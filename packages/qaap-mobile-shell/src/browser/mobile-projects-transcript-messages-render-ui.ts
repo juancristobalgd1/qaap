@@ -14,11 +14,16 @@ import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, i
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
+import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
 } from '../common/qaap-transcript-turn-status';
+import {
+    appendBeforeTranscriptLiveStatus,
+    detachTranscriptLiveStatusFromScroller,
+} from '../common/qaap-transcript-live-status';
 import { recordTranscriptRenderMetric, type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
 
 /** Telemetry: attribute every patch-miss to the guard that rejected it. */
@@ -534,6 +539,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return;
         }
         const scroll = this.resolveTranscriptScrollController(messageHost);
+        // Already on the live edge — keep following; do not yank to the process header.
+        if (scroll.shouldFollowTail()) {
+            this.scrollTranscriptFollowTail(messageHost);
+            return;
+        }
         scroll.beginPositionTurn();
         scroll.markProgrammaticScroll();
         const contextPx = Math.min(96, Math.max(40, Math.round(messageHost.clientHeight * 0.14)));
@@ -657,6 +667,13 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return;
         }
         const scroll = this.resolveTranscriptScrollController(messageHost);
+        // Reader already at the live edge — keep the live-status footer in view;
+        // do not pin the turn/process header or install a reading runway.
+        if (scroll.shouldFollowTail()) {
+            this.scrollTranscriptFollowTail(messageHost);
+            return;
+        }
+        this.prepareTranscriptReadingAnchorWindow(messageHost, userRow);
         if (options?.asPositionTurn) {
             scroll.beginPositionTurn();
             scroll.schedulePositionTurnStart(messageHost, userRow);
@@ -665,22 +682,30 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         this.scrollTranscriptTurnStartIntoReadingPosition(messageHost, userRow);
     }
 
-    renderTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): void {
-        if (typeof window !== 'undefined'
-            && new URLSearchParams(window.location.search).get('qaapRenderMetrics') === '1') {
-            // eslint-disable-next-line no-console
-            console.log('[QAAP scroll trace] render', JSON.stringify({
-                id: conv.id,
-                status: conv.status,
-                previousId: this.host.transcriptLastConv?.id,
-                previousCount: this.host.transcriptLastConv?.messages.length,
-                previousLastRole: this.host.transcriptLastConv?.messages.at(-1)?.role,
-                previousLastId: this.host.transcriptLastConv?.messages.at(-1)?.id,
-                nextCount: conv.messages.length,
-                nextLastRole: conv.messages.at(-1)?.role,
-                nextLastId: conv.messages.at(-1)?.id,
-            }));
+    /**
+     * Materialize only the target user row and the response immediately above
+     * it. Those are the boxes that enter the viewport during turn placement;
+     * keeping them real prevents content-visibility estimates from changing
+     * the scroll range underneath the single positioning write.
+     */
+    protected prepareTranscriptReadingAnchorWindow(messageHost: HTMLElement, userRow: HTMLElement): void {
+        messageHost.querySelectorAll('.theia-mod-transcript-reading-anchor').forEach(element => {
+            element.classList.remove('theia-mod-transcript-reading-anchor');
+        });
+        const contextPx = Math.min(96, Math.max(40, Math.round(messageHost.clientHeight * 0.14)));
+        const runwayPx = Math.max(0, messageHost.clientHeight - contextPx);
+        messageHost.classList.add('theia-mod-transcript-reading-runway');
+        messageHost.style.setProperty('--qaap-transcript-reading-context-px', `${contextPx}px`);
+        messageHost.style.setProperty('--qaap-transcript-reading-runway-px', `${runwayPx}px`);
+        const userWrap = userRow.closest<HTMLElement>('[data-transcript-message-id]') ?? userRow;
+        userWrap.classList.add('theia-mod-transcript-reading-anchor');
+        userRow.classList.add('theia-mod-transcript-reading-anchor');
+        if (userWrap.previousElementSibling instanceof HTMLElement) {
+            userWrap.previousElementSibling.classList.add('theia-mod-transcript-reading-anchor');
         }
+    }
+
+    renderTranscriptMessages(host: HTMLElement, conv: QaapAgentConversationDTO): void {
         const conversationSwitched = this.host.transcriptLastRenderedConversationId !== undefined
             && this.host.transcriptLastRenderedConversationId !== conv.id;
         // Settled (non-streaming) snapshots can never take the stream-patch fast path and never
@@ -737,6 +762,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const previousConversation = this.host.transcriptLastConv;
         const shouldVirtualize = this.host.transcriptUi.shouldVirtualize(conv);
         const messageHost = this.resolveTranscriptMessageHost(host);
+        const hadReadingAnchorWindow = messageHost.querySelector('.theia-mod-transcript-reading-anchor') !== null;
         const scroll = this.resolveTranscriptScrollController(messageHost);
         const openingConversation = scroll.conversationId !== conv.id;
         if (openingConversation) {
@@ -823,6 +849,11 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             ? this.findTranscriptStreamingActivityRow(messageHost)
             : undefined;
         preservedActivityRow?.remove();
+        // Same for the scroller-tail live-status: replaceChildren would destroy the ThinkingOrb
+        // and drop `:has(> .live-status)`, flashing the activity chrome for a frame.
+        const preservedLiveStatus = !conversationSwitched
+            ? detachTranscriptLiveStatusFromScroller(messageHost)
+            : undefined;
         const normalizedForKeys = this.normalizeConversationFailuresCached(conv);
         const seamIndex = this.transcriptContextCompactionBoundaryIndex(normalizedForKeys);
         const fragment = document.createDocumentFragment();
@@ -859,32 +890,50 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             : undefined;
         if (resolveTranscriptEffectiveStatus(conv) === 'streaming') {
             if (last?.role === 'agent') {
-                messageHost.lastElementChild?.classList.add('theia-mod-streaming');
+                const streamingTail = [...messageHost.children]
+                    .reverse()
+                    .find((el): el is HTMLElement => el instanceof HTMLElement
+                        && el.classList.contains('theia-mobile-agent-transcript-msg'));
+                streamingTail?.classList.add('theia-mod-streaming');
                 if (runningCompaction) {
-                    messageHost.append(runningCompaction);
+                    appendBeforeTranscriptLiveStatus(messageHost, runningCompaction);
                 }
             } else {
                 if (runningCompaction) {
-                    messageHost.append(runningCompaction);
+                    appendBeforeTranscriptLiveStatus(messageHost, runningCompaction);
                 }
                 if (preservedActivityRow
                     && this.artifactsUi.syncTranscriptStreamingActivityRow(preservedActivityRow, conv)) {
                     preservedActivityRow.hidden = false;
-                    messageHost.append(preservedActivityRow);
+                    appendBeforeTranscriptLiveStatus(messageHost, preservedActivityRow);
                 } else {
                     const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
                     if (activityRow) {
-                        messageHost.append(activityRow);
+                        appendBeforeTranscriptLiveStatus(messageHost, activityRow);
                     }
                 }
             }
         } else if (runningCompaction) {
-            messageHost.append(runningCompaction);
+            appendBeforeTranscriptLiveStatus(messageHost, runningCompaction);
         }
-        // replaceChildren drops the scroller-tail live-status — remount / clear via hold rules.
+        // Reattach the same live-status node (orb/shimmer intact) then sync via hold rules.
+        if (preservedLiveStatus) {
+            messageHost.append(preservedLiveStatus);
+        }
         this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
-        if (newTurnStarted) {
+        if (hadReadingAnchorWindow && !newTurnStarted && !shouldFollowTail) {
+            const lastUserRow = this.findLastUserMessageRow(messageHost);
+            if (lastUserRow) {
+                // Optimistic and persisted user messages have different ids.
+                // Carry the bounded materialized window across that keyed/full
+                // reconciliation so the scroll range does not collapse again.
+                this.prepareTranscriptReadingAnchorWindow(messageHost, lastUserRow);
+            }
+        }
+        if (newTurnStarted && !shouldFollowTail) {
             this.scrollTranscriptToLastUserTurn(messageHost, { asPositionTurn: true });
+        } else if (newTurnStarted && shouldFollowTail) {
+            this.scrollTranscriptFollowTail(messageHost);
         } else if (openingConversation && !this.hasExplicitTranscriptMessageHash()) {
             scroll.beginRestore();
             scroll.markProgrammaticScroll(200);
@@ -965,17 +1014,6 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         const previousConversation = this.host.transcriptLastConv;
         const decision = resolveStreamingTranscriptPatchDecision(previousConversation, conv);
         const patchKind = decision.kind;
-        if (typeof window !== 'undefined'
-            && new URLSearchParams(window.location.search).get('qaapRenderMetrics') === '1') {
-            // eslint-disable-next-line no-console
-            console.log('[QAAP scroll trace] patch decision', JSON.stringify({
-                patchKind,
-                previousCount: previousConversation?.messages.length,
-                nextCount: conv.messages.length,
-                previousLastRole: previousConversation?.messages.at(-1)?.role,
-                nextLastRole: conv.messages.at(-1)?.role,
-            }));
-        }
         const appendedUserMessageIndex = patchKind === 'append-agent' || patchKind === 'append-user'
             ? this.findAppendedUserMessageIndex(previousConversation, conv)
             : -1;
@@ -1028,7 +1066,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             for (let index = prevCount; index < conv.messages.length; index++) {
                 fragment.append(this.createTranscriptMessageRowAtIndex(conv, index));
             }
-            messageHost.append(fragment);
+            appendBeforeTranscriptLiveStatus(messageHost, fragment);
             this.host.transcriptLastConv = conv;
             this.host.transcriptLastRenderedConversationId = conv.id;
             this.host.transcriptLastRenderedMessageId = conv.messages.at(-1)?.id;
@@ -1090,7 +1128,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 // placeholder tick was skipped) — this is an append, not a
                 // replace; keep the two apart in telemetry.
                 recordTranscriptRenderMetric('render_patch_last_agent_append_missing_row');
-                messageHost.append(row);
+                appendBeforeTranscriptLiveStatus(messageHost, row);
             }
         } else {
             recordTranscriptRenderMetric('render_patch_append');
@@ -1105,9 +1143,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
                 for (let index = prevCount; index < conv.messages.length - 1; index++) {
                     fragment.append(this.createTranscriptMessageRowAtIndex(conv, index));
                 }
-                messageHost.append(fragment);
+                appendBeforeTranscriptLiveStatus(messageHost, fragment);
             }
-            messageHost.append(row);
+            appendBeforeTranscriptLiveStatus(messageHost, row);
         }
 
         this.host.transcriptLastConv = conv;
@@ -1439,7 +1477,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             recordTranscriptRenderMetric('render_patch_activity_replace');
             const activityRow = this.artifactsUi.createTranscriptStreamingActivityRow(conv);
             if (activityRow) {
-                messageHost.append(activityRow);
+                appendBeforeTranscriptLiveStatus(messageHost, activityRow);
                 this.artifactsUi.ensurePinnedTranscriptLiveStatus(conv);
             }
             return;
@@ -1489,16 +1527,46 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel);
         const failedTool = extractLastFailedToolFromMessage(msg);
         const canRetry = conv?.status === 'failed' && !!this.host.retryOpenFailedConversationTask;
+        const agentId = provenance.turnAgentId ?? conv?.agentId;
         body.append(this.toolUi.createTranscriptAgentFailureDialog(
             msg.error ?? '',
             resolveAgentTurnFailureTechnicalContent(msg),
-            {
+            this.buildTranscriptAgentFailureDialogOptions({
                 failedToolName: failedTool?.name,
-                onRetry: canRetry ? () => this.host.retryOpenFailedConversationTask?.() : undefined,
-            },
+                canRetry,
+                agentId,
+                error: msg.error,
+                technicalContent: resolveAgentTurnFailureTechnicalContent(msg),
+            }),
         ));
         row.append(body);
         return row;
+    }
+
+    protected buildTranscriptAgentFailureDialogOptions(input: {
+        readonly failedToolName?: string;
+        readonly canRetry: boolean;
+        readonly agentId?: string;
+        readonly error?: string;
+        readonly technicalContent?: string;
+    }): {
+        readonly failedToolName?: string;
+        readonly onRetry?: () => void | Promise<void>;
+        readonly onOpenAuthUrl?: (url: string) => void;
+        readonly onOpenAgentSignIn?: () => void | Promise<void>;
+        readonly agentLabel?: string;
+    } {
+        return {
+            failedToolName: input.failedToolName,
+            onRetry: input.canRetry ? () => this.host.retryOpenFailedConversationTask?.() : undefined,
+            onOpenAuthUrl: (url: string) => {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            },
+            onOpenAgentSignIn: this.host.openAgentSignInTerminal
+                ? () => this.host.openAgentSignInTerminal?.(input.agentId)
+                : undefined,
+            agentLabel: input.agentId ? resolveAgentDisplayLabel(input.agentId) : undefined,
+        };
     }
 
     createTranscriptMessageRow(

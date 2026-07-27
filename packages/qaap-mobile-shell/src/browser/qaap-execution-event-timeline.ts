@@ -687,14 +687,10 @@ export interface MobileProcessAccordionOptions {
      */
     readonly settled?: boolean;
     /**
-     * Which agent/model actually executed this turn (e.g. a routine or a
-     * delegated sub-task run under a different pick than the composer's
-     * current selection). Rendered as a small provenance badge in the
-     * header, mirroring how Cursor labels a delegated subtask. Omitted for
-     * historical turns that predate this field. `turnAgentModel` may be
-     * unset even when `turnAgentId` is known — some agent CLIs run their own
-     * default model without reporting a pick, and the badge must not invent
-     * one in that case.
+     * @deprecated Provenance (agent/model) is no longer rendered inside the
+     * accordion header — callers mount {@link syncTranscriptStandaloneTurnProvenance}
+     * above the accordion. Fields remain accepted so existing call sites keep
+     * compiling until they stop passing them.
      */
     readonly turnAgentId?: string;
     readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
@@ -728,7 +724,7 @@ export function wrapMobileProcessAccordion(
     timeline: HTMLElement,
     options: MobileProcessAccordionOptions,
 ): HTMLElement {
-    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb, settled, turnAgentId, turnAgentModel } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, settled } = options;
     const details = document.createElement('details');
     details.className =
         `${MOBILE_PROCESS_ACCORDION_CLASS} ${isWorking ? 'theia-mod-working' : ''} ${isError ? 'theia-mod-error' : ''}` +
@@ -765,15 +761,17 @@ export function wrapMobileProcessAccordion(
 
     const label = document.createElement('span');
     label.className = 'theia-mobile-process-accordion-label';
-    label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options), activityVerb);
-    syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs, activityVerb);
+    label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
+    syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
 
     const chevron = document.createElement('span');
     chevron.className = 'codicon codicon-chevron-down theia-mobile-process-accordion-chevron';
     chevron.setAttribute('aria-hidden', 'true');
 
     header.append(label);
-    syncMobileProcessAccordionProvenance(header, turnAgentId, turnAgentModel);
+    // Provenance (agent avatar + model) lives ABOVE the accordion via
+    // syncTranscriptStandaloneTurnProvenance — never inside this summary.
+    clearLegacyAccordionHeaderProvenance(header);
     syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
     header.append(chevron);
     // Orb lives in the pinned stream footer — never in the accordion header.
@@ -874,10 +872,9 @@ function syncMobileProcessAccordionLabelTicker(
     label: HTMLElement,
     isWorking: boolean,
     turnStartMs: number | undefined,
-    activityVerb: string | undefined,
 ): void {
     const nextKey = isWorking && turnStartMs !== undefined
-        ? `${turnStartMs}:${activityVerb ?? ''}`
+        ? `${turnStartMs}`
         : '';
     const prevKey = label.dataset.qaapProcessTickerKey ?? '';
     if (nextKey === prevKey) {
@@ -889,7 +886,7 @@ function syncMobileProcessAccordionLabelTicker(
         sharedElapsedTicker.register({
             element: label,
             render: now => {
-                label.textContent = formatMobileProcessLabel(Math.max(0, now - turnStartMs), 'processing', activityVerb);
+                label.textContent = formatMobileProcessLabel(Math.max(0, now - turnStartMs), 'processing');
             },
         });
     }
@@ -920,7 +917,7 @@ export function syncMobileProcessAccordionState(
         return;
     }
     const details = accordion as HTMLDetailsElement;
-    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs, activityVerb, turnAgentId, turnAgentModel } = options;
+    const { isWorking, isError, isCancelled, elapsedMs, turnStartMs } = options;
 
     // Update the label regardless of toggle state.
     const label = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-label');
@@ -928,14 +925,14 @@ export function syncMobileProcessAccordionState(
         if (!(isWorking && turnStartMs !== undefined)) {
             // While working with a known turn start, registering on the ticker
             // below renders immediately — skip the redundant direct write.
-            label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options), activityVerb);
+            label.textContent = formatMobileProcessLabel(elapsedMs, resolveMobileProcessOutcome(options));
         }
-        syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs, activityVerb);
+        syncMobileProcessAccordionLabelTicker(label, isWorking, turnStartMs);
     }
 
     const header = details.querySelector<HTMLElement>('.theia-mobile-process-accordion-header');
     if (header) {
-        syncMobileProcessAccordionProvenance(header, turnAgentId, turnAgentModel);
+        clearLegacyAccordionHeaderProvenance(header);
         syncMobileProcessAccordionRunStop(header, isWorking, options.onStopRun);
         syncMobileProcessAccordionBrandLogo(header, false);
     }
@@ -1015,29 +1012,31 @@ function resolveMobileProcessOutcome(
     return 'processed';
 }
 
-/** Class of the small "which agent/model ran this turn" badge in the accordion header. */
+/**
+ * Legacy class formerly used when provenance lived inside the accordion
+ * `<summary>`. Kept exported so tests can assert it is never mounted; live
+ * code only clears leftover nodes with this class.
+ */
 export const MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS = 'theia-mobile-process-accordion-provenance';
 
 /**
- * Class of the standalone turn-provenance badge rendered for a turn that has no process
- * accordion (no tool segments) to host the badge in its header. Mounted as the FIRST child of
- * the turn's segments body -- the same slot the accordion (and its header badge) would occupy if
- * this turn had used tools -- so the badge always lands in the same visual position regardless
- * of whether this particular turn ran any tools. See
- * {@link syncTranscriptStandaloneTurnProvenance}.
+ * Class of the turn-provenance badge (agent avatar + provider sub-icon + short
+ * model label). Mounted as the FIRST child of the turn's segments body,
+ * ABOVE the process accordion when tools exist — never inside the accordion
+ * header. See {@link syncTranscriptStandaloneTurnProvenance}.
  */
 export const MOBILE_TURN_PROVENANCE_STANDALONE_CLASS = 'theia-mobile-turn-provenance-standalone';
 
 /**
- * The badge text/title pair shared by both provenance-badge hosts (the accordion header and the
- * standalone no-tool-turn badge). The VISIBLE text is only ever the short model id (the provider
- * is already conveyed by the avatar's corner sub-icon, see {@link createAgentIdentityElement} --
- * showing "Provider · modelId" in text on top of that icon would be the exact redundancy this
- * design replaces) or, when no model is known, the agent's own display label. `fullLabel` is the
- * full, unambiguous "Agent · Provider · modelId" string reserved for the `title` tooltip -- the
- * only place that needs to fully disambiguate once the visible text is just "free". Always skips
- * inventing a model label when `turnAgentModel` is unset -- some agent CLIs run their own default
- * model without reporting a pick.
+ * The badge text/title pair for the turn-provenance badge. The VISIBLE text is only ever the
+ * short model id (the provider is already conveyed by the avatar's corner sub-icon, see
+ * {@link createAgentIdentityElement} -- showing "Provider · modelId" in text on top of that
+ * icon would be the exact redundancy this design replaces) or, when no model is known, the
+ * agent's own display label. `fullLabel` is the full, unambiguous "Agent · Provider · modelId"
+ * string reserved for the `title` tooltip -- the only place that needs to fully disambiguate
+ * once the visible text is just "free". Always skips inventing a model label when
+ * `turnAgentModel` is unset -- some agent CLIs run their own default model without reporting
+ * a pick.
  */
 function resolveTranscriptProvenanceBadgeText(
     turnAgentId: string,
@@ -1069,9 +1068,7 @@ function transcriptProvenanceBadgeKey(
  * Builds the turn-provenance badge element: the same agent-avatar + provider-sub-icon + short
  * model label visual as the composer's agent picker (see {@link createAgentIdentityElement}),
  * carrying the full unambiguous label as its `title` and the raw provenance tuple as its
- * idempotency dataset key. Shared by both provenance-badge hosts so they can never visually
- * diverge -- see {@link syncMobileProcessAccordionProvenance} and
- * {@link syncTranscriptStandaloneTurnProvenance}.
+ * idempotency dataset key. Used exclusively by {@link syncTranscriptStandaloneTurnProvenance}.
  */
 function createTranscriptProvenanceBadgeElement(
     hostClass: string,
@@ -1090,63 +1087,26 @@ function createTranscriptProvenanceBadgeElement(
     return badge;
 }
 
-/**
- * Adds, updates, or removes the turn-provenance badge (agent avatar, optionally with the
- * provider's icon overlaid in the corner and the short model name as text) in the accordion
- * header. Idempotent: re-running with the same `turnAgentId`/`turnAgentModel` is a no-op, so
- * calling it on every streaming sync tick (see {@link syncMobileProcessAccordionState}) never
- * duplicates or flickers the badge. Inserted right before the stop button/chevron so it reads
- * `<label> <badge> [stop] <chevron>`, and always before the model-less fallback is skipped
- * entirely (no "unknown model" placeholder) per the product rule: never invent a model the
- * backend didn't report.
- */
-function syncMobileProcessAccordionProvenance(
-    header: HTMLElement,
-    turnAgentId: string | undefined,
-    turnAgentModel: QaapCreateAgentTaskQaiqModel | undefined,
-): void {
-    const existing = header.querySelector<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`);
-    if (!turnAgentId) {
-        existing?.remove();
-        return;
-    }
-    const key = transcriptProvenanceBadgeKey(turnAgentId, turnAgentModel);
-    if (existing) {
-        if (existing.dataset.qaapProvenanceKey === key) {
-            return;
-        }
+/** Drops any leftover provenance badge that older builds mounted inside the accordion summary. */
+function clearLegacyAccordionHeaderProvenance(header: HTMLElement): void {
+    for (const existing of header.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)) {
         existing.remove();
-    }
-    const badge = createTranscriptProvenanceBadgeElement(MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS, turnAgentId, turnAgentModel);
-    const stopButton = header.querySelector(`.${MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS}`);
-    const chevron = header.querySelector('.theia-mobile-process-accordion-chevron');
-    const insertBeforeEl = stopButton ?? chevron;
-    if (insertBeforeEl) {
-        header.insertBefore(badge, insertBeforeEl);
-    } else {
-        header.append(badge);
     }
 }
 
 /**
- * Adds, updates, or removes the standalone turn-provenance badge for a turn body that has no
- * process accordion (the turn produced no tool segments, so {@link renderMobileExecutionEventTimeline}
- * never wraps anything in {@link wrapMobileProcessAccordion} and there is no header to host the
- * badge in). Mounted as the FIRST child of `body` -- always via `prepend`, so repeated calls (every
- * streaming sync tick) keep it in that same slot even after later content (thought brief, text
- * blocks) has been appended -- matching the position the accordion occupies for a turn that did use
- * tools, so the eye finds the badge in the same place either way.
+ * Adds, updates, or removes the turn-provenance badge (agent avatar, optionally with the
+ * provider's icon overlaid in the corner and the short model name as text) as the FIRST child
+ * of the turn's segments body — ABOVE the process accordion when tools exist, or above the
+ * thought brief / text blocks when they do not. Never mounts inside the accordion header.
  *
- * Idempotent exactly like {@link syncMobileProcessAccordionProvenance}: re-running with the same
- * `turnAgentId`/`turnAgentModel` is a no-op (dataset-key compare), and an undefined `turnAgentId`
- * (historical turns predating the field) removes any existing badge and leaves no gap -- no
- * reserved space, no layout shift.
+ * Idempotent: re-running with the same `turnAgentId`/`turnAgentModel` is a no-op (dataset-key
+ * compare), so calling it on every streaming sync tick never duplicates or flickers the badge.
+ * An undefined `turnAgentId` (historical turns predating the field) removes any existing badge
+ * and leaves no gap -- no reserved space, no layout shift.
  *
- * Callers must remove this badge (or call this with `turnAgentId: undefined`) when a row is
- * upgraded from the no-tool representation to the execution-event-timeline/accordion
- * representation (see `upgradeToMobileExecutionEventTimeline` in
- * `mobile-projects-transcript-messages-artifacts-ui.ts`), so a turn never ends up showing both the
- * standalone badge and the accordion header badge at once.
+ * Always uses `prepend`, so repeated calls keep the badge in the same slot even after later
+ * content (accordion, thought brief, text blocks) has been appended.
  */
 export function syncTranscriptStandaloneTurnProvenance(
     body: HTMLElement,
@@ -1161,6 +1121,11 @@ export function syncTranscriptStandaloneTurnProvenance(
     const key = transcriptProvenanceBadgeKey(turnAgentId, turnAgentModel);
     if (existing) {
         if (existing.dataset.qaapProvenanceKey === key) {
+            // Keep the badge first even when identity is unchanged (accordion may have been
+            // rebuilt and prepended ahead of it).
+            if (body.firstElementChild !== existing) {
+                body.prepend(existing);
+            }
             return;
         }
         existing.remove();
@@ -1222,13 +1187,10 @@ function syncMobileProcessAccordionRunStop(
     }
 }
 
-function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: MobileProcessOutcome, activityVerb?: string): string {
+function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: MobileProcessOutcome): string {
     if (elapsedMs === undefined) {
         switch (outcome) {
             case 'processing':
-                if (activityVerb) {
-                    return nls.localize('theia/qaap-mobile-shell/processTimeline/workingOnNoElapsed', '{0}…', activityVerb);
-                }
                 return nls.localize('theia/qaap-mobile-shell/processTimeline/processing', 'Processing…');
             case 'stopped':
                 return nls.localize('theia/qaap-mobile-shell/processTimeline/stopped', 'Stopped');
@@ -1241,10 +1203,7 @@ function formatMobileProcessLabel(elapsedMs: number | undefined, outcome: Mobile
     const formatted = formatMobileElapsed(elapsedMs);
     switch (outcome) {
         case 'processing':
-            if (activityVerb) {
-                return nls.localize('theia/qaap-mobile-shell/processTimeline/workingOn', '{0}… {1}', activityVerb, formatted);
-            }
-            return nls.localize('theia/qaap-mobile-shell/processTimeline/processingElapsed', 'Processing… {0}', formatted);
+            return nls.localize('theia/qaap-mobile-shell/processTimeline/processingFor', 'Processing for {0}', formatted);
         case 'stopped':
             return nls.localize('theia/qaap-mobile-shell/processTimeline/stoppedAfter', 'Stopped after {0}', formatted);
         case 'failed':

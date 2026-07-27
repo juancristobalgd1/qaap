@@ -889,7 +889,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(timeline).to.not.equal(undefined);
         expect(timeline instanceof HTMLDetailsElement && timeline.open).to.equal(false);
         expect(timeline?.querySelector('.theia-mobile-agent-activity-timeline-summary-label')?.textContent)
-            .to.equal('Read 1 file');
+            .to.equal('Processed');
         expect(timeline?.querySelector('.theia-mobile-agent-activity-result-preview')?.textContent)
             .to.equal('export default function Page() { return null; }');
     });
@@ -1101,13 +1101,31 @@ describe('qaap-transcript-timeline-render-bench', () => {
         // child of the scroller (not nested in the row / segments body).
         const streamingRow = createStreamingRow(artifactsUi, segments);
         scroller.append(streamingRow);
-        // Re-tail after append (mirrors production patch path).
+        // Mid-stream snapshot still has unfinished work so live-status stays mounted.
+        const streamingSegments: QaapAgentMessageSegmentDTO[] = [
+            { type: 'thinking', content: 'Plan the work.' },
+            {
+                type: 'tool',
+                name: 'Read',
+                toolUseId: 'tool-read-page',
+                args: JSON.stringify({ path: 'app/page.tsx' }),
+                result: 'ok',
+                finished: true,
+            },
+            {
+                type: 'tool',
+                name: 'Write',
+                toolUseId: 'tool-write-page',
+                args: JSON.stringify({ file_path: 'app/page.tsx' }),
+                finished: false,
+            },
+        ];
         artifactsUi.ensurePinnedTranscriptLiveStatus({
             ...conv,
             status: 'streaming',
             messages: [
                 { id: 'user-1', role: 'user', content: 'Bench prompt', createdAt: Date.now() - 5000 },
-                { id: 'agent-1', role: 'agent', content: '', segments },
+                { id: 'agent-1', role: 'agent', content: '', segments: streamingSegments },
             ],
         } as QaapAgentConversationDTO);
         expect(streamingRow.querySelector('.theia-mobile-diff-summary')).to.equal(null);
@@ -1275,10 +1293,12 @@ describe('qaap-transcript-timeline-render-bench', () => {
         expect(row.querySelector('.theia-mobile-execution-timeline')).to.equal(null);
 
         // Finalize with the full segments (including the tool)
-        const finalizedConv = { ...conv, status: 'idle' as const, messages: [
-            conv.messages[0]!,
-            { id: 'agent-1', role: 'agent', content: '', segments },
-        ] } as QaapAgentConversationDTO;
+        const finalizedConv = {
+            ...conv, status: 'idle' as const, messages: [
+                conv.messages[0]!,
+                { id: 'agent-1', role: 'agent', content: '', segments },
+            ]
+        } as QaapAgentConversationDTO;
         artifactsUi.finalizeStreamingAgentTrace(row, segments, finalizedConv);
 
         // Should now have the Codex-style timeline, not the thought brief

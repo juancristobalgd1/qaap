@@ -799,7 +799,7 @@
   margin-bottom: 4px;
 }
 
-.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-subagent-card + .theia-mod-subagent-card-child {
+.theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-item.theia-mod-subagent-card+.theia-mod-subagent-card-child {
   border-top: none;
 }
 
@@ -995,11 +995,31 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * No `content-visibility: auto` here. Rows are already windowed by the real
+ * virtual list above TRANSCRIPT_VIRTUAL_MIN_MESSAGES, and below it the policy
+ * deliberately wants real native heights. Skipping row rendering made every
+ * off-screen box resolve to `contain-intrinsic-size` instead, so the scroll
+ * range swung on every streaming tick, settle and conversation open — rows
+ * popped in/out and the viewport shimmied. `contain` alone keeps the paint
+ * savings without ever replacing a box with an estimate.
+ */
 .theia-mobile-agent-transcript-msg:not(.theia-mod-streaming),
 .theia-mobile-agent-transcript-user-wrap:not(.theia-mod-streaming) {
-  content-visibility: auto;
   contain: layout style paint;
-  contain-intrinsic-size: auto 160px;
+}
+
+/*
+ * A new turn needs enough scroll range to sit near the top with prior context
+ * even before its response has grown. The runway is proportional to the live
+ * viewport; Jump to latest and conversation changes remove it explicitly.
+ */
+.theia-mobile-agent-transcript.theia-mod-transcript-reading-runway::after {
+  content: "";
+  display: block;
+  flex: 0 0 var(--qaap-transcript-reading-runway-px, 0px);
+  min-block-size: var(--qaap-transcript-reading-runway-px, 0px);
+  pointer-events: none;
 }
 
 .theia-mobile-agent-transcript-segments {
@@ -1221,11 +1241,6 @@
 }
 
 @media (max-width: 640px) {
-
-  .theia-mobile-agent-transcript-msg:not(.theia-mod-streaming),
-  .theia-mobile-agent-transcript-user-wrap:not(.theia-mod-streaming) {
-    contain-intrinsic-size: auto 190px;
-  }
 
   .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace .theia-mobile-agent-activity-detail.theia-mod-pill {
     max-width: min(320px, 72vw);
@@ -1449,6 +1464,7 @@ body.qaap-theme-light .theia-mobile-agent-transcript-context-compaction-line {
 }
 
 @media (hover: hover) and (pointer: fine) {
+
   .theia-mobile-agent-lobe-workflow .theia-mobile-agent-lobe-workflow-summary:hover,
   .theia-mobile-agent-lobe-workflow-summary.theia-mobile-agent-activity-timeline-sticky-bar:hover {
     background: color-mix(in srgb, var(--theia-foreground) 4%, transparent) !important;

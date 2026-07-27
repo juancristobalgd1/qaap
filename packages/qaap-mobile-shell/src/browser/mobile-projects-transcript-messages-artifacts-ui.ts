@@ -20,7 +20,6 @@ import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     hasUnfinishedAgentWork,
-    isConversationTurnVisuallySettled,
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptLiveStatus,
 } from '../common/qaap-transcript-turn-status';
@@ -123,7 +122,6 @@ import {
     hasMobileExecutionEventTimeline,
     MOBILE_CLOSING_ERROR_CARD_CLASS,
     MOBILE_TOOL_FILE_OPEN_EVENT,
-    MOBILE_TURN_PROVENANCE_STANDALONE_CLASS,
     refreshMobileExecutionEventTimeline,
     resolveMobileActivityVerb,
     syncMobileProcessAccordionState,
@@ -461,11 +459,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 message: options?.message,
             });
         } else {
-            // No tools (yet, or ever, for a turn that never calls one) — there is no
-            // process accordion to host the turn-provenance badge in its header, so
-            // render a standalone badge as the FIRST child of `body`, the same slot
-            // the accordion occupies for a turn that did use tools (see
-            // renderMobileExecutionEventTimeline / wrapMobileProcessAccordion above).
+            // No tools (yet, or ever, for a turn that never calls one) — still
+            // render the turn-provenance badge as the FIRST child of `body`
+            // (same slot used when tools exist: above the process accordion).
             // This is deliberately NOT an empty accordion -- there is no process to
             // expand for a tool-less turn, and a collapsible control with nothing
             // inside would be worse than no accordion at all.
@@ -504,12 +500,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
                 segments,
             });
             const canRetry = conv?.status === 'failed' && !!this.host.retryOpenFailedConversationTask;
+            const provenance = this.resolveTurnProvenance(conv, undefined);
+            const agentId = provenance.turnAgentId ?? conv?.agentId;
             body.append(this.toolUi.createTranscriptAgentFailureDialog(
                 error,
                 resolveAgentTurnFailureTechnicalContent({ role: 'agent', content: '', segments }),
                 {
                     failedToolName: failedTool?.name,
                     onRetry: canRetry ? () => this.host.retryOpenFailedConversationTask?.() : undefined,
+                    onOpenAuthUrl: (url: string) => {
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                    },
+                    onOpenAgentSignIn: this.host.openAgentSignInTerminal
+                        ? () => this.host.openAgentSignInTerminal?.(agentId)
+                        : undefined,
                 },
             ));
         }
@@ -565,6 +569,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
         const provenance = this.resolveTurnProvenance(conv, effectiveMessage);
+        // Agent/model identity always sits ABOVE the accordion (never inside its summary).
+        syncTranscriptStandaloneTurnProvenance(body, provenance.turnAgentId, provenance.turnAgentModel);
         const accordion = wrapMobileProcessAccordion(eventTimeline, {
             isWorking,
             isError,
@@ -574,8 +580,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             activityVerb,
             onStopRun: this.resolveRunStopHandler(conv, message, isWorking),
             settled: this.isConversationFinalResponseCommitted(conv, streaming),
-            turnAgentId: provenance.turnAgentId,
-            turnAgentModel: provenance.turnAgentModel,
         });
         this.bindMobileExecutionEventTimelineFileOpen(accordion);
         body.append(accordion);
@@ -1011,6 +1015,10 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const message = this.resolveTranscriptRowAgentMessage(row, conv);
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
         const provenance = this.resolveTurnProvenance(conv, message);
+        const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
+        if (segmentsBody) {
+            syncTranscriptStandaloneTurnProvenance(segmentsBody, provenance.turnAgentId, provenance.turnAgentModel);
+        }
         syncMobileProcessAccordionState(accordion, {
             isWorking,
             isError: this.isConversationError(conv),
@@ -1024,8 +1032,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             // the one moment auto-collapse is allowed. Streaming syncs must
             // never collapse, even if the working flag flickers between tools.
             settled: this.isConversationFinalResponseCommitted(conv, streaming),
-            turnAgentId: provenance.turnAgentId,
-            turnAgentModel: provenance.turnAgentModel,
         });
         // Re-ensure the slow-turn hint on every sync (runs on every streaming
         // tick): this is what lets the hint survive `accordion` being wholly
@@ -1061,15 +1067,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         // Remove legacy elements: thought brief, activity timeline, artifacts,
         // and all text blocks (process-prose text blocks will be re-rendered
         // as narrative inside the timeline; closing-narrative text blocks will
-        // be re-rendered after the timeline). The standalone turn-provenance
-        // badge (rendered while this row had no tools, see
-        // createTranscriptAgentSegmentsRow) is removed here too -- the
-        // upgraded row gets its own provenance badge in the accordion header,
-        // and a turn must never show both at once.
+        // be re-rendered after the timeline). Keep the standalone turn-provenance
+        // badge — it stays ABOVE the accordion after upgrade (same visual slot
+        // as before tools arrived); renderMobileExecutionEventTimeline re-syncs it.
         segmentsBody.querySelectorAll(
             `[${TRANSCRIPT_THOUGHT_BRIEF_ATTR}], [${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}], ` +
-            `.theia-mobile-agent-transcript-artifacts, [${TRANSCRIPT_SEGMENT_INDEX_ATTR}], ` +
-            `.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`,
+            `.theia-mobile-agent-transcript-artifacts, [${TRANSCRIPT_SEGMENT_INDEX_ATTR}]`,
         ).forEach(el => el.remove());
         // Remove any leftover trace status / live footer (re-added by the helper if streaming)
         segmentsBody.querySelector('.theia-mobile-agent-trace-status')?.remove();
@@ -2186,14 +2189,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return;
         }
         const state = this.resolveTranscriptStreamingActivity(conv, { stalled, timedOut });
+        const durationLabel = stalled || timedOut ? state.title : this.resolveTranscriptStreamDurationLabel(conv);
         if (line.classList.contains('qaap-agent-setup')) {
-            syncAgentSetupElement(line as HTMLElement, stalled || timedOut ? null : state.title);
+            syncAgentSetupElement(line as HTMLElement, stalled || timedOut ? null : durationLabel);
             return;
         }
         line.className = `theia-mobile-agent-stream-line theia-mod-${state.kind}`;
         const label = line.querySelector('.theia-mobile-agent-stream-label');
         if (label) {
-            label.textContent = timedOut ? state.title : `${state.title}…`;
+            label.textContent = timedOut ? state.title : durationLabel;
             label.classList.toggle(
                 'theia-mod-shimmer',
                 shouldTranscriptStreamLabelShimmer(state.kind, stalled, timedOut),
@@ -2404,21 +2408,19 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     protected pinnedLiveStatusPeakTokens = 0;
 
     /**
-     * True while the live-status row should stay at the transcript scroller tail.
-     * Mid-turn streaming only — never while idle/failed, and never during backend
-     * `settled` finalizing (summary/answer already on screen) even though Stop/glow
-     * may still report execution-busy until the task detaches.
+     * True while the live-status row should stay pinned for the whole backend turn.
+     * Backend `streaming` / `settled` only — never hide on mid-stream "visually settled".
      */
     protected shouldShowPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
         return shouldShowTranscriptLiveStatus(conv);
     }
 
     /**
-     * Hold only covers brief mid-stream status dips. Drop immediately once the
-     * backend leaves `streaming` or the turn looks complete.
+     * Hold only covers brief mid-stream status dips. Drop once the backend leaves
+     * the in-flight statuses (`streaming` / `settled`).
      */
     protected shouldHoldPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
-        if (conv.status !== 'streaming' || isConversationTurnVisuallySettled(conv)) {
+        if (conv.status !== 'streaming' && conv.status !== 'settled') {
             return false;
         }
         return this.pinnedLiveStatusConvId === conv.id
@@ -2443,8 +2445,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
 
     /**
      * Keep orb + process + elapsed + tokens as the last child of the transcript scroller
-     * for the whole turn (setup → tools → finalize). Scrolls with the thread; never pinned
-     * outside the scrollport.
+     * for the whole backend turn (streaming + settled). Visibility is gated by backend
+     * status only — never by mid-stream "visually settled".
      */
     ensurePinnedTranscriptLiveStatus(
         conv: QaapAgentConversationDTO,
@@ -2605,12 +2607,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         if (!segmentsBody) {
             return false;
         }
-        // This path only ever handles a row with no tool segments (callers in
-        // patchStreamingActivityTimeline already returned early for a row that has,
-        // or just gained, an execution event timeline) -- keep the standalone
-        // turn-provenance badge in sync on every tick, the same way
-        // syncRowProcessAccordion keeps the accordion header badge in sync for a
-        // row that has tools.
+        // Keep the standalone turn-provenance badge in sync on every tick for
+        // no-tool rows. Tool rows sync the same badge from syncRowProcessAccordion.
         if (!hasMobileExecutionEventTimeline(row)) {
             const message = this.resolveTranscriptRowAgentMessage(row, conv);
             const provenance = this.resolveTurnProvenance(conv, message);
@@ -2994,8 +2992,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             return;
         }
         for (const summaryLabel of summaryLabels) {
-            const summaryText = this.resolveTranscriptActivityTimelineSummary(segments, visibleItems, 0, {
+            const summaryText = this.resolveTranscriptActivityTimelineSummary(segments, 0, {
                 streaming: !!options?.streaming,
+                row: options?.row,
             });
             const summaryFingerprint = fingerprintTranscriptTimelineSummary(
                 summaryText,
@@ -4035,22 +4034,31 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return nls.localize('qaap/mobileProjects/transcriptThoughtMeta', 'Explored {0}', parts.join(', '));
     }
 
+    /**
+     * The header only reports the turn duration. Which step is running is
+     * narrated by the orb / activity row inside the accordion body, so mirroring
+     * it up here both duplicated the information and rewrote the header on every
+     * SSE tick.
+     */
     protected resolveTranscriptActivityTimelineSummary(
         segments: readonly QaapAgentMessageSegmentDTO[],
-        items: readonly TranscriptActivityTimelineItem[],
         hiddenCount = 0,
-        options?: { readonly streaming?: boolean },
+        options?: { readonly streaming?: boolean; readonly row?: HTMLElement },
     ): string {
-        const summaryItems = items.filter(item => !isTranscriptExecutionTimelineNarrative(item));
-        return resolveTranscriptActivityTimelineSummaryText(segments, summaryItems, hiddenCount, {
+        return resolveTranscriptActivityTimelineSummaryText(hiddenCount, {
             streaming: options?.streaming,
-            formatExploredSummary: exploredSegments => {
-                const stats = resolveTranscriptActivityStats(exploredSegments);
-                return hasTranscriptActivityStats(stats)
-                    ? this.formatTranscriptActivityMeta(stats)
-                    : undefined;
-            },
+            durationMs: this.resolveTranscriptTurnDurationMs(segments, options?.row),
         });
+    }
+
+    protected resolveTranscriptTurnDurationMs(
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        row: HTMLElement | undefined,
+    ): number | undefined {
+        const messageId = row?.getAttribute(TRANSCRIPT_MESSAGE_ID_ATTR);
+        return messageId
+            ? this.activityTiming.resolveTurnDurationMs(messageId, segments)
+            : undefined;
     }
 
     createTranscriptActivityTimeline(
@@ -4092,8 +4100,9 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             summaryIcon.setAttribute('aria-hidden', 'true');
             const label = document.createElement('span');
             label.className = 'theia-mobile-agent-activity-timeline-summary-label';
-            label.textContent = this.resolveTranscriptActivityTimelineSummary(segments, items, 0, {
+            label.textContent = this.resolveTranscriptActivityTimelineSummary(segments, 0, {
                 streaming: !!options?.streaming,
+                row: options?.row,
             });
             const count = document.createElement('span');
             count.className = 'theia-mobile-agent-activity-timeline-summary-count';
@@ -5812,6 +5821,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         row.setAttribute('aria-live', 'polite');
         row.setAttribute('aria-busy', 'true');
         const state = this.resolveTranscriptStreamingActivity(conv, { stalled, timedOut });
+        const durationLabel = stalled || timedOut ? state.title : this.resolveTranscriptStreamDurationLabel(conv);
 
         // CloudCode-style setup animation: whimsical phrases + ThinkingOrb
         // + per-letter shimmer while the agent is in its initial setup or thinking
@@ -5820,7 +5830,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const phase = resolveTranscriptTraceDisplayPhase(segments, !stalled && !timedOut);
         const useSetupAnimation = (awaitingFirstAgentOutput || phase === 'thinking') && !stalled && !timedOut;
         if (useSetupAnimation) {
-            const setupEl = createAgentSetupElement(state.title, {
+            const setupEl = createAgentSetupElement(durationLabel, {
                 createIndicator: () => createThinkingOrbIndicator({
                     setup: phase !== 'thinking',
                     activityKind: phase === 'thinking' ? 'thinking' : 'planning',
@@ -5852,7 +5862,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             });
             const label = document.createElement('span');
             label.className = 'theia-mobile-agent-stream-label';
-            label.textContent = timedOut ? state.title : `${state.title}…`;
+            label.textContent = timedOut ? state.title : durationLabel;
             label.classList.toggle('theia-mod-shimmer', shouldTranscriptStreamLabelShimmer(state.kind, stalled, timedOut));
             label.classList.toggle('theia-mod-stall', stalled || timedOut);
             line.append(spinner, label);
@@ -5913,6 +5923,21 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
             },
         });
         return meta;
+    }
+
+    /**
+     * Duration-only label for the stream-line / orb row — never the tool name.
+     * Mirrors the accordion header: "Processing for 12s" while live, "Processed
+     * in 12s" once settled. Stall / timeout keep their specific messages.
+     */
+    protected resolveTranscriptStreamDurationLabel(conv: QaapAgentConversationDTO): string {
+        const turnStartMs = resolveTranscriptTurnStartMs(conv.messages);
+        const durationMs = resolveTranscriptTurnElapsedMs(turnStartMs);
+        const streaming = resolveTranscriptEffectiveStatus(conv) === 'streaming';
+        return resolveTranscriptActivityTimelineSummaryText(0, {
+            streaming,
+            durationMs,
+        });
     }
 
     resolveTranscriptStreamingActivity(

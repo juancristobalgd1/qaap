@@ -4,24 +4,9 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import { formatTranscriptCursorTraceRowText } from './qaap-transcript-cursor-trace-label';
 import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
-import { isTranscriptActivityLiveState } from './qaap-transcript-activity-step-state';
-
-function isTranscriptTimelinePlanningItem(item: TranscriptActivityNavigationItem): boolean {
-    return item.verb === 'Planning'
-        || item.verb === 'Thinking'
-        || item.navigate === 'thought';
-}
-
-function isTranscriptTimelineAnswerItem(item: TranscriptActivityNavigationItem): boolean {
-    return item.verb === 'Preparing';
-}
-
-function isTranscriptTimelineActionItem(item: TranscriptActivityNavigationItem): boolean {
-    return !isTranscriptTimelinePlanningItem(item) && !isTranscriptTimelineAnswerItem(item);
-}
+import { formatTranscriptActivityStepDuration } from './qaap-transcript-activity-step-state';
 
 export function formatTranscriptActivityTimelineItemLabel(item: TranscriptActivityNavigationItem): string {
     if (item.verb && item.detail) {
@@ -30,37 +15,31 @@ export function formatTranscriptActivityTimelineItemLabel(item: TranscriptActivi
     return item.label;
 }
 
-/** Sticky / collapsed summary — prefers the live tool step over generic "Explored N files". */
+/**
+ * Sticky / collapsed process-accordion header.
+ *
+ * Reports only how long the turn took — never which step is running. The live
+ * step-by-step narration belongs to the orb / activity row below the header,
+ * and duplicating it here made the header rewrite itself several times per
+ * second. Mirrors the Codex header: "Processing for 12s" → "Processed in 12s".
+ */
 export function resolveTranscriptActivityTimelineSummaryText(
-    segments: readonly QaapAgentMessageSegmentDTO[],
-    items: readonly TranscriptActivityNavigationItem[],
     hiddenCount = 0,
     options?: {
         readonly streaming?: boolean;
-        readonly formatExploredSummary?: (segments: readonly QaapAgentMessageSegmentDTO[]) => string | undefined;
+        readonly durationMs?: number;
     },
 ): string {
-    const activeAction = [...items].reverse().find(item =>
-        isTranscriptActivityLiveState(item.state) && isTranscriptTimelineActionItem(item));
-    const lastAction = [...items].reverse().find(isTranscriptTimelineActionItem);
-    const activeAny = [...items].reverse().find(item => isTranscriptActivityLiveState(item.state));
-
+    const durationText = resolveTranscriptTurnDurationText(options?.durationMs, options?.streaming);
     let summary: string;
-    if (options?.streaming && activeAction) {
-        summary = formatTranscriptActivityTimelineItemLabel(activeAction);
-    } else if (lastAction) {
-        summary = formatTranscriptActivityTimelineItemLabel(lastAction);
-    } else if (activeAny) {
-        summary = formatTranscriptActivityTimelineItemLabel(activeAny);
+    if (options?.streaming) {
+        summary = durationText
+            ? nls.localize('qaap/mobileProjects/transcriptActivityProcessing', 'Processing for {0}', durationText)
+            : nls.localize('qaap/mobileProjects/transcriptActivityProcessingPending', 'Processing…');
+    } else if (durationText) {
+        summary = nls.localize('qaap/mobileProjects/transcriptActivityProcessed', 'Processed in {0}', durationText);
     } else {
-        const explored = options?.formatExploredSummary?.(segments);
-        if (explored) {
-            summary = explored;
-        } else if (items.length > 0) {
-            summary = formatTranscriptActivityTimelineItemLabel(items[items.length - 1]!);
-        } else {
-            summary = nls.localize('qaap/mobileProjects/transcriptActivityTimeline', 'Activity');
-        }
+        summary = nls.localize('qaap/mobileProjects/transcriptActivityProcessedPending', 'Processed');
     }
     if (hiddenCount > 0) {
         return nls.localize(
@@ -71,4 +50,16 @@ export function resolveTranscriptActivityTimelineSummaryText(
         );
     }
     return summary;
+}
+
+/**
+ * While the turn is live the duration is floored to whole seconds: the header
+ * re-renders on every SSE tick, and a sub-second reading would rewrite it ~8
+ * times per second for no readable gain.
+ */
+function resolveTranscriptTurnDurationText(durationMs: number | undefined, streaming?: boolean): string | undefined {
+    if (durationMs === undefined || !Number.isFinite(durationMs) || durationMs < 0) {
+        return undefined;
+    }
+    return formatTranscriptActivityStepDuration(streaming ? Math.floor(durationMs / 1000) * 1000 : durationMs);
 }

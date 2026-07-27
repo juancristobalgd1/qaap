@@ -4,29 +4,34 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 import {
     resolveTranscriptActivityTimelineSummaryText,
 } from './qaap-transcript-activity-timeline-summary';
 
 describe('qaap-transcript-activity-timeline-summary', () => {
 
-    it('prefers the live tool step over explored stats while streaming', () => {
-        const items: TranscriptActivityNavigationItem[] = [
-            { label: 'Read 3 files', state: 'success', verb: 'Read', detail: '3 files', toolKind: 'reading', grouped: true, groupCount: 3 },
-            { label: 'Ran npm test', state: 'running', verb: 'Ran', detail: 'npm test', toolKind: 'terminal' },
-        ];
-        expect(resolveTranscriptActivityTimelineSummaryText([], items, 0, { streaming: true }))
-            .to.equal('Ran npm test');
+    it('shows "Processing for Xs" while streaming with a duration', () => {
+        expect(resolveTranscriptActivityTimelineSummaryText(0, { streaming: true, durationMs: 12_000 }))
+            .to.equal('Processing for 12s');
     });
 
-    it('uses the last meaningful action after the turn settles', () => {
-        const items: TranscriptActivityNavigationItem[] = [
-            { label: 'Thinking', state: 'success', verb: 'Thinking', navigate: 'thought' },
-            { label: 'Edited foo.ts', state: 'success', verb: 'Edited', detail: 'foo.ts', toolKind: 'editing' },
-            { label: 'Preparing the response', state: 'success', verb: 'Preparing', detail: 'the response' },
-        ];
-        expect(resolveTranscriptActivityTimelineSummaryText([], items))
-            .to.equal('Edited foo.ts');
+    it('shows "Processing…" while streaming before any duration is known', () => {
+        expect(resolveTranscriptActivityTimelineSummaryText(0, { streaming: true }))
+            .to.equal('Processing…');
+    });
+
+    it('shows "Processed in Xs" after the turn settles', () => {
+        expect(resolveTranscriptActivityTimelineSummaryText(0, { durationMs: 3_500 }))
+            .to.equal('Processed in 3.5s');
+    });
+
+    it('shows "Processed" when no duration is available', () => {
+        expect(resolveTranscriptActivityTimelineSummaryText(0))
+            .to.equal('Processed');
+    });
+
+    it('appends the hidden-step count when collapsed', () => {
+        expect(resolveTranscriptActivityTimelineSummaryText(3, { durationMs: 12_000 }))
+            .to.equal('Processed in 12s · 3 earlier steps');
     });
 });

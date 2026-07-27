@@ -126,6 +126,49 @@ export class TranscriptActivityTimingStore {
         return Math.max(0, finishedAt - startedAt);
     }
 
+    /**
+     * Wall-clock span of one agent turn: earliest observed step start to the
+     * latest finish, or to `now` while any step is still open. Drives the
+     * Codex-style process-accordion header, which reports only the duration.
+     * Returns `undefined` when nothing timed the turn (e.g. a history snapshot
+     * whose backend sent no `startedAt`/`finishedAt`) so the header can fall
+     * back to a duration-less label instead of printing a bogus 0s.
+     */
+    resolveTurnDurationMs(
+        messageId: string,
+        segments: readonly QaapAgentMessageSegmentDTO[],
+        now = Date.now(),
+    ): number | undefined {
+        let startedAt: number | undefined;
+        let finishedAt: number | undefined;
+        let open = false;
+        segments.forEach((segment, segmentIndex) => {
+            const entry = this.entries.get(timingKey(messageId, segmentIndex));
+            const wireStarted = segment.type === 'tool' ? (segment as TimedToolSegment).startedAt : undefined;
+            const wireFinished = segment.type === 'tool' ? (segment as TimedToolSegment).finishedAt : undefined;
+            const start = wireStarted ?? entry?.startedAt;
+            if (start === undefined) {
+                return;
+            }
+            if (startedAt === undefined || start < startedAt) {
+                startedAt = start;
+            }
+            const end = wireFinished ?? entry?.finishedAt;
+            if (end === undefined) {
+                open = true;
+                return;
+            }
+            if (finishedAt === undefined || end > finishedAt) {
+                finishedAt = end;
+            }
+        });
+        if (startedAt === undefined) {
+            return undefined;
+        }
+        const end = open || finishedAt === undefined ? now : finishedAt;
+        return Math.max(0, end - startedAt);
+    }
+
     resolveTimestamp(
         messageId: string,
         segmentIndex: number | undefined,
