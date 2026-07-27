@@ -35,6 +35,10 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: "${THEIA_PORT:-4873}"
+      # Theia's PTY fallback reads THEIA_SHELL, then SHELL. Docker does not populate either
+      # automatically, so leaving both empty creates a process id that disappears immediately.
+      SHELL: /bin/bash
+      THEIA_SHELL: /bin/bash
       QAAP_GITHUB_CLIENT_ID: ${QAAP_GITHUB_CLIENT_ID:-}
       QAAP_GITHUB_CLIENT_SECRET: ${QAAP_GITHUB_CLIENT_SECRET:-}
       # Public IDE URL, e.g. http://178.105.136.93:4873 (OAuth + dev preview /qaap-dev/<port>/)

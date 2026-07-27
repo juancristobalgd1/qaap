@@ -159,6 +159,25 @@ docker compose ps
 echo "[qaap-vps-update] waiting for health..."
 for _ in $(seq 1 60); do
     if docker compose exec -T theia node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
+        echo "[qaap-vps-update] verifying integrated terminal shell..."
+        if ! docker compose exec -T theia node -e '
+            const { constants, accessSync } = require("fs");
+            const { spawnSync } = require("child_process");
+            const { ShellProcess } = require("/app/packages/terminal/lib/node/shell-process");
+            const shell = ShellProcess.getShellExecutablePath();
+            if (!shell) {
+                throw new Error("Theia did not resolve a terminal shell (THEIA_SHELL and SHELL are empty)");
+            }
+            accessSync(shell, constants.X_OK);
+            const probe = spawnSync(shell, ["-lc", "printf QAAP_TERMINAL_OK"], { encoding: "utf8" });
+            if (probe.status !== 0 || probe.stdout !== "QAAP_TERMINAL_OK") {
+                throw new Error(`Terminal shell probe failed for ${shell}: ${probe.stderr || `exit ${probe.status}`}`);
+            }
+            console.log(`[qaap-vps-update] terminal shell: ${shell} (OK)`);
+        '; then
+            echo "[qaap-vps-update] integrated terminal shell check failed" >&2
+            exit 1
+        fi
         echo "[qaap-vps-update] ready at commit $BEFORE"
         # Report searxng health (non-fatal — the IDE runs without it, only @qaiq web search needs it).
         SX_HEALTH="$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q searxng 2>/dev/null)" 2>/dev/null || echo unknown)"
