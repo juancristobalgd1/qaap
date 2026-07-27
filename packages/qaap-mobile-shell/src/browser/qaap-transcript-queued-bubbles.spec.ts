@@ -52,6 +52,10 @@ describe('qaap-transcript-queued-bubbles', () => {
         expect(bubbles).to.have.length(2);
         const scroller = chatHost.querySelector('.theia-mobile-agent-transcript');
         expect(scroller?.lastElementChild?.className).to.equal(TRANSCRIPT_QUEUED_BUBBLES_CLASS);
+        const queue = chatHost.querySelector(`.${TRANSCRIPT_QUEUED_BUBBLES_CLASS}`);
+        expect(queue?.getAttribute('role')).to.equal('log');
+        expect(queue?.getAttribute('aria-live')).to.equal('polite');
+        expect(queue?.getAttribute('aria-relevant')).to.equal('additions text');
     });
 
     it('stays above the live-status row instead of fighting it for the last slot', () => {

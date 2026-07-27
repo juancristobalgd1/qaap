@@ -540,7 +540,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         welcome.className = 'theia-mobile-agent-transcript-empty-welcome';
         welcome.setAttribute(
             'aria-label',
-            nls.localize('qaap/mobileProjects/transcriptEmptyWelcomeAria', 'Qaaq welcome'),
+            nls.localize('qaap/mobileProjects/transcriptEmptyWelcomeAria', 'Qaap welcome'),
         );
 
         const logo = document.createElement('div');

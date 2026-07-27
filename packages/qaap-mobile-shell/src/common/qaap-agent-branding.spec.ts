@@ -38,6 +38,24 @@ describe('qaap-agent-branding', () => {
         expect(brand?.svgLight).to.not.equal(brand?.svgDark);
     });
 
+    it('resolveAgentBrand uses the QAIQ terminal mark and uniquifies its gradients', () => {
+        const first = resolveAgentBrand(QAIQ_AGENT_ID);
+        const second = resolveAgentBrand(QAIQ_AGENT_ID);
+        expect(first?.label).to.equal('QAIQ');
+        expect(first?.tone).to.equal('dark');
+        expect(first?.svg).to.not.equal(second?.svg);
+        for (const svg of [first?.svg ?? '', second?.svg ?? '']) {
+            const gradientIds = [...svg.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
+            expect(gradientIds).to.have.lengthOf(4);
+            expect(gradientIds.every(id => /^qaiq__[\w-]+-gradient-\d+$/.test(id))).to.equal(true);
+            for (const id of gradientIds) {
+                expect(svg).to.include(`url(#${id})`);
+            }
+            expect(svg).to.include('stroke="#47E1E0"');
+            expect(svg).to.not.include('<style');
+        }
+    });
+
     it('resolveAgentBrand uniquifies antigravity mask ids across calls', () => {
         const first = resolveAgentBrand('antigravity')?.svg ?? '';
         const second = resolveAgentBrand('antigravity')?.svg ?? '';

@@ -6,6 +6,17 @@
     'use strict';
 
     /**
+     * Qaap is an English-language product. Theia persists display-language choices in
+     * `localeId`; normalize it before bundle.js evaluates `nls.locale`.
+     */
+    (function enforceEnglishInterface() {
+        try {
+            window.localStorage.setItem('localeId', 'en');
+        } catch (e) { /* storage may be unavailable */ }
+        document.documentElement.setAttribute('lang', 'en');
+    })();
+
+    /**
      * Mobile Work Hub boot guard — runs before bundle.js so the IDE shell never flashes
      * behind the Agents chat while layout + workspace restore finish loading.
      * Mirrors installMobileWorkHubBootGuard() in @theia/qaap-mobile-shell.
@@ -196,8 +207,8 @@
 
         var name = appName();
         var msg = kind === 'bundle'
-            ? 'El bundle de la aplicación no pudo cargarse. Comprueba tu conexión.'
-            : 'La aplicación tardó demasiado en arrancar.';
+            ? 'The application bundle could not load. Check your connection.'
+            : 'The application took too long to start.';
 
         injectErrorStyles();
         var host = document.createElement('div');
@@ -208,7 +219,7 @@
             '<div class="qaap-err-icon" aria-hidden="true">&#9888;</div>' +
             '<p class="qaap-err-name">' + escapeHtml(name) + '</p>' +
             '<p class="qaap-err-msg">' + escapeHtml(msg) + '</p>' +
-            '<button type="button" id="qaap-err-retry" class="qaap-err-btn">Reintentar</button>' +
+            '<button type="button" id="qaap-err-retry" class="qaap-err-btn">Retry</button>' +
             '</div></div>';
         document.body.appendChild(host);
 
@@ -328,7 +339,7 @@
             '<div class="qaap-login-spacer"></div>' +
             '<div class="qaap-login-actions">' +
             '<button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary">' +
-            '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span>Iniciar con GitHub</button>' +
+            '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span>Sign in with GitHub</button>' +
             '</div>' +
             '<footer class="qaap-login-footer">By continuing you agree to the terms &amp; privacy.</footer>' +
             '</div>';

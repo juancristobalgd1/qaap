@@ -30,34 +30,34 @@ export const QAAP_WATERMARK_ENTRY_DEFS: readonly QaapWatermarkEntryDef[] = [
     {
         commandId: AI_CHAT_TOGGLE_COMMAND_ID,
         labelKey: 'qaap/watermark/openChat',
-        defaultLabel: 'Abrir chat'
+        defaultLabel: 'Open chat'
     },
     {
         commandId: 'workbench.action.terminal.toggleTerminal',
         labelKey: 'qaap/watermark/hideTerminal',
-        defaultLabel: 'Ocultar terminal'
+        defaultLabel: 'Hide terminal'
     },
     {
         commandId: 'fileNavigator:toggle',
         labelKey: 'qaap/watermark/showFiles',
-        defaultLabel: 'Mostrar archivos',
+        defaultLabel: 'Show files',
         commandCandidates: QAAP_SHOW_FILES_COMMAND_CANDIDATES
     },
     {
         commandId: 'file-search.openFile',
         labelKey: 'qaap/watermark/goToFile',
-        defaultLabel: 'Ir al archivo',
+        defaultLabel: 'Go to file',
         commandCandidates: QAAP_GO_TO_FILE_COMMAND_CANDIDATES
     },
     {
         commandId: 'mini-browser.openUrl',
         labelKey: 'qaap/watermark/openBrowser',
-        defaultLabel: 'Abrir navegador'
+        defaultLabel: 'Open browser'
     },
     {
         commandId: QAAP_MAXIMIZE_CHAT_COMMAND_ID,
         labelKey: 'qaap/watermark/maximizeChat',
-        defaultLabel: 'Maximizar chat'
+        defaultLabel: 'Maximize chat'
     }
 ];
 

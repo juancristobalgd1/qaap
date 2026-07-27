@@ -417,9 +417,8 @@ export class MobileProjectsTasksHubUi {
                     members,
                     transcriptOverlay: !!pill.closest('.theia-mobile-agent-transcript-root'),
                     onSelect: member => this.host.onTeamMemberClick(member),
-                    onStopAll: working => {
-                        void this.stopAllWorkingAgents(working);
-                    },
+                    onStop: member => this.stopWorkingAgent(member),
+                    onStopAll: working => this.stopAllWorkingAgents(working),
                     resolveDetailActivityFeed: member => this.resolveWorkingDetailActivityFeed(member),
                     onDetailMemberChange: member => this.bindWorkingDetailActivitySubscription(member),
                 });
@@ -438,9 +437,8 @@ export class MobileProjectsTasksHubUi {
             members,
             transcriptOverlay,
             onSelect: member => this.host.onTeamMemberClick(member),
-            onStopAll: working => {
-                void this.stopAllWorkingAgents(working);
-            },
+            onStop: member => this.stopWorkingAgent(member),
+            onStopAll: working => this.stopAllWorkingAgents(working),
             resolveDetailActivityFeed: member => this.resolveWorkingDetailActivityFeed(member),
             onDetailMemberChange: member => this.bindWorkingDetailActivitySubscription(member),
         });
@@ -698,16 +696,20 @@ export class MobileProjectsTasksHubUi {
      * Uses {@link MobileProjectsTasksHubHost.onCancelConversation} (same as sticky-composer
      * `onStop`) plus task cancel for running VPS subtasks without a conversation id.
      */
-    async stopAllWorkingAgents(members: readonly WorkHubTeamMember[]): Promise<void> {
+    async stopAllWorkingAgents(members: readonly WorkHubTeamMember[]): Promise<boolean> {
         const errors: string[] = [];
         const cancelledConversationIds = new Set<string>();
         const cancelJobs: Promise<void>[] = [];
 
         // 1) Always stop the open sticky-composer / transcript session first (composer Stop).
-        const stoppedOpen = this.host.transcriptStickyComposerUi.stopOpenComposerAgentLikeComposerStop();
         const openComposerId = this.resolveOpenComposerConversationId();
-        if (stoppedOpen && openComposerId) {
-            cancelledConversationIds.add(openComposerId);
+        try {
+            const stoppedOpen = this.host.transcriptStickyComposerUi.stopOpenComposerAgentLikeComposerStop();
+            if (stoppedOpen && openComposerId) {
+                cancelledConversationIds.add(openComposerId);
+            }
+        } catch (error) {
+            errors.push(error instanceof Error ? error.message : String(error));
         }
 
         // 2) Live hub members + expand snapshot (prefer live — snapshot can be stale/idle-retained).
@@ -749,15 +751,49 @@ export class MobileProjectsTasksHubUi {
         if (errors.length > 0) {
             const message = nls.localize(
                 'qaap/workHubChrome/workingStopAllFailed',
-                'Could not stop all agents: {0}',
+                '{0} agent(s) could not be stopped: {1}. They remain visible so you can retry.',
+                String(errors.length),
                 errors[0],
             );
             this.host.messageService?.error(message);
+            this.host.transcriptComposerSendRefresh?.();
+            this.updateWorkingPillChrome();
+            return false;
         }
         // Stop All clears reading retain + pill immediately (do not keep "1 Working").
         dismissWorkingAgentsExpandForStopAll();
         this.host.transcriptComposerSendRefresh?.();
         this.updateWorkingPillChrome();
+        return true;
+    }
+
+    /** Stop one Working row without hiding unrelated runs or the retry path on failure. */
+    async stopWorkingAgent(member: WorkHubTeamMember): Promise<boolean> {
+        try {
+            if (member.conversationId) {
+                await this.cancelWorkingConversationLikeComposerStop(member.conversationId);
+            } else if (member.taskId) {
+                await cancelAgentTask(member.taskId);
+            } else {
+                throw new Error(nls.localize(
+                    'qaap/workHubChrome/workingStopUnavailable',
+                    'This run no longer has a cancellable session.',
+                ));
+            }
+            this.host.transcriptComposerSendRefresh?.();
+            this.updateWorkingPillChrome();
+            return true;
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            this.host.messageService?.error(nls.localize(
+                'qaap/workHubChrome/workingStopFailed',
+                'Could not stop this agent: {0}. It remains visible so you can retry.',
+                detail,
+            ));
+            this.host.transcriptComposerSendRefresh?.();
+            this.updateWorkingPillChrome();
+            return false;
+        }
     }
 
     /**

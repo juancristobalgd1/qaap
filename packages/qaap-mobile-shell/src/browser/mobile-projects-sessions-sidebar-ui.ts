@@ -695,7 +695,7 @@ export class MobileProjectsSessionsSidebarUi {
         head.className = 'theia-mobile-tasks-inbox-section-head theia-mod-sessions-sidebar-pinned-head';
         const label = document.createElement('span');
         label.className = 'theia-mobile-tasks-inbox-section-label';
-        label.textContent = nls.localize('qaap/sessionsSidebar/pinnedSection', 'Anclados');
+        label.textContent = nls.localize('qaap/sessionsSidebar/pinnedSection', 'Pinned');
         head.append(label);
         const list = document.createElement('div');
         list.className = 'theia-mobile-work-hub-sessions-sidebar-pinned-list';
@@ -822,7 +822,7 @@ export class MobileProjectsSessionsSidebarUi {
         const lessBtn = document.createElement('button');
         lessBtn.type = 'button';
         lessBtn.className = 'theia-mobile-work-hub-sessions-sidebar-show-more theia-mod-show-less';
-        lessBtn.textContent = nls.localize('qaap/sessionsSidebar/showLess', 'Mostrar menos');
+        lessBtn.textContent = nls.localize('qaap/sessionsSidebar/showLess', 'Show less');
         lessBtn.title = nls.localize(
             'qaap/sessionsSidebar/showLessHint',
             'Show only the first {0} sessions',

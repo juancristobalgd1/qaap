@@ -715,7 +715,7 @@ export function mountEmbeddedAgentPreviewChrome(
                     { messageService: options.messageService, notify: options.notify },
                     nls.localize(
                         'qaap/preview/ideShellBlocked',
-                        'Esa URL es el propio Qaap, no tu app. Usa "Open preview" o escribe la URL de tu aplicación.',
+                        'That URL points to Qaap itself, not your app. Use "Open preview" or enter your application URL.',
                     ),
                     'warn',
                 );

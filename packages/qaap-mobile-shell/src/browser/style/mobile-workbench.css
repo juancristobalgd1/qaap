@@ -8287,6 +8287,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .qaap-working-agents-popover-stop-all,
+.qaap-working-agents-popover-stop-one,
 .qaap-working-agents-popover-close,
 .qaap-working-agents-popover-back,
 .qaap-working-agents-popover-expand {
@@ -8310,6 +8311,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   border-radius: 6px;
 }
 
+.qaap-working-agents-popover-stop-one {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--theia-errorForeground);
+}
+
 .qaap-working-agents-popover-close,
 .qaap-working-agents-popover-back,
 .qaap-working-agents-popover-expand {
@@ -8331,15 +8339,23 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .qaap-working-agents-popover-stop-all:hover,
+.qaap-working-agents-popover-stop-one:hover,
 .qaap-working-agents-popover-close:hover,
 .qaap-working-agents-popover-back:hover,
 .qaap-working-agents-popover-expand:hover,
 .qaap-working-agents-popover-stop-all:focus-visible,
+.qaap-working-agents-popover-stop-one:focus-visible,
 .qaap-working-agents-popover-close:focus-visible,
 .qaap-working-agents-popover-back:focus-visible,
 .qaap-working-agents-popover-expand:focus-visible {
   color: var(--theia-foreground);
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.qaap-working-agents-popover-stop-one:hover,
+.qaap-working-agents-popover-stop-one:focus-visible {
+  color: var(--theia-errorForeground);
+  background: color-mix(in srgb, var(--theia-errorForeground) 12%, transparent);
 }
 
 /* Richer agent/subagent detail inside the same expand surface. */
@@ -32529,8 +32545,8 @@ body.theia-dark .theia-mobile-agent-web-search,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   margin-left: auto;
   padding: 0;
   border-radius: var(--qaap-mobile-radius-control, 8px);
@@ -32545,13 +32561,17 @@ body.theia-dark .theia-mobile-agent-web-search,
   font-size: 11px;
 }
 
-.theia-mobile-process-accordion-run-stop:hover {
+.theia-mobile-process-accordion-run-stop:hover,
+.theia-mobile-process-accordion-run-stop:focus-visible {
   color: var(--theia-errorForeground, #e06c75);
   border-color: color-mix(in srgb, var(--theia-errorForeground, #e06c75) 45%, transparent);
+}
+
+.theia-mobile-process-accordion-run-stop:focus-visible {
+  outline: 1px solid var(--theia-focusBorder, #007fd4);
+  outline-offset: 2px;
 }
 
 .theia-mobile-process-accordion-run-stop + .theia-mobile-process-accordion-chevron {
   margin-left: 8px;
 }
-
-

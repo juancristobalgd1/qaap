@@ -168,6 +168,8 @@ export interface QaapGenericCommandResult {
     readonly timedOut: boolean;
 }
 
+const GENERIC_COMMAND_TRUNCATED_PREFIX = '...[truncated]...\n';
+
 /** Cap on the per-project info artifact injected into prompts, to keep the agent command bounded. */
 const PROJECT_INFO_MAX_CHARS = 8000;
 
@@ -2864,6 +2866,8 @@ export class QaapAgentTaskRunner {
             readonly header?: string;
             readonly streamOutput?: boolean;
             readonly tailOutput?: boolean;
+            /** Bounds each captured stream in memory while retaining its most recent output. */
+            readonly maxCaptureChars?: number;
         } = {},
     ): Promise<QaapGenericCommandResult> {
         if (options.header) {
@@ -2905,20 +2909,20 @@ export class QaapAgentTaskRunner {
             }, Math.max(1, timeoutMs));
             child.stdout?.on('data', (chunk: Buffer | string) => {
                 const text = String(chunk);
-                stdout += text;
+                stdout = this.appendBoundedCommandOutput(stdout, text, options.maxCaptureChars);
                 if (options.streamOutput) {
                     this.appendAndFireOutput(taskId, text);
                 }
             });
             child.stderr?.on('data', (chunk: Buffer | string) => {
                 const text = String(chunk);
-                stderr += text;
+                stderr = this.appendBoundedCommandOutput(stderr, text, options.maxCaptureChars);
                 if (options.streamOutput) {
                     this.appendAndFireOutput(taskId, text);
                 }
             });
             child.on('error', error => {
-                stderr += `${error.message}\n`;
+                stderr = this.appendBoundedCommandOutput(stderr, `${error.message}\n`, options.maxCaptureChars);
             });
             child.once('exit', () => {
                 this.reapAgentProcessGroupAfterExit(child);
@@ -2934,6 +2938,30 @@ export class QaapAgentTaskRunner {
                 finish(timedOut && code === 0 ? 1 : code ?? 1);
             });
         });
+    }
+
+    protected appendBoundedCommandOutput(current: string, chunk: string, maxChars: number | undefined): string {
+        if (maxChars === undefined) {
+            return `${current}${chunk}`;
+        }
+        if (!Number.isFinite(maxChars) || maxChars <= 0) {
+            return '';
+        }
+        const boundedMax = Math.floor(maxChars);
+        if (boundedMax <= GENERIC_COMMAND_TRUNCATED_PREFIX.length) {
+            return `${current}${chunk}`.slice(-boundedMax);
+        }
+        const contentMax = boundedMax - GENERIC_COMMAND_TRUNCATED_PREFIX.length;
+        const wasTruncated = current.startsWith(GENERIC_COMMAND_TRUNCATED_PREFIX);
+        const currentContent = wasTruncated ? current.slice(GENERIC_COMMAND_TRUNCATED_PREFIX.length) : current;
+        if (!wasTruncated && currentContent.length + chunk.length <= boundedMax) {
+            return `${currentContent}${chunk}`;
+        }
+        if (chunk.length >= contentMax) {
+            return `${GENERIC_COMMAND_TRUNCATED_PREFIX}${chunk.slice(-contentMax)}`;
+        }
+        const keepFromCurrent = Math.max(0, contentMax - chunk.length);
+        return `${GENERIC_COMMAND_TRUNCATED_PREFIX}${currentContent.slice(-keepFromCurrent)}${chunk}`;
     }
 
     protected appendAndFireOutput(taskId: string, chunk: string): void {

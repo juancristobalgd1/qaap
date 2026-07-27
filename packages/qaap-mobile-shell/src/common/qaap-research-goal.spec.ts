@@ -135,6 +135,17 @@ describe('qaap-research-goal', () => {
         })).to.throw(/at most 5 metrics/);
     });
 
+    it('rejects invalid or excessively long metric regular expressions', () => {
+        expect(() => normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd',
+            metrics: [{ ...baseMetric, metricRegex: '(' }],
+        })).to.throw(/valid regular expression/);
+        expect(() => normalizeResearchGoal({
+            id: 'g1', cwd: '/tmp', description: 'd',
+            metrics: [{ ...baseMetric, metricRegex: 'a'.repeat(513) }],
+        })).to.throw(/maximum length of 512/);
+    });
+
     it('passes through an explicit agentModel unchanged', () => {
         const goal = normalizeResearchGoal({
             id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],

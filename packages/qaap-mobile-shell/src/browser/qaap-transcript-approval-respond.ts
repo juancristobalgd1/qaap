@@ -46,7 +46,7 @@ export async function respondToTranscriptApproval(
             )
             : nls.localize(
                 'qaap/mobileProjects/transcriptApprovalRejectFailed',
-                'Could not reject this action.',
+                'Could not reject this action. It may have expired — refresh the task or send a follow-up.',
             );
         MobileSnackbar.show(result.error ?? fallback, { kind: 'warning', duration: 4200 });
         if (card) {
@@ -54,7 +54,12 @@ export async function respondToTranscriptApproval(
         }
         return false;
     } catch (error) {
-        MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning', duration: 4200 });
+        const detail = error instanceof Error ? error.message : String(error);
+        MobileSnackbar.show(nls.localize(
+            'qaap/mobileProjects/transcriptApprovalTransportFailed',
+            'Could not update this approval: {0}. Refresh the task and try again.',
+            detail,
+        ), { kind: 'warning', duration: 4200 });
         if (card) {
             setTranscriptApprovalCardBusy(card, false);
         }

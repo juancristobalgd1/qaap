@@ -22,7 +22,21 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         // scope (load time), so restoring the globals here would strip the document out from
         // under whichever spec file runs next.
         enableJSDOM();
+        // @lumino/dragdrop reads DragEvent at module load; jsdom does not provide it.
+        const globals = globalThis as unknown as { DragEvent?: unknown };
+        if (!globals.DragEvent) {
+            globals.DragEvent = class DragEvent {};
+        }
         composerModule = require('./mobile-projects-transcript-sticky-composer-ui');
+    });
+
+    it('merges a failed send with text entered while the request was in flight', () => {
+        expect(composerModule.mergeFailedComposerDraft('failed request', 'new idea'))
+            .to.equal('failed request\n\nnew idea');
+        expect(composerModule.mergeFailedComposerDraft('failed request', ''))
+            .to.equal('failed request');
+        expect(composerModule.mergeFailedComposerDraft('failed request', 'failed request'))
+            .to.equal('failed request');
     });
 
     const project = { id: 'p1', name: 'demo' } as unknown as MobileProjectEntry;
@@ -145,22 +159,40 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
 
     it('falls back to the queue when the session is already at the agent limit', async () => {
         const probe = createProbe({ agentWorking: true, atRunLimit: true });
-        const entry = { draft: 'one too many' };
+        const request = {
+            variable: { name: 'file' },
+            arg: '/srv/demo/report.md',
+        };
+        const entry = {
+            draft: 'one too many',
+            variables: [request],
+            imagePreviews: [{ src: 'data:image/png;base64,AA==', fileName: 'shot.png' }],
+        };
 
         await (probe.ui as unknown as {
-            startPeerRunOrQueue: (p: MobileProjectEntry, s: QaapAgentConversationSummaryDTO, e: { draft: string }) => Promise<void>;
+            startPeerRunOrQueue: (
+                p: MobileProjectEntry,
+                s: QaapAgentConversationSummaryDTO,
+                e: typeof entry,
+            ) => Promise<boolean>;
         }).startPeerRunOrQueue(project, summary, entry);
 
         // Not a failed send: the message waits in the queue instead of being lost.
         expect(probe.conversationSubmits).to.deep.equal([]);
         expect(probe.queue.peek(summary.id).map(e => e.draft)).to.deep.equal(['one too many']);
+        expect(probe.queue.peek(summary.id)[0].variables).to.deep.equal([request]);
+        expect(probe.queue.peek(summary.id)[0].imagePreviews?.[0].fileName).to.equal('shot.png');
     });
 
     it('queues a rapid-fire send that the in-flight guard skipped instead of losing it', async () => {
         const probe = createProbe({ agentWorking: true, submitSkipped: true });
 
         await (probe.ui as unknown as {
-            startPeerRunOrQueue: (p: MobileProjectEntry, s: QaapAgentConversationSummaryDTO, e: { draft: string }) => Promise<void>;
+            startPeerRunOrQueue: (
+                p: MobileProjectEntry,
+                s: QaapAgentConversationSummaryDTO,
+                e: { draft: string },
+            ) => Promise<boolean>;
         }).startPeerRunOrQueue(project, summary, { draft: 'typed too fast' });
 
         // The composer draft is already cleared by this point, so a skipped submit must not
@@ -191,5 +223,70 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(probe.conversationSubmits[0].draft).to.equal('run me');
         expect(probe.conversationSubmits[0].options.parallel).to.equal(undefined);
         expect(probe.queue.peek(summary.id)).to.have.length(0);
+    });
+
+    it('restores draft and composer context when an active-conversation send fails', async () => {
+        const errors: string[] = [];
+        const contextEntry = {
+            id: 'context-1',
+            request: {
+                variable: { name: 'file' },
+                arg: '/srv/demo/report.md',
+            },
+        };
+        const host = {
+            transcriptComposerContext: [contextEntry],
+            transcriptComposerDraft: 'send this safely',
+            transcriptComposerDraftPersistTimer: undefined,
+            transcriptComposerModeId: undefined,
+            transcriptComposerApprovalPolicyId: undefined,
+            transcriptComposerAgentModel: undefined,
+            transcriptComposerHost: undefined,
+            transcriptComposerSendRefresh: undefined,
+            resolveAttachmentPreview: undefined,
+            messageService: {
+                error: (message: string) => errors.push(message),
+                warn: () => undefined,
+            },
+            submitTranscriptViaBackendConversation: async () => {
+                throw new Error('network offline');
+            },
+        };
+        const ui = Object.create(
+            composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+        ) as MobileProjectsTranscriptStickyComposerUi;
+        const seam = ui as unknown as Record<string, unknown>;
+        seam.host = host;
+        seam.isTranscriptStickyComposerAgentWorking = () => false;
+        seam.resolveComposerTranscriptChatHost = () => undefined;
+        seam.remountTranscriptStickyComposer = () => undefined;
+
+        await (ui as unknown as {
+            submitTranscriptComposerDraft: (
+                draft: string,
+                p: MobileProjectEntry,
+                s: QaapAgentConversationSummaryDTO,
+                chatHost: HTMLElement,
+                options: {
+                    readonly resolvedPinnedId: string;
+                    readonly showApprovalPolicy: boolean;
+                    readonly isLegacyTheiaChat: boolean;
+                },
+            ) => Promise<void>;
+        }).submitTranscriptComposerDraft(
+            'send this safely',
+            project,
+            summary,
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+            },
+        );
+
+        expect(host.transcriptComposerDraft).to.equal('send this safely');
+        expect(host.transcriptComposerContext).to.deep.equal([contextEntry]);
+        expect(errors[0]).to.contain('network offline');
     });
 });

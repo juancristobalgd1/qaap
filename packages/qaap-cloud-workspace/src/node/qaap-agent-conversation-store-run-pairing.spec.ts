@@ -29,6 +29,11 @@ const PLAIN_AGENT_ID = 'shell';
 class TestTaskRunner extends QaapAgentTaskRunner {
     private nextId = 1;
 
+    override normalizeAgentId(token: string | undefined): string | undefined {
+        const normalized = token?.trim().toLowerCase();
+        return normalized === PLAIN_AGENT_ID || normalized === 'qaiq' ? normalized : undefined;
+    }
+
     override create(): QaapAgentTask {
         return { id: `task-${this.nextId++}`, state: 'running' } as unknown as QaapAgentTask;
     }
@@ -46,6 +51,12 @@ class TestTaskRunner extends QaapAgentTaskRunner {
 
 class TestConversationStore extends QaapAgentConversationStore {
 
+    readonly wireUpdates: Array<{
+        readonly agentId: string;
+        readonly messageId: string;
+        readonly forceFullMessage: boolean;
+    }> = [];
+
     protected override async persist(): Promise<void> { /* no-op */ }
     protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
     protected override startTurnWatchdog(): void { /* no-op */ }
@@ -56,6 +67,20 @@ class TestConversationStore extends QaapAgentConversationStore {
 
     protected override captureCheckpoint(): undefined {
         return undefined;
+    }
+
+    protected override fireAgentMessageWireUpdate(
+        _conversationId: string,
+        _cwd: string,
+        agentId: string,
+        message: QaapAgentMessage,
+        options?: { forceFullMessage?: boolean },
+    ): void {
+        this.wireUpdates.push({
+            agentId,
+            messageId: message.id,
+            forceFullMessage: options?.forceFullMessage === true,
+        });
     }
 
     configureForTest(taskRunner: QaapAgentTaskRunner): void {
@@ -71,7 +96,12 @@ class TestConversationStore extends QaapAgentConversationStore {
     /** Drives the stdout path the task runner normally invokes for a live run. */
     streamOutput(taskId: string, chunk: string): void {
         const ref = (this as unknown as {
-            taskToConversation: Map<string, { conversationId: string; userMessageId: string; agentMessageId?: string }>;
+            taskToConversation: Map<string, {
+                conversationId: string;
+                userMessageId: string;
+                turnAgentId: string;
+                agentMessageId?: string;
+            }>;
         }).taskToConversation.get(taskId)!;
         (this as unknown as {
             applyTaskOutput: (t: string, r: unknown, c: string) => void;
@@ -79,15 +109,27 @@ class TestConversationStore extends QaapAgentConversationStore {
     }
 
     /** Drives the task-outcome path (normally invoked by the task runner's events). */
-    async settleRun(conversationId: string, userMessageId: string, task: QaapAgentTask): Promise<void> {
+    async settleRun(taskId: string, task: QaapAgentTask): Promise<void> {
+        const ref = (this as unknown as {
+            taskToConversation: Map<string, {
+                conversationId: string;
+                userMessageId: string;
+                turnAgentId: string;
+                agentMessageId?: string;
+            }>;
+        }).taskToConversation.get(taskId)!;
         await (this as unknown as {
-            applyTaskOutcome: (c: string, u: string, a: string | undefined, t: QaapAgentTask) => Promise<void>;
-        }).applyTaskOutcome(conversationId, userMessageId, undefined, task);
+            applyTaskOutcome: (r: unknown, t: QaapAgentTask) => Promise<void>;
+        }).applyTaskOutcome(ref, task);
     }
 
-    runRef(taskId: string): { readonly userMessageId: string; agentMessageId?: string } {
+    runRef(taskId: string): { readonly userMessageId: string; readonly turnAgentId: string; agentMessageId?: string } {
         return (this as unknown as {
-            taskToConversation: Map<string, { userMessageId: string; agentMessageId?: string }>;
+            taskToConversation: Map<string, {
+                userMessageId: string;
+                turnAgentId: string;
+                agentMessageId?: string;
+            }>;
         }).taskToConversation.get(taskId)!;
     }
 }
@@ -162,12 +204,50 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
         store.postUserMessage('c1', 'run B', PLAIN_AGENT_ID);
         const [userA] = userIds(store);
 
-        await store.settleRun('c1', userA, { id: 'task-1', state: 'failed' } as QaapAgentTask);
+        await store.settleRun('task-1', { id: 'task-1', state: 'failed' } as QaapAgentTask);
 
         const failed = store.get('c1')!.messages.filter(message => message.role === 'agent');
         expect(failed, 'exactly one agent message so far — run B has not spoken').to.have.length(1);
         expect(failed[0].error, 'the message carries the failure').to.be.a('string');
         expect(failed[0].runUserMessageId, 'a failed run is attributed to its own turn').to.equal(userA);
+    });
+
+    it('keeps each run parser bound to its sealed agent after a peer changes the conversation picker', () => {
+        const store = createStore();
+        store.postUserMessage('c1', 'plain run', PLAIN_AGENT_ID);
+        store.postUserMessage('c1', 'structured peer', 'qaiq');
+        const [plainUser] = userIds(store);
+
+        // The conversation-level picker now says QAIQ. This chunk still belongs to shell and must
+        // take the plain-text path instead of being fed to QAIQ's AG-UI/NDJSON emitter.
+        store.streamOutput('task-1', 'plain shell reply');
+
+        const plainReply = store.get('c1')!.messages.find(message => message.runUserMessageId === plainUser);
+        expect(store.runRef('task-1').turnAgentId).to.equal(PLAIN_AGENT_ID);
+        expect(plainReply?.content).to.contain('plain shell reply');
+    });
+
+    it('finalizes and publishes the settled run instead of the peer message at the array tail', async () => {
+        const store = createStore();
+        store.postUserMessage('c1', 'run A', PLAIN_AGENT_ID);
+        store.postUserMessage('c1', 'run B', PLAIN_AGENT_ID);
+        const [userA, userB] = userIds(store);
+        store.streamOutput('task-1', 'A output');
+        store.streamOutput('task-2', 'B output');
+        const agentA = store.get('c1')!.messages.find(message => message.runUserMessageId === userA)!;
+        const agentB = store.get('c1')!.messages.find(message => message.runUserMessageId === userB)!;
+        store.wireUpdates.length = 0;
+
+        await store.settleRun('task-1', { id: 'task-1', state: 'completed' } as QaapAgentTask);
+
+        expect(store.wireUpdates).to.deep.equal([{
+            agentId: PLAIN_AGENT_ID,
+            messageId: agentA.id,
+            forceFullMessage: true,
+        }]);
+        const settled = store.get('c1')!;
+        expect(settled.messages.find(message => message.id === agentA.id)?.runActive).to.equal(undefined);
+        expect(settled.messages.find(message => message.id === agentB.id)?.runActive).to.equal(true);
     });
 
     describe('AG-UI transcript events', () => {
@@ -253,6 +333,20 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
             const agents = store.get('c1')!.messages.filter(message => message.role === 'agent');
             expect(agents, 'no new message — the event joined the tail one, as before').to.have.length(1);
             expect(toolNames(agents[0])).to.deep.equal(['Read', 'Grep']);
+        });
+
+        it('uses the run agent for AG-UI reduction and wire deltas after the picker changes', () => {
+            const store = new TestConversationStore();
+            store.configureForTest(new TestTaskRunner());
+            store.seed({ ...idleConversation('c1'), agentId: AG_UI_AGENT_ID });
+            store.postUserMessage('c1', 'AG-UI run', AG_UI_AGENT_ID);
+            store.postUserMessage('c1', 'plain peer', PLAIN_AGENT_ID);
+
+            const agUiTaskId = store.runRef('task-1').turnAgentId === AG_UI_AGENT_ID ? 'task-1' : 'task-2';
+            expect(store.runRef(agUiTaskId).turnAgentId).to.equal(AG_UI_AGENT_ID);
+            toolCall(store, agUiTaskId, 'a-1', 'Read');
+
+            expect(store.wireUpdates.at(-1)?.agentId).to.equal(AG_UI_AGENT_ID);
         });
     });
 });

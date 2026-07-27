@@ -17,6 +17,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { Keybinding, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { nls } from '@theia/core/lib/common/nls';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import {
     QAAP_WATERMARK_ENTRY_DEFS,
@@ -203,7 +204,7 @@ export class QaapEmptyWorkbenchBrandingContribution implements FrontendApplicati
 
         const shortcuts = document.createElement('nav');
         shortcuts.className = SHORTCUTS_CLASS;
-        shortcuts.setAttribute('aria-label', 'Atajos del editor');
+        shortcuts.setAttribute('aria-label', nls.localize('qaap/watermark/editorShortcutsAria', 'Editor shortcuts'));
 
         root.append(logo, shortcuts);
         return root;

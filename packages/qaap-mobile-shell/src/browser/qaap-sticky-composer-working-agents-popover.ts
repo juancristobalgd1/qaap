@@ -25,6 +25,7 @@ import {
     updateWorkingDetailTaskLog,
     WORKING_DETAIL_TASK_LOG_CLASS,
 } from './qaap-sticky-composer-working-detail-task-log';
+import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 
 export const WORKING_CONTROL_CLASS = 'theia-mobile-sticky-composer-working-control';
 export const WORKING_EXPAND_CLIP_CLASS = 'qaap-working-agents-expand-clip';
@@ -46,7 +47,10 @@ export interface OpenWorkingAgentsPopoverOptions {
     readonly transcriptOverlay?: boolean;
     /** Open the agent/session transcript (detail footer action — not row click). */
     readonly onSelect: (member: WorkHubTeamMember) => void;
-    readonly onStopAll: (members: readonly WorkHubTeamMember[]) => void;
+    readonly onStop?: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>;
+    readonly onStopAll: (
+        members: readonly WorkHubTeamMember[],
+    ) => boolean | void | Promise<boolean | void>;
     readonly onClose?: () => void;
     /**
      * Cursor-style live activity feed for the DETAIL panel.
@@ -69,7 +73,10 @@ interface ActiveWorkingAgentsExpand {
     readonly cleanup: () => void;
     anchor: HTMLElement;
     onSelect: (member: WorkHubTeamMember) => void;
-    onStopAll: (members: readonly WorkHubTeamMember[]) => void;
+    onStop?: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>;
+    onStopAll: (
+        members: readonly WorkHubTeamMember[],
+    ) => boolean | void | Promise<boolean | void>;
     onClose: () => void;
     resolveDetailActivityFeed?: (
         member: WorkHubTeamMember,
@@ -89,7 +96,10 @@ interface WorkingExpandSession {
     transcriptOverlay?: boolean;
     /** Live handlers — kept on session so remount/reclaim never falls back to no-ops. */
     onSelect?: (member: WorkHubTeamMember) => void;
-    onStopAll?: (members: readonly WorkHubTeamMember[]) => void;
+    onStop?: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>;
+    onStopAll?: (
+        members: readonly WorkHubTeamMember[],
+    ) => boolean | void | Promise<boolean | void>;
     onCloseExtra?: () => void;
     resolveDetailActivityFeed?: (
         member: WorkHubTeamMember,
@@ -101,6 +111,7 @@ let workingExpandSession: WorkingExpandSession = { open: false };
 
 function bindSessionHandlers(options: OpenWorkingAgentsPopoverOptions): void {
     workingExpandSession.onSelect = options.onSelect;
+    workingExpandSession.onStop = options.onStop;
     workingExpandSession.onStopAll = options.onStopAll;
     workingExpandSession.onCloseExtra = options.onClose;
     if (options.resolveDetailActivityFeed) {
@@ -131,9 +142,19 @@ function resolveSessionOnSelect(): (member: WorkHubTeamMember) => void {
         ?? ((): void => undefined);
 }
 
-function resolveSessionOnStopAll(): (members: readonly WorkHubTeamMember[]) => void {
+function resolveSessionOnStopAll(): (
+    members: readonly WorkHubTeamMember[],
+) => boolean | void | Promise<boolean | void> {
     return workingExpandSession.onStopAll
         ?? activeWorkingAgentsExpand?.onStopAll
+        ?? ((): void => undefined);
+}
+
+function resolveSessionOnStop(): (
+    member: WorkHubTeamMember,
+) => boolean | void | Promise<boolean | void> {
+    return workingExpandSession.onStop
+        ?? activeWorkingAgentsExpand?.onStop
         ?? ((): void => undefined);
 }
 
@@ -315,6 +336,7 @@ export function reclaimParkedWorkingControlIntoRow(
                 cleanup,
                 anchor: pill,
                 onSelect: resolveSessionOnSelect(),
+                onStop: resolveSessionOnStop(),
                 onStopAll: resolveSessionOnStopAll(),
                 onClose,
                 resolveDetailActivityFeed: workingExpandSession.resolveDetailActivityFeed
@@ -413,7 +435,7 @@ export function ensureWorkingControlShell(pill: HTMLElement): HTMLElement {
 
 export function renderWorkingAgentsPopoverPanel(options: {
     readonly entries: readonly WorkingAgentsPopoverEntry[];
-    readonly onStopAll: () => void;
+    readonly onStopAll: () => boolean | void | Promise<boolean | void>;
     readonly onClose: () => void;
     readonly onSelect: (member: WorkHubTeamMember) => void;
 }): HTMLElement {
@@ -438,10 +460,54 @@ export function renderWorkingAgentsPopoverPanel(options: {
     stopAll.type = 'button';
     stopAll.className = 'qaap-working-agents-popover-stop-all';
     stopAll.textContent = nls.localize('qaap/workHubChrome/workingStopAll', 'Stop All');
+    let stopAllConfirmationPending = false;
+    let stopAllConfirmationTimer: number | undefined;
     stopAll.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
-        options.onStopAll();
+        if (options.entries.length > 1 && !stopAllConfirmationPending) {
+            stopAllConfirmationPending = true;
+            stopAll.textContent = nls.localize(
+                'qaap/workHubChrome/workingStopAllConfirm',
+                'Confirm Stop All',
+            );
+            stopAll.setAttribute('aria-label', nls.localize(
+                'qaap/workHubChrome/workingStopAllConfirmAria',
+                'Confirm stopping {0} agents',
+                String(options.entries.length),
+            ));
+            if (stopAllConfirmationTimer !== undefined) {
+                window.clearTimeout(stopAllConfirmationTimer);
+            }
+            stopAllConfirmationTimer = window.setTimeout(() => {
+                stopAllConfirmationPending = false;
+                stopAll.textContent = nls.localize('qaap/workHubChrome/workingStopAll', 'Stop All');
+                stopAll.removeAttribute('aria-label');
+            }, 5_000);
+            return;
+        }
+        stopAllConfirmationPending = false;
+        if (stopAllConfirmationTimer !== undefined) {
+            window.clearTimeout(stopAllConfirmationTimer);
+            stopAllConfirmationTimer = undefined;
+        }
+        stopAll.disabled = true;
+        stopAll.setAttribute('aria-busy', 'true');
+        void (async (): Promise<void> => {
+            try {
+                await options.onStopAll();
+            } catch (error) {
+                console.warn('[qaap-working-agents] Stop All handler failed:', error);
+            } finally {
+                if (!stopAll.isConnected) {
+                    return;
+                }
+                stopAll.disabled = false;
+                stopAll.removeAttribute('aria-busy');
+                stopAll.textContent = nls.localize('qaap/workHubChrome/workingStopAll', 'Stop All');
+                stopAll.removeAttribute('aria-label');
+            }
+        })();
     });
 
     const closeBtn = document.createElement('button');
@@ -479,6 +545,7 @@ export function renderWorkingAgentsDetailPanel(options: {
     readonly activityFeed?: WorkingAgentDetailActivityFeed;
     readonly commandLogText?: string;
     readonly commandLogTruncated?: boolean;
+    readonly onStop?: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>;
     readonly onBack: () => void;
     readonly onClose: () => void;
     readonly onToggleLarge: () => void;
@@ -505,11 +572,42 @@ export function renderWorkingAgentsDetailPanel(options: {
 
     const title = document.createElement('span');
     title.className = 'qaap-working-agents-popover-title theia-mod-detail';
-    title.textContent = options.member.title?.trim()
-        || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task');
+    title.textContent = formatWorkingAgentTitle(options.member);
 
     const actions = document.createElement('div');
     actions.className = 'qaap-working-agents-popover-actions';
+
+    if (options.onStop && isWorkingAgentStatusLive(options.member)) {
+        const stopBtn = document.createElement('button');
+        stopBtn.type = 'button';
+        stopBtn.className = 'qaap-working-agents-popover-stop-one';
+        stopBtn.textContent = nls.localize('qaap/workHubChrome/workingStop', 'Stop');
+        stopBtn.setAttribute('aria-label', nls.localize(
+            'qaap/workHubChrome/workingStopAgent',
+            'Stop {0}',
+            resolveAgentDisplayLabel(options.member.agentId),
+        ));
+        stopBtn.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            stopBtn.disabled = true;
+            stopBtn.setAttribute('aria-busy', 'true');
+            void (async (): Promise<void> => {
+                try {
+                    await options.onStop!(options.member);
+                } catch (error) {
+                    console.warn('[qaap-working-agents] Stop handler failed:', error);
+                } finally {
+                    if (!stopBtn.isConnected) {
+                        return;
+                    }
+                    stopBtn.disabled = false;
+                    stopBtn.removeAttribute('aria-busy');
+                }
+            })();
+        });
+        actions.append(stopBtn);
+    }
 
     const expandBtn = document.createElement('button');
     expandBtn.type = 'button';
@@ -639,8 +737,8 @@ function renderWorkingAgentsPopoverRow(
 
     const title = document.createElement('span');
     title.className = 'qaap-working-agents-popover-row-title';
-    title.textContent = entry.member.title?.trim()
-        || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task');
+    title.textContent = formatWorkingAgentTitle(entry.member);
+    title.title = formatWorkingAgentAccessibleTitle(entry.member);
 
     const status = document.createElement('span');
     status.className = 'qaap-working-agents-popover-row-status';
@@ -648,12 +746,40 @@ function renderWorkingAgentsPopoverRow(
     applyWorkingAgentStatusLoader(status, entry.member);
 
     row.append(icon, title, status);
+    row.setAttribute('aria-label', nls.localize(
+        'qaap/workHubChrome/workingAgentRowAria',
+        '{0}, {1}',
+        formatWorkingAgentAccessibleTitle(entry.member),
+        resolveWorkingAgentStatusLabel(entry.member),
+    ));
     row.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
         onSelect(entry.member);
     });
     return row;
+}
+
+function formatWorkingAgentTitle(member: WorkHubTeamMember): string {
+    const taskTitle = member.title?.trim()
+        || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task');
+    return nls.localize(
+        'qaap/workHubChrome/workingAgentAndTask',
+        '{0} · {1}',
+        resolveAgentDisplayLabel(member.agentId),
+        taskTitle,
+    );
+}
+
+function formatWorkingAgentAccessibleTitle(member: WorkHubTeamMember): string {
+    const identity = member.taskId ?? member.conversationId ?? member.id;
+    const shortIdentity = identity.length > 8 ? identity.slice(-6) : identity;
+    return nls.localize(
+        'qaap/workHubChrome/workingAgentTaskIdentity',
+        '{0}, run {1}',
+        formatWorkingAgentTitle(member),
+        shortIdentity,
+    );
 }
 
 /** True while the agent/subagent is actively working (status row acts as a live loader). */
@@ -726,22 +852,7 @@ function showWorkingAgentsListView(): void {
             const current = activeWorkingAgentsExpand;
             const stop = resolveSessionOnStopAll();
             const targets = filterWorkingTeamMembers(current?.members ?? working);
-            const stopBtn = current?.inner.querySelector<HTMLButtonElement>(
-                '.qaap-working-agents-popover-stop-all',
-            );
-            if (stopBtn) {
-                stopBtn.disabled = true;
-                stopBtn.setAttribute('aria-busy', 'true');
-            }
-            try {
-                stop(targets);
-            } finally {
-                // Chrome refresh / collapse is owned by stopAllWorkingAgents.
-                if (stopBtn?.isConnected) {
-                    stopBtn.disabled = false;
-                    stopBtn.removeAttribute('aria-busy');
-                }
-            }
+            return stop(targets);
         },
         onSelect: member => showWorkingAgentsDetailView(member.id),
     });
@@ -782,6 +893,23 @@ function showWorkingAgentsDetailView(memberId: string): void {
         parent,
         detailLarge,
         activityFeed,
+        onStop: async target => {
+            const stopped = await resolveSessionOnStop()(target);
+            if (stopped === false) {
+                return false;
+            }
+            const current = activeWorkingAgentsExpand;
+            if (!current) {
+                return true;
+            }
+            current.members = current.members.filter(entry => entry.id !== target.id);
+            if (current.members.length === 0) {
+                closeWorkingAgentsPopover(true);
+            } else {
+                showWorkingAgentsListView();
+            }
+            return true;
+        },
         onBack: () => showWorkingAgentsListView(),
         onClose: () => {
             const current = activeWorkingAgentsExpand;
@@ -1124,6 +1252,7 @@ function mountWorkingAgentsExpand(
         cleanup,
         anchor: options.anchor,
         onSelect: options.onSelect,
+        onStop: options.onStop,
         onStopAll: options.onStopAll,
         onClose,
         resolveDetailActivityFeed: options.resolveDetailActivityFeed
@@ -1185,6 +1314,7 @@ export function restoreWorkingAgentsExpandIfNeeded(options: OpenWorkingAgentsPop
         });
         if (reclaimed && activeWorkingAgentsExpand?.shell.isConnected) {
             activeWorkingAgentsExpand.onSelect = options.onSelect;
+            activeWorkingAgentsExpand.onStop = options.onStop;
             activeWorkingAgentsExpand.onStopAll = options.onStopAll;
             activeWorkingAgentsExpand.onClose = (): void => {
                 invokeSessionOnClose();
@@ -1221,6 +1351,7 @@ export function restoreWorkingAgentsExpandIfNeeded(options: OpenWorkingAgentsPop
         // Same open shell already in the tree (transfer path) — refresh handlers/content.
         if (active.shell.contains(options.anchor) || active.anchor === options.anchor) {
             active.onSelect = options.onSelect;
+            active.onStop = options.onStop;
             active.onStopAll = options.onStopAll;
             active.onClose = (): void => {
                 invokeSessionOnClose();

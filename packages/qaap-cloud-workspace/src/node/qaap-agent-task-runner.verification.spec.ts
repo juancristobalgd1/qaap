@@ -353,6 +353,49 @@ describe('QaapAgentTaskRunner process lifecycle', () => {
         expect(await resultPromise).to.deep.include({ exitCode: 0, timedOut: false });
         expect(runner.residualProcessGroupReaps).to.equal(1);
     });
+
+    it('retains only the latest bounded stdout/stderr for a noisy command', async () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const stdout = new PassThrough();
+        const stderr = new PassThrough();
+        const child = new EventEmitter() as ChildProcess;
+        Object.assign(child, {
+            pid: 4243,
+            stdout,
+            stderr,
+        });
+        Object.assign(runner, {
+            residualProcessGroupReaps: 0,
+            processes: new Map(),
+            enforceAgentIsolationPolicy: () => undefined,
+            ensureAgentCwdOwnership: () => undefined,
+            spawnAgentCommand: () => child,
+        });
+
+        const maxCaptureChars = 80;
+        const resultPromise = runner.runGenericCommand(
+            'noisy-review',
+            '/repo',
+            {},
+            TASK.id,
+            1_000,
+            { maxCaptureChars },
+        );
+        stdout.write('a'.repeat(200));
+        stdout.end('latest-output');
+        stderr.write('b'.repeat(200));
+        stderr.end('latest-error');
+        child.emit('exit', 0);
+        child.emit('close', 0);
+
+        const result = await resultPromise;
+        expect(result.stdout.length).to.be.at.most(maxCaptureChars);
+        expect(result.stderr.length).to.be.at.most(maxCaptureChars);
+        expect(result.stdout).to.match(/^\.\.\.\[truncated\]\.\.\.\n/);
+        expect(result.stderr).to.match(/^\.\.\.\[truncated\]\.\.\.\n/);
+        expect(result.stdout).to.match(/latest-output$/);
+        expect(result.stderr).to.match(/latest-error$/);
+    });
 });
 
 /**

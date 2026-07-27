@@ -13,6 +13,7 @@ import {
     forceOrphanedWorkingExpandSessionForTests,
     isWorkingAgentsExpandPinnedOpen,
     isWorkingAgentsExpandSessionOpen,
+    isWorkingPillSuppressedAfterStopAll,
 } from './qaap-sticky-composer-working-agents-popover';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
@@ -411,13 +412,103 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
         document.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-row')?.click();
         expect(document.querySelector('.qaap-working-agents-detail-panel')).to.not.equal(null);
 
-        await ui.stopAllWorkingAgents(host.collectTeamMembersForHub());
+        const stopped = await ui.stopAllWorkingAgents(host.collectTeamMembersForHub());
 
+        expect(stopped).to.equal(true);
         expect(cancelledIds).to.deep.equal(['m0']);
         expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.equal(null);
         expect(host.stickyComposerHost.querySelector('.theia-mod-working-only')).to.equal(null);
         expect(document.querySelector('.qaap-working-agents-expand-clip.theia-mod-open')).to.equal(null);
         expect(document.querySelector('.theia-mobile-sticky-composer-working-control.theia-mod-expanded')).to.equal(null);
+    });
+
+    it('keeps failed Stop All targets visible for retry', async () => {
+        const members: WorkHubTeamMember[] = ['one', 'two'].map(id => ({
+            id,
+            kind: 'conversation',
+            title: `Agent ${id}`,
+            projectName: 'Demo',
+            cwd: '/srv/demo',
+            agentId: 'qaiq',
+            state: 'streaming',
+            childCount: 0,
+            createdAt: 1,
+            updatedAt: 2,
+            conversationId: id,
+            projectId: 'p1',
+        }));
+        const host = createHost({ running: 2, members });
+        const summaries = members.map(member => ({
+            id: member.id,
+            cwd: member.cwd,
+            status: 'streaming',
+            title: member.title,
+        } as QaapAgentConversationSummaryDTO));
+        const errors: string[] = [];
+        host.transcriptStickyComposerUi = {
+            stopOpenComposerAgentLikeComposerStop: () => false,
+        } as unknown as MobileProjectsTasksHubHost['transcriptStickyComposerUi'];
+        host.conversationIndexUi = {
+            conversationsForProject: () => summaries,
+            vpsTasksForProject: () => summaries,
+            findSummaryById: (id: string) => summaries.find(summary => summary.id === id),
+        } as unknown as MobileProjectsTasksHubHost['conversationIndexUi'];
+        host.onCancelConversation = (_project, summary) => {
+            if (summary.id === 'two') {
+                throw new Error('cancel transport failed');
+            }
+        };
+        host.messageService = {
+            error: (message: string) => { errors.push(message); },
+        } as unknown as MobileProjectsTasksHubHost['messageService'];
+        const ui = new MobileProjectsTasksHubUi(host);
+        ui.updateWorkingPillChrome();
+        host.stickyComposerHost.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-working-pill')?.click();
+        expect(isWorkingAgentsExpandSessionOpen()).to.equal(true);
+
+        const stopped = await ui.stopAllWorkingAgents(members);
+
+        expect(stopped).to.equal(false);
+        expect(errors[0]).to.contain('1 agent(s) could not be stopped');
+        expect(errors[0]).to.contain('cancel transport failed');
+        expect(isWorkingAgentsExpandSessionOpen()).to.equal(true);
+        expect(host.stickyComposerHost.querySelector('.theia-mobile-sticky-composer-working-pill')).to.not.equal(null);
+    });
+
+    it('stops one conversation member without suppressing the Working pill globally', async () => {
+        const member: WorkHubTeamMember = {
+            id: 'one',
+            kind: 'conversation',
+            title: 'One agent',
+            projectName: 'Demo',
+            cwd: '/srv/demo',
+            agentId: 'qaiq',
+            state: 'streaming',
+            childCount: 0,
+            createdAt: 1,
+            updatedAt: 2,
+            conversationId: 'one',
+            projectId: 'p1',
+        };
+        const summary = {
+            id: 'one',
+            cwd: '/srv/demo',
+            status: 'streaming',
+            title: 'One agent',
+        } as QaapAgentConversationSummaryDTO;
+        const cancelled: string[] = [];
+        const host = createHost({ running: 1, members: [member] });
+        host.conversationIndexUi = {
+            conversationsForProject: () => [summary],
+            vpsTasksForProject: () => [summary],
+            findSummaryById: () => summary,
+        } as unknown as MobileProjectsTasksHubHost['conversationIndexUi'];
+        host.onCancelConversation = (_project, target) => { cancelled.push(target.id); };
+        const stopped = await new MobileProjectsTasksHubUi(host).stopWorkingAgent(member);
+
+        expect(stopped).to.equal(true);
+        expect(cancelled).to.deep.equal(['one']);
+        expect(isWorkingPillSuppressedAfterStopAll()).to.equal(false);
     });
 
     it('does not auto-collapse Working detail when chrome reports 0 after summary idle', () => {

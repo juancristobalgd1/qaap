@@ -88,6 +88,12 @@ export function syncTranscriptQueuedBubbles(
     } else {
         container = document.createElement('div');
         container.className = TRANSCRIPT_QUEUED_BUBBLES_CLASS;
+        // Queue changes arrive outside the normal message-render pipeline. Treat this
+        // static bubble group as a polite log so assistive technology is notified when
+        // a follow-up is inserted or edited without moving keyboard focus.
+        container.setAttribute('role', 'log');
+        container.setAttribute('aria-live', 'polite');
+        container.setAttribute('aria-relevant', 'additions text');
         container.append(...entries.map(entry => createQueuedBubble(entry)));
         container.dataset.qaapQueuedFingerprint = fingerprint;
     }

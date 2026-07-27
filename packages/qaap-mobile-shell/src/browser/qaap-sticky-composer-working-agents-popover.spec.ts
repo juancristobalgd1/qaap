@@ -155,7 +155,11 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             onSelect: m => { selected = m.id; },
         });
         expect(panel.querySelector('.qaap-working-agents-popover-title')?.textContent).to.equal('2 Working');
-        panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all')?.click();
+        const stopAll = panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all');
+        stopAll?.click();
+        expect(stopped).to.equal(false);
+        expect(stopAll?.textContent).to.equal('Confirm Stop All');
+        stopAll?.click();
         expect(stopped).to.equal(true);
         panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-close')?.click();
         expect(closed).to.equal(true);
@@ -163,6 +167,9 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         const rows = panel.querySelectorAll('.qaap-working-agents-popover-row');
         expect(rows).to.have.length(2);
         expect(rows[1].classList.contains('theia-mod-child')).to.equal(true);
+        expect(rows[0].querySelector('.qaap-working-agents-popover-row-title')?.textContent)
+            .to.equal('QAIQ · Parent task');
+        expect(rows[0].getAttribute('aria-label')).to.contain('run parent');
         const childStatus = rows[1].querySelector('.qaap-working-agents-popover-row-status');
         expect(childStatus?.textContent).to.equal('Reading files');
         expect(childStatus?.classList.contains('theia-mod-shimmer')).to.equal(true);
@@ -234,6 +241,66 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(document.querySelector(`.${WORKING_DETAIL_PANEL_CLASS}`)).to.equal(null);
         expect(shell?.classList.contains('theia-mod-expanded')).to.equal(true);
         expect(document.querySelector('.qaap-working-agents-popover-title')?.textContent).to.equal('2 Working');
+    });
+
+    it('stops one selected agent and leaves unrelated runs available', async () => {
+        const rowHost = document.createElement('div');
+        rowHost.className = 'theia-mobile-sticky-composer-changes-pill-row';
+        const anchor = document.createElement('button');
+        anchor.className = 'theia-mobile-sticky-composer-working-pill';
+        rowHost.append(anchor);
+        document.body.append(rowHost);
+        const first = member({ id: 'first', title: 'Same task', agentId: 'qaiq' });
+        const second = member({ id: 'second', title: 'Same task', agentId: 'codex' });
+        let stoppedId: string | undefined;
+        openWorkingAgentsPopover({
+            anchor,
+            members: [first, second],
+            onSelect: () => undefined,
+            onStop: async target => {
+                stoppedId = target.id;
+                return true;
+            },
+            onStopAll: () => undefined,
+        });
+
+        document.querySelector<HTMLButtonElement>(
+            '.qaap-working-agents-popover-row[data-member-id="first"]',
+        )?.click();
+        const stop = document.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-one');
+        expect(stop?.getAttribute('aria-label')).to.equal('Stop QAIQ');
+        stop?.click();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(stoppedId).to.equal('first');
+        expect(isWorkingAgentsExpandSessionOpen()).to.equal(true);
+        expect(getWorkingAgentsDetailMemberId()).to.equal(undefined);
+        const remaining = document.querySelectorAll('.qaap-working-agents-popover-row');
+        expect(remaining).to.have.length(1);
+        expect(remaining[0].getAttribute('data-member-id')).to.equal('second');
+        expect(remaining[0].textContent).to.contain('Codex · Same task');
+    });
+
+    it('keeps Stop All busy until asynchronous cancellation settles', async () => {
+        let release: (() => void) | undefined;
+        const pending = new Promise<void>(resolve => { release = resolve; });
+        const panel = renderWorkingAgentsPopoverPanel({
+            entries: [{ member: member({ id: 'one', title: 'One task' }), depth: 0 }],
+            onStopAll: () => pending,
+            onClose: () => undefined,
+            onSelect: () => undefined,
+        });
+        document.body.append(panel);
+        const stop = panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all')!;
+        stop.click();
+        expect(stop.disabled).to.equal(true);
+        expect(stop.getAttribute('aria-busy')).to.equal('true');
+        release?.();
+        await pending;
+        await Promise.resolve();
+        expect(stop.disabled).to.equal(false);
+        expect(stop.hasAttribute('aria-busy')).to.equal(false);
     });
 
     it('renders DETAIL activity feed instead of project/workspace metadata', () => {
@@ -593,6 +660,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             },
         });
         expect(isWorkingAgentsExpandSessionOpen()).to.equal(true);
+        document.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all')?.click();
         document.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all')?.click();
         expect(stoppedIds).to.deep.equal(['p1', 'c1']);
         // Stop All must not collapse before the host refresh decides.

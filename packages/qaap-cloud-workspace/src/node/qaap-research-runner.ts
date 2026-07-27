@@ -8,11 +8,13 @@ import { spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Worker } from 'worker_threads';
 import {
     DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
     type ResearchAgentModel,
     type ResearchGoal,
     type ResearchGoalStatus,
+    type ResearchMetricSpec,
     type TerminationReason,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
@@ -33,9 +35,15 @@ import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
 
-/** Minimum wall-clock cap for a `measure` phase. Model-backed metrics may need the goal's full
- *  compute budget even though parsing their final number is cheap. */
+/** Minimum wall-clock allowance for a `measure` phase. */
 const MIN_MEASURE_TIMEOUT_MS = 2 * 60 * 1000;
+/** Metric commands are post-processing, not the potentially multi-hour training run. */
+const MAX_MEASURE_TIMEOUT_MS = 10 * 60 * 1000;
+/** Per stdout/stderr stream; the task log still receives its normal diagnostic tail on disk. */
+const RESEARCH_COMMAND_CAPTURE_MAX_CHARS = 256 * 1024;
+/** Bounds input copied into the metric parser and its isolated regex worker. */
+const RESEARCH_METRIC_PARSE_MAX_CHARS = RESEARCH_COMMAND_CAPTURE_MAX_CHARS;
+const METRIC_REGEX_TIMEOUT_MS = 250;
 const GIT_COMMAND_TIMEOUT_MS = 15_000;
 /** Keep failed command diagnostics useful without turning the JSONL ledger into a copy of a
  *  multi-hour training log. The full 12k tail remains in the task log; this smaller excerpt is
@@ -61,6 +69,23 @@ const PREFLIGHT_TIMEOUT_MS = 5 * 60 * 1000;
  */
 const PREFLIGHT_PROMPT =
     'Preflight check. Reply with exactly the single word: READY. Do not use any tools, do not read files, do not plan.';
+
+const METRIC_REGEX_WORKER_SOURCE = `
+const { parentPort, workerData } = require('worker_threads');
+let value = null;
+try {
+    const match = new RegExp(workerData.pattern).exec(workerData.stdout);
+    if (match) {
+        const parsed = Number(match[1] ?? match[0]);
+        if (Number.isFinite(parsed)) {
+            value = parsed;
+        }
+    }
+} catch {
+    // Invalid expressions are rejected during goal normalization; still fail closed for legacy data.
+}
+parentPort.postMessage({ value });
+`;
 
 /** Path (relative to `goal.cwd`) of the runner-owned ledger file — never product of an experiment.
  *  Excluded from every round's diff AND from the round's commit, so it never contaminates
@@ -104,6 +129,72 @@ function toAgentTaskModel(agentModel: ResearchAgentModel | undefined): QaapCreat
         vendor: agentModel.vendor ?? 'unknown',
         modelId: agentModel.modelId,
     };
+}
+
+/**
+ * A metric command gets enough time for normal evaluation, but never inherits the multi-hour
+ * training allowance. An explicit goal deadline remains the harder boundary.
+ */
+export function resolveResearchMeasureTimeoutMs(goal: ResearchGoal, now = Date.now()): number {
+    const configured = Math.min(MAX_MEASURE_TIMEOUT_MS, Math.max(MIN_MEASURE_TIMEOUT_MS, goal.runTimeoutMs));
+    if (goal.deadlineAt === undefined) {
+        return configured;
+    }
+    return Math.max(1, Math.min(configured, goal.deadlineAt - now));
+}
+
+function parseMetricRegexWithTimeout(stdout: string, pattern: string): Promise<number | undefined> {
+    return new Promise(resolve => {
+        let worker: Worker;
+        try {
+            worker = new Worker(METRIC_REGEX_WORKER_SOURCE, {
+                eval: true,
+                workerData: { stdout, pattern },
+            });
+        } catch {
+            resolve(undefined);
+            return;
+        }
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const settle = (value: number | undefined): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (timer) {
+                clearTimeout(timer);
+            }
+            void worker.terminate();
+            resolve(value);
+        };
+        worker.once('message', (message: unknown) => {
+            const candidate = typeof message === 'object' && message !== null
+                ? (message as { value?: unknown }).value
+                : undefined;
+            settle(typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : undefined);
+        });
+        worker.once('error', () => settle(undefined));
+        worker.once('exit', () => settle(undefined));
+        timer = setTimeout(() => settle(undefined), METRIC_REGEX_TIMEOUT_MS);
+    });
+}
+
+/**
+ * Parses bounded metric output. Regex extractors run in a worker so pathological backtracking
+ * cannot block the backend event loop; JSON extractors fail closed when their document was cut.
+ */
+export async function parseResearchMetricFromStdout(stdout: string, spec: ResearchMetricSpec): Promise<number | undefined> {
+    if (spec.metricJsonPath && stdout.length > RESEARCH_METRIC_PARSE_MAX_CHARS) {
+        return undefined;
+    }
+    const parseInput = stdout.length > RESEARCH_METRIC_PARSE_MAX_CHARS
+        ? stdout.slice(-RESEARCH_METRIC_PARSE_MAX_CHARS)
+        : stdout;
+    if (spec.metricRegex) {
+        return parseMetricRegexWithTimeout(parseInput, spec.metricRegex);
+    }
+    return parseMetricFromStdout(parseInput, spec);
 }
 
 /**
@@ -765,7 +856,11 @@ export class QaapResearchRunner {
             this.buildResearchCommandEnv(),
             taskId,
             goal.runTimeoutMs || DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
-            { header: `\n[qaap-research] round ${record.round}: running ${goal.runCommand}\n`, tailOutput: true },
+            {
+                header: `\n[qaap-research] round ${record.round}: running ${goal.runCommand}\n`,
+                tailOutput: true,
+                maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+            },
         );
         this.activeExecutionId.delete(goal.id);
         if (this.isCancelled(goal.id)) {
@@ -801,14 +896,18 @@ export class QaapResearchRunner {
                 goal.cwd,
                 this.buildResearchCommandEnv(),
                 taskId,
-                Math.max(MIN_MEASURE_TIMEOUT_MS, goal.runTimeoutMs),
-                { header: `\n[qaap-research] round ${record.round}: measuring ${spec.name}\n`, tailOutput: true },
+                resolveResearchMeasureTimeoutMs(goal),
+                {
+                    header: `\n[qaap-research] round ${record.round}: measuring ${spec.name}\n`,
+                    tailOutput: true,
+                    maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+                },
             );
             this.activeExecutionId.delete(goal.id);
             if (this.isCancelled(goal.id)) {
                 return;
             }
-            const value = result.exitCode === 0 ? parseMetricFromStdout(result.stdout, spec) : undefined;
+            const value = result.exitCode === 0 ? await parseResearchMetricFromStdout(result.stdout, spec) : undefined;
             if (value === undefined) {
                 const reason = result.exitCode === 0
                     ? this.appendCommandOutput(`metricCommand for "${spec.name}" produced an unparseable value.`, result)
@@ -873,7 +972,11 @@ export class QaapResearchRunner {
             this.buildResearchCommandEnv(),
             taskId,
             GIT_COMMAND_TIMEOUT_MS,
-            { header: `\n[qaap-research] round ${record.round}: reverting regression\n`, tailOutput: true },
+            {
+                header: `\n[qaap-research] round ${record.round}: reverting regression\n`,
+                tailOutput: true,
+                maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+            },
         );
         if (result.exitCode === 0) {
             const pending = this.beginLedgerWrite(goal.cwd, { ...record, reverted: true });

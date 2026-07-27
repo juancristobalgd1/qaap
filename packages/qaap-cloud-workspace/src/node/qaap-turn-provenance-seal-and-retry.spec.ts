@@ -63,6 +63,7 @@ class TestableQaapAgentConversationStore extends QaapAgentConversationStore {
         task: QaapAgentTask,
         conv: QaapAgentConversation,
         agentMessage: QaapAgentMessage | undefined,
+        turnAgentId: string,
         startSha?: string,
     ): boolean {
         return (this as unknown as {
@@ -73,9 +74,19 @@ class TestableQaapAgentConversationStore extends QaapAgentConversationStore {
                 task: QaapAgentTask,
                 conv: QaapAgentConversation,
                 agentMessage: QaapAgentMessage | undefined,
+                turnAgentId: string,
                 startSha?: string,
             ): boolean;
-        }).maybeRetryTurnWithFallbackModel(conversationId, userMessageId, agentMessageId, task, conv, agentMessage, startSha);
+        }).maybeRetryTurnWithFallbackModel(
+            conversationId,
+            userMessageId,
+            agentMessageId,
+            task,
+            conv,
+            agentMessage,
+            turnAgentId,
+            startSha,
+        );
     }
 }
 
@@ -196,7 +207,15 @@ describe('turn-provenance sealing and fallback-model re-attribution (backend hal
         const failedTask: QaapAgentTask = {
             id: 'task-0', title: '', command: '', cwd: '/repo', state: 'failed', createdAt: 0,
         };
-        const retried = store.retryWithFallbackModel(conversationId, userMessageId, undefined, failedTask, conv, undefined);
+        const retried = store.retryWithFallbackModel(
+            conversationId,
+            userMessageId,
+            undefined,
+            failedTask,
+            conv,
+            undefined,
+            QAIQ_AGENT_ID,
+        );
         expect(retried, 'a turn with no output and a failed task must trigger the fallback-model retry').to.equal(true);
         expect(spawnedRequests, 'exactly one fallback re-spawn happened').to.have.length(1);
 
@@ -223,6 +242,84 @@ describe('turn-provenance sealing and fallback-model re-attribution (backend hal
         expect(frames[0].turnAgentModel, 'the emitted frame carries the fallback model')
             .to.deep.equal(updatedUserMessage.turnAgentModel);
         expect(frames[0].turnAgentId, 'the emitted frame keeps the agent attribution').to.equal(QAIQ_AGENT_ID);
+    });
+
+    it('retries the owning turn when a peer agent changed the picker and appended the tail', () => {
+        const store = new TestableQaapAgentConversationStore();
+        const originalModel: QaapCreateAgentTaskQaiqModel = {
+            provider: 'openai',
+            vendor: 'openrouter',
+            modelId: 'some-vendor/flaky-model',
+        };
+        const spawnedRequests: QaapCreateAgentTaskRequest[] = [];
+        installFakes(store, request => {
+            spawnedRequests.push(request);
+            return {
+                id: 'fallback-task',
+                title: request.title ?? '',
+                command: request.command ?? '',
+                cwd: request.cwd,
+                state: 'running',
+                createdAt: 3,
+            };
+        });
+        const conv: QaapAgentConversation = {
+            id: 'interleaved',
+            cwd: '/repo',
+            agentId: SHELL_AGENT_ID,
+            title: 'Interleaved retry',
+            status: 'streaming',
+            createdAt: 0,
+            updatedAt: 2,
+            agentModel: originalModel,
+            qaiqModel: originalModel,
+            messages: [
+                {
+                    id: 'qaiq-user',
+                    role: 'user',
+                    content: 'Fix the flaky test',
+                    createdAt: 0,
+                    taskId: 'failed-task',
+                    turnAgentId: QAIQ_AGENT_ID,
+                    turnAgentModel: originalModel,
+                },
+                {
+                    id: 'shell-user',
+                    role: 'user',
+                    content: 'git status',
+                    createdAt: 1,
+                    taskId: 'shell-task',
+                    turnAgentId: SHELL_AGENT_ID,
+                },
+                {
+                    id: 'shell-agent',
+                    role: 'agent',
+                    content: 'working tree clean',
+                    createdAt: 2,
+                    runUserMessageId: 'shell-user',
+                    runActive: true,
+                },
+            ],
+        };
+        store.seed(conv);
+
+        const retried = store.retryWithFallbackModel(
+            conv.id,
+            'qaiq-user',
+            undefined,
+            { id: 'failed-task', title: '', command: '', cwd: conv.cwd, state: 'failed', createdAt: 0 },
+            conv,
+            undefined,
+            QAIQ_AGENT_ID,
+        );
+
+        expect(retried).to.equal(true);
+        expect(spawnedRequests).to.have.length(1);
+        expect(spawnedRequests[0].agent).to.equal(QAIQ_AGENT_ID);
+        expect(spawnedRequests[0].prompt).to.match(/latest user message:[\s\S]*Fix the flaky test/i);
+        expect(store.get(conv.id)?.agentId, 'the peer-selected conversation picker remains shell').to.equal(SHELL_AGENT_ID);
+        expect(store.get(conv.id)?.messages.find(message => message.id === 'qaiq-user')?.turnAgentModel)
+            .to.not.deep.equal(originalModel);
     });
 
     it('emits the user-message frame ALREADY sealed, and before the agent process is spawned', () => {

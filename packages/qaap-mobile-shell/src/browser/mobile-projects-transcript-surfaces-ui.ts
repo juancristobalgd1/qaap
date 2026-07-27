@@ -1818,13 +1818,13 @@ export class MobileProjectsTranscriptSurfacesUi {
             note.className = 'theia-mobile-transcript-preview-ready';
             const title = document.createElement('div');
             title.className = 'theia-mobile-transcript-preview-ready-title';
-            title.textContent = nls.localize('qaap/mobileProjects/previewNoApp', 'Este repositorio aún no tiene una app ejecutable');
+            title.textContent = nls.localize('qaap/mobileProjects/previewNoApp', 'This repository does not have a runnable app yet');
             const detail = document.createElement('p');
             detail.className = 'theia-mobile-transcript-preview-ready-hint';
             detail.textContent = result.hint
                 ?? nls.localize(
                     'qaap/mobileProjects/previewNoAppHint',
-                    'No se encontró package.json ni index.html. Pídele al agente que genere la app, o sube el código del proyecto a este repositorio.',
+                    'No package.json or index.html was found. Ask the agent to generate the app, or upload the project code to this repository.',
                 );
             note.append(title, detail);
             wrap.append(note);

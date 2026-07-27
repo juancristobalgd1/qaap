@@ -118,6 +118,9 @@ export const MAX_RESEARCH_METRICS = 5;
 
 export const MAX_RESEARCH_COMMAND_CHARS = 16_384;
 
+/** Keeps user-supplied metric extractors small enough to validate and evaluate predictably. */
+export const MAX_RESEARCH_METRIC_REGEX_CHARS = 512;
+
 /** Wall-clock deadline may be at most 7 days ahead of normalize time. */
 export const MAX_RESEARCH_DEADLINE_AHEAD_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -231,10 +234,23 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
         if (metric.direction !== 'max' && metric.direction !== 'min') {
             throw new Error(`ResearchGoal metric "${name}" requires direction "max" or "min".`);
         }
+        const metricRegex = metric.metricRegex?.trim();
+        if (metricRegex && metricRegex.length > MAX_RESEARCH_METRIC_REGEX_CHARS) {
+            throw new Error(`ResearchGoal metric "${name}" metricRegex exceeds the maximum length of `
+                + `${MAX_RESEARCH_METRIC_REGEX_CHARS} characters.`);
+        }
+        if (metricRegex) {
+            try {
+                new RegExp(metricRegex);
+            } catch {
+                throw new Error(`ResearchGoal metric "${name}" metricRegex is not a valid regular expression.`);
+            }
+        }
         return {
             ...metric,
             name,
             metricCommand: requireCommand(metric.metricCommand, `ResearchGoal metric "${name}" metricCommand`),
+            metricRegex: metricRegex || undefined,
             primary: primaryCount === 1 ? !!metric.primary : index === 0,
             minImprovement: metric.minImprovement ?? 0,
         };

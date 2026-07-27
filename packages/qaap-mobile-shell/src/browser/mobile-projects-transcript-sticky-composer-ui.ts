@@ -165,6 +165,19 @@ export interface TranscriptStickyComposerColumnOptions {
     transcriptOverlay?: boolean;
 }
 
+/** Preserve both a failed send and anything the user typed while it was in flight. */
+export function mergeFailedComposerDraft(failedDraft: string, currentDraft: string): string {
+    const failed = failedDraft.trim();
+    const current = currentDraft.trim();
+    if (!failed) {
+        return currentDraft;
+    }
+    if (!current || current === failed) {
+        return failedDraft;
+    }
+    return `${failedDraft}\n\n${currentDraft}`;
+}
+
 /** Panel surface for transcript sticky composer mount, prefs persistence, and follow-up queue. */
 /**
  * True when `active` is a focus holder the idle composer may take focus from:
@@ -996,6 +1009,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
             onQueueExpandedChange: expanded => { this.host.transcriptComposerQueueExpanded = expanded; },
             onQueueEdit: (index, entry) => {
                 this.host.transcriptComposerDraft = entry.draft;
+                const existingRequests = new Set(this.host.transcriptComposerContext.map(item => item.request));
+                const restored = (entry.variables ?? [])
+                    .filter(request => !existingRequests.has(request))
+                    .map(request => createComposerContextEntry(request));
+                this.host.transcriptComposerContext = [...restored, ...this.host.transcriptComposerContext];
                 this.host.transcriptFollowUpQueue.removeAt(summary.id, index);
                 this.remountTranscriptStickyComposer();
             },
@@ -1586,10 +1604,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected async startIsolatedRunIfRequested(
         project: MobileProjectEntry,
         entry: TranscriptFollowUpEntry,
-        payload: {
-            readonly variables?: import('@theia/ai-core').AIVariableResolutionRequest[];
-            readonly imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
-        } = {},
     ): Promise<boolean> {
         if (this.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) !== 'worktree') {
             return false;
@@ -1603,8 +1617,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
             autoApprove: entry.autoApprove,
             approvalPolicyId: entry.approvalPolicyId,
             agentModel: this.host.transcriptComposerAgentModel,
-            variables: payload.variables,
-            imagePreviews: payload.imagePreviews,
+            variables: entry.variables,
+            imagePreviews: entry.imagePreviews,
         });
         return true;
     }
@@ -1618,13 +1632,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         entry: TranscriptFollowUpEntry,
-        payload: {
-            readonly variables?: import('@theia/ai-core').AIVariableResolutionRequest[];
-            readonly imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
-        } = {},
-    ): Promise<void> {
-        if (await this.startIsolatedRunIfRequested(project, entry, payload)) {
-            return;
+    ): Promise<boolean> {
+        if (await this.startIsolatedRunIfRequested(project, entry)) {
+            return true;
         }
         try {
             const submitted = await this.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
@@ -1633,26 +1643,27 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 autoApprove: entry.autoApprove,
                 approvalPolicyId: entry.approvalPolicyId,
                 agentModel: this.host.transcriptComposerAgentModel,
-                variables: payload.variables,
-                imagePreviews: payload.imagePreviews,
+                variables: entry.variables,
+                imagePreviews: entry.imagePreviews,
                 parallel: true,
             });
             if (!submitted) {
                 // Another POST for this conversation was still open (rapid-fire sends): the
                 // message never left, and the composer draft is already cleared — queue it.
-                this.queuePeerRunMessage(summary, entry);
+                return this.queuePeerRunMessage(summary, entry);
             }
+            return true;
         } catch (error) {
             if (!isMaxConcurrentRunsError(error)) {
                 const detail = error instanceof Error ? error.message : String(error);
                 this.host.messageService?.error(nls.localize(
                     'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,
                 ));
-                return;
+                return false;
             }
             // Session is already at the agent limit — hold the message in the queue, where it
             // flushes (or can be dispatched by hand) as soon as one of the runs finishes.
-            this.queuePeerRunMessage(summary, entry);
+            return this.queuePeerRunMessage(summary, entry);
         }
     }
 
@@ -1660,14 +1671,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
     protected queuePeerRunMessage(
         summary: QaapAgentConversationSummaryDTO,
         entry: TranscriptFollowUpEntry,
-    ): void {
+    ): boolean {
         if (!this.enqueueTranscriptFollowUp(summary.id, entry)) {
             // Queue is full too — the only case where the message cannot be kept anywhere.
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/peerRunQueueFull',
                 'Could not send: this session already has the maximum number of agents and queued messages.',
             ));
-            return;
+            return false;
         }
         this.refreshComposerActivityStack();
         MobileSnackbar.show(
@@ -1677,6 +1688,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
             ),
             { duration: 2600 },
         );
+        return true;
     }
 
     protected async submitQueuedFollowUpEntry(
@@ -1693,6 +1705,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 autoApprove: entry.autoApprove,
                 approvalPolicyId: entry.approvalPolicyId,
                 agentModel: this.host.transcriptComposerAgentModel,
+                variables: entry.variables,
+                imagePreviews: entry.imagePreviews,
                 ...(options.parallel ? { parallel: true } : {}),
             });
         } catch (error) {
@@ -2302,8 +2316,26 @@ export class MobileProjectsTranscriptStickyComposerUi {
             this.host.transcriptComposerApprovalPolicyId,
             summary.cwd,
         );
-        disposeComposerContextEntries(this.host.transcriptComposerContext);
         this.host.transcriptComposerContext = [];
+        const commitComposerSubmission = (): void => {
+            disposeComposerContextEntries(contextSnapshot);
+        };
+        const restoreComposerSubmission = (): void => {
+            const existingIds = new Set(this.host.transcriptComposerContext.map(entry => entry.id));
+            this.host.transcriptComposerContext = [
+                ...contextSnapshot.filter(entry => !existingIds.has(entry.id)),
+                ...this.host.transcriptComposerContext,
+            ];
+            this.host.transcriptComposerDraft = mergeFailedComposerDraft(
+                draft,
+                this.host.transcriptComposerDraft,
+            );
+            if (isAgentsHubIdleConversationSummary(summary)) {
+                writeProjectComposerDraft(project.id, this.host.transcriptComposerDraft);
+            } else {
+                writeConversationComposerDraft(summary.id, this.host.transcriptComposerDraft);
+            }
+        };
         const clearComposerDraft = (): void => {
             if (this.host.transcriptComposerDraftPersistTimer !== undefined) {
                 window.clearTimeout(this.host.transcriptComposerDraftPersistTimer);
@@ -2330,13 +2362,29 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     this.host.transcriptComposerApprovalPolicyId,
                     summary.cwd,
                 ),
+                variables,
+                imagePreviews,
             };
             clearComposerDraft();
             const input = this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
             // Column submit clears the textarea; re-dispatch input so the syntax mirror refreshes too.
             input?.dispatchEvent(new Event('input', { bubbles: true }));
             this.host.transcriptComposerSendRefresh?.();
-            await this.startPeerRunOrQueue(project, summary, entry, { variables, imagePreviews });
+            try {
+                if (await this.startPeerRunOrQueue(project, summary, entry)) {
+                    commitComposerSubmission();
+                } else {
+                    restoreComposerSubmission();
+                    this.remountTranscriptStickyComposer();
+                }
+            } catch (error) {
+                restoreComposerSubmission();
+                const detail = error instanceof Error ? error.message : String(error);
+                this.host.messageService?.error(nls.localize(
+                    'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,
+                ));
+                this.remountTranscriptStickyComposer();
+            }
             return;
         }
         clearComposerDraft();
@@ -2362,7 +2410,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     agentModel: this.host.transcriptComposerAgentModel,
                     imagePreviews,
                 });
+                commitComposerSubmission();
             } catch {
+                restoreComposerSubmission();
                 /* submitBackgroundAgentTask surfaces errors */
             } finally {
                 if (this.host.transcriptComposerHost?.isConnected) {
@@ -2392,8 +2442,9 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     ),
                     imagePreviews,
                 });
+                commitComposerSubmission();
             } else {
-                await this.host.submitTranscriptViaBackendConversation(project, summary, draft, {
+                const submitted = await this.host.submitTranscriptViaBackendConversation(project, summary, draft, {
                     selectedAgentId,
                     modeId,
                     variables,
@@ -2405,8 +2456,18 @@ export class MobileProjectsTranscriptStickyComposerUi {
                     agentModel: this.host.transcriptComposerAgentModel,
                     imagePreviews,
                 });
+                if (!submitted) {
+                    restoreComposerSubmission();
+                    this.host.messageService?.warn(nls.localize(
+                        'qaap/mobileProjects/transcriptSendInFlight',
+                        'Another message is still being sent. Your draft and attachments were restored.',
+                    ));
+                    return;
+                }
+                commitComposerSubmission();
             }
         } catch (error) {
+            restoreComposerSubmission();
             const detail = error instanceof Error ? error.message : String(error);
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail

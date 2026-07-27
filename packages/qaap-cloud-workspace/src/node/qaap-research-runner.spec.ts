@@ -6,7 +6,11 @@
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { QaapResearchRunner } from './qaap-research-runner';
+import {
+    parseResearchMetricFromStdout,
+    QaapResearchRunner,
+    resolveResearchMeasureTimeoutMs,
+} from './qaap-research-runner';
 import {
     normalizeResearchGoal,
     type ResearchGoal,
@@ -27,12 +31,25 @@ interface FakeCommandResult {
     readonly timedOut: boolean;
 }
 
+interface FakeCommandOptions {
+    readonly header?: string;
+    readonly streamOutput?: boolean;
+    readonly tailOutput?: boolean;
+    readonly maxCaptureChars?: number;
+}
+
 /** Records every `runGenericCommand` call so tests can assert on `run`/`measure`/`revert` shell-outs. */
 class FakeTaskRunner {
     protected nextTaskId = 1;
     readonly createdTasks: Array<{ id: string; request: unknown; ownerLogin?: string }> = [];
     readonly cancelledIds: string[] = [];
-    readonly genericCommandCalls: Array<{ command: string; cwd: string; taskId: string; timeoutMs: number }> = [];
+    readonly genericCommandCalls: Array<{
+        command: string;
+        cwd: string;
+        taskId: string;
+        timeoutMs: number;
+        options?: FakeCommandOptions;
+    }> = [];
     protected readonly listeners = new Set<(event: QaapAgentTaskEvent) => void>();
     protected readonly logs = new Map<string, string>();
     /** Script for `runGenericCommand`, keyed by call index (0-based); falls back to `defaultResult`. */
@@ -83,9 +100,16 @@ class FakeTaskRunner {
         return 'qaiq';
     }
 
-    async runGenericCommand(command: string, cwd: string, _env: unknown, taskId: string, timeoutMs: number): Promise<FakeCommandResult> {
+    async runGenericCommand(
+        command: string,
+        cwd: string,
+        _env: unknown,
+        taskId: string,
+        timeoutMs: number,
+        options?: FakeCommandOptions,
+    ): Promise<FakeCommandResult> {
         const index = this.genericCommandCalls.length;
-        this.genericCommandCalls.push({ command, cwd, taskId, timeoutMs });
+        this.genericCommandCalls.push({ command, cwd, taskId, timeoutMs, options });
         return this.genericCommandResults[index] ?? this.defaultResult;
     }
 }
@@ -249,6 +273,42 @@ async function passPreflight(taskRunner: FakeTaskRunner): Promise<void> {
 }
 
 // ---- tests --------------------------------------------------------------------
+
+describe('QaapResearchRunner resource limits', () => {
+
+    it('caps metric commands at ten minutes and honors a nearer goal deadline', () => {
+        const longGoal = makeGoal({ metrics: [METRIC], runTimeoutMs: 4 * 60 * 60 * 1000 });
+        expect(resolveResearchMeasureTimeoutMs(longGoal, 1_000)).to.equal(10 * 60 * 1000);
+
+        const deadlineGoal = makeGoal({
+            metrics: [METRIC],
+            runTimeoutMs: 4 * 60 * 60 * 1000,
+            deadlineAt: 6_000,
+        });
+        expect(resolveResearchMeasureTimeoutMs(deadlineGoal, 1_000)).to.equal(5_000);
+        expect(resolveResearchMeasureTimeoutMs(deadlineGoal, 7_000)).to.equal(1);
+    });
+
+    it('isolates a pathological metric regex and returns before it can block the backend', async () => {
+        const startedAt = Date.now();
+        const value = await parseResearchMetricFromStdout(
+            `${'a'.repeat(50_000)}!`,
+            { ...METRIC, metricRegex: '(a+)+$' },
+        );
+
+        expect(value).to.equal(undefined);
+        expect(Date.now() - startedAt).to.be.lessThan(2_000);
+    });
+
+    it('still extracts ordinary regex metrics in the isolated worker', async () => {
+        const value = await parseResearchMetricFromStdout(
+            'completed: score=0.875',
+            { ...METRIC, metricRegex: 'score=([0-9.]+)' },
+        );
+
+        expect(value).to.equal(0.875);
+    });
+});
 
 describe('QaapResearchRunner state machine', () => {
 
@@ -442,6 +502,8 @@ describe('QaapResearchRunner state machine', () => {
 
         expect(taskRunner.genericCommandCalls[0].command).to.equal('python train.py');
         expect(taskRunner.genericCommandCalls[1].command).to.equal('python measure.py');
+        expect(taskRunner.genericCommandCalls[0].options?.maxCaptureChars).to.equal(256 * 1024);
+        expect(taskRunner.genericCommandCalls[1].options?.maxCaptureChars).to.equal(256 * 1024);
         const [record] = store.readLedgerForGoal(goal);
         expect(record).to.deep.include({ phase: 'done', verdict: 'improved' });
     });
@@ -842,7 +904,8 @@ describe('QaapResearchRunner state machine', () => {
             expect(taskRunner.createdTasks).to.have.lengthOf(0);
             expect(taskRunner.genericCommandCalls).to.have.lengthOf(1);
             expect(taskRunner.genericCommandCalls[0].command).to.equal('python measure.py'); // never re-ran train.py
-            expect(taskRunner.genericCommandCalls[0].timeoutMs).to.equal(goal.runTimeoutMs);
+            expect(taskRunner.genericCommandCalls[0].timeoutMs).to.equal(10 * 60 * 1000);
+            expect(taskRunner.genericCommandCalls[0].options?.maxCaptureChars).to.equal(256 * 1024);
             const [record] = store.readLedgerForGoal(goal);
             expect(record).to.deep.include({ phase: 'done', verdict: 'improved' });
         });

@@ -15,9 +15,10 @@ describe('qaap-work-hub-usage-summary', () => {
     const now = Date.parse('2026-06-03T15:00:00.000Z');
 
     it('formatWorkHubUsageTokens abbreviates millions and thousands', () => {
-        expect(formatWorkHubUsageTokens(16_600_000)).to.equal('16,6M');
-        expect(formatWorkHubUsageTokens(2_400)).to.equal('2,4k');
-        expect(formatWorkHubUsageCount(28457)).to.equal('28.457');
+        expect(formatWorkHubUsageTokens(16_600_000)).to.equal('16.6M');
+        expect(formatWorkHubUsageTokens(2_400)).to.equal('2.4k');
+        expect(formatWorkHubUsageCount(28457)).to.equal('28,457');
+        expect(formatWorkHubUsageTokens(2_400, 'es')).to.equal('2,4k');
     });
 
     it('buildWorkHubHomeUsageSummary aggregates sessions, messages, and heatmap', () => {

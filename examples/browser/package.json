@@ -8,6 +8,7 @@
       "config": {
         "applicationName": "Qaap",
         "applicationIcon": "./media/qaap-logo.svg",
+        "defaultLocale": "en",
         "markdownPreviewOpenIcon": "play",
         "pwa": {
           "shortName": "Qaap",

@@ -48,9 +48,9 @@ export function presentQaapLoginGate(): void {
   </header>
   <div class="qaap-login-spacer"></div>
   <div class="qaap-login-actions">
-    <button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary" data-provider="github" aria-label="Iniciar con GitHub">
+    <button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary" data-provider="github" aria-label="Sign in with GitHub">
       <span class="qaap-login-btn-icon-slot" data-icon="github">${QAAP_LOGIN_GITHUB_SVG}</span>
-      <span class="qaap-login-btn-label">Iniciar con GitHub</span>
+      <span class="qaap-login-btn-label">Sign in with GitHub</span>
     </button>
   </div>
   <footer class="qaap-login-footer">

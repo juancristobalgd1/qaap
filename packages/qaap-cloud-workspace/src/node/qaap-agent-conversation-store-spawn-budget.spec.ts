@@ -20,6 +20,8 @@ class TestConversationStore extends QaapAgentConversationStore {
         content: string,
         conv: QaapAgentConversation,
         rootUserMessageId: string,
+        _turnAgentId: string,
+        _turnAgentModel: QaapAgentMessage['turnAgentModel'],
     ): QaapAgentConversation {
         this.autoMessageSequence += 1;
         const userMessage: QaapAgentMessage = {
@@ -67,7 +69,14 @@ class TestConversationStore extends QaapAgentConversationStore {
     continueLatestTurn(conversationId: string): QaapAgentConversation {
         const conversation = this.conversations.get(conversationId)!;
         const userMessage = [...conversation.messages].reverse().find(message => message.role === 'user')!;
-        this.maybeAutoContinueIncompleteTurn(conversationId, conversation, userMessage.id);
+        const agentMessage = [...conversation.messages].reverse().find(message => message.role === 'agent')!;
+        this.maybeAutoContinueIncompleteTurn(
+            conversationId,
+            conversation,
+            userMessage.id,
+            agentMessage.id,
+            userMessage.turnAgentId ?? conversation.agentId,
+        );
         return this.conversations.get(conversationId)!;
     }
 }

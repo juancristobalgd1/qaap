@@ -71,14 +71,14 @@ export function buildWorkHubHomeUsageSummary(
     };
 }
 
-export function formatWorkHubUsageCount(value: number, locale = 'es'): string {
+export function formatWorkHubUsageCount(value: number, locale = 'en'): string {
     if (!Number.isFinite(value) || value <= 0) {
         return '0';
     }
     return new Intl.NumberFormat(locale).format(Math.round(value));
 }
 
-export function formatWorkHubUsageTokens(value: number, locale = 'es'): string {
+export function formatWorkHubUsageTokens(value: number, locale = 'en'): string {
     if (!Number.isFinite(value) || value <= 0) {
         return '0';
     }
@@ -86,14 +86,21 @@ export function formatWorkHubUsageTokens(value: number, locale = 'es'): string {
     if (abs >= 1_000_000) {
         const scaled = value / 1_000_000;
         const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 1;
-        return `${scaled.toFixed(digits).replace('.', ',')}M`;
+        return `${formatCompactNumber(scaled, digits, locale)}M`;
     }
     if (abs >= 1_000) {
         const scaled = value / 1_000;
         const digits = scaled >= 100 ? 0 : 1;
-        return `${scaled.toFixed(digits).replace('.', ',')}k`;
+        return `${formatCompactNumber(scaled, digits, locale)}k`;
     }
     return formatWorkHubUsageCount(value, locale);
+}
+
+function formatCompactNumber(value: number, digits: number, locale: string): string {
+    return new Intl.NumberFormat(locale, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+    }).format(value);
 }
 
 function buildUsageMetrics(

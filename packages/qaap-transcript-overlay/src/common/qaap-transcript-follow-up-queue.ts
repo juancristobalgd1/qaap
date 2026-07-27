@@ -3,12 +3,24 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { AIVariableResolutionRequest } from '@theia/ai-core';
+
+export interface TranscriptFollowUpImagePreview {
+    readonly src: string;
+    readonly fileName: string;
+    readonly wsRelativePath?: string;
+}
+
 export interface TranscriptFollowUpEntry {
     readonly draft: string;
     readonly selectedAgentId?: string;
     readonly modeId?: string;
     readonly autoApprove?: boolean;
     readonly approvalPolicyId?: string;
+    /** Resolved composer attachments must survive overflow into the follow-up queue. */
+    readonly variables?: readonly AIVariableResolutionRequest[];
+    /** Optimistic transcript previews paired with {@link variables}. */
+    readonly imagePreviews?: readonly TranscriptFollowUpImagePreview[];
 }
 
 export const MAX_TRANSCRIPT_FOLLOW_UP_QUEUE = 5;

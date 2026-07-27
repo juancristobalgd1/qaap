@@ -204,6 +204,15 @@ interface PostUserMessageInternalOptions {
     readonly clientMessageId?: string;
 }
 
+/** Immutable routing/provenance for one task-backed turn inside a multi-run conversation. */
+interface QaapConversationTaskRef {
+    readonly conversationId: string;
+    readonly userMessageId: string;
+    readonly turnAgentId: string;
+    agentMessageId?: string;
+    readonly startSha?: string;
+}
+
 /**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
  * task on {@link QaapAgentTaskRunner} with the full transcript embedded in the prompt; when the
@@ -238,7 +247,7 @@ export class QaapAgentConversationStore {
     /** Serializes screenshot attachment per conversation across multiple open frontend tabs. */
     protected readonly visualVerificationInFlight = new Set<string>();
     /** Reverse index: task id → conversation turn metadata so we can route output/completion. */
-    protected readonly taskToConversation = new Map<string, { conversationId: string; userMessageId: string; agentMessageId?: string; startSha?: string }>();
+    protected readonly taskToConversation = new Map<string, QaapConversationTaskRef>();
     /** Subtask ids whose completion was already appended to a leader conversation (passive mailbox). */
     protected readonly subtaskMailboxDelivered = new Set<string>();
     /** Leader turn task ids for which an auto-synthesis user message was already posted. */
@@ -565,7 +574,7 @@ export class QaapAgentConversationStore {
         let task: QaapAgentTask | undefined;
         try {
             task = this.taskRunner.create(
-                this.buildTaskCreateRequest(next, turnAgentId, latencyMarks),
+                this.buildTaskCreateRequest(next, turnAgentId, latencyMarks, userMessage.id),
                 next.ownerLogin,
             );
         } catch (error) {
@@ -599,7 +608,12 @@ export class QaapAgentConversationStore {
             this.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: sealedUserMessage });
         }
         const startSha = this.captureGitSha(conv.cwd);
-        this.taskToConversation.set(task.id, { conversationId: id, userMessageId: userMessage.id, startSha });
+        this.taskToConversation.set(task.id, {
+            conversationId: id,
+            userMessageId: userMessage.id,
+            turnAgentId: task.agentId ?? turnAgentId,
+            startSha,
+        });
         void this.persist();
         return next;
     }
@@ -1270,7 +1284,7 @@ export class QaapAgentConversationStore {
                 return; // only react when the turn settles
             }
             this.taskToConversation.delete(task.id);
-            void this.applyTaskOutcome(ref.conversationId, ref.userMessageId, ref.agentMessageId, task, ref.startSha);
+            void this.applyTaskOutcome(ref, task);
             return;
         }
         if (event.type === 'output' || event.type === 'created') {
@@ -1436,7 +1450,7 @@ export class QaapAgentConversationStore {
 
     protected applyTaskOutput(
         taskId: string,
-        ref: { conversationId: string; userMessageId: string; agentMessageId?: string },
+        ref: QaapConversationTaskRef,
         chunk: string,
     ): void {
         const conv = this.conversations.get(ref.conversationId);
@@ -1444,7 +1458,7 @@ export class QaapAgentConversationStore {
         if (!conv || !filtered) {
             return;
         }
-        const agentId = conv.agentId;
+        const agentId = ref.turnAgentId;
         if (usesAgUiCliTranscriptStream(agentId)) {
             this.applyAgUiTaskOutput(taskId, ref, filtered, agentId);
             return;
@@ -1527,7 +1541,7 @@ export class QaapAgentConversationStore {
     /** Structured CLI stdout → AG-UI reducer (traceEvents-only wire path). */
     protected applyAgUiTaskOutput(
         taskId: string,
-        ref: { conversationId: string; userMessageId: string; agentMessageId?: string },
+        ref: QaapConversationTaskRef,
         chunk: string,
         agentId: string,
     ): void {
@@ -1626,7 +1640,7 @@ export class QaapAgentConversationStore {
     /** When AG-UI event mapping is empty but the segment accumulator parsed NDJSON, persist that snapshot. */
     protected applyAccumulatorStructuredOutput(
         taskId: string,
-        ref: { conversationId: string; userMessageId: string; agentMessageId?: string },
+        ref: QaapConversationTaskRef,
         agentId: string,
     ): void {
         const conv = this.conversations.get(ref.conversationId);
@@ -1740,12 +1754,10 @@ export class QaapAgentConversationStore {
     }
 
     protected async applyTaskOutcome(
-        conversationId: string,
-        userMessageId: string,
-        agentMessageId: string | undefined,
+        ref: QaapConversationTaskRef,
         task: QaapAgentTask,
-        startSha?: string,
     ): Promise<void> {
+        const { conversationId, userMessageId, agentMessageId, turnAgentId, startSha } = ref;
         const convSnapshot = this.conversations.get(conversationId);
         if (!convSnapshot) {
             return;
@@ -1759,7 +1771,7 @@ export class QaapAgentConversationStore {
             this.agUiStreamByTaskId.delete(task.id);
             return;
         }
-        const usageFinalized = this.finalizeTurnContextUsage(convSnapshot, task.id, convSnapshot.agentId);
+        const usageFinalized = this.finalizeTurnContextUsage(convSnapshot, task.id, turnAgentId);
         this.agentStreamByTaskId.delete(task.id);
         this.agUiStreamByTaskId.delete(task.id);
         const conv = this.conversations.get(conversationId);
@@ -1781,7 +1793,7 @@ export class QaapAgentConversationStore {
                 status: this.settleStatusForRun(conversationId, task.id, 'idle'),
                 updatedAt: Date.now(),
             };
-            this.publishFinalizedAgentMessage(conversationId, next, agentMessageId);
+            this.publishFinalizedAgentMessage(conversationId, next, agentMessageId, turnAgentId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, next);
             return;
         }
@@ -1805,11 +1817,11 @@ export class QaapAgentConversationStore {
             ? withUsageBaseline.messages.find(message => message.id === agentMessageId)
             : undefined;
         const skipLogReparse = agentMessageHasStructuredTrace(streamingAgent)
-            || (usesStructuredAgentTranscript(conv.agentId) && (
+            || (usesStructuredAgentTranscript(turnAgentId) && (
                 (streamingAgent?.segments?.length ?? 0) > 0
                 || (streamingAgent?.traceEvents?.length ?? 0) > 0
             ));
-        const structuredParsed = log && !skipLogReparse ? this.parseStructuredLog(conv.agentId, log) : undefined;
+        const structuredParsed = log && !skipLogReparse ? this.parseStructuredLog(turnAgentId, log) : undefined;
         // 'completed_with_warnings' (clean exit, verification still red) is a delivered turn:
         // it takes the success path below — with a warning trace instead of the failure flow.
         if (task.state !== 'completed' && task.state !== 'completed_with_warnings') {
@@ -1817,7 +1829,7 @@ export class QaapAgentConversationStore {
             let agentMessageForFailure = streamingAgent;
             if (agentMessageId && log && streamingAgent?.role === 'agent' && !agentMessageHasStructuredTrace(streamingAgent)) {
                 const backfilled = materializeAgentMessageForApi(syncSettledTraceEventsOnMessage(
-                    this.backfillAgentMessageFromStructuredLog(streamingAgent, conv.agentId, log),
+                    this.backfillAgentMessageFromStructuredLog(streamingAgent, turnAgentId, log),
                 ));
                 agentMessageForFailure = backfilled;
                 convForFailure = {
@@ -1834,6 +1846,7 @@ export class QaapAgentConversationStore {
                 task,
                 convForFailure,
                 agentMessageForFailure,
+                turnAgentId,
                 startSha,
             )) {
                 return;
@@ -1843,7 +1856,7 @@ export class QaapAgentConversationStore {
                 exitCode: task.exitCode,
                 agentMessage: agentMessageForFailure,
             });
-            const failureBody = log ? resolveAgentLogDisplayText(conv.agentId, log) : '';
+            const failureBody = log ? resolveAgentLogDisplayText(turnAgentId, log) : '';
             const failed = this.markTurnFailed(convForFailure, {
                 userMessageId,
                 agentMessageId,
@@ -1853,7 +1866,7 @@ export class QaapAgentConversationStore {
             });
             const resolvedAgentMessageId = failed.agentMessageId ?? agentMessageId;
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
-            this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId);
+            this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId, turnAgentId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
             return;
         }
@@ -1880,7 +1893,7 @@ export class QaapAgentConversationStore {
                     return message;
                 }
                 const backfilled = log
-                    ? this.backfillAgentMessageFromStructuredLog(message, conv.agentId, log)
+                    ? this.backfillAgentMessageFromStructuredLog(message, turnAgentId, log)
                     : message;
                 return materializeAgentMessageForApi(syncSettledTraceEventsOnMessage(backfilled));
             });
@@ -1891,7 +1904,7 @@ export class QaapAgentConversationStore {
                 messages,
             };
         } else {
-            const displayText = log ? resolveAgentLogDisplayText(conv.agentId, log) : '';
+            const displayText = log ? resolveAgentLogDisplayText(turnAgentId, log) : '';
             const body = structuredParsed?.content?.trim() || displayText || '(agent produced no output)';
             const reply = this.appendAgentReply(
                 { ...withUsageBaseline, status: this.settleStatusForRun(conversationId, task.id, 'idle') },
@@ -1928,6 +1941,7 @@ export class QaapAgentConversationStore {
                 task,
                 withReply,
                 settledAgentMessage,
+                turnAgentId,
                 startSha,
             )) {
                 return;
@@ -1941,7 +1955,7 @@ export class QaapAgentConversationStore {
             });
             const resolvedAgentMessageId = failed.agentMessageId ?? settledAgentMessage.id;
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
-            this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId);
+            this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId, turnAgentId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
             return;
         }
@@ -1977,14 +1991,10 @@ export class QaapAgentConversationStore {
         if (blockedNeed !== undefined) {
             withReply = this.appendBlockedTrace(withReply, agentMessageId, blockedNeed);
         }
-        withReply = this.clearRunActive(withReply, agentMessageId);
+        const finalizedAgentMessageId = settledAgentMessage?.id ?? agentMessageId;
+        withReply = this.clearRunActive(withReply, finalizedAgentMessageId);
         this.conversations.set(conversationId, withReply);
-        const agentMessage = withReply.messages[withReply.messages.length - 1];
-        if (agentMessage) {
-            this.fireAgentMessageWireUpdate(conversationId, withReply.cwd, withReply.agentId, agentMessage, { forceFullMessage: true });
-            this.lastWireMessageById.delete(agentMessage.id);
-            this.clearAgUiReducer(agentMessage.id);
-        }
+        this.publishFinalizedAgentMessage(conversationId, withReply, finalizedAgentMessageId, turnAgentId);
         this.modelFallbackTriedByUserMessage.delete(this.resolveLoopBudgetKey(withReply, userMessageId));
         this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, withReply);
         if (blockedNeed !== undefined) {
@@ -1999,7 +2009,13 @@ export class QaapAgentConversationStore {
             // "keep going" on top of a known-red build. Leave the decision to the user.
             return;
         }
-        this.maybeAutoContinueIncompleteTurn(conversationId, withReply, userMessageId);
+        this.maybeAutoContinueIncompleteTurn(
+            conversationId,
+            withReply,
+            userMessageId,
+            finalizedAgentMessageId,
+            turnAgentId,
+        );
     }
 
     /**
@@ -2035,9 +2051,10 @@ export class QaapAgentConversationStore {
         task: QaapAgentTask,
         conv: QaapAgentConversation,
         agentMessage: QaapAgentMessage | undefined,
+        turnAgentId: string,
         startSha?: string,
     ): boolean {
-        if (!agentSupportsModelPicker(conv.agentId)) {
+        if (!agentSupportsModelPicker(turnAgentId)) {
             return false;
         }
         // Tool-support failures also arrive on clean exits (state 'completed'): the model
@@ -2055,15 +2072,16 @@ export class QaapAgentConversationStore {
             this.modelFallbackTriedByUserMessage.delete(loopBudgetKey);
             return false;
         }
-        const currentModel = conv.agentModel
-            ?? conv.qaiqModel
-            ?? resolveTaskAgentModel(task);
+        const turnUserMessage = conv.messages.find(message => message.id === userMessageId && message.role === 'user');
+        const currentModel = turnUserMessage?.turnAgentModel
+            ?? resolveTaskAgentModel(task)
+            ?? (conv.agentId === turnAgentId ? conv.agentModel ?? conv.qaiqModel : undefined);
         const tried = this.modelFallbackTriedByUserMessage.get(loopBudgetKey) ?? new Set<string>();
         const currentKey = agentModelKey(currentModel);
         if (currentKey) {
             tried.add(currentKey);
         }
-        const nextModel = resolveNextFallbackAgentModel(conv.agentId, currentModel, tried);
+        const nextModel = resolveNextFallbackAgentModel(turnAgentId, currentModel, tried);
         if (!nextModel) {
             this.modelFallbackTriedByUserMessage.delete(loopBudgetKey);
             return false;
@@ -2071,20 +2089,25 @@ export class QaapAgentConversationStore {
         const messages = conv.messages
             .filter(message => message.id !== agentMessageId)
             .map(message => message.id === userMessageId
-                ? { ...message, error: undefined, taskId: undefined }
+                ? {
+                    ...message,
+                    error: undefined,
+                    taskId: undefined,
+                    turnAgentId,
+                    turnAgentModel: nextModel,
+                }
                 : message);
         const retryConv: QaapAgentConversation = {
             ...conv,
             status: 'streaming',
             updatedAt: Date.now(),
             messages,
-            agentModel: nextModel,
-            qaiqModel: nextModel,
+            ...(conv.agentId === turnAgentId ? { agentModel: nextModel, qaiqModel: nextModel } : {}),
         };
         let spawned: QaapAgentTask;
         try {
             spawned = this.taskRunner.create(
-                this.buildTaskCreateRequest(retryConv, conv.agentId),
+                this.buildTaskCreateRequest(retryConv, turnAgentId, undefined, userMessageId),
                 retryConv.ownerLogin,
             );
         } catch {
@@ -2102,7 +2125,7 @@ export class QaapAgentConversationStore {
                 taskId: spawned.id,
                 // Same fallback rationale as the initial-spawn site: task.agentId is not resolved
                 // synchronously by taskRunner.create().
-                turnAgentId: spawned.agentId ?? conv.agentId,
+                turnAgentId: spawned.agentId ?? turnAgentId,
                 turnAgentModel: nextModel,
             }
             : message);
@@ -2119,6 +2142,7 @@ export class QaapAgentConversationStore {
         this.taskToConversation.set(spawned.id, {
             conversationId,
             userMessageId,
+            turnAgentId: spawned.agentId ?? turnAgentId,
             startSha,
         });
         void this.persist();
@@ -2130,12 +2154,14 @@ export class QaapAgentConversationStore {
         content: string,
         conv: QaapAgentConversation,
         rootUserMessageId: string,
+        turnAgentId: string,
+        turnAgentModel: QaapAgentMessage['turnAgentModel'],
     ): QaapAgentConversation {
         return this.postUserMessage(
             conversationId,
             content,
-            conv.agentId,
-            conv.agentModel ?? conv.qaiqModel,
+            turnAgentId,
+            turnAgentModel ?? (conv.agentId === turnAgentId ? conv.agentModel ?? conv.qaiqModel : undefined),
             conv.autoApprove,
             conv.interactionModeId,
             conv.approvalPolicyId,
@@ -2149,15 +2175,22 @@ export class QaapAgentConversationStore {
         conversationId: string,
         conv: QaapAgentConversation,
         userMessageId: string,
+        agentMessageId?: string,
+        turnAgentId?: string,
     ): void {
         if (!QAAP_AGENT_AUTO_CONTINUE_ENABLED) {
             return;
         }
         const userMessage = conv.messages.find(message => message.id === userMessageId);
-        const agentMessage = conv.messages[conv.messages.length - 1];
+        const agentMessage = agentMessageId
+            ? conv.messages.find(message => message.id === agentMessageId)
+            : [...conv.messages].reverse().find(message =>
+                message.role === 'agent' && message.runUserMessageId === userMessageId
+            );
         if (!userMessage || !agentMessage || agentMessage.role !== 'agent' || conv.status !== 'idle') {
             return;
         }
+        const resolvedTurnAgentId = turnAgentId ?? userMessage.turnAgentId ?? conv.agentId;
         // Only auto-continue in the fully-autonomous agent contract. plan/ask modes and
         // request-approval / manual-approve turns are deliberate stops the user opted into —
         // re-posting a "keep working" prompt there contradicts the chosen interaction mode.
@@ -2183,6 +2216,8 @@ export class QaapAgentConversationStore {
                 buildAgentAutoContinuePrompt(rootUserMessage.content),
                 conv,
                 rootUserMessageId,
+                resolvedTurnAgentId,
+                userMessage.turnAgentModel,
             );
         } catch {
             /* turn already replaced or cancelled */
@@ -2519,16 +2554,30 @@ export class QaapAgentConversationStore {
         conversationId: string,
         conv: QaapAgentConversation,
         agentMessageId: string | undefined,
+        turnAgentId?: string,
     ): void {
         if (!agentMessageId) {
             return;
         }
         const agentMessage = conv.messages.find(message => message.id === agentMessageId);
         if (agentMessage) {
-            this.fireAgentMessageWireUpdate(conversationId, conv.cwd, conv.agentId, agentMessage, { forceFullMessage: true });
+            this.fireAgentMessageWireUpdate(
+                conversationId,
+                conv.cwd,
+                turnAgentId ?? this.resolveAgentIdForAgentMessage(conv, agentMessage),
+                agentMessage,
+                { forceFullMessage: true },
+            );
             this.lastWireMessageById.delete(agentMessage.id);
             this.clearAgUiReducer(agentMessage.id);
         }
+    }
+
+    protected resolveAgentIdForAgentMessage(conv: QaapAgentConversation, agentMessage: QaapAgentMessage): string {
+        const runUserMessage = agentMessage.runUserMessageId
+            ? conv.messages.find(message => message.id === agentMessage.runUserMessageId && message.role === 'user')
+            : undefined;
+        return runUserMessage?.turnAgentId ?? conv.agentId;
     }
 
     /** Agent for the current user turn: `@mention` in this message beats the picker, then stored agent. */
@@ -2654,30 +2703,48 @@ export class QaapAgentConversationStore {
         conv: QaapAgentConversation,
         turnAgentId: string,
         latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
+        turnUserMessageId?: string,
     ): QaapCreateAgentTaskRequest {
-        const lastUser = conv.messages[conv.messages.length - 1];
+        const turnUserMessage = turnUserMessageId
+            ? conv.messages.find(message => message.id === turnUserMessageId && message.role === 'user')
+            : undefined;
+        // A fallback may be spawned after peer runs appended messages. Build a request-shaped
+        // transcript with this run's user turn at the tail; never let an interleaved peer message
+        // become the command/latest prompt simply because it is last in the shared array.
+        const requestConv = turnUserMessage && conv.messages[conv.messages.length - 1]?.id !== turnUserMessage.id
+            ? {
+                ...conv,
+                messages: [
+                    ...conv.messages.filter(message => message.id !== turnUserMessage.id),
+                    turnUserMessage,
+                ],
+            }
+            : conv;
+        const lastUser = requestConv.messages[requestConv.messages.length - 1];
         if (turnAgentId === 'shell') {
             return {
                 command: this.stripLeadingAgentMention(lastUser.content),
-                cwd: conv.cwd,
-                title: conv.title,
+                cwd: requestConv.cwd,
+                title: requestConv.title,
             };
         }
         return {
-            prompt: this.buildPrompt(conv),
+            prompt: this.buildPrompt(requestConv, turnAgentId),
             agent: turnAgentId,
-            cwd: conv.cwd,
-            title: conv.title,
+            cwd: requestConv.cwd,
+            title: requestConv.title,
             // Clean latest user message (mention-stripped) for opt-in relevance retrieval.
             ...(lastUser?.content ? { userQuery: this.stripLeadingAgentMention(lastUser.content) } : {}),
-            ...(conv.autoApprove === false ? { autoApprove: false } : {}),
-            ...(conv.contextPreamble ? { contextPreamble: conv.contextPreamble } : {}),
-            ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
-            ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
-            ...(conv.toolApprovalRules ? { toolApprovalRules: conv.toolApprovalRules } : {}),
+            ...(requestConv.autoApprove === false ? { autoApprove: false } : {}),
+            ...(requestConv.contextPreamble ? { contextPreamble: requestConv.contextPreamble } : {}),
+            ...(requestConv.interactionModeId ? { interactionModeId: requestConv.interactionModeId } : {}),
+            ...(requestConv.approvalPolicyId ? { approvalPolicyId: requestConv.approvalPolicyId } : {}),
+            ...(requestConv.toolApprovalRules ? { toolApprovalRules: requestConv.toolApprovalRules } : {}),
             ...(latencyMarks ? { latencyMarks } : {}),
             ...(() => {
-                const agentModel = conv.agentModel ?? conv.qaiqModel;
+                const agentModel = lastUser?.turnAgentId === turnAgentId
+                    ? lastUser.turnAgentModel ?? requestConv.agentModel ?? requestConv.qaiqModel
+                    : requestConv.agentModel ?? requestConv.qaiqModel;
                 return agentSupportsModelPicker(turnAgentId) && agentModel
                     ? { agentModel, qaiqModel: agentModel }
                     : {};
@@ -2699,7 +2766,7 @@ export class QaapAgentConversationStore {
      * accepts free-form text as a single shell-quoted argument, so an explicit transcript is the
      * most robust way to carry multi-turn context without depending on agent-specific resume APIs.
      */
-    protected buildPrompt(conv: QaapAgentConversation): string {
+    protected buildPrompt(conv: QaapAgentConversation, turnAgentId = conv.agentId): string {
         const lastUser = conv.messages[conv.messages.length - 1];
         const skipDelegation = isTeamSynthesisUserMessage(lastUser.content);
         const compaction = conv.contextCompaction?.status === 'complete' && conv.contextCompaction.summary?.trim()
@@ -2712,7 +2779,7 @@ export class QaapAgentConversationStore {
             const prompt = compaction
                 ? `${this.contextPreambleWithCompaction(conv.contextPreamble, compaction.summary!)}\n\nNow respond to the latest user message:\n\nUSER: ${latestUser}`
                 : latestUser;
-            return skipDelegation ? prompt : this.appendTeamDelegation(prompt, conv.agentId);
+            return skipDelegation ? prompt : this.appendTeamDelegation(prompt, turnAgentId);
         }
         const transcript = buildConversationAgentPrompt({
             history,
@@ -2722,7 +2789,7 @@ export class QaapAgentConversationStore {
                 : conv.contextPreamble,
             contextWindowSize: conv.contextWindowSize,
         });
-        return skipDelegation ? transcript : this.appendTeamDelegation(transcript, conv.agentId);
+        return skipDelegation ? transcript : this.appendTeamDelegation(transcript, turnAgentId);
     }
 
     protected contextPreambleWithCompaction(contextPreamble: string | undefined, summary: string): string {
@@ -2794,7 +2861,7 @@ export class QaapAgentConversationStore {
         conversationId: string,
         event: QaapAgUiEvent,
         /** Mutated in place: an agent message created here is written back onto the run's ref. */
-        run?: { readonly userMessageId: string; agentMessageId?: string },
+        run?: { readonly userMessageId: string; readonly turnAgentId?: string; agentMessageId?: string },
     ): QaapAgentConversation | undefined {
         const conv = this.conversations.get(conversationId);
         if (!conv) {
@@ -2824,13 +2891,15 @@ export class QaapAgentConversationStore {
             this.agUiReducerByAgentMessageId.delete(agentMessageId);
         }
         const previousReducer = this.agUiReducerByAgentMessageId.get(agentMessageId);
+        const previousMessage = messages.find(message => message.id === agentMessageId);
+        const agentId = run?.turnAgentId
+            ?? (previousMessage ? this.resolveAgentIdForAgentMessage(conv, previousMessage) : conv.agentId);
         const { next: reducer } = reduceQaapAgUiTranscriptEvent(previousReducer, event, {
             agentMessageId,
-            createdAt: messages.find(message => message.id === agentMessageId)?.createdAt ?? now,
-            agentId: conv.agentId,
+            createdAt: previousMessage?.createdAt ?? now,
+            agentId,
         });
         this.agUiReducerByAgentMessageId.set(agentMessageId, reducer);
-        const previousMessage = messages.find(message => message.id === agentMessageId);
         const rebuilt = buildAgentMessageFromQaapAgUiReducer(
             reducer,
             previousMessage?.createdAt ?? now,
@@ -2856,7 +2925,7 @@ export class QaapAgentConversationStore {
             contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
         };
         this.conversations.set(conversationId, next);
-        this.fireAgentMessageWireUpdate(conversationId, next.cwd, next.agentId, agentMessage);
+        this.fireAgentMessageWireUpdate(conversationId, next.cwd, agentId, agentMessage);
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
         this.schedulePersist();
         return next;

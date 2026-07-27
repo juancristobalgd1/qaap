@@ -71,9 +71,22 @@ class TestConversationStore extends QaapAgentConversationStore {
 
     /** Drives the task-outcome path directly (normally invoked by the task runner's events). */
     async settleRun(conversationId: string, userMessageId: string, taskId: string): Promise<void> {
+        const ref = (this as unknown as {
+            taskToConversation: Map<string, {
+                conversationId: string;
+                userMessageId: string;
+                turnAgentId: string;
+                agentMessageId?: string;
+            }>;
+        }).taskToConversation.get(taskId) ?? {
+            conversationId,
+            userMessageId,
+            turnAgentId: this.get(conversationId)!.messages.find(message => message.id === userMessageId)?.turnAgentId
+                ?? this.get(conversationId)!.agentId,
+        };
         await (this as unknown as {
-            applyTaskOutcome: (c: string, u: string, a: string | undefined, t: QaapAgentTask) => Promise<void>;
-        }).applyTaskOutcome(conversationId, userMessageId, undefined, { id: taskId, state: 'completed' } as QaapAgentTask);
+            applyTaskOutcome: (r: unknown, t: QaapAgentTask) => Promise<void>;
+        }).applyTaskOutcome(ref, { id: taskId, state: 'completed' } as QaapAgentTask);
     }
 
     appendPeerMessage(conversationId: string, content: string): void {
