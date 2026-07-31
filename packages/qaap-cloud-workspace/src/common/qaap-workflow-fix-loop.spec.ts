@@ -360,10 +360,21 @@ describe('review fix-loop as a per-run option', () => {
         const registry = new TestRegistry();
         for (const summary of registry.list()) {
             const template = registry.get(summary.id)!;
-            expect(template.build().nodes.map(node => node.id), `${summary.id} default`)
+            const base = template.build();
+            expect(base.nodes.map(node => node.id), `${summary.id} default`)
                 .to.not.include('implement-review-fix');
             const looped = template.build({ reviewFix: true });
-            expect(looped.nodes.map(node => node.id), `${summary.id} with reviewFix`).to.include('implement-review-fix');
+            // The review fix-loop repairs code a judge rejected, so it only attaches to a template
+            // that has an implement phase. An audit-only template (explore → synthesize → judge,
+            // no writer) has nothing to fix, so asking for the loop is a no-op there rather than an
+            // error — the contract is "every template that implements", not "every template".
+            const implementsCode = base.nodes.some(node => node.kind === 'agent-turn' && node.capability === 'implement');
+            const loopedIds = looped.nodes.map(node => node.id);
+            if (implementsCode) {
+                expect(loopedIds, `${summary.id} with reviewFix`).to.include('implement-review-fix');
+            } else {
+                expect(loopedIds, `${summary.id} with reviewFix (audit-only, nothing to fix)`).to.not.include('implement-review-fix');
+            }
             expect(validateQaapWorkflowDef(looped), `${summary.id} with reviewFix`).to.deep.include({ ok: true });
         }
     });
