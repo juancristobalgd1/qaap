@@ -4,15 +4,15 @@
 // *****************************************************************************
 
 // End-to-end regression guard for the turn-provenance badge (commit 8a5e9c286):
-// the accordion header of an agent turn shows which agent/model actually drove
-// it. This spec walks the REAL path front to back rather than unit-testing any
-// single layer in isolation:
+// each agent turn shows which agent/model actually drove it, ABOVE and OUTSIDE
+// the process accordion (never inside its summary). This spec walks the REAL
+// path front to back rather than unit-testing any single layer in isolation:
 //
 //   toAgentMessageWirePayload/applyAgentMessageWireDelta (wire round-trip)
 //     -> renderTranscriptMessages / createTranscriptAgentSegmentsRow
-//     -> wrapMobileProcessAccordion / syncMobileProcessAccordionProvenance
+//     -> syncTranscriptStandaloneTurnProvenance
 //
-// It deliberately does NOT mock resolveTurnProvenance, syncMobileProcessAccordionProvenance,
+// It deliberately does NOT mock resolveTurnProvenance, syncTranscriptStandaloneTurnProvenance,
 // or the wire delta functions -- those are exactly the pieces under test.
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
@@ -165,7 +165,8 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         };
     }
 
-    function findBadges(messageHost: HTMLElement): HTMLElement[] {
+    /** Legacy accordion-header host — must stay empty after the badge moved above the accordion. */
+    function findAccordionHeaderBadges(messageHost: HTMLElement): HTMLElement[] {
         return [...messageHost.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
     }
 
@@ -173,12 +174,17 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         return [...messageHost.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)];
     }
 
-    /** Every provenance badge in the transcript, accordion-hosted or standalone -- a turn must
-     *  never render more than one, regardless of which host it ends up in. */
+    /** Every provenance badge in the transcript — a turn must never render more than one. */
     function findAnyBadges(messageHost: HTMLElement): HTMLElement[] {
         return [...messageHost.querySelectorAll<HTMLElement>(
             `.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}, .${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`,
         )];
+    }
+
+    /** Prefer the live standalone host; accordion-header badges must never appear. */
+    function findBadges(messageHost: HTMLElement): HTMLElement[] {
+        expect(findAccordionHeaderBadges(messageHost), 'provenance must never mount inside the accordion header').to.have.length(0);
+        return findStandaloneBadges(messageHost);
     }
 
     // The badge now shares the composer's agent-identity visual (createAgentIdentityElement):
@@ -293,8 +299,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
 
             expect(messageHost.querySelectorAll('.theia-mobile-process-accordion'), 'no empty accordion for a tool-less turn').to.have.length(0);
-            const accordionBadges = findBadges(messageHost);
-            expect(accordionBadges, 'no accordion-hosted badge -- there is no accordion').to.have.length(0);
+            expect(findAccordionHeaderBadges(messageHost), 'no accordion-header badge -- there is no accordion').to.have.length(0);
             const standaloneBadges = findStandaloneBadges(messageHost);
             expect(standaloneBadges, 'exactly one standalone badge').to.have.length(1);
             expect(badgeProviderIcon(standaloneBadges[0]), 'provider sub-icon present -- a model is known').to.exist;
@@ -319,7 +324,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             expect(findAnyBadges(messageHost), 'no badge, no gap, no layout shift for a pre-feature no-tool turn').to.have.length(0);
         });
 
-        it('a turn WITH tools shows only the accordion badge, never a standalone one alongside it', () => {
+        it('a turn WITH tools shows the standalone badge above the accordion, never inside the header', () => {
             const { renderUi } = createRenderUi();
             const chatHost = document.createElement('div');
             chatHost.className = 'theia-mobile-agent-transcript-real-chat';
@@ -332,8 +337,13 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             renderUi.renderTranscriptMessages(chatHost, conv);
             const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
 
-            expect(findStandaloneBadges(messageHost), 'no standalone badge when the turn used tools').to.have.length(0);
+            expect(messageHost.querySelector('.theia-mobile-process-accordion'), 'tool turn has an accordion').to.exist;
+            expect(findStandaloneBadges(messageHost), 'exactly one standalone badge above the accordion').to.have.length(1);
+            expect(findAccordionHeaderBadges(messageHost), 'never mounts provenance inside the accordion header').to.have.length(0);
             expect(findAnyBadges(messageHost)).to.have.length(1);
+            const body = messageHost.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments')!;
+            expect(body.firstElementChild?.classList.contains(MOBILE_TURN_PROVENANCE_STANDALONE_CLASS)).to.equal(true);
+            expect(body.firstElementChild?.nextElementSibling?.classList.contains('theia-mobile-process-accordion')).to.equal(true);
         });
 
         it('stays idempotent across a repeated streaming tick on a no-tool row (never duplicates)', () => {
@@ -359,7 +369,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             expect(body.firstElementChild, 'the badge stays the first child of the segments body').to.equal(secondPass[0]);
         });
 
-        it('removes the standalone badge (never leaves both) once the row upgrades to the tool timeline', () => {
+        it('keeps the standalone badge above the accordion once the row upgrades to the tool timeline', () => {
             const ui = createArtifactsUi();
             const noToolSegments = [textSegment('Thinking…')];
             const userMessage: QaapAgentMessageDTO = {
@@ -370,14 +380,20 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             const row = ui.createTranscriptAgentSegmentsRow(noToolSegments, undefined, conv, { streaming: true, message: conv.messages[1] });
             const body = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments')!;
             expect(body.querySelectorAll(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`), 'standalone badge before any tool arrives').to.have.length(1);
+            const badgeBefore = body.querySelector<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)!;
 
             const withTool = [...noToolSegments, finishedTool('t1')];
             conv = conversationWithTurn(userMessage, withTool);
             const patched = ui.patchStreamingActivityTimeline(row, withTool, conv);
             expect(patched, 'the upgrade patch applies in place').to.equal(true);
 
-            expect(body.querySelectorAll(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`), 'standalone badge removed once the row has an accordion').to.have.length(0);
-            expect(body.querySelectorAll(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`), 'exactly one accordion-hosted badge after the upgrade').to.have.length(1);
+            const badgesAfter = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)];
+            expect(badgesAfter, 'standalone badge stays after the row gains an accordion').to.have.length(1);
+            expect(findAccordionHeaderBadges(body), 'never remounts provenance inside the accordion header').to.have.length(0);
+            expect(body.firstElementChild, 'badge remains the first child of the segments body').to.equal(badgesAfter[0]);
+            expect(badgesAfter[0].nextElementSibling?.classList.contains('theia-mobile-process-accordion'), 'accordion sits directly under the badge')
+                .to.equal(true);
+            expect(badgesAfter[0], 'same badge element is reused across the upgrade').to.equal(badgeBefore);
         });
     });
 
@@ -396,7 +412,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             modelId: 'openrouter/free',
         };
 
-        it('accordion badge: text is ONLY the short model id (no vendor stutter), title stays full', () => {
+        it('accordion turn badge: text is ONLY the short model id (no vendor stutter), title stays full', () => {
             const { renderUi } = createRenderUi();
             const chatHost = document.createElement('div');
             chatHost.className = 'theia-mobile-agent-transcript-real-chat';
@@ -421,7 +437,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             expect(badges[0].title).to.contain('OpenRouter · openrouter/free');
         });
 
-        it('standalone badge: identical visual pattern as the accordion badge', () => {
+        it('standalone badge: identical visual pattern as the tool-turn badge', () => {
             const { renderUi } = createRenderUi();
             const chatHost = document.createElement('div');
             chatHost.className = 'theia-mobile-agent-transcript-real-chat';
@@ -442,7 +458,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             expect(badges[0].title).to.equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(openRouterFreeModel)}`);
         });
 
-        it('both badge hosts render the exact same shared DOM shape (.theia-qaap-agent-identity*)', () => {
+        it('tool and no-tool turns render the exact same shared DOM shape (.theia-qaap-agent-identity*)', () => {
             // Two independent render-ui instances (like every other test in this file) --
             // reusing one across two unrelated conversations would make the second render
             // take an unrelated streaming-patch code path against stale internal state from
@@ -456,7 +472,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             );
             const { renderUi: renderUiWithTool } = createRenderUi();
             renderUiWithTool.renderTranscriptMessages(chatHostWithTool, convWithTool);
-            const accordionBadge = findBadges(renderUiWithTool.resolveTranscriptMessageHost(chatHostWithTool))[0];
+            const toolTurnBadge = findBadges(renderUiWithTool.resolveTranscriptMessageHost(chatHostWithTool))[0];
 
             const chatHostNoTool = document.createElement('div');
             chatHostNoTool.className = 'theia-mobile-agent-transcript-real-chat';
@@ -467,15 +483,15 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             );
             const { renderUi: renderUiNoTool } = createRenderUi();
             renderUiNoTool.renderTranscriptMessages(chatHostNoTool, convNoTool);
-            const standaloneBadge = findStandaloneBadges(renderUiNoTool.resolveTranscriptMessageHost(chatHostNoTool))[0];
+            const noToolBadge = findStandaloneBadges(renderUiNoTool.resolveTranscriptMessageHost(chatHostNoTool))[0];
 
-            for (const badge of [accordionBadge, standaloneBadge]) {
+            for (const badge of [toolTurnBadge, noToolBadge]) {
                 expect(badge.classList.contains('theia-qaap-agent-identity'), 'shared identity root class').to.equal(true);
                 expect(badge.querySelector('.theia-qaap-agent-identity-avatar'), 'shared avatar class').to.exist;
                 expect(badge.querySelector('.theia-qaap-agent-identity-provider-badge'), 'shared provider-badge class').to.exist;
                 expect(badge.querySelector('.theia-qaap-agent-identity-label'), 'shared label class').to.exist;
             }
-            expect(badgeLabelText(accordionBadge)).to.equal(badgeLabelText(standaloneBadge));
+            expect(badgeLabelText(toolTurnBadge)).to.equal(badgeLabelText(noToolBadge));
         });
     });
 
@@ -546,7 +562,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             renderUi.renderTranscriptMessages(chatHost, conv);
             const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
 
-            expect(findBadges(messageHost), 'no accordion-hosted badge -- a raw-stdout turn has no accordion').to.have.length(0);
+            expect(findAccordionHeaderBadges(messageHost), 'no accordion-header badge -- a raw-stdout turn has no accordion').to.have.length(0);
             const standaloneBadges = findStandaloneBadges(messageHost);
             expect(standaloneBadges, 'exactly one standalone badge').to.have.length(1);
             expect(badgeAvatarIcon(standaloneBadges[0]), 'agent brand avatar is present').to.exist;
@@ -614,7 +630,7 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
             renderUi.renderTranscriptMessages(chatHost, conv);
             const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
 
-            expect(findBadges(messageHost), 'no accordion-hosted badge -- a segment-less failure has no accordion').to.have.length(0);
+            expect(findAccordionHeaderBadges(messageHost), 'no accordion-header badge -- a segment-less failure has no accordion').to.have.length(0);
             const standaloneBadges = findStandaloneBadges(messageHost);
             expect(standaloneBadges, 'exactly one standalone badge on the failure row').to.have.length(1);
             expect(badgeProviderIcon(standaloneBadges[0]), 'provider sub-icon present -- a model is known').to.exist;
@@ -685,8 +701,9 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         const row = ui.createTranscriptAgentSegmentsRow(agentSegments, undefined, conv, { streaming: true, message: conv.messages[1] });
         row.setAttribute(TRANSCRIPT_MESSAGE_ID_ATTR, 'agent-1');
         const body = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments')!;
-        const badgesAfterFirstRender = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
+        const badgesAfterFirstRender = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)];
         expect(badgesAfterFirstRender, 'exactly one badge after the initial render').to.have.length(1);
+        expect(findAccordionHeaderBadges(body), 'never mounts provenance inside the accordion header').to.have.length(0);
         const firstBadgeEl = badgesAfterFirstRender[0];
         expect(badgeProviderIcon(firstBadgeEl), 'provider sub-icon present -- a model is known').to.exist;
         const firstLabel = badgeLabelText(firstBadgeEl);
@@ -694,13 +711,14 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         expect(firstBadgeEl.title).to.equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(anthropicSonnet)}`);
         const headerEl = row.querySelector('.theia-mobile-process-accordion-header')!;
         expect(headerEl, 'the accordion header exists after the initial render').to.not.equal(null);
+        expect(body.firstElementChild, 'badge sits above the accordion').to.equal(firstBadgeEl);
 
         // Step C: a second, identical SSE tick (e.g. a duplicate frame after a reconnect) must
-        // neither drop nor duplicate the badge -- syncMobileProcessAccordionProvenance's dataset-key
+        // neither drop nor duplicate the badge -- syncTranscriptStandaloneTurnProvenance's dataset-key
         // dedup is exactly what is being exercised here via the real patch entrypoint.
         const patchedIdentical = ui.patchStreamingActivityTimeline(row, agentSegments, conv);
         expect(patchedIdentical, 'identical tick patches in place').to.equal(true);
-        const badgesAfterIdenticalTick = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
+        const badgesAfterIdenticalTick = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)];
         expect(badgesAfterIdenticalTick, 'still exactly one badge after an identical tick').to.have.length(1);
         expect(badgesAfterIdenticalTick[0], 'the same badge element is reused, not replaced').to.equal(firstBadgeEl);
         expect(badgeLabelText(badgesAfterIdenticalTick[0])).to.equal(firstLabel);
@@ -728,13 +746,14 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         conv = conversationWithTurn(retriedUserMessage!, agentSegments);
         const patchedRetry = ui.patchStreamingActivityTimeline(row, agentSegments, conv);
         expect(patchedRetry, 'fallback-model tick patches in place').to.equal(true);
-        const badgesAfterRetryTick = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
+        const badgesAfterRetryTick = [...body.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)];
         // A genuine label change removes the stale badge and inserts a fresh one (see
-        // syncMobileProcessAccordionProvenance) rather than mutating text in place -- so element
+        // syncTranscriptStandaloneTurnProvenance) rather than mutating text in place -- so element
         // identity is NOT preserved here, but the accordion/header themselves must be (no full row
         // rebuild), and there must still be exactly one badge, never zero or two.
         expect(badgesAfterRetryTick, 'still exactly one badge after the fallback-model tick (no duplicate left behind)').to.have.length(1);
-        expect(row.querySelector('.theia-mobile-process-accordion-header'), 'same header element, only its badge child changed')
+        expect(findAccordionHeaderBadges(body), 'fallback tick still never mounts header provenance').to.have.length(0);
+        expect(row.querySelector('.theia-mobile-process-accordion-header'), 'same header element after the badge update')
             .to.equal(headerEl);
         expect(badgeProviderIcon(badgesAfterRetryTick[0]), 'provider sub-icon still present for the fallback model').to.exist;
         const retryLabel = badgeLabelText(badgesAfterRetryTick[0]);
@@ -771,17 +790,19 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
         };
 
         const rowA = ui.createTranscriptAgentSegmentsRow(agentASegments, undefined, conv, { streaming: true, message: conv.messages[2] });
-        const badgesA = [...rowA.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
+        const badgesA = [...rowA.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)];
 
-        expect(badgesA, 'exactly one badge on the first run\'s accordion').to.have.length(1);
+        expect(badgesA, 'exactly one badge on the first run').to.have.length(1);
+        expect(findAccordionHeaderBadges(rowA), 'first run never mounts header provenance').to.have.length(0);
         // `title` rather than `textContent`: the badge also carries a brand glyph, and QAIQ's
         // is a text monogram that would otherwise prefix the label.
         expect(badgesA[0].title, 'the first run is still badged QAIQ, not the newer @claude turn').to
             .equal(`${resolveAgentDisplayLabel('qaiq')} · ${formatQaiqModelSelectionLabel(anthropicSonnet)}`);
 
         const rowB = ui.createTranscriptAgentSegmentsRow([finishedTool('b1')], undefined, conv, { streaming: true, message: conv.messages[3] });
-        const badgesB = [...rowB.querySelectorAll<HTMLElement>(`.${MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS}`)];
-        expect(badgesB, 'exactly one badge on the peer run\'s accordion').to.have.length(1);
+        const badgesB = [...rowB.querySelectorAll<HTMLElement>(`.${MOBILE_TURN_PROVENANCE_STANDALONE_CLASS}`)];
+        expect(badgesB, 'exactly one badge on the peer run').to.have.length(1);
+        expect(findAccordionHeaderBadges(rowB), 'peer run never mounts header provenance').to.have.length(0);
         expect(badgesB[0].title).to
             .equal(`${resolveAgentDisplayLabel('claude')} · ${formatQaiqModelSelectionLabel(openRouterFallback)}`);
     });
