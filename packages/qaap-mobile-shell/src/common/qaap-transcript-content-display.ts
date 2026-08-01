@@ -19,9 +19,36 @@ export function stripAnsiEscapes(text: string): string {
         .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, '');
 }
 
+/**
+ * A source line from a compiler/linter diagnostic: a numbered gutter drawn with the box-drawing
+ * bar (`250 │ …`, the formatter's twin `13 13 │ …`, or the pointed `> 252 │ …`), or a caret run
+ * (`^^^^^^^`) underlining a span. These are terminal output, never Markdown — `│` does not occur
+ * in prose, and the `>` marker is a pointer, not a blockquote.
+ */
+function isCompilerDiagnosticLine(line: string): boolean {
+    return /^\s*>?\s*\d+(?:\s+\d+)?\s*│/.test(line) || /^\s*│?\s*\^{3,}/.test(line);
+}
+
+/**
+ * True for compiler/linter diagnostics (biome, tsc, rustc, eslint --format codeframe, …): output
+ * whose numbered code frames Markdown would shred — indented lines become code blocks and the
+ * `> 252 │` pointer becomes a blockquote, splitting one continuous frame into stray cards and
+ * quotes. Two such lines are enough; prose never produces them.
+ */
+export function looksLikeCompilerDiagnostic(content: string): boolean {
+    if (!content.trim()) {
+        return false;
+    }
+    return content.split('\n').filter(isCompilerDiagnosticLine).length >= 2;
+}
+
 /** Returns true when transcript text should render as Markdown, not a terminal/log panel. */
 export function looksLikeTranscriptMarkdown(content: string): boolean {
     if (!content.trim()) {
+        return false;
+    }
+    // A compiler diagnostic's `> 252 │` pointer is not a blockquote and its frame is not Markdown.
+    if (looksLikeCompilerDiagnostic(content)) {
         return false;
     }
     if (/^#{1,6}\s+\S/m.test(content)) {
@@ -39,6 +66,7 @@ export function looksLikeTranscriptMarkdown(content: string): boolean {
     if (/^\d+\.\s+\S/m.test(content)) {
         return true;
     }
+    // A blockquote pointer from a diagnostic (`> 252 │ …`) is excluded above; a real quote remains.
     if (/^>\s+\S/m.test(content)) {
         return true;
     }
@@ -50,6 +78,11 @@ export function looksLikeTranscriptMarkdown(content: string): boolean {
 
 /** Heuristic: multi-line stderr / stack traces that belong in a collapsible terminal panel. */
 export function isTranscriptTerminalOutputText(content: string): boolean {
+    // A compiler/linter diagnostic is terminal output even without a stack trace: its numbered
+    // code frame must render literally, or Markdown splits it into stray cards and blockquotes.
+    if (looksLikeCompilerDiagnostic(content)) {
+        return true;
+    }
     if (looksLikeTranscriptMarkdown(content)) {
         return false;
     }

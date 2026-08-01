@@ -10,6 +10,7 @@ import {
     isLikelySourceFileDump,
     isTranscriptErrorOutput,
     isTranscriptTerminalOutputText,
+    looksLikeCompilerDiagnostic,
     looksLikeTranscriptMarkdown,
     stripAnsiEscapes,
     stripToolResultLineNumberPrefixes,
@@ -49,6 +50,56 @@ describe('qaap-transcript-content-display', () => {
     it('does not treat short error snippets as terminal output', () => {
         const short = 'Error: command not found';
         expect(isTranscriptTerminalOutputText(short)).to.equal(false);
+    });
+
+    it('renders a compiler/linter code frame literally, not as fragmented Markdown', () => {
+        // Real biome output: the `> 252 │` pointer is not a blockquote and the frame is one block.
+        // Markdown would shred it into stray code cards and a <blockquote> (the reported bug).
+        const diagnostic = [
+            'Error: Verification checks are still failing after 1 fix attempt.',
+            'npm run lint exited with code 1.',
+            '',
+            '  × Provide an explicit type prop for the button element.',
+            '',
+            '    250 │         <div className="flex">',
+            '    251 │           {ranges.map((range) => (',
+            '  > 252 │             <button',
+            '        │             ^^^^^^^',
+            '  > 253 │               key={range.key}',
+        ].join('\n');
+        expect(looksLikeCompilerDiagnostic(diagnostic)).to.equal(true);
+        expect(looksLikeTranscriptMarkdown(diagnostic)).to.equal(false);
+        expect(isTranscriptTerminalOutputText(diagnostic)).to.equal(true);
+    });
+
+    it('recognizes the formatter twin-number gutter too', () => {
+        const format = [
+            'components/ui/date-range-picker.tsx format',
+            '',
+            '  × Formatter would have printed the following content:',
+            '',
+            '    13 13 │     maxDate?: Date',
+            '    14 14 │   }) {',
+        ].join('\n');
+        expect(looksLikeCompilerDiagnostic(format)).to.equal(true);
+        expect(isTranscriptTerminalOutputText(format)).to.equal(true);
+    });
+
+    it('does not mistake prose that merely quotes or numbers for a diagnostic', () => {
+        // A genuine blockquote and an ordered list — no `N │` gutter, no caret run.
+        const prose = [
+            '## Summary',
+            '',
+            'Found the **bug**. Steps:',
+            '',
+            '1. Read the file',
+            '2. Fix the nesting',
+            '',
+            '> Note: this changes the translations.',
+        ].join('\n');
+        expect(looksLikeCompilerDiagnostic(prose)).to.equal(false);
+        expect(looksLikeTranscriptMarkdown(prose)).to.equal(true);
+        expect(isTranscriptTerminalOutputText(prose)).to.equal(false);
     });
 
     it('isAgentToolResultFailure ignores error substrings inside file paths', () => {
