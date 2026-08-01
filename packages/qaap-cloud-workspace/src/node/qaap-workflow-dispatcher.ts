@@ -107,7 +107,18 @@ export class QaapWorkflowDispatcher {
     constructor(
         protected readonly store: QaapWorkflowRunStore,
         protected readonly ports: QaapWorkflowPorts,
+        /**
+         * Which persisted runs this dispatcher owns. Runs share one store, but chat-turn runs
+         * (ADR-002) are reconciled and settled by the conversation store — two dispatchers acting
+         * on the same run would double-spawn on boot and race each other's terminal reports.
+         * Absent means "owns everything" (the pre-ADR-002 behaviour and every existing spec).
+         */
+        protected readonly governs?: (record: QaapPersistedWorkflowRun) => boolean,
     ) { }
+
+    protected owns(record: QaapPersistedWorkflowRun): boolean {
+        return !this.governs || this.governs(record);
+    }
 
     /** Start every node the store just released, then keep going as outcomes arrive. */
     async dispatch(record: QaapPersistedWorkflowRun, nodeIds: readonly string[]): Promise<void> {
@@ -149,7 +160,7 @@ export class QaapWorkflowDispatcher {
     /** Route a finished agent task back into its run. Ignores tasks that belong to no workflow. */
     async onAgentTaskFinished(externalId: string, state: QaapAgentTaskState, log?: string): Promise<void> {
         const found = this.store.findByExternalId(externalId);
-        if (!found) {
+        if (!found || !this.owns(found.record)) {
             return;
         }
         const node = found.record.def.nodes.find(entry => entry.id === found.nodeId);
@@ -171,7 +182,7 @@ export class QaapWorkflowDispatcher {
     /** Route a finished job back into its run. Ignores jobs that belong to no workflow. */
     async onJobFinished(externalId: string, state: QaapJobState, result?: unknown): Promise<void> {
         const found = this.store.findByExternalId(externalId);
-        if (!found) {
+        if (!found || !this.owns(found.record)) {
             return;
         }
         const node = found.record.def.nodes.find(entry => entry.id === found.nodeId);
@@ -200,15 +211,30 @@ export class QaapWorkflowDispatcher {
         // Every tenant, not just the anonymous bucket: a run left mid-flight by any owner must be
         // reconciled or it hangs forever on a process that no longer exists.
         for (const record of this.store.listAllUnfinished()) {
+            if (!this.owns(record)) {
+                continue;
+            }
             // Bookkeeping nodes never get a `dispatched` entry, so a run parked on one (written by
             // a build that did not settle joins) would survive every restart. Settle them first.
             for (const nodeId of record.run.active) {
                 if (record.dispatched[nodeId]) {
                     continue;
                 }
-                const outcome = SELF_SETTLED[record.def.nodes.find(node => node.id === nodeId)?.kind ?? 'emit'];
+                const kind = record.def.nodes.find(node => node.id === nodeId)?.kind ?? 'emit';
+                const outcome = SELF_SETTLED[kind];
                 if (outcome) {
                     await this.report(record.ownerLogin, record.run.id, nodeId, outcome);
+                    continue;
+                }
+                if (kind === 'agent-turn' || kind === 'deterministic') {
+                    // Dispatchable node active with no dispatched entry: the backend died between
+                    // starting the work and persisting where it went (create → attachDispatch).
+                    // Nothing will ever report it, and the node deadline never arms without a
+                    // dispatchedAt — the run would hang until its run wall clock. Route the
+                    // failure edge instead, exactly like a dead external process.
+                    await this.store.interrupt(record.ownerLogin, record.run.id, nodeId).then(
+                        result => this.dispatch(result.record, result.dispatch),
+                    );
                 }
             }
             for (const entry of Object.values(record.dispatched)) {
@@ -251,6 +277,9 @@ export class QaapWorkflowDispatcher {
      */
     async sweepDeadlines(now: number): Promise<void> {
         for (const record of this.store.listAllUnfinished()) {
+            if (!this.owns(record)) {
+                continue;
+            }
             if (hasQaapWorkflowRunExpired(record.run, record.createdAt, now)) {
                 console.warn(`[qaap-workflow] run ${record.run.id} exceeded its wall clock; stopping it.`);
                 await Promise.all(Object.values(record.dispatched).map(entry => this.cancelDispatched(entry)));

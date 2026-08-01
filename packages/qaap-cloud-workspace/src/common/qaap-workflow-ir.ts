@@ -112,7 +112,14 @@ export type QaapWorkflowEdgeWhen =
     | 'verdict:pass'
     | 'verdict:fail'
     | 'verdict:inconclusive'
-    | 'human:continue';
+    | 'human:continue'
+    // Chat-turn lifecycle outcomes (ADR-002). Definitions that declare no edge for them receive
+    // the base outcome from QAAP_WORKFLOW_BASE_OUTCOME instead, so pre-ADR-002 templates keep
+    // their exact routing.
+    | 'resume:restart'
+    | 'retry:model'
+    | 'continue:auto'
+    | 'success:warned';
 
 export interface QaapWorkflowAgentTurnNode {
     readonly kind: 'agent-turn';
@@ -218,7 +225,25 @@ export type QaapWorkflowNodeOutcome =
     | 'verdict:pass'
     | 'verdict:fail'
     | 'verdict:inconclusive'
-    | 'human:continue';
+    | 'human:continue'
+    | 'resume:restart'
+    | 'retry:model'
+    | 'continue:auto'
+    | 'success:warned';
+
+/**
+ * What a rich chat-turn outcome (ADR-002) means to a definition that never declared an edge for
+ * it: when {@link stepQaapWorkflow} finds no matching edge for the outcome itself, matching is
+ * retried with this base outcome. `success:warned` degrades to `'fail'` — the same mapping
+ * {@code resolveAgentTurnOutcome} applies to `completed_with_warnings` — so a template that never
+ * heard of warnings keeps treating a red-verification turn exactly as it always has.
+ */
+export const QAAP_WORKFLOW_BASE_OUTCOME: Readonly<Partial<Record<QaapWorkflowNodeOutcome, QaapWorkflowNodeOutcome>>> = {
+    'resume:restart': 'fail',
+    'retry:model': 'fail',
+    'continue:auto': 'success',
+    'success:warned': 'fail',
+};
 
 export interface QaapWorkflowValidationIssue {
     readonly path: string;
@@ -434,7 +459,15 @@ export function stepQaapWorkflow(
     }
 
     const outgoing = def.edges.filter(edge => edge.from === finishedNodeId);
-    const matched = outgoing.filter(edge => edgeMatches(edge.when ?? 'always', outcome));
+    let matched = outgoing.filter(edge => edgeMatches(edge.when ?? 'always', outcome));
+    if (matched.length === 0) {
+        // Rich outcomes degrade for definitions that predate them: an edge set with no
+        // `resume:restart` edge routes it as the plain `fail` it would have been before ADR-002.
+        const base = QAAP_WORKFLOW_BASE_OUTCOME[outcome];
+        if (base) {
+            matched = outgoing.filter(edge => edgeMatches(edge.when ?? 'always', base));
+        }
+    }
     if (matched.length === 0) {
         return { done: true, current: [finishedNodeId], next: [], terminalReason: 'no-edge' };
     }

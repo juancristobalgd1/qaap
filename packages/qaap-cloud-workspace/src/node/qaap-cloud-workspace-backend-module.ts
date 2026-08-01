@@ -69,6 +69,7 @@ import {
     QaapJobFunctionRegistry,
 } from './qaap-job-function-registry';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
+import { QAAP_CHAT_TURN_WORKFLOW_ID } from '../common/qaap-chat-turn-workflow';
 import { QaapWorkflowPromptRegistry } from '../common/qaap-workflow-prompt-registry';
 import { QaapWorkflowRoutingPolicy, parseQaapWorkflowRoutingTable } from '../common/qaap-workflow-routing';
 import { QaapWorkflowTemplateRegistry } from '../common/qaap-workflow-template-registry';
@@ -144,6 +145,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             agent: container.get(QaapWorkflowAgentTurnAdapter),
             deterministic: container.get(QaapWorkflowDeterministicAdapter),
         },
+        // Chat-turn runs (ADR-002) are reconciled and settled by the conversation store; the
+        // template-workflow dispatcher must never spawn, interrupt or expire them.
+        record => record.def.id !== QAAP_CHAT_TURN_WORKFLOW_ID,
     )).inSingletonScope();
     bind(QaapWorkflowTemplateRegistry).toSelf().inSingletonScope();
     bind(QaapWorkflowService).toSelf().inSingletonScope();

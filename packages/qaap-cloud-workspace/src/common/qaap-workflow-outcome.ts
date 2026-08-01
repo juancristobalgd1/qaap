@@ -25,6 +25,10 @@ export const QAAP_WORKFLOW_OUTCOMES: readonly QaapWorkflowNodeOutcome[] = [
     'verdict:fail',
     'verdict:inconclusive',
     'human:continue',
+    'resume:restart',
+    'retry:model',
+    'continue:auto',
+    'success:warned',
 ];
 
 export function isQaapWorkflowOutcome(value: unknown): value is QaapWorkflowNodeOutcome {
