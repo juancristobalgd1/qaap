@@ -60,6 +60,11 @@ import {
     QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
+import {
+    agentHasCliOAuthLogin,
+    localizeAgentSettingsApiKeyLoginMessage,
+} from '../common/qaap-agent-auth-login';
+import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { MobileSnackbar } from './mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
@@ -2955,15 +2960,23 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
      * chat can surface the same sign-in URL the agent TUI would print.
      */
     openAgentSignInTerminal(agentId?: string): void {
-        const project = this.transcriptController.state.transcriptOpenProject;
-        const summary = this.transcriptController.state.transcriptOpenSummary;
-        if (!project || !summary) {
+        const state = this.transcriptController.state;
+        const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
+        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+        const resolvedAgentId = agentId?.trim()
+            || summary?.agentId
+            || state.transcriptLastConv?.agentId;
+        if (!resolvedAgentId) {
             return;
         }
-        const resolvedAgentId = agentId?.trim()
-            || summary.agentId
-            || this.transcriptController.state.transcriptLastConv?.agentId;
-        if (!resolvedAgentId) {
+        // BYOK / Settings-catalog agents (qaiq, and any agent without a CLI login
+        // subcommand) have no terminal sign-in — opening the TUI would sign no one
+        // in. Point the user to the API key in Settings instead.
+        if (!agentHasCliOAuthLogin(resolvedAgentId)) {
+            this.notifyAgentUsesSettingsApiKey(resolvedAgentId);
+            return;
+        }
+        if (!project || !summary) {
             return;
         }
         void this.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(
@@ -2972,6 +2985,24 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             resolvedAgentId,
             { login: true },
         );
+    }
+
+    /**
+     * Tell the user that a BYOK / Settings-catalog agent authenticates via an API
+     * key in Settings (no terminal sign-in), and offer to open the AI settings.
+     */
+    protected notifyAgentUsesSettingsApiKey(agentId: string): void {
+        const message = localizeAgentSettingsApiKeyLoginMessage(resolveAgentDisplayLabel(agentId));
+        const openSettings = nls.localize('qaap/agentLogin/openSettings', 'Open Settings');
+        if (this.messageService) {
+            void this.messageService.info(message, openSettings).then(action => {
+                if (action === openSettings) {
+                    void this.openAiConfigurationSheet?.();
+                }
+            });
+            return;
+        }
+        void this.openAiConfigurationSheet?.();
     }
 
     protected async onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void> {

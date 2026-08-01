@@ -5,9 +5,11 @@
 
 import { expect } from 'chai';
 import {
+    agentHasCliOAuthLogin,
     detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
+    localizeAgentSettingsApiKeyLoginMessage,
     resolveAgentLoginCliCommand,
 } from './qaap-agent-auth-login';
 import { detectAgentFailureKind, resolveAgentTurnFailureMessage } from './qaap-agent-failure-message';
@@ -58,6 +60,30 @@ describe('qaap-agent-auth-login', () => {
         expect(resolveAgentLoginCliCommand('claude')).to.equal('claude auth login');
         expect(resolveAgentLoginCliCommand('cursor')).to.equal('cursor-agent login');
         expect(resolveAgentLoginCliCommand('qaiq')).to.equal(undefined);
+    });
+
+    it('agentHasCliOAuthLogin is true only for CLI OAuth agents, false for BYOK/Settings', () => {
+        // Agents with a real terminal sign-in — the proactive login entry appears.
+        expect(agentHasCliOAuthLogin('codex')).to.equal(true);
+        expect(agentHasCliOAuthLogin('claude')).to.equal(true);
+        expect(agentHasCliOAuthLogin('cursor')).to.equal(true);
+        expect(agentHasCliOAuthLogin('copilot')).to.equal(true);
+        // BYOK / Settings-catalog agents — no terminal sign-in, no proactive entry.
+        expect(agentHasCliOAuthLogin('qaiq')).to.equal(false);
+        expect(agentHasCliOAuthLogin('grok')).to.equal(false);
+        expect(agentHasCliOAuthLogin('opencode')).to.equal(false);
+        expect(agentHasCliOAuthLogin(undefined)).to.equal(false);
+        expect(agentHasCliOAuthLogin('')).to.equal(false);
+    });
+
+    it('localizeAgentSettingsApiKeyLoginMessage points BYOK agents to the Settings API key', () => {
+        const named = localizeAgentSettingsApiKeyLoginMessage('QAIQ');
+        expect(named).to.match(/QAIQ/);
+        expect(named).to.match(/API key/i);
+        expect(named).to.match(/Settings/i);
+        const generic = localizeAgentSettingsApiKeyLoginMessage();
+        expect(generic).to.match(/API key/i);
+        expect(generic).to.match(/Settings/i);
     });
 
     it('resolveAgentTurnFailureMessage uses session-login copy for OAuth expiry', () => {

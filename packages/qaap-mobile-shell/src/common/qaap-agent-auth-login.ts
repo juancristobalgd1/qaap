@@ -216,3 +216,32 @@ export function isAgentSessionAuthFailure(log: string | undefined): boolean {
     return detectAgentAuthFailureMode(log) === 'session'
         || !!extractAgentAuthLoginChallenge(log)?.url;
 }
+
+/**
+ * True when the agent authenticates through a real CLI OAuth / device-code login
+ * (a terminal sign-in flow), as opposed to a BYOK / Settings API-key agent.
+ * Mirrors {@link resolveAgentLoginCliCommand}: an agent has a terminal sign-in
+ * exactly when a dedicated login command exists for it.
+ */
+export function agentHasCliOAuthLogin(agentId: string | undefined): boolean {
+    return resolveAgentLoginCliCommand(agentId) !== undefined;
+}
+
+/**
+ * User-facing copy for BYOK / Settings-catalog agents that do NOT have a terminal
+ * sign-in: they authenticate with an API key configured in Settings, so opening a
+ * TUI would not log anyone in.
+ */
+export function localizeAgentSettingsApiKeyLoginMessage(agentLabel?: string): string {
+    if (agentLabel) {
+        return nls.localize(
+            'qaap/agentLogin/settingsApiKeyNamed',
+            '{0} signs in with an API key in Settings, not a terminal login. Add or update the key in Settings, then retry.',
+            agentLabel,
+        );
+    }
+    return nls.localize(
+        'qaap/agentLogin/settingsApiKey',
+        'This agent signs in with an API key in Settings, not a terminal login. Add or update the key in Settings, then retry.',
+    );
+}

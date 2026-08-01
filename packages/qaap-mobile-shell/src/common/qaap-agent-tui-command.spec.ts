@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveInteractiveAgentCliBin } from './qaap-agent-tui-command';
+import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from './qaap-agent-tui-command';
 
 describe('resolveInteractiveAgentCliBin', () => {
     it('maps composer agents to interactive TUI binaries', () => {
@@ -22,5 +22,32 @@ describe('resolveInteractiveAgentCliBin', () => {
         expect(resolveInteractiveAgentCliBin(undefined)).to.equal(undefined);
         expect(resolveInteractiveAgentCliBin('')).to.equal(undefined);
         expect(resolveInteractiveAgentCliBin('not-an-agent')).to.equal(undefined);
+    });
+});
+
+describe('resolveInteractiveAgentLoginCommand', () => {
+    it('returns the real CLI login command for OAuth agents', () => {
+        expect(resolveInteractiveAgentLoginCommand('codex')).to.equal('codex login --device-auth');
+        expect(resolveInteractiveAgentLoginCommand('claude')).to.equal('claude auth login');
+        expect(resolveInteractiveAgentLoginCommand('cursor')).to.equal('cursor-agent login');
+        expect(resolveInteractiveAgentLoginCommand('copilot')).to.equal('gh auth login');
+    });
+
+    it('does NOT fall back to the bare interactive binary for BYOK/Settings agents', () => {
+        // Regression guard: launching the bare TUI never signs anyone in, so login
+        // intent must resolve to undefined (the UI then points to Settings).
+        expect(resolveInteractiveAgentLoginCommand('qaiq')).to.equal(undefined);
+        expect(resolveInteractiveAgentLoginCommand('grok')).to.equal(undefined);
+        expect(resolveInteractiveAgentLoginCommand('opencode')).to.equal(undefined);
+        // The bare interactive binary still exists for these agents — proving the
+        // login path deliberately declines it rather than there being no binary.
+        expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
+        expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
+    });
+
+    it('returns undefined for unknown or empty ids', () => {
+        expect(resolveInteractiveAgentLoginCommand(undefined)).to.equal(undefined);
+        expect(resolveInteractiveAgentLoginCommand('')).to.equal(undefined);
+        expect(resolveInteractiveAgentLoginCommand('not-an-agent')).to.equal(undefined);
     });
 });

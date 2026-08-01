@@ -31,9 +31,14 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
 
 /**
  * Text to send into the transcript terminal to start CLI session login
- * (device-auth / OAuth), matching the agent TUI login flow. Falls back to the
- * interactive binary when the agent has no dedicated login subcommand.
+ * (device-auth / OAuth), matching the agent TUI login flow.
+ *
+ * Returns `undefined` for BYOK / Settings-catalog agents (qaiq and any agent
+ * without a dedicated login subcommand). We deliberately do NOT fall back to the
+ * bare interactive binary: launching the agent TUI does not sign anyone in and
+ * only confuses the user. The caller should instead surface a "configure the API
+ * key in Settings" affordance (see {@link agentHasCliOAuthLogin}).
  */
 export function resolveInteractiveAgentLoginCommand(agentId: string | undefined): string | undefined {
-    return resolveAgentLoginCliCommand(agentId) ?? resolveInteractiveAgentCliBin(agentId);
+    return resolveAgentLoginCliCommand(agentId);
 }

@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatMode } from '@theia/ai-chat';
+import { agentHasCliOAuthLogin } from '../common/qaap-agent-auth-login';
 import {
     agentSupportsModelPicker,
     agentUsesSettingsModelCatalog,
@@ -132,6 +133,7 @@ export interface MobileProjectsStickyComposerSheetsHost {
     stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
     stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
     closeTranscriptComposerSheets(): void;
+    openAgentSignInTerminal?(agentId?: string): void | Promise<void>;
     agentsHubShellActive?: boolean;
     submitExternalComposerPrompt?(
         draft: string,
@@ -399,6 +401,12 @@ export class MobileProjectsStickyComposerSheetsUi {
                     this.closeAllComposerSheets();
                     this.host.stickyComposerRenderUi.renderStickyComposer();
                 },
+                onProactiveLogin: this.host.openAgentSignInTerminal
+                    ? agentId => {
+                        this.closeAllComposerSheets();
+                        void this.host.openAgentSignInTerminal?.(agentId);
+                    }
+                    : undefined,
                 });
             }).catch(() => {
                 if (this.host.stickyComposerAgentSheet === chrome.sheet) {
@@ -1034,6 +1042,13 @@ export class MobileProjectsStickyComposerSheetsUi {
             readonly agentsTitle?: string;
             readonly agentsIntro?: string;
             readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
+            /**
+             * When set, agents with a real CLI OAuth login get a proactive
+             * "Sign in with <agent>" row so the user can authenticate without
+             * first running a task that fails. Omitted for one-shot pickers
+             * (e.g. Generate UI variant) where no transcript is open.
+             */
+            readonly onProactiveLogin?: (agentId: string) => void;
         },
     ): Promise<void> {
         const renderGeneration = Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1;
@@ -1229,6 +1244,9 @@ export class MobileProjectsStickyComposerSheetsUi {
                     });
                 },
             }));
+            if (options.onProactiveLogin && agentHasCliOAuthLogin(agentId)) {
+                content.append(this.createProactiveLoginRow(label, () => options.onProactiveLogin!(agentId)));
+            }
         };
 
         for (const entry of searchResults.directAgents) {
@@ -1287,6 +1305,36 @@ export class MobileProjectsStickyComposerSheetsUi {
         );
         wireSearchKeyboard(resultButtons.length === 1 ? resultButtons[0] : undefined);
         window.requestAnimationFrame(() => this.syncAgentPickerPopoverPosition(chrome.sheet));
+    }
+    /**
+     * Secondary "Sign in with <agent>" row shown under a CLI-OAuth agent in the
+     * composer agent picker, so login is reachable without a failed task first.
+     */
+    protected createProactiveLoginRow(agentLabel: string, onSelect: () => void): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-agent-sheet-login-option';
+        const content = document.createElement('span');
+        content.className = 'theia-mobile-sticky-composer-sheet-option-content';
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-sign-in theia-qaap-agent-sheet-login-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        content.append(icon);
+        const labelEl = document.createElement('span');
+        labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
+        labelEl.textContent = nls.localize(
+            'qaap/mobileProjects/stickyComposerSignInWithAgent',
+            'Sign in with {0}',
+            agentLabel,
+        );
+        content.append(labelEl);
+        btn.append(content);
+        btn.addEventListener('click', event => {
+            event.stopPropagation();
+            event.preventDefault();
+            onSelect();
+        });
+        return btn;
     }
     protected createAgentPickerNoResultsHint(): HTMLElement {
         const hint = document.createElement('p');

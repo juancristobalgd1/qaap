@@ -11467,6 +11467,26 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   opacity: 0.75;
 }
 
+.theia-qaap-agent-sheet-login-option {
+  min-height: 32px;
+  margin: 0 0 6px 24px;
+  padding: 4px 10px;
+  width: calc(100% - 24px);
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.theia-qaap-agent-sheet-login-option:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-qaap-agent-sheet-login-icon {
+  flex: 0 0 auto;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
 .theia-mobile-sticky-composer-sheet-loading,
 .theia-qaap-agent-sheet-empty-models,
 .theia-qaap-agent-sheet-default-hint {
