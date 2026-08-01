@@ -479,8 +479,13 @@ export class MobileProjectsBackgroundTaskUi {
                 this.host.justAddedTaskId = undefined;
                 if (preserveAgentsShell) {
                     this.host.sessionsSidebar?.refreshList();
-                } else {
-                    this.host.renderList();
+                } else if (typeof document !== 'undefined') {
+                    // The 1400ms delay only exists to drop the one-shot "just added" flash from the
+                    // new row (the `theia-mobile-projects-flash-in 1.4s` animation just ended). Strip
+                    // that class in place instead of rebuilding the entire hub list — SSE/detail ticks
+                    // already keep the list current through the incremental patcher.
+                    document.querySelectorAll('.theia-mobile-projects-task-item.theia-mod-flash')
+                        .forEach(el => el.classList.remove('theia-mod-flash'));
                 }
             }
         }, 1400);

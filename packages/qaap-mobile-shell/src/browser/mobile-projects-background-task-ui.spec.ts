@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+enableJSDOM();
+
 import { expect } from 'chai';
 import { MobileProjectsBackgroundTaskUi } from './mobile-projects-background-task-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -55,6 +59,63 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         const cwd = await ui.ensureInlineComposerCwd(mockup);
         expect(cwd).to.equal('/tmp/qaap-ui-ws-empty');
         expect(prepared.get('mockup')).to.equal('/tmp/qaap-ui-ws-empty');
+    });
+
+    it('clears the just-added flash in place after 1.4s instead of rebuilding the whole list', () => {
+        const project: MobileProjectEntry = {
+            id: 'p1', name: 'P1', color: '#000', branch: 'main', status: 'idle', task: '',
+            progress: 0, agents: [], lastActive: '', tokens: '—', cost: '—', pinned: false,
+            isCurrent: false,
+        };
+        const item = document.createElement('button');
+        item.className = 'theia-mobile-projects-task-item theia-mod-flash';
+        document.body.append(item);
+
+        let renderListCalls = 0;
+        const ui = new MobileProjectsBackgroundTaskUi({
+            projects: [project],
+            preparedCwdByProjectId: new Map(),
+            justAddedTaskId: undefined,
+            agentsHubShellActive: false,
+            projectsService: { getProjectCwd: () => '/repo' } as never,
+            delegate: { onProjectsChanged: () => undefined },
+            transcriptSheetUi: {} as never,
+            transcriptLiveUi: {} as never,
+            shouldUseAgentsHubLanding: () => false,
+            renderSubtitle: () => undefined,
+            renderList: () => { renderListCalls++; },
+            seedTranscriptOptimisticSubmit: () => undefined,
+            syncWorkHubProjectSkillRoots: () => undefined,
+        } as never);
+
+        const realSetTimeout = window.setTimeout;
+        let deferred: (() => void) | undefined;
+        window.setTimeout = ((handler: TimerHandler) => {
+            if (typeof handler === 'function') {
+                deferred = handler as () => void;
+            }
+            return 1 as unknown as number;
+        }) as typeof setTimeout;
+
+        try {
+            (ui as unknown as {
+                applyTaskStartedToProject: (cwd: string, title: string, taskId: string) => void;
+            }).applyTaskStartedToProject('/repo', 'New task', 'task-1');
+
+            // Initial paint is a single full render; the flash is still on.
+            expect(renderListCalls).to.equal(1);
+            expect((ui as unknown as { host: { justAddedTaskId?: string } }).host.justAddedTaskId).to.equal('task-1');
+            expect(item.classList.contains('theia-mod-flash')).to.equal(true);
+
+            // The 1.4s cleanup strips the flash class WITHOUT a second full render.
+            deferred?.();
+            expect(item.classList.contains('theia-mod-flash')).to.equal(false);
+            expect(renderListCalls).to.equal(1);
+            expect((ui as unknown as { host: { justAddedTaskId?: string } }).host.justAddedTaskId).to.equal(undefined);
+        } finally {
+            window.setTimeout = realSetTimeout;
+            item.remove();
+        }
     });
 
     it('auto-enables worktree when another conversation is streaming in the same cwd', () => {
