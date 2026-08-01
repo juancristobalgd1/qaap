@@ -55,11 +55,17 @@ describe('qaap-agent-auth-login', () => {
         expect(localizeAgentAuthFailureMessage({ mode: 'session' })).to.match(/sign in/i);
     });
 
-    it('resolveAgentLoginCliCommand maps agents to TUI login commands', () => {
+    it('resolveAgentLoginCliCommand maps agents to their audited device-code login command', () => {
+        // Verified against the installed CLIs (Aug 2026): device-code where the CLI offers one.
         expect(resolveAgentLoginCliCommand('codex')).to.equal('codex login --device-auth');
         expect(resolveAgentLoginCliCommand('claude')).to.equal('claude auth login');
+        expect(resolveAgentLoginCliCommand('grok')).to.equal('grok login --device-auth');
+        expect(resolveAgentLoginCliCommand('copilot')).to.equal('gh auth login --web');
         expect(resolveAgentLoginCliCommand('cursor')).to.equal('cursor-agent login');
+        // BYOK / no login subcommand — routed to Settings, never a bare TUI.
         expect(resolveAgentLoginCliCommand('qaiq')).to.equal(undefined);
+        expect(resolveAgentLoginCliCommand('antigravity')).to.equal(undefined);
+        expect(resolveAgentLoginCliCommand('opencode')).to.equal(undefined);
     });
 
     it('agentHasCliOAuthLogin is true only for CLI OAuth agents, false for BYOK/Settings', () => {
@@ -68,10 +74,13 @@ describe('qaap-agent-auth-login', () => {
         expect(agentHasCliOAuthLogin('claude')).to.equal(true);
         expect(agentHasCliOAuthLogin('cursor')).to.equal(true);
         expect(agentHasCliOAuthLogin('copilot')).to.equal(true);
+        // grok has a real device-code login — corrected from BYOK after auditing its CLI.
+        expect(agentHasCliOAuthLogin('grok')).to.equal(true);
         // BYOK / Settings-catalog agents — no terminal sign-in, no proactive entry.
         expect(agentHasCliOAuthLogin('qaiq')).to.equal(false);
-        expect(agentHasCliOAuthLogin('grok')).to.equal(false);
         expect(agentHasCliOAuthLogin('opencode')).to.equal(false);
+        // antigravity's `agy` only launches the TUI — no login, so BYOK.
+        expect(agentHasCliOAuthLogin('antigravity')).to.equal(false);
         expect(agentHasCliOAuthLogin(undefined)).to.equal(false);
         expect(agentHasCliOAuthLogin('')).to.equal(false);
     });

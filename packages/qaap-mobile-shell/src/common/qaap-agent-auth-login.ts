@@ -191,21 +191,34 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
     if (!normalized) {
         return undefined;
     }
+    // Commands audited against the installed CLIs (Aug 2026, `<bin> login --help`). In a headless
+    // cloud workspace the classic OAuth redirect-to-localhost cannot complete — the callback lands
+    // on the user's machine, not the server — so only device-code / paste flows work. Prefer the
+    // device-code flag wherever the CLI offers one.
     switch (normalized) {
         case 'codex':
             return 'codex login --device-auth';
         case 'claude':
+            // Claude Code's own login is device/console paste; no flag needed.
             return 'claude auth login';
-        case 'cursor':
-            return 'cursor-agent login';
+        case 'grok':
+            // grok login --device-auth: "device-code authentication for headless/remote
+            // environments" (its own help). Works in cloud; previously misfiled as BYOK.
+            return 'grok login --device-auth';
         case 'copilot':
-            return 'gh auth login';
-        case 'gemini':
-        case 'antigravity':
-            return 'agy';
+            // gh's default is a browser redirect; --web prints the one-time device code, the only
+            // headless-viable path here.
+            return 'gh auth login --web';
+        case 'cursor':
+            // cursor-agent login only opens a local browser (redirect-to-localhost), so it
+            // completes on a desktop but not on a headless VPS. Kept because it is a real login for
+            // local use; the cloud case needs the OAuth-callback proxy, not a different flag.
+            return 'cursor-agent login';
         case QAIQ_AGENT_ID:
             // QAIQ is BYOK / Settings — no CLI OAuth login command.
             return undefined;
+        // gemini / antigravity (`agy`) expose no login subcommand — `agy` just launches the TUI,
+        // which is the dead end users hit. Treat them as BYOK so the UI points to Settings instead.
         default:
             return undefined;
     }
