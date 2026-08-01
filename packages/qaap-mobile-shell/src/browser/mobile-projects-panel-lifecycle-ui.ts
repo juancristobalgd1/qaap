@@ -103,6 +103,7 @@ export interface MobileProjectsPanelLifecycleHost {
     isAgentsHubExecutionSurfaceReady(): boolean;
     ensureAgentsHubExecutionShellRendered(): void;
     refreshWorkHubConversationChrome(): void;
+    patchWorkHubConversationRowInPlace(conversationId: string): void;
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[];
     updateTasksAttentionChrome(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
@@ -356,6 +357,16 @@ export class MobileProjectsPanelLifecycleUi {
                         if (this.host.shouldSkipFullRenderListOnConversationTick()
                             || previewOnlyDelta) {
                             this.host.refreshWorkHubConversationChrome();
+                            // A preview-only tick still advances the streaming card's progress ring and
+                            // activity label. When the inbox is actually on screen (no transcript
+                            // covering it), patch just that one row in place instead of leaving it
+                            // frozen until a non-preview tick arrives — the minimal DOM touch for the
+                            // change. Skipped when a transcript is open, since the rows are hidden.
+                            if (previewOnlyDelta
+                                && change.conversationId
+                                && !this.host.shouldSkipFullRenderListOnConversationTick()) {
+                                this.host.patchWorkHubConversationRowInPlace(change.conversationId);
+                            }
                             this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
                             return;
                         }

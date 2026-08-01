@@ -169,6 +169,63 @@ describe('MobileProjectsHubIncrementalUi', () => {
         scroll.remove();
     });
 
+    it('patchConversationRowInPlace patches one row and stamps its fingerprint', () => {
+        const scroll = document.createElement('div');
+        const section = document.createElement('section');
+        section.className = 'theia-mobile-projects-chats-project-group';
+        section.dataset.qaapProjectId = 'p1';
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-projects-chats-list';
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-projects-task-row';
+        row.setAttribute(QAAP_INBOX_ROW_ID_ATTR, 'conv-a');
+        row.setAttribute(QAAP_INBOX_ROW_FP_ATTR, 'stale');
+        list.append(row);
+        section.append(list);
+        scroll.append(section);
+        document.body.append(scroll);
+
+        let patchCalls = 0;
+        const ui = new MobileProjectsHubIncrementalUi({
+            query: '',
+            scroll,
+            transcriptOpenSummaryId: undefined,
+            justAddedTaskId: undefined,
+            projectsForCurrentHubList: () => [{ id: 'p1' } as never],
+            conversationIndexUi: {
+                summaryToTaskView: (s: { id: string; status: string }) => ({
+                    id: s.id, title: 'A', state: s.status === 'streaming' ? 'running' : 'idle',
+                }),
+                isConversationUnread: () => false,
+            } as never,
+            projectRowsUi: {
+                patchWorkHubTaskRow: () => { patchCalls++; return true; },
+            } as never,
+        } as never);
+
+        const patched = ui.patchConversationRowInPlace({
+            id: 'conv-a', title: 'A', status: 'streaming', createdAt: 1, updatedAt: 5,
+            messageCount: 2, turnProgressCurrent: 2, turnProgressTotal: 4, agentId: 'qaiq', cwd: '/repo',
+        } as never);
+
+        expect(patched).to.equal(true);
+        expect(patchCalls).to.equal(1);
+        expect(row.getAttribute(QAAP_INBOX_ROW_FP_ATTR)).to.not.equal('stale');
+
+        scroll.remove();
+    });
+
+    it('patchConversationRowInPlace bails safely when the row is not on screen', () => {
+        const scroll = document.createElement('div');
+        document.body.append(scroll);
+        const ui = new MobileProjectsHubIncrementalUi({
+            query: '', scroll, transcriptOpenSummaryId: undefined, justAddedTaskId: undefined,
+            projectsForCurrentHubList: () => [], conversationIndexUi: {} as never, projectRowsUi: {} as never,
+        } as never);
+        expect(ui.patchConversationRowInPlace({ id: 'missing', cwd: '/repo' } as never)).to.equal(false);
+        scroll.remove();
+    });
+
     it('patches embedded team rows without rebuilding the tasks hub root', () => {
         const scroll = document.createElement('div');
         const root = document.createElement('div');

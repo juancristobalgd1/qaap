@@ -3220,6 +3220,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agentsHubInlineUi.refreshWorkHubConversationChrome();
     }
 
+    /** Patch just the one inbox row for a preview-only tick, keeping its progress ring/activity live. */
+    protected patchWorkHubConversationRowInPlace(conversationId: string): void {
+        const summary = this.conversations?.threadStore.getSummary(conversationId);
+        if (summary) {
+            this.hubIncrementalUi.patchConversationRowInPlace(summary);
+        }
+    }
+
     protected resolveAgentsHubShellProject(): MobileProjectEntry | undefined {
         return this.agentsHubInlineUi.resolveAgentsHubShellProject();
     }

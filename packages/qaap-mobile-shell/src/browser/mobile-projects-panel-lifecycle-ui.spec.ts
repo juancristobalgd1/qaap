@@ -19,14 +19,17 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
         renderListCalls: number;
         scheduleRenderListCalls: number;
         refreshChromeCalls: number;
+        patchRowCalls: number;
     } {
         const renderListCalls = { value: 0 };
         const scheduleRenderListCalls = { value: 0 };
         const refreshChromeCalls = { value: 0 };
+        const patchRowCalls = { value: 0 };
         const host: MobileProjectsPanelLifecycleHost & {
             renderListCalls: number;
             scheduleRenderListCalls: number;
             refreshChromeCalls: number;
+            patchRowCalls: number;
         } = {
             visible: true,
             homeMode: true,
@@ -104,6 +107,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             isAgentsHubExecutionSurfaceReady: () => true,
             ensureAgentsHubExecutionShellRendered: () => undefined,
             refreshWorkHubConversationChrome: () => { refreshChromeCalls.value++; },
+            patchWorkHubConversationRowInPlace: () => { patchRowCalls.value++; },
             mergeInboxPullRequests: polled => polled,
             updateTasksAttentionChrome: () => undefined,
             cardMenuUi: { closeCardMenu: () => undefined } as MobileProjectsPanelLifecycleHost['cardMenuUi'],
@@ -111,6 +115,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             get renderListCalls() { return renderListCalls.value; },
             get scheduleRenderListCalls() { return scheduleRenderListCalls.value; },
             get refreshChromeCalls() { return refreshChromeCalls.value; },
+            get patchRowCalls() { return patchRowCalls.value; },
             ...overrides,
         };
         return host;
@@ -140,6 +145,64 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
         expect(host.scheduleRenderListCalls).to.equal(3);
         expect(host.renderListCalls).to.equal(0);
         expect(host.refreshChromeCalls).to.equal(0);
+    });
+
+    it('patches only the affected row on a preview-only tick instead of rebuilding the list', () => {
+        const onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
+        const host = createHost({
+            conversations: {
+                warmLiveTransport: () => undefined,
+                onDidChange: Event.None,
+                onDidChangeDetail: onDidChangeDetailEmitter.event,
+                onDidReceiveMessage: Event.None,
+                onDidReceiveParallelRun: Event.None,
+                onDidReceiveTransportActivity: Event.None,
+                onDidReconnectTransport: Event.None,
+            } as MobileProjectsPanelLifecycleHost['conversations'],
+        });
+        const ui = new MobileProjectsPanelLifecycleUi(host);
+        ui.subscribeToActiveTasks();
+
+        // turnProgress/activityLabel are preview-only fields → single-row patch, no list rebuild.
+        onDidChangeDetailEmitter.fire({
+            kind: 'message_delta',
+            conversationId: 'c1',
+            cwd: '/repo',
+            changedFields: ['turnProgress', 'updatedAt'],
+        });
+
+        expect(host.patchRowCalls).to.equal(1);
+        expect(host.refreshChromeCalls).to.equal(1);
+        expect(host.scheduleRenderListCalls).to.equal(0);
+        expect(host.renderListCalls).to.equal(0);
+    });
+
+    it('does not patch inbox rows on a preview-only tick while a transcript covers them', () => {
+        const onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
+        const host = createHost({
+            shouldSkipFullRenderListOnConversationTick: () => true,
+            conversations: {
+                warmLiveTransport: () => undefined,
+                onDidChange: Event.None,
+                onDidChangeDetail: onDidChangeDetailEmitter.event,
+                onDidReceiveMessage: Event.None,
+                onDidReceiveParallelRun: Event.None,
+                onDidReceiveTransportActivity: Event.None,
+                onDidReconnectTransport: Event.None,
+            } as MobileProjectsPanelLifecycleHost['conversations'],
+        });
+        const ui = new MobileProjectsPanelLifecycleUi(host);
+        ui.subscribeToActiveTasks();
+
+        onDidChangeDetailEmitter.fire({
+            kind: 'message_delta',
+            conversationId: 'c1',
+            cwd: '/repo',
+            changedFields: ['turnProgress'],
+        });
+
+        expect(host.patchRowCalls).to.equal(0);
+        expect(host.refreshChromeCalls).to.equal(1);
     });
 
     it('refreshes chrome instead of scheduling hub list rebuild while transcript is open', () => {

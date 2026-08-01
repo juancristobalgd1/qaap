@@ -239,6 +239,49 @@ export class MobileProjectsHubIncrementalUi {
         return true;
     }
 
+    /**
+     * Patch a SINGLE inbox row in place from a fresh summary — used on high-frequency preview-only
+     * ticks (turn progress / activity) so the streaming card's progress ring and activity label keep
+     * advancing without running the whole structure sweep or a list rebuild. Returns false (and does
+     * nothing) whenever anything is missing or the patch can't apply, so the caller safely falls back
+     * to the current chrome-only behaviour.
+     */
+    patchConversationRowInPlace(
+        summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,
+    ): boolean {
+        const row = this.host.scroll.querySelector<HTMLElement>(
+            `.theia-mobile-projects-task-row[${QAAP_INBOX_ROW_ID_ATTR}="${cssEscape(summary.id)}"]`,
+        );
+        if (!row) {
+            return false;
+        }
+        const projectId = row.closest<HTMLElement>('.theia-mobile-projects-chats-project-group')?.dataset.qaapProjectId;
+        const project = projectId
+            ? this.host.projectsForCurrentHubList().find(candidate => candidate.id === projectId)
+            : undefined;
+        if (!project) {
+            return false;
+        }
+        const task = this.host.conversationIndexUi.summaryToTaskView(summary);
+        const unread = this.host.conversationIndexUi.isConversationUnread(summary);
+        const isCurrent = this.host.transcriptOpenSummaryId === summary.id;
+        const visualStatusId = resolveQaapAgentTaskVisualStatus(task, summary, unread).id;
+        const nextFingerprint = buildWorkHubInboxRowFingerprintFromSummary(summary, {
+            rowKey: summary.id,
+            visualStatusId,
+            unread,
+            isCurrent,
+        });
+        if (row.getAttribute(QAAP_INBOX_ROW_FP_ATTR) === nextFingerprint) {
+            return true;
+        }
+        if (this.host.projectRowsUi.patchWorkHubTaskRow(row, project, task, summary, { isCurrent })) {
+            row.setAttribute(QAAP_INBOX_ROW_FP_ATTR, nextFingerprint);
+            return true;
+        }
+        return false;
+    }
+
     tryPatchTeamSection(teamRoot: HTMLElement): boolean {
         const { members, filteredApprovals } = this.host.getFilteredTeamHubState();
         return this.host.ensureOverlayUi().teamHub.patchSections(teamRoot, members, {
