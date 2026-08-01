@@ -99,6 +99,8 @@ import { QaapLobehubThinkingRenderer } from './qaap-lobehub-thinking-renderer';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { QaapTerminalFrontendContribution } from './qaap-terminal-frontend-contribution';
+import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
+import { createQaapXtermLinkFactory } from './qaap-xterm-link-adapter';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapComposerEditorContextContribution } from './qaap-composer-editor-context-contribution';
@@ -188,6 +190,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(QaapDesktopTerminalLayoutContribution);
     bind(QaapTerminalFrontendContribution).toSelf().inSingletonScope();
     rebind(TerminalFrontendContribution).toService(QaapTerminalFrontendContribution);
+    // Terminal link taps must open reliably on touch devices (Qaap is mobile-first);
+    // subclass XtermLinkAdapter via a replacement factory. Seam for packages/terminal.
+    rebind(XtermLinkFactory).toFactory(createQaapXtermLinkFactory);
     bind(MobileOnboardingTutorialContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MobileOnboardingTutorialContribution);
     bind(CommandContribution).toService(MobileOnboardingTutorialContribution);
