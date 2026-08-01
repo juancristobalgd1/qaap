@@ -85,6 +85,13 @@ export interface QaapAgentMessage {
     /** Original user turn that owns this backend-generated auto-continuation chain. */
     readonly autoContinueRootMessageId?: string;
     /**
+     * How many times this turn has been auto-resumed after a backend restart (OOM/redeploy). Held
+     * on the root user message and persisted so the ceiling survives further restarts: a turn whose
+     * own work is what saturated memory cannot loop restart→resume→OOM forever. See
+     * {@code maybeAutoResumeInterruptedTurn}.
+     */
+    readonly restartResumeCount?: number;
+    /**
      * Set on an agent message: the user message whose run produced it. An agent message is
      * created lazily on its run's first output and appended at the end of the array, so with
      * several runs sharing one session the array order alone (`[userA, userB, agentA, agentB]`)

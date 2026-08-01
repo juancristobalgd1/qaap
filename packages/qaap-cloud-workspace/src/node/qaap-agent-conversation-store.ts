@@ -196,6 +196,23 @@ const TURN_WATCHDOG_SWEEP_MS = 60 * 1000;
 const QAAP_AGENT_AUTO_CONTINUE_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_AUTO_CONTINUE?.trim() ?? '');
 
 /**
+ * Auto-resume a turn that a backend restart (OOM-kill / redeploy) interrupted, instead of only
+ * marking it failed with a manual "Retry to continue". Default ON; set QAAP_AUTO_RESUME_TURNS to
+ * 0/false/off to disable during an incident without a redeploy.
+ */
+const QAAP_AUTO_RESUME_TURNS_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AUTO_RESUME_TURNS?.trim() ?? '');
+
+/**
+ * Max auto-resumes per human-authored turn across ALL restarts. 1 bounds the worst case (a turn
+ * whose own work is what OOMs the container) to a single extra restart cycle before it degrades to
+ * the manual retry. Override with QAAP_MAX_RESTART_RESUMES.
+ */
+const MAX_RESTART_RESUMES = (() => {
+    const parsed = Number.parseInt(process.env.QAAP_MAX_RESTART_RESUMES?.trim() ?? '', 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+})();
+
+/**
  * Hard ceiling on agent re-spawns triggered by ALL loops (auto-continue + model-fallback) for a
  * single user message. Each loop has its own smaller cap, but without a shared budget they multiply
  * (2 auto-continues × N fallback models), so one turn could fan out into many CLI invocations. 4
@@ -3218,8 +3235,17 @@ export class QaapAgentConversationStore {
                     anyChanged = true;
                 }
             }
-            const sweptAny = this.sweepZombieStreamingTurns(Date.now(), { resetSurvivorsToIdle: true });
-            if (anyChanged || sweptAny) {
+            const now = Date.now();
+            // First try to auto-resume turns the restart interrupted (bounded, persisted counter).
+            // A turn that resumes gets a live task, so the sweep below skips it (getActiveTaskIds guard).
+            let resumedAny = false;
+            for (const conv of [...this.conversations.values()]) {
+                if (conv.status === 'streaming' && await this.maybeAutoResumeInterruptedTurn(conv.id, now)) {
+                    resumedAny = true;
+                }
+            }
+            const sweptAny = this.sweepZombieStreamingTurns(now, { resetSurvivorsToIdle: true });
+            if (anyChanged || resumedAny || sweptAny) {
                 await this.persist();
             }
         } catch {
@@ -3288,6 +3314,12 @@ export class QaapAgentConversationStore {
                     changed = true;
                 }
             } else if (options?.resetSurvivorsToIdle) {
+                // A turn auto-resumed earlier in the same restore now owns a live task, so it is no
+                // longer a zombie — leave it running instead of interrupting it. (taskToConversation
+                // starts empty on boot, so only just-resumed turns have an entry here.)
+                if (this.getActiveTaskIdsForConversation(turn.conversationId).length > 0) {
+                    continue;
+                }
                 if (this.interruptStreamingTurnForRestart(turn.conversationId, nowMs)) {
                     changed = true;
                 }
@@ -3354,6 +3386,101 @@ export class QaapAgentConversationStore {
      * user's message and no agent reply — mark it failed with a visible interrupted trace so
      * the turn is clearly ended and can be retried.
      */
+    /**
+     * A turn that a backend restart (OOM-kill / redeploy) interrupted cannot settle on its own — the
+     * child agent died with the container's cgroup and no PID is persisted to reattach. Rather than
+     * forcing the user to press "Retry", re-run the same turn automatically by reconstructing its
+     * request (same agent + model) exactly like {@link maybeRetryTurnWithFallbackModel}, letting the
+     * task-runner's concurrency queue pace the re-spawns. Bounded by a PERSISTED per-turn counter so
+     * a turn whose own work saturates memory cannot loop restart→resume→OOM forever.
+     *
+     * Returns `true` when it handled the turn (resumed, or degraded to interrupted on a spawn error);
+     * `false` leaves the turn for {@link interruptStreamingTurnForRestart}.
+     */
+    protected async maybeAutoResumeInterruptedTurn(conversationId: string, nowMs: number): Promise<boolean> {
+        if (!QAAP_AUTO_RESUME_TURNS_ENABLED || MAX_RESTART_RESUMES <= 0) {
+            return false;
+        }
+        const conv = this.conversations.get(conversationId);
+        if (!conv || conv.status !== 'streaming') {
+            return false;
+        }
+        // A turn deliberately paused on a human decision (plan/ask mode, request-approval /
+        // manual-approve) must NOT be relaunched as an autonomous run — that would execute the very
+        // tool the user was about to approve or reject. Same guard as maybeAutoContinueIncompleteTurn.
+        if (!autoContinueAllowedForInteraction(conv)) {
+            return false;
+        }
+        const turnUserMessage = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId)
+            ?? [...conv.messages].reverse().find(message => message.role === 'user');
+        const turnAgentId = turnUserMessage?.turnAgentId ?? conv.agentId;
+        if (!turnUserMessage || !turnAgentId) {
+            return false;
+        }
+        const userMessageId = turnUserMessage.id;
+        // Charge the counter to the human-authored root so an auto-continue chain shares one budget.
+        const rootUserMessageId = this.resolveLoopBudgetKey(conv, userMessageId);
+        const rootUserMessage = conv.messages.find(message => message.id === rootUserMessageId && message.role === 'user')
+            ?? turnUserMessage;
+        if ((rootUserMessage.restartResumeCount ?? 0) >= MAX_RESTART_RESUMES) {
+            return false;
+        }
+        const nextResumeCount = (rootUserMessage.restartResumeCount ?? 0) + 1;
+        const lastMessage = conv.messages[conv.messages.length - 1];
+        const agentMessageId = lastMessage?.role === 'agent' ? lastMessage.id : undefined;
+        // Drop the orphaned partial agent output (the CLI is stateless; context is rebuilt from the
+        // conversation), clear the dead task link, and stamp the incremented resume counter.
+        const messages = conv.messages
+            .filter(message => message.id !== agentMessageId)
+            .map(message => {
+                let next = message;
+                if (message.id === userMessageId) {
+                    next = { ...next, error: undefined, taskId: undefined };
+                }
+                if (message.id === rootUserMessageId) {
+                    next = { ...next, restartResumeCount: nextResumeCount };
+                }
+                return next;
+            });
+        const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: nowMs, messages };
+        // Persist the incremented counter BEFORE spawning. persist() is best-effort/async, so if we
+        // spawned first and the container were OOM-killed again before the counter reached disk, the
+        // next boot would read the stale lower count and resume forever. Awaiting the flush here makes
+        // progress monotonic under a hard kill: each turn resumes at most MAX_RESTART_RESUMES times
+        // across ALL restarts.
+        this.conversations.set(conversationId, resumeConv);
+        await this.persist();
+        let spawned: QaapAgentTask;
+        try {
+            spawned = this.taskRunner.create(
+                this.buildTaskCreateRequest(resumeConv, turnAgentId, undefined, userMessageId),
+                resumeConv.ownerLogin,
+            );
+        } catch {
+            // cwd gone / runner refused: degrade to the manual "Retry to continue" flow. The counter
+            // is already persisted, so this turn will not be retried automatically again.
+            this.interruptStreamingTurnForRestart(conversationId, nowMs);
+            return true;
+        }
+        const messagesWithTask = resumeConv.messages.map(message => message.id === userMessageId
+            ? { ...message, taskId: spawned.id, turnAgentId: spawned.agentId ?? turnAgentId }
+            : message);
+        const nextConv = { ...resumeConv, messages: messagesWithTask };
+        this.conversations.set(conversationId, nextConv);
+        this.taskToConversation.set(spawned.id, {
+            conversationId,
+            userMessageId,
+            turnAgentId: spawned.agentId ?? turnAgentId,
+        });
+        this.fire({ type: 'updated', conversation: toConversationSummary(nextConv) });
+        void this.persist();
+        console.warn(
+            `[qaap-agent-conversation-resume] auto-resumed conversation ${conversationId} after restart `
+            + `(attempt ${nextResumeCount}/${MAX_RESTART_RESUMES}).`,
+        );
+        return true;
+    }
+
     protected interruptStreamingTurnForRestart(conversationId: string, nowMs: number): boolean {
         const conv = this.conversations.get(conversationId);
         if (!conv || conv.status !== 'streaming') {
