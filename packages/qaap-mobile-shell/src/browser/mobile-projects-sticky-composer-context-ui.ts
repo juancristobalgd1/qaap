@@ -34,6 +34,29 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 
+/**
+ * Surfaces a failed device attachment. Logs the real error (there is no console on mobile) and shows
+ * the concrete reason in the snackbar when the upload rejected with one, instead of the opaque generic
+ * message that hid the root cause.
+ */
+function showDeviceAttachFailed(error?: unknown): void {
+    const detail = error instanceof Error ? error.message.trim() : typeof error === 'string' ? error.trim() : '';
+    if (error !== undefined) {
+        console.error('[qaap] device attachment failed', error);
+    }
+    const message = detail
+        ? nls.localize(
+            'qaap/mobileProjects/stickyComposerAttachDeviceFailedDetail',
+            'Could not attach files from this device: {0}',
+            detail,
+        )
+        : nls.localize(
+            'qaap/mobileProjects/stickyComposerAttachDeviceFailed',
+            'Could not attach files from this device.',
+        );
+    MobileSnackbar.show(message, { kind: 'warning', duration: detail ? 5000 : 2800 });
+}
+
 export interface MobileProjectsStickyComposerContextHost {
 stickyComposerContext: StickyComposerContextEntry[];
 transcriptComposerContext: StickyComposerContextEntry[];
@@ -97,7 +120,7 @@ export class MobileProjectsStickyComposerContextUi {
                 entry.displayName = undefined;
                 this.host.stickyComposerRenderUi.renderStickyComposer();
             },
-            removeOptimistic: id => {
+            removeOptimistic: (id, error) => {
                 const index = this.host.stickyComposerContext.findIndex(item => item.id === id);
                 if (index < 0) {
                     return;
@@ -105,13 +128,7 @@ export class MobileProjectsStickyComposerContextUi {
                 revokeComposerContextPreview(this.host.stickyComposerContext[index]);
                 this.host.stickyComposerContext.splice(index, 1);
                 this.host.stickyComposerRenderUi.renderStickyComposer();
-                MobileSnackbar.show(
-                    nls.localize(
-                        'qaap/mobileProjects/stickyComposerAttachDeviceFailed',
-                        'Could not attach files from this device.',
-                    ),
-                    { kind: 'warning', duration: 2800 },
-                );
+                showDeviceAttachFailed(error);
             },
         };
     }
@@ -142,7 +159,7 @@ export class MobileProjectsStickyComposerContextUi {
                 entry.displayName = undefined;
                 this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
             },
-            removeOptimistic: id => {
+            removeOptimistic: (id, error) => {
                 const index = this.host.transcriptComposerContext.findIndex(item => item.id === id);
                 if (index < 0) {
                     return;
@@ -150,13 +167,7 @@ export class MobileProjectsStickyComposerContextUi {
                 revokeComposerContextPreview(this.host.transcriptComposerContext[index]);
                 this.host.transcriptComposerContext.splice(index, 1);
                 this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-                MobileSnackbar.show(
-                    nls.localize(
-                        'qaap/mobileProjects/stickyComposerAttachDeviceFailed',
-                        'Could not attach files from this device.',
-                    ),
-                    { kind: 'warning', duration: 2800 },
-                );
+                showDeviceAttachFailed(error);
             },
         };
     }

@@ -33,7 +33,12 @@ export {
 export interface MobileComposerAttachHandlers {
     appendOptimistic(entry: StickyComposerContextEntry): void;
     finalizeOptimistic(id: string, request: AIVariableResolutionRequest): void;
-    removeOptimistic(id: string): void;
+    /**
+     * Drops a pending attachment chip. `error` carries the real upload failure (or `undefined` when the
+     * upload resolved without a request) so the surface can surface the concrete reason instead of the
+     * opaque generic message — critical on mobile, where there is no console to inspect.
+     */
+    removeOptimistic(id: string, error?: unknown): void;
     /** Inserts `/skill-name` into the sticky composer draft (Cursor-style skill slash). */
     insertComposerSkill?: (skillName: string) => void;
     /**
@@ -106,6 +111,37 @@ async function uploadDeviceImageToWorkspace(
         return undefined;
     }
     return ImageContextVariable.createPathBasedRequest(path, file.name);
+}
+
+/**
+ * Attaches a device image, preferring a workspace-file upload but falling back to an inline base64
+ * image request when the upload fails or yields nothing. On the production VPS the workspace write can
+ * be rejected (e.g. tenant-ownership 403 on a cwd outside the user's repo root); base64 keeps working
+ * because it never touches the backend filesystem. Only when the fallback itself fails do we drop the
+ * chip and surface the real error.
+ */
+async function attachImageWithInlineFallback(
+    file: File,
+    root: URI,
+    services: MobileComposerDeviceAttachServices,
+    handlers: MobileComposerAttachHandlers,
+    entryId: string,
+): Promise<void> {
+    try {
+        const request = await uploadDeviceImageToWorkspace(file, root, services.fileService, services.workspaceService);
+        if (request) {
+            handlers.finalizeOptimistic(entryId, request);
+            return;
+        }
+    } catch (error) {
+        // Swallow and try the inline fallback below; the error is only surfaced if that also fails.
+        console.warn('[qaap] workspace image upload failed, falling back to inline base64', error);
+    }
+    try {
+        handlers.finalizeOptimistic(entryId, await createImageContextFromDeviceFile(file));
+    } catch (error) {
+        handlers.removeOptimistic(entryId, error);
+    }
 }
 
 function uniqueInlineImageName(name: string): string {
@@ -242,7 +278,7 @@ export function attachDeviceImagesOptimistic(
         handlers.appendOptimistic(entry);
         void createImageContextFromDeviceFile(file)
             .then(request => handlers.finalizeOptimistic(entry.id, request))
-            .catch(() => handlers.removeOptimistic(entry.id));
+            .catch(error => handlers.removeOptimistic(entry.id, error));
     }
 }
 
@@ -266,15 +302,7 @@ export function attachDeviceFilesOptimistic(
         handlers.appendOptimistic(entry);
 
         if (isImageAttachmentFileName(file.name)) {
-            void uploadDeviceImageToWorkspace(file, root, services.fileService, services.workspaceService)
-                .then(request => {
-                    if (request) {
-                        handlers.finalizeOptimistic(entry.id, request);
-                    } else {
-                        handlers.removeOptimistic(entry.id);
-                    }
-                })
-                .catch(() => handlers.removeOptimistic(entry.id));
+            void attachImageWithInlineFallback(file, root, services, handlers, entry.id);
             continue;
         }
 
@@ -286,7 +314,7 @@ export function attachDeviceFilesOptimistic(
                     handlers.removeOptimistic(entry.id);
                 }
             })
-            .catch(() => handlers.removeOptimistic(entry.id));
+            .catch(error => handlers.removeOptimistic(entry.id, error));
     }
 }
 
