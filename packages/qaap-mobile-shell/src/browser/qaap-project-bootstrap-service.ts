@@ -1382,25 +1382,96 @@ export class QaapProjectBootstrapService {
     }
 
     /**
-     * Waits until the dev server probe succeeds, then opens preview. Falls back to opening the
-     * proxy URL anyway so the holding page can auto-retry (v0-style).
+     * Waits until the reserved claim (or a healed preferred port) is transport-ready, then opens
+     * preview. Does not open the identity holding page on a dead reserved port — that produced
+     * false "Dev server reachable" toasts while `/qaap-preview/` kept returning 503.
      */
     protected async openPrimaryPreviewWhenReady(port: number, url: string, options?: { auto?: boolean }): Promise<void> {
         if (this._previewUrl) {
             return;
         }
         ({ port, url } = this.resolvePrimaryPreviewTarget(port, url));
-        const ready = await waitForQaapDevPreviewPort(port, {
+        let ready = await waitForQaapDevPreviewPort(port, {
             maxAttempts: DEV_PREVIEW_OPEN_PROBE_ATTEMPTS,
             intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
         });
+        if (!ready) {
+            ready = await this.healPreviewClaimToListeningPort(port);
+            if (ready && this.activePreviewClaim) {
+                port = this.activePreviewClaim.port;
+                url = this.activePreviewClaim.previewUrl;
+            }
+        }
         if (this._previewUrl) {
+            return;
+        }
+        if (!ready) {
             return;
         }
         const activeUrl = this.activePreviewClaim?.port === port
             ? this.activePreviewClaim.previewUrl
             : undefined;
-        await this.openPreview(activeUrl ?? ready?.previewUrl ?? url, true, options);
+        const previewId = this.activePreviewClaim?.previewId;
+        if (previewId) {
+            const identity = await probeQaapIdentityPreview(previewId);
+            if (!identity.ready) {
+                return;
+            }
+            await this.openPreview(identity.previewUrl || activeUrl || ready.previewUrl || url, true, options);
+            return;
+        }
+        await this.openPreview(activeUrl ?? ready.previewUrl ?? url, true, options);
+    }
+
+    /**
+     * When the reserved claim port never answers but a detected/preferred port does, re-claim so
+     * the registry rebinds the same process identity before the iframe opens.
+     */
+    protected async healPreviewClaimToListeningPort(
+        deadPort: number,
+    ): Promise<Awaited<ReturnType<typeof waitForQaapDevPreviewPort>>> {
+        const candidates = [
+            this.activeDevPortHint,
+            this._lastPort,
+            this._portConflictPort,
+            ...this._forwardedPorts.map(entry => entry.port),
+        ].filter((value, index, all): value is number => (
+            typeof value === 'number'
+            && Number.isInteger(value)
+            && value > 0
+            && value !== deadPort
+            && !isReservedIdePort(value)
+            && all.indexOf(value) === index
+        ));
+        for (const candidate of candidates) {
+            // Claim first: an unclaimed listening port cannot be probed (403), but process-claim
+            // rebind adopts the preferred port when it answers on loopback.
+            await this.claimDevPreviewPort(candidate);
+            const claim = this.activePreviewClaim;
+            if (!claim || claim.port === deadPort) {
+                continue;
+            }
+            const healed = await waitForQaapDevPreviewPort(claim.port, {
+                maxAttempts: 8,
+                intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
+            });
+            if (healed?.ready) {
+                this._lastPort = claim.port;
+                return healed;
+            }
+            const identity = await probeQaapIdentityPreview(claim.previewId);
+            if (identity.ready) {
+                this._lastPort = claim.port;
+                return {
+                    ready: true,
+                    readiness: 'transport_ready',
+                    previewUrl: identity.previewUrl || claim.previewUrl,
+                    previewId: claim.previewId,
+                    port: claim.port,
+                };
+            }
+        }
+        return undefined;
     }
 
     /**

@@ -244,10 +244,33 @@ docker compose build --no-cache theia
 docker compose up -d
 ```
 
-## HTTPS (recommended for production)
+## HTTPS (required for any external user)
 
-Put **Caddy** or **nginx** in front with TLS and set `QAAP_OAUTH_PUBLIC_URL` to
-`https://ide.example.com`. Update the GitHub OAuth callback URL to match.
+`docker-compose.yml` ships a **Caddy** service on `:80`/`:443`. Theia binds only to
+`127.0.0.1:4873` on the host.
+
+Without a custom domain, use [sslip.io](https://sslip.io) for the VPS IP:
+
+```bash
+# /opt/qaap/.env
+QAAP_PUBLIC_HOST=178.105.136.93.sslip.io
+QAAP_OAUTH_PUBLIC_URL=https://178.105.136.93.sslip.io
+```
+
+Then:
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw delete allow 4873/tcp   # stop exposing raw Theia
+docker compose up -d caddy theia
+```
+
+Update the GitHub OAuth app callback to
+`https://<QAAP_PUBLIC_HOST>/qaap/oauth/github/callback`.
+
+Caddy obtains a Let’s Encrypt certificate for the sslip.io hostname automatically.
+If you later buy a real domain, point DNS at the VPS and change `QAAP_PUBLIC_HOST`.
 
 ## Hardening the agent for multi-tenant use (non-root privilege drop)
 

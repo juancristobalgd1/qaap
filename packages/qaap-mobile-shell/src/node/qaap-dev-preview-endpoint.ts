@@ -296,6 +296,26 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 });
                 return;
             }
+            // Reserved empty / dead claim, but the process bound the preferred port (common when a
+            // project hardcodes PORT while the allocator had to park on another free slot first).
+            if (preferredPort !== existing.port && await this.probeLocalDevServer(preferredPort)) {
+                const rebound = this.portRegistry.rebindPort(existing.previewId, owner, preferredPort);
+                if (rebound) {
+                    console.info('[qaap-preview] rebound process claim to listening preferred port', {
+                        previewId: rebound.previewId,
+                        ownerLogin: owner,
+                        fromPort: existing.port,
+                        port: rebound.port,
+                        processId: identity.processId,
+                    });
+                    res.status(200).json({
+                        previewId: rebound.previewId,
+                        previewUrl: this.buildIdentityPreviewUrl(req, rebound),
+                        port: rebound.port,
+                    });
+                    return;
+                }
+            }
             this.terminatePreviewProcess(existing);
             this.portRegistry.releasePreview(existing.previewId, owner);
         }

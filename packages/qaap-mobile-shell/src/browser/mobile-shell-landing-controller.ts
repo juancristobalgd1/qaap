@@ -180,8 +180,8 @@ export class MobileShellLandingController {
 
     /**
      * The user dismissed the landing — by opening a project or focusing the active workspace.
-     * Drop the landing-mode panel so the next Projects open creates a sheet variant, and lift the
-     * landing chrome lock so the bottom nav comes back.
+     * Drop a pure repos-list landing panel, but never dispose an active Agents hub shell (Work Hub
+     * is the primary surface after a workspace opens).
      */
     onLandingDismissed(): void {
         markMobileProjectsLeftLanding();
@@ -190,7 +190,11 @@ export class MobileShellLandingController {
         clearMobileProjectsHomeVisible();
         this.sessionState.landingLeftThisSession = true;
         const panel = this.host.getProjectsPanel();
-        if (panel?.isHomeMode()) {
+        const keepAgentsHub = !!panel && (
+            panel.isAgentsHubShellActive()
+            || panel.getHubView() === 'tasks'
+        );
+        if (panel?.isHomeMode() && !keepAgentsHub) {
             panel.dispose();
             if (panel.node.parentElement) {
                 panel.node.parentElement.removeChild(panel.node);
@@ -201,6 +205,29 @@ export class MobileShellLandingController {
         setMobileLandingHubListChrome(false);
         this.host.refreshProjectBootstrapFromWorkspace();
         this.host.tryBootstrapMobileAgentsChat();
+    }
+
+    /**
+     * Workspace opened while Agents Work Hub should remain the active surface: persist preference,
+     * clear landing chrome, and re-show/bootstrap the hub instead of tearing it down.
+     */
+    retainAgentsHubAfterWorkspaceOpen(): void {
+        markMobileProjectsLeftLanding();
+        markPreferAgentsSurface();
+        this.sessionState.landingLeftThisSession = true;
+        document.body.classList.remove('theia-mobile-mod-landing');
+        setMobileLandingHubListChrome(false);
+        const panel = this.host.getProjectsPanel();
+        if (panel) {
+            void panel.show({ preferredHubView: 'tasks' }).then(() => {
+                panel.ensureAgentsHubExecutionShellRendered();
+            }).catch(() => undefined);
+        }
+        this.host.refreshProjectBootstrapFromWorkspace();
+        this.host.tryBootstrapMobileAgentsChat();
+        this.host.refreshBottomBar();
+        this.host.refreshWorkbenchTopBar();
+        this.applyLandingChrome();
     }
 
     /** Hide the full-screen landing the moment the user picks a project. */

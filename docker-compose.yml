@@ -2,10 +2,11 @@
 #
 #   cp .env.docker.example .env   # set QAAP_OAUTH_PUBLIC_URL + GitHub OAuth callback
 #   docker compose up --build -d
-#   open http://localhost:4873
+#   open https://<QAAP_PUBLIC_HOST>  (Caddy) or http://127.0.0.1:4873 on the host
 #
 # Default IDE port is 4873 (not 3000) so Next/Vite dev servers can use :3000 inside the container.
 # See packages/qaap-mobile-shell/src/common/qaap-ide-port.ts (QAAP_DOCKER_IDE_PORT).
+# Theia binds to loopback only; Caddy publishes 80/443 with automatic HTTPS.
 
 services:
   theia:
@@ -28,7 +29,8 @@ services:
         OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-latest}
         COPILOT_CLI_VERSION: ${COPILOT_CLI_VERSION:-latest}
     ports:
-      - "${THEIA_PORT:-4873}:${THEIA_PORT:-4873}"
+      # Not world-reachable. Public traffic should hit Caddy on :443.
+      - "127.0.0.1:${THEIA_PORT:-4873}:${THEIA_PORT:-4873}"
     environment:
       # Theia backend runs in production mode; project bootstrap install uses
       # NODE_ENV=development / npm --include=dev so Vite/Next devDependencies are installed.
@@ -42,7 +44,8 @@ services:
       THEIA_SHELL: /bin/bash
       QAAP_GITHUB_CLIENT_ID: ${QAAP_GITHUB_CLIENT_ID:-}
       QAAP_GITHUB_CLIENT_SECRET: ${QAAP_GITHUB_CLIENT_SECRET:-}
-      # Public IDE URL, e.g. http://178.105.136.93:4873 (OAuth + dev preview /qaap-dev/<port>/)
+      # Public IDE URL (must be https://… when Caddy terminates TLS).
+      # Example: https://178.105.136.93.sslip.io
       QAAP_OAUTH_PUBLIC_URL: ${QAAP_OAUTH_PUBLIC_URL:-}
       QAAP_SKIP_AUTH: ${QAAP_SKIP_AUTH:-false}
       QAAP_VAPID_PUBLIC_KEY: ${QAAP_VAPID_PUBLIC_KEY:-}
@@ -167,6 +170,22 @@ services:
           pids: ${QAAP_THEIA_PIDS_LIMIT:-512}
 
   # Free, self-hosted web search for @qaiq — no API key, only Docker. Reachable ONLY from
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - theia
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      QAAP_PUBLIC_HOST: ${QAAP_PUBLIC_HOST:-localhost}
+      THEIA_PORT: ${THEIA_PORT:-4873}
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
   # the theia backend over the compose network (no host port published). Config + JSON-format
   # toggle live in deploy/searxng/settings.yml.
   searxng:
@@ -198,3 +217,5 @@ volumes:
   theia-workspace:
   qaap-auth-data:
   qaap-theia-user:
+  caddy_data:
+  caddy_config:

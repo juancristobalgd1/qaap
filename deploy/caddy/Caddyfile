@@ -1,0 +1,8 @@
+# Public TLS terminator for Qaap. Theia stays on the compose network / localhost.
+# Set QAAP_PUBLIC_HOST to a hostname with public DNS (sslip.io works for bare VPS IPs):
+#   QAAP_PUBLIC_HOST=178.105.136.93.sslip.io
+#   QAAP_OAUTH_PUBLIC_URL=https://178.105.136.93.sslip.io
+{$QAAP_PUBLIC_HOST:localhost} {
+	encode gzip
+	reverse_proxy theia:{$THEIA_PORT:4873}
+}

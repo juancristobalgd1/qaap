@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import {
     MobileWorkHubSessionsSidebar,
+    QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS,
     QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY,
     hasSeenSessionsSidebarDismissHint,
     markSessionsSidebarDismissHintSeen,
@@ -283,5 +284,39 @@ describe('mobile-work-hub-sessions-sidebar', () => {
 
         expect(sidebar.isVisible()).to.equal(false);
         expect(sidebar.node.classList.contains('theia-mod-visible')).to.equal(false);
+    });
+
+    it('hide always clears the sessions-sidebar body class even when embedded mode flips', () => {
+        const matchMedia = (query: string): MediaQueryList => ({
+            matches: query.includes('min-width: 768px'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        });
+        (global as { window?: Window }).window = {
+            ...(global as { window?: Window }).window,
+            matchMedia,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+
+        let embedded = false;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => { host.append(document.createElement('div')); },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+            isEmbedded: () => embedded,
+        });
+        document.body.append(sidebar.node);
+        sidebar.show();
+        expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(true);
+        embedded = true;
+        sidebar.hide();
+        expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(false);
     });
 });

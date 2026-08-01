@@ -12,6 +12,8 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { shouldPreferWorkHubAgentsLayout } from './mobile-projects-open';
 import { MobileHaptics } from './mobile-haptics';
 import { MobileSnackbar } from './mobile-snackbar';
+import { parsePreviewIdentityPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { probeQaapIdentityPreview } from './qaap-dev-preview-client';
 import {
     QaapBootstrapStateChange,
     QaapProjectBootstrapService,
@@ -126,11 +128,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                 // visual verifier after the page hydrates.
                 this.removeBanner();
                 if (state.previewUrl) {
-                    this.announce(state.phase, () =>
-                        MobileSnackbar.show(
-                            nls.localize('qaap/projectBootstrap/previewTransportReady', 'Dev server reachable'),
-                            { kind: 'success', duration: 1600 }
-                        ));
+                    void this.announceTransportReady(state.previewUrl);
                 }
                 break;
             case 'dismissed':
@@ -149,6 +147,30 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
         }
         this.lastAnnouncedPhase = phase;
         emit();
+    }
+
+    /** Only celebrate transport readiness when the identity proxy can actually reach the server. */
+    protected async announceTransportReady(previewUrl: string): Promise<void> {
+        if (this.lastAnnouncedPhase === 'running') {
+            return;
+        }
+        try {
+            const parsed = new URL(previewUrl, window.location.origin);
+            const identity = parsePreviewIdentityPath(parsed.pathname);
+            if (identity?.previewId) {
+                const probe = await probeQaapIdentityPreview(identity.previewId);
+                if (!probe.ready) {
+                    return;
+                }
+            }
+        } catch {
+            return;
+        }
+        this.announce('running', () =>
+            MobileSnackbar.show(
+                nls.localize('qaap/projectBootstrap/previewTransportReady', 'Dev server reachable'),
+                { kind: 'success', duration: 1600 }
+            ));
     }
 
     protected showBanner(state: QaapBootstrapStateChange): void {

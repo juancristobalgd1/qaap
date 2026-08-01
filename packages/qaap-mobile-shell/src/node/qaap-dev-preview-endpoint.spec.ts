@@ -668,6 +668,33 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(ep.probedPorts).to.include(8080);
         });
 
+        it('rebinds an empty process reservation onto the preferred port once it listens', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/python-app';
+            const claim = {
+                workspaceId: root,
+                projectId: root,
+                processId: 'process-python',
+            };
+            const reserved = makeRes();
+            await ep.exposeHandleClaim(claimReq(8124, claim, root), reserved);
+            expect(reserved.record.code).to.equal(200);
+            const previewId = (reserved.record.body as { previewId: string }).previewId;
+            expect((reserved.record.body as { port: number }).port).to.equal(8124);
+
+            ep.listeningPorts.add(8123);
+            const healed = makeRes();
+            await ep.exposeHandleClaim(claimReq(8123, claim, root), healed);
+            expect(healed.record.code).to.equal(200);
+            expect((healed.record.body as { previewId: string }).previewId).to.equal(previewId);
+            expect((healed.record.body as { port: number }).port).to.equal(8123);
+            expect(registry.getByPort(8124)).to.equal(undefined);
+            expect(registry.getByPort(8123)?.previewId).to.equal(previewId);
+        });
+
         it('refuses to adopt an unregistered listener through the legacy claim path', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

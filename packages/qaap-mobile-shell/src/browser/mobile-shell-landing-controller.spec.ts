@@ -118,6 +118,8 @@ describe('mobile-shell-landing-controller', () => {
         const { controller, host } = createController();
         host.panel = {
             isHomeMode: () => true,
+            isAgentsHubShellActive: () => false,
+            getHubView: () => 'repos',
             dispose: () => { host.calls.push('dispose'); },
             node: { parentElement: null } as unknown as HTMLElement,
         } as unknown as MobileProjectsPanel;
@@ -127,6 +129,48 @@ describe('mobile-shell-landing-controller', () => {
         expect(document.body.classList.contains('theia-mobile-mod-landing')).to.equal(false);
         expect(host.calls).to.include('refreshProjectBootstrapFromWorkspace');
         expect(host.calls).to.include('tryBootstrapMobileAgentsChat');
+        expect(host.calls).to.include('dispose');
+    });
+
+    it('onLandingDismissed keeps an active Agents hub panel mounted', () => {
+        const { controller, host } = createController();
+        host.panel = {
+            isHomeMode: () => true,
+            isVisible: () => true,
+            isAgentsHubShellActive: () => true,
+            getHubView: () => 'tasks',
+            dispose: () => { host.calls.push('dispose'); },
+            node: { parentElement: null } as unknown as HTMLElement,
+        } as unknown as MobileProjectsPanel;
+        controller.onLandingDismissed();
+        expect(host.calls).to.not.include('dispose');
+        expect(host.getProjectsPanel()).to.not.equal(undefined);
+        expect(storage.get(QAAP_MOBILE_PREFER_AGENTS_SURFACE_KEY)).to.equal('1');
+    });
+
+    it('retainAgentsHubAfterWorkspaceOpen re-shows the tasks hub instead of disposing it', async () => {
+        const { controller, host } = createController();
+        let shownHub: string | undefined;
+        host.panel = {
+            isHomeMode: () => true,
+            isVisible: () => true,
+            isAgentsHubShellActive: () => true,
+            getHubView: () => 'tasks',
+            show: async (opts?: { preferredHubView?: string }) => {
+                shownHub = opts?.preferredHubView;
+                host.calls.push('show');
+            },
+            ensureAgentsHubExecutionShellRendered: () => { host.calls.push('ensureAgentsHubExecutionShellRendered'); },
+            dispose: () => { host.calls.push('dispose'); },
+            node: { parentElement: null, classList: { contains: () => false } } as unknown as HTMLElement,
+        } as unknown as MobileProjectsPanel;
+        controller.retainAgentsHubAfterWorkspaceOpen();
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+        expect(shownHub).to.equal('tasks');
+        expect(host.calls).to.include('show');
+        expect(host.calls).to.include('ensureAgentsHubExecutionShellRendered');
+        expect(host.calls).to.not.include('dispose');
+        expect(host.calls).to.not.include('hideProjectsPanel');
     });
 
     it('openFirstRepoAfterAuth opens the only GitHub repo automatically', async () => {

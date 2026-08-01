@@ -1645,10 +1645,12 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         }
     }
 
-    /** Dismiss the projects sheet after clone/create/open so the IDE workspace is visible. */
+    /**
+     * After clone/create/open, keep Work Hub Agents mounted. Disposing the home panel here left
+     * an empty IDE shell (collapsed main area + hide-ide CSS) with only snackbars visible.
+     */
     protected onProjectsWorkspaceOpened(): void {
-        this.landing.onLandingDismissed();
-        this.hideProjectsPanel();
+        this.landing.retainAgentsHubAfterWorkspaceOpen();
         this.scheduleSnapAndUiRefresh();
     }
 

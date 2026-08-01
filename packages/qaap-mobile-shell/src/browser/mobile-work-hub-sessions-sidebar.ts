@@ -323,6 +323,7 @@ export class MobileWorkHubSessionsSidebar {
 
     hide(): void {
         if (!this.visible) {
+            document.body.classList.remove(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
             return;
         }
         dismissQaapAccountMenu();
@@ -335,9 +336,9 @@ export class MobileWorkHubSessionsSidebar {
         this.visible = false;
         this.root.classList.remove('theia-mod-visible');
         this.root.setAttribute('aria-hidden', 'true');
-        if (this.delegate.isEmbedded?.() !== true) {
-            document.body.classList.remove(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
-        }
+        // Always clear the body class. Embedded mode can flip after show(); leaving the class
+        // stuck hides the Work Hub composer via visibility:hidden (pointer:coarse CSS).
+        document.body.classList.remove(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
         document.removeEventListener('keydown', this.onKeyDown, true);
         window.setTimeout(() => {
             if (!this.visible) {

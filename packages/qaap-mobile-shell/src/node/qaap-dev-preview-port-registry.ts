@@ -267,6 +267,49 @@ export class QaapDevPreviewPortRegistry {
         return true;
     }
 
+    /**
+     * Moves a live claim to a different port when the reserved listener never appeared (or died)
+     * and the owner's process bound elsewhere. Refuses to steal another preview's live port.
+     */
+    rebindPort(previewId: string, ownerLogin: string, nextPort: number): QaapDevPreviewRecord | undefined {
+        const existing = this.getForOwner(previewId, ownerLogin);
+        if (!existing || !Number.isInteger(nextPort) || nextPort <= 0 || nextPort > 65535) {
+            return undefined;
+        }
+        if (existing.port === nextPort) {
+            const touched = { ...existing, touchedAt: Date.now() };
+            this.previews.set(previewId, touched);
+            this.claims.set(nextPort, { ownerLogin, at: Date.now() });
+            this.schedulePersist();
+            return touched;
+        }
+        const occupiedBy = this.previewIdByPort.get(nextPort);
+        if (occupiedBy !== undefined && occupiedBy !== previewId) {
+            return undefined;
+        }
+        const livePortOwner = this.ownerOf(nextPort);
+        if (livePortOwner !== undefined && livePortOwner !== ownerLogin) {
+            return undefined;
+        }
+        if (this.previewIdByPort.get(existing.port) === previewId) {
+            this.previewIdByPort.delete(existing.port);
+        }
+        if (this.claims.get(existing.port)?.ownerLogin === ownerLogin) {
+            this.claims.delete(existing.port);
+        }
+        const now = Date.now();
+        const rebound: QaapDevPreviewRecord = {
+            ...existing,
+            port: nextPort,
+            touchedAt: now,
+        };
+        this.previews.set(previewId, rebound);
+        this.previewIdByPort.set(nextPort, previewId);
+        this.claims.set(nextPort, { ownerLogin, at: now });
+        this.schedulePersist();
+        return rebound;
+    }
+
     getByPort(port: number): QaapDevPreviewRecord | undefined {
         const previewId = this.previewIdByPort.get(port);
         return previewId ? this.get(previewId) : undefined;
