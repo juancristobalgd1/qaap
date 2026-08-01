@@ -433,8 +433,11 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 this.expandedAgentFiles.delete(path);
             }
         }
-        if (this.files.length === 1 && this.expandedAgentFiles.size === 0) {
-            this.expandedAgentFiles.add(this.files[0].path);
+        // File diffs start expanded so the user can read changes immediately.
+        if (this.expandedAgentFiles.size === 0) {
+            for (const file of this.files) {
+                this.expandedAgentFiles.add(file.path);
+            }
         }
     }
 

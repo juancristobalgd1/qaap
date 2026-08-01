@@ -227,8 +227,10 @@ describe('qaap-transcript-turn-status', () => {
             ],
         });
         expect(resolveTranscriptEffectiveStatus(settledTurn)).to.equal('settled');
-        expect(shouldShowTranscriptLiveStatus(settledTurn)).to.equal(false);
-        expect(shouldShowTranscriptLiveStatus({ ...settledTurn, status: 'settled' })).to.equal(false);
+        // Live-status stays up for the whole backend turn — including visually settled
+        // streaming and settled/finalizing — so tokens/elapsed do not flicker.
+        expect(shouldShowTranscriptLiveStatus(settledTurn)).to.equal(true);
+        expect(shouldShowTranscriptLiveStatus({ ...settledTurn, status: 'settled' })).to.equal(true);
         expect(shouldShowTranscriptLiveStatus({ ...settledTurn, status: 'idle' })).to.equal(false);
         expect(resolveTranscriptAgentExecutionState(summary, settledTurn)).to.deep.equal({
             phase: 'finalizing',
@@ -240,7 +242,7 @@ describe('qaap-transcript-turn-status', () => {
         expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'idle' }, { ...settledTurn, status: 'idle' })).to.equal(false);
     });
 
-    it('shows live-status only while the effective turn is still streaming', () => {
+    it('shows live-status for the whole backend turn, not only while tools are unfinished', () => {
         const working = conv({
             status: 'streaming',
             messages: [
@@ -260,6 +262,21 @@ describe('qaap-transcript-turn-status', () => {
             messages: [{ id: 'u1', role: 'user', content: 'go', createdAt: 2 }],
         });
         expect(shouldShowTranscriptLiveStatus(setupOnly)).to.equal(true);
+        const betweenTools = conv({
+            status: 'streaming',
+            messages: [
+                { id: 'u1', role: 'user', content: 'go', createdAt: 2 },
+                {
+                    id: 'a1',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 3,
+                    segments: [{ type: 'tool', toolUseId: 't1', name: 'Edit', args: '{}', finished: true }],
+                },
+            ],
+        });
+        expect(isConversationTurnVisuallySettled(betweenTools)).to.equal(true);
+        expect(shouldShowTranscriptLiveStatus(betweenTools)).to.equal(true);
     });
 
     it('execution chrome is idle once the backend is idle, even with an unfinished-looking tool', () => {

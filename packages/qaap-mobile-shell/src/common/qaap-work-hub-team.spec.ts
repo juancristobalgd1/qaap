@@ -9,6 +9,7 @@ import {
     collectAgentMembers,
     countRunningTeamMembers,
     filterTeamMembersForDisplay,
+    inferAgentIdFromCommand,
 } from './qaap-work-hub-team';
 
 describe('collectAgentMembers', () => {
@@ -46,6 +47,28 @@ describe('collectAgentMembers', () => {
         });
         expect(members).to.have.length(1);
         expect(members[0].kind).to.equal('leader-task');
+    });
+
+    it('brands Antigravity from agy argv0 even when the prompt mentions QAIQ', () => {
+        const command = [
+            "agy --dangerously-skip-permissions -p '",
+            '[QAAP direct execution policy] QAIQ is a Claude Code CLI. ',
+            'Available --agent values: codex, claude, antigravity, qaiq. ',
+            "Find and fix a bug.'",
+        ].join('');
+        expect(inferAgentIdFromCommand(command)).to.equal('antigravity');
+        const members = collectAgentMembers({
+            conversations: [],
+            tasks: [{
+                id: 'agy-1',
+                title: 'Find and fix a bug',
+                command,
+                cwd: '/srv/app',
+                state: 'running',
+                createdAt: 1000,
+            }],
+        });
+        expect(members[0]?.agentId).to.equal('antigravity');
     });
 
     it('exposes command + activityLabel for VPS tasks so Working DETAIL is not a bare Working', () => {

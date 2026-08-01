@@ -152,15 +152,13 @@ export function isTranscriptAgentTailStreaming(conv: QaapAgentConversationDTO): 
 }
 
 /**
- * Mid-turn scroller-tail live-status (orb + activity + elapsed). Hide once the backend
- * leaves `streaming`, and while streaming hide as soon as the turn looks complete
- * (effective status becomes settled) — even if Stop/glow stay busy during finalizing.
+ * Mid-turn pinned live-status (orb + activity + elapsed · tokens).
+ * Stay visible for the whole backend turn (streaming + settled/finalizing).
+ * Hide only when the task ends (idle/failed) — never on "visually settled"
+ * mid-stream, or the chrome flickers between tools / while preparing the answer.
  */
 export function shouldShowTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
-    if (conv.status !== 'streaming') {
-        return false;
-    }
-    return resolveTranscriptEffectiveStatus(conv) === 'streaming';
+    return conv.status === 'streaming' || conv.status === 'settled';
 }
 
 export function conversationHasUserMessage(

@@ -270,44 +270,59 @@ function resolveTaskMemberActivityLabel(task: WorkHubTeamTaskInput): string | un
     return command.length > 80 ? `${command.slice(0, 77)}…` : command;
 }
 
-function inferAgentIdFromCommand(command: string): string {
-    if (/\bqaiq\b|\bopenclaude\b/.test(command)) {
+/**
+ * Agent brand for Working/Team rows — match the CLI argv0 only.
+ * Scanning the full command (incl. `-p` prompt) false-positives on injected
+ * context that mentions other agents (e.g. "QAIQ is a Claude Code…" inside an `agy` run).
+ */
+function extractLeadingCliBin(command: string): string {
+    const trimmed = command.trim().replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/, '');
+    const token = /^([^\s]+)/.exec(trimmed)?.[1] ?? '';
+    const base = token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token;
+    return base.toLowerCase();
+}
+
+/** @internal Exported for unit tests. */
+export function inferAgentIdFromCommand(command: string): string {
+    const bin = extractLeadingCliBin(command);
+    if (bin === 'qaiq' || bin === 'openclaude') {
         return 'qaiq';
     }
-    if (/\bcodex\b/.test(command)) {
+    if (bin === 'codex') {
         return 'codex';
     }
-    if (/\bclaude\b/.test(command)) {
+    if (bin === 'claude') {
         return 'claude';
     }
-    if (/\bgrok\b/.test(command)) {
+    if (bin === 'grok') {
         return 'grok';
     }
-    if (/\bopencode\b/.test(command)) {
+    if (bin === 'opencode') {
         return 'opencode';
     }
-    if (/\bgoose\b/.test(command)) {
+    if (bin === 'goose') {
         return 'goose';
     }
-    if (/\bhermes\b/.test(command)) {
+    if (bin === 'hermes') {
         return 'hermes';
     }
-    if (/\bopenclaw\b/.test(command)) {
+    if (bin === 'openclaw') {
         return 'openclaw';
     }
-    if (/\bcursor-agent\b/.test(command)) {
+    if (bin === 'cursor-agent' || bin === 'cursor') {
         return 'cursor';
     }
-    if (/\bantigravity\b|\bgemini\b/.test(command)) {
+    // Google Antigravity CLI prefers `agy`; also accept `antigravity` / legacy `gemini`.
+    if (bin === 'agy' || bin === 'antigravity' || bin === 'gemini' || bin === 'ag') {
         return 'antigravity';
     }
-    if (/\bcopilot\b/.test(command)) {
+    if (bin === 'copilot') {
         return 'copilot';
     }
-    if (/\bqwen\b/.test(command)) {
+    if (bin === 'qwen') {
         return 'qwen';
     }
-    if (/\bkimi\b/.test(command)) {
+    if (bin === 'kimi') {
         return 'kimi';
     }
     return 'shell';
