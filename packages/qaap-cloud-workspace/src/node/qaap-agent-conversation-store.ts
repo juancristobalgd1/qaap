@@ -45,6 +45,7 @@ import { localizeAgentFailureMessage, detectAgentFailureKind, resolveAgentTurnFa
 import {
     detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
+    isUnauthenticatedCliDeclaration,
     localizeAgentAuthFailureMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-auth-login';
 import { extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
@@ -2369,6 +2370,15 @@ export class QaapAgentConversationStore {
         const challenge = extractAgentAuthLoginChallenge(trimmed);
         if (challenge?.url && challenge.userCode) {
             return localizeAgentAuthFailureMessage(challenge);
+        }
+        // Some CLIs (e.g. Copilot) refuse to run when signed out, printing an unmistakable
+        // sign-in instruction to stdout — "No authentication information found … run '/login'
+        // … gh auth login" — yet still exit 0, with no stream-json envelope and no device-code
+        // URL, so neither branch above catches them and the refusal renders as a normal reply.
+        // Only these strong imperative declarations (not a mere mention of auth in prose or tool
+        // output) fail an otherwise-delivered turn, so the Work Hub shows the Sign-in card.
+        if (isUnauthenticatedCliDeclaration(trimmed)) {
+            return localizeAgentAuthFailureMessage({ mode: 'session' });
         }
         // Plain-text quota / rate-limit on a clean exit (e.g. Antigravity "Individual quota
         // reached…") — a short provider-style line, not a long successful transcript that

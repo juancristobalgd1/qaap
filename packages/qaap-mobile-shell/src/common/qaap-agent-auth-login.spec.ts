@@ -8,6 +8,7 @@ import {
     agentHasCliOAuthLogin,
     detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
+    isUnauthenticatedCliDeclaration,
     localizeAgentAuthFailureMessage,
     localizeAgentSettingsApiKeyLoginMessage,
     resolveAgentLoginCliCommand,
@@ -47,6 +48,30 @@ describe('qaap-agent-auth-login', () => {
         const challenge = extractAgentAuthLoginChallenge('Not logged in · Please run /login');
         expect(challenge?.mode).to.equal('session');
         expect(challenge?.url).to.equal(undefined);
+    });
+
+    it('detects Copilot CLI sign-out (exit-0 stdout refusal, no URL/code) as session login', () => {
+        const log = [
+            'Error: No authentication information found.',
+            'Copilot can be authenticated with GitHub using an OAuth Token or a Fine-Grained Personal Access Token.',
+            "To authenticate, you can use any of the following methods: • Start 'copilot' and run the '/login' command"
+            + ' • Set the COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN environment variable'
+            + " • Run 'gh auth login' to authenticate with the GitHub CLI",
+        ].join('\n');
+        // Not an API key failure (BYOK) — this is a terminal sign-in, so the Sign-in card must show.
+        expect(detectAgentAuthFailureMode(log)).to.equal('session');
+        expect(detectAgentFailureKind(log)).to.equal('auth');
+        expect(extractAgentAuthLoginChallenge(log)?.mode).to.equal('session');
+        // Strong enough to fail an otherwise-clean (exit 0) turn.
+        expect(isUnauthenticatedCliDeclaration(log)).to.equal(true);
+    });
+
+    it('isUnauthenticatedCliDeclaration ignores prose that merely mentions auth', () => {
+        // A successful turn that edited auth code must NOT be reclassified as a sign-in failure.
+        expect(isUnauthenticatedCliDeclaration(
+            'Updated src/auth/login.ts to handle the OAuth session and the login redirect.',
+        )).to.equal(false);
+        expect(isUnauthenticatedCliDeclaration('Done — everything is authenticated now.')).to.equal(false);
     });
 
     it('detects API-key auth mode separately from session login', () => {

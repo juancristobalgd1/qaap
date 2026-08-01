@@ -43,8 +43,10 @@ const AUTH_URL_HINTS: readonly RegExp[] = [
 
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     /\bnot\s+logged\s+in\b/i,
-    /\bplease\s+run\s+\/login\b/i,
-    /\brun\s+\/login\b/i,
+    // "Please run /login", "run the '/login' command" (Copilot CLI quotes it).
+    /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
+    // Copilot CLI's unauthenticated headline ("No authentication information found").
+    /\bno\s+authentication\s+information\s+found\b/i,
     /\bauthentication_failed\b/i,
     /\boauth\s+session\b/i,
     /\bfailed\s+to\s+authenticate\b/i,
@@ -131,6 +133,28 @@ export function detectAgentAuthFailureMode(log: string | undefined): 'session' |
         return 'api_key';
     }
     return undefined;
+}
+
+/**
+ * Strong, imperative refusal lines a CLI prints when it will NOT run because the user is not
+ * signed in (Copilot: "No authentication information found … run '/login' … gh auth login").
+ * Unlike {@link SESSION_AUTH_PATTERNS} — which also matches bare login URLs and loose prose —
+ * these are used to fail an otherwise-clean exit (a CLI that prints its refusal to stdout and
+ * still exits 0), so they must be unmistakable: a "do X to sign in" instruction, not a mention.
+ */
+const CLI_UNAUTH_DECLARATION_PATTERNS: readonly RegExp[] = [
+    /\bno\s+authentication\s+information\s+found\b/i,
+    /\brun\s+(?:the\s+)?['"`]?\/login\b/i,
+    /\brun\s+['"`]?gh\s+auth\s+login\b/i,
+];
+
+/**
+ * True when the CLI output is an unmistakable "not signed in, cannot run" refusal — safe to
+ * fail an exit-0 turn on. Deliberately stricter than {@link detectAgentAuthFailureMode}.
+ */
+export function isUnauthenticatedCliDeclaration(log: string | undefined): boolean {
+    const sample = (log ?? '').trim();
+    return !!sample && CLI_UNAUTH_DECLARATION_PATTERNS.some(pattern => pattern.test(sample));
 }
 
 /**
