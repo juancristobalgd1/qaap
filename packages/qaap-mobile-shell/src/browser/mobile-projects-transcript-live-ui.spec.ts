@@ -17,6 +17,7 @@ import {
     resetTranscriptRenderMetrics,
 } from '../common/qaap-transcript-render-metrics';
 import { TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { QaapThreadStore } from '../common/qaap-thread-store';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { MobileProjectsTranscriptLiveUi, type MobileProjectsTranscriptLiveHost } from './mobile-projects-transcript-live-ui';
@@ -244,6 +245,49 @@ describe('MobileProjectsTranscriptLiveUi', () => {
             chatHost.remove();
             composerHost.remove();
         }
+    });
+
+    it('summary subscriber re-arms the refresh when visualVerificationPending flips, without pinning a stale flag', () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        host.transcriptOpenSummaryId = 'conv-visual';
+        host.transcriptOpenSummary = {
+            id: 'conv-visual',
+            cwd: '/repo',
+            agentId: 'codex',
+            title: 'Visual',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 10,
+            messageCount: 1,
+        };
+        const threadStore = new QaapThreadStore();
+        host.conversations = { threadStore } as unknown as MobileProjectsTranscriptLiveHost['conversations'];
+
+        let ensureCalls = 0;
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        const liveUiAny = liveUi as unknown as {
+            bindOpenTranscriptThreadStore: (id: string) => void;
+            ensureTranscriptConversationRefresh: () => void;
+        };
+        liveUiAny.ensureTranscriptConversationRefresh = () => { ensureCalls += 1; };
+        liveUiAny.bindOpenTranscriptThreadStore('conv-visual');
+
+        // Capture requested → pending true: refresh armed exactly once.
+        threadStore.upsertSummary({ ...host.transcriptOpenSummary!, updatedAt: 11, visualVerificationPending: true });
+        expect(host.transcriptOpenSummary!.visualVerificationPending).to.equal(true);
+        expect(ensureCalls).to.equal(1);
+
+        // Evidence landed → the fresh summary OMITS the flag; the merge must clear it (not pin true)
+        // and re-arm the refresh so the "Processing…" skeleton swaps to the screenshot in place.
+        threadStore.upsertSummary({ ...host.transcriptOpenSummary!, updatedAt: 12, visualVerificationPending: undefined });
+        expect(host.transcriptOpenSummary!.visualVerificationPending).to.equal(undefined);
+        expect(ensureCalls).to.equal(2);
+
+        chatHost.remove();
+        composerHost.remove();
     });
 
     it('onTranscriptUserMessageSubmitted sets preview pending without switching execution tab', () => {

@@ -163,7 +163,9 @@ const TRANSCRIPT_PREVIEW_POLL_BASE_MS = 900;
 const TRANSCRIPT_PREVIEW_POLL_MAX_MS = 5_000;
 /** While server-side capture runs, poll the open transcript until evidence lands. */
 const TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS = 3_000;
-const TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS = 120_000;
+// Cover a cold dev-server boot (up to ~180s) before the headless capture can run, so the
+// skeleton chip still resolves in place on slow projects instead of stranding until reload.
+const TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS = 180_000;
 
 /** SSE-first live transcript watch, debounced refetch, and inline approval bar. */
 export class MobileProjectsTranscriptLiveUi {
@@ -523,9 +525,30 @@ export class MobileProjectsTranscriptLiveUi {
                     return;
                 }
                 if (summary) {
-                    this.host.transcriptOpenSummary = { ...this.host.transcriptOpenSummary, ...summary };
+                    const previousVisualPending = this.host.transcriptOpenSummary.visualVerificationPending ?? false;
+                    const nextVisualPending = summary.visualVerificationPending ?? false;
+                    this.host.transcriptOpenSummary = {
+                        ...this.host.transcriptOpenSummary,
+                        ...summary,
+                        // `visualVerificationPending` is omitted (not set to false) once the
+                        // capture lands, so a plain spread would leave a stale `true` pinned
+                        // forever — take the flag verbatim from the authoritative summary.
+                        visualVerificationPending: summary.visualVerificationPending,
+                    };
                     if (this.host.transcriptComposerSummary?.id === conversationId) {
-                        this.host.transcriptComposerSummary = { ...this.host.transcriptComposerSummary, ...summary };
+                        this.host.transcriptComposerSummary = {
+                            ...this.host.transcriptComposerSummary,
+                            ...summary,
+                            visualVerificationPending: summary.visualVerificationPending,
+                        };
+                    }
+                    // A settled turn that emitted `[QAAP capture]`/`[QAAP record]` flips this
+                    // flag on/off through summary events — the capture runs server-side after
+                    // the SSE stream ends. Kick the verification poll on any change so the
+                    // skeleton chip swaps to the real screenshot/video in place; without this
+                    // the evidence only surfaced after a manual page reload.
+                    if (nextVisualPending !== previousVisualPending) {
+                        this.ensureTranscriptConversationRefresh();
                     }
                 }
             },
@@ -718,6 +741,13 @@ export class MobileProjectsTranscriptLiveUi {
         const activeConv = this.host.transcriptLastConv?.id === settled?.id ? this.host.transcriptLastConv : undefined;
         if (settled && !isTranscriptAgentExecutionBusy(settled, activeConv)) {
             void this.host.transcriptStickyComposerUi.flushTranscriptFollowUpQueue(project, settled);
+        }
+        // The just-settled turn may have requested a screenshot/video: its `visualVerificationPending`
+        // was recomputed above from the final conversation. Arm the verification poll now — the
+        // capture runs server-side after the SSE stream is already torn down, so without a
+        // surface-independent poll the "Processing…" skeleton only resolves on a manual reload.
+        if (settled?.visualVerificationPending) {
+            this.ensureTranscriptConversationRefresh();
         }
         void this.finalizeTranscriptDevPreviewAfterSettle();
     }
