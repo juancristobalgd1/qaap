@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { Emitter, Event } from '@theia/core/lib/common/event';
+import { nls } from '@theia/core/lib/common/nls';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
 import { spawnSync, SpawnSyncReturns } from 'child_process';
@@ -77,6 +78,7 @@ import {
     resolveChatTurnOutcome,
     resolveChatTurnRunBudget,
 } from '../common/qaap-chat-turn-workflow';
+import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
@@ -1331,7 +1333,15 @@ export class QaapAgentConversationStore {
             // The graph settle is DEFERRED until the outcome flow finishes: a retriable failure
             // must become the run's `retry:model` edge (which steals the claim below), never a
             // premature terminal report racing the decision.
-            void this.applyTaskOutcome(ref, task).finally(() => this.settleChatTurnRun(task));
+            void this.applyTaskOutcome(ref, task).then(
+                outcome => this.settleChatTurnRun(task, outcome),
+                error => {
+                    // Materialization must not strand the control-plane run. Fall back to the raw
+                    // task state when an unexpected projection error prevents finer classification.
+                    this.settleChatTurnRun(task);
+                    console.warn('[qaap-agent-conversation-store] failed to apply a task outcome:', error);
+                },
+            );
             return;
         }
         if (event.type === 'output' || event.type === 'created') {
@@ -1803,11 +1813,11 @@ export class QaapAgentConversationStore {
     protected async applyTaskOutcome(
         ref: QaapConversationTaskRef,
         task: QaapAgentTask,
-    ): Promise<void> {
+    ): Promise<QaapWorkflowNodeOutcome> {
         const { conversationId, userMessageId, agentMessageId, turnAgentId, startSha } = ref;
         const convSnapshot = this.conversations.get(conversationId);
         if (!convSnapshot) {
-            return;
+            return resolveChatTurnOutcome(task.state);
         }
         // Defense-in-depth: a newer task may have superseded this one — but only when it took
         // over the SAME user turn (that is what the model-fallback retry does). Peer runs started
@@ -1816,14 +1826,14 @@ export class QaapAgentConversationStore {
         if (this.hasActiveTaskForUserMessage(conversationId, userMessageId, task.id)) {
             this.agentStreamByTaskId.delete(task.id);
             this.agUiStreamByTaskId.delete(task.id);
-            return;
+            return resolveChatTurnOutcome(task.state);
         }
         const usageFinalized = this.finalizeTurnContextUsage(convSnapshot, task.id, turnAgentId);
         this.agentStreamByTaskId.delete(task.id);
         this.agUiStreamByTaskId.delete(task.id);
         const conv = this.conversations.get(conversationId);
         if (!conv) {
-            return;
+            return resolveChatTurnOutcome(task.state);
         }
         let withUsageBaseline: QaapAgentConversation = {
             ...conv,
@@ -1847,7 +1857,7 @@ export class QaapAgentConversationStore {
             this.fire({ type: 'updated', conversation: toConversationSummary(next) });
             this.flushPersist();
             this.pendingTeamSynthesisForLeader.delete(task.id);
-            return;
+            return 'blocked';
         }
         const detail = await this.taskRunner.detail(task.id);
         // Re-read across the await: with in-session multitasking a PEER run can stream into this
@@ -1856,7 +1866,7 @@ export class QaapAgentConversationStore {
         // the other agent's output (read-modify-write over one shared conversation record).
         const latest = this.conversations.get(conversationId);
         if (!latest) {
-            return;
+            return resolveChatTurnOutcome(task.state);
         }
         withUsageBaseline = {
             ...latest,
@@ -1907,7 +1917,9 @@ export class QaapAgentConversationStore {
                 turnAgentId,
                 startSha,
             )) {
-                return;
+                // A successful graph retry stole the task claim; an imperative degradation leaves
+                // the old run terminally failed. Either way, a remaining claim must not say success.
+                return 'fail';
             }
             const reason = completedAuthFailureReason ?? resolveAgentTurnFailureMessage(log, {
                 state: task.state === 'interrupted' ? 'interrupted' : 'failed',
@@ -1926,7 +1938,7 @@ export class QaapAgentConversationStore {
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
             this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId, turnAgentId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
-            return;
+            return 'fail';
         }
         let withReply: QaapAgentConversation;
         if (agentMessageId && structuredParsed) {
@@ -2002,7 +2014,7 @@ export class QaapAgentConversationStore {
                 turnAgentId,
                 startSha,
             )) {
-                return;
+                return 'fail';
             }
             const reason = localizeAgentFailureMessage('tool_unsupported');
             const failed = this.markTurnFailed(withReply, {
@@ -2015,7 +2027,7 @@ export class QaapAgentConversationStore {
             const finalized = this.finalizeStreamingAgentMessage(failed.conv, resolvedAgentMessageId, reason);
             this.publishFinalizedAgentMessage(conversationId, finalized, resolvedAgentMessageId, turnAgentId);
             this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, finalized);
-            return;
+            return 'fail';
         }
         const gitStats = this.computeGitDiffStats(conv.cwd, startSha);
         if (gitStats) {
@@ -2059,13 +2071,13 @@ export class QaapAgentConversationStore {
             // The agent explicitly asked for the user — reclassify the task and never auto-continue
             // on top of a question only the user can answer.
             this.taskRunner.markTaskBlocked(task.id);
-            return;
+            return 'blocked';
         }
         if (task.state === 'completed_with_warnings') {
             // The backend verification loop already spent its fix-turn budget on this turn; the
             // text-heuristic auto-continue is blind to that verdict and would just re-prompt
             // "keep going" on top of a known-red build. Leave the decision to the user.
-            return;
+            return 'success:warned';
         }
         this.maybeAutoContinueIncompleteTurn(
             conversationId,
@@ -2074,6 +2086,7 @@ export class QaapAgentConversationStore {
             finalizedAgentMessageId,
             turnAgentId,
         );
+        return 'success';
     }
 
     /**
@@ -3652,13 +3665,13 @@ export class QaapAgentConversationStore {
      * materializing the transcript and deciding follow-ups imperatively. One decider per
      * transition — the template dispatcher is fenced off these runs by its `governs` predicate.
      */
-    protected settleChatTurnRun(task: QaapAgentTask): void {
+    protected settleChatTurnRun(task: QaapAgentTask, outcome: QaapWorkflowNodeOutcome = resolveChatTurnOutcome(task.state)): void {
         const governed = this.chatTurnRunByTask.get(task.id);
         if (!governed) {
             return;
         }
         this.chatTurnRunByTask.delete(task.id);
-        void this.workflowRuns?.report(governed.ownerLogin, governed.runId, governed.nodeId, resolveChatTurnOutcome(task.state))
+        void this.workflowRuns?.report(governed.ownerLogin, governed.runId, governed.nodeId, outcome)
             .catch(error => console.warn('[qaap-agent-conversation-store] failed to settle a chat-turn run:', error));
     }
 
@@ -3668,11 +3681,6 @@ export class QaapAgentConversationStore {
             candidate.def.id === QAAP_CHAT_TURN_WORKFLOW_ID
             && candidate.inputs.conversationId === conv.id
             && candidate.inputs.rootUserMessageId === rootUserMessageId);
-    }
-
-    /** Re-spawns the graph already granted this run: fallback and auto-continue trace entries. */
-    protected countGraphLoopSpawns(record: QaapPersistedWorkflowRun): number {
-        return record.trace.filter(entry => entry.outcome === 'retry:model' || entry.outcome === 'continue:auto').length;
     }
 
     /** The durable tried-model keys of a run's fallback ladder ({@link QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT}). */
@@ -3687,6 +3695,28 @@ export class QaapAgentConversationStore {
         } catch {
             return [];
         }
+    }
+
+    /**
+     * Reconstruct the shared fallback/auto-continue ceiling from every durable projection. During
+     * incremental migration a run may be adopted after imperative continuations or fallbacks have
+     * already happened, so its trace alone is insufficient after the in-memory counter disappears.
+     */
+    protected countDurableLoopSpawns(
+        conv: QaapAgentConversation,
+        rootUserMessageId: string,
+        record: QaapPersistedWorkflowRun | undefined,
+    ): number {
+        const trace = record?.trace ?? [];
+        const fallbackTraceCount = trace.filter(entry => entry.outcome === 'retry:model').length;
+        const continueTraceCount = trace.filter(entry => entry.outcome === 'continue:auto').length;
+        // The artifact contains the initial/current model plus every selected fallback. It also
+        // carries pre-adoption imperative history that the run trace can never reconstruct.
+        const uniqueTriedModels = new Set(this.readTriedFallbackModels(record)).size;
+        const fallbackArtifactCount = Math.max(0, uniqueTriedModels - 1);
+        const projectedContinueCount = this.countAutoContinueAttempts(conv, rootUserMessageId);
+        return Math.max(fallbackTraceCount, fallbackArtifactCount)
+            + Math.max(continueTraceCount, projectedContinueCount);
     }
 
     /**
@@ -3725,7 +3755,7 @@ export class QaapAgentConversationStore {
         // Shared-ceiling parity: the stricter of the run's own trace and the in-memory counter
         // (a turn may have spent spawns imperatively before the flag flip, or via auto-continue).
         const spent = Math.max(
-            record ? this.countGraphLoopSpawns(record) : 0,
+            this.countDurableLoopSpawns(conv, loopBudgetKey, record),
             this.loopSpawnCountByUserMessage.get(loopBudgetKey) ?? 0,
         );
         if (spent >= MAX_LOOP_SPAWNS_PER_USER_MESSAGE) {
@@ -3773,16 +3803,26 @@ export class QaapAgentConversationStore {
             }
         }
         const nodeId = record.run.active[0] ?? QAAP_CHAT_TURN_NODE;
-        // The decision is now the graph's: steal the deferred terminal settle so the retry edge —
-        // not the raw task state — is what the run records for this task.
-        this.chatTurnRunByTask.delete(task.id);
         const nextKey = agentModelKey(nextModel);
         const triedWithNext = [...tried, ...(nextKey && !tried.has(nextKey) ? [nextKey] : [])];
-        const advanced = await runs.report(
-            conv.ownerLogin, record.run.id, nodeId, 'retry:model', undefined,
-            { key: QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT, value: JSON.stringify(triedWithNext) },
-            'Retrying with the next curated model.',
-        );
+        let advanced;
+        try {
+            advanced = await runs.report(
+                conv.ownerLogin, record.run.id, nodeId, 'retry:model', undefined,
+                { key: QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT, value: JSON.stringify(triedWithNext) },
+                nls.localize('qaap/chatTurn/retryingModel', 'Retrying with the next curated model.'),
+            );
+        } catch (error) {
+            // Preserve the old task's claim so the deferred settle can close this run. A transient
+            // ledger failure must not also deny the user the established imperative fallback.
+            console.warn('[qaap-agent-conversation-fallback] could not persist the graph retry; using the imperative retry:', error);
+            return this.maybeRetryTurnWithFallbackModel(
+                conversationId, userMessageId, agentMessageId, task, conv, agentMessage, turnAgentId, startSha,
+            );
+        }
+        // The decision is durably the graph's: steal the deferred terminal settle only AFTER the
+        // retry edge reached disk, never while a failed report could still need the old claim.
+        this.chatTurnRunByTask.delete(task.id);
         const fallbackNodeId = advanced.dispatch[0];
         if (!fallbackNodeId) {
             // The visit backstop refused the re-entry; the run is settled and the turn fails normally.
