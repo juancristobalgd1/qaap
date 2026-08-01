@@ -27,6 +27,13 @@ import { QaapWorkflowRunBudget } from './qaap-workflow-run';
 
 export const QAAP_CHAT_TURN_WORKFLOW_ID = 'qaap.chat-turn';
 
+/**
+ * Run artifact holding the JSON array of model keys already tried by the fallback ladder. Durable
+ * on purpose: the imperative tried-set lives in process memory and forgets every failed model on
+ * a backend restart, so a bad model could be retried forever across OOM cycles.
+ */
+export const QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT = 'fallback.tried';
+
 /** Node ids of the canonical chat-turn graph, shared by the store, specs and future pieces. */
 export const QAAP_CHAT_TURN_NODE = 'turn';
 export const QAAP_CHAT_TURN_FALLBACK_NODE = 'turn-fallback';
