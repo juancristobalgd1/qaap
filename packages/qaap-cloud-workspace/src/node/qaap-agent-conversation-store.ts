@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { Emitter, Event } from '@theia/core/lib/common/event';
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
 import { spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
@@ -69,6 +69,14 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
 import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
 import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
+import {
+    QAAP_CHAT_TURN_NODE,
+    QAAP_CHAT_TURN_WORKFLOW_ID,
+    buildChatTurnWorkflow,
+    resolveChatTurnOutcome,
+    resolveChatTurnRunBudget,
+} from '../common/qaap-chat-turn-workflow';
+import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
@@ -266,7 +274,17 @@ export class QaapAgentConversationStore {
         return spawnSync(wrapped.file, wrapped.args, { cwd, env: runEnv, encoding: 'utf8' });
     }
 
+    /**
+     * Durable ledger for graph-governed turns (ADR-002). Optional: unit-test harnesses construct
+     * the store without DI, and the imperative path never touches it. With `QAAP_TURN_GRAPH` off
+     * (the default) it stays completely unused.
+     */
+    @inject(QaapWorkflowRunStore) @optional()
+    protected readonly workflowRuns: QaapWorkflowRunStore | undefined;
+
     protected readonly conversations = new Map<string, QaapAgentConversation>();
+    /** Task id → the chat-turn run it is executing, so its terminal settles the run's edge. */
+    protected readonly chatTurnRunByTask = new Map<string, { runId: string; ownerLogin?: string; nodeId: string }>();
     /** Serializes screenshot attachment per conversation across multiple open frontend tabs. */
     protected readonly visualVerificationInFlight = new Set<string>();
     /** Reverse index: task id → conversation turn metadata so we can route output/completion. */
@@ -1309,6 +1327,7 @@ export class QaapAgentConversationStore {
                 return; // only react when the turn settles
             }
             this.taskToConversation.delete(task.id);
+            this.settleChatTurnRun(task);
             void this.applyTaskOutcome(ref, task);
             return;
         }
@@ -3245,6 +3264,11 @@ export class QaapAgentConversationStore {
                 }
             }
             const sweptAny = this.sweepZombieStreamingTurns(now, { resetSurvivorsToIdle: true });
+            if (this.isTurnGraphEnabled()) {
+                // After resume and sweep have settled every conversation's fate, close graph runs
+                // whose turn is no longer live (lost terminal report, deleted conversation).
+                await this.reapOrphanedChatTurnRuns();
+            }
             if (anyChanged || resumedAny || sweptAny) {
                 await this.persist();
             }
@@ -3425,6 +3449,9 @@ export class QaapAgentConversationStore {
         if ((rootUserMessage.restartResumeCount ?? 0) >= MAX_RESTART_RESUMES) {
             return false;
         }
+        if (this.isTurnGraphEnabled() && this.workflowRuns) {
+            return this.resumeInterruptedTurnViaGraph(conv, turnUserMessage, rootUserMessage, turnAgentId, nowMs);
+        }
         const nextResumeCount = (rootUserMessage.restartResumeCount ?? 0) + 1;
         const lastMessage = conv.messages[conv.messages.length - 1];
         const agentMessageId = lastMessage?.role === 'agent' ? lastMessage.id : undefined;
@@ -3479,6 +3506,164 @@ export class QaapAgentConversationStore {
             + `(attempt ${nextResumeCount}/${MAX_RESTART_RESUMES}).`,
         );
         return true;
+    }
+
+    /** ADR-002 turnstile: whether restart-resume is governed by the chat-turn workflow graph. */
+    protected isTurnGraphEnabled(): boolean {
+        return /^(1|true|on)$/i.test(process.env.QAAP_TURN_GRAPH?.trim() ?? '');
+    }
+
+    /**
+     * The graph-governed twin of the imperative resume branch (ADR-002 piece 1). The decision and
+     * its durable ledger are the run's: the turn is adopted into (or re-found in) a
+     * `qaap.chat-turn` run, and the resume is `report('resume:restart')` — persisted visits/trace
+     * BEFORE the process spawns, which is the same monotonic-progress invariant the imperative
+     * branch implements with `await persist()`. The conversation-side effects (orphan cleanup,
+     * counter projection, task re-link, SSE) deliberately mirror that branch line by line: the
+     * store stays the data plane, the run store becomes the control plane.
+     */
+    protected async resumeInterruptedTurnViaGraph(
+        conv: QaapAgentConversation,
+        turnUserMessage: QaapAgentMessage,
+        rootUserMessage: QaapAgentMessage,
+        turnAgentId: string,
+        nowMs: number,
+    ): Promise<boolean> {
+        const runs = this.workflowRuns!;
+        const conversationId = conv.id;
+        const userMessageId = turnUserMessage.id;
+        const rootUserMessageId = rootUserMessage.id;
+        const nextResumeCount = (rootUserMessage.restartResumeCount ?? 0) + 1;
+        let record = runs.listUnfinished(conv.ownerLogin).find(candidate =>
+            candidate.def.id === QAAP_CHAT_TURN_WORKFLOW_ID
+            && candidate.inputs.conversationId === conversationId
+            && candidate.inputs.rootUserMessageId === rootUserMessageId);
+        if (!record) {
+            record = await runs.adoptRun(buildChatTurnWorkflow(), {
+                cwd: conv.cwd,
+                ownerLogin: conv.ownerLogin,
+                inputs: { conversationId, rootUserMessageId },
+                seedNodeId: QAAP_CHAT_TURN_NODE,
+                // The run's ledger carries the ceiling across governance changes: visits = 1 + the
+                // resumes the projection already recorded before this run existed.
+                seedVisits: 1 + (rootUserMessage.restartResumeCount ?? 0),
+                deadExternalId: turnUserMessage.taskId,
+                budget: resolveChatTurnRunBudget(MAX_RESTART_RESUMES),
+            });
+        }
+        const nodeId = record.run.active[0] ?? QAAP_CHAT_TURN_NODE;
+        // Belt and braces with the projection guard the caller already applied: if the RUN's own
+        // ledger says the ceiling is spent, settle its failure edge and hand the conversation to
+        // the sweep — never spawn on a counter that disagrees.
+        if (Math.max(0, (record.run.visits[nodeId] ?? 1) - 1) >= MAX_RESTART_RESUMES) {
+            await runs.report(conv.ownerLogin, record.run.id, nodeId, 'fail').catch(() => undefined);
+            return false;
+        }
+        // THE transition: `turn --resume:restart--> turn`. report() persists the incremented visit
+        // and the trace entry before resolving, so the spawn below can never outrun the ledger.
+        const advanced = await runs.report(conv.ownerLogin, record.run.id, nodeId, 'resume:restart');
+        if (!advanced.dispatch.includes(nodeId)) {
+            // The visit backstop refused the re-visit (budget-exhausted): the run is terminal.
+            return false;
+        }
+        // Data plane, mirroring the imperative branch: drop the orphaned partial agent output,
+        // clear the dead task link, stamp the projected counter, persist BEFORE spawning.
+        const lastMessage = conv.messages[conv.messages.length - 1];
+        const agentMessageId = lastMessage?.role === 'agent' ? lastMessage.id : undefined;
+        const messages = conv.messages
+            .filter(message => message.id !== agentMessageId)
+            .map(message => {
+                let next = message;
+                if (message.id === userMessageId) {
+                    next = { ...next, error: undefined, taskId: undefined };
+                }
+                if (message.id === rootUserMessageId) {
+                    next = { ...next, restartResumeCount: nextResumeCount };
+                }
+                return next;
+            });
+        const resumeConv: QaapAgentConversation = { ...conv, status: 'streaming', updatedAt: nowMs, messages };
+        this.conversations.set(conversationId, resumeConv);
+        await this.persist();
+        let spawned: QaapAgentTask;
+        try {
+            spawned = this.taskRunner.create(
+                this.buildTaskCreateRequest(resumeConv, turnAgentId, undefined, userMessageId),
+                resumeConv.ownerLogin,
+            );
+        } catch {
+            // cwd gone / runner refused: settle the run's failure edge and degrade to the manual
+            // "Retry to continue" flow. Ledger and projection both already persisted, so this
+            // turn will not be retried automatically again.
+            await runs.report(conv.ownerLogin, record.run.id, nodeId, 'fail').catch(() => undefined);
+            this.interruptStreamingTurnForRestart(conversationId, nowMs);
+            return true;
+        }
+        await runs.attachDispatch(conv.ownerLogin, record.run.id, nodeId, 'agent', spawned.id).catch(() => undefined);
+        this.chatTurnRunByTask.set(spawned.id, { runId: record.run.id, ownerLogin: conv.ownerLogin, nodeId });
+        const messagesWithTask = resumeConv.messages.map(message => message.id === userMessageId
+            ? { ...message, taskId: spawned.id, turnAgentId: spawned.agentId ?? turnAgentId }
+            : message);
+        const nextConv = { ...resumeConv, messages: messagesWithTask };
+        this.conversations.set(conversationId, nextConv);
+        this.taskToConversation.set(spawned.id, {
+            conversationId,
+            userMessageId,
+            turnAgentId: spawned.agentId ?? turnAgentId,
+        });
+        this.fire({ type: 'updated', conversation: toConversationSummary(nextConv) });
+        void this.persist();
+        console.warn(
+            `[qaap-agent-conversation-resume] auto-resumed conversation ${conversationId} after restart `
+            + `via chat-turn run ${record.run.id} (attempt ${nextResumeCount}/${MAX_RESTART_RESUMES}).`,
+        );
+        return true;
+    }
+
+    /**
+     * Settle the graph edge of a graph-governed turn when its task reaches a terminal state.
+     * Bookkeeping only in piece 1: the run records the outcome (`success` / `success:warned` /
+     * `fail` / `blocked`) and ends on its settle emit, while {@code applyTaskOutcome} keeps
+     * materializing the transcript and deciding follow-ups imperatively. One decider per
+     * transition — the template dispatcher is fenced off these runs by its `governs` predicate.
+     */
+    protected settleChatTurnRun(task: QaapAgentTask): void {
+        const governed = this.chatTurnRunByTask.get(task.id);
+        if (!governed) {
+            return;
+        }
+        this.chatTurnRunByTask.delete(task.id);
+        void this.workflowRuns?.report(governed.ownerLogin, governed.runId, governed.nodeId, resolveChatTurnOutcome(task.state))
+            .catch(error => console.warn('[qaap-agent-conversation-store] failed to settle a chat-turn run:', error));
+    }
+
+    /**
+     * Close chat-turn runs whose conversation is no longer streaming — the terminal report lives
+     * in process memory ({@link chatTurnRunByTask}) and dies with a crash, and the template
+     * dispatcher is told to ignore these runs, so without this sweep the shared run index would
+     * accumulate zombies that stay "running" forever.
+     */
+    protected async reapOrphanedChatTurnRuns(): Promise<void> {
+        const runs = this.workflowRuns;
+        if (!runs) {
+            return;
+        }
+        for (const record of runs.listAllUnfinished()) {
+            if (record.def.id !== QAAP_CHAT_TURN_WORKFLOW_ID) {
+                continue;
+            }
+            const conversationId = record.inputs.conversationId;
+            const conv = conversationId ? this.conversations.get(conversationId) : undefined;
+            if (conv?.status === 'streaming') {
+                continue; // still governed — the resume path owns it
+            }
+            for (const nodeId of record.run.active) {
+                await runs.report(
+                    record.ownerLogin, record.run.id, nodeId, 'fail', undefined, undefined,
+                    'Conversation settled while the backend was down.',
+                ).catch(() => undefined);
+            }
+        }
     }
 
     protected interruptStreamingTurnForRestart(conversationId: string, nowMs: number): boolean {

@@ -13,6 +13,7 @@ import * as path from 'path';
 import { DEFAULT_REVIEW_DIFF_CAP_CHARS } from '../common/qaap-agent-review';
 import { QaapWorkflowDef, QaapWorkflowNodeOutcome, validateQaapWorkflowDef } from '../common/qaap-workflow-ir';
 import {
+    DEFAULT_QAAP_WORKFLOW_RUN_BUDGET,
     QaapWorkflowRun,
     QaapWorkflowRunBudget,
     advanceQaapWorkflowRun,
@@ -107,6 +108,29 @@ export interface QaapStartWorkflowRunOptions {
 }
 
 export class QaapWorkflowRunRequestError extends Error { }
+
+/** How an existing unit of work is adopted into a run mid-life (ADR-002 chat-turn adoption). */
+export interface QaapAdoptWorkflowRunOptions {
+    /** Absolute working directory every node runs in. */
+    readonly cwd: string;
+    readonly ownerLogin?: string;
+    /** Correlation values, e.g. `{ conversationId, rootUserMessageId }` for chat turns. */
+    readonly inputs?: Readonly<Record<string, string>>;
+    /** Node the adopted run is parked on: active, already counted as visited. */
+    readonly seedNodeId: string;
+    /**
+     * Visits already spent on the seed node before adoption (>= 1). For a chat turn this is
+     * 1 + the restart resumes the imperative projection already recorded, so the run's ledger
+     * carries the ceiling across governance changes.
+     */
+    readonly seedVisits: number;
+    /** External process the node was attached to when the backend died, when known. */
+    readonly deadExternalId?: string;
+    readonly deadKind?: 'agent' | 'job';
+    /** When the dead process was originally dispatched; defaults to adoption time. */
+    readonly dispatchedAt?: number;
+    readonly budget?: QaapWorkflowRunBudget;
+}
 
 /**
  * Durable, owner-scoped storage for workflow runs.
@@ -209,6 +233,83 @@ export class QaapWorkflowRunStore {
             };
             return { records: [...records, record], result: { record, dispatch: started.dispatch } };
         }, result => result.record);
+    }
+
+    /**
+     * Adopt an ALREADY-RUNNING unit of work into a run parked on one node (ADR-002). Unlike
+     * {@link start}, nothing is dispatched: the seed node is active with its visits pre-counted,
+     * optionally attached to the dead external process it was running as, and the caller's next
+     * step is reporting an outcome for it (`resume:restart` after a restart, a terminal otherwise).
+     * Persisted before the promise resolves, like every other mutation.
+     */
+    adoptRun(def: QaapWorkflowDef, options: QaapAdoptWorkflowRunOptions): Promise<QaapPersistedWorkflowRun> {
+        return this.mutate(records => {
+            const validation = validateQaapWorkflowDef(def);
+            if (!validation.ok) {
+                throw new QaapWorkflowRunRequestError(nls.localize(
+                    'qaap/workflowRuns/invalidDefinition',
+                    'Invalid workflow definition: {0}',
+                    validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('; '),
+                ));
+            }
+            if (!def.nodes.some(node => node.id === options.seedNodeId)) {
+                throw new QaapWorkflowRunRequestError(`Adopted node "${options.seedNodeId}" is not declared by "${def.id}".`);
+            }
+            const owner = this.normalizeOwner(options.ownerLogin);
+            let next = [...records];
+            if (next.filter(record => record.ownerLogin === owner).length >= MAX_RUNS_PER_OWNER) {
+                // Adoption is lifecycle bookkeeping the user never asked to budget: reap the
+                // oldest FINISHED run of the same definition before giving up like start() does.
+                const reapable = next
+                    .filter(record => record.ownerLogin === owner
+                        && record.def.id === def.id
+                        && !this.isUnfinished(record))
+                    .sort((left, right) => left.updatedAt - right.updatedAt)[0];
+                if (!reapable) {
+                    throw new QaapWorkflowRunRequestError(nls.localize(
+                        'qaap/workflowRuns/limit', 'You can keep at most {0} workflow runs.', String(MAX_RUNS_PER_OWNER),
+                    ));
+                }
+                next = next.filter(record => record !== reapable);
+            }
+            const now = this.now();
+            const seedVisits = Math.max(1, Math.floor(options.seedVisits));
+            const record: QaapPersistedWorkflowRun = {
+                run: {
+                    id: randomUUID(),
+                    defId: def.id,
+                    defVersion: def.version,
+                    status: 'running',
+                    active: [options.seedNodeId],
+                    visits: { [options.seedNodeId]: seedVisits },
+                    joinArrivals: {},
+                    firedJoins: [],
+                    bindings: {},
+                    nodeRuns: seedVisits,
+                    budget: options.budget ?? DEFAULT_QAAP_WORKFLOW_RUN_BUDGET,
+                },
+                def,
+                ownerLogin: owner,
+                cwd: options.cwd,
+                inputs: options.inputs ?? {},
+                createdAt: now,
+                updatedAt: now,
+                dispatched: options.deadExternalId
+                    ? {
+                        [options.seedNodeId]: {
+                            nodeId: options.seedNodeId,
+                            externalId: options.deadExternalId,
+                            kind: options.deadKind ?? 'agent',
+                            dispatchedAt: options.dispatchedAt ?? now,
+                        },
+                    }
+                    : {},
+                artifacts: {},
+                routedAgents: {},
+                trace: [],
+            };
+            return { records: [...next, record], result: record };
+        }, result => result);
     }
 
     /** Report the outcome of a dispatched node and return whatever must start next. */
