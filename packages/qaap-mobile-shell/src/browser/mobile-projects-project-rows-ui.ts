@@ -19,6 +19,7 @@ import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
 import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
 import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
+import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
@@ -694,45 +695,7 @@ export class MobileProjectsProjectRowsUi {
         if (!compact) {
             const footRow = document.createElement('div');
             footRow.className = 'theia-mobile-projects-task-foot';
-            const agentLabel = this.resolveConversationAgentLabel(summary);
-            const agentId = summary?.agentId?.trim()
-                || this.host.activeTasks?.getDefaultAgent()
-                || SHELL_AGENT_ID;
-            const agentChip = createAgentTaskBadge({
-                agentId,
-                label: sessionMeta ?? agentLabel,
-            });
-            footRow.append(agentChip);
-            if (summary?.linkedPullRequest?.number) {
-                const prChip = document.createElement('span');
-                prChip.className = 'theia-mobile-projects-task-agent theia-mod-linked-pr';
-                prChip.textContent = nls.localize(
-                    'qaap/mobileProjects/inboxLinkedPrShort',
-                    '#{0}',
-                    String(summary.linkedPullRequest.number),
-                );
-                footRow.append(prChip);
-            }
-            this.appendConversationFootMetrics(footRow, summary, isRunning);
-
-            const verifyBadge = createAgentTaskVerificationBadge(task.verification);
-            if (verifyBadge) {
-                this.appendTaskFootSeparator(footRow);
-                footRow.append(verifyBadge);
-            }
-
-            if (summary && summary.messageCount > 0 && !this.hasConversationDiffStats(summary)) {
-                this.appendTaskFootSeparator(footRow);
-                const msgCount = document.createElement('span');
-                msgCount.className = 'theia-mobile-projects-task-message-count';
-                msgCount.textContent = String(summary.messageCount);
-                const msgLabel = summary.messageCount === 1
-                    ? nls.localize('qaap/mobileProjects/taskMessageOne', '1 message')
-                    : nls.localize('qaap/mobileProjects/taskMessageMany', '{0} messages', String(summary.messageCount));
-                msgCount.setAttribute('aria-label', msgLabel);
-                msgCount.title = msgLabel;
-                footRow.append(msgCount);
-            }
+            this.populateWorkHubTaskFootRow(footRow, task, summary, isRunning);
             taskBody.append(footRow);
             const activityRow = this.createConversationActivityRow(project, summary, {
                 isRunning,
@@ -858,6 +821,7 @@ export class MobileProjectsProjectRowsUi {
                 : `${rowKey}:${task.state}:${task.title}`,
         );
 
+        this.registerTaskElapsedTickers(row, task, summary, isRunning);
         return row;
     }
 
@@ -1082,7 +1046,68 @@ export class MobileProjectsProjectRowsUi {
                 return false;
             }
         }
+        // Non-compact rows carry a foot with diff (+N/-N), activity and message-count metrics that
+        // are NOT covered by the checks above; refresh it in place when its signature changed so a
+        // patched row doesn't strand the values it was first rendered with. The compact foot
+        // (`theia-mod-sidebar-compact-meta`) is handled by the meta branch above and excluded here.
+        const footRow = row.querySelector<HTMLElement>(
+            '.theia-mobile-projects-task-foot:not(.theia-mod-sidebar-compact-meta)');
+        if (footRow) {
+            const footFp = this.computeTaskFootFingerprint(task, summary, isRunning);
+            if (footRow.dataset.qaapFootFp !== footFp) {
+                this.populateWorkHubTaskFootRow(footRow, task, summary, isRunning);
+            }
+        }
+        // Re-register the elapsed labels with the fresh task/summary so the shared ticker keeps
+        // advancing "since"/"ran" off the latest anchors (and drops "ran" when it stops running).
+        this.registerTaskElapsedTickers(row, task, summary, isRunning);
         return true;
+    }
+
+    /**
+     * Keep the "since" and (running) "ran" elapsed labels advancing between SSE ticks by driving
+     * them off the shared 1s ticker instead of only repainting them when a conversation delta lands.
+     * Both recompute from stable anchor timestamps (`createdAt`/`finishedAt`/`turnStartedAt`) + now,
+     * so the captured `task`/`summary` stay correct for the elapsed math; the patch path re-registers
+     * with fresh values each tick, and disconnected rows self-evict from the ticker. No per-row
+     * intervals are introduced.
+     */
+    protected registerTaskElapsedTickers(
+        row: HTMLElement,
+        task: MobileProjectTaskView,
+        summary: QaapAgentConversationSummaryDTO | undefined,
+        isRunning: boolean,
+    ): void {
+        const since = row.querySelector<HTMLElement>('.theia-mobile-projects-task-since');
+        if (since) {
+            sharedSecondTicker.register({
+                element: since,
+                render: () => {
+                    const text = this.formatTaskSince(task, summary);
+                    if (since.textContent !== text) {
+                        since.textContent = text;
+                    }
+                },
+            });
+        }
+        // "ran" is only live while the turn is running (turnStartedAt + now); a finished row shows a
+        // frozen duration and never needs ticking.
+        const ran = row.querySelector<HTMLElement>('.theia-mobile-projects-task-ran');
+        if (ran) {
+            if (isRunning && summary) {
+                sharedSecondTicker.register({
+                    element: ran,
+                    render: () => {
+                        const text = this.formatConversationRunDuration(summary, true);
+                        if (text && ran.textContent !== text) {
+                            ran.textContent = text;
+                        }
+                    },
+                });
+            } else {
+                sharedSecondTicker.unregister(ran);
+            }
+        }
     }
 
     formatTaskSince(task: MobileProjectTaskView, summary?: QaapAgentConversationSummaryDTO): string {
@@ -1113,6 +1138,90 @@ export class MobileProjectsProjectRowsUi {
         sep.className = 'theia-mobile-projects-task-foot-sep';
         sep.textContent = '·';
         footRow.append(sep);
+    }
+
+    /**
+     * (Re)build the non-compact task foot row (agent chip, linked PR, activity/diff/ran metrics,
+     * verification badge, message count). Shared by initial render and the in-place patch path so
+     * a patched running row refreshes its `+N/-N` diff, activity and message count instead of
+     * keeping the values it was first created with. Stamps a foot fingerprint so the patch path
+     * can skip the rebuild when nothing the foot shows has changed.
+     */
+    populateWorkHubTaskFootRow(
+        footRow: HTMLElement,
+        task: MobileProjectTaskView,
+        summary: QaapAgentConversationSummaryDTO | undefined,
+        isRunning: boolean,
+    ): void {
+        footRow.replaceChildren();
+        const agentLabel = this.resolveConversationAgentLabel(summary);
+        const sessionMeta = summary
+            ? formatConversationComposerSessionMeta(summary, agentId => this.resolveConversationAgentLabel({
+                ...summary,
+                agentId,
+            }))
+            : undefined;
+        const agentId = summary?.agentId?.trim()
+            || this.host.activeTasks?.getDefaultAgent()
+            || SHELL_AGENT_ID;
+        const agentChip = createAgentTaskBadge({
+            agentId,
+            label: sessionMeta ?? agentLabel,
+        });
+        footRow.append(agentChip);
+        if (summary?.linkedPullRequest?.number) {
+            const prChip = document.createElement('span');
+            prChip.className = 'theia-mobile-projects-task-agent theia-mod-linked-pr';
+            prChip.textContent = nls.localize(
+                'qaap/mobileProjects/inboxLinkedPrShort',
+                '#{0}',
+                String(summary.linkedPullRequest.number),
+            );
+            footRow.append(prChip);
+        }
+        this.appendConversationFootMetrics(footRow, summary, isRunning);
+
+        const verifyBadge = createAgentTaskVerificationBadge(task.verification);
+        if (verifyBadge) {
+            this.appendTaskFootSeparator(footRow);
+            footRow.append(verifyBadge);
+        }
+
+        if (summary && summary.messageCount > 0 && !this.hasConversationDiffStats(summary)) {
+            this.appendTaskFootSeparator(footRow);
+            const msgCount = document.createElement('span');
+            msgCount.className = 'theia-mobile-projects-task-message-count';
+            msgCount.textContent = String(summary.messageCount);
+            const msgLabel = summary.messageCount === 1
+                ? nls.localize('qaap/mobileProjects/taskMessageOne', '1 message')
+                : nls.localize('qaap/mobileProjects/taskMessageMany', '{0} messages', String(summary.messageCount));
+            msgCount.setAttribute('aria-label', msgLabel);
+            msgCount.title = msgLabel;
+            footRow.append(msgCount);
+        }
+        footRow.dataset.qaapFootFp = this.computeTaskFootFingerprint(task, summary, isRunning);
+    }
+
+    /**
+     * Cheap signature of everything the foot renders EXCEPT the time-derived "ran" label — that one
+     * advances via the shared elapsed ticker, so keeping it out avoids rebuilding the foot every
+     * second. The patch path rebuilds the foot only when this changes.
+     */
+    protected computeTaskFootFingerprint(
+        task: MobileProjectTaskView,
+        summary: QaapAgentConversationSummaryDTO | undefined,
+        isRunning: boolean,
+    ): string {
+        return [
+            isRunning ? 1 : 0,
+            isRunning ? (summary?.activityLabel ?? '') : '',
+            summary?.linesAdded ?? '',
+            summary?.linesRemoved ?? '',
+            summary?.linkedPullRequest?.number ?? '',
+            summary?.messageCount ?? '',
+            summary?.agentId ?? '',
+            task.verification?.status ?? '',
+        ].join('|');
     }
 
     appendConversationFootMetrics(

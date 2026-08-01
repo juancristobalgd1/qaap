@@ -61,6 +61,30 @@ describe('qaap-work-hub-inbox-fingerprint', () => {
         expect(inactive).to.not.equal(active);
     });
 
+    it('changes row fingerprint when diff line counts change so the foot repaints', () => {
+        const before = buildWorkHubInboxRowFingerprintFromSummary(
+            { ...summary, linesAdded: 3, linesRemoved: 1 },
+            { rowKey: 'conv-1', visualStatusId: 'running' },
+        );
+        const after = buildWorkHubInboxRowFingerprintFromSummary(
+            { ...summary, linesAdded: 11, linesRemoved: 9 },
+            { rowKey: 'conv-1', visualStatusId: 'running' },
+        );
+        expect(before).to.not.equal(after);
+    });
+
+    it('changes row fingerprint when the activity label changes', () => {
+        const searching = buildWorkHubInboxRowFingerprintFromSummary(
+            { ...summary, activityLabel: 'Searching' },
+            { rowKey: 'conv-1', visualStatusId: 'running' },
+        );
+        const thinking = buildWorkHubInboxRowFingerprintFromSummary(
+            { ...summary, activityLabel: 'Thinking' },
+            { rowKey: 'conv-1', visualStatusId: 'running' },
+        );
+        expect(searching).to.not.equal(thinking);
+    });
+
     it('detects structure changes when row order changes', () => {
         const first = buildWorkHubInboxStructureFingerprint({
             hubKind: 'tasks-inbox',

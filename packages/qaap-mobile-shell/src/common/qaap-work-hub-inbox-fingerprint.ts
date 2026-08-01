@@ -20,6 +20,9 @@ export interface WorkHubInboxRowFingerprintInput {
     readonly unread?: boolean;
     readonly visualStatusId: string;
     readonly isCurrent?: boolean;
+    readonly linesAdded?: number;
+    readonly linesRemoved?: number;
+    readonly activityLabel?: string;
 }
 
 export interface WorkHubInboxProjectGroupFingerprintInput {
@@ -54,6 +57,9 @@ export function buildWorkHubInboxRowFingerprint(input: WorkHubInboxRowFingerprin
         input.unread ? 1 : 0,
         input.visualStatusId,
         input.isCurrent ? 1 : 0,
+        input.linesAdded ?? '',
+        input.linesRemoved ?? '',
+        input.activityLabel ?? '',
         input.title,
     ].join(':');
 }
@@ -82,6 +88,9 @@ export function buildWorkHubInboxRowFingerprintFromSummary(
         unread: options.unread,
         visualStatusId: options.visualStatusId,
         isCurrent: options.isCurrent,
+        linesAdded: summary.linesAdded,
+        linesRemoved: summary.linesRemoved,
+        activityLabel: summary.activityLabel,
     });
 }
 
