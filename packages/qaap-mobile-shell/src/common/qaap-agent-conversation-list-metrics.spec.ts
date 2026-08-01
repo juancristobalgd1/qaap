@@ -178,6 +178,8 @@ describe('formatToolActivityLabel', () => {
     it('enriches bash label with command from JSON args', () => {
         expect(formatToolActivityLabel('Bash', '{"command":"npm test"}')).to.equal('Ran command: npm test');
         expect(formatToolActivityLabel('Bash', '{"command":"pnpm dev"}')).to.equal('Started server: pnpm dev');
+        expect(formatToolActivityLabel('Bash', '{"command":"open http://localhost:5173/preview"}'))
+            .to.equal('Ran command: open http://localhost:5173/preview');
     });
 
     it('enriches search label with pattern from JSON args', () => {

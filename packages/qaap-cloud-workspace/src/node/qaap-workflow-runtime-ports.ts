@@ -12,6 +12,7 @@
  */
 
 import { inject, injectable } from '@theia/core/shared/inversify';
+import { randomUUID } from 'crypto';
 import { QaapAgentTaskState } from '../common/qaap-agent-task';
 import { canEnforceReadOnlyWorkspace } from '../common/qaap-agent-readonly-workspace';
 import { QaapJobState } from '../common/qaap-job';
@@ -32,10 +33,16 @@ import {
     QAAP_WORKFLOW_GIT_DIFF_FUNCTION,
     QAAP_WORKFLOW_VERIFY_FUNCTION,
 } from './qaap-workflow-job-functions';
-import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import {
+    QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS,
+    QaapPersistedWorkflowRun,
+    QaapWorkflowRunStore,
+} from './qaap-workflow-run-store';
 
 /** Nothing excluded — a plain routing pass. */
 const EMPTY_EXCLUSION: ReadonlySet<string> = new Set();
+const DISPATCH_CLAIM_POLL_MS = 10;
+const DISPATCH_CLAIM_WAIT_MS = QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS + 5_000;
 
 /** Two exclusion tiers blocking the same backends resolve identically; the repeat is dropped. */
 function isSameAgentSet(one: ReadonlySet<string>, other: ReadonlySet<string>): boolean {
@@ -83,42 +90,111 @@ export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
         if (!record) {
             throw new Error(`Workflow run ${context.runId} is not available to dispatch node "${context.nodeId}".`);
         }
-        const prompt = this.prompts.resolve(node.promptRef, {
-            inputs: record.inputs,
-            bindings: record.run.bindings,
-            artifacts: record.artifacts,
-        });
-        // An unpinned turn declares only capability + tier; the policy maps that onto an installed
-        // backend, and an unresolved ref falls back to the runner's own default agent.
-        const routed = this.resolveBackend(node, record);
-        const readOnly = node.isolation === 'cwd-readonly';
-        if (readOnly) {
-            this.assertReadOnlyEnforceable(node, routed, context);
+        const claimId = randomUUID();
+        const claim = await this.store.claimDispatch(
+            context.ownerLogin, context.runId, context.nodeId, context.visit, 'agent', claimId,
+        );
+        if (claim.status === 'attached') {
+            return claim.externalId;
         }
-        const task = this.runner.create({
-            title: `${record.def.name} · ${node.id}`,
-            prompt,
-            cwd: record.cwd,
-            agent: routed.agentRef,
-            // Makes the node's declared isolation a restriction on the spawned CLI instead of a
-            // sentence in the prompt. Before this, a `cwd-readonly` judge ran with Edit/Write in hand
-            // and was observed writing into the very tree it was grading.
-            readOnlyWorkspace: readOnly,
-            // The graph owns the review (its judge node), so the runner must not review this turn
-            // as well. Only writer turns would trigger it; a read-only judge never does.
-            externalReview: !readOnly,
-            // Hands the orchestrator's own capability/costTier evaluation to model routing, so a
-            // cheap explore/measure turn and a premium implement/judge turn land on different
-            // models instead of both falling through to the runner's prompt-text heuristic.
-            taskKind: resolveQaapWorkflowTaskKind(node.capability, node.costTier),
-        }, context.ownerLogin || undefined);
-        if (routed.agentRef) {
+        if (claim.status === 'pending') {
+            return this.waitForClaimedAgentTurn(node, context);
+        }
+
+        let taskId: string | undefined;
+        let routed: QaapWorkflowRoutingResult | undefined;
+        try {
+            const current = this.store.get(context.ownerLogin, context.runId);
+            if (!current) {
+                throw new Error(`Workflow run ${context.runId} disappeared while dispatching node "${context.nodeId}".`);
+            }
+            const prompt = this.prompts.resolve(node.promptRef, {
+                inputs: current.inputs,
+                bindings: current.run.bindings,
+                artifacts: current.artifacts,
+            });
+            // An unpinned turn declares only capability + tier; the policy maps that onto an installed
+            // backend, and an unresolved ref falls back to the runner's own default agent.
+            routed = this.resolveBackend(node, current);
+            const readOnly = node.isolation === 'cwd-readonly';
+            if (readOnly) {
+                this.assertReadOnlyEnforceable(node, routed, context);
+            }
+            const task = this.runner.create({
+                title: `${current.def.name} · ${node.id}`,
+                prompt,
+                cwd: current.cwd,
+                agent: routed.agentRef,
+                // Makes the node's declared isolation a restriction on the spawned CLI instead of a
+                // sentence in the prompt. Before this, a `cwd-readonly` judge ran with Edit/Write in hand
+                // and was observed writing into the very tree it was grading.
+                readOnlyWorkspace: readOnly,
+                // The graph owns the review (its judge node), so the runner must not review this turn
+                // as well. Only writer turns would trigger it; a read-only judge never does.
+                externalReview: !readOnly,
+                // Hands the orchestrator's own capability/costTier evaluation to model routing, so a
+                // cheap explore/measure turn and a premium implement/judge turn land on different
+                // models instead of both falling through to the runner's prompt-text heuristic.
+                taskKind: resolveQaapWorkflowTaskKind(node.capability, node.costTier),
+            }, context.ownerLogin || undefined);
+            taskId = task.id;
+            // Publishing the id consumes the durable claim. No caller can observe an unclaimed gap:
+            // it sees either the pending claim or this attachment, never permission to create too.
+            await this.store.completeDispatchClaim(
+                context.ownerLogin, context.runId, context.nodeId, context.visit, 'agent', claimId, task.id,
+            );
+        } catch (error) {
+            if (taskId) {
+                try {
+                    this.runner.cancel(taskId);
+                } catch (cancelError) {
+                    console.warn(`[qaap-workflow] failed to cancel unclaimed agent task ${taskId}:`, cancelError);
+                }
+            }
+            await this.store.releaseDispatchClaim(context.ownerLogin, context.runId, context.nodeId, claimId)
+                .catch(releaseError => console.warn('[qaap-workflow] failed to release agent dispatch claim:', releaseError));
+            throw error;
+        }
+        const task = { id: taskId! };
+        if (routed?.agentRef) {
             this.routedAgentByTask.set(task.id, routed.agentRef);
             // Durable, unlike the map above, which only lives until this task reports: a judge
             // dispatched later still has to know who wrote the code.
-            await this.store.noteRoutedAgent(context.ownerLogin, context.runId, node.id, routed.agentRef);
+            await this.store.noteRoutedAgent(context.ownerLogin, context.runId, node.id, routed.agentRef)
+                .catch(error => console.warn('[qaap-workflow] failed to persist routed agent metadata:', error));
         }
         return task.id;
+    }
+
+    /** Wait for the caller that owns the durable claim, then reuse the id it published. */
+    protected async waitForClaimedAgentTurn(
+        node: QaapWorkflowAgentTurnNode,
+        context: QaapWorkflowDispatchContext,
+    ): Promise<string> {
+        const deadline = Date.now() + DISPATCH_CLAIM_WAIT_MS;
+        while (Date.now() < deadline) {
+            const record = this.store.get(context.ownerLogin, context.runId);
+            const attached = record?.dispatched[context.nodeId];
+            if (attached?.kind === 'agent') {
+                return attached.externalId;
+            }
+            if (!record?.run.active.includes(context.nodeId) || record.run.visits[context.nodeId] !== context.visit) {
+                throw new Error(`Workflow node "${context.nodeId}" visit ${context.visit} stopped while waiting for its dispatch claim.`);
+            }
+            const pending = record.dispatchClaims[context.nodeId];
+            if (!pending) {
+                // The owner failed before publishing an id and released its claim. Compete for a
+                // fresh claim; the store still guarantees that only one retry can win.
+                return this.startAgentTurn(node, context);
+            }
+            if (Date.now() - pending.claimedAt >= QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS) {
+                // The creator exceeded its lease. claimDispatch() atomically decides which waiter
+                // steals it; losers see the replacement claim and continue waiting.
+                return this.startAgentTurn(node, context);
+            }
+            await new Promise(resolve => setTimeout(resolve, DISPATCH_CLAIM_POLL_MS));
+        }
+        throw new Error(`Timed out waiting for the dispatch claim of node "${context.nodeId}" visit ${context.visit}.`);
     }
 
     /**
@@ -399,8 +475,11 @@ export class QaapWorkflowDeterministicAdapter implements QaapWorkflowDeterminist
                 // Only the verify op reads it; the others ignore an extra key.
                 ...(record.goalCheckScript ? { script: record.goalCheckScript } : {}),
             },
-            // One run must never start the same node twice, even if a report is replayed.
-            idempotencyKey: `workflow:${context.runId}:${context.nodeId}`,
+            // A replay of ONE durable visit resolves to the same job, while a graph loop that
+            // re-enters this node gets a fresh job and genuinely verifies the repaired workspace.
+            // Keying only by run + node reused visit one's terminal result forever and turned
+            // verify → fix → verify into verify → fix → the old failed verify.
+            idempotencyKey: `workflow:${context.runId}:${context.nodeId}:visit:${context.visit}`,
         }, context.ownerLogin || undefined);
         return created.job.id;
     }

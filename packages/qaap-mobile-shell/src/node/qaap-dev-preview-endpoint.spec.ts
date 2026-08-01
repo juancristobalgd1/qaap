@@ -944,8 +944,12 @@ describe('QaapDevPreviewEndpoint', () => {
             get: () => 'localhost:3000',
         });
 
-        const makeJsonRes = (): { record: { code: number; body?: { ready?: boolean; previewId?: string; previewUrl?: string; port?: number } } } => {
-            const record: { code: number; body?: { ready?: boolean; previewId?: string; previewUrl?: string; port?: number } } = { code: 200 };
+        const makeJsonRes = (): { record: { code: number; body?: {
+            ready?: boolean; readiness?: string; previewId?: string; previewUrl?: string; port?: number
+        } } } => {
+            const record: { code: number; body?: {
+                ready?: boolean; readiness?: string; previewId?: string; previewUrl?: string; port?: number
+            } } = { code: 200 };
             const res = {
                 record,
                 status(code: number): unknown { record.code = code; return res; },
@@ -996,6 +1000,7 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(res.record.code).to.equal(200);
             expect(res.record.body?.previewId).to.equal(newest.previewId);
             expect(res.record.body?.ready).to.equal(true);
+            expect(res.record.body?.readiness).to.equal('transport_ready');
             expect(res.record.body?.port).to.equal(4174);
             expect(res.record.body?.previewUrl).to.contain(`/qaap-preview/${newest.previewId}`);
         });

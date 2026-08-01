@@ -872,7 +872,9 @@ export class MobileProjectsProjectRowsUi {
         if (project.previewUrl) {
             chips.push(this.createConversationActivityChip({
                 iconClass: 'codicon-open-preview',
-                label: nls.localize('qaap/mobileProjects/activityPreviewReady', 'Preview ready'),
+                // A project URL only proves a preview can be opened; rendering/visual validation
+                // happens separately and must not be implied by this compact activity chip.
+                label: nls.localize('qaap/mobileProjects/activityPreviewAvailable', 'Preview available'),
                 variant: 'surface',
             }));
         }

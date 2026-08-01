@@ -162,7 +162,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            this.handlePostVisualVerificationFailure(req, res);
+            void this.handlePostVisualVerificationFailure(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/git-actions`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
@@ -539,14 +539,23 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
     /** Clamped validation shared by the single-shot header and the per-step flow payload. */
     protected sanitizeVisualResult(parsed: Partial<QaapPreviewVisualValidationResult> | undefined): QaapPreviewVisualValidationResult | undefined {
         if (!parsed
-            || (parsed.status !== 'passed' && parsed.status !== 'warning')
+            || (parsed.status !== 'passed' && parsed.status !== 'warning' && parsed.status !== 'failed')
             || typeof parsed.summary !== 'string'
             || !Array.isArray(parsed.issues)
             || !parsed.issues.every(issue => typeof issue === 'string')) {
             return undefined;
         }
+        // A client cannot label the evidence `passed` while explicitly declaring it non-ready.
+        // Normalize the contradictory payload to a hard failure so transport reachability (HTTP
+        // 200) can never bypass the render gate or the automatic repair loop.
+        const status = parsed.status === 'passed' && parsed.readiness === 'failed'
+            ? 'failed'
+            : parsed.status;
         return {
-            status: parsed.status,
+            status,
+            readiness: status === 'passed'
+                ? 'render_ready'
+                : 'failed',
             summary: parsed.summary.slice(0, 500),
             issues: parsed.issues.slice(0, 10).map(issue => issue.slice(0, 300)),
         };
@@ -666,7 +675,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         }
     }
 
-    protected handlePostVisualVerificationFailure(req: Request, res: Response): void {
+    protected async handlePostVisualVerificationFailure(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as { reason?: unknown; targetMessageId?: unknown };
         const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
         const targetMessageId = typeof body.targetMessageId === 'string' ? body.targetMessageId.trim() : '';
@@ -674,7 +683,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             res.status(400).json({ error: 'reason and targetMessageId are required.' });
             return;
         }
-        const conv = this.store.recordVisualVerificationFailure(req.params.id, reason, targetMessageId);
+        const conv = await this.store.recordVisualVerificationFailure(req.params.id, reason, targetMessageId);
         if (!conv) {
             res.status(404).json({ error: 'Conversation or agent response not found.' });
             return;

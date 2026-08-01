@@ -25,6 +25,7 @@ import {
     buildQaapDevPreviewOpenUrl,
     buildQaapIdentityPreviewUrl,
     injectQaapPreviewViteEnvBootstrap,
+    injectQaapPreviewDiagnostics,
     isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
     parseQaapIdentityPreviewRequestPath,
@@ -603,6 +604,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         if (record && login === record.ownerLogin) {
             const body: QaapDevPreviewProbeResponse = {
                 ready,
+                ...(ready ? { readiness: 'transport_ready' as const } : {}),
                 previewUrl: this.buildIdentityPreviewUrl(req, record),
                 previewId: record.previewId,
                 projectId: record.projectId,
@@ -616,6 +618,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         }
         const body: QaapDevPreviewProbeResponse = {
             ready,
+            ...(ready ? { readiness: 'transport_ready' as const } : {}),
             previewUrl: buildQaapDevPreviewOpenUrl(origin, port),
         };
         res.json(body);
@@ -661,6 +664,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             this.portRegistry.touchPreview(record.previewId, login);
             res.json({
                 ready: true,
+                readiness: 'transport_ready',
                 previewUrl: this.buildIdentityPreviewUrl(req, record),
                 previewId: record.previewId,
                 projectId: record.projectId,
@@ -703,8 +707,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             res.json({ ready: false, previewUrl, previewId } satisfies QaapDevPreviewProbeResponse);
             return;
         }
+        const ready = await this.probeLocalDevServer(record.port);
         res.json({
-            ready: await this.probeLocalDevServer(record.port),
+            ready,
+            ...(ready ? { readiness: 'transport_ready' as const } : {}),
             previewUrl,
             previewId,
             projectId: record.projectId,
@@ -905,10 +911,10 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 const rewritten = this.rewriteDevPreviewBody(body, targetPort, publicPrefix);
                 const contentType = proxyRes.headers['content-type'];
                 outgoing.end(typeof contentType === 'string' && /\btext\/html\b/i.test(contentType)
-                    ? injectQaapPreviewViteEnvBootstrap(
+                    ? injectQaapPreviewDiagnostics(injectQaapPreviewViteEnvBootstrap(
                         injectQaapPreviewBridgeLoader(rewritten, this.resolvePublicOrigin(incoming)),
                         publicPrefix,
-                    )
+                    ))
                     : rewritten);
             });
         });

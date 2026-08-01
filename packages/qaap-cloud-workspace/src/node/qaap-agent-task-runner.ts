@@ -141,7 +141,7 @@ const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIO
  *
  * QAAP_AGENT_COMMANDS='[
  *   {"id":"grok-fast","label":"Grok Build (fast)","bin":"grok","template":"grok --always-approve -m grok-4.5 -p {prompt}"},
- *   {"id":"qaiq-gemini","label":"QAIQ Gemini","bin":"qaiq","template":"qaiq --print --dangerously-skip-permissions --provider gemini --model gemini-2.5-flash {prompt}"}
+ *   {"id":"qaiq-gemini","label":"QAIQ Gemini","bin":"qaiq","template":"qaiq --print --provider gemini --model gemini-2.5-flash {prompt}"}
  * ]'
  *
  * API keys stay in the regular provider env vars consumed by the underlying CLI
@@ -1140,10 +1140,11 @@ export class QaapAgentTaskRunner {
      * A template's `{prompt}` placeholder is replaced with a POSIX shell-quoted prompt;
      * without a placeholder the prompt is appended.
      *
-     * QAIQ + explicit "request approval" uses the SDK stdio permission flow: the prompt moves to stdin
+     * QAIQ + "request approval" or the default "approve for me" uses the SDK stdio permission flow: the prompt moves to stdin
      * ({@code stdinPrompt}) and the CLI is launched with {@link QAIQ_STDIO_APPROVAL_FLAGS}.
-     * Default {@code approve-for-me} / {@code full-access} stay non-interactive (OpenCode-style):
-     * {@code --dangerously-skip-permissions}, stream-json on stdout, blocked headless tools at CLI.
+     * Qaap answers safe requests automatically for {@code approve-for-me} but can still hard-deny
+     * global process kills and other destructive commands. Only explicit {@code full-access} uses
+     * the non-interactive permission bypass.
      */
     protected buildAgentCommand(
         prompt: string,
@@ -1213,8 +1214,11 @@ export class QaapAgentTaskRunner {
         // exists so a human can say yes to a write, and on a read-only turn there is no write to say
         // yes to. Letting it through would also append QAIQ_STDIO_APPROVAL_FLAGS after the read-only
         // flags and hand the permission decision back to the model's own prompt.
-        const useStdioApprovals = id === QAIQ_AGENT_ID
-            && !!detected
+        const envTemplate = detected ? undefined : process.env.QAAP_AGENT_COMMAND?.trim();
+        const usesQaiqProtocol = !!detected
+            ? id === QAIQ_AGENT_ID || detected.bin === 'qaiq' || detected.bin === 'openclaude'
+            : !!envTemplate && this.isQaiqRunner(id, envTemplate);
+        const useStdioApprovals = usesQaiqProtocol
             && !readOnlyWorkspace
             && shouldUseQaiqStdioApprovals(approvalOptions);
         if (detected) {
@@ -1222,13 +1226,13 @@ export class QaapAgentTaskRunner {
             command = useStdioApprovals
                 ? this.applyTemplateWithoutPrompt(detected.template, vars)
                 : this.applyTemplate(detected.template, agentPrompt, vars);
+        } else if (envTemplate) {
+            const vars = this.buildTemplateVars(id, agentModel, interaction);
+            command = useStdioApprovals
+                ? this.applyTemplateWithoutPrompt(envTemplate, vars)
+                : this.applyTemplate(envTemplate, agentPrompt, vars);
         } else {
-            const envTemplate = process.env.QAAP_AGENT_COMMAND?.trim();
-            if (envTemplate) {
-                command = this.applyTemplate(envTemplate, agentPrompt, this.buildTemplateVars(id, agentModel, interaction));
-            } else {
-                command = agentPrompt;
-            }
+            command = agentPrompt;
         }
         command = applyAgentApprovalPolicyToCommand(command, approvalOptions);
         if (useStdioApprovals) {

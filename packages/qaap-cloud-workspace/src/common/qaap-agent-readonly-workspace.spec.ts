@@ -112,7 +112,9 @@ describe('qaap-agent-readonly-workspace command flags', () => {
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
         });
-        expect(writer).to.include('--dangerously-skip-permissions');
+        expect(writer).to.include('--permission-mode default');
+        expect(writer).to.not.include('--dangerously-skip-permissions');
+        expect(writer).to.include('--allowed-tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,WebFetch,WebSearch');
         const tools = /--tools\s+(\S+)/.exec(writer)?.[1].split(',') ?? [];
         expect(tools).to.include.members(['Write', 'Edit', 'Bash', 'NotebookEdit']);
     });

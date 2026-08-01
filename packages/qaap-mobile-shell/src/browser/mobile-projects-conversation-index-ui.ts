@@ -5,7 +5,11 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatService } from '@theia/ai-chat';
-import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import {
+    isFailedRunSummary,
+    preferQaapConversationSummary,
+    type QaapAgentConversationSummaryDTO,
+} from '../common/qaap-agent-conversation-client';
 import { filterVpsTaskSummaries } from '../common/qaap-work-hub-surfaces';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -215,25 +219,7 @@ export class MobileProjectsConversationIndexUi {
         current: QaapAgentConversationSummaryDTO,
         next: QaapAgentConversationSummaryDTO,
     ): QaapAgentConversationSummaryDTO {
-        if ((current.status === 'idle' || current.status === 'settled') && next.status === 'streaming' && current.updatedAt >= next.updatedAt) {
-            return current;
-        }
-        if (current.status === 'streaming' && (next.status === 'idle' || next.status === 'settled')) {
-            return next.updatedAt >= current.updatedAt ? next : current;
-        }
-        if (current.status !== 'streaming' && next.status === 'streaming') {
-            return { ...next, id: current.id };
-        }
-        if (current.id.startsWith('theia-chat-service:')) {
-            return {
-                ...current,
-                title: current.title || next.title,
-                messageCount: Math.max(current.messageCount, next.messageCount),
-                updatedAt: Math.max(current.updatedAt, next.updatedAt),
-                lastMessagePreview: current.lastMessagePreview ?? next.lastMessagePreview,
-            };
-        }
-        return next.updatedAt > current.updatedAt ? next : current;
+        return preferQaapConversationSummary(current, next);
     }
 
     summaryToTaskView(conversation: QaapAgentConversationSummaryDTO): MobileProjectTaskView {

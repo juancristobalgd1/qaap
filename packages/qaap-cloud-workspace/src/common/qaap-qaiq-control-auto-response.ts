@@ -89,6 +89,14 @@ export function resolveQaiqControlRequestAutoAction(
     if (!toolName) {
         return 'allow';
     }
+    // Approve-for-me deliberately omits Bash and Agent from `--allowed-tools` so QAIQ emits a
+    // control request and Qaap can apply the guards above. Once those guards pass, the core
+    // `--tools` allowlist is the policy signal: safe shell calls and the verification-only
+    // subagent must continue immediately instead of entering an approval queue the default UI
+    // does not surface.
+    if ((isShellTool(toolName) || toolName === 'Agent') && coreTools?.has(toolName)) {
+        return 'allow';
+    }
     const allowedTools = parseAllowedTools(command);
     if (allowedTools) {
         return allowedTools.has(toolName) ? 'allow' : 'queue';

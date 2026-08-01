@@ -75,19 +75,33 @@ describe('QaapWorkflowJobFunctions.verify', () => {
         expect(contribution.ran).to.deep.equal(['typecheck', 'build']);
     });
 
-    it('succeeds with nothing to run when there are no verification scripts', async () => {
+    it('fails closed when there are no verification scripts', async () => {
         writePackageJson({ start: 'node .' });
         const { definition, contribution } = verifyDefinition();
-        const result = await definition.execute(context(dir), {}) as { outcome: string; scripts: string[] };
-        expect(result.outcome).to.equal('success');
-        expect(result.scripts).to.deep.equal([]);
+        const result = await definition.execute(context(dir), {}) as { outcome: string; summary: string; artifact: string };
+        expect(result.outcome).to.equal('fail');
+        expect(result.summary).to.contain('No applicable verification script');
+        expect(result.artifact).to.contain('No applicable verification script');
         expect(contribution.ran).to.deep.equal([]);
     });
 
-    it('succeeds when there is no package.json at all', async () => {
+    it('fails closed when there is no package.json at all', async () => {
         const { definition } = verifyDefinition();
-        const result = await definition.execute(context(dir), {}) as { outcome: string };
-        expect(result.outcome).to.equal('success');
+        const result = await definition.execute(context(dir), {}) as { outcome: string; summary: string };
+        expect(result.outcome).to.equal('fail');
+        expect(result.summary).to.contain('No applicable verification script');
+    });
+
+    it('fails the declared goal check when that exact script is absent instead of falling back', async () => {
+        writePackageJson({ test: 'mocha' });
+        const { definition, contribution } = verifyDefinition();
+        const result = await definition.execute(context(dir), { script: 'goal:check' }) as {
+            outcome: string; failedScript: string; summary: string;
+        };
+        expect(result.outcome).to.equal('fail');
+        expect(result.failedScript).to.equal('goal:check');
+        expect(result.summary).to.contain('npm run goal:check');
+        expect(contribution.ran).to.deep.equal([]);
     });
 
     describe('what the fix turn is handed', () => {

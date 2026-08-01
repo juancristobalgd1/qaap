@@ -34,6 +34,7 @@ class FakeAgentPort implements QaapWorkflowAgentTurnPort {
     readonly cancelled: string[] = [];
     readonly tasks = new Map<string, { state: QaapAgentTaskState; log?: string }>();
     failNext = false;
+    completeNext = false;
     private counter = 0;
 
     async cancelAgentTurn(externalId: string): Promise<void> {
@@ -47,7 +48,8 @@ class FakeAgentPort implements QaapWorkflowAgentTurnPort {
         }
         const id = `task-${++this.counter}`;
         this.started.push(id);
-        this.tasks.set(id, { state: 'running' });
+        this.tasks.set(id, { state: this.completeNext ? 'completed' : 'running' });
+        this.completeNext = false;
         return id;
     }
 
@@ -106,6 +108,19 @@ describe('QaapWorkflowDispatcher', () => {
         const runId = await startRun();
         expect(agent.started).to.deep.equal(['task-1']);
         expect(store.get('ada', runId)?.dispatched.implement?.externalId).to.equal('task-1');
+    });
+
+    it('reconciles an agent turn that finishes before its durable attachment completes', async () => {
+        agent.completeNext = true;
+
+        const runId = await startRun();
+
+        // The original terminal event could not find the run yet. The post-attach lookup routes it
+        // exactly once and advances to the next node without waiting for a restart reconciliation.
+        expect(agent.started).to.deep.equal(['task-1']);
+        expect(jobs.started).to.deep.equal(['job-1']);
+        expect(store.get('ada', runId)?.run.active).to.deep.equal(['risk-classify']);
+        expect(store.get('ada', runId)?.dispatched['risk-classify']?.externalId).to.equal('job-1');
     });
 
     it('drives the whole review graph from runtime events', async () => {

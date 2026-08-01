@@ -6,7 +6,7 @@ browser tab is closed. The server auto-detects these CLIs on `PATH`:
 - `codex` -> `codex exec {prompt}` on current Codex CLI, or `codex -q {prompt}` on older
   research-preview builds that do not expose `exec`
 - `claude` -> `claude -p {prompt}`
-- `qaiq` -> `qaiq --bare --print --output-format stream-json --verbose --include-partial-messages --dangerously-skip-permissions {qaiq_flags} {prompt}`
+- `qaiq` -> `qaiq --bare --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}`
   (stream-json is parsed live in chat/transcript UIs: thinking blocks, tool calls, and assistant text)
   (`{qaiq_flags}` is filled from your Settings API keys: Gemini, OpenRouter, Ollama, …)
 - `grok` -> `grok --always-approve {model_flags} -p {prompt}`
@@ -71,13 +71,13 @@ QAAP_AGENT_COMMANDS='[
     "id": "qaiq-gemini",
     "label": "QAIQ Gemini",
     "bin": "qaiq",
-    "template": "qaiq --print --dangerously-skip-permissions --provider gemini --model gemini-2.5-flash {prompt}"
+    "template": "qaiq --print --provider gemini --model gemini-2.5-flash {prompt}"
   },
   {
     "id": "qaiq-ollama",
     "label": "QAIQ Ollama",
     "bin": "qaiq",
-    "template": "qaiq --print --dangerously-skip-permissions --provider ollama --model qwen2.5-coder:7b {prompt}"
+    "template": "qaiq --print --provider ollama --model qwen2.5-coder:7b {prompt}"
   }
 ]'
 ```
@@ -100,7 +100,7 @@ QAAP_AGENT_COMMANDS='[
     "id": "qaiq-openrouter",
     "label": "QAIQ OpenRouter",
     "bin": "qaiq",
-    "template": "OPENAI_API_KEY=$OPENROUTER_API_KEY OPENAI_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1} qaiq --print --dangerously-skip-permissions --provider openai --model nvidia/nemotron-3-super-120b-a12b:free {prompt}"
+    "template": "OPENAI_API_KEY=$OPENROUTER_API_KEY OPENAI_BASE_URL=${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1} qaiq --print --provider openai --model nvidia/nemotron-3-super-120b-a12b:free {prompt}"
   }
 ]'
 ```

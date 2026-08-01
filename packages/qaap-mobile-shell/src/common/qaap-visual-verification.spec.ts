@@ -12,6 +12,7 @@ import {
     findQaapCaptureDirectivesInText,
     parseQaapCaptureDirective,
     QAAP_VISUAL_VERIFICATION_MARKER,
+    QAAP_VISUAL_REPAIR_REQUIRED_MARKER,
     textContainsQaapCaptureDirective,
 } from './qaap-visual-verification';
 
@@ -23,7 +24,7 @@ describe('qaap-visual-verification', () => {
             issues: ['Missing page heading', 'One broken image'],
         });
         expect(markdown).to.contain(QAAP_VISUAL_VERIFICATION_MARKER);
-        expect(markdown).to.contain('Review recommended');
+        expect(markdown).to.contain('Needs fixes');
         expect(markdown).to.contain('Missing page heading');
         expect(markdown).to.contain('![QAAP preview evidence](/evidence/1)');
     });
@@ -34,7 +35,7 @@ describe('qaap-visual-verification', () => {
             { label: '/checkout', imageUrl: '/evidence/2', result: { status: 'warning', summary: '1 finding.', issues: ['overflow'] } },
         ]);
         expect(markdown.match(/\[QAAP visual verification\]/g)).to.have.length(1);
-        expect(markdown).to.contain('Review recommended');
+        expect(markdown).to.contain('Needs fixes');
         expect(markdown).to.contain('Walked 2 pages of the app flow.');
         expect(markdown).to.contain('![QAAP preview evidence /](/evidence/1)');
         expect(markdown).to.contain('![QAAP preview evidence /checkout](/evidence/2)');
@@ -123,9 +124,23 @@ describe('qaap-visual-verification', () => {
             { label: '/checkout', result: { status: 'warning', summary: '1 finding', issues: ['overflow'] } },
         ]);
         expect(markdown.match(/\[QAAP visual verification\]/g)).to.have.length(1);
-        expect(markdown).to.contain('Review recommended');
+        expect(markdown).to.contain('Needs fixes');
         expect(markdown).to.contain('Recorded a video tour of 2 pages.');
         expect(markdown).to.contain('- `/checkout`: overflow');
         expect(markdown).to.contain('[QAAP preview video](/evidence/v.webm)');
+    });
+
+    it('labels failed render evidence as failed, never ready or passed', () => {
+        const markdown = buildQaapVisualVerificationMarkdown('/evidence/failed', {
+            status: 'failed',
+            readiness: 'failed',
+            summary: 'Preview render failed.',
+            issues: ['pageerror: fixture boom'],
+        });
+        expect(markdown).to.contain('Visual verification · Failed');
+        expect(markdown).to.contain('pageerror: fixture boom');
+        expect(markdown).to.contain(QAAP_VISUAL_REPAIR_REQUIRED_MARKER);
+        expect(markdown).to.contain('Re-enter the repair loop');
+        expect(markdown).not.to.contain('Visual verification · Passed');
     });
 });

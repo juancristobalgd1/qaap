@@ -4,7 +4,12 @@
 // *****************************************************************************
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO, QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import {
+    preferQaapConversationSummary,
+    type QaapAgentConversationDTO,
+    type QaapAgentConversationSummaryDTO,
+    type QaapAgentMessageDTO,
+} from './qaap-agent-conversation-client';
 import { applyAgentMessageWireDelta } from './qaap-agent-message-wire-delta';
 import type { QaapAgentMessageWireDelta } from './qaap-agent-message-wire-delta';
 import {
@@ -75,8 +80,12 @@ export class QaapThreadStore {
 
     upsertSummary(summary: QaapAgentConversationSummaryDTO): QaapThreadStoreUpsertResult {
         const previous = this.summariesById.get(summary.id);
-        const cwd = normalizeCwd(summary.cwd);
-        const listOrderChanged = streamingSortOrderMayChange(previous, summary);
+        // WebSocket and HTTP terminal updates can share a millisecond with the last streaming
+        // delta. Keep the server's terminal state instead of leaving this store (and the Work Hub)
+        // permanently on "Processing".
+        const next = previous ? preferQaapConversationSummary(previous, summary) : summary;
+        const cwd = normalizeCwd(next.cwd);
+        const listOrderChanged = streamingSortOrderMayChange(previous, next);
         const ids = [...(this.idsByCwd.get(cwd) ?? [])];
         const index = ids.indexOf(summary.id);
         if (index >= 0) {
@@ -85,7 +94,7 @@ export class QaapThreadStore {
         ids.unshift(summary.id);
         const sorted = sortConversationSummaries(ids.map(id => {
             if (id === summary.id) {
-                return summary;
+                return next;
             }
             return this.summariesById.get(id)!;
         }).filter((entry): entry is QaapAgentConversationSummaryDTO => !!entry));
@@ -95,12 +104,12 @@ export class QaapThreadStore {
         }
         // Sync status/updatedAt to cached document so non-active conversations
         // don't show stale streaming/idle state when the user returns.
-        this.syncDocumentStatusFromSummary(summary.id, summary);
+        this.syncDocumentStatusFromSummary(next.id, next);
         this.notifyThread(summary.id);
         return {
             previous,
-            next: summary,
-            changedFields: computeSummaryChangedFields(previous, summary),
+            next,
+            changedFields: computeSummaryChangedFields(previous, next),
             listOrderChanged,
         };
     }

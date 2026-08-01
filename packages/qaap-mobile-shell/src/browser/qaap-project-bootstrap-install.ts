@@ -13,6 +13,10 @@ import { QaapPackageManager } from './qaap-project-bootstrap-types';
 export function buildBootstrapInstallCommand(pm: QaapPackageManager): string {
     const env = 'NODE_ENV=development';
     switch (pm) {
+        case 'native':
+            // Native/custom preview descriptors are already runnable. This is a portable no-op
+            // because Node is the Qaap host runtime even when the app itself is not JavaScript.
+            return 'node -e ""';
         case 'pnpm':
             return `${env} pnpm install`;
         case 'yarn':

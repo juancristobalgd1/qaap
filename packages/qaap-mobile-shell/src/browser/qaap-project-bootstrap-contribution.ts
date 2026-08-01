@@ -32,6 +32,15 @@ function frameworkLabel(kind: QaapProjectDescriptor['kind']): string {
         case 'node-svelte': return 'SvelteKit';
         case 'node-nuxt': return 'Nuxt';
         case 'node-generic': return 'Node.js';
+        case 'python-django': return 'Django';
+        case 'python-fastapi': return 'FastAPI';
+        case 'python-flask': return 'Flask';
+        case 'python-generic': return 'Python';
+        case 'go': return 'Go';
+        case 'rust': return 'Rust';
+        case 'dotnet': return '.NET';
+        case 'php': return 'PHP';
+        case 'custom': return 'Custom app';
         case 'static': return 'Static site';
         default: return 'Project';
     }
@@ -113,12 +122,13 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                     ));
                 break;
             case 'running':
-                // Once the preview is up the banner goes away and the user gets a transient toast.
+                // The port probe only proves transport liveness; render truth arrives from the
+                // visual verifier after the page hydrates.
                 this.removeBanner();
                 if (state.previewUrl) {
                     this.announce(state.phase, () =>
                         MobileSnackbar.show(
-                            nls.localize('qaap/projectBootstrap/previewReady', 'Preview ready'),
+                            nls.localize('qaap/projectBootstrap/previewTransportReady', 'Dev server reachable'),
                             { kind: 'success', duration: 1600 }
                         ));
                 }
@@ -240,7 +250,10 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
             item.addEventListener('click', () => {
                 this.closeAppPicker();
                 MobileHaptics.fire(MobileHaptics.LIGHT);
-                this.bootstrap.selectMonorepoApp(app);
+                // A live preview performs an asynchronous, ownership-scoped hand-off before the
+                // selected app is published as running. The service reports any launch error in
+                // its normal bootstrap state instead of leaving an unhandled picker promise.
+                void this.bootstrap.selectMonorepoApp(app);
             });
             menu.appendChild(item);
         }

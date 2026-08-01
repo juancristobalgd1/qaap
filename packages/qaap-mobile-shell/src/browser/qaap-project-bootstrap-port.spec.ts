@@ -85,6 +85,17 @@ describe('qaap-project-bootstrap-port', () => {
         expect(getImplicitDevPort('node-vite')).to.equal(5173);
     });
 
+    it('materializes native preview ports without injecting Node options', () => {
+        const command = wrapDevCommandForPort(
+            "'python3' '-m' 'http.server' '{{PORT}}'",
+            8001,
+            'python-generic',
+        );
+        expect(command).to.include("'http.server' '8001'");
+        expect(command).to.include('PORT=8001');
+        expect(command).not.to.include('NODE_OPTIONS');
+    });
+
     it('wrapDevCommandForPort passes -p to Next after PORT=', () => {
         expect(wrapDevCommandForPort('npm run dev', 3001, 'node-next')).to.match(/npm run dev -- -p 3001$/);
     });

@@ -123,4 +123,16 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
 
         expect(footRow.querySelector('.theia-mobile-projects-task-diff')).to.equal(diffBefore);
     });
+
+    it('does not claim a preview URL has rendered successfully', () => {
+        const ui = newUi();
+        const activity = ui.createConversationActivityRow(
+            { previewUrl: 'http://localhost:5173' } as never,
+            summary({}),
+            { isRunning: false, needsInput: false, isDone: false },
+        );
+
+        expect(activity?.textContent).to.contain('Preview available');
+        expect(activity?.textContent).not.to.contain('Preview ready');
+    });
 });

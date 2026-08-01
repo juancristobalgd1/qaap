@@ -8,12 +8,19 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildImplementThenReviewWorkflow, type QaapWorkflowDef } from '../common/qaap-workflow-ir';
-import { QaapWorkflowRunRequestError, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import {
+    QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS,
+    QaapWorkflowRunRequestError,
+    QaapWorkflowRunStore,
+} from './qaap-workflow-run-store';
 
 class TestStore extends QaapWorkflowRunStore {
+    protected testNow: number | undefined;
     constructor(protected readonly testDirectory: string) { super(); }
     initialize(): void { this.init(); }
+    setNow(now: number): void { this.testNow = now; }
     protected override storeDirectory(): string { return this.testDirectory; }
+    protected override now(): number { return this.testNow ?? super.now(); }
 }
 
 describe('QaapWorkflowRunStore', () => {
@@ -33,6 +40,73 @@ describe('QaapWorkflowRunStore', () => {
         expect(started.dispatch).to.deep.equal(['implement']);
         expect(started.record.run.status).to.equal('running');
         expect(started.record.ownerLogin).to.equal('ada');
+    });
+
+    it('serializes durable dispatch claims and attaches the winner exactly once', async () => {
+        const started = await store.start(buildImplementThenReviewWorkflow(), {
+            cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' },
+        });
+        const runId = started.record.run.id;
+
+        const [winner, replay] = await Promise.all([
+            store.claimDispatch('ada', runId, 'implement', 1, 'agent', 'claim-a'),
+            store.claimDispatch('ada', runId, 'implement', 1, 'agent', 'claim-b'),
+        ]);
+
+        expect(winner).to.deep.equal({ status: 'claimed' });
+        expect(replay).to.deep.equal({ status: 'pending', claimId: 'claim-a' });
+        expect(store.get('ada', runId)?.dispatchClaims.implement).to.deep.include({
+            visit: 1, kind: 'agent', claimId: 'claim-a',
+        });
+
+        await store.completeDispatchClaim('ada', runId, 'implement', 1, 'agent', 'claim-a', 'task-1');
+        const attachedReplay = await store.claimDispatch('ada', runId, 'implement', 1, 'agent', 'claim-c');
+        expect(attachedReplay).to.deep.equal({ status: 'attached', externalId: 'task-1' });
+        expect(store.get('ada', runId)?.dispatchClaims).to.deep.equal({});
+        expect(store.findByExternalId('task-1')?.nodeId).to.equal('implement');
+
+        // Dispatcher attaches after the port returns. Repeating the exact attachment is a no-op,
+        // while replacing the winner with another process is rejected.
+        await store.attachDispatch('ada', runId, 'implement', 'agent', 'task-1');
+        await store.attachDispatch('ada', runId, 'implement', 'agent', 'task-2').then(
+            () => expect.fail('expected a conflicting attachment to be rejected'),
+            error => expect(error).to.be.instanceOf(QaapWorkflowRunRequestError),
+        );
+    });
+
+    it('persists a pending dispatch claim across a store restart', async () => {
+        const started = await store.start(buildImplementThenReviewWorkflow(), {
+            cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' },
+        });
+        await store.claimDispatch('ada', started.record.run.id, 'implement', 1, 'agent', 'claim-a');
+
+        const restored = new TestStore(directory);
+        restored.initialize();
+
+        expect(restored.get('ada', started.record.run.id)?.dispatchClaims.implement).to.deep.include({
+            visit: 1, claimId: 'claim-a', kind: 'agent',
+        });
+    });
+
+    it('lets one caller steal an expired claim and rejects the dead owner attachment', async () => {
+        store.setNow(1_000);
+        const started = await store.start(buildImplementThenReviewWorkflow(), {
+            cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix the login bug' },
+        });
+        const runId = started.record.run.id;
+        await store.claimDispatch('ada', runId, 'implement', 1, 'agent', 'dead-owner');
+        store.setNow(1_000 + QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS);
+
+        const stolen = await store.claimDispatch('ada', runId, 'implement', 1, 'agent', 'replacement');
+
+        expect(stolen).to.deep.equal({ status: 'claimed' });
+        expect(store.get('ada', runId)?.dispatchClaims.implement.claimId).to.equal('replacement');
+        await store.completeDispatchClaim('ada', runId, 'implement', 1, 'agent', 'dead-owner', 'task-dead').then(
+            () => expect.fail('expected the expired owner to lose attachment rights'),
+            error => expect(error).to.be.instanceOf(QaapWorkflowRunRequestError),
+        );
+        await store.completeDispatchClaim('ada', runId, 'implement', 1, 'agent', 'replacement', 'task-live');
+        expect(store.get('ada', runId)?.dispatched.implement.externalId).to.equal('task-live');
     });
 
     it('rejects an invalid definition before persisting anything', async () => {

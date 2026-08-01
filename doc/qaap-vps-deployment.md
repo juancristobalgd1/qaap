@@ -251,16 +251,20 @@ Put **Caddy** or **nginx** in front with TLS and set `QAAP_OAUTH_PUBLIC_URL` to
 
 ## Hardening the agent for multi-tenant use (non-root privilege drop)
 
-By default the hosted agent runs as **root** with `--dangerously-skip-permissions`. On a
-single-user box that is fine, but before you invite other users you should drop the agent to a
-non-root uid so one tenant's agent cannot read another tenant's secrets (API keys, GitHub OAuth
-tokens, helper tokens) — all of which live under the root-owned `/root/.qaap` and `/root/.theia`.
+By default the hosted backend stays root so it can allocate isolated tenant identities, while each
+agent runs under a persistent **per-user non-root uid** (`QAAP_AGENT_UID_PER_USER=1`). The normal
+“Approve for me” policy keeps QAIQ shell calls behind Qaap's stdio control; only an explicit
+“Full access” turn uses the CLI permission bypass. This prevents one tenant from reading another
+tenant's code or root-owned secrets and lets Qaap reject global process kills before execution.
 
-The image already ships a `qaap-agent` user (uid 1001) and locks `/root` to `0700`. Activation is
-opt-in via env, and you should **verify before flipping it on**:
+The image also ships a shared fallback `qaap-agent` user (uid 1001) and locks `/root` to `0700`.
+Keep per-user uid isolation enabled for hosted deployments. Only use the shared fallback on an
+explicitly single-user box, and verify it before opting out:
 
 1. Build/pull the new image and set in your VPS `.env`:
    ```
+   QAAP_AGENT_UID_PER_USER=0
+   QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true
    QAAP_AGENT_UID=1001
    QAAP_AGENT_GID=1001
    ```
@@ -281,9 +285,8 @@ opt-in via env, and you should **verify before flipping it on**:
 4. Run a real agent task end-to-end (edit a file, run the dev server) to confirm nothing regressed.
    If a CLI complains it can't write its config, confirm `QAAP_AGENT_HOME=/home/qaap-agent` is set.
 
-> This closes the cross-tenant **secret** leak. It does **not** yet isolate cross-tenant **code**
-> reads (all agents share uid 1001 on the shared `/workspace`). Full isolation (a container or uid
-> per user) is the next step for a large public deployment.
+> The shared fallback isolates root-owned secrets but does not isolate code between users. The
+> default per-user uid mode is required for a public deployment.
 
 ## Backups
 

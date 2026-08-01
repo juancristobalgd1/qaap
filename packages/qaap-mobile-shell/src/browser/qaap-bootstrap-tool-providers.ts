@@ -5,6 +5,7 @@
 
 import { ToolInvocationContext, ToolProvider, ToolRequest } from '@theia/ai-core';
 import { inject, injectable } from '@theia/core/shared/inversify';
+import { nls } from '@theia/core/lib/common/nls';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     formatBootstrapToolResult,
@@ -32,8 +33,7 @@ async function missingProjectMessage(service: QaapProjectBootstrapService): Prom
         return snapshot.missingDescriptorHint;
     }
     return await service.getMissingDescriptorHint()
-        ?? 'No runnable Node project detected in the workspace root. '
-        + 'If the app was scaffolded in a subfolder, Qaap should auto-detect it after refresh.';
+        ?? 'No runnable preview target was detected. Add a supported web entry point or a validated .qaap/preview.json launch plan.';
 }
 
 @injectable()
@@ -74,7 +74,7 @@ export class QaapBootstrapInstallTool implements ToolProvider {
             id: QAAP_BOOTSTRAP_INSTALL_TOOL_ID,
             name: QAAP_BOOTSTRAP_INSTALL_TOOL_ID,
             providerName: 'qaap',
-            description: 'Installs workspace dependencies (npm/pnpm/yarn). May auto-start the dev server when install succeeds. '
+            description: 'Installs Node workspace dependencies when needed. Native/custom preview plans skip this step. May auto-start the dev server when install succeeds. '
                 + 'Use qaap_bootstrap_status to inspect progress.',
             parameters: {
                 type: 'object',
@@ -186,7 +186,11 @@ export class QaapBootstrapOpenPreviewTool implements ToolProvider {
                         await this.bootstrap.openPreview(before.previewUrl, true, { auto: true });
                         return snapshotJson(
                             this.bootstrap,
-                            `Preview ready at ${before.previewUrl}. Do not switch the user's view; they open it via Open preview or the link.`,
+                            nls.localize(
+                                'qaap/bootstrap/previewTransportReady',
+                                'Dev server reachable at {0}. Render verification has not run yet. Do not switch the user\'s view; they open it via Open preview or the link.',
+                                before.previewUrl,
+                            ),
                         );
                     }
                     if (before.portInUse || before.lastPort !== undefined || before.phase === 'run-failed') {
@@ -195,7 +199,11 @@ export class QaapBootstrapOpenPreviewTool implements ToolProvider {
                         if (after.previewUrl) {
                             return snapshotJson(
                                 this.bootstrap,
-                                `Preview ready at ${after.previewUrl}. Do not switch the user's view; they open it via Open preview or the link.`,
+                                nls.localize(
+                                    'qaap/bootstrap/previewTransportReady',
+                                    'Dev server reachable at {0}. Render verification has not run yet. Do not switch the user\'s view; they open it via Open preview or the link.',
+                                    after.previewUrl,
+                                ),
                             );
                         }
                         return snapshotJson(this.bootstrap, after.error ?? 'Could not attach to an existing dev server.');
@@ -206,7 +214,11 @@ export class QaapBootstrapOpenPreviewTool implements ToolProvider {
                             await this.bootstrap.openPreview(url, true, { auto: true });
                             return snapshotJson(
                                 this.bootstrap,
-                                `Preview ready at ${url}. Do not switch the user's view; they open it via Open preview or the link.`,
+                                nls.localize(
+                                    'qaap/bootstrap/previewTransportReady',
+                                    'Dev server reachable at {0}. Render verification has not run yet. Do not switch the user\'s view; they open it via Open preview or the link.',
+                                    url,
+                                ),
                             );
                         }
                         return snapshotJson(this.bootstrap, 'Dev server is running but no preview URL is available yet.');

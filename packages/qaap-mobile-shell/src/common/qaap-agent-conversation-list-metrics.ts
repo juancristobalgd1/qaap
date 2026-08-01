@@ -351,9 +351,10 @@ export function formatToolActivityLabel(toolName: string | undefined | null, arg
         if (detail && /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve)\b|(?:vite|next|astro|remix)\s+(?:dev|start)?\b/i.test(detail)) {
             return `Started server: ${detail}`;
         }
-        if (detail && /\b(?:open|preview|localhost|127\.0\.0\.1|0\.0\.0\.0|:\d{2,5})\b/i.test(detail)) {
-            return `Preview ready: ${detail}`;
-        }
+        // A command mentioning a URL or preview only proves that the command was requested. It
+        // says nothing about whether the port answered, the page rendered, or the app survived
+        // hydration. Readiness is emitted by the preview probe/visual verifier, never inferred
+        // from an agent's shell text.
         return detail ? `Ran command: ${detail}` : 'Ran command';
     }
     if (name.includes('write') || name.includes('edit') || name.includes('patch') || name.includes('replace')) {

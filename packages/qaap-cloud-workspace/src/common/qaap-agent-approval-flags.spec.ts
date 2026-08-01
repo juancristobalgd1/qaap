@@ -22,29 +22,32 @@ describe('qaap-agent-approval-flags', () => {
             .to.deep.equal({ shell: true, network: false });
     });
 
-    it('approve-for-me uses OpenCode-style skip for QAIQ headless runs', () => {
+    it('approve-for-me keeps QAIQ on stdio-controlled permissions', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
-        expect(command).to.include('--dangerously-skip-permissions');
+        expect(command).to.include('--permission-mode default');
+        expect(command).not.to.include('--dangerously-skip-permissions');
         expect(command).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent');
         expect(command).to.include('--disallowed-tools');
         expect(command).to.include('Task');
         expect(command).to.include('Skill');
-        expect(command).not.to.include('--allowed-tools');
+        expect(command).to.include('--allowed-tools');
+        expect(command).not.to.match(/--allowed-tools\s+[^\s]*\bBash\b/);
     });
 
-    it('approve-for-me strips template acceptEdits before injecting skip-permissions', () => {
+    it('approve-for-me strips template acceptEdits before injecting controlled permissions', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --permission-mode acceptEdits --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
         );
-        expect(command).to.include('--dangerously-skip-permissions');
+        expect(command).to.include('--permission-mode default');
+        expect(command).not.to.include('--dangerously-skip-permissions');
         expect(command).not.to.include('acceptEdits');
     });
 
-    it('approve-for-me blocks QAIQ headless tools under skip-permissions', () => {
+    it('approve-for-me blocks QAIQ headless tools under controlled permissions', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "qaiq --print -p 'hi'",
             { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
@@ -146,12 +149,12 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--full-auto');
     });
 
-    it('default approve-for-me does not use QAIQ stdio on headless runs', () => {
+    it('default approve-for-me uses QAIQ stdio so Qaap can enforce hard denials', () => {
         expect(shouldUseQaiqStdioApprovals({
             agentId: 'qaiq',
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
-        })).to.equal(false);
+        })).to.equal(true);
         expect(shouldUseQaiqStdioApprovals({
             agentId: 'qaiq',
             approvalPolicyId: 'request-approval',
@@ -181,7 +184,7 @@ describe('qaap-agent-approval-flags', () => {
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
             toolApprovalRules: { shell: false, network: false },
-        })).to.equal(false);
+        })).to.equal(true);
     });
 
     describe('dispatch is by agentId, not by scanning the whole command for another agent\'s name', () => {
@@ -243,8 +246,30 @@ describe('qaap-agent-approval-flags', () => {
                 "qaiq --print -p 'mentions claude and codex in passing'",
                 { agentId: 'qaiq', approvalPolicyId: 'approve-for-me', autoApprove: true },
             );
-            expect(qaiq).to.include('--dangerously-skip-permissions');
+            expect(qaiq).to.include('--permission-mode default');
+            expect(qaiq).not.to.include('--dangerously-skip-permissions');
             expect(qaiq).to.include('--tools');
+        });
+
+        it('custom QAIQ provider ids inherit the QAIQ safety policy from their executable', () => {
+            const result = applyAgentApprovalPolicyToCommand(
+                'OPENAI_API_KEY=$OPENROUTER_API_KEY OPENAI_BASE_URL=https://openrouter.ai/api/v1 '
+                    + "qaiq --print --dangerously-skip-permissions --provider openai --model free-model 'hi'",
+                { agentId: 'qaiq-openrouter-free', approvalPolicyId: 'approve-for-me', autoApprove: true },
+            );
+            expect(result).to.include('--permission-mode default');
+            expect(result).not.to.include('--dangerously-skip-permissions');
+            expect(result).to.include('--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent');
+            expect(result).not.to.match(/--allowed-tools\s+[^\s]*\bBash\b/);
+        });
+
+        it('explicit shell tasks remain raw even when their command starts with an agent executable', () => {
+            const result = applyAgentApprovalPolicyToCommand(
+                "qaiq --print --dangerously-skip-permissions 'diagnostic'",
+                { agentId: 'shell', approvalPolicyId: 'approve-for-me', autoApprove: true },
+            );
+            expect(result).to.include('--dangerously-skip-permissions');
+            expect(result).not.to.include('--permission-mode default');
         });
     });
 });

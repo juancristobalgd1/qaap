@@ -256,6 +256,51 @@ export function isFailedRunSummary(
     return summary.lastMessageRole === 'agent' && looksLikeSelfReportedAgentStopFailure(summary.lastMessagePreview);
 }
 
+/**
+ * Merge a fresh conversation summary into a cached row without allowing a completed server turn
+ * to remain visually streaming. Server terminal states are authoritative when their timestamps
+ * tie with the final stream delta, which is common when both writes land in the same millisecond.
+ */
+export function preferQaapConversationSummary(
+    current: QaapAgentConversationSummaryDTO,
+    next: QaapAgentConversationSummaryDTO,
+): QaapAgentConversationSummaryDTO {
+    const currentStreaming = current.status === 'streaming';
+    const nextTerminal = next.status === 'idle' || next.status === 'settled' || next.status === 'failed';
+    if (currentStreaming && nextTerminal) {
+        return next.updatedAt >= current.updatedAt ? next : current;
+    }
+    if ((current.status === 'idle' || current.status === 'settled')
+        && next.status === 'streaming'
+        && current.updatedAt >= next.updatedAt) {
+        return current;
+    }
+    if (current.status === 'failed' && next.status === 'streaming') {
+        const startsNewTurn = next.updatedAt > current.updatedAt
+            && next.messageCount > current.messageCount;
+        return startsNewTurn ? next : current;
+    }
+    if (current.status !== 'streaming' && next.status === 'streaming') {
+        return { ...next, id: current.id };
+    }
+    if (current.id.startsWith('theia-chat-service:')) {
+        return {
+            ...current,
+            title: current.title || next.title,
+            messageCount: Math.max(current.messageCount, next.messageCount),
+            updatedAt: Math.max(current.updatedAt, next.updatedAt),
+            lastMessagePreview: current.lastMessagePreview ?? next.lastMessagePreview,
+        };
+    }
+    // Normal summary updates may legitimately share a timestamp (for example a title and status
+    // update in one response), so retain their fresh fields. A same-tick non-failed event must not
+    // erase an already-observed failure, however.
+    if (current.status === 'failed' && next.status !== 'failed' && next.updatedAt <= current.updatedAt) {
+        return current;
+    }
+    return next.updatedAt >= current.updatedAt ? next : current;
+}
+
 /** Move legacy user-turn errors onto the following agent row for transcript rendering. */
 export function normalizeAgentConversationFailures(conv: QaapAgentConversationDTO): QaapAgentConversationDTO {
     if (!conv.messages.some(message => message.role === 'user' && message.error?.trim())) {

@@ -1,12 +1,20 @@
 // *****************************************************************************
+
+import { nls } from '@theia/core/lib/common/nls';
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
 export const QAAP_VISUAL_VERIFICATION_MARKER = '[QAAP visual verification]';
+export const QAAP_VISUAL_REPAIR_REQUIRED_MARKER = '[QAAP repair required]';
 
 export interface QaapPreviewVisualValidationResult {
-    readonly status: 'passed' | 'warning';
+    readonly status: 'passed' | 'warning' | 'failed';
+    /**
+     * Backwards-compatible readiness truth. Only a clean render is `render_ready`; warnings and
+     * runtime/render failures remain non-ready even when the HTTP transport answered.
+     */
+    readonly readiness?: 'render_ready' | 'failed';
     readonly summary: string;
     readonly issues: readonly string[];
 }
@@ -125,15 +133,21 @@ export function agentMessageHasVisualVerificationMarker(message: {
 }
 
 /**
- * Note attached when every capture attempt failed. Carries the marker on purpose: it settles
- * the turn's evidence slot (stops retries on every tab) and makes the failure visible instead
- * of dying in a console.warn nobody reads on the VPS.
+ * Failed evidence attached when every capture attempt failed. The verification marker settles
+ * duplicate capture attempts; the repair marker makes the backend re-enter its bounded repair
+ * loop instead of treating "no screenshot" as an acceptable terminal result.
  */
 export function buildQaapVisualVerificationFailureMarkdown(reason: string): string {
     return [
         QAAP_VISUAL_VERIFICATION_MARKER,
         '**Visual verification · Screenshot unavailable**  ',
         reason.trim(),
+        '',
+        QAAP_VISUAL_REPAIR_REQUIRED_MARKER,
+        nls.localize(
+            'qaap/visualVerification/repairAfterCaptureFailure',
+            'The app could not produce verifiable visual evidence. Re-enter the repair loop, make the preview capturable, then validate it again.',
+        ),
     ].join('\n');
 }
 
@@ -141,16 +155,27 @@ export function buildQaapVisualVerificationMarkdown(
     imageUrl: string,
     result: QaapPreviewVisualValidationResult,
 ): string {
-    const outcome = result.status === 'passed' ? 'Passed' : 'Review recommended';
+    const outcome = result.status === 'passed'
+        ? nls.localize('qaap/visualVerification/passed', 'Passed')
+        : result.status === 'failed'
+            ? nls.localize('qaap/visualVerification/failed', 'Failed')
+            : nls.localize('qaap/visualVerification/needsFixes', 'Needs fixes');
     const issueLines = result.issues.length > 0
         ? `\n\n${result.issues.map(issue => `- ${issue}`).join('\n')}`
         : '';
+    const repair = result.status === 'failed'
+        ? ['', QAAP_VISUAL_REPAIR_REQUIRED_MARKER, nls.localize(
+            'qaap/visualVerification/repairAndCapture',
+            'The app is not render-ready. Re-enter the repair loop with these findings, then capture it again.',
+        )]
+        : [];
     return [
         QAAP_VISUAL_VERIFICATION_MARKER,
         `**Visual verification · ${outcome}**  `,
         `${result.summary}${issueLines}`,
         '',
         `![QAAP preview evidence](${imageUrl})`,
+        ...repair,
     ].join('\n');
 }
 
@@ -170,8 +195,13 @@ export function buildQaapVisualVideoMarkdown(
     videoUrl: string,
     steps: readonly { readonly label: string; readonly result: QaapPreviewVisualValidationResult }[],
 ): string {
-    const failing = steps.filter(step => step.result.status !== 'passed').length;
-    const outcome = failing === 0 ? 'Passed' : 'Review recommended';
+    const failures = steps.filter(step => step.result.status === 'failed').length;
+    const warnings = steps.filter(step => step.result.status === 'warning').length;
+    const outcome = failures > 0
+        ? nls.localize('qaap/visualVerification/failed', 'Failed')
+        : warnings > 0
+            ? nls.localize('qaap/visualVerification/needsFixes', 'Needs fixes')
+            : nls.localize('qaap/visualVerification/passed', 'Passed');
     const findings = steps.flatMap(step => step.result.issues.map(issue => `- \`${step.label}\`: ${issue}`));
     return [
         QAAP_VISUAL_VERIFICATION_MARKER,
@@ -180,13 +210,22 @@ export function buildQaapVisualVideoMarkdown(
         ...(findings.length > 0 ? ['', ...findings] : []),
         '',
         `[QAAP preview video](${videoUrl})`,
+        ...(failures > 0 ? ['', QAAP_VISUAL_REPAIR_REQUIRED_MARKER, nls.localize(
+            'qaap/visualVerification/repairAndRecord',
+            'The app is not render-ready. Re-enter the repair loop with these findings, then record it again.',
+        )] : []),
     ].join('\n');
 }
 
 /** Multi-step twin of {@link buildQaapVisualVerificationMarkdown} — one image per walked route. */
 export function buildQaapVisualFlowMarkdown(steps: readonly QaapVisualFlowStepEvidence[]): string {
-    const failing = steps.filter(step => step.result.status !== 'passed').length;
-    const outcome = failing === 0 ? 'Passed' : 'Review recommended';
+    const failures = steps.filter(step => step.result.status === 'failed').length;
+    const warnings = steps.filter(step => step.result.status === 'warning').length;
+    const outcome = failures > 0
+        ? nls.localize('qaap/visualVerification/failed', 'Failed')
+        : warnings > 0
+            ? nls.localize('qaap/visualVerification/needsFixes', 'Needs fixes')
+            : nls.localize('qaap/visualVerification/passed', 'Passed');
     const blocks = steps.map(step => {
         const issueLines = step.result.issues.length > 0
             ? `\n${step.result.issues.map(issue => `- ${issue}`).join('\n')}`
@@ -200,5 +239,9 @@ export function buildQaapVisualFlowMarkdown(steps: readonly QaapVisualFlowStepEv
         `Walked ${steps.length} page${steps.length === 1 ? '' : 's'} of the app flow.`,
         '',
         blocks.join('\n\n'),
+        ...(failures > 0 ? ['', QAAP_VISUAL_REPAIR_REQUIRED_MARKER, nls.localize(
+            'qaap/visualVerification/repairAndCapture',
+            'The app is not render-ready. Re-enter the repair loop with these findings, then capture it again.',
+        )] : []),
     ].join('\n');
 }

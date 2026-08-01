@@ -32,6 +32,13 @@ interface QaapPreviewProcessRecord {
     readonly stderr: QaapStderrRing;
     /** Timestamps (ms) of automatic restarts within the current window. */
     autoRestartAt: number[];
+    /** Structured launch supplied by the shared preview plan (non-Node/custom runtimes). */
+    launch?: QaapPreviewSupervisorLaunch;
+}
+
+export interface QaapPreviewSupervisorLaunch {
+    readonly command: string;
+    readonly args: readonly string[];
 }
 
 /**
@@ -55,7 +62,12 @@ export class QaapPreviewSupervisor {
      * Starts (or restarts) a dev server for `cwd` on `port`. If a supervised child is already
      * live on that port it is returned as-is. Returns the resulting status.
      */
-    start(cwd: string, port: number, identity?: QaapPreviewProcessIdentity): QaapPreviewProcessStatus {
+    start(
+        cwd: string,
+        port: number,
+        identity?: QaapPreviewProcessIdentity,
+        launch?: QaapPreviewSupervisorLaunch,
+    ): QaapPreviewProcessStatus {
         const key = identity?.previewId ?? `legacy-port-${port}`;
         const existing = this.records.get(key);
         if (existing && existing.status !== 'exited' && existing.child && existing.child.exitCode === null) {
@@ -66,7 +78,7 @@ export class QaapPreviewSupervisor {
         if (collision) {
             throw new Error(`Preview port ${port} is already reserved by ${collision.identity?.previewId ?? collision.key}.`);
         }
-        return this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity);
+        return this.spawnDevServer(cwd, port, existing?.autoRestartAt ?? [], identity, launch);
     }
 
     /**
@@ -120,9 +132,10 @@ export class QaapPreviewSupervisor {
         port: number,
         autoRestartAt: number[],
         identity?: QaapPreviewProcessIdentity,
+        launch?: QaapPreviewSupervisorLaunch,
     ): QaapPreviewProcessStatus {
         const key = identity?.previewId ?? `legacy-port-${port}`;
-        const plan = this.resolveDevCommand(cwd);
+        const plan = launch ?? this.resolveDevCommand(cwd);
         if (!plan) {
             const failed: QaapPreviewProcessRecord = {
                 key,
@@ -135,13 +148,14 @@ export class QaapPreviewSupervisor {
                 exitedAt: Date.now(),
                 stderr: new QaapStderrRing(),
                 autoRestartAt,
+                launch,
             };
-            failed.stderr.push('No "dev" or "start" script found in package.json for this workspace.\n');
+            failed.stderr.push('No runnable preview launch plan was found for this workspace.\n');
             this.records.set(key, failed);
             return 'exited';
         }
         this.registerCleanup();
-        // SEC-1: the dev server runs the workspace's own package.json script (tenant-controlled code),
+        // SEC-1: the dev server runs workspace-controlled code (package script or validated argv plan),
         // so it MUST drop to the tenant uid — otherwise a malicious repo's `dev` script runs as root and
         // defeats uid-per-user isolation. spawnArgvPrepared enforces the fail-closed policy, provisions
         // + chowns the tenant tree, and wraps the command in `setpriv --clear-groups`. resolveProcessEnv
@@ -178,6 +192,7 @@ export class QaapPreviewSupervisor {
             everStarted: true,
             stderr: new QaapStderrRing(),
             autoRestartAt,
+            launch,
         };
         this.records.set(key, record);
 
@@ -229,7 +244,7 @@ export class QaapPreviewSupervisor {
         // Small delay so a crash-on-boot app cannot busy-loop between spawns.
         setTimeout(() => {
             if (this.records.get(record.key) === record && record.status === 'exited') {
-                this.spawnDevServer(record.cwd, record.port, record.autoRestartAt, record.identity);
+                this.spawnDevServer(record.cwd, record.port, record.autoRestartAt, record.identity, record.launch);
             }
         }, 1500).unref?.();
     }

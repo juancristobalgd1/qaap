@@ -127,7 +127,7 @@ describe('buildAgentDevServerVerificationPromptBlock', () => {
         expect(block).to.include('curl -s -o /dev/null');
         expect(block).to.include('never report a URL you have not confirmed');
         expect(block).to.include('Partial output from a killed or timed-out process');
-        expect(block).to.include('no package.json in the root');
+        expect(block).to.include('.qaap/preview.json');
     });
 });
 

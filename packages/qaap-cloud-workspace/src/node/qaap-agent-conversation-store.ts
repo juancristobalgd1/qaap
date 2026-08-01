@@ -148,6 +148,7 @@ import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common
 import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 import {
+    QAAP_VISUAL_REPAIR_REQUIRED_MARKER,
     agentMessageHasVisualVerificationMarker,
     buildQaapVisualFlowMarkdown,
     buildQaapVisualVerificationFailureMarkdown,
@@ -230,12 +231,20 @@ const MAX_RESTART_RESUMES = (() => {
  * bounds the worst case while leaving room for a couple of continues plus one or two fallbacks.
  */
 const MAX_LOOP_SPAWNS_PER_USER_MESSAGE = 4;
+/** A real render failure may re-enter the same agent twice before the conversation fails closed. */
+const MAX_VISUAL_REPAIR_ATTEMPTS = 2;
 
 interface PostUserMessageInternalOptions {
     /** Keeps every backend-generated continuation charged to the original human turn. */
     readonly autoContinueRootMessageId?: string;
     /** Correlates a browser optimistic row with the persisted user message. */
     readonly clientMessageId?: string;
+    /** Durable visual repair identity; all three fields are written before its task id is sealed. */
+    readonly visualRepair?: {
+        readonly rootUserMessageId: string;
+        readonly attempt: number;
+        readonly sourceAgentMessageId: string;
+    };
 }
 
 /** Immutable routing/provenance for one task-backed turn inside a multi-run conversation. */
@@ -582,6 +591,11 @@ export class QaapAgentConversationStore {
             ...(internal?.autoContinueRootMessageId
                 ? { autoContinueRootMessageId: internal.autoContinueRootMessageId }
                 : {}),
+            ...(internal?.visualRepair ? {
+                visualRepairRootMessageId: internal.visualRepair.rootUserMessageId,
+                visualRepairAttempt: internal.visualRepair.attempt,
+                visualRepairSourceAgentMessageId: internal.visualRepair.sourceAgentMessageId,
+            } : {}),
         };
         const messages = [...conv.messages, userMessage];
         let next: QaapAgentConversation = {
@@ -1003,6 +1017,177 @@ export class QaapAgentConversationStore {
         return next;
     }
 
+    /** User turn whose agent reply owns the evidence target (array adjacency is only a legacy fallback). */
+    protected resolveVisualRepairSourceUserMessage(
+        conv: QaapAgentConversation,
+        target: QaapAgentMessage,
+    ): QaapAgentMessage | undefined {
+        if (target.runUserMessageId) {
+            const runUser = conv.messages.find(message =>
+                message.id === target.runUserMessageId && message.role === 'user'
+            );
+            if (runUser) {
+                return runUser;
+            }
+        }
+        const targetIndex = conv.messages.findIndex(message => message.id === target.id);
+        for (let index = targetIndex - 1; index >= 0; index--) {
+            if (conv.messages[index].role === 'user') {
+                return conv.messages[index];
+            }
+        }
+        return undefined;
+    }
+
+    protected countVisualRepairAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
+        return conv.messages.filter(message =>
+            message.role === 'user'
+            && message.visualRepairRootMessageId === rootUserMessageId
+            && typeof message.visualRepairAttempt === 'number'
+        ).length;
+    }
+
+    protected buildVisualRepairPrompt(target: QaapAgentMessage, attempt: number): string {
+        const markerIndex = target.content.lastIndexOf('[QAAP visual verification]');
+        const evidence = (markerIndex >= 0 ? target.content.slice(markerIndex) : target.content)
+            .trim()
+            .slice(0, 3_000);
+        return [
+            nls.localize(
+                'qaap/visualRepair/heading',
+                'Automatic visual repair attempt {0} of {1}.',
+                attempt,
+                MAX_VISUAL_REPAIR_ATTEMPTS,
+            ),
+            nls.localize(
+                'qaap/visualRepair/instruction',
+                'The real browser render failed. Inspect the evidence and findings below, reproduce the problem in this same workspace, edit the app until the blocking render/runtime findings are fixed, and verify the change. An HTTP response alone is not visual success.',
+            ),
+            nls.localize(
+                'qaap/visualRepair/capture',
+                'Finish your reply with [QAAP capture] so Qaap runs the browser validation again. Do not claim success before that validation.',
+            ),
+            '',
+            evidence,
+        ].join('\n\n');
+    }
+
+    /**
+     * Fail closed after the durable repair budget is spent (or the shared turn budget refuses a
+     * respawn). The failed screenshot remains attached to the reply and the same reply receives a
+     * structured preview-failure trace, so evidence and terminal state cannot disagree.
+     */
+    protected async failVisualRepairLoop(
+        conv: QaapAgentConversation,
+        sourceUserMessage: QaapAgentMessage,
+        target: QaapAgentMessage,
+        reason: string,
+    ): Promise<QaapAgentConversation> {
+        const failed = this.markTurnFailed(conv, {
+            userMessageId: sourceUserMessage.id,
+            agentMessageId: target.id,
+            reason,
+            failureBody: target.content,
+        });
+        const next: QaapAgentConversation = {
+            ...failed.conv,
+            status: 'failed',
+            updatedAt: Date.now(),
+            messages: failed.conv.messages.map(message => message.id === target.id && message.role === 'agent'
+                ? appendTracePreviewFailureEvent(message, reason)
+                : message),
+        };
+        this.conversations.set(conv.id, next);
+        this.publishFinalizedAgentMessage(conv.id, next, target.id, sourceUserMessage.turnAgentId);
+        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        await this.persist();
+        return next;
+    }
+
+    /**
+     * Re-enter the same conversation/task runtime after a failed REAL render. Identity lives on the
+     * generated user message, not in memory: `${sourceAgentMessageId}, attempt` is therefore durable
+     * across backend restarts and makes duplicate browser/headless reports idempotent.
+     */
+    protected async continueVisualRepairLoop(
+        conversationId: string,
+        sourceAgentMessageId: string,
+    ): Promise<QaapAgentConversation | undefined> {
+        let conv = this.conversations.get(conversationId);
+        if (!conv || conv.status === 'failed' || conv.paused) {
+            return conv;
+        }
+        const target = conv.messages.find(message => message.id === sourceAgentMessageId && message.role === 'agent');
+        if (!target?.content.includes(QAAP_VISUAL_REPAIR_REQUIRED_MARKER)) {
+            return conv;
+        }
+        // One failure report can arrive from the frontend and headless runner at nearly the same
+        // time. A persisted child turns every replay into a read-only return.
+        if (conv.messages.some(message =>
+            message.role === 'user' && message.visualRepairSourceAgentMessageId === sourceAgentMessageId
+        )) {
+            return conv;
+        }
+        const sourceUserMessage = this.resolveVisualRepairSourceUserMessage(conv, target);
+        if (!sourceUserMessage) {
+            return conv;
+        }
+        const rootUserMessageId = sourceUserMessage.visualRepairRootMessageId
+            ?? sourceUserMessage.autoContinueRootMessageId
+            ?? sourceUserMessage.id;
+        const attempts = this.countVisualRepairAttempts(conv, rootUserMessageId);
+        if (attempts >= MAX_VISUAL_REPAIR_ATTEMPTS) {
+            return this.failVisualRepairLoop(conv, sourceUserMessage, target, nls.localize(
+                'qaap/visualRepair/exhausted',
+                'Visual verification is still failing after {0} automatic repair attempts. The app is not render-ready.',
+                MAX_VISUAL_REPAIR_ATTEMPTS,
+            ));
+        }
+        if (!this.hasLoopSpawnBudget(rootUserMessageId)) {
+            return this.failVisualRepairLoop(conv, sourceUserMessage, target, nls.localize(
+                'qaap/visualRepair/sharedBudgetExhausted',
+                'Visual verification failed and the turn has exhausted its safe automatic retry budget. The app is not render-ready.',
+            ));
+        }
+        // Persist evidence BEFORE any new process. If the backend dies here, restoreFromDisk finds
+        // this marker again and resumes exactly one repair; if it dies after the child is persisted,
+        // the source-message dedupe above prevents a second one.
+        await this.persist();
+        conv = this.conversations.get(conversationId);
+        const latestTarget = conv?.messages.find(message => message.id === sourceAgentMessageId && message.role === 'agent');
+        if (!conv || conv.status !== 'idle' || conv.paused || !latestTarget
+            || conv.messages[conv.messages.length - 1]?.id !== sourceAgentMessageId
+            || conv.messages.some(message =>
+                message.role === 'user' && message.visualRepairSourceAgentMessageId === sourceAgentMessageId
+            )) {
+            // A user follow-up/cancel/pause won the race while evidence flushed. Never layer an
+            // autonomous repair over their newer intent.
+            return conv;
+        }
+        const attempt = attempts + 1;
+        const turnAgentId = sourceUserMessage.turnAgentId ?? conv.agentId;
+        this.recordLoopSpawn(rootUserMessageId);
+        const next = this.postUserMessage(
+            conversationId,
+            this.buildVisualRepairPrompt(latestTarget, attempt),
+            turnAgentId,
+            sourceUserMessage.turnAgentModel
+                ?? (conv.agentId === turnAgentId ? conv.agentModel ?? conv.qaiqModel : undefined),
+            conv.autoApprove,
+            conv.interactionModeId,
+            conv.approvalPolicyId,
+            conv.toolApprovalRules,
+            undefined,
+            {
+                autoContinueRootMessageId: rootUserMessageId,
+                clientMessageId: `visual-repair:${sourceAgentMessageId}:${attempt}`,
+                visualRepair: { rootUserMessageId, attempt, sourceAgentMessageId },
+            },
+        );
+        await this.persist();
+        return next;
+    }
+
     /** Persist a same-origin preview screenshot and attach the authenticated image to the last reply. */
     async recordVisualVerification(
         conversationId: string,
@@ -1032,7 +1217,10 @@ export class QaapAgentConversationStore {
             await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
             const imageUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
                 + `/visual-verifications/${encodeURIComponent(evidenceId)}`;
-            return this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationMarkdown(imageUrl, result));
+            const next = this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationMarkdown(imageUrl, result));
+            return result.status === 'failed'
+                ? await this.continueVisualRepairLoop(conversationId, target.id)
+                : next;
         } finally {
             this.visualVerificationInFlight.delete(conversationId);
         }
@@ -1088,12 +1276,12 @@ export class QaapAgentConversationStore {
     }
 
     /** Attaches a recorded-tour evidence block referencing a stored webm. */
-    recordVisualVerificationVideo(
+    async recordVisualVerificationVideo(
         conversationId: string,
         videoEvidenceId: string,
         steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[],
         targetAgentMessageId: string,
-    ): QaapAgentConversation | undefined {
+    ): Promise<QaapAgentConversation | undefined> {
         const conv = this.conversations.get(conversationId);
         if (!conv || !/^[a-f\d-]{36}$/i.test(videoEvidenceId)) {
             return undefined;
@@ -1114,7 +1302,9 @@ export class QaapAgentConversationStore {
                 + `/visual-verifications/${encodeURIComponent(videoEvidenceId)}.webm`;
             const next = this.attachVisualVerificationBlock(conv, target, buildQaapVisualVideoMarkdown(videoUrl, steps));
             void this.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
-            return next;
+            return steps.some(step => step.result.status === 'failed')
+                ? await this.continueVisualRepairLoop(conversationId, target.id)
+                : next;
         } finally {
             this.visualVerificationInFlight.delete(conversationId);
         }
@@ -1181,7 +1371,9 @@ export class QaapAgentConversationStore {
             }
             const next = this.attachVisualVerificationBlock(conv, target, buildQaapVisualFlowMarkdown(evidenceSteps));
             void this.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
-            return next;
+            return evidenceSteps.some(step => step.result.status === 'failed')
+                ? await this.continueVisualRepairLoop(conversationId, target.id)
+                : next;
         } finally {
             this.visualVerificationInFlight.delete(conversationId);
         }
@@ -1220,15 +1412,15 @@ export class QaapAgentConversationStore {
     }
 
     /**
-     * Settle a turn's evidence slot when the frontend exhausted its capture attempts. The note
-     * carries the verification marker, so `visualVerificationPending` clears everywhere and the
-     * user can finally see *why* no screenshot arrived instead of an eternally silent gap.
+     * Fail a turn's visual gate when no PNG/video could be produced. The note is durable evidence
+     * in its own right: it clears the stale pending slot, carries `[QAAP repair required]`, and
+     * re-enters the same bounded repair loop as a screenshot that proved the render was broken.
      */
-    recordVisualVerificationFailure(
+    async recordVisualVerificationFailure(
         conversationId: string,
         reason: string,
         targetAgentMessageId: string,
-    ): QaapAgentConversation | undefined {
+    ): Promise<QaapAgentConversation | undefined> {
         const trimmed = reason.trim().slice(0, 500);
         const conv = this.conversations.get(conversationId);
         if (!conv || !trimmed) {
@@ -1241,7 +1433,13 @@ export class QaapAgentConversationStore {
         if (agentMessageHasVisualVerificationMarker(target) || this.visualVerificationInFlight.has(conversationId)) {
             return conv;
         }
-        return this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationFailureMarkdown(trimmed));
+        this.visualVerificationInFlight.add(conversationId);
+        try {
+            this.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationFailureMarkdown(trimmed));
+            return await this.continueVisualRepairLoop(conversationId, target.id);
+        } finally {
+            this.visualVerificationInFlight.delete(conversationId);
+        }
     }
 
     /**
@@ -2111,7 +2309,9 @@ export class QaapAgentConversationStore {
     /** Persisted count so a backend restart cannot reset the per-chain auto-continue ceiling. */
     protected countAutoContinueAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
         return conv.messages.filter(message =>
-            message.role === 'user' && message.autoContinueRootMessageId === rootUserMessageId
+            message.role === 'user'
+            && message.autoContinueRootMessageId === rootUserMessageId
+            && message.visualRepairAttempt === undefined
         ).length;
     }
 
@@ -3305,12 +3505,27 @@ export class QaapAgentConversationStore {
                 }
             }
             const sweptAny = this.sweepZombieStreamingTurns(now, { resetSurvivorsToIdle: true });
+            // Evidence is persisted before its repair process is spawned. A hard kill in that
+            // narrow gap therefore leaves an idle tail with `[QAAP repair required]`; resume it
+            // here through the same idempotent loop instead of silently abandoning the result.
+            let visualRepairResumedAny = false;
+            for (const conv of [...this.conversations.values()]) {
+                const last = conv.messages[conv.messages.length - 1];
+                if (conv.status === 'idle' && last?.role === 'agent'
+                    && last.content.includes(QAAP_VISUAL_REPAIR_REQUIRED_MARKER)) {
+                    const before = this.conversations.get(conv.id);
+                    const after = await this.continueVisualRepairLoop(conv.id, last.id);
+                    if (after !== before) {
+                        visualRepairResumedAny = true;
+                    }
+                }
+            }
             if (this.isTurnGraphEnabled()) {
                 // After resume and sweep have settled every conversation's fate, close graph runs
                 // whose turn is no longer live (lost terminal report, deleted conversation).
                 await this.reapOrphanedChatTurnRuns();
             }
-            if (anyChanged || resumedAny || sweptAny) {
+            if (anyChanged || resumedAny || sweptAny || visualRepairResumedAny) {
                 await this.persist();
             }
         } catch {

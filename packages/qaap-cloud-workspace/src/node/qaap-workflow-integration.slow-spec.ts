@@ -20,8 +20,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { buildImplementThenReviewWorkflow } from '../common/qaap-workflow-ir';
 import { QaapAgentTaskState } from '../common/qaap-agent-task';
-import { QaapJobState } from '../common/qaap-job';
+import { isQaapJobFinished, QaapJobState } from '../common/qaap-job';
 import { QaapJobFunctionContext, QaapJobFunctionDefinition, QaapJobFunctionRegistry } from './qaap-job-function-registry';
+import { QaapJobRuntime } from './qaap-job-runtime';
 import {
     QaapWorkflowAgentTurnPort,
     QaapWorkflowDeterministicPort,
@@ -29,11 +30,18 @@ import {
 } from './qaap-workflow-dispatcher';
 import { QaapWorkflowJobFunctions } from './qaap-workflow-job-functions';
 import { QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { QaapWorkflowDeterministicAdapter } from './qaap-workflow-runtime-ports';
 
 class TestStore extends QaapWorkflowRunStore {
     constructor(protected readonly testDirectory: string) { super(); }
     initialize(): void { this.init(); }
     protected override storeDirectory(): string { return this.testDirectory; }
+}
+
+/** Real scheduler with persistence disabled; every lifecycle transition remains QaapJobRuntime's. */
+class TestJobRuntime extends QaapJobRuntime {
+    protected override persist(): Promise<void> { return Promise.resolve(); }
+    protected override scheduleRetentionPrune(): void { /* no background timers in a spec */ }
 }
 
 function buildFunctions(): Map<string, QaapJobFunctionDefinition> {
@@ -241,11 +249,12 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             expect(() => definition.normalizeInput({ script: 'test; rm -rf /' })).to.throw(/npm script name/);
         });
 
-        it('falls back to the repository scripts for a name it does not declare', async () => {
+        it('fails closed for a goal check the repository does not declare', async () => {
             const result = await functions.get('qaap.workflow.verify')!.execute(contextFor(repo), { script: 'not-declared' }) as
-                { outcome: string; scripts: string[] };
-            expect(result.outcome).to.equal('success');
-            expect(result.scripts).to.deep.equal(['test', 'lint']);
+                { outcome: string; failedScript: string; summary: string };
+            expect(result.outcome).to.equal('fail');
+            expect(result.failedScript).to.equal('not-declared');
+            expect(result.summary).to.contain('npm run not-declared');
         });
     });
 
@@ -408,6 +417,154 @@ describe('Dynamic Workflows end-to-end (real git)', function (): void {
             const record = store.get('ada', started.record.run.id)!;
             expect(record.run.bindings).to.not.have.property('review.passed');
             expect(record.run.bindings).to.have.property('review.inconclusive');
+        });
+    });
+
+    describe('workflow dispatch through the real QaapJobRuntime', () => {
+        function buildRuntimeAdapter(
+            definitions: Map<string, QaapJobFunctionDefinition> = functions,
+        ): { runtime: TestJobRuntime; adapter: QaapWorkflowDeterministicAdapter } {
+            const runtime = new TestJobRuntime();
+            Object.assign(runtime, {
+                functionRegistry: {
+                    get: (id: string) => definitions.get(id),
+                    list: () => [...definitions.values()].map(definition => definition.descriptor),
+                },
+            });
+            const adapter = Object.create(QaapWorkflowDeterministicAdapter.prototype) as QaapWorkflowDeterministicAdapter;
+            Object.assign(adapter, { jobs: runtime, store });
+            return { runtime, adapter };
+        }
+
+        async function waitForTerminal(runId: string, timeoutMs = 10_000): Promise<void> {
+            const deadline = Date.now() + timeoutMs;
+            while (Date.now() < deadline) {
+                if (store.get('ada', runId)?.run.status !== 'running') {
+                    return;
+                }
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            throw new Error(`Workflow ${runId} did not finish within ${timeoutMs}ms.`);
+        }
+
+        it('reconciles an immediately resolved function job after its durable attachment', async () => {
+            const immediate = new Map<string, QaapJobFunctionDefinition>([[
+                'qaap.workflow.classify-risk',
+                {
+                    descriptor: {
+                        id: 'qaap.workflow.classify-risk',
+                        label: 'Immediate check',
+                        description: 'Returns without I/O.',
+                        resourceClass: 'workspace',
+                        workspaceAccess: 'read',
+                        inputSchema: { type: 'object' },
+                        outputSchema: { type: 'object' },
+                    },
+                    normalizeInput: () => ({}),
+                    execute: async () => ({ outcome: 'risk:low' }),
+                },
+            ]]);
+            const { runtime, adapter } = buildRuntimeAdapter(immediate);
+            const agent: QaapWorkflowAgentTurnPort = {
+                startAgentTurn: async () => { throw new Error('not used'); },
+                lookupAgentTurn: async () => undefined,
+            };
+            const dispatcher = new QaapWorkflowDispatcher(store, { agent, deterministic: adapter });
+            const def = {
+                id: 'immediate-job', version: 1, name: 'Immediate job', entry: 'check',
+                nodes: [
+                    { kind: 'deterministic' as const, id: 'check', op: 'risk-classify' as const },
+                    { kind: 'emit' as const, id: 'done', bindingKey: 'checked' },
+                ],
+                edges: [{ from: 'check', to: 'done', when: 'risk:low' as const }],
+            };
+            const started = await store.start(def, { cwd: repo, ownerLogin: 'ada' });
+
+            // There is deliberately no job-event listener. The immediate result can be emitted
+            // while attachDispatch() is persisting, and dispatch() must reconcile it itself.
+            await dispatcher.dispatch(started.record, started.dispatch);
+
+            const final = store.get('ada', started.record.run.id)!;
+            expect(final.run.status).to.equal('succeeded');
+            expect(final.run.bindings).to.have.property('checked');
+            expect(final.trace[0].externalId).to.be.a('string');
+            await runtime.shutdown();
+        });
+
+        it('deduplicates a replay of one visit but creates fresh work for the next visit', async () => {
+            const { runtime, adapter } = buildRuntimeAdapter();
+            const def = buildImplementThenReviewWorkflow({ withVerify: true });
+            const started = await store.start(def, {
+                cwd: repo, ownerLogin: 'ada', inputs: { task: 'verify it' }, goalCheckScript: 'test',
+            });
+            const node = def.nodes.find(candidate => candidate.id === 'verify');
+            expect(node?.kind).to.equal('deterministic');
+            const visitOne = { runId: started.record.run.id, nodeId: 'verify', visit: 1, ownerLogin: 'ada' };
+
+            const first = await adapter.startDeterministic(node as Extract<typeof node, { kind: 'deterministic' }>, visitOne);
+            const replay = await adapter.startDeterministic(node as Extract<typeof node, { kind: 'deterministic' }>, visitOne);
+            const second = await adapter.startDeterministic(
+                node as Extract<typeof node, { kind: 'deterministic' }>,
+                { ...visitOne, visit: 2 },
+            );
+
+            expect(replay).to.equal(first);
+            expect(second).to.not.equal(first);
+            await runtime.shutdown();
+        });
+
+        it('runs verify → fix → verify as two real jobs and respects the goal check', async () => {
+            fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({
+                name: 'runtime-loop',
+                version: '1.0.0',
+                scripts: {
+                    test: 'node -e "process.exit(0)"',
+                    'goal:check': 'node -e "process.exit(require(\'fs\').existsSync(\'fixed\') ? 0 : 1)"',
+                },
+            }));
+            const { runtime, adapter } = buildRuntimeAdapter();
+            const tasks = new Map<string, { state: QaapAgentTaskState; log?: string }>();
+            const startedNodes: string[] = [];
+            let taskCounter = 0;
+            const agent: QaapWorkflowAgentTurnPort = {
+                async startAgentTurn(node): Promise<string> {
+                    startedNodes.push(node.id);
+                    if (node.id === 'implement-fix') {
+                        fs.writeFileSync(path.join(repo, 'fixed'), 'repaired\n');
+                    }
+                    const id = `task-${++taskCounter}`;
+                    tasks.set(id, { state: 'completed' });
+                    return id;
+                },
+                async lookupAgentTurn(externalId): Promise<{ state: QaapAgentTaskState; log?: string } | undefined> {
+                    return tasks.get(externalId);
+                },
+            };
+            const dispatcher = new QaapWorkflowDispatcher(store, { agent, deterministic: adapter });
+            runtime.onDidChangeJob(event => {
+                if (event.type !== 'output' && isQaapJobFinished(event.job.state)) {
+                    void dispatcher.onJobFinished(event.job.id, event.job.state, runtime.get(event.job.id)?.result);
+                }
+            });
+            const started = await store.start(buildImplementThenReviewWorkflow({ withVerify: true, reviewMode: 'off' }), {
+                cwd: repo,
+                ownerLogin: 'ada',
+                inputs: { task: 'make the declared goal pass', checkScript: 'goal:check' },
+                goalCheckScript: 'goal:check',
+            });
+
+            await dispatcher.dispatch(started.record, started.dispatch);
+            await waitForTerminal(started.record.run.id);
+
+            const final = store.get('ada', started.record.run.id)!;
+            const verifies = final.trace.filter(entry => entry.nodeId === 'verify');
+            expect(final.run.status).to.equal('succeeded');
+            expect(final.run.visits.verify).to.equal(2);
+            expect(verifies).to.have.length(2);
+            expect(verifies.map(entry => entry.outcome)).to.deep.equal(['fail', 'success']);
+            expect(new Set(verifies.map(entry => entry.externalId)).size).to.equal(2);
+            expect(startedNodes).to.deep.equal(['implement', 'implement-fix']);
+            await runtime.shutdown();
         });
     });
 });

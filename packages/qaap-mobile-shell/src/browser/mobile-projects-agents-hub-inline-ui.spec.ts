@@ -369,8 +369,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             expect(host.agentsHubInlineExecutionRoot?.parentElement).to.equal(host.scroll);
             expect(host.agentsHubInlineChatHost?.isConnected).to.equal(true);
             expect(host.agentsHubInlineExecutionRoot?.contains(host.agentsHubInlineChatHost!)).to.equal(true);
-            expect(shownTab).to.equal('terminal');
-            expect(mountedTab).to.equal('terminal');
+            expect(shownTab).to.equal('messages');
+            expect(mountedTab).to.equal('messages');
         } finally {
             host.scroll.remove();
         }
@@ -485,6 +485,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 executionSurfaceTabsUi: {
                     closeExecutionTabOverflowMenu: () => undefined,
                     executionSurfaceTabForProject: () => 'preview',
+                    setExecutionSurfaceTab: () => undefined,
                     showOnlyExecutionSurfaceTab: (tab: ExecutionSurfaceTabId) => { shownTab = tab; },
                     mountTranscriptSurfaceTab: (
                         _project: MobileProjectEntry,
@@ -538,8 +539,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             const ui = new MobileProjectsAgentsHubInlineUi(host);
             ui.syncAgentsHubInlineExecutionHeader = () => undefined;
             await ui.openAgentsHubInlineTranscript(project, { ...openSummary(), id: 'conv-new' });
-            expect(shownTab).to.equal('preview');
-            expect(mountedTab).to.equal('preview');
+            expect(shownTab).to.equal('messages');
+            expect(mountedTab).to.equal('messages');
         } finally {
             executionRoot.remove();
         }

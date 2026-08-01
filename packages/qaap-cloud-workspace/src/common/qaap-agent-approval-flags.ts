@@ -64,9 +64,13 @@ export function shouldUseInteractiveAgentApprovals(options: QaapAgentApprovalFla
     return options.autoApprove === false || options.approvalPolicyId === 'request-approval';
 }
 
-/** QAIQ stdio pause-and-wait is only for explicit interactive presets — not default headless runs. */
+/**
+ * QAIQ stdio control is also used by approve-for-me. Safe tools are answered automatically, while
+ * destructive shell commands are rejected by Qaap before the CLI can execute them. Full access is
+ * the only explicit preset that keeps the CLI's unconditional bypass mode.
+ */
 export function shouldUseQaiqStdioApprovals(options: QaapAgentApprovalFlagOptions): boolean {
-    return options.autoApprove === false || options.approvalPolicyId === 'request-approval';
+    return options.approvalPolicyId !== 'full-access';
 }
 
 /**
@@ -77,7 +81,12 @@ export function shouldUseQaiqStdioApprovals(options: QaapAgentApprovalFlagOption
  * {@link QaapAgentApprovalFlagOptions.agentId} is not supplied, e.g. legacy persisted tasks.
  */
 function inferAgentIdFromCommand(command: string): string | undefined {
-    const trimmed = command.trimStart();
+    // Custom provider templates commonly prefix the real CLI with POSIX environment assignments.
+    // Peel those assignments only for executable identification; the command itself stays intact.
+    const trimmed = command.trimStart().replace(
+        /^(?:env\s+)?(?:[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|[^\s]+)\s+)+/,
+        '',
+    );
     if (/^(?:qaiq|openclaude)\b/.test(trimmed)) {
         return 'qaiq';
     }
@@ -93,12 +102,28 @@ function inferAgentIdFromCommand(command: string): string | undefined {
     return undefined;
 }
 
+function resolveApprovalAgentId(command: string, agentId: string | undefined): string | undefined {
+    const requested = agentId?.trim().toLowerCase();
+    if (requested === 'openclaude') {
+        return 'qaiq';
+    }
+    if (requested === 'qaiq' || requested === 'claude' || requested === 'codex' || requested === 'opencode') {
+        return requested;
+    }
+    if (requested === 'shell') {
+        return undefined;
+    }
+    // Custom ids such as `qaiq-gemini` describe a model/provider, not a different permission
+    // protocol. Identify the actual leading executable so they receive the same safety policy.
+    return inferAgentIdFromCommand(command);
+}
+
 /**
  * Apply composer approval presets to an agent command. Replaces the old binary auto-approve injection
  * so {@code approve-for-me} can auto-approve edits while still prompting for shell/network when configured.
  *
- * QAIQ headless runs use {@code --dangerously-skip-permissions} (OpenCode-style) plus
- * {@link QAAP_QAIQ_BLOCKED_HEADLESS_TOOLS} — Qaap only launches, enriches the prompt, and paints stream-json.
+ * QAIQ approve-for-me runs keep Bash behind stdio control so Qaap can auto-answer safe requests
+ * and hard-deny destructive commands. Only explicit full-access uses the unconditional bypass.
  *
  * Dispatch is by {@code options.agentId} whenever it is known — never by scanning the command text, which
  * also contains the (quoted) prompt and can otherwise mention another agent's name and misroute the whole
@@ -121,7 +146,7 @@ export function applyAgentApprovalPolicyToCommand(
     const agentId = options.agentId?.trim().toLowerCase();
     const policyId = options.approvalPolicyId ?? 'approve-for-me';
     const rules = resolveEffectiveToolApprovalRules(policyId, options.toolApprovalRules);
-    const effectiveId = agentId || inferAgentIdFromCommand(command);
+    const effectiveId = resolveApprovalAgentId(command, agentId);
     if (effectiveId === 'qaiq') {
         return applyQaiqApprovalFlags(command, options, policyId, rules);
     }
@@ -150,7 +175,7 @@ export function applyAgentApprovalPolicyToCommand(
  * workflow adapter, the task runner) is responsible for routing away from it and recording what it got.
  */
 export function applyReadOnlyWorkspaceToCommand(command: string, agentId: string | undefined): string {
-    const effectiveId = agentId?.trim().toLowerCase() || inferAgentIdFromCommand(command);
+    const effectiveId = resolveApprovalAgentId(command, agentId);
     const flags = formatReadOnlyFlagsForAgent(effectiveId);
     if (!flags) {
         return command;
@@ -207,8 +232,12 @@ function ensureQaiqCoreTools(
 }
 
 function formatQaiqApproveForMeFlags(_rules: QaapAgentToolApprovalRules): string {
-    // Headless VPS runs match OpenCode: auto-approve real tools, block delegation noise at CLI.
-    return '--dangerously-skip-permissions';
+    // Bash deliberately stays out of the CLI allowlist. It remains available through `--tools`, but
+    // every invocation produces a stdio control request so Qaap can auto-approve safe commands and
+    // hard-deny global process kills/destructive operations. Agent follows the same path so only the
+    // verification subagent type can be approved by the backend policy.
+    return '--permission-mode default '
+        + '--allowed-tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite,WebFetch,WebSearch';
 }
 
 function ensureQaiqBlockedHeadlessTools(command: string): string {
@@ -280,7 +309,7 @@ function applyOpencodeApprovalFlags(
 }
 
 function stripNonInteractiveApprovalFlags(command: string, agentId: string | undefined): string {
-    const effectiveId = agentId?.trim().toLowerCase() || inferAgentIdFromCommand(command);
+    const effectiveId = resolveApprovalAgentId(command, agentId);
     if (effectiveId === 'qaiq') {
         if (qaiqCommandUsesInteractionFlags(command)) {
             return injectAfterPattern(

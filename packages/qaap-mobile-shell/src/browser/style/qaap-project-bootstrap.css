@@ -242,6 +242,108 @@
     font-family: var(--theia-monospace-font-family, monospace);
 }
 
+/* Work Hub app picker. The classic bootstrap banner is intentionally hidden over the agent
+ * surface, so monorepos need a first-class selector that remains visible in Preview. */
+.theia-mobile-transcript-app-picker {
+    position: fixed;
+    inset: 0;
+    z-index: 10850;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+}
+
+.theia-mobile-transcript-app-picker-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.55);
+    cursor: default;
+}
+
+.theia-mobile-transcript-app-picker-sheet {
+    position: relative;
+    width: min(460px, calc(100vw - 32px));
+    max-height: min(70vh, 560px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid var(--theia-menu-border, var(--theia-contrastBorder, transparent));
+    border-radius: 14px;
+    background: var(--theia-menu-background, var(--theia-notifications-background));
+    color: var(--theia-menu-foreground, var(--theia-foreground));
+    box-shadow: 0 24px 72px rgba(0, 0, 0, 0.46);
+}
+
+.theia-mobile-transcript-app-picker-sheet h2,
+.theia-mobile-transcript-app-picker-sheet p {
+    margin: 0;
+}
+
+.theia-mobile-transcript-app-picker-sheet h2 {
+    font-size: 18px;
+}
+
+.theia-mobile-transcript-app-picker-sheet p {
+    color: var(--theia-descriptionForeground);
+    line-height: 1.45;
+}
+
+.theia-mobile-transcript-app-picker-list {
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.theia-mobile-transcript-app-picker-item,
+.theia-mobile-transcript-app-picker-cancel {
+    border: 1px solid var(--theia-input-border, var(--theia-contrastBorder, transparent));
+    border-radius: 10px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.theia-mobile-transcript-app-picker-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 11px 12px;
+    background: var(--theia-list-inactiveSelectionBackground, transparent);
+    text-align: left;
+}
+
+.theia-mobile-transcript-app-picker-item:hover,
+.theia-mobile-transcript-app-picker-item:focus-visible,
+.theia-mobile-transcript-app-picker-cancel:hover,
+.theia-mobile-transcript-app-picker-cancel:focus-visible {
+    outline: 2px solid var(--theia-focusBorder);
+    outline-offset: 1px;
+}
+
+.theia-mobile-transcript-app-picker-name {
+    font-weight: 600;
+}
+
+.theia-mobile-transcript-app-picker-path {
+    color: var(--theia-descriptionForeground);
+    font-family: var(--theia-monospace-font-family, monospace);
+    font-size: var(--theia-ui-font-size0, 11px);
+}
+
+.theia-mobile-transcript-app-picker-cancel {
+    align-self: flex-end;
+    padding: 7px 12px;
+    background: transparent;
+}
+
 /* Respect the user's reduced-motion preference (WCAG 2.3.3). The banner/picker entrance
  * animations and hover/visibility transitions are decorative, so they are removed. The
  * `codicon-loading` spinner is kept: it is essential feedback that work is in progress. */

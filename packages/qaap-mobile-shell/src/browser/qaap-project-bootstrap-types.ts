@@ -18,7 +18,7 @@ export type QaapBootstrapPhase =
     | 'dismissed';
 
 /** Package manager understood by the detector. */
-export type QaapPackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun';
+export type QaapPackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun' | 'native';
 
 /** Likely framework guess (used for UI labels and port hints). */
 export type QaapProjectKind =
@@ -30,6 +30,15 @@ export type QaapProjectKind =
     | 'node-svelte'
     | 'node-nuxt'
     | 'node-generic'
+    | 'python-django'
+    | 'python-fastapi'
+    | 'python-flask'
+    | 'python-generic'
+    | 'go'
+    | 'rust'
+    | 'dotnet'
+    | 'php'
+    | 'custom'
     | 'static'
     | 'unknown';
 
@@ -74,6 +83,8 @@ export type QaapMonorepoFlavor =
 export interface QaapProjectDescriptor {
     /** Root URI used for the inspection. */
     readonly rootUri: URI;
+    /** Cwd of the launch plan when it differs from the inspected workspace root. */
+    readonly previewRootUri?: URI;
     /** Human-readable workspace name, e.g. `qaap-store-web`. */
     readonly name: string;
     /** Best-guess project kind. */
@@ -122,4 +133,3 @@ export interface QaapForwardedPort {
     /** Set on the entry the bootstrap auto-opened as the "main" preview. */
     readonly primary: boolean;
 }
-

@@ -17,6 +17,15 @@ export function qaapFrameworkLabel(kind: QaapProjectKind | undefined): string {
         case 'node-svelte': return 'SvelteKit';
         case 'node-nuxt': return 'Nuxt';
         case 'node-generic': return 'Node';
+        case 'python-django': return 'Django';
+        case 'python-fastapi': return 'FastAPI';
+        case 'python-flask': return 'Flask';
+        case 'python-generic': return 'Python';
+        case 'go': return 'Go';
+        case 'rust': return 'Rust';
+        case 'dotnet': return '.NET';
+        case 'php': return 'PHP';
+        case 'custom': return 'Custom';
         case 'static': return 'Static';
         default: return 'App';
     }

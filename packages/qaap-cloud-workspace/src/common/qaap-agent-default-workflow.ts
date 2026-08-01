@@ -110,7 +110,9 @@ export function buildAgentDestructiveCommandsPromptBlock(): string {
         DESTRUCTIVE_COMMANDS_MARKER,
         'These commands are destructive and need the user\'s explicit request in their own message before you run them: '
         + 'git push --force / --force-with-lease, deleting remote branches (git push --delete), git reset --hard, '
-        + 'git clean -f, git branch -D, git filter-branch / filter-repo, and rm -rf on anything outside the workspace (absolute paths, ~, ..).',
+        + 'git clean -f, git branch -D, git filter-branch / filter-repo, process signals through kill/pkill/killall, '
+        + 'and rm -rf on anything outside the workspace (absolute paths, ~, ..).',
+        'Never stop a preview or job by process-name matching: it can kill sibling projects. Use the Qaap preview/job stop action, which targets its recorded process group.',
         'When one seems necessary but was not explicitly requested, stop, state the safe alternative (git stash, a targeted rm, a normal push), and let the user decide in the next turn.',
     ].join('\n');
 }
@@ -129,7 +131,7 @@ export function buildAgentWebGenerationQualityPromptBlock(): string {
         WEB_GENERATION_MARKER,
         'For landing pages and simple websites, do not stop after create-vite or npm create scaffolding.',
         'Replace the default Vite/React starter (logos, counter demo) with the requested branding, sections, and copy.',
-        'Confirm package.json has a dev script and mention the run command (e.g. npm run dev) in your final reply.',
+        'Confirm the app has a runnable preview entry point and mention its run command in your final reply.',
     ].join('\n');
 }
 
@@ -229,7 +231,8 @@ export function buildAgentDevPreviewPromptBlock(): string {
         'Qaap keeps the dev server alive in a dedicated IDE terminal with hot reload.',
         'Never run long-lived dev commands in shell (pnpm dev, npm start, vite, next dev, astro dev, etc.) — shell tools time out after ~30s and kill the preview.',
         'Use one-shot install/build/typecheck/test commands only. When the app should be previewable, reply with the expected local port (e.g. 5173) and confirm dependencies are installed; Qaap starts the server separately.',
-        'Prefer scaffolding web apps in the workspace root (package.json at root). If you must use a subfolder, name it clearly in your final message — Qaap auto-detects child projects for preview.',
+        'Prefer scaffolding web apps in the workspace root. Qaap auto-detects Node, static HTML, Django, FastAPI/Flask, Go, Rust, .NET, and PHP projects.',
+        'For another runtime or an ambiguous entry point, create .qaap/preview.json version 1 with runtime, command, argv-style args, workspace-relative cwd, and port. Use {{PORT}} in an argument when Qaap must inject the allocated port.',
     ].join('\n');
 }
 
@@ -252,7 +255,7 @@ export function buildAgentDevServerVerificationPromptBlock(): string {
         'Before reporting a URL, verify the server responds: run `curl -s -o /dev/null -w \'%{http_code}\' http://localhost:PORT/` and check the HTTP status code is 200 or 3xx.',
         'If you cannot verify (command timed out, connection refused, no curl available), say so explicitly — never report a URL you have not confirmed.',
         'Partial output from a killed or timed-out process (e.g. "VITE ready in 1606ms" followed by a shell timeout) is NOT evidence the server is still running. The process may have been killed after producing that output.',
-        'If the workspace has no package.json in the root and no runnable child project was detected, report that clearly — do not invent a dev server, port, or URL.',
+        'If no supported entry point or valid .qaap/preview.json launch plan was detected, report that clearly — do not invent a dev server, port, or URL.',
     ].join('\n');
 }
 

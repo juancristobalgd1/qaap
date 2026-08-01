@@ -133,6 +133,28 @@ describe('QaapWorkflowDispatcher (ADR-002)', () => {
             expect(record?.run.bindings).to.have.property('review.skipped');
         });
 
+        it('releases a creator claim left by a crash and redispatches the same visit once', async () => {
+            const started = await store.start(buildImplementThenReviewWorkflow(), {
+                cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix' },
+            });
+            await store.claimDispatch('ada', started.record.run.id, 'implement', 1, 'agent', 'dead-creator');
+
+            // A real restart reconstructs both store and port. The old claim has no external id,
+            // so reconciliation owns clearing it before exactly one replay of visit one.
+            store = new TestStore(directory);
+            store.initialize();
+            agent = new FakeAgentPort();
+            const owning = new QaapWorkflowDispatcher(store, { agent, deterministic: new FakeJobPort() });
+
+            await owning.reconcileOnBoot();
+
+            const record = store.get('ada', started.record.run.id);
+            expect(agent.started).to.deep.equal(['task-1']);
+            expect(record?.run.visits.implement).to.equal(1);
+            expect(record?.dispatchClaims).to.deep.equal({});
+            expect(record?.dispatched.implement.externalId).to.equal('task-1');
+        });
+
         it('leaves an active node alone when its process is still known to the runtime', async () => {
             const started = await store.start(buildImplementThenReviewWorkflow(), {
                 cwd: '/repo', ownerLogin: 'ada', inputs: { task: 'fix' },

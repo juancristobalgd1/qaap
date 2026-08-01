@@ -13,6 +13,8 @@ import {
 describe('mobile-keyboard-helper', () => {
 
     let disableJSDOM: (() => void) | undefined;
+    let previousRequestAnimationFrame: typeof requestAnimationFrame | undefined;
+    let previousCancelAnimationFrame: typeof cancelAnimationFrame | undefined;
 
     before(() => {
         disableJSDOM = enableJSDOM();
@@ -29,6 +31,8 @@ describe('mobile-keyboard-helper', () => {
         document.body.innerHTML = '';
         document.body.className = '';
         document.documentElement.style.cssText = '';
+        previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+        previousCancelAnimationFrame = globalThis.cancelAnimationFrame;
         const raf = (cb: FrameRequestCallback): number => {
             cb(0);
             return 1;
@@ -37,6 +41,23 @@ describe('mobile-keyboard-helper', () => {
         (global as unknown as { cancelAnimationFrame: typeof cancelAnimationFrame }).cancelAnimationFrame = () => undefined;
         (global as unknown as { window: Window }).window.requestAnimationFrame = raf;
         window.cancelAnimationFrame = () => undefined;
+    });
+
+    afterEach(() => {
+        if (previousRequestAnimationFrame) {
+            globalThis.requestAnimationFrame = previousRequestAnimationFrame;
+            window.requestAnimationFrame = previousRequestAnimationFrame;
+        } else {
+            delete (globalThis as Partial<typeof globalThis>).requestAnimationFrame;
+            delete (window as Partial<Window>).requestAnimationFrame;
+        }
+        if (previousCancelAnimationFrame) {
+            globalThis.cancelAnimationFrame = previousCancelAnimationFrame;
+            window.cancelAnimationFrame = previousCancelAnimationFrame;
+        } else {
+            delete (globalThis as Partial<typeof globalThis>).cancelAnimationFrame;
+            delete (window as Partial<Window>).cancelAnimationFrame;
+        }
     });
 
     it('marks shell and body while the keyboard inset is active', () => {

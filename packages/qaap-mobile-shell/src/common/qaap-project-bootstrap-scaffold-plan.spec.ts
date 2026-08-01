@@ -14,7 +14,8 @@ import {
 describe('qaap-project-bootstrap-scaffold-plan', () => {
 
     it('formatMissingBootstrapProjectHint explains orphan scaffolds', () => {
-        expect(formatMissingBootstrapProjectHint([])).to.include('Run/preview failed');
+        expect(formatMissingBootstrapProjectHint([])).to.include('.qaap/preview.json');
+        expect(formatMissingBootstrapProjectHint([])).to.include('Django');
         expect(formatMissingBootstrapProjectHint(['rioja-wines-landing-page'])).to.include('rioja-wines-landing-page');
     });
 

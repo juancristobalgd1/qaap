@@ -4,7 +4,24 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { isFailedRunSummary, looksLikeSelfReportedAgentStopFailure } from './qaap-agent-conversation-client';
+import {
+    isFailedRunSummary,
+    looksLikeSelfReportedAgentStopFailure,
+    preferQaapConversationSummary,
+    type QaapAgentConversationSummaryDTO,
+} from './qaap-agent-conversation-client';
+
+const summary = (partial: Partial<QaapAgentConversationSummaryDTO> = {}): QaapAgentConversationSummaryDTO => ({
+    id: 'conversation-1',
+    cwd: '/workspace/project',
+    agentId: 'qaiq',
+    title: 'Fix preview',
+    status: 'streaming',
+    createdAt: 1,
+    updatedAt: 10,
+    messageCount: 1,
+    ...partial,
+});
 
 describe('looksLikeSelfReportedAgentStopFailure', () => {
     it('matches a leading "Stopped:" or "Stopped." wording', () => {
@@ -66,5 +83,52 @@ describe('isFailedRunSummary', () => {
             lastMessageRole: 'user',
             lastMessagePreview: 'Stopped: repeated tool failures detected',
         })).to.be.false;
+    });
+});
+
+describe('preferQaapConversationSummary', () => {
+    it('settles a streaming row when a failed server update has the same timestamp', () => {
+        const result = preferQaapConversationSummary(
+            summary({ status: 'streaming', updatedAt: 42 }),
+            summary({ status: 'failed', updatedAt: 42, lastMessagePreview: 'Agent interrupted (exit 144).' }),
+        );
+
+        expect(result.status).to.equal('failed');
+    });
+
+    it('does not let an older failed update overwrite newer active stream state', () => {
+        const result = preferQaapConversationSummary(
+            summary({ status: 'streaming', updatedAt: 43 }),
+            summary({ status: 'failed', updatedAt: 42 }),
+        );
+
+        expect(result.status).to.equal('streaming');
+    });
+
+    it('does not erase a same-tick failure with a stale idle summary', () => {
+        const result = preferQaapConversationSummary(
+            summary({ status: 'failed', updatedAt: 42 }),
+            summary({ status: 'idle', updatedAt: 42 }),
+        );
+
+        expect(result.status).to.equal('failed');
+    });
+
+    it('does not revive a failed row from a same-tick streaming delta', () => {
+        const result = preferQaapConversationSummary(
+            summary({ status: 'failed', updatedAt: 42, messageCount: 4 }),
+            summary({ status: 'streaming', updatedAt: 42, messageCount: 4 }),
+        );
+
+        expect(result.status).to.equal('failed');
+    });
+
+    it('allows a failed conversation to stream again only after a newer user turn', () => {
+        const result = preferQaapConversationSummary(
+            summary({ status: 'failed', updatedAt: 42, messageCount: 4 }),
+            summary({ status: 'streaming', updatedAt: 43, messageCount: 5 }),
+        );
+
+        expect(result.status).to.equal('streaming');
     });
 });

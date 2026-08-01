@@ -85,6 +85,16 @@ export interface QaapAgentMessage {
     /** Original user turn that owns this backend-generated auto-continuation chain. */
     readonly autoContinueRootMessageId?: string;
     /**
+     * Human-authored root turn whose visual result this backend-generated repair belongs to.
+     * Persisted separately from {@link autoContinueRootMessageId} so the visual loop keeps its own
+     * strict attempt budget while still sharing the global re-spawn ceiling with every other loop.
+     */
+    readonly visualRepairRootMessageId?: string;
+    /** 1-based visual repair attempt. Backend-generated user messages only. */
+    readonly visualRepairAttempt?: number;
+    /** Agent evidence message whose failed render caused this repair turn. */
+    readonly visualRepairSourceAgentMessageId?: string;
+    /**
      * How many times this turn has been auto-resumed after a backend restart (OOM/redeploy). Held
      * on the root user message and persisted so the ceiling survives further restarts: a turn whose
      * own work is what saturated memory cannot loop restart→resume→OOM forever. See

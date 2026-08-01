@@ -15,8 +15,8 @@ const SCRIPT_NAME = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$/;
 
 /**
  * The caller's chosen check, if the repository actually declares it. Returns undefined for an
- * unknown or malformed name so the caller falls back to the repository's own verification scripts
- * rather than "verifying" nothing at all.
+ * unknown or malformed name; the workflow verifier treats a supplied-but-unresolved name as a red
+ * gate, while absence of a supplied name selects the repository's standard verification scripts.
  */
 export function resolveQaapDeclaredVerificationScript(packageJson: unknown, script: string | undefined): string | undefined {
     if (!script || !SCRIPT_NAME.test(script)) {

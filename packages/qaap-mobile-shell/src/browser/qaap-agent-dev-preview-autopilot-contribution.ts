@@ -240,7 +240,8 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
                 ...first,
                 result: {
                     ...first.result,
-                    status: 'warning',
+                    status: 'failed',
+                    readiness: 'failed',
                     issues: [...first.result.issues, ...skipped.map(reason => `Could not capture ${reason}.`)],
                 },
             };

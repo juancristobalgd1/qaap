@@ -178,6 +178,15 @@ for _ in $(seq 1 60); do
             echo "[qaap-vps-update] integrated terminal shell check failed" >&2
             exit 1
         fi
+        THEIA_CONTAINER_ID="$(docker compose ps -q theia)"
+        THEIA_RESTART_COUNT="$(docker inspect -f '{{.RestartCount}}' "$THEIA_CONTAINER_ID" 2>/dev/null || echo unknown)"
+        if [[ "$THEIA_RESTART_COUNT" != "0" ]]; then
+            echo "[qaap-vps-update] theia restarted ${THEIA_RESTART_COUNT} time(s) during startup; refusing to report a healthy deploy" >&2
+            docker compose logs --tail=120 theia >&2
+            exit 1
+        fi
+        THEIA_MEMORY="$(docker stats --no-stream --format '{{.MemUsage}}' "$THEIA_CONTAINER_ID" 2>/dev/null || echo unknown)"
+        echo "[qaap-vps-update] theia memory: $THEIA_MEMORY; restarts: $THEIA_RESTART_COUNT"
         echo "[qaap-vps-update] ready at commit $BEFORE"
         # Report searxng health (non-fatal — the IDE runs without it, only @qaiq web search needs it).
         SX_HEALTH="$(docker inspect -f '{{.State.Health.Status}}' "$(docker compose ps -q searxng 2>/dev/null)" 2>/dev/null || echo unknown)"

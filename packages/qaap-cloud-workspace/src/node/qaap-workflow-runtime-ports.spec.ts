@@ -10,6 +10,7 @@ import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { QaapWorkflowDispatchContext } from './qaap-workflow-dispatcher';
 import { QAAP_WORKFLOW_STRICT_READONLY_ENV, QaapWorkflowAgentTurnAdapter } from './qaap-workflow-runtime-ports';
+import { QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS } from './qaap-workflow-run-store';
 
 /** Judge turn: unpinned, so routing decides the backend. */
 const judgeNode: QaapWorkflowAgentTurnNode = {
@@ -21,7 +22,7 @@ const judgeNode: QaapWorkflowAgentTurnNode = {
     requireSentinel: true,
 };
 
-const context: QaapWorkflowDispatchContext = { runId: 'r1', nodeId: 'judge', ownerLogin: 'ada' };
+const context: QaapWorkflowDispatchContext = { runId: 'r1', nodeId: 'judge', visit: 1, ownerLogin: 'ada' };
 
 interface CapturedRequest {
     readonly agent?: string;
@@ -35,6 +36,7 @@ interface Harness {
     taskKinds: (string | undefined)[];
     requests: CapturedRequest[];
     noted: string[];
+    cancelled: string[];
 }
 
 interface HarnessOptions {
@@ -48,6 +50,10 @@ interface HarnessOptions {
     readonly installed?: readonly string[];
     /** Routing table override, to exercise backends the default table never reaches. */
     readonly routing?: QaapWorkflowRoutingPolicy;
+    /** Simulate persistence failing after the runner returned a task id. */
+    readonly failCompleteClaim?: boolean;
+    /** Begin with a claim left behind by a dead creator. */
+    readonly staleClaim?: boolean;
 }
 
 /** Real routing policy + registry; runner/store stubbed. codex and qaiq both installed. */
@@ -56,9 +62,20 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
     const taskKinds: (string | undefined)[] = [];
     const requests: CapturedRequest[] = [];
     const noted: string[] = [];
+    const cancelled: string[] = [];
     // Mutated by noteRoutedAgent exactly as the real store does, so dispatching several judge nodes
     // in a row through one adapter reproduces what the dispatcher's serial loop actually sees.
     const routedAgents: Record<string, string> = { ...(options.routedAgents ?? {}) };
+    const dispatchClaims: Record<string, { claimId: string; visit: number; kind: 'agent'; claimedAt: number }> = {};
+    const dispatched: Record<string, { nodeId: string; externalId: string; kind: 'agent'; dispatchedAt: number }> = {};
+    const visits: Record<string, number> = {};
+    if (options.staleClaim) {
+        visits[context.nodeId] = context.visit;
+        dispatchClaims[context.nodeId] = {
+            claimId: 'dead-creator', visit: context.visit, kind: 'agent',
+            claimedAt: Date.now() - QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS - 1,
+        };
+    }
     let counter = 0;
     const adapter = Object.create(QaapWorkflowAgentTurnAdapter.prototype) as QaapWorkflowAgentTurnAdapter;
     Object.assign(adapter, {
@@ -68,13 +85,52 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
         prompts: new QaapWorkflowPromptRegistry(),
         store: {
             get: () => ({
-                run: { id: 'r1', bindings: {} },
+                run: { id: 'r1', bindings: {}, active: Object.keys(visits), visits: { ...visits } },
                 def: { name: 'Wf', nodes: [...(options.nodes ?? [])], edges: [...(options.edges ?? [])] },
                 inputs: { task: 'do it' },
                 cwd: '/repo',
                 artifacts: {},
                 routedAgents: { ...routedAgents },
+                dispatchClaims: { ...dispatchClaims },
+                dispatched: { ...dispatched },
             }),
+            claimDispatch: async (
+                _owner: string, _runId: string, nodeId: string, visit: number, _kind: 'agent', claimId: string,
+            ) => {
+                if (visits[nodeId] !== visit) {
+                    visits[nodeId] = visit;
+                    delete dispatchClaims[nodeId];
+                    delete dispatched[nodeId];
+                }
+                if (dispatched[nodeId]) {
+                    return { status: 'attached' as const, externalId: dispatched[nodeId].externalId };
+                }
+                if (dispatchClaims[nodeId]) {
+                    if (Date.now() - dispatchClaims[nodeId].claimedAt >= QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS) {
+                        dispatchClaims[nodeId] = { claimId, visit, kind: 'agent', claimedAt: Date.now() };
+                        return { status: 'claimed' as const };
+                    }
+                    return { status: 'pending' as const, claimId: dispatchClaims[nodeId].claimId };
+                }
+                dispatchClaims[nodeId] = { claimId, visit, kind: 'agent', claimedAt: Date.now() };
+                return { status: 'claimed' as const };
+            },
+            completeDispatchClaim: async (
+                _owner: string, _runId: string, nodeId: string, visit: number, _kind: 'agent', claimId: string, externalId: string,
+            ) => {
+                if (options.failCompleteClaim) {
+                    throw new Error('claim persistence failed');
+                }
+                expect(dispatchClaims[nodeId]).to.deep.include({ claimId, visit });
+                dispatched[nodeId] = { nodeId, externalId, kind: 'agent', dispatchedAt: Date.now() };
+                delete dispatchClaims[nodeId];
+                return undefined;
+            },
+            releaseDispatchClaim: async (_owner: string, _runId: string, nodeId: string, claimId: string) => {
+                if (dispatchClaims[nodeId]?.claimId === claimId) {
+                    delete dispatchClaims[nodeId];
+                }
+            },
             noteRoutedAgent: async (_owner: string, _runId: string, nodeId: string, agentRef: string) => {
                 noted.push(`${nodeId}:${agentRef}`);
                 routedAgents[nodeId] = agentRef;
@@ -90,10 +146,54 @@ function buildAdapter(options: HarnessOptions = {}): Harness {
                 requests.push(request);
                 return { id: `task-${++counter}` };
             },
+            cancel: (taskId: string) => cancelled.push(taskId),
         },
     });
-    return { adapter, createdWith, taskKinds, requests, noted };
+    return { adapter, createdWith, taskKinds, requests, noted, cancelled };
 }
+
+describe('QaapWorkflowAgentTurnAdapter durable visit claims', () => {
+    it('creates one task for concurrent replays of the same visit', async () => {
+        const { adapter, requests } = buildAdapter();
+
+        const [first, replay] = await Promise.all([
+            adapter.startAgentTurn(judgeNode, context),
+            adapter.startAgentTurn(judgeNode, context),
+        ]);
+
+        expect(replay).to.equal(first);
+        expect(requests).to.have.length(1);
+    });
+
+    it('creates a fresh task only when the durable visit increments', async () => {
+        const { adapter, requests } = buildAdapter();
+        const first = await adapter.startAgentTurn(judgeNode, context);
+        const second = await adapter.startAgentTurn(judgeNode, { ...context, visit: 2 });
+
+        expect(second).to.not.equal(first);
+        expect(requests).to.have.length(2);
+    });
+
+    it('cancels the created task and releases ownership when claim attachment fails', async () => {
+        const { adapter, cancelled } = buildAdapter({ failCompleteClaim: true });
+
+        await adapter.startAgentTurn(judgeNode, context).then(
+            () => expect.fail('expected claim completion to fail'),
+            error => expect(error).to.have.property('message', 'claim persistence failed'),
+        );
+
+        expect(cancelled).to.deep.equal(['task-1']);
+    });
+
+    it('steals a stale durable claim and creates exactly one replacement task', async () => {
+        const { adapter, requests } = buildAdapter({ staleClaim: true });
+
+        const taskId = await adapter.startAgentTurn(judgeNode, context);
+
+        expect(taskId).to.equal('task-1');
+        expect(requests).to.have.length(1);
+    });
+});
 
 describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
     it('routes the judge to the first preferred installed backend', async () => {
@@ -109,12 +209,12 @@ describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
         adapter.noteAgentTurnResult(first, 'failed');
 
         // codex is cooling down → next unpinned judge goes to the next candidate.
-        const second = await adapter.startAgentTurn(judgeNode, context);
+        const second = await adapter.startAgentTurn(judgeNode, { ...context, visit: 2 });
         expect(createdWith).to.deep.equal(['codex', 'qaiq']);
 
         // A completed turn on qaiq clears nothing for codex; codex stays cooled…
         adapter.noteAgentTurnResult(second, 'completed');
-        await adapter.startAgentTurn(judgeNode, context);
+        await adapter.startAgentTurn(judgeNode, { ...context, visit: 3 });
         expect(createdWith[2]).to.equal('qaiq');
     });
 
@@ -123,7 +223,7 @@ describe('QaapWorkflowAgentTurnAdapter backend cooldown', () => {
         const first = await adapter.startAgentTurn(judgeNode, context);
         // 'completed' even with a fail verdict proves the CLI itself works.
         adapter.noteAgentTurnResult(first, 'completed');
-        await adapter.startAgentTurn(judgeNode, context);
+        await adapter.startAgentTurn(judgeNode, { ...context, visit: 2 });
         expect(createdWith).to.deep.equal(['codex', 'codex']);
     });
 
@@ -427,7 +527,7 @@ describe('QaapWorkflowAgentTurnAdapter independence beyond the writer', () => {
         });
         await adapter.startAgentTurn(implementNode, { ...context, nodeId: 'implement' });
         await adapter.startAgentTurn(judgeNode, context);
-        await adapter.startAgentTurn(judgeNode, context);
+        await adapter.startAgentTurn(judgeNode, { ...context, visit: 2 });
         expect(createdWith).to.deep.equal(['claude', 'codex', 'codex']);
     });
 });

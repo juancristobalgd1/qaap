@@ -31,6 +31,8 @@ const MAX_RUNS_PER_OWNER = 200;
  * store's own guarantee that one enormous change cannot grow the shared run index without bound.
  */
 const MAX_ARTIFACT_CHARS = DEFAULT_REVIEW_DIFF_CAP_CHARS;
+/** A creator that cannot publish an external id within this window has lost its claim. */
+export const QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS = 30_000;
 
 /**
  * The definition travels with the run: defs are immutable `id@version` and are not stored
@@ -44,6 +46,26 @@ export interface QaapWorkflowDispatchedNode {
     readonly kind: 'agent' | 'job';
     readonly dispatchedAt: number;
 }
+
+/**
+ * Durable ownership of the create side-effect for one node visit.
+ *
+ * The external id does not exist yet, so this is deliberately separate from `dispatched`. A
+ * concurrent replay that sees the claim waits for its owner to publish the id instead of spawning
+ * a second agent for the same visit.
+ */
+export interface QaapWorkflowDispatchClaim {
+    readonly nodeId: string;
+    readonly visit: number;
+    readonly kind: 'agent' | 'job';
+    readonly claimId: string;
+    readonly claimedAt: number;
+}
+
+export type QaapWorkflowDispatchClaimResult =
+    | { readonly status: 'claimed' }
+    | { readonly status: 'pending'; readonly claimId: string }
+    | { readonly status: 'attached'; readonly externalId: string };
 
 export interface QaapPersistedWorkflowRun {
     readonly run: QaapWorkflowRun;
@@ -67,6 +89,8 @@ export interface QaapPersistedWorkflowRun {
     readonly updatedAt: number;
     /** Node id → its live execution. Persisted so a restart can still map events back to nodes. */
     readonly dispatched: Readonly<Record<string, QaapWorkflowDispatchedNode>>;
+    /** Node id → durable create claim held until its external id is attached. */
+    readonly dispatchClaims: Readonly<Record<string, QaapWorkflowDispatchClaim>>;
     /**
      * Text a deterministic node produced for later `promptRef` templates (the captured diff, say),
      * keyed by the producing node's `artifactKey`. Server-side like `cwd` and `inputs`: it is
@@ -227,6 +251,7 @@ export class QaapWorkflowRunStore {
                 createdAt: now,
                 updatedAt: now,
                 dispatched: {},
+                dispatchClaims: {},
                 artifacts: {},
                 routedAgents: {},
                 trace: [],
@@ -304,6 +329,7 @@ export class QaapWorkflowRunStore {
                         },
                     }
                     : {},
+                dispatchClaims: {},
                 artifacts: {},
                 routedAgents: {},
                 trace: [],
@@ -341,11 +367,14 @@ export class QaapWorkflowRunStore {
             const dispatched = { ...previous.dispatched };
             const executed = dispatched[nodeId];
             delete dispatched[nodeId];
+            const dispatchClaims = { ...previous.dispatchClaims };
+            delete dispatchClaims[nodeId];
             const finishedAt = this.now();
             const record: QaapPersistedWorkflowRun = {
                 ...previous,
                 run: advanced.run,
                 dispatched,
+                dispatchClaims,
                 artifacts: artifact
                     ? { ...previous.artifacts, [artifact.key]: artifact.value.slice(0, MAX_ARTIFACT_CHARS) }
                     : previous.artifacts,
@@ -384,6 +413,13 @@ export class QaapWorkflowRunStore {
                 ));
             }
             const previous = records[index];
+            const existing = previous.dispatched[nodeId];
+            if (existing) {
+                if (existing.kind !== kind || existing.externalId !== externalId) {
+                    throw new QaapWorkflowRunRequestError(`Workflow node "${nodeId}" is already attached to different work.`);
+                }
+                return { records, result: this.clone(previous) };
+            }
             const record: QaapPersistedWorkflowRun = {
                 ...previous,
                 dispatched: {
@@ -396,6 +432,154 @@ export class QaapWorkflowRunStore {
             next[index] = record;
             return { records: next, result: record };
         }, result => result);
+    }
+
+    /**
+     * Persist ownership of the create side-effect before an agent process is created.
+     *
+     * This mutation is serialized with every other run mutation. Therefore exactly one caller can
+     * receive `claimed`; concurrent callers receive `pending`, and a replay after attachment gets
+     * the existing external id.
+     */
+    claimDispatch(
+        ownerLogin: string | undefined,
+        runId: string,
+        nodeId: string,
+        visit: number,
+        kind: 'agent' | 'job',
+        claimId: string,
+    ): Promise<QaapWorkflowDispatchClaimResult> {
+        return this.mutate<QaapWorkflowDispatchClaimResult>(records => {
+            const owner = this.normalizeOwner(ownerLogin);
+            const index = records.findIndex(entry => entry.run.id === runId && entry.ownerLogin === owner);
+            if (index < 0) {
+                throw new QaapWorkflowRunRequestError(nls.localize(
+                    'qaap/workflowRuns/notFound', 'Workflow run {0} was not found.', runId,
+                ));
+            }
+            const previous = records[index];
+            if (!previous.run.active.includes(nodeId) || previous.run.visits[nodeId] !== visit) {
+                throw new QaapWorkflowRunRequestError(`Workflow node "${nodeId}" visit ${visit} is no longer active.`);
+            }
+            const attached = previous.dispatched[nodeId];
+            if (attached) {
+                if (attached.kind !== kind) {
+                    throw new QaapWorkflowRunRequestError(`Workflow node "${nodeId}" is attached with a different runtime kind.`);
+                }
+                return { records, result: { status: 'attached', externalId: attached.externalId } as const };
+            }
+            const pending = previous.dispatchClaims[nodeId];
+            if (pending) {
+                if (pending.visit !== visit || pending.kind !== kind) {
+                    throw new QaapWorkflowRunRequestError(`Workflow node "${nodeId}" has a conflicting dispatch claim.`);
+                }
+                const now = this.now();
+                if (now - pending.claimedAt >= QAAP_WORKFLOW_DISPATCH_CLAIM_LEASE_MS) {
+                    const record: QaapPersistedWorkflowRun = {
+                        ...previous,
+                        dispatchClaims: {
+                            ...previous.dispatchClaims,
+                            [nodeId]: { nodeId, visit, kind, claimId, claimedAt: now },
+                        },
+                        updatedAt: now,
+                    };
+                    const next = [...records];
+                    next[index] = record;
+                    return { records: next, result: { status: 'claimed' } };
+                }
+                return {
+                    records,
+                    result: pending.claimId === claimId
+                        ? { status: 'claimed' }
+                        : { status: 'pending', claimId: pending.claimId },
+                };
+            }
+            const now = this.now();
+            const record: QaapPersistedWorkflowRun = {
+                ...previous,
+                dispatchClaims: {
+                    ...previous.dispatchClaims,
+                    [nodeId]: { nodeId, visit, kind, claimId, claimedAt: now },
+                },
+                updatedAt: now,
+            };
+            const next = [...records];
+            next[index] = record;
+            return { records: next, result: { status: 'claimed' } };
+        });
+    }
+
+    /** Convert the caller's durable claim into the durable external-id attachment. */
+    completeDispatchClaim(
+        ownerLogin: string | undefined,
+        runId: string,
+        nodeId: string,
+        visit: number,
+        kind: 'agent' | 'job',
+        claimId: string,
+        externalId: string,
+    ): Promise<QaapPersistedWorkflowRun> {
+        return this.mutate(records => {
+            const owner = this.normalizeOwner(ownerLogin);
+            const index = records.findIndex(entry => entry.run.id === runId && entry.ownerLogin === owner);
+            if (index < 0) {
+                throw new QaapWorkflowRunRequestError(nls.localize(
+                    'qaap/workflowRuns/notFound', 'Workflow run {0} was not found.', runId,
+                ));
+            }
+            const previous = records[index];
+            const existing = previous.dispatched[nodeId];
+            if (existing?.kind === kind && existing.externalId === externalId) {
+                return { records, result: this.clone(previous) };
+            }
+            const claim = previous.dispatchClaims[nodeId];
+            if (
+                !previous.run.active.includes(nodeId)
+                || previous.run.visits[nodeId] !== visit
+                || claim?.claimId !== claimId
+                || claim?.visit !== visit
+                || claim?.kind !== kind
+            ) {
+                throw new QaapWorkflowRunRequestError(`Workflow dispatch claim for "${nodeId}" visit ${visit} is no longer valid.`);
+            }
+            const now = this.now();
+            const dispatchClaims = { ...previous.dispatchClaims };
+            delete dispatchClaims[nodeId];
+            const record: QaapPersistedWorkflowRun = {
+                ...previous,
+                dispatched: {
+                    ...previous.dispatched,
+                    [nodeId]: { nodeId, externalId, kind, dispatchedAt: now },
+                },
+                dispatchClaims,
+                updatedAt: now,
+            };
+            const next = [...records];
+            next[index] = record;
+            return { records: next, result: record };
+        }, result => result);
+    }
+
+    /** Release only the caller's own unfinished claim; used when process creation/attach fails. */
+    releaseDispatchClaim(
+        ownerLogin: string | undefined,
+        runId: string,
+        nodeId: string,
+        claimId: string,
+    ): Promise<void> {
+        return this.mutate(records => {
+            const owner = this.normalizeOwner(ownerLogin);
+            const index = records.findIndex(entry => entry.run.id === runId && entry.ownerLogin === owner);
+            if (index < 0 || records[index].dispatchClaims[nodeId]?.claimId !== claimId) {
+                return { records, result: undefined };
+            }
+            const previous = records[index];
+            const dispatchClaims = { ...previous.dispatchClaims };
+            delete dispatchClaims[nodeId];
+            const next = [...records];
+            next[index] = { ...previous, dispatchClaims, updatedAt: this.now() };
+            return { records: next, result: undefined };
+        });
     }
 
     /**
@@ -482,6 +666,7 @@ export class QaapWorkflowRunStore {
                 ...previous,
                 run: expireQaapWorkflowRun(previous.run),
                 dispatched: {},
+                dispatchClaims: {},
                 trace,
                 updatedAt: expiredAt,
             };
@@ -524,6 +709,7 @@ export class QaapWorkflowRunStore {
                 this.records.set(record.run.id, {
                     ...record,
                     dispatched: record.dispatched ?? {},
+                    dispatchClaims: record.dispatchClaims ?? {},
                     cwd: record.cwd ?? '',
                     inputs: record.inputs ?? {},
                     artifacts: record.artifacts ?? {},

@@ -210,16 +210,30 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
 
     /**
      * Mirrors {@code QaapAgentTaskRunner.runVerificationScripts}: run each resolved npm script in
-     * order via `npm run <script>` and stop at the first non-zero exit. No scripts means nothing to
-     * verify, which is a success (the node exists to gate on failure, not to require config).
+     * order via `npm run <script>` and stop at the first non-zero exit. A verification node is an
+     * outcome gate, so having no applicable oracle is a failure: absence of evidence is not proof
+     * that the requested result works.
      */
     protected async verify(context: QaapJobFunctionContext, declaredScript?: string): Promise<VerifyOutput> {
         const packageJson = await this.readPackageJson(context);
         // A run that declared its own success check is measured by THAT, and by nothing else: the
         // point of a goal is that the caller, not the repository layout, decides what "done" means.
-        // An unknown name falls back to the repository's scripts rather than verifying nothing.
         const declared = resolveQaapDeclaredVerificationScript(packageJson, declaredScript);
+        if (declaredScript && !declared) {
+            const summary = nls.localize(
+                'qaap/workflows/functions/goalCheckMissing',
+                'The declared goal check "npm run {0}" is not present in this workspace package.json.',
+                declaredScript,
+            );
+            return this.oracleFailure(summary, declaredScript);
+        }
         const scripts = declared ? [declared] : resolveQaapAgentVerificationScripts(packageJson);
+        if (scripts.length === 0) {
+            return this.oracleFailure(nls.localize(
+                'qaap/workflows/functions/noVerificationOracle',
+                'No applicable verification script was found. Declare typecheck, build, test, lint, or an explicit goal check.',
+            ));
+        }
         for (const script of scripts) {
             context.emitOutput(`\n[qaap-workflow] verifying: npm run ${script}\n`);
             const failure = await this.runVerificationScript(context, script);
@@ -233,6 +247,16 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
             }
         }
         return { outcome: 'success', scripts };
+    }
+
+    /** A configuration failure is a red gate and gives the repair turn an actionable artifact. */
+    protected oracleFailure(summary: string, declaredScript?: string): VerifyOutput {
+        return {
+            outcome: 'fail',
+            ...(declaredScript ? { failedScript: declaredScript } : {}),
+            summary,
+            artifact: `[qaap verification] failed:\n\n${summary}`,
+        };
     }
 
     /**
@@ -282,7 +306,7 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
             const raw = await fsp.readFile(path.join(context.cwd, 'package.json'), 'utf8');
             return JSON.parse(raw) as unknown;
         } catch {
-            // No manifest or unreadable → no scripts → nothing to verify.
+            // No manifest or unreadable → no scripts; verify() turns that into a fail-closed gate.
             return undefined;
         }
     }

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { nls } from '@theia/core/lib/common/nls';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as http from 'http';
@@ -15,6 +16,12 @@ import {
     type QaapPreviewVisualValidationResult,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 import { deriveVisualFlowSteps } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-flow-plan';
+import {
+    QAAP_PREVIEW_CONFIG_PATH,
+    QaapPreviewLaunchPlan,
+    materializeQaapPreviewLaunchPlan,
+    parseQaapPreviewLaunchConfigJson,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-launch-plan';
 import { conversationNeedsVisualVerificationEvidence, type QaapAgentConversation } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';
@@ -66,6 +73,8 @@ export interface QaapHeadlessCaptureAppTarget {
     readonly kind: 'script' | 'static';
     /** Port the app is expected on; `PORT` env is injected, Vite-style configs are parsed. */
     readonly expectedPort: number;
+    /** Exact argv plan shared with the frontend for non-package.json runtimes. */
+    readonly launch?: QaapPreviewLaunchPlan;
 }
 
 function readPackageJson(dir: string): { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | undefined {
@@ -122,11 +131,98 @@ function scriptProjectAt(dir: string): QaapHeadlessCaptureAppTarget | undefined 
     return { root: dir, kind: 'script', expectedPort: expectedPortForProject(dir, pkg) };
 }
 
+function configuredProjectAt(workspaceRoot: string): QaapHeadlessCaptureAppTarget | undefined {
+    try {
+        const parsed = parseQaapPreviewLaunchConfigJson(
+            fs.readFileSync(path.join(workspaceRoot, QAAP_PREVIEW_CONFIG_PATH), 'utf8'),
+        );
+        if (!parsed.ok) {
+            return undefined;
+        }
+        const root = path.resolve(workspaceRoot, parsed.plan.cwd);
+        const contained = root === workspaceRoot || root.startsWith(`${workspaceRoot}${path.sep}`);
+        if (!contained || !fs.statSync(root).isDirectory()) {
+            return undefined;
+        }
+        return { root, kind: 'script', expectedPort: parsed.plan.port, launch: parsed.plan };
+    } catch {
+        return undefined;
+    }
+}
+
+function nativePlan(
+    root: string,
+    runtime: QaapPreviewLaunchPlan['runtime'],
+    command: string,
+    args: string[],
+    port: number = 8080,
+): QaapHeadlessCaptureAppTarget {
+    return {
+        root,
+        kind: 'script',
+        expectedPort: port,
+        launch: { version: 1, runtime, cwd: '.', command, args, port },
+    };
+}
+
+/** Conservative native-runtime discovery matching the frontend detector. */
+function nativeProjectAt(dir: string): QaapHeadlessCaptureAppTarget | undefined {
+    if (fs.existsSync(path.join(dir, 'manage.py'))) {
+        return nativePlan(dir, 'python', 'python3', ['manage.py', 'runserver', '0.0.0.0:{{PORT}}'], 8000);
+    }
+    const pythonManifest = ['requirements.txt', 'pyproject.toml']
+        .map(name => {
+            try {
+                return fs.readFileSync(path.join(dir, name), 'utf8');
+            } catch {
+                return '';
+            }
+        })
+        .join('\n');
+    if (pythonManifest && fs.existsSync(path.join(dir, 'app.py'))) {
+        if (/\b(?:fastapi|uvicorn)\b/i.test(pythonManifest)) {
+            return nativePlan(dir, 'python', 'python3', [
+                '-m', 'uvicorn', 'app:app', '--host', '0.0.0.0', '--port', '{{PORT}}',
+            ], 8000);
+        }
+        if (/\bflask\b/i.test(pythonManifest)) {
+            return nativePlan(dir, 'python', 'python3', [
+                '-m', 'flask', '--app', 'app', 'run', '--host', '0.0.0.0', '--port', '{{PORT}}',
+            ], 5000);
+        }
+    }
+    if (fs.existsSync(path.join(dir, 'go.mod'))) {
+        return nativePlan(dir, 'go', 'go', ['run', '.']);
+    }
+    if (fs.existsSync(path.join(dir, 'Cargo.toml'))) {
+        return nativePlan(dir, 'rust', 'cargo', ['run']);
+    }
+    let csproj: string | undefined;
+    try {
+        csproj = fs.readdirSync(dir).filter(name => name.toLowerCase().endsWith('.csproj')).sort()[0];
+    } catch {
+        // Not a readable .NET project.
+    }
+    if (csproj) {
+        return nativePlan(dir, 'dotnet', 'dotnet', [
+            'run', '--project', csproj, '--urls', 'http://0.0.0.0:{{PORT}}',
+        ]);
+    }
+    if (fs.existsSync(path.join(dir, 'index.php'))) {
+        return nativePlan(dir, 'php', 'php', ['-S', '0.0.0.0:{{PORT}}']);
+    }
+    return undefined;
+}
+
 /**
  * Resolves what to run for a workspace: the root project, the first runnable child project
  * (depth ≤ 2 — covers `artifacts/<app>` layouts), or a plain static site (`index.html`).
  */
 export function resolveHeadlessCaptureAppTarget(cwd: string): QaapHeadlessCaptureAppTarget | undefined {
+    const configured = configuredProjectAt(cwd);
+    if (configured) {
+        return configured;
+    }
     const atRoot = scriptProjectAt(cwd);
     if (atRoot) {
         return atRoot;
@@ -142,6 +238,12 @@ export function resolveHeadlessCaptureAppTarget(cwd: string): QaapHeadlessCaptur
     };
     const level1 = listDirs(cwd);
     for (const child of level1) {
+        const target = configuredProjectAt(child);
+        if (target) {
+            return target;
+        }
+    }
+    for (const child of level1) {
         const target = scriptProjectAt(child);
         if (target) {
             return target;
@@ -149,6 +251,10 @@ export function resolveHeadlessCaptureAppTarget(cwd: string): QaapHeadlessCaptur
     }
     for (const child of level1) {
         for (const grandChild of listDirs(child)) {
+            const configuredChild = configuredProjectAt(grandChild);
+            if (configuredChild) {
+                return configuredChild;
+            }
             const target = scriptProjectAt(grandChild);
             if (target) {
                 return target;
@@ -157,6 +263,24 @@ export function resolveHeadlessCaptureAppTarget(cwd: string): QaapHeadlessCaptur
     }
     if (fs.existsSync(path.join(cwd, 'index.html'))) {
         return { root: cwd, kind: 'static', expectedPort: 0 };
+    }
+    const nativeRoot = nativeProjectAt(cwd);
+    if (nativeRoot) {
+        return nativeRoot;
+    }
+    for (const child of level1) {
+        const target = nativeProjectAt(child);
+        if (target) {
+            return target;
+        }
+    }
+    for (const child of level1) {
+        for (const grandChild of listDirs(child)) {
+            const target = nativeProjectAt(grandChild);
+            if (target) {
+                return target;
+            }
+        }
     }
     return undefined;
 }
@@ -187,8 +311,9 @@ export function resolveHeadlessChromiumExecutable(): string | undefined {
 /** Same-shape DOM smoke check as the frontend's validateQaapPreviewDocument, run in the page. */
 const PAGE_SMOKE_CHECK = `(() => {
     const issues = [];
+    const fatalIssues = [];
     const bodyText = (document.body && (document.body.innerText || document.body.textContent) || '').trim();
-    if (bodyText.length < 20) { issues.push('The page appears empty or contains very little visible text.'); }
+    if (bodyText.length < 20) { fatalIssues.push('The page appears empty or contains very little visible text.'); }
     if (!document.querySelector('h1')) { issues.push('No primary page heading (h1) was found.'); }
     const brokenImages = [...document.images].filter(i => i.complete && i.naturalWidth === 0).length;
     if (brokenImages > 0) { issues.push(brokenImages + ' image' + (brokenImages === 1 ? '' : 's') + ' failed to load.'); }
@@ -202,14 +327,106 @@ const PAGE_SMOKE_CHECK = `(() => {
         issues.push('The page has horizontal overflow at the captured viewport width.');
     }
     const interactive = document.querySelectorAll('a, button, input, textarea, select, [role="button"]').length;
+    const allIssues = fatalIssues.concat(issues);
     return {
-        status: issues.length === 0 ? 'passed' : 'warning',
-        summary: issues.length === 0
+        status: fatalIssues.length > 0 ? 'failed' : issues.length === 0 ? 'passed' : 'warning',
+        readiness: allIssues.length === 0 ? 'render_ready' : 'failed',
+        summary: fatalIssues.length > 0
+            ? 'Preview render failed with ' + fatalIssues.length + ' blocking finding' + (fatalIssues.length === 1 ? '' : 's') + '.'
+            : issues.length === 0
             ? 'Preview loaded and passed the DOM smoke check (' + interactive + ' interactive elements).'
             : 'Preview loaded with ' + issues.length + ' visual/accessibility finding' + (issues.length === 1 ? '' : 's') + '.',
-        issues,
+        issues: allIssues,
     };
 })()`;
+
+function boundedDiagnostic(value: unknown): string {
+    const text = value instanceof Error ? value.message : String(value ?? 'Unknown application error');
+    return text.replace(/\s+/g, ' ').trim().slice(0, 500) || 'Unknown application error';
+}
+
+/** Applies browser/runtime failures to the DOM result without losing the captured screenshot. */
+export function applyQaapHeadlessRuntimeDiagnostics(
+    result: QaapPreviewVisualValidationResult,
+    diagnostics: readonly string[],
+): QaapPreviewVisualValidationResult {
+    const unique = [...new Set(diagnostics.map(boundedDiagnostic).filter(Boolean))].slice(0, 20);
+    if (unique.length === 0) {
+        return result;
+    }
+    return {
+        status: 'failed',
+        readiness: 'failed',
+        summary: nls.localize(
+            'qaap/visualVerification/browserRuntimeErrors',
+            'Preview render failed with {0} browser/runtime error(s).',
+            unique.length,
+        ),
+        issues: [...unique, ...result.issues].slice(0, 30),
+    };
+}
+
+/**
+ * Navigates one route and combines DOM smoke findings with Playwright's runtime/network truth.
+ * A successful HTTP response alone can never produce `passed` when the page throws, rejects,
+ * drops a request, or receives a 5xx response.
+ */
+export async function inspectQaapHeadlessPage(
+    page: any,
+    url: string,
+    settleMs: number = PAGE_SETTLE_MS,
+): Promise<QaapPreviewVisualValidationResult> {
+    const diagnostics: string[] = [];
+    const add = (kind: string, message: unknown): void => {
+        diagnostics.push(`${kind}: ${boundedDiagnostic(message)}`);
+    };
+    const onPageError = (error: unknown): void => add('pageerror', error);
+    const onConsole = (message: any): void => {
+        if (message.type?.() === 'error') {
+            add('console.error', message.text?.() ?? message);
+        }
+    };
+    const onRequestFailed = (request: any): void => {
+        const failure = request.failure?.();
+        add('requestfailed', `${request.url?.() ?? 'unknown URL'} (${failure?.errorText ?? 'unknown failure'})`);
+    };
+    const onResponse = (response: any): void => {
+        const status = Number(response.status?.());
+        if (status >= 500) {
+            add('http', `${status} ${response.url?.() ?? 'unknown URL'}`);
+        }
+    };
+    page.on('pageerror', onPageError);
+    page.on('console', onConsole);
+    page.on('requestfailed', onRequestFailed);
+    page.on('response', onResponse);
+    await page.addInitScript(`(() => {
+        const key = '__qaapHeadlessUnhandledRejections';
+        globalThis[key] = [];
+        addEventListener('unhandledrejection', event => {
+            const reason = event.reason;
+            const message = reason && reason.message ? reason.message : String(reason || 'Unknown rejection');
+            if (globalThis[key].length < 20) { globalThis[key].push(message.slice(0, 500)); }
+        });
+    })()`);
+    try {
+        await page.goto(url, { waitUntil: 'load', timeout: PAGE_LOAD_TIMEOUT_MS });
+        await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
+        await page.waitForTimeout(settleMs);
+        const result = await page.evaluate(PAGE_SMOKE_CHECK) as QaapPreviewVisualValidationResult;
+        const rejections = await page.evaluate(`globalThis.__qaapHeadlessUnhandledRejections || []`)
+            .catch(() => []) as string[];
+        for (const rejection of rejections) {
+            add('unhandledrejection', rejection);
+        }
+        return applyQaapHeadlessRuntimeDiagnostics(result, diagnostics);
+    } finally {
+        page.off('pageerror', onPageError);
+        page.off('console', onConsole);
+        page.off('requestfailed', onRequestFailed);
+        page.off('response', onResponse);
+    }
+}
 
 @injectable()
 export class QaapHeadlessVisualCaptureService {
@@ -263,9 +480,9 @@ export class QaapHeadlessVisualCaptureService {
         this.inFlight.add(conversationId);
         this.queue = this.queue
             .then(() => this.captureConversation(conversationId))
-            .catch(error => {
+            .catch(async error => {
                 console.warn('[qaap-headless-visual-capture] capture failed:', error);
-                this.recordHeadlessCaptureFailure(conversationId, error);
+                await this.recordHeadlessCaptureFailure(conversationId, error);
             })
             .finally(() => {
                 this.inFlight.delete(conversationId);
@@ -277,7 +494,7 @@ export class QaapHeadlessVisualCaptureService {
      * `[QAAP record]` turns spinning forever — attemptedTurns blocks retry, so settle the
      * evidence slot with a visible note instead.
      */
-    protected recordHeadlessCaptureFailure(conversationId: string, error: unknown): void {
+    protected async recordHeadlessCaptureFailure(conversationId: string, error: unknown): Promise<void> {
         const conv = this.store.get(conversationId);
         if (!conv || !conversationNeedsVisualVerificationEvidence(conv)) {
             return;
@@ -287,7 +504,7 @@ export class QaapHeadlessVisualCaptureService {
             return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        this.store.recordVisualVerificationFailure(
+        await this.store.recordVisualVerificationFailure(
             conversationId,
             `Headless capture failed: ${message}`,
             target.id,
@@ -307,7 +524,7 @@ export class QaapHeadlessVisualCaptureService {
         const chromium = resolveHeadlessChromiumExecutable();
         if (!chromium) {
             if (captureDirective.mode === 'video') {
-                this.store.recordVisualVerificationFailure(
+                await this.store.recordVisualVerificationFailure(
                     conversationId,
                     'Video recording requires a server-side Chromium binary (set QAAP_HEADLESS_CHROMIUM '
                     + 'or install playwright browsers). Screenshots cannot substitute for [QAAP record].',
@@ -324,10 +541,12 @@ export class QaapHeadlessVisualCaptureService {
         }
         const app = resolveHeadlessCaptureAppTarget(conv.cwd);
         if (!app) {
-            this.store.recordVisualVerificationFailure(
+            await this.store.recordVisualVerificationFailure(
                 conversationId,
-                'No runnable app was found in the workspace (no package.json dev/start script and no index.html), '
-                + 'so no screenshot could be captured. Scaffold the app first.',
+                nls.localize(
+                    'qaap/headlessCapture/noRunnablePreview',
+                    'No runnable preview target was found. Add a supported entry point or .qaap/preview.json before requesting visual evidence.',
+                ),
                 target.id,
             );
             return;
@@ -351,7 +570,7 @@ export class QaapHeadlessVisualCaptureService {
                     // giving up (a landing page's `dev: http-server` counts on exactly this).
                     const staticRoot = [app.root, conv.cwd].find(dir => fs.existsSync(path.join(dir, 'index.html')));
                     if (!staticRoot) {
-                        this.store.recordVisualVerificationFailure(
+                        await this.store.recordVisualVerificationFailure(
                             conversationId,
                             `The dev server did not become ready for the capture: ${ready.reason}`,
                             target.id,
@@ -394,10 +613,11 @@ export class QaapHeadlessVisualCaptureService {
         // Deliberately NOT registered in the dev-preview port registry: this is an internal
         // loopback server, not a user-facing preview, and must stay non-proxyable.
         const startedPreviewId = `qaap-headless-capture:${app.root}`;
+        const launch = app.launch ? materializeQaapPreviewLaunchPlan(app.launch, port) : undefined;
         this.supervisor.start(app.root, port, {
             previewId: startedPreviewId,
             projectId: app.root,
-        });
+        }, launch);
         const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
         while (Date.now() < deadline) {
             if (await this.probePort(port)) {
@@ -489,10 +709,7 @@ export class QaapHeadlessVisualCaptureService {
             const skipped: string[] = [];
             for (const step of steps) {
                 try {
-                    await page.goto(`http://127.0.0.1:${port}${step}`, { waitUntil: 'load', timeout: PAGE_LOAD_TIMEOUT_MS });
-                    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
-                    await page.waitForTimeout(PAGE_SETTLE_MS);
-                    const result = await page.evaluate(PAGE_SMOKE_CHECK) as QaapPreviewVisualValidationResult;
+                    const result = await inspectQaapHeadlessPage(page, `http://127.0.0.1:${port}${step}`);
                     let png: Buffer = await page.screenshot({ fullPage: true, type: 'png' });
                     if (png.length > MAX_EVIDENCE_BYTES) {
                         png = await page.screenshot({ fullPage: false, type: 'png' });
@@ -507,7 +724,7 @@ export class QaapHeadlessVisualCaptureService {
                 }
             }
             if (captured.length === 0) {
-                this.store.recordVisualVerificationFailure(
+                await this.store.recordVisualVerificationFailure(
                     conversationId,
                     `Headless capture reached the dev server but no route could be captured — ${skipped.join('; ')}`,
                     targetAgentMessageId,
@@ -520,7 +737,8 @@ export class QaapHeadlessVisualCaptureService {
                     ...first,
                     result: {
                         ...first.result,
-                        status: 'warning',
+                        status: 'failed',
+                        readiness: 'failed',
                         issues: [...first.result.issues, ...skipped.map(reason => `Could not capture ${reason}.`)],
                     },
                 };
@@ -561,10 +779,7 @@ export class QaapHeadlessVisualCaptureService {
             const video = page.video();
             for (const step of deriveVisualFlowSteps(conv)) {
                 try {
-                    await page.goto(`http://127.0.0.1:${port}${step}`, { waitUntil: 'load', timeout: PAGE_LOAD_TIMEOUT_MS });
-                    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
-                    await page.waitForTimeout(PAGE_SETTLE_MS);
-                    const result = await page.evaluate(PAGE_SMOKE_CHECK) as QaapPreviewVisualValidationResult;
+                    const result = await inspectQaapHeadlessPage(page, `http://127.0.0.1:${port}${step}`);
                     stepResults.push({ label: step, result });
                     // Scroll tour: reveal the page gradually so the recording shows all content.
                     await page.evaluate(`new Promise(resolve => {
@@ -590,7 +805,7 @@ export class QaapHeadlessVisualCaptureService {
         }
         try {
             if (stepResults.length === 0 || !videoPath) {
-                this.store.recordVisualVerificationFailure(
+                await this.store.recordVisualVerificationFailure(
                     conversationId,
                     `Headless recording reached the dev server but produced no video — ${skipped.join('; ') || 'no route loaded'}`,
                     targetAgentMessageId,
@@ -603,21 +818,22 @@ export class QaapHeadlessVisualCaptureService {
                     ...first,
                     result: {
                         ...first.result,
-                        status: 'warning',
+                        status: 'failed',
+                        readiness: 'failed',
                         issues: [...first.result.issues, ...skipped.map(reason => `Could not record ${reason}.`)],
                     },
                 };
             }
             const evidenceId = await this.store.saveVisualEvidenceVideo(conversationId, videoPath);
             if (!evidenceId) {
-                this.store.recordVisualVerificationFailure(
+                await this.store.recordVisualVerificationFailure(
                     conversationId,
                     'The recorded video could not be stored (size cap or storage limit reached).',
                     targetAgentMessageId,
                 );
                 return;
             }
-            this.store.recordVisualVerificationVideo(conversationId, evidenceId, stepResults, targetAgentMessageId);
+            await this.store.recordVisualVerificationVideo(conversationId, evidenceId, stepResults, targetAgentMessageId);
         } finally {
             await fsp.rm(videoDir, { recursive: true, force: true }).catch(() => undefined);
         }

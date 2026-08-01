@@ -22,6 +22,17 @@ export function getImplicitDevPort(kind: QaapProjectKind): number | undefined {
             return QAAP_THEIA_DEV_PORT;
         case 'node-generic':
             return QAAP_THEIA_DEV_PORT;
+        case 'python-django':
+        case 'python-fastapi':
+        case 'python-generic':
+        case 'go':
+        case 'rust':
+        case 'dotnet':
+        case 'php':
+        case 'custom':
+            return 8080;
+        case 'python-flask':
+            return 5000;
         default:
             return undefined;
     }
@@ -127,23 +138,24 @@ export function resolveBootstrapDevPort(
  */
 export function wrapDevCommandForPort(command: string, port: number, kind: QaapProjectKind): string {
     const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
+    const materialized = command.replaceAll('{{PORT}}', String(port));
     switch (kind) {
         case 'node-vite':
         case 'node-astro':
         case 'node-svelte':
             // Vite reads `process.env.PORT` before CLI flags; Docker sets PORT to the IDE port (4873).
             return appendCliPortFlag(
-                injectFrameworkPortIntoMultiProcessCommand(prefixPortEnv(command, port, kind, isWindows), port),
+                injectFrameworkPortIntoMultiProcessCommand(prefixPortEnv(materialized, port, kind, isWindows), port),
                 port,
                 isWindows,
                 true,
             );
         case 'node-next':
-            return appendNextDevPort(prefixPortEnv(command, port, kind, isWindows), port, isWindows);
+            return appendNextDevPort(prefixPortEnv(materialized, port, kind, isWindows), port, isWindows);
         case 'node-remix':
-            return appendCliPortFlag(prefixPortEnv(command, port, kind, isWindows), port, isWindows);
+            return appendCliPortFlag(prefixPortEnv(materialized, port, kind, isWindows), port, isWindows);
         default:
-            return prefixPortEnv(command, port, kind, isWindows);
+            return prefixPortEnv(materialized, port, kind, isWindows);
     }
 }
 
@@ -178,13 +190,18 @@ function forceNodePreviewPortImport(kind: QaapProjectKind): string {
 }
 
 function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isWindows: boolean): string {
-    const forcePortImport = forceNodePreviewPortImport(kind);
+    const isNode = kind.startsWith('node-');
+    const forcePortImport = isNode ? forceNodePreviewPortImport(kind) : undefined;
     if (isWindows) {
-        return `set "QAAP_PREVIEW_PORT=${port}"&& set "PORT=${port}"&& set "NODE_ENV=development"&& `
-            + `set "NODE_OPTIONS=%NODE_OPTIONS% ${forcePortImport}"&& ${command}`;
+        const base = `set "QAAP_PREVIEW_PORT=${port}"&& set "PORT=${port}"&& `;
+        return isNode
+            ? `${base}set "NODE_ENV=development"&& set "NODE_OPTIONS=%NODE_OPTIONS% ${forcePortImport}"&& ${command}`
+            : `${base}${command}`;
     }
-    return `QAAP_PREVIEW_PORT=${port} PORT=${port} NODE_ENV=development `
-        + `NODE_OPTIONS="$NODE_OPTIONS ${forcePortImport}" ${command}`;
+    return isNode
+        ? `QAAP_PREVIEW_PORT=${port} PORT=${port} NODE_ENV=development `
+            + `NODE_OPTIONS="$NODE_OPTIONS ${forcePortImport}" ${command}`
+        : `QAAP_PREVIEW_PORT=${port} PORT=${port} ${command}`;
 }
 
 /**

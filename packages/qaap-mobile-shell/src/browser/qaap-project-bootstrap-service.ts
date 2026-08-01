@@ -82,6 +82,8 @@ import {
     isRestoredPreviewProbeOwned,
     shouldDisposeRestoredPreviewTerminal,
 } from './qaap-preview-terminal-lifecycle';
+import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
+import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
 
 /** Storage key used to remember per-workspace user intent (skip / installed). */
 const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
@@ -224,6 +226,15 @@ export class QaapProjectBootstrapService {
     /** Set when dev stdout indicates missing devDependencies (typical on NODE_ENV=production hosts). */
     protected _needsInstall = false;
     protected _selectedApp: QaapMonorepoAppCandidate | undefined;
+    /**
+     * Monotonically invalidates an app switch which was overtaken by a later picker tap.
+     * We keep the currently-running app selected until its Qaap-managed terminal is stopped, so
+     * the UI can never label app B as running while app A is still the live process.
+     */
+    protected monorepoAppSwitchGeneration = 0;
+    /** Target currently being switched to; makes a repeated tap on the same item idempotent. */
+    protected pendingMonorepoAppPath: string | undefined;
+    protected monorepoAppSwitchPromise: Promise<void> | undefined;
     /** Primary port the dev server last bound to. Used to label "resume preview" once we restore. */
     protected _lastPort: number | undefined;
     /** Set when stdout mentions `EADDRINUSE` so failure handlers can offer recovery. */
@@ -525,7 +536,7 @@ export class QaapProjectBootstrapService {
         }
         return {
             command: plan.command,
-            cwd: new URI(plan.cwdKey),
+            cwd: descriptor.previewRootUri ?? new URI(plan.cwdKey),
             expectedPort: plan.expectedPort,
             kind: plan.kind as QaapProjectKind,
         };
@@ -630,15 +641,112 @@ export class QaapProjectBootstrapService {
         return workspaceRoot.toString();
     }
 
-    /** Select a monorepo app; updates the dev plan that {@link runDevServer} will use. */
-    selectMonorepoApp(candidate: QaapMonorepoAppCandidate | undefined): void {
-        this._selectedApp = candidate;
-        if (this._descriptor && candidate) {
-            this.persistPhase(this._phase === 'detected' ? 'detected' : 'ready-to-run', candidate);
+    /**
+     * Selects a monorepo app. Switching while a preview is live is a real hand-off: stop only the
+     * Qaap terminal/process group we own, release its identity claim, then start the selected app.
+     * Updating `_selectedApp` before that hand-off used to make the banner say app B was running
+     * while the terminal for app A still served the preview.
+     */
+    selectMonorepoApp(
+        candidate: QaapMonorepoAppCandidate | undefined,
+        options?: { readonly conversationId?: string },
+    ): Promise<void> {
+        const descriptor = this._descriptor;
+        // A single runnable app has no meaningful app switch. Keep its normal preview untouched.
+        if (!descriptor || descriptor.apps.length <= 1) {
+            return Promise.resolve();
         }
-        this.setPhase(this._phase === 'detected' || this._phase === 'ready-to-run'
-            ? (this._descriptor?.nodeModulesPresent ? 'ready-to-run' : 'detected')
-            : this._phase);
+        const candidatePath = candidate?.relativePath;
+        if (candidatePath === this._selectedApp?.relativePath) {
+            return Promise.resolve();
+        }
+        if (candidatePath === this.pendingMonorepoAppPath && this.monorepoAppSwitchPromise) {
+            return this.monorepoAppSwitchPromise;
+        }
+
+        const switchGeneration = ++this.monorepoAppSwitchGeneration;
+        this.pendingMonorepoAppPath = candidatePath;
+        const switching = this.switchMonorepoApp(candidate, descriptor, switchGeneration, options)
+            .catch(error => {
+                if (switchGeneration !== this.monorepoAppSwitchGeneration) {
+                    return;
+                }
+                this._error = this.toUserFacingDevError(error instanceof Error ? error.message : String(error));
+                this.setPhase('run-failed');
+            })
+            .finally(() => {
+                if (switchGeneration === this.monorepoAppSwitchGeneration) {
+                    this.pendingMonorepoAppPath = undefined;
+                    this.monorepoAppSwitchPromise = undefined;
+                }
+            });
+        this.monorepoAppSwitchPromise = switching;
+        return switching;
+    }
+
+    protected async switchMonorepoApp(
+        candidate: QaapMonorepoAppCandidate | undefined,
+        descriptor: QaapProjectDescriptor,
+        switchGeneration: number,
+        options?: { readonly conversationId?: string },
+    ): Promise<void> {
+        await switchQaapMonorepoPreviewApp({
+            appCount: descriptor.apps.length,
+            currentAppPath: this._selectedApp?.relativePath,
+            nextApp: candidate,
+            nextAppPath: candidate?.relativePath,
+            previewIsActive: this._phase === 'starting' || this._phase === 'running',
+            stopActivePreview: () => this.stopManagedDevServerForAppSwitch(),
+            isCurrent: () => switchGeneration === this.monorepoAppSwitchGeneration,
+            applySelection: nextApp => {
+                this._selectedApp = nextApp;
+                this._previewUrl = undefined;
+                this._lastPort = undefined;
+                this.activeDevPortHint = undefined;
+                this._portConflictDetected = false;
+                this._portConflictPort = undefined;
+                this._error = undefined;
+                this.clearForwardedPorts();
+                if (nextApp) {
+                    this.persistPhase(descriptor.nodeModulesPresent ? 'ready-to-run' : 'detected', nextApp);
+                }
+            },
+            launchSelectedPreview: async () => {
+                if (!candidate || !descriptor.nodeModulesPresent) {
+                    this.setPhase(descriptor.nodeModulesPresent ? 'ready-to-run' : 'detected');
+                    return;
+                }
+                // Publish the new selection as a transition, never as a false `running` state.
+                // The launch path immediately creates a fresh process id and claim for this app.
+                this.setPhase('starting');
+                await this.runDevServer(options);
+            },
+        });
+    }
+
+    /**
+     * Stops the one terminal that this bootstrap instance created. Terminal disposal closes its
+     * PTY/process group; no process-name or global PID matching is used. Wait briefly for the
+     * terminal backend to observe that close before a replacement attempts the same dev port.
+     */
+    protected async stopManagedDevServerForAppSwitch(): Promise<void> {
+        this.devRunGeneration++;
+        this.releaseActivePreview();
+        // The replacement is a different app process, not a reattachment. Give it a new process
+        // identity so a delayed probe/claim from the stopped app cannot be adopted as the new one.
+        this.previewRunIdByConversation.delete(this.activePreviewConversationId);
+        this.activePreviewRunId = undefined;
+        this.cancelDevPreviewFallbacks();
+        this.cancelDevPreviewHealthMonitor();
+        const terminal = this.devTerminal;
+        this.devTerminalListener.dispose();
+        this.devTerminalListener = Disposable.NULL;
+        this.devTerminal = undefined;
+        this.devTerminalConversationId = undefined;
+        if (terminal && !terminal.isDisposed) {
+            this.disposeBootstrapTerminal(terminal);
+            await this.delay(RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS);
+        }
     }
 
     /**
@@ -821,6 +929,9 @@ export class QaapProjectBootstrapService {
                 command: spawnPlan.command,
                 cwd: plan.cwd,
                 kind: QAAP_PREVIEW_TERMINAL_KIND,
+                // Work Hub owns this terminal; revealing the bottom-panel terminal on mobile can
+                // dispose/recreate the widget while it is starting and lose its launch options.
+                reveal: false,
             };
             const terminal = matchesMobileOneColumnLayout()
                 ? await this.spawnCommandWithRetry(spawnOptions)
@@ -1720,10 +1831,11 @@ export class QaapProjectBootstrapService {
         // when the command completes. We use a login shell so the user's `node` / `pnpm` / `npm`
         // resolve from `~/.nvm`, `/opt/homebrew/bin`, etc. Without `-l` the PATH would be the
         // minimal one inherited from the IDE, which on macOS often lacks node entirely.
-        const { shellPath, shellArgs } = this.buildShellInvocation(options.command);
+        const terminalCwd = FileUri.fsPath(options.cwd.toString());
+        const { shellPath, shellArgs } = this.buildShellInvocation(options.command, terminalCwd);
         const terminal = await this.terminalService.newTerminal({
             title: options.title,
-            cwd: FileUri.fsPath(options.cwd.toString()),
+            cwd: terminalCwd,
             shellPath,
             shellArgs,
             destroyTermOnClose: true,
@@ -1895,6 +2007,14 @@ export class QaapProjectBootstrapService {
         }
         if (/command not found|not found:/i.test(message)) {
             const pm = this._descriptor?.packageManager ?? 'npm';
+            const kind = this._descriptor?.kind;
+            if (pm === 'native') {
+                const runtime = kind === 'python-django' || kind === 'python-fastapi'
+                    || kind === 'python-flask' || kind === 'python-generic'
+                    ? 'Python'
+                    : kind === 'dotnet' ? '.NET' : kind === 'custom' ? 'configured runtime' : kind ?? 'runtime';
+                return `${runtime} is not available in the workspace environment. Install its runtime in the Qaap image or update .qaap/preview.json to an available executable.`;
+            }
             if (pm === 'pnpm' && /pnpm/.test(message)) {
                 return 'pnpm is not available in this environment. Rebuild the Qaap Docker image (Corepack + pnpm) or run Install from a terminal with pnpm in PATH.';
             }
@@ -1904,12 +2024,12 @@ export class QaapProjectBootstrapService {
     }
 
     /** Picks the right shell wrapper for the host platform. */
-    protected buildShellInvocation(command: string): { shellPath: string; shellArgs: string[] } {
-        const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
-        if (isWindows) {
-            return { shellPath: 'cmd.exe', shellArgs: ['/d', '/s', '/c', command] };
-        }
-        return { shellPath: '/bin/bash', shellArgs: ['-l', '-c', command] };
+    protected buildShellInvocation(command: string, cwd: string): { shellPath: string; shellArgs: string[] } {
+        // Keep `cwd` in the terminal options for normal Theia behavior AND make it part of the
+        // managed command. The latter is a fail-safe for mobile terminal restoration: live VPS
+        // evidence showed a recreated widget falling back to the IDE's `/app/examples/browser`
+        // working directory and running another package's npm scripts.
+        return buildQaapManagedShellInvocation(command, cwd);
     }
 
     /**

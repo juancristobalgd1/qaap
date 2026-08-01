@@ -16,6 +16,7 @@ import {
 describe('mobile-work-hub-sessions-sidebar', () => {
 
     let disableJSDOM: (() => void) | undefined;
+    let jsdomWindow: Window | undefined;
     const storage = new Map<string, string>();
 
     before(() => {
@@ -29,6 +30,7 @@ describe('mobile-work-hub-sessions-sidebar', () => {
 
     beforeEach(() => {
         storage.clear();
+        jsdomWindow = window;
         (global as { window?: Window }).window = {
             localStorage: {
                 getItem: (key: string) => storage.get(key) ?? null,
@@ -50,7 +52,8 @@ describe('mobile-work-hub-sessions-sidebar', () => {
     });
 
     afterEach(() => {
-        delete (global as { window?: Window }).window;
+        (global as { window?: Window }).window = jsdomWindow;
+        jsdomWindow = undefined;
     });
 
     it('shows dismiss hint only until marked seen', () => {

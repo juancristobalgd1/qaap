@@ -28,6 +28,12 @@ import {
     buildStaticServeCommand,
 } from './qaap-project-bootstrap-static';
 import { formatMissingBootstrapProjectHint } from '../common/qaap-project-bootstrap-scaffold-plan';
+import {
+    QAAP_PREVIEW_CONFIG_PATH,
+    QaapPreviewLaunchPlan,
+    parseQaapPreviewLaunchConfigJson,
+    renderQaapPreviewLaunchCommand,
+} from '../common/qaap-preview-launch-plan';
 
 interface PackageJsonShape {
     name?: unknown;
@@ -86,6 +92,8 @@ const FRAMEWORK_BY_SCRIPT: ReadonlyArray<readonly [RegExp, QaapProjectKind, numb
 /** PORT=4173, --port 4173, --port=4173, or -p 4173 in a dev script. */
 const EXPLICIT_SCRIPT_PORT_REGEX = /(?:\bPORT\s*=\s*|--port(?:\s+|=)|(?:^|\s)-p\s+)(\d{2,5})\b/i;
 
+const NATIVE_INSTALL_COMMAND = buildBootstrapInstallCommand('native');
+
 @injectable()
 export class QaapProjectBootstrapDetector {
 
@@ -93,6 +101,10 @@ export class QaapProjectBootstrapDetector {
     protected readonly fileService: FileService;
 
     async detect(rootUri: URI): Promise<QaapProjectDescriptor | undefined> {
+        const configured = await this.detectConfiguredPreview(rootUri);
+        if (configured) {
+            return configured;
+        }
         const packageJsonUri = rootUri.resolve('package.json');
         if (!(await this.fileService.exists(packageJsonUri))) {
             // No Node project: fall back to serving a plain static site (index.html) if present, so
@@ -101,7 +113,8 @@ export class QaapProjectBootstrapDetector {
             if (staticSite) {
                 return staticSite;
             }
-            return this.detectScaffoldedSubfolder(rootUri);
+            const scaffolded = await this.detectScaffoldedSubfolder(rootUri);
+            return scaffolded ?? this.detectNativeProject(rootUri);
         }
 
         let pkg: PackageJsonShape;
@@ -142,6 +155,10 @@ export class QaapProjectBootstrapDetector {
             if (staticSite) {
                 return { ...staticSite, name };
             }
+            const native = await this.detectNativeProject(rootUri);
+            if (native) {
+                return native;
+            }
         }
 
         return {
@@ -157,6 +174,184 @@ export class QaapProjectBootstrapDetector {
             monorepoFlavor: flavor,
             apps,
         };
+    }
+
+    /** Explicit launch configuration is authoritative, including for mixed-language repos. */
+    protected async detectConfiguredPreview(rootUri: URI): Promise<QaapProjectDescriptor | undefined> {
+        const configUri = rootUri.resolve(QAAP_PREVIEW_CONFIG_PATH);
+        if (!(await this.fileService.exists(configUri))) {
+            return undefined;
+        }
+        try {
+            const content = await this.fileService.read(configUri);
+            const parsed = parseQaapPreviewLaunchConfigJson(content.value || '');
+            if (!parsed.ok) {
+                return undefined;
+            }
+            return this.descriptorForNativePlan(rootUri, parsed.plan, this.kindForConfiguredRuntime(parsed.plan));
+        } catch {
+            return undefined;
+        }
+    }
+
+    /** Conservative marker-based discovery. Ambiguous Python entry points require preview.json. */
+    protected async detectNativeProject(workspaceRoot: URI): Promise<QaapProjectDescriptor | undefined> {
+        const atRoot = await this.detectNativeProjectAt(workspaceRoot, workspaceRoot);
+        if (atRoot) {
+            return atRoot;
+        }
+        try {
+            const resolved = await this.fileService.resolve(workspaceRoot);
+            const children = (resolved.children ?? [])
+                .filter(child => child.isDirectory && !SCAFFOLD_SUBFOLDER_SKIP.has(child.name))
+                .slice(0, MAX_SCAFFOLD_SUBFOLDER_APPS);
+            for (const child of children) {
+                const detected = await this.detectNativeProjectAt(workspaceRoot, child.resource);
+                if (detected) {
+                    return detected;
+                }
+            }
+        } catch {
+            // An unreadable workspace is simply not auto-runnable.
+        }
+        return undefined;
+    }
+
+    protected async detectNativeProjectAt(
+        workspaceRoot: URI,
+        projectRoot: URI,
+    ): Promise<QaapProjectDescriptor | undefined> {
+        if (await this.fileService.exists(projectRoot.resolve('manage.py'))) {
+            return this.descriptorForNativePlan(workspaceRoot, {
+                version: 1,
+                runtime: 'python',
+                name: projectRoot.path.base || 'Django app',
+                cwd: this.relativePathFromRoot(workspaceRoot, projectRoot) ?? '.',
+                command: 'python3',
+                args: ['manage.py', 'runserver', '0.0.0.0:{{PORT}}'],
+                port: 8000,
+            }, 'python-django');
+        }
+        const pythonManifest = await this.readFirstText(projectRoot, ['requirements.txt', 'pyproject.toml']);
+        if (pythonManifest && await this.fileService.exists(projectRoot.resolve('app.py'))) {
+            if (/\b(?:fastapi|uvicorn)\b/i.test(pythonManifest)) {
+                return this.descriptorForNativePlan(workspaceRoot, {
+                    version: 1,
+                    runtime: 'python',
+                    name: projectRoot.path.base || 'FastAPI app',
+                    cwd: this.relativePathFromRoot(workspaceRoot, projectRoot) ?? '.',
+                    command: 'python3',
+                    args: ['-m', 'uvicorn', 'app:app', '--host', '0.0.0.0', '--port', '{{PORT}}'],
+                    port: 8000,
+                }, 'python-fastapi');
+            }
+            if (/\bflask\b/i.test(pythonManifest)) {
+                return this.descriptorForNativePlan(workspaceRoot, {
+                    version: 1,
+                    runtime: 'python',
+                    name: projectRoot.path.base || 'Flask app',
+                    cwd: this.relativePathFromRoot(workspaceRoot, projectRoot) ?? '.',
+                    command: 'python3',
+                    args: ['-m', 'flask', '--app', 'app', 'run', '--host', '0.0.0.0', '--port', '{{PORT}}'],
+                    port: 5000,
+                }, 'python-flask');
+            }
+        }
+        if (await this.fileService.exists(projectRoot.resolve('go.mod'))) {
+            return this.descriptorForNativePlan(workspaceRoot, this.nativePlan(projectRoot, workspaceRoot, 'go', 'go', ['run', '.']), 'go');
+        }
+        if (await this.fileService.exists(projectRoot.resolve('Cargo.toml'))) {
+            return this.descriptorForNativePlan(workspaceRoot, this.nativePlan(projectRoot, workspaceRoot, 'rust', 'cargo', ['run']), 'rust');
+        }
+        const csproj = await this.findDotnetProject(projectRoot);
+        if (csproj) {
+            return this.descriptorForNativePlan(workspaceRoot, this.nativePlan(
+                projectRoot, workspaceRoot, 'dotnet', 'dotnet', ['run', '--project', csproj, '--urls', 'http://0.0.0.0:{{PORT}}'],
+            ), 'dotnet');
+        }
+        if (await this.fileService.exists(projectRoot.resolve('index.php'))) {
+            return this.descriptorForNativePlan(workspaceRoot, this.nativePlan(
+                projectRoot, workspaceRoot, 'php', 'php', ['-S', '0.0.0.0:{{PORT}}'],
+            ), 'php');
+        }
+        return undefined;
+    }
+
+    protected nativePlan(
+        projectRoot: URI,
+        workspaceRoot: URI,
+        runtime: QaapPreviewLaunchPlan['runtime'],
+        command: string,
+        args: string[],
+    ): QaapPreviewLaunchPlan {
+        return {
+            version: 1,
+            runtime,
+            name: projectRoot.path.base || `${runtime} app`,
+            cwd: this.relativePathFromRoot(workspaceRoot, projectRoot) ?? '.',
+            command,
+            args,
+            port: 8080,
+        };
+    }
+
+    protected async readFirstText(root: URI, names: readonly string[]): Promise<string | undefined> {
+        for (const name of names) {
+            const uri = root.resolve(name);
+            if (await this.fileService.exists(uri)) {
+                try {
+                    return (await this.fileService.read(uri)).value || '';
+                } catch {
+                    return undefined;
+                }
+            }
+        }
+        return undefined;
+    }
+
+    protected async findDotnetProject(root: URI): Promise<string | undefined> {
+        try {
+            const resolved = await this.fileService.resolve(root);
+            return (resolved.children ?? [])
+                .filter(child => child.isFile && child.name.toLowerCase().endsWith('.csproj'))
+                .map(child => child.name)
+                .sort()[0];
+        } catch {
+            return undefined;
+        }
+    }
+
+    protected descriptorForNativePlan(
+        workspaceRoot: URI,
+        plan: QaapPreviewLaunchPlan,
+        kind: QaapProjectKind,
+    ): QaapProjectDescriptor {
+        const previewRootUri = plan.cwd === '.' ? workspaceRoot : workspaceRoot.resolve(plan.cwd);
+        return {
+            rootUri: workspaceRoot,
+            previewRootUri,
+            name: plan.name ?? workspaceRoot.path.base ?? 'app',
+            kind,
+            packageManager: 'native',
+            installCommand: NATIVE_INSTALL_COMMAND,
+            devCommand: renderQaapPreviewLaunchCommand(plan),
+            devCommandLabel: [plan.command, ...plan.args].join(' '),
+            expectedPort: plan.port,
+            nodeModulesPresent: true,
+            apps: [],
+            scaffoldRelativePath: plan.cwd === '.' ? undefined : plan.cwd,
+        };
+    }
+
+    protected kindForConfiguredRuntime(plan: QaapPreviewLaunchPlan): QaapProjectKind {
+        switch (plan.runtime) {
+            case 'python': return 'python-generic';
+            case 'go': return 'go';
+            case 'rust': return 'rust';
+            case 'dotnet': return 'dotnet';
+            case 'php': return 'php';
+            default: return 'custom';
+        }
     }
 
     /**

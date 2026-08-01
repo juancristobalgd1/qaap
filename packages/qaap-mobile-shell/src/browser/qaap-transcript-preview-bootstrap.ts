@@ -144,6 +144,10 @@ function waitForBootstrapPreviewUrl(
         toDispose.push(bootstrap.onStateChange(state => {
             if (state.previewUrl && state.phase === 'running') {
                 finish(state.previewUrl);
+            } else if (state.phase === 'install-failed' || state.phase === 'run-failed') {
+                // The managed terminal already reported a definitive failure. Do not leave Work
+                // Hub spinning until the outer three-minute safety deadline expires.
+                finish(undefined);
             }
         }));
         // The state-change path depends on spotting the dev server's banner in terminal output —

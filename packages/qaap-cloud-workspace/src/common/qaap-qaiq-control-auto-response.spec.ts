@@ -9,6 +9,9 @@ import { resolveQaiqControlRequestAutoAction } from './qaap-qaiq-control-auto-re
 describe('qaap-qaiq-control-auto-response', () => {
     const approveForMeCommand = 'qaiq --permission-mode default --allowed-tools Read,Grep,Glob,LS,Edit,Write,NotebookEdit';
     const approveForMeShellCommand = 'qaiq --permission-mode default --allowed-tools Read,Grep,Glob,LS,Edit,Write,NotebookEdit,Bash';
+    const controlledApproveForMeCommand = 'qaiq --permission-mode default '
+        + '--tools Read,Write,Edit,Bash,Grep,Glob,NotebookEdit,TodoWrite,Agent '
+        + '--allowed-tools Read,Write,Edit,Grep,Glob,NotebookEdit,TodoWrite';
 
     it('queues manual approvals when auto-approve is off', () => {
         expect(resolveQaiqControlRequestAutoAction(approveForMeCommand, false, {
@@ -45,6 +48,19 @@ describe('qaap-qaiq-control-auto-response', () => {
             requestId: 'req-1',
             toolName: 'Bash',
         })).to.equal('allow');
+    });
+
+    it('auto-allows safe Bash after Qaap guards when Bash is controlled through stdio', () => {
+        expect(resolveQaiqControlRequestAutoAction(controlledApproveForMeCommand, true, {
+            requestId: 'req-controlled-bash',
+            toolName: 'Bash',
+            toolInput: { command: 'npm test' },
+        })).to.equal('allow');
+        expect(resolveQaiqControlRequestAutoAction(controlledApproveForMeCommand, true, {
+            requestId: 'req-controlled-kill',
+            toolName: 'Bash',
+            toolInput: { command: 'pkill -f vite' },
+        })).to.equal('deny');
     });
 
     it('queues Bash when shell scope is disabled in approve-for-me allowed-tools', () => {
@@ -106,6 +122,11 @@ describe('qaap-qaiq-control-auto-response', () => {
         // Agent with verification is allowed (not in blocked list, in core tools)
         expect(resolveQaiqControlRequestAutoAction('qaiq --permission-mode bypassPermissions', true, {
             requestId: 'req-2',
+            toolName: 'Agent',
+            toolInput: { subagent_type: 'verification' },
+        })).to.equal('allow');
+        expect(resolveQaiqControlRequestAutoAction(controlledApproveForMeCommand, true, {
+            requestId: 'req-2-controlled',
             toolName: 'Agent',
             toolInput: { subagent_type: 'verification' },
         })).to.equal('allow');

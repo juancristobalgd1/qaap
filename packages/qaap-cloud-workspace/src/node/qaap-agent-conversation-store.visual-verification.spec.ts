@@ -8,11 +8,45 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapAgentConversation, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
+import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
+import type { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 
 class VisualEvidenceStoreHarness extends QaapAgentConversationStore {
+    readonly createdTasks: { task: QaapAgentTask; request: QaapCreateAgentTaskRequest }[] = [];
+
     constructor(protected readonly evidenceRoot: string) {
         super();
+        const fakeTaskRunner = {
+            normalizeAgentId: (id: string): string | undefined => id.trim() || undefined,
+            defaultAgent: (): string => 'qaiq',
+            listAgents: (): readonly { id: string }[] => [],
+            create: (request: QaapCreateAgentTaskRequest): QaapAgentTask => {
+                const task: QaapAgentTask = {
+                    id: `task-${this.createdTasks.length + 1}`,
+                    title: request.title ?? 'Visual repair',
+                    command: request.command ?? request.prompt ?? '',
+                    cwd: request.cwd,
+                    agentId: request.agent,
+                    state: 'queued',
+                    createdAt: Date.now(),
+                };
+                this.createdTasks.push({ task, request });
+                return task;
+            },
+            list: (): readonly QaapAgentTask[] => this.createdTasks.map(entry => entry.task),
+            cancel: (taskId: string): QaapAgentTask | undefined => {
+                const index = this.createdTasks.findIndex(entry => entry.task.id === taskId);
+                if (index < 0) {
+                    return undefined;
+                }
+                const current = this.createdTasks[index];
+                const task: QaapAgentTask = { ...current.task, state: 'cancelled', finishedAt: Date.now() };
+                this.createdTasks[index] = { ...current, task };
+                return task;
+            },
+        };
+        (this as unknown as { taskRunner: QaapAgentTaskRunner }).taskRunner = fakeTaskRunner as unknown as QaapAgentTaskRunner;
     }
 
     seed(conversation: QaapAgentConversation): void {
@@ -32,6 +66,30 @@ class VisualEvidenceStoreHarness extends QaapAgentConversationStore {
 
     sweepNow(conversationId: string): Promise<void> {
         return this.sweepUnreferencedVisualEvidence(conversationId);
+    }
+
+    settleLatestRepair(content = 'Applied the visual repair.\n[QAAP capture]'): string {
+        const conv = this.conversations.get('conversation-1')!;
+        const repairUser = [...conv.messages].reverse().find(message =>
+            message.role === 'user' && message.visualRepairAttempt !== undefined
+        )!;
+        const agentId = `agent-repair-${repairUser.visualRepairAttempt}`;
+        this.conversations.set(conv.id, {
+            ...conv,
+            status: 'idle',
+            updatedAt: Date.now(),
+            messages: [
+                ...conv.messages,
+                {
+                    id: agentId,
+                    role: 'agent',
+                    content,
+                    createdAt: Date.now(),
+                    runUserMessageId: repairUser.id,
+                },
+            ],
+        });
+        return agentId;
     }
 
     protected override async persist(): Promise<void> { }
@@ -149,26 +207,36 @@ describe('QaapAgentConversationStore visual verification', () => {
         expect(fs.existsSync(path.join(root, 'conversation-1'))).to.equal(false);
     });
 
-    it('settles the evidence slot with a visible failure note that blocks later screenshots', async () => {
-        const failed = store.recordVisualVerificationFailure(
+    it('treats missing PNG/video evidence as failed validation and exhausts through the same repair loop', async () => {
+        const failed = await store.recordVisualVerificationFailure(
             'conversation-1',
             'Automatic capture failed: the preview canvas did not produce a PNG.',
             'agent-1',
         );
-        const content = failed?.messages.at(-1)?.content ?? '';
-        expect(content).to.contain('[QAAP visual verification]');
-        expect(content).to.contain('Screenshot unavailable');
-        expect(content).to.contain('did not produce a PNG');
+        const firstEvidence = failed?.messages.find(message => message.id === 'agent-1')?.content ?? '';
+        expect(firstEvidence).to.contain('[QAAP visual verification]');
+        expect(firstEvidence).to.contain('[QAAP repair required]');
+        expect(firstEvidence).to.contain('Screenshot unavailable');
+        expect(firstEvidence).to.contain('did not produce a PNG');
+        expect(failed?.messages.at(-1)?.visualRepairAttempt).to.equal(1);
 
-        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 9]);
-        const afterwards = await store.recordVisualVerification(
+        const firstRepairAgent = store.settleLatestRepair();
+        const second = await store.recordVisualVerificationFailure(
             'conversation-1',
-            { status: 'passed', summary: 'Too late.', issues: [] },
-            png,
-            'agent-1',
+            'The headless browser still could not produce evidence.',
+            firstRepairAgent,
         );
-        expect(afterwards?.messages.at(-1)?.content.match(/\[QAAP visual verification\]/g)).to.have.length(1);
-        expect(fs.existsSync(path.join(root, 'conversation-1'))).to.equal(false);
+        expect(second?.messages.at(-1)?.visualRepairAttempt).to.equal(2);
+
+        const secondRepairAgent = store.settleLatestRepair();
+        const exhausted = await store.recordVisualVerificationFailure(
+            'conversation-1',
+            'The headless browser could not produce evidence after the second repair.',
+            secondRepairAgent,
+        );
+        expect(exhausted?.status).to.equal('failed');
+        expect(exhausted?.messages.at(-1)?.error).to.contain('2 automatic repair attempts');
+        expect(store.createdTasks).to.have.length(2);
     });
 
     it('attaches a walked flow with one image per captured route', async () => {
@@ -209,7 +277,7 @@ describe('QaapAgentConversationStore visual verification', () => {
         expect(resolved?.contentType).to.equal('video/webm');
         expect(store.resolveVisualVerificationFile('conversation-1', `${evidenceId}/../escape.webm`)).to.equal(undefined);
 
-        const conv = store.recordVisualVerificationVideo('conversation-1', evidenceId!, [
+        const conv = await store.recordVisualVerificationVideo('conversation-1', evidenceId!, [
             { label: '/', result: { status: 'passed', summary: 'ok', issues: [] } },
         ], 'agent-1');
         const content = conv?.messages.at(-1)?.content ?? '';
@@ -217,6 +285,96 @@ describe('QaapAgentConversationStore visual verification', () => {
         expect(content).to.contain('Recorded a video tour of 1 page.');
         expect(content).to.contain(`visual-verifications/${evidenceId}.webm`);
         fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
+    it('re-enters the same agent and workspace after a failed render, then accepts real visual success', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 12]);
+        const failed = await store.recordVisualVerification('conversation-1', {
+            status: 'failed',
+            readiness: 'failed',
+            summary: 'The page rendered blank.',
+            issues: ['The page has no visible content.'],
+        }, png, 'agent-1');
+
+        expect(failed?.status).to.equal('streaming');
+        const repair = failed?.messages.at(-1);
+        expect(repair?.role).to.equal('user');
+        expect(repair?.visualRepairAttempt).to.equal(1);
+        expect(repair?.visualRepairSourceAgentMessageId).to.equal('agent-1');
+        expect(repair?.content).to.contain('HTTP response alone is not visual success');
+        expect(repair?.content).to.contain('[QAAP capture]');
+        expect(store.createdTasks).to.have.length(1);
+        expect(store.createdTasks[0].request).to.include({ cwd: '/tmp/project', agent: 'qaiq' });
+
+        const repairedAgentId = store.settleLatestRepair();
+        const passed = await store.recordVisualVerification('conversation-1', {
+            status: 'passed',
+            readiness: 'render_ready',
+            summary: 'The repaired page rendered correctly.',
+            issues: [],
+        }, png, repairedAgentId);
+
+        expect(passed?.status).to.equal('idle');
+        expect(passed?.messages.at(-1)?.content).to.contain('The repaired page rendered correctly.');
+        expect(passed?.messages.at(-1)?.content).to.not.contain('[QAAP repair required]');
+        expect(store.createdTasks).to.have.length(1);
+    });
+
+    it('deduplicates concurrent failed evidence reports into one repair task', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 14]);
+        await Promise.all([
+            store.recordVisualVerification('conversation-1', {
+                status: 'failed', readiness: 'failed', summary: 'Blank.', issues: ['blank'],
+            }, png, 'agent-1'),
+            store.recordVisualVerification('conversation-1', {
+                status: 'failed', readiness: 'failed', summary: 'Blank duplicate.', issues: ['blank'],
+            }, png, 'agent-1'),
+        ]);
+        const conv = store.get('conversation-1');
+        expect(store.createdTasks).to.have.length(1);
+        expect(conv?.messages.filter(message => message.visualRepairSourceAgentMessageId === 'agent-1')).to.have.length(1);
+        expect(fs.readdirSync(path.join(root, 'conversation-1'))).to.have.length(1);
+    });
+
+    it('routes a cancelled visual repair through the normal task cancellation path', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 15]);
+        const repairing = await store.recordVisualVerification('conversation-1', {
+            status: 'failed', readiness: 'failed', summary: 'Blank.', issues: ['blank'],
+        }, png, 'agent-1');
+        const repairUser = repairing?.messages.at(-1);
+        expect(repairUser?.visualRepairAttempt).to.equal(1);
+
+        const cancelled = store.cancelRun('conversation-1', repairUser!.id);
+        expect(cancelled?.status).to.equal('idle');
+        expect(store.createdTasks[0].task.state).to.equal('cancelled');
+        expect(store.createdTasks).to.have.length(1);
+    });
+
+    it('fails closed after two durable visual repair attempts and never spawns a third', async () => {
+        const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 13]);
+        await store.recordVisualVerification('conversation-1', {
+            status: 'failed', readiness: 'failed', summary: 'Blank render 1.', issues: ['blank'],
+        }, png, 'agent-1');
+        const firstRepairAgent = store.settleLatestRepair();
+        const afterFirstRepair = await store.recordVisualVerification('conversation-1', {
+            status: 'failed', readiness: 'failed', summary: 'Blank render 2.', issues: ['still blank'],
+        }, png, firstRepairAgent);
+        expect(afterFirstRepair?.messages.at(-1)?.visualRepairAttempt).to.equal(2);
+        expect(store.createdTasks).to.have.length(2);
+
+        const secondRepairAgent = store.settleLatestRepair();
+        const exhausted = await store.recordVisualVerification('conversation-1', {
+            status: 'failed', readiness: 'failed', summary: 'Blank render 3.', issues: ['still blank'],
+        }, png, secondRepairAgent);
+        expect(exhausted?.status).to.equal('failed');
+        expect(exhausted?.messages.at(-1)?.error).to.contain('2 automatic repair attempts');
+        expect(exhausted?.messages.at(-1)?.content).to.contain('[QAAP repair required]');
+        expect(store.createdTasks).to.have.length(2);
+
+        await store.recordVisualVerification('conversation-1', {
+            status: 'failed', readiness: 'failed', summary: 'Duplicate.', issues: ['duplicate'],
+        }, png, secondRepairAgent);
+        expect(store.createdTasks).to.have.length(2);
     });
 
     it('sweeps stale unreferenced images but keeps referenced and fresh ones', async () => {

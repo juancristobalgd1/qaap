@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
 import { isShellToolName } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
 import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals';
 
@@ -10,9 +11,10 @@ import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals'
  * Guard against agents running destructive shell commands without an explicit user request.
  *
  * Mirrors `qaap-agent-dev-server-guard`: enforced on the QAIQ stdio `can_use_tool` control path,
- * so it is a hard denial whenever the CLI asks before running tools (`request-approval` /
- * `autoApprove === false`). Default headless runs (`--dangerously-skip-permissions`) never emit
- * control requests, so there the same policy rides the prompt as `[QAAP destructive commands]`.
+ * so it is a hard denial whenever the CLI asks before running tools. Qaap's default
+ * `approve-for-me` QAIQ policy also uses that control path: safe tools are answered automatically,
+ * while these patterns are denied before the shell starts. Explicit `full-access` bypasses it and
+ * therefore still receives the same policy in the prompt as defense in depth.
  * TODO(qaiq): enforce these patterns inside the QAIQ CLI itself so headless runs get the hard
  * denial too (deny rules must win over bypassPermissions, Claude-Code-style).
  */
@@ -29,6 +31,14 @@ const GIT_CLEAN_FORCE_RE = /\bgit\s+clean\b[^\n|&;]*(?:\s-[a-zA-Z]*f[a-zA-Z]*\b|
 const GIT_BRANCH_FORCE_DELETE_RE = /\bgit\s+branch\b[^\n|&;]*(?:\s-D\b|--delete\s+--force\b|-df\b|-fd\b)/;
 /** History rewrites that affect every ref. */
 const GIT_HISTORY_REWRITE_RE = /\bgit\s+(?:filter-branch|filter-repo)\b/;
+
+/**
+ * Global process selectors are never workspace-scoped. In the hosted runtime one tenant can own
+ * several projects/previews, so `pkill -f vite`, `killall node`, or an arbitrary `kill PID` can terminate unrelated work even
+ * though the OS uid boundary correctly prevents cross-tenant access. Qaap-managed processes are
+ * stopped by their recorded pid/process-group through the preview/job APIs instead.
+ */
+const GLOBAL_PROCESS_KILL_RE = /(?:^|&&|\|\||;|\|\s*|\(\s*|\b(?:sudo|nohup|exec|command|builtin)\s+)\s*(?:pkill|killall|kill)\b/i;
 
 /** `rm` invocations (optionally via sudo/env prefixes) — inspected further for -rf + dangerous targets. */
 const RM_COMMAND_RE = /(?:^|&&|\|\||;|\|\s*|\(\s*|\b(?:sudo|nohup|exec)\s+)\s*rm\s+([^\n|&;]*)/gi;
@@ -110,6 +120,7 @@ function isDestructiveShellCommandAtDepth(command: string | undefined, depth: nu
         || GIT_CLEAN_FORCE_RE.test(text)
         || GIT_BRANCH_FORCE_DELETE_RE.test(text)
         || GIT_HISTORY_REWRITE_RE.test(text)
+        || GLOBAL_PROCESS_KILL_RE.test(text)
     ) {
         return true;
     }
@@ -126,11 +137,15 @@ function isDestructiveShellCommandAtDepth(command: string | undefined, depth: nu
 
 /** Deny guidance sent back to the agent so it proposes a safe alternative instead of retrying. */
 export function buildDestructiveCommandDenyMessage(): string {
-    return 'Blocked by Qaap: this command is destructive (force push, remote/local branch force-delete, '
-        + 'hard reset, forced clean, history rewrite, or rm -rf outside the workspace) and needs the user\'s '
+    return nls.localize(
+        'qaap/agent/destructiveCommandBlocked',
+        'Blocked by Qaap: this command is destructive (force push, remote/local branch force-delete, '
+        + 'hard reset, forced clean, history rewrite, global process kill, or rm -rf outside the workspace) and needs the user\'s '
         + 'explicit request. Do not retry it. Use the safe alternative (git stash, a normal push, a targeted rm '
-        + 'inside the workspace), or state in your final message exactly which command you propose and why, '
-        + 'so the user can run or approve it themselves.';
+        + 'inside the workspace, or the Qaap preview/job stop action for a recorded process), or state in your final message '
+        + 'exactly which command you propose and why, '
+        + 'so the user can run or approve it themselves.',
+    );
 }
 
 /**

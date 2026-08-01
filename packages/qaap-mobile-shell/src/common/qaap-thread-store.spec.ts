@@ -198,6 +198,15 @@ describe('qaap-thread-store', () => {
         expect(store.listStreamingSummaries().map(entry => entry.id)).to.deep.equal(['live']);
     });
 
+    it('reconciles a failed terminal update with the same timestamp as the final stream delta', () => {
+        const store = new QaapThreadStore();
+        store.upsertSummary(summary({ status: 'streaming', updatedAt: 42 }));
+        store.upsertSummary(summary({ status: 'failed', updatedAt: 42, lastMessagePreview: 'Agent interrupted (exit 144).' }));
+
+        expect(store.getSummary('conv-1')?.status).to.equal('failed');
+        expect(store.listStreamingSummaries()).to.have.length(0);
+    });
+
     it('getVariantsForBaseCwd groups parallel-run threads under the base repo', () => {
         const store = new QaapThreadStore();
         store.applySummarySnapshot([

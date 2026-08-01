@@ -48,7 +48,7 @@ export interface QaapStartWorkflowRequest {
      * For a goal run: the npm SCRIPT NAME whose exit code decides whether the goal is met. Never a
      * command — it is looked up in the repository's own `package.json` and invoked as
      * `npm run <name>`, so a caller cannot turn a success check into arbitrary execution. An
-     * unknown name falls back to the repository's usual verification scripts.
+     * unknown name fails the verification gate instead of silently substituting another check.
      */
     readonly checkScript?: string;
 }

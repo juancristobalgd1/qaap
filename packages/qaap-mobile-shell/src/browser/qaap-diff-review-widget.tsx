@@ -113,6 +113,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected bulkActionsEnabled = true;
 
     protected files: QaapGitChangedFile[] = [];
+    /** Avoid showing a false clean-state claim while the authoritative git snapshot is loading. */
+    protected loadingChanges = false;
     protected selectedPath: string | undefined;
     protected diff: QaapGitFileDiffResponse | undefined;
     protected loadingDiff = false;
@@ -303,9 +305,12 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.selectedPath = undefined;
             this.diff = undefined;
             this.error = undefined;
+            this.loadingChanges = false;
             this.update();
             return;
         }
+        this.loadingChanges = true;
+        this.update();
         try {
             const response = await fetch(
                 `${QAAP_GIT_REVIEW_API_PATH}/changes?root=${encodeURIComponent(requestRoot)}`,
@@ -322,6 +327,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.branchName = body.branch;
             this.prReadiness = body.prReadiness;
             this.error = undefined;
+            this.loadingChanges = false;
             this.notifyReviewStats();
             if (this.transcriptEmbed && this.transcriptExternalChrome) {
                 this.invalidateAgentDiffs();
@@ -339,6 +345,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
         } catch (error) {
             if (requestSerial === this.refreshRequestSerial && requestRoot === this.rootFsPath) {
                 this.error = error instanceof Error ? error.message : String(error);
+                this.loadingChanges = false;
             }
         }
         if (requestSerial === this.refreshRequestSerial && requestRoot === this.rootFsPath) {
@@ -526,8 +533,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
             { adds: 0, dels: 0 },
         );
         return (
-            <div className='qaap-diff-review-body'>
-                {this.error && <div className='qaap-diff-review-error'>{this.error}</div>}
+            <div className='qaap-diff-review-body' aria-live='polite'>
+                {this.error && <div className='qaap-diff-review-error' role='alert'>{this.error}</div>}
                 {!this.bulkActionsEnabled && this.files.length > 0 && !this.transcriptEmbed && (
                     <div className='qaap-diff-review-note qaap-diff-review-readonly-hint'>
                         {nls.localize(
@@ -545,9 +552,25 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     protected renderEmpty(): React.ReactNode {
         const agent = this.transcriptEmbed && this.transcriptExternalChrome;
+        if (this.loadingChanges) {
+            return (
+                <div className={`qaap-diff-review-empty${agent ? ' qaap-diff-review-empty--agent' : ''}`} aria-busy='true'>
+                    <i className={codicon('sync')} aria-hidden='true' />
+                    <p>{nls.localize('qaap/diff/checkingChanges', 'Checking workspace changes…')}</p>
+                </div>
+            );
+        }
+        if (!this.rootFsPath) {
+            return (
+                <div className={`qaap-diff-review-empty${agent ? ' qaap-diff-review-empty--agent' : ''}`}>
+                    <i className={codicon('folder-opened')} aria-hidden='true' />
+                    <p>{nls.localize('qaap/diff/noWorkspace', 'Open a project to view its changes.')}</p>
+                </div>
+            );
+        }
         return (
             <div className={`qaap-diff-review-empty${agent ? ' qaap-diff-review-empty--agent' : ''}`}>
-                <i className={codicon(agent ? 'diff' : 'check-all')} />
+                <i className={codicon(agent ? 'diff' : 'check-all')} aria-hidden='true' />
                 <p>{nls.localize('qaap/diff/noChanges', 'No changes to review.')}</p>
                 <span>
                     {agent

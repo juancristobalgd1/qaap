@@ -14,8 +14,8 @@
  */
 
 import { extractAgentFinalMessage } from '../common/qaap-agent-empty-turn';
-import { QaapAgentTaskState } from '../common/qaap-agent-task';
-import { QaapJobState } from '../common/qaap-job';
+import { isQaapAgentTaskFinished, QaapAgentTaskState } from '../common/qaap-agent-task';
+import { isQaapJobFinished, QaapJobState } from '../common/qaap-job';
 import { QaapWorkflowAgentTurnNode, QaapWorkflowDeterministicNode, QaapWorkflowNode } from '../common/qaap-workflow-ir';
 import { resolveAgentTurnOutcome, resolveDeterministicOutcome } from '../common/qaap-workflow-outcome';
 import { findTimedOutQaapWorkflowNodes, hasQaapWorkflowRunExpired } from '../common/qaap-workflow-run';
@@ -25,6 +25,11 @@ import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-
 export interface QaapWorkflowDispatchContext {
     readonly runId: string;
     readonly nodeId: string;
+    /**
+     * Durable, one-based visit number from {@link QaapWorkflowRun.visits}. Replaying dispatch for
+     * this visit must return the same work; re-entering a node through a loop must start new work.
+     */
+    readonly visit: number;
     readonly ownerLogin: string;
 }
 
@@ -139,21 +144,67 @@ export class QaapWorkflowDispatcher {
             const context: QaapWorkflowDispatchContext = {
                 runId: record.run.id,
                 nodeId,
+                visit: record.run.visits[nodeId] ?? 1,
                 ownerLogin: record.ownerLogin,
             };
+            let externalId: string | undefined;
             try {
-                const externalId = node.kind === 'agent-turn'
+                externalId = node.kind === 'agent-turn'
                     ? await this.ports.agent.startAgentTurn(node, context)
                     : await this.ports.deterministic.startDeterministic(node as QaapWorkflowDeterministicNode, context);
                 await this.store.attachDispatch(record.ownerLogin, record.run.id, nodeId, node.kind === 'agent-turn' ? 'agent' : 'job', externalId);
             } catch (error) {
+                // If creation succeeded but recording its id did not, stop the now-orphaned work.
+                // A retry is safe for deterministic jobs because its visit-scoped idempotency key
+                // resolves to this same id, but leaving the process alive would let it overlap the
+                // graph's failure path in the meantime.
+                if (externalId) {
+                    await this.cancelExternal(node, externalId);
+                }
                 // A node that could not even start is a failed node, not a stuck run.
                 console.warn(`[qaap-workflow] failed to start node "${nodeId}":`, error);
                 await this.report(record.ownerLogin, record.run.id, nodeId, 'fail', undefined, 'The step could not be started.');
+                continue;
+            }
+            try {
+                // Closing the create → attach event race does not require making either runtime
+                // transactional. A function job (or a test/dummy agent) can finish before the
+                // durable attachment write resolves, so its terminal event initially has no run to
+                // find. Re-read immediately after attaching and route that terminal state now. If
+                // the normal event listener races this lookup, store.report() deduplicates it.
+                await this.reconcileJustAttached(node, externalId);
+            } catch (error) {
+                // A transient lookup failure must not fail work that was successfully created and
+                // durably attached. Runtime events and boot reconciliation remain authoritative.
+                console.warn(`[qaap-workflow] failed to reconcile newly attached node "${nodeId}":`, error);
             }
         }
         for (const settled of selfSettled) {
             await this.report(record.ownerLogin, record.run.id, settled.nodeId, settled.outcome);
+        }
+    }
+
+    protected async reconcileJustAttached(node: QaapWorkflowNode, externalId: string): Promise<void> {
+        if (node.kind === 'agent-turn') {
+            const task = await this.ports.agent.lookupAgentTurn(externalId);
+            if (task && isQaapAgentTaskFinished(task.state)) {
+                await this.onAgentTaskFinished(externalId, task.state, task.log);
+            }
+            return;
+        }
+        const job = await this.ports.deterministic.lookupDeterministic(externalId);
+        if (job && isQaapJobFinished(job.state)) {
+            await this.onJobFinished(externalId, job.state, job.result);
+        }
+    }
+
+    protected async cancelExternal(node: QaapWorkflowNode, externalId: string): Promise<void> {
+        try {
+            await (node.kind === 'agent-turn'
+                ? this.ports.agent.cancelAgentTurn?.(externalId)
+                : this.ports.deterministic.cancelDeterministic?.(externalId));
+        } catch (error) {
+            console.warn(`[qaap-workflow] failed to cancel unattached ${node.kind} ${externalId}:`, error);
         }
     }
 
@@ -227,6 +278,22 @@ export class QaapWorkflowDispatcher {
                     continue;
                 }
                 if (kind === 'agent-turn' || kind === 'deterministic') {
+                    const claim = record.dispatchClaims[nodeId];
+                    if (claim) {
+                        // A persisted claim with no external id belongs to the backend process that
+                        // died. Release it before replaying this SAME visit: the agent adapter will
+                        // acquire a new durable claim, while deterministic jobs reuse their
+                        // visit-scoped idempotency key. This recovers the boot window without ever
+                        // starting two creators in one live backend.
+                        await this.store.releaseDispatchClaim(
+                            record.ownerLogin, record.run.id, nodeId, claim.claimId,
+                        );
+                        const refreshed = this.store.get(record.ownerLogin, record.run.id);
+                        if (refreshed) {
+                            await this.dispatch(refreshed, [nodeId]);
+                        }
+                        continue;
+                    }
                     // Dispatchable node active with no dispatched entry: the backend died between
                     // starting the work and persisting where it went (create → attachDispatch).
                     // Nothing will ever report it, and the node deadline never arms without a

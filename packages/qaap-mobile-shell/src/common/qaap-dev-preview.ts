@@ -28,6 +28,11 @@ export const QAAP_DEV_PREVIEW_CURRENT_PATH = `${QAAP_DEV_PREVIEW_PREFIX}/api/cur
 
 export interface QaapDevPreviewProbeResponse {
     readonly ready: boolean;
+    /**
+     * `ready` is retained for existing clients, but only means the HTTP transport answered.
+     * Render readiness is produced later by visual verification and must not be inferred here.
+     */
+    readonly readiness?: 'transport_ready' | 'render_ready' | 'failed';
     /** URL the mini-browser should load via the same-origin `/qaap-dev/:port/` proxy. */
     readonly previewUrl: string;
     readonly previewId?: string;
@@ -109,6 +114,42 @@ export function buildQaapIdentityPreviewUrl(publicOrigin: string, previewId: str
 }
 
 export const QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER = 'data-qaap-preview-vite-env';
+export const QAAP_PREVIEW_DIAGNOSTICS_MARKER = 'data-qaap-preview-diagnostics';
+
+/**
+ * Installs a bounded, same-origin diagnostic buffer before application scripts execute. The
+ * visual verifier reads it after hydration, catching the common HTTP-200 + blank-app case that
+ * a transport probe cannot distinguish from a healthy render.
+ */
+export function injectQaapPreviewDiagnostics(html: string): string {
+    if (!html || html.includes(QAAP_PREVIEW_DIAGNOSTICS_MARKER)) {
+        return html;
+    }
+    const script = `<script ${QAAP_PREVIEW_DIAGNOSTICS_MARKER}>(function(){
+var root=globalThis;
+if(root.__qaapPreviewDiagnostics){return;}
+var errors=[];
+function text(value){try{return typeof value==='string'?value:JSON.stringify(value);}catch(e){return String(value);}}
+function add(kind,value){var message=text(value)||'Unknown application error';
+if(errors.length<20&&!errors.some(function(item){return item.kind===kind&&item.message===message;})){
+errors.push({kind:kind,message:message.slice(0,500)});}}
+root.__qaapPreviewDiagnostics={errors:errors};
+addEventListener('error',function(event){add('pageerror',event.message||(event.error&&event.error.message)||event.error);});
+addEventListener('unhandledrejection',function(event){add('unhandledrejection',event.reason&&event.reason.message||event.reason);});
+var original=console.error;
+console.error=function(){var values=Array.prototype.slice.call(arguments);add('console.error',values.map(text).join(' '));
+return original.apply(console,arguments);};
+})();</script>`;
+    const headOpen = /<head(?:\s[^>]*)?>/i;
+    if (headOpen.test(html)) {
+        return html.replace(headOpen, match => `${match}${script}`);
+    }
+    const htmlOpen = /<html(?:\s[^>]*)?>/i;
+    if (htmlOpen.test(html)) {
+        return html.replace(htmlOpen, match => `${match}${script}`);
+    }
+    return `${script}${html}`;
+}
 
 /**
  * In dev, Vite materializes the config `define` entries as runtime globals via `/@vite/env`

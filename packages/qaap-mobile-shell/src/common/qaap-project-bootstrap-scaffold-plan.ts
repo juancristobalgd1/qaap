@@ -20,14 +20,15 @@ export interface QaapBootstrapAppTarget {
 /** Human-readable hint when preview cannot run because the workspace root has no manifest. */
 export function formatMissingBootstrapProjectHint(candidatePaths: readonly string[]): string | undefined {
     if (candidatePaths.length === 0) {
-        return 'Run/preview failed: no package.json in the workspace root and no runnable child project was found. '
-            + 'Scaffold the app in the workspace root or in a subfolder with a dev script.';
+        return 'Preview discovery found no runnable target. Qaap supports Node, static HTML, Django, FastAPI/Flask, '
+            + 'Go, Rust, .NET, PHP, and explicit .qaap/preview.json launch plans. Add a supported entry point or '
+            + 'declare command, args, cwd, and port in .qaap/preview.json.';
     }
     if (candidatePaths.length === 1) {
-        return `Run/preview failed: no package.json in the workspace root. `
+        return `No runnable target exists at the workspace root. `
             + `App detected in ${candidatePaths[0]}/ — Qaap preview targets that folder automatically.`;
     }
-    return `Run/preview failed: no package.json in the workspace root. Runnable apps detected in: ${candidatePaths.join(', ')}. `
+    return `No runnable target exists at the workspace root. Runnable apps detected in: ${candidatePaths.join(', ')}. `
         + 'Pick one as the preview target.';
 }
 

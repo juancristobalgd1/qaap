@@ -33,6 +33,7 @@ services:
       # Theia backend runs in production mode; project bootstrap install uses
       # NODE_ENV=development / npm --include=dev so Vite/Next devDependencies are installed.
       NODE_ENV: production
+      NODE_OPTIONS: ${QAAP_NODE_OPTIONS:---max-old-space-size=1536}
       HOST: 0.0.0.0
       PORT: "${THEIA_PORT:-4873}"
       # Theia's PTY fallback reads THEIA_SHELL, then SHELL. Docker does not populate either
@@ -52,7 +53,7 @@ services:
       QAAP_AGENT_COMMANDS: ${QAAP_AGENT_COMMANDS:-}
       QAAP_DEFAULT_AGENT: ${QAAP_DEFAULT_AGENT:-qaiq}
       # Agent CLI update toast: set QAAP_AGENT_CLI_UPDATE_CHECK=0 to disable boot probes / npm lookups.
-      QAAP_AGENT_CLI_UPDATE_CHECK: ${QAAP_AGENT_CLI_UPDATE_CHECK:-}
+      QAAP_AGENT_CLI_UPDATE_CHECK: ${QAAP_AGENT_CLI_UPDATE_CHECK:-0}
       # Optional min-version fallback when npm registry is unreachable (Codex pin is also a build arg).
       CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-}
       CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-}
@@ -61,19 +62,24 @@ services:
       ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-}
       QAAP_QAIQ_MIN_VERSION: ${QAAP_QAIQ_MIN_VERSION:-}
       # Hard backend cap for distinct variants in a parallel run.
-      QAAP_MAX_PARALLEL_VARIANTS: ${QAAP_MAX_PARALLEL_VARIANTS:-4}
+      QAAP_MAX_PARALLEL_VARIANTS: ${QAAP_MAX_PARALLEL_VARIANTS:-2}
+      # Agent processes are the dominant memory consumers. Keep two-way collaboration available,
+      # but queue additional turns instead of letting four heavy CLIs compete inside 4 GiB.
+      QAAP_MAX_CONCURRENT_AGENTS: ${QAAP_MAX_CONCURRENT_AGENTS:-2}
+      QAAP_MAX_CONCURRENT_AGENTS_PER_USER: ${QAAP_MAX_CONCURRENT_AGENTS_PER_USER:-2}
+      QAAP_AGENT_VERIFY_MAX_CONCURRENT: ${QAAP_AGENT_VERIFY_MAX_CONCURRENT:-1}
       # Agent-independent job scheduler: global/per-user caps and isolated resource lanes.
-      QAAP_JOB_MAX_CONCURRENT: ${QAAP_JOB_MAX_CONCURRENT:-8}
-      QAAP_JOB_MAX_CONCURRENT_PER_USER: ${QAAP_JOB_MAX_CONCURRENT_PER_USER:-4}
-      QAAP_JOB_LIMIT_CPU: ${QAAP_JOB_LIMIT_CPU:-2}
-      QAAP_JOB_LIMIT_IO: ${QAAP_JOB_LIMIT_IO:-8}
-      QAAP_JOB_LIMIT_NETWORK: ${QAAP_JOB_LIMIT_NETWORK:-4}
-      QAAP_JOB_LIMIT_WORKSPACE: ${QAAP_JOB_LIMIT_WORKSPACE:-4}
+      QAAP_JOB_MAX_CONCURRENT: ${QAAP_JOB_MAX_CONCURRENT:-4}
+      QAAP_JOB_MAX_CONCURRENT_PER_USER: ${QAAP_JOB_MAX_CONCURRENT_PER_USER:-2}
+      QAAP_JOB_LIMIT_CPU: ${QAAP_JOB_LIMIT_CPU:-1}
+      QAAP_JOB_LIMIT_IO: ${QAAP_JOB_LIMIT_IO:-4}
+      QAAP_JOB_LIMIT_NETWORK: ${QAAP_JOB_LIMIT_NETWORK:-2}
+      QAAP_JOB_LIMIT_WORKSPACE: ${QAAP_JOB_LIMIT_WORKSPACE:-2}
       QAAP_JOB_LIMIT_DEPLOYMENT: ${QAAP_JOB_LIMIT_DEPLOYMENT:-1}
       QAAP_JOB_MAX_TIMEOUT_MS: ${QAAP_JOB_MAX_TIMEOUT_MS:-7200000}
       QAAP_JOB_MAX_LOG_CHARS: ${QAAP_JOB_MAX_LOG_CHARS:-524288}
       QAAP_JOB_LOOP_MAX_JOBS: ${QAAP_JOB_LOOP_MAX_JOBS:-512}
-      QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER: ${QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER:-4}
+      QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER: ${QAAP_JOB_LOOP_MAX_ACTIVE_PER_USER:-2}
       QAAP_JOB_LOOP_TRIGGER_LEASE_TTL_MS: ${QAAP_JOB_LOOP_TRIGGER_LEASE_TTL_MS:-600000}
       QAAP_JOB_LOOP_MANAGEMENT_LOCK_TTL_MS: ${QAAP_JOB_LOOP_MANAGEMENT_LOCK_TTL_MS:-30000}
       QAAP_JOB_LOOP_MANAGEMENT_LOCK_TIMEOUT_MS: ${QAAP_JOB_LOOP_MANAGEMENT_LOCK_TIMEOUT_MS:-5000}
@@ -157,6 +163,8 @@ services:
       resources:
         limits:
           memory: 4G
+          # A runaway agent/process tree must fail locally instead of exhausting the host.
+          pids: ${QAAP_THEIA_PIDS_LIMIT:-512}
 
   # Free, self-hosted web search for @qaiq — no API key, only Docker. Reachable ONLY from
   # the theia backend over the compose network (no host port published). Config + JSON-format

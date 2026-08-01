@@ -41,6 +41,7 @@ import {
 } from '../common/qaap-dev-preview';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
 import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
 import {
     buildQaapPreviewId,
@@ -205,6 +206,8 @@ export class MobileProjectsTranscriptSurfacesUi {
     protected transcriptPreviewConversationScopeId: string | undefined;
     /** Bumped on Stop / new Play so in-flight ensureTranscriptDevPreview callbacks are ignored. */
     protected previewLaunchGeneration = 0;
+    protected transcriptPreviewAppPicker: HTMLElement | undefined;
+    protected transcriptPreviewAppPickerCancel: (() => void) | undefined;
 
     constructor(
         protected readonly host: MobileProjectsTranscriptSurfacesHost,
@@ -213,6 +216,97 @@ export class MobileProjectsTranscriptSurfacesUi {
 
     protected previewScopeId(summary?: Pick<QaapAgentConversationSummaryDTO, 'id'>): string {
         return normalizeQaapPreviewConversationId(summary?.id ?? this.host.transcriptOpenSummaryId);
+    }
+
+    /**
+     * Work Hub hides the classic IDE bootstrap banner. Surface a native app choice here so a
+     * monorepo preview never waits on a hidden "Pick app" action or spends an agent turn on a
+     * deterministic launch decision.
+     */
+    protected pickTranscriptPreviewApp(
+        apps: readonly QaapMonorepoAppCandidate[],
+    ): Promise<QaapMonorepoAppCandidate | undefined> {
+        this.closeTranscriptPreviewAppPicker();
+        return new Promise(resolve => {
+            let settled = false;
+            const picker = document.createElement('div');
+            const finish = (app: QaapMonorepoAppCandidate | undefined): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                this.transcriptPreviewAppPickerCancel = undefined;
+                document.removeEventListener('keydown', onKeyDown, true);
+                picker.remove();
+                if (this.transcriptPreviewAppPicker === picker) {
+                    this.transcriptPreviewAppPicker = undefined;
+                }
+                resolve(app);
+            };
+            const onKeyDown = (event: KeyboardEvent): void => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                    finish(undefined);
+                }
+            };
+
+            picker.className = 'theia-mobile-transcript-app-picker';
+            picker.setAttribute('role', 'dialog');
+            picker.setAttribute('aria-modal', 'true');
+            const backdrop = document.createElement('button');
+            backdrop.type = 'button';
+            backdrop.className = 'theia-mobile-transcript-app-picker-backdrop';
+            backdrop.tabIndex = -1;
+            backdrop.setAttribute('aria-label', nls.localize('qaap/mobileProjects/cancelAppPicker', 'Cancel app selection'));
+            backdrop.addEventListener('click', () => finish(undefined));
+
+            const sheet = document.createElement('section');
+            sheet.className = 'theia-mobile-transcript-app-picker-sheet';
+            const heading = document.createElement('h2');
+            heading.id = `qaap-preview-app-picker-${Date.now().toString(36)}`;
+            heading.textContent = nls.localize('qaap/mobileProjects/pickPreviewApp', 'Choose app to preview');
+            picker.setAttribute('aria-labelledby', heading.id);
+            const hint = document.createElement('p');
+            hint.textContent = nls.localize(
+                'qaap/mobileProjects/pickPreviewAppHint',
+                'Qaap will run the selected app in its own managed preview with hot reload.',
+            );
+            const list = document.createElement('div');
+            list.className = 'theia-mobile-transcript-app-picker-list';
+            for (const app of apps) {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'theia-mobile-transcript-app-picker-item';
+                const name = document.createElement('span');
+                name.className = 'theia-mobile-transcript-app-picker-name';
+                name.textContent = app.name;
+                const path = document.createElement('span');
+                path.className = 'theia-mobile-transcript-app-picker-path';
+                path.textContent = app.relativePath;
+                item.append(name, path);
+                item.addEventListener('click', () => finish(app));
+                list.append(item);
+            }
+            const cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'theia-mobile-transcript-app-picker-cancel';
+            cancel.textContent = nls.localize('qaap/mobileProjects/cancel', 'Cancel');
+            cancel.addEventListener('click', () => finish(undefined));
+            sheet.append(heading, hint, list, cancel);
+            picker.append(backdrop, sheet);
+            document.body.append(picker);
+            this.transcriptPreviewAppPicker = picker;
+            this.transcriptPreviewAppPickerCancel = () => finish(undefined);
+            document.addEventListener('keydown', onKeyDown, true);
+            window.setTimeout(() => list.querySelector<HTMLButtonElement>('button')?.focus(), 0);
+        });
+    }
+
+    protected closeTranscriptPreviewAppPicker(): void {
+        this.transcriptPreviewAppPickerCancel?.();
+        this.transcriptPreviewAppPickerCancel = undefined;
+        this.transcriptPreviewAppPicker?.remove();
+        this.transcriptPreviewAppPicker = undefined;
     }
 
     protected previewRuntimeFor(conversationScopeId: string): ConversationPreviewRuntimeState {
@@ -373,7 +467,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         const diffHost = document.createElement('div');
         diffHost.className = 'theia-mobile-transcript-review-diff-host';
         host.append(diffHost);
-        const rootUri = project.uri?.toString() ?? `file://${cwd}`;
+        // Review can be scoped to an agent worktree, not the hub card's clone. Keep the URI and
+        // filesystem root aligned so opening a changed/untracked file cannot jump to another repo.
+        const rootUri = FileUri.create(cwd).toString();
         if (!this.host.diffReviewWidget) {
             this.host.diffReviewWidget = await this.host.createDiffReviewWidget();
         }
@@ -578,7 +674,8 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.host.transcriptReviewChecksHost = undefined;
         this.host.transcriptHistoryRoot = cwd;
 
-        const rootUri = project.uri?.toString() ?? `file://${cwd}`;
+        // A VPS task's summary.cwd is authoritative and can point at an isolated worktree.
+        const rootUri = FileUri.create(cwd).toString();
         if (!this.host.diffReviewWidget) {
             this.host.diffReviewWidget = await this.host.createDiffReviewWidget();
         }
@@ -1350,12 +1447,12 @@ export class MobileProjectsTranscriptSurfacesUi {
             ready.className = 'theia-mobile-transcript-preview-ready';
             const title = document.createElement('div');
             title.className = 'theia-mobile-transcript-preview-ready-title';
-            title.textContent = nls.localize('qaap/projectBootstrap/previewReady', 'Preview ready');
+            title.textContent = nls.localize('qaap/projectBootstrap/previewTransportReady', 'Dev server reachable');
             const hint = document.createElement('p');
             hint.className = 'theia-mobile-transcript-preview-ready-hint';
             hint.textContent = nls.localize(
                 'qaap/mobileProjects/previewReadyHint',
-                'The dev server is running. Open it in the in-IDE browser preview.',
+                'The HTTP transport is responding. Open the preview to render and verify the app.',
             );
             const open = document.createElement('button');
             open.type = 'button';
@@ -1438,6 +1535,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
         host.hidden = false;
         this.applyTranscriptPreviewRunButtonState(button, openProject, openSummary, conv);
+        this.syncHeaderPreviewAppSwitchButton(host, openProject, openSummary);
     }
 
     /** Hide the header play control — only when leaving Preview or tearing down the shell. */
@@ -1510,6 +1608,110 @@ export class MobileProjectsTranscriptSurfacesUi {
         return btn;
     }
 
+    /**
+     * Keeps the selected monorepo app visible beside Play/Stop and provides an explicit switch
+     * affordance. The classic bootstrap banner also has an app selector, but Work Hub hides that
+     * banner by design, so relying on it made the first choice effectively permanent.
+     */
+    protected syncHeaderPreviewAppSwitchButton(
+        host: HTMLElement,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        const bootstrap = this.host.projectBootstrap;
+        const snapshot = bootstrap?.getStateSnapshot();
+        const apps = snapshot?.descriptor?.apps ?? [];
+        const selectedApp = snapshot?.selectedApp;
+        let button = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-app-switch');
+        if (!bootstrap || apps.length <= 1 || !selectedApp) {
+            button?.remove();
+            return;
+        }
+        if (!button) {
+            button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'theia-mobile-transcript-preview-app-switch';
+            const icon = document.createElement('i');
+            icon.className = 'codicon codicon-list-selection';
+            icon.setAttribute('aria-hidden', 'true');
+            const name = document.createElement('span');
+            name.className = 'theia-mobile-transcript-preview-app-switch-name';
+            const chevron = document.createElement('i');
+            chevron.className = 'codicon codicon-chevron-down';
+            chevron.setAttribute('aria-hidden', 'true');
+            button.append(icon, name, chevron);
+            host.prepend(button);
+        }
+        const label = nls.localize(
+            'qaap/mobileProjects/switchPreviewApp',
+            'Switch preview app (current: {0})',
+            selectedApp.name,
+        );
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        const name = button.querySelector<HTMLElement>('.theia-mobile-transcript-preview-app-switch-name');
+        if (name) {
+            name.textContent = selectedApp.name;
+        }
+        button.disabled = this.host.transcriptPreviewRequestRunning || this.host.transcriptPreviewRequestPending;
+        button.onclick = () => {
+            void this.switchTranscriptPreviewApp(project, summary);
+        };
+    }
+
+    /** Stop app A through the bootstrap-owned terminal, then launch and mount app B. */
+    protected async switchTranscriptPreviewApp(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        const bootstrap = this.host.projectBootstrap;
+        const snapshot = bootstrap?.getStateSnapshot();
+        const apps = snapshot?.descriptor?.apps ?? [];
+        const currentApp = snapshot?.selectedApp;
+        if (!bootstrap || apps.length <= 1 || !currentApp) {
+            return;
+        }
+        const selectedApp = await this.pickTranscriptPreviewApp(apps);
+        if (!selectedApp || selectedApp.relativePath === currentApp.relativePath) {
+            return;
+        }
+
+        const launchGeneration = ++this.previewLaunchGeneration;
+        this.host.transcriptPreviewSuppressedByUser = false;
+        this.host.transcriptPreviewRequestRunning = true;
+        this.host.transcriptPreviewRequestPending = true;
+        this.syncHeaderPreviewRunButton(project, summary);
+        MobileSnackbar.show(
+            nls.localize('qaap/mobileProjects/switchingPreviewApp', 'Switching preview to {0}…', selectedApp.name),
+            { duration: 2200 },
+        );
+        try {
+            await bootstrap.selectMonorepoApp(selectedApp, { conversationId: summary.id });
+            const readyUrl = await ensureTranscriptDevPreview(bootstrap, {
+                conversationId: summary.id,
+                projectId: project.id,
+                skipConversationPortProbe: true,
+            });
+            if (launchGeneration !== this.previewLaunchGeneration || this.host.transcriptPreviewSuppressedByUser) {
+                return;
+            }
+            if (readyUrl) {
+                this.adoptReadyTranscriptPreview(project, summary, readyUrl);
+                return;
+            }
+            const failure = bootstrap.getBootstrapFailureDetail()?.terminalFailure
+                ?? nls.localize('qaap/mobileProjects/previewSwitchFailed', 'The selected app did not become ready.');
+            MobileSnackbar.show(failure, { kind: 'warning' });
+        } finally {
+            if (launchGeneration === this.previewLaunchGeneration) {
+                this.host.transcriptPreviewRequestRunning = false;
+                this.host.transcriptPreviewRequestPending = false;
+                const latestProject = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
+                this.syncHeaderPreviewRunButton(latestProject, summary);
+            }
+        }
+    }
+
     updateTranscriptPreviewRunButtonState(conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv): void {
         this.syncHeaderPreviewRunButton(this.host.transcriptOpenProject, this.host.transcriptOpenSummary, conv);
     }
@@ -1577,6 +1779,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.host.transcriptPreviewSuppressedByUser = true;
         this.host.transcriptPreviewRequestRunning = false;
         this.host.transcriptPreviewRequestPending = false;
+        this.closeTranscriptPreviewAppPicker();
         this.transcriptPreviewEnsureRequests.clear();
         this.stopTranscriptPreviewTabProbe();
         this.stopTranscriptPreviewIdentityWatch();
@@ -2760,51 +2963,43 @@ export class MobileProjectsTranscriptSurfacesUi {
             );
         }
         if (bootstrap && projectRoot) {
-            const conversation = this.host.transcriptLastConv?.id === summary.id
-                ? this.host.transcriptLastConv
-                : undefined;
-            void ensureTranscriptDevPreview(bootstrap, {
-                conversation,
-                conversationId: summary.id,
-                projectId: project.id,
-                workspaceRoot: projectRoot,
-            }).then(readyUrl => {
+            // A runnable project does not need an agent to decide how to start it. Detect first,
+            // ask which app to run when this is a monorepo, and use the managed terminal directly.
+            // Agent troubleshooting remains the fallback only when that launch cannot get ready.
+            this.host.transcriptPreviewRequestRunning = true;
+            this.host.transcriptPreviewRequestPending = true;
+            this.updateTranscriptPreviewRunButtonState();
+            await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
+            const detected = bootstrap.getStateSnapshot();
+            if (detected.descriptor && detected.descriptor.apps.length > 1 && !detected.selectedApp) {
+                const selectedApp = await this.pickTranscriptPreviewApp(detected.descriptor.apps);
                 if (launchGeneration !== this.previewLaunchGeneration || this.host.transcriptPreviewSuppressedByUser) {
                     return;
                 }
-                if (!readyUrl) {
-                    if (this.matchesActivePreviewSummary(summary)
-                        && this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
-                        MobileSnackbar.show(
-                            nls.localize(
-                                'qaap/mobileProjects/previewStartFailed',
-                                'The dev server for {0} did not start. Check the Terminal view for details.',
-                                project.name ?? project.id,
-                            ),
-                            { kind: 'warning' },
-                        );
-                    }
+                if (!selectedApp) {
+                    this.host.transcriptPreviewRequestRunning = false;
+                    this.host.transcriptPreviewRequestPending = false;
+                    this.syncHeaderPreviewRunButton(project, summary);
+                    MobileSnackbar.dismiss();
                     return;
                 }
-                // ALWAYS record the ready URL, even when the user stayed on the Chat view.
-                // Recording only while the Preview tab was active meant a chat-dwelling user never
-                // got `project.previewUrl` set, so the "Open preview" pill had no URL to offer —
-                // the observed "the agent started the app but there is nothing to click" failure.
-                const refreshed = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
-                this.host.projects = this.host.projects.map(candidate => candidate.id === refreshed.id
-                    ? { ...candidate, previewUrl: readyUrl }
-                    : candidate);
-                void this.host.projectsService.recordProjectPreviewUrl({ ...refreshed, previewUrl: readyUrl }, readyUrl);
-                if (!this.matchesActivePreviewSummary(summary)) {
-                    return;
-                }
-                this.stageTranscriptPreviewReadyUrl(this.previewScopeId(summary), readyUrl);
-                if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
-                    this.renderPreviewTab({ ...refreshed, previewUrl: readyUrl }, summary);
-                } else {
-                    this.host.transcriptScheduleRefresh?.();
-                }
+                await bootstrap.selectMonorepoApp(selectedApp, { conversationId: summary.id });
+            }
+            const readyUrl = await ensureTranscriptDevPreview(bootstrap, {
+                conversationId: summary.id,
+                projectId: project.id,
+                // `refreshFromProjectRoot` above already selected the authoritative Work Hub
+                // project. Refreshing again after an app choice discards the live transition and
+                // can restart the same app twice; wait on the current managed launch instead.
+                skipConversationPortProbe: true,
             });
+            if (launchGeneration !== this.previewLaunchGeneration || this.host.transcriptPreviewSuppressedByUser) {
+                return;
+            }
+            if (readyUrl) {
+                this.adoptReadyTranscriptPreview(project, summary, readyUrl);
+                return;
+            }
         }
 
         const message = nls.localize(
@@ -2861,5 +3056,36 @@ export class MobileProjectsTranscriptSurfacesUi {
                 this.host.transcriptPreviewRequestRunning = false;
             }
         }
+    }
+
+    /** Persist and mount a verified managed preview without duplicating switch/first-launch logic. */
+    protected adoptReadyTranscriptPreview(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        readyUrl: string,
+    ): MobileProjectEntry {
+        // ALWAYS record the ready URL, even when the user stayed on the Chat view. Recording only
+        // on Preview meant a chat-dwelling user never got an actionable "Open preview" pill.
+        const refreshed = this.host.projects.find(candidate => candidate.id === project.id) ?? project;
+        const readyProject = { ...refreshed, previewUrl: readyUrl };
+        this.host.projects = this.host.projects.map(candidate => candidate.id === refreshed.id
+            ? readyProject
+            : candidate);
+        if (this.host.transcriptOpenProject?.id === readyProject.id) {
+            this.host.transcriptOpenProject = readyProject;
+        }
+        void this.host.projectsService.recordProjectPreviewUrl(readyProject, readyUrl);
+        this.host.transcriptPreviewRequestRunning = false;
+        this.host.transcriptPreviewRequestPending = false;
+        if (this.matchesActivePreviewSummary(summary)) {
+            this.stageTranscriptPreviewReadyUrl(this.previewScopeId(summary), readyUrl);
+            if (this.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
+                this.renderPreviewTab(readyProject, summary);
+            } else {
+                this.host.transcriptScheduleRefresh?.();
+            }
+        }
+        this.syncHeaderPreviewRunButton(readyProject, summary);
+        return readyProject;
     }
 }

@@ -42,6 +42,23 @@ describe('qaap-agent-destructive-command-guard', () => {
         }
     });
 
+    it('blocks global process selectors that can terminate sibling project previews', () => {
+        const blocked = [
+            'pkill -f "vite"',
+            'pkill -9 node',
+            'killall vite',
+            'sudo killall node',
+            'kill 12345',
+            'kill -TERM 12345',
+            'builtin kill $pid',
+            'cd app && pkill -f "npm run dev"',
+            "sh -c 'pkill -f next'",
+        ];
+        for (const command of blocked) {
+            expect(isDestructiveShellCommand(command), command).to.equal(true);
+        }
+    });
+
     it('blocks rm -rf reaching outside the workspace or wiping it', () => {
         const blocked = [
             'rm -rf /workspace/other-repo',
@@ -77,6 +94,7 @@ describe('qaap-agent-destructive-command-guard', () => {
             'rm file.txt',
             'rm -r src/old-dir',
             'npm run build && rm -rf dist/tmp',
+            'process.kill(recordedPid)',
         ];
         for (const command of allowed) {
             expect(isDestructiveShellCommand(command), command).to.equal(false);

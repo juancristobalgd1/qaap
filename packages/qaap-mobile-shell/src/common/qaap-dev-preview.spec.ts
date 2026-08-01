@@ -9,11 +9,22 @@ import {
     buildQaapDevPreviewOpenUrl,
     buildQaapDevPreviewUrl,
     injectQaapPreviewViteEnvBootstrap,
+    injectQaapPreviewDiagnostics,
     parseQaapDevPreviewRequestPath,
     parseQaapDevPreviewPort,
 } from './qaap-dev-preview';
 
 describe('qaap-dev-preview', () => {
+    it('injectQaapPreviewDiagnostics before app scripts and remains idempotent', () => {
+        const html = '<html><head><script src="/app.js"></script></head><body></body></html>';
+        const once = injectQaapPreviewDiagnostics(html);
+        expect(once).to.contain('data-qaap-preview-diagnostics');
+        expect(once.indexOf('data-qaap-preview-diagnostics')).to.be.lessThan(once.indexOf('src="/app.js"'));
+        expect(once).to.contain("addEventListener('unhandledrejection'");
+        expect(once).to.contain('console.error=function()');
+        expect(injectQaapPreviewDiagnostics(once)).to.equal(once);
+    });
+
 
     it('buildQaapDevPreviewUrl works for VPS IP origins', () => {
         expect(buildQaapDevPreviewUrl('http://178.105.136.93:3000', 3001))

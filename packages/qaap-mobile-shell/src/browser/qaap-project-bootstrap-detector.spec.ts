@@ -6,6 +6,10 @@
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 enableJSDOM();
+const browserGlobals = globalThis as unknown as { DragEvent?: unknown };
+if (!browserGlobals.DragEvent) {
+    browserGlobals.DragEvent = class DragEvent { };
+}
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
@@ -92,6 +96,62 @@ function bindMockFileService(detector: QaapProjectBootstrapDetector, mock: MockF
 }
 
 describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
+
+    it('uses an explicit non-JavaScript preview plan with a workspace-contained cwd', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/services');
+        mock.addDir('/ws/services/docs');
+        mock.addFile('/ws/.qaap/preview.json', JSON.stringify({
+            version: 1,
+            runtime: 'python',
+            name: 'Python docs',
+            cwd: 'services/docs',
+            command: 'python3',
+            args: ['-m', 'http.server', '{{PORT}}'],
+            port: 8000,
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.kind).to.equal('python-generic');
+        expect(descriptor?.packageManager).to.equal('native');
+        expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws/services/docs');
+        expect(descriptor?.devCommand).to.equal("'python3' '-m' 'http.server' '{{PORT}}'");
+        expect(descriptor?.expectedPort).to.equal(8000);
+        expect(descriptor?.nodeModulesPresent).to.equal(true);
+    });
+
+    it('auto-detects Django at the workspace root', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/manage.py', '#!/usr/bin/env python3');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.kind).to.equal('python-django');
+        expect(descriptor?.devCommand).to.include('manage.py');
+        expect(descriptor?.expectedPort).to.equal(8000);
+    });
+
+    it('auto-detects a Go app in a direct child without requiring package.json', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/server');
+        mock.addFile('/ws/server/go.mod', 'module example.test/server');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.kind).to.equal('go');
+        expect(descriptor?.previewRootUri?.path.toString()).to.equal('/ws/server');
+        expect(descriptor?.devCommand).to.equal("'go' 'run' '.'");
+    });
 
     it('detects a Vite app scaffolded in a direct child folder', async () => {
         const mock = new MockFileService();
