@@ -13,7 +13,7 @@ import {
     QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
 } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
-import type { QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '../common/qaap-transcript-incremental-update';
 import {
     enableTranscriptRenderMetrics,
@@ -289,6 +289,99 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
             expect(metrics.render_patch_activity_in_place).to.equal(1);
             expect(metrics.render_patch_activity_replace).to.equal(0);
             expect(metrics.render_full).to.equal(0);
+        } finally {
+            resetTranscriptRenderMetrics();
+            enableTranscriptRenderMetrics(false);
+        }
+    });
+
+    it('streaming turn distribution — incremental patch tiers dominate over full rebuilds', () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        // jsdom does not define the global `CSS` object that some rich-content/tool rendering
+        // touches (CSS.escape / CSS.supports). Shim it for the bench; real browsers provide it.
+        const cssHost = globalThis as unknown as { CSS?: { escape(v: string): string; supports(...a: unknown[]): boolean } };
+        if (!cssHost.CSS) {
+            cssHost.CSS = { escape: (value: string) => value, supports: () => false };
+        }
+
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
+        try {
+            const base = Date.now();
+            const user: QaapAgentMessageDTO = { id: 'user-1', role: 'user', content: 'Fix a bug', createdAt: base };
+            const words = ('I inspected the module and found the off-by-one in the loop bound. '
+                + 'The fix clamps the index and adds a guard so the tail element is never skipped. '
+                + 'I also added a regression test covering the boundary. Everything compiles and the suite is green.')
+                .split(' ');
+            const mk = (segments: QaapAgentMessageSegmentDTO[], tick: number): QaapAgentConversationDTO => ({
+                id: 'conv-bench', cwd: '/workspace', agentId: 'codex', title: '', status: 'streaming',
+                createdAt: base, updatedAt: base + tick,
+                messages: [user, { id: 'agent-1', role: 'agent', content: '', segments, createdAt: base + 1 }],
+            });
+            const tool = (finished: boolean): QaapAgentMessageSegmentDTO => ({
+                type: 'tool', name: 'Read', toolUseId: 't1', args: JSON.stringify({ path: 'src/loop.ts' }),
+                result: finished ? 'ok' : undefined, finished,
+            });
+            const snapshots: QaapAgentConversationDTO[] = [];
+            let tick = 0;
+            // Phase 1: the thinking segment grows word by word.
+            const thinkWords = 'Planning the fix for the loop bound off by one'.split(' ');
+            for (let i = 1; i <= thinkWords.length; i++) {
+                snapshots.push(mk([{ type: 'thinking', content: thinkWords.slice(0, i).join(' ') }], tick++));
+            }
+            // Phase 2: a tool appears, runs, finishes.
+            snapshots.push(mk([{ type: 'thinking', content: thinkWords.join(' ') }, tool(false)], tick++));
+            snapshots.push(mk([{ type: 'thinking', content: thinkWords.join(' ') }, tool(true)], tick++));
+            // Phase 3: the final answer paragraph streams in word by word.
+            for (let w = 1; w <= words.length; w++) {
+                snapshots.push(mk([
+                    { type: 'thinking', content: thinkWords.join(' ') },
+                    tool(true),
+                    { type: 'text', content: words.slice(0, w).join(' ') },
+                ], tick++));
+            }
+
+            let prev: QaapAgentConversationDTO | undefined;
+            for (const snap of snapshots) {
+                host.transcriptLastConv = prev;
+                renderUi.renderTranscriptMessages(chatHost, snap);
+                prev = snap;
+            }
+
+            const m = getTranscriptRenderMetricsSnapshot() as unknown as Record<string, number>;
+            const full = m.render_full ?? 0;
+            const patchTotal = Object.entries(m)
+                .filter(([key]) => key.startsWith('render_patch_') && !key.startsWith('render_patch_none'))
+                .reduce((sum, [, value]) => sum + (value ?? 0), 0);
+            const pick = (prefix: string): Record<string, number> =>
+                Object.fromEntries(Object.entries(m).filter(([key]) => key.startsWith(prefix)).filter(([, v]) => v));
+            // This bench is also the measurement harness for the fine-grained-rendering backlog:
+            // its console output is the render-tier distribution used to prioritise the remaining
+            // coarse fallbacks (#2 agent-row replace). NOTE: the test host stubs `transcriptMarkdownIt`
+            // and there is no markdown Web Worker under jsdom, so the streaming markdown tail cost
+            // (#1) is NOT represented here — measure that one live with enableTranscriptRenderMetrics().
+            // eslint-disable-next-line no-console
+            console.log('[streaming-distribution-bench] ' + JSON.stringify({
+                ticks: snapshots.length,
+                render_full: full,
+                render_full_rows_rebuilt: m.render_full_rows_rebuilt ?? 0,
+                patchTotal,
+                lastAgent: pick('render_patch_last_agent'),
+                append: m.render_patch_append ?? 0,
+                activity: pick('render_patch_activity'),
+                none: pick('render_patch_none'),
+                skip: pick('render_skip'),
+            }, undefined, 2));
+
+            // Regression guard: the incremental path must dominate — a full rebuild must NOT fire on
+            // every tick, and in-place patches must outnumber full rebuilds for a normal growing turn.
+            expect(patchTotal).to.be.greaterThan(0);
+            expect(full).to.be.lessThan(snapshots.length);
+            expect(patchTotal).to.be.greaterThan(full);
         } finally {
             resetTranscriptRenderMetrics();
             enableTranscriptRenderMetrics(false);
