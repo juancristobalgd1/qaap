@@ -250,6 +250,36 @@ export class MobileProjectsTranscriptLiveUi {
     }
 
     /**
+     * Instantly clear Stop / glow chrome when the user cancels — do not wait for the
+     * backend WS `updated` frame. `isTranscriptSummaryAgentWorking` prefers
+     * `transcriptLastConv.status` over the summary snapshot, so updating only the
+     * summary left the Stop button stuck until the network round-trip.
+     */
+    applyOptimisticConversationCancel(summary: QaapAgentConversationSummaryDTO): void {
+        const conv = this.host.transcriptLastConv;
+        if (!conv || conv.id !== summary.id) {
+            return;
+        }
+        const optimistic: QaapAgentConversationDTO = {
+            ...conv,
+            status: 'idle',
+            updatedAt: Date.now(),
+            messages: conv.messages.map(message => message.role === 'agent' && message.runActive
+                ? { ...message, runActive: undefined }
+                : message),
+        };
+        this.host.transcriptLastConv = optimistic;
+        this.host.transcriptLastFingerprint = undefined;
+        const chatHost = this.resolveActiveTranscriptChatHost();
+        if (chatHost) {
+            this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, optimistic);
+        }
+        this.scheduleTranscriptComposerActivityRefresh(optimistic);
+        this.host.transcriptHeaderUi.refreshTranscriptExecutionChrome();
+        this.host.transcriptComposerSendRefresh?.();
+    }
+
+    /**
      * Zero-latency recovery when the client-side stream watchdog timed out but the backend turn
      * may still be running — hide the timeout chrome and restart the progress clock immediately.
      */

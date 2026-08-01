@@ -249,6 +249,7 @@ export class MobileProjectsConversationActionsUi {
         this.host.cardMenuUi.closeCardMenu();
 
         this.host.conversations?.recordSnapshot({ ...summary, status: 'idle', updatedAt: Date.now() });
+        this.host.transcriptLiveUi.applyOptimisticConversationCancel(summary);
         this.refreshConversationLists();
 
         if (summary.source === 'theia-chat') {

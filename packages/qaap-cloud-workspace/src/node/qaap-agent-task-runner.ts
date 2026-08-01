@@ -1727,7 +1727,10 @@ export class QaapAgentTaskRunner {
     cancel(id: string): QaapAgentTask | undefined {
         const child = this.processes.get(id);
         if (child) {
-            this.killAgentProcessTree(child);
+            // User Stop must feel immediate: SIGTERM the group, then SIGKILL almost
+            // right away (250ms). The default 5s grace is for watchdog/idle cleanup
+            // where a clean exit is preferred over hard-killing mid-tool.
+            this.killAgentProcessTree(child, { escalateAfterMs: 250 });
         }
         this.queuedCreateRequests.delete(id);
         const task = this.tasks.get(id);
@@ -1740,7 +1743,8 @@ export class QaapAgentTaskRunner {
     }
 
     /**
-     * Kill the agent's WHOLE process tree, escalating SIGTERM → SIGKILL after 5s.
+     * Kill the agent's WHOLE process tree, escalating SIGTERM → SIGKILL after
+     * {@link escalateAfterMs} (default 5s).
      *
      * The agent is spawned with `shell: true` + `detached: true`, so the shell is a
      * process-group leader and `kill(-pid)` reaches the actual agent (qaiq/claude/…)
@@ -1752,7 +1756,10 @@ export class QaapAgentTaskRunner {
      * Returns the escalation timer (unref'ed) so callers that observe the process exit
      * can clear it and avoid a stray SIGKILL to a recycled pid/group.
      */
-    protected killAgentProcessTree(child: ChildProcess): NodeJS.Timeout | undefined {
+    protected killAgentProcessTree(
+        child: ChildProcess,
+        options?: { readonly escalateAfterMs?: number },
+    ): NodeJS.Timeout | undefined {
         const pid = child.pid;
         if (!pid) {
             return undefined;
@@ -1768,11 +1775,17 @@ export class QaapAgentTaskRunner {
                 child.kill('SIGTERM');
             } catch { /* already gone */ }
         }
-        const escalation = setTimeout(() => {
+        const escalateAfterMs = options?.escalateAfterMs ?? 5_000;
+        const sendKill = (): void => {
             try {
                 globalThis.process.kill(-pid, 'SIGKILL');
             } catch { /* already gone */ }
-        }, 5_000);
+        };
+        if (escalateAfterMs <= 0) {
+            sendKill();
+            return undefined;
+        }
+        const escalation = setTimeout(sendKill, escalateAfterMs);
         escalation.unref?.();
         return escalation;
     }
@@ -3002,9 +3015,14 @@ export class QaapAgentTaskRunner {
 
     protected fireOutput(taskId: string, chunk: unknown): void {
         const task = this.tasks.get(taskId);
+        // Drop stdout after cancel/finish — otherwise a dying CLI can keep painting the
+        // transcript for hundreds of ms and make Stop feel ignored.
+        if (!task || task.state !== 'running') {
+            return;
+        }
         const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
         const filtered = filterAgentProcessLogChunk(text);
-        if (!task || !filtered) {
+        if (!filtered) {
             return;
         }
         this.onDidChangeTaskEmitter.fire({ type: 'output', task, chunk: filtered });
