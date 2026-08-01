@@ -56,6 +56,23 @@ describe('qaap-agent-branding', () => {
         }
     });
 
+    it('resolveAgentBrand serves theme-adaptive monochrome marks for copilot and hermes', () => {
+        for (const id of ['copilot', 'hermes']) {
+            const brand = resolveAgentBrand(id);
+            // Transparent tone so the glyph sits on the theme surface, not on a plate.
+            expect(brand?.tone, `${id} tone`).to.equal('light');
+            expect(brand?.svgLight, `${id} svgLight`).to.be.a('string');
+            expect(brand?.svgDark, `${id} svgDark`).to.be.a('string');
+            expect(brand?.svgLight).to.not.equal(brand?.svgDark);
+            // currentColor would let ambient colour bleed in; each variant is a fixed fill.
+            expect(brand?.svgLight).to.not.include('currentColor');
+            expect(brand?.svgDark).to.not.include('currentColor');
+            // Dark glyph for the light theme, white glyph for the dark theme.
+            expect(brand?.svgLight?.toLowerCase()).to.include('#1f2328');
+            expect(brand?.svgDark?.toLowerCase()).to.include('#ffffff');
+        }
+    });
+
     it('resolveAgentBrand uniquifies antigravity mask ids across calls', () => {
         const first = resolveAgentBrand('antigravity')?.svg ?? '';
         const second = resolveAgentBrand('antigravity')?.svg ?? '';
