@@ -12,6 +12,10 @@ import {
     isOpencodeAgent,
     isQaiqAgent,
 } from './qaap-agent-task-client';
+import {
+    extractAgentAuthLoginChallenge,
+    localizeAgentAuthFailureMessage,
+} from './qaap-agent-auth-login';
 import { detectAgentFailureKind, localizeAgentFailureMessage } from './qaap-agent-failure-message';
 import type { QaapAgentMessageSegment } from './qaap-qaiq-stream';
 import type { QaapAgentContextUsage } from './qaap-agent-context-usage';
@@ -142,6 +146,26 @@ export function resolveAgentLogDisplayText(agentId: string | undefined, log: str
         return '';
     }
     const failureKind = detectAgentFailureKind(trimmed);
+    if (failureKind === 'auth') {
+        // Keep login URLs / device codes from the CLI so the chat can offer a Sign-in CTA
+        // (same affordance as the agent TUI hyperlink). Do not replace the body with the
+        // generic Settings/API-key sentence.
+        const challenge = extractAgentAuthLoginChallenge(trimmed);
+        const parsed = parseAgentLogForTranscript(agentId, trimmed).content.trim();
+        const parts: string[] = [];
+        if (parsed) {
+            parts.push(parsed);
+        } else {
+            parts.push(localizeAgentAuthFailureMessage(challenge));
+        }
+        if (challenge?.url && !parts.some(part => part.includes(challenge.url!))) {
+            parts.push(challenge.url);
+        }
+        if (challenge?.userCode && !parts.some(part => part.includes(challenge.userCode!))) {
+            parts.push(`Code: ${challenge.userCode}`);
+        }
+        return parts.join('\n');
+    }
     if (failureKind) {
         return localizeAgentFailureMessage(failureKind);
     }

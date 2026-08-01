@@ -41,7 +41,13 @@ import {
     estimateConversationTokensFromMessages,
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
-import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { localizeAgentFailureMessage, detectAgentFailureKind, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import {
+    detectAgentAuthFailureMode,
+    extractAgentAuthLoginChallenge,
+    localizeAgentAuthFailureMessage,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-auth-login';
+import { extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
     createAgentStreamAccumulator,
@@ -112,7 +118,6 @@ import {
     agentModelKey,
     agentTurnHasRetryableEmptyOutput,
     agentTurnHasRetryableModelFailure,
-    agentTurnHasRetryableQuotaFailure,
     agentTurnHasRetryableToolSupportFailure,
     resolveNextFallbackAgentModel,
 } from '../common/qaap-agent-model-fallback';
@@ -710,7 +715,9 @@ export class QaapAgentConversationStore {
         for (const taskId of cancelTaskIds) {
             this.taskRunner.cancel(taskId);
             for (const subtask of collectSubtasksForLeader(taskId, this.taskRunner.list())) {
-                if (subtask.state === 'running') {
+                // Queued children must die with Stop All too — otherwise they start
+                // after the leader was cancelled and the Working pill comes back.
+                if (subtask.state === 'running' || subtask.state === 'queued') {
                     this.taskRunner.cancel(subtask.id);
                 }
             }
@@ -1794,7 +1801,12 @@ export class QaapAgentConversationStore {
                 updatedAt: Date.now(),
             };
             this.publishFinalizedAgentMessage(conversationId, next, agentMessageId, turnAgentId);
-            this.finishLeaderTurnAndMaybeSynthesize(conversationId, task.id, next);
+            // Do not auto-synthesize after a cancelled leader — that would spawn a new turn
+            // right after the user hit Stop (and feels like cancel "did nothing").
+            this.conversations.set(conversationId, next);
+            this.fire({ type: 'updated', conversation: toConversationSummary(next) });
+            this.flushPersist();
+            this.pendingTeamSynthesisForLeader.delete(task.id);
             return;
         }
         const detail = await this.taskRunner.detail(task.id);
@@ -1824,7 +1836,13 @@ export class QaapAgentConversationStore {
         const structuredParsed = log && !skipLogReparse ? this.parseStructuredLog(turnAgentId, log) : undefined;
         // 'completed_with_warnings' (clean exit, verification still red) is a delivered turn:
         // it takes the success path below — with a warning trace instead of the failure flow.
-        if (task.state !== 'completed' && task.state !== 'completed_with_warnings') {
+        // Exception: CLI blocking failures that still exit 0 — auth/session (Sign-in card),
+        // and quota/rate-limit (Task failed dialog). Antigravity often prints a plain
+        // "Individual quota reached…" line and exits 0; never treat that as success.
+        const completedAuthFailureReason = (task.state === 'completed' || task.state === 'completed_with_warnings')
+            ? this.resolveCompletedTurnAuthFailureReason(log)
+            : undefined;
+        if ((task.state !== 'completed' && task.state !== 'completed_with_warnings') || completedAuthFailureReason) {
             let convForFailure = withUsageBaseline;
             let agentMessageForFailure = streamingAgent;
             if (agentMessageId && log && streamingAgent?.role === 'agent' && !agentMessageHasStructuredTrace(streamingAgent)) {
@@ -1851,7 +1869,7 @@ export class QaapAgentConversationStore {
             )) {
                 return;
             }
-            const reason = resolveAgentTurnFailureMessage(log, {
+            const reason = completedAuthFailureReason ?? resolveAgentTurnFailureMessage(log, {
                 state: task.state === 'interrupted' ? 'interrupted' : 'failed',
                 exitCode: task.exitCode,
                 agentMessage: agentMessageForFailure,
@@ -2060,9 +2078,12 @@ export class QaapAgentConversationStore {
         // Tool-support failures also arrive on clean exits (state 'completed'): the model
         // emitted its tool call as text and the CLI finished "successfully" with exit 0.
         const toolSupportFailure = agentTurnHasRetryableToolSupportFailure(agentMessage);
+        // Quota is NOT auto-retried: Antigravity models encode effort in the label
+        // ("Gemini 3.5 Flash (High)" → "(Low)"), so silent fallback looks like the
+        // product changed effort without the user asking. Surface the quota dialog
+        // and let them pick another model/effort in the composer.
         const retryableFailedState = task.state === 'failed'
             && (agentTurnHasRetryableEmptyOutput(agentMessage)
-                || agentTurnHasRetryableQuotaFailure(agentMessage)
                 || agentTurnHasRetryableModelFailure(agentMessage));
         if (!toolSupportFailure && !retryableFailedState) {
             return false;
@@ -2311,6 +2332,60 @@ export class QaapAgentConversationStore {
         this.fire({ type: 'updated', conversation: toConversationSummary(next) });
         void this.persist();
         return next;
+    }
+
+    /**
+     * Detect CLI blocking failures that exit 0 but must still open an interactive
+     * failure dialog in Work Hub chat (Sign-in for auth; Task failed for quota /
+     * rate limits). Covers stream-json `is_error:true` and plain-text Antigravity
+     * quota lines ("Individual quota reached…").
+     */
+    protected resolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined {
+        const trimmed = (log ?? '').trim();
+        if (!trimmed) {
+            return undefined;
+        }
+        // A clean exit (exit 0) is a *delivered* turn. It may only be reclassified as an
+        // auth/quota failure when the CLI itself DECLARED the failure — never because the
+        // raw stdout merely *mentions* auth. The broad session/URL/api-key patterns match
+        // file echoes, diffs and the agent's own prose describing login code (e.g. a task
+        // that edits `src/auth/login.ts` and writes "OAuth session" / "not logged in" /
+        // "user_code"), so scanning the full transcript reclassifies successful turns as a
+        // false "Sign in required". The only trustworthy declarations on a clean exit are:
+        //   (1) a stream-json `is_error:true` result envelope (extractAgentTurnError), or
+        //   (2) for plain-text CLIs, an unmistakable device-code login prompt
+        //       (a login URL on a known auth host AND a one-time code).
+        const turnError = extractAgentTurnError(trimmed);
+        if (turnError) {
+            const mode = detectAgentAuthFailureMode(turnError);
+            const kind = detectAgentFailureKind(turnError);
+            if (mode || kind === 'auth' || kind === 'quota' || kind === 'rate_limit') {
+                return resolveAgentTurnFailureMessage(turnError, { state: 'failed' });
+            }
+        }
+        // No structured error envelope: only a genuine device-code login challenge — a login
+        // URL on a known auth host *and* a one-time code — is unambiguous enough to fail a
+        // clean exit. A bare auth-host link or a loose "not logged in" phrase in prose is not.
+        const challenge = extractAgentAuthLoginChallenge(trimmed);
+        if (challenge?.url && challenge.userCode) {
+            return localizeAgentAuthFailureMessage(challenge);
+        }
+        // Plain-text quota / rate-limit on a clean exit (e.g. Antigravity "Individual quota
+        // reached…") — a short provider-style line, not a long successful transcript that
+        // merely mentions "quota" in tool output.
+        const kind = detectAgentFailureKind(trimmed);
+        if (kind === 'quota' || kind === 'rate_limit') {
+            const looksLikeProviderError = !!turnError
+                || trimmed.length < 2_000
+                || /^(?:Error|error):/m.test(trimmed)
+                || /\bIndividual\s+quota\s+reached\b/i.test(trimmed)
+                || /\binsufficient[_\s-]?quota\b/i.test(trimmed)
+                || /\brate[_\s-]?limit(?:ed|ing)?\b/i.test(trimmed);
+            if (looksLikeProviderError) {
+                return resolveAgentTurnFailureMessage(trimmed, { state: 'failed' });
+            }
+        }
+        return undefined;
     }
 
     protected markTurnFailed(

@@ -72,6 +72,16 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('Error: something went wrong');
     });
 
+    it('resolveAgentTurnFailureMessage prefers provider quota text over generic copy', () => {
+        const friendly = resolveAgentTurnFailureMessage(
+            'Error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 54h16m14s.',
+            { state: 'failed', exitCode: 0 },
+        );
+        expect(friendly).to.match(/Individual quota reached/i);
+        expect(friendly).to.match(/Resets in/i);
+        expect(friendly).to.not.match(/^Error:/i);
+    });
+
     it('resolveAgentTurnFailureMessage maps known logs to product copy', () => {
         const friendly = resolveAgentTurnFailureMessage(
             'There was an issue with the selected model.',

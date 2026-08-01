@@ -65,7 +65,7 @@ import {
     type TranscriptTerminalSurface,
     type TranscriptTerminalViewServices,
 } from './qaap-transcript-terminal-view';
-import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
+import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
     normalizeTranscriptWorkspaceKey,
@@ -573,33 +573,10 @@ export class MobileProjectsTranscriptSurfacesUi {
         host.replaceChildren();
         const diffHost = document.createElement('div');
         diffHost.className = 'theia-mobile-transcript-review-diff-host';
-        const historyResizeHandle = document.createElement('div');
-        historyResizeHandle.className = 'theia-mobile-transcript-history-resize';
-        historyResizeHandle.setAttribute('role', 'separator');
-        historyResizeHandle.setAttribute('aria-orientation', 'horizontal');
-        historyResizeHandle.setAttribute('aria-label', nls.localize('qaap/mobileProjects/historyResizePanel', 'Resize history panel'));
-        historyResizeHandle.hidden = !this.host.transcriptHistoryPanelOpen;
-        const historyPanel = document.createElement('div');
-        historyPanel.className = 'theia-mobile-transcript-history-panel';
-        historyPanel.hidden = !this.host.transcriptHistoryPanelOpen;
-        if (this.host.transcriptHistoryPanelHeightPx !== undefined) {
-            historyPanel.style.setProperty('--qaap-transcript-history-height', `${this.host.transcriptHistoryPanelHeightPx}px`);
-        }
-        const dock = document.createElement('div');
-        dock.className = 'theia-mobile-transcript-changes-dock';
-        const dockControls = document.createElement('div');
-        dockControls.className = 'theia-mobile-transcript-changes-controls';
-        const checksHost = document.createElement('div');
-        checksHost.className = 'theia-mobile-transcript-review-checks';
-        const historyToggleHost = document.createElement('div');
-        historyToggleHost.className = 'theia-mobile-transcript-history-toggle-host';
-        dockControls.append(checksHost, historyToggleHost);
-        dock.append(dockControls);
-        host.append(diffHost, historyResizeHandle, historyPanel, dock);
+        host.append(diffHost);
         this.host.transcriptReviewDiffHost = diffHost;
-        this.host.transcriptReviewChecksHost = checksHost;
+        this.host.transcriptReviewChecksHost = undefined;
         this.host.transcriptHistoryRoot = cwd;
-        this.transcriptHistoryUi.installTranscriptHistoryResize(historyResizeHandle, historyPanel);
 
         const rootUri = project.uri?.toString() ?? `file://${cwd}`;
         if (!this.host.diffReviewWidget) {
@@ -608,6 +585,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.host.transcriptReviewHost !== host || !diffHost.isConnected) {
             return;
         }
+        // No bottom changes-dock (Loading / history) — agent changes live in the diff widget.
         this.host.diffReviewWidget.enableTranscriptEmbed({ externalChrome: true });
         this.host.diffReviewWidget.node.classList.add('theia-mobile-transcript-diff-embed');
         this.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(async message => {
@@ -622,9 +600,6 @@ export class MobileProjectsTranscriptSurfacesUi {
             rootFsPath: cwd,
             isActiveWorkspace: project.isCurrent,
         });
-        this.host.renderChecksSection(checksHost, project, summary, { embedded: true });
-        this.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
-        this.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);
     }
 
     async submitTranscriptReviewFeedback(
@@ -2221,9 +2196,12 @@ export class MobileProjectsTranscriptSurfacesUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         agentId: string,
+        options?: { readonly login?: boolean },
     ): Promise<void> {
-        const bin = resolveInteractiveAgentCliBin(agentId);
-        if (!bin) {
+        const command = options?.login
+            ? resolveInteractiveAgentLoginCommand(agentId)
+            : resolveInteractiveAgentCliBin(agentId);
+        if (!command) {
             return;
         }
         this.host.executionSurfaceTabsUi.selectTranscriptTab('terminal', project, summary);
@@ -2242,7 +2220,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
         const title = resolveAgentDisplayLabel(agentId);
         try {
-            surface.terminal.title.label = title;
+            surface.terminal.title.label = options?.login
+                ? nls.localize('qaap/mobileProjects/terminalAgentSignInTitle', 'Sign in · {0}', title)
+                : title;
         } catch {
             /* title is best-effort */
         }
@@ -2251,7 +2231,7 @@ export class MobileProjectsTranscriptSurfacesUi {
             window.setTimeout(resolve, 120);
         });
         if (!surface.terminal.isDisposed) {
-            surface.terminal.sendText(`${bin}\n`);
+            surface.terminal.sendText(`${command}\n`);
         }
     }
 

@@ -4,6 +4,10 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import {
+    extractAgentAuthLoginChallenge,
+    localizeAgentAuthFailureMessage,
+} from './qaap-agent-auth-login';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { isAgentToolResultFailure, isTranscriptErrorOutput } from './qaap-transcript-content-display';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
@@ -59,6 +63,12 @@ const TOOL_UNSUPPORTED_PATTERNS: readonly RegExp[] = [
 
 const AUTH_PATTERNS: readonly RegExp[] = [
     /\binvalid[_\s-]?api[_\s-]?key\b/i,
+    /\bauthentication_failed\b/i,
+    /\bfailed\s+to\s+authenticate\b/i,
+    /\boauth\s+session\b/i,
+    /\bnot\s+logged\s+in\b/i,
+    /\bplease\s+run\s+\/login\b/i,
+    /\brun\s+\/login\b/i,
     /\bauthentication\b/i,
     /\bunauthorized\b/i,
     /\b401\b/,
@@ -194,13 +204,13 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind): string 
     switch (kind) {
         case 'quota':
             return nls.localize(
-                'qaap/agentFailure/freeCreditsExhausted',
-                'Free credits for this model may be exhausted. Try OpenCode or another model in the composer.',
+                'qaap/agentFailure/quotaReached',
+                'This model has reached its quota. Switch model or effort in the composer, or wait until the limit resets.',
             );
         case 'rate_limit':
             return nls.localize(
                 'qaap/agentFailure/rateLimited',
-                'Rate limit reached for this model. Wait a moment or switch to OpenCode or another model.',
+                'Rate limit reached for this model. Wait a moment or switch model or effort in the composer.',
             );
         case 'model_unavailable':
             return nls.localize(
@@ -213,10 +223,9 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind): string 
                 'This model can\'t use tools (function calling), which the coding agent needs. Pick another model in the composer.',
             );
         case 'auth':
-            return nls.localize(
-                'qaap/agentFailure/auth',
-                'Authentication failed for this model or provider. Check your API key in Settings and try again.',
-            );
+            // Prefer session-login copy; callers with a log should use
+            // {@link localizeAgentAuthFailureMessage} via {@link resolveAgentTurnFailureMessage}.
+            return localizeAgentAuthFailureMessage({ mode: 'session' });
         case 'timeout':
             return nls.localize(
                 'qaap/agentFailure/timeout',
@@ -368,6 +377,17 @@ export function resolveAgentTurnFailureMessage(
         ? { state: 'failed' }
         : (options ?? { state: 'failed' });
     const kind = detectAgentFailureKind(log);
+    if (kind === 'auth') {
+        return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(log));
+    }
+    if (kind === 'quota' || kind === 'rate_limit') {
+        // Prefer the provider's concrete line (incl. "Resets in …") over generic copy.
+        const hint = extractAgentLogFailureHint(log);
+        if (hint && detectAgentFailureKind(hint) === kind) {
+            return hint.replace(/^Error:\s*/i, '').trim();
+        }
+        return localizeAgentFailureMessage(kind);
+    }
     if (kind) {
         return localizeAgentFailureMessage(kind);
     }
@@ -383,6 +403,9 @@ export function resolveAgentTurnFailureMessage(
     if (failedTool) {
         const toolLog = failedTool.result ?? log;
         const toolKind = detectAgentFailureKind(toolLog);
+        if (toolKind === 'auth') {
+            return localizeAgentAuthFailureMessage(extractAgentAuthLoginChallenge(toolLog));
+        }
         if (toolKind) {
             return localizeAgentFailureMessage(toolKind);
         }

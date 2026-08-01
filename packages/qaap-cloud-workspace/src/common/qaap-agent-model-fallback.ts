@@ -140,8 +140,10 @@ function collectAgentMessageDetails(agentMessage: {
 }
 
 /**
- * True when a provider explicitly reports exhausted credits/quota. Unlike a normal model error,
- * this is safe to retry with the next curated model because repeating the same model cannot help.
+ * True when a provider explicitly reports exhausted credits/quota.
+ * Used for classification / inbox lanes — Work Hub no longer auto-retries
+ * quota by silently switching model/effort (Antigravity encodes effort in
+ * the model label). The failure dialog asks the user to pick another model.
  */
 export function agentTurnHasRetryableQuotaFailure(
     agentMessage: {

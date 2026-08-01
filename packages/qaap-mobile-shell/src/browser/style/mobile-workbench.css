@@ -17952,15 +17952,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-changes-dock {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
-  border-top: 1px solid var(--theia-panel-border, color-mix(in srgb, var(--theia-foreground) 12%, transparent));
-  background: var(--theia-editor-background);
-  color: var(--theia-foreground);
-  box-shadow: 0 -6px 18px color-mix(in srgb, #000 12%, transparent);
+  display: none !important;
 }
 
 .theia-mobile-transcript-review,
@@ -26104,6 +26096,119 @@ body.qaap-theme-light .theia-mobile-agent-activity-timeline.theia-mod-cursor-tra
   margin-top: 10px;
 }
 
+/* CLI session sign-in card (Work Hub chat — mirrors agent TUI login URL). */
+.theia-mobile-agent-auth-login-card {
+  margin-top: 12px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-focusBorder, #3794ff) 35%, var(--theia-widget-border, rgba(128, 128, 128, 0.25)));
+  background: color-mix(in srgb, var(--theia-focusBorder, #3794ff) 8%, var(--theia-editor-background, transparent));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theia-mobile-agent-auth-login-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-auth-login-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.theia-mobile-agent-auth-login-code-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-auth-login-code {
+  font-family: var(--theia-ui-font-family-monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--theia-editor-background);
+  border: 1px solid var(--theia-widget-border, rgba(128, 128, 128, 0.25));
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-agent-auth-login-copy {
+  border: none;
+  background: transparent;
+  color: var(--theia-textLink-foreground, var(--theia-focusBorder));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.theia-mobile-agent-auth-login-copy::before {
+  margin-right: 2px;
+}
+
+.theia-mobile-agent-auth-login-url {
+  font-size: 11.5px;
+  line-height: 1.35;
+  word-break: break-all;
+  color: var(--theia-textLink-foreground, var(--theia-focusBorder));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.theia-mobile-agent-auth-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.theia-mobile-agent-auth-login-action {
+  appearance: none;
+  border: 1px solid var(--theia-button-border, transparent);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--theia-button-secondaryBackground, color-mix(in srgb, var(--theia-foreground) 8%, transparent));
+  color: var(--theia-button-secondaryForeground, var(--theia-foreground));
+}
+
+.theia-mobile-agent-auth-login-action.theia-mod-primary {
+  background: var(--theia-button-background, var(--theia-focusBorder, #3794ff));
+  color: var(--theia-button-foreground, #fff);
+  border-color: transparent;
+}
+
+.theia-mobile-agent-auth-login-action.theia-mod-retry {
+  background: transparent;
+  border-color: var(--theia-widget-border, rgba(128, 128, 128, 0.3));
+}
+
+.theia-mobile-agent-auth-login-action:hover,
+.theia-mobile-agent-auth-login-action:focus-visible {
+  filter: brightness(1.05);
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure.theia-mod-auth-login .theia-mobile-agent-shell-icon.codicon-key {
+  color: var(--theia-focusBorder, #3794ff);
+}
+
 .theia-mobile-agent-transcript-readonly {
   padding: 10px 16px 14px;
   border-top: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
@@ -28424,9 +28529,8 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
    composer's agent-picker button (which also layers its own
    .theia-mobile-projects-sticky-composer-agent-* classes on top, see the codex-context-tray
    overrides below) and the transcript's turn-provenance badge
-   (qaap-execution-event-timeline.ts / .theia-mobile-process-accordion-provenance and
-   .theia-mobile-turn-provenance-standalone), so neither surface can visually diverge from
-   the other. */
+   (qaap-execution-event-timeline.ts / .theia-mobile-turn-provenance-standalone), so neither
+   surface can visually diverge from the other. */
 .theia-qaap-agent-identity {
   display: inline-flex;
   align-items: center;
@@ -30986,47 +31090,40 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   white-space: nowrap;
 }
 
-/* Which agent/model ran this turn (see qaap-execution-event-timeline.ts). Shares
-   the header row with the label, stop button and chevron -- it must shrink
-   before either of those so the chevron's tap target never gets crowded out
-   on a narrow viewport. Uses the shared .theia-qaap-agent-identity visual (avatar +
-   provider sub-icon + short model label, see createAgentIdentityElement) -- the
-   provider is already shown by the sub-icon, so the text itself is only ever the
-   short model id (or the agent name alone when no model is known) and comfortably
-   fits even on a narrow viewport without truncating. */
+/* Which agent/model ran this turn lives ABOVE the accordion (see
+   .theia-mobile-turn-provenance-standalone), never inside the summary. Legacy
+   header-hosted badges are cleared in JS; these rules are inert safety nets. */
 .theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance {
-  flex: 0 1 auto;
-  min-width: 0;
+  display: none !important;
 }
 
-.theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-identity-label {
-  max-width: 22ch;
-}
-
-@media (max-width: 767px) {
-  .theia-mobile-process-accordion-header .theia-mobile-process-accordion-provenance .theia-qaap-agent-identity-label {
-    max-width: 16ch;
-  }
-}
-
-/* Standalone turn-provenance badge for a turn with no tool segments (no process
-   accordion header to host the badge in, see qaap-execution-event-timeline.ts /
-   syncTranscriptStandaloneTurnProvenance). Same row height and vertical rhythm as
-   the accordion header so the badge lands in the same visual slot either way. */
+/* Turn-provenance badge: agent avatar + provider sub-icon + model label.
+   Mounted as the first child of the segments body, above the process accordion
+   (or above thought/text when there is no accordion). Uses the full transcript
+   line width — truncate with ellipsis only when the name approaches the
+   viewport edge, never with an artificial ch cap. */
 .theia-mobile-turn-provenance-standalone {
-  display: inline-flex;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 28px;
   margin: 0 0 8px 0;
+  box-sizing: border-box;
+}
+
+.theia-mobile-turn-provenance-standalone.theia-qaap-agent-identity,
+.theia-mobile-turn-provenance-standalone .theia-qaap-agent-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .theia-mobile-turn-provenance-standalone .theia-qaap-agent-identity-label {
-  max-width: 22ch;
-}
-
-@media (max-width: 767px) {
-  .theia-mobile-turn-provenance-standalone .theia-qaap-agent-identity-label {
-    max-width: 16ch;
-  }
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
 }
 
 .theia-mobile-process-accordion.theia-mod-working .theia-mobile-process-accordion-label {

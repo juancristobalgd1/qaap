@@ -2950,6 +2950,30 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         void this.onRetryConversation(project, summary);
     }
 
+    /**
+     * Opens the transcript terminal and starts the agent CLI login flow so the
+     * chat can surface the same sign-in URL the agent TUI would print.
+     */
+    openAgentSignInTerminal(agentId?: string): void {
+        const project = this.transcriptController.state.transcriptOpenProject;
+        const summary = this.transcriptController.state.transcriptOpenSummary;
+        if (!project || !summary) {
+            return;
+        }
+        const resolvedAgentId = agentId?.trim()
+            || summary.agentId
+            || this.transcriptController.state.transcriptLastConv?.agentId;
+        if (!resolvedAgentId) {
+            return;
+        }
+        void this.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(
+            project,
+            summary,
+            resolvedAgentId,
+            { login: true },
+        );
+    }
+
     protected async onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void> {
         return this.conversationActionsUi.onDeleteConversation(summary);
     }

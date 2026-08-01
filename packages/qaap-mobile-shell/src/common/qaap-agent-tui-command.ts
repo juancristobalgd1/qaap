@@ -5,6 +5,7 @@
 
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 import { LEGACY_OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
+import { resolveAgentLoginCliCommand } from './qaap-agent-auth-login';
 
 /**
  * Interactive TUI CLI binary for an agent id — the bare executable to type into a PTY,
@@ -26,4 +27,13 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
     }
     const builtin = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === normalized);
     return builtin?.bin;
+}
+
+/**
+ * Text to send into the transcript terminal to start CLI session login
+ * (device-auth / OAuth), matching the agent TUI login flow. Falls back to the
+ * interactive binary when the agent has no dedicated login subcommand.
+ */
+export function resolveInteractiveAgentLoginCommand(agentId: string | undefined): string | undefined {
+    return resolveAgentLoginCliCommand(agentId) ?? resolveInteractiveAgentCliBin(agentId);
 }

@@ -4,7 +4,11 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { formatStoredAgentFailureMessage } from '../common/qaap-agent-failure-message';
+import {
+    extractAgentAuthLoginChallenge,
+    type QaapAgentAuthLoginChallenge,
+} from '../common/qaap-agent-auth-login';
+import { detectAgentFailureKind, formatStoredAgentFailureMessage } from '../common/qaap-agent-failure-message';
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
@@ -160,11 +164,31 @@ export class MobileProjectsTranscriptMessagesToolUi {
         options?: {
             readonly failedToolName?: string;
             readonly onRetry?: () => void | Promise<void>;
+            /** Opens the auth URL in a new browser tab (TUI-equivalent hyperlink). */
+            readonly onOpenAuthUrl?: (url: string) => void;
+            /** Opens the transcript terminal and starts the agent CLI login flow. */
+            readonly onOpenAgentSignIn?: () => void | Promise<void>;
+            readonly agentLabel?: string;
         },
     ): HTMLElement {
         const formatted = formatStoredAgentFailureMessage(error);
+        const authSample = [error, technicalContent].filter(Boolean).join('\n');
+        const failureKind = detectAgentFailureKind(authSample);
+        const extractedChallenge = extractAgentAuthLoginChallenge(authSample);
+        const authChallenge = extractedChallenge
+            ?? (failureKind === 'auth' ? { mode: 'session' as const } : undefined)
+            ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
+                ? { mode: 'session' as const }
+                : undefined);
+        const isQuotaFailure = !authChallenge && (failureKind === 'quota' || failureKind === 'rate_limit');
         const details = document.createElement('details');
         details.className = 'theia-mobile-agent-shell-window theia-mod-failed theia-mod-turn-failure';
+        if (authChallenge) {
+            details.classList.add('theia-mod-auth-login');
+        }
+        if (isQuotaFailure) {
+            details.classList.add('theia-mod-quota-limit');
+        }
         details.open = true;
 
         const summary = document.createElement('summary');
@@ -175,14 +199,18 @@ export class MobileProjectsTranscriptMessagesToolUi {
         const iconWrap = document.createElement('span');
         iconWrap.className = 'theia-mobile-agent-shell-icon-wrap';
         const icon = document.createElement('span');
-        icon.className = 'theia-mobile-agent-shell-icon codicon codicon-warning';
+        icon.className = `theia-mobile-agent-shell-icon codicon ${authChallenge ? 'codicon-key' : 'codicon-warning'}`;
         icon.setAttribute('aria-hidden', 'true');
         iconWrap.append(icon);
         const titleWrap = document.createElement('span');
         titleWrap.className = 'theia-mobile-agent-turn-failure-title-wrap';
         const label = document.createElement('span');
         label.className = 'theia-mobile-agent-shell-title';
-        label.textContent = nls.localize('qaap/mobileProjects/transcriptTurnFailed', 'Task failed');
+        label.textContent = authChallenge
+            ? nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required')
+            : isQuotaFailure
+                ? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached')
+                : nls.localize('qaap/mobileProjects/transcriptTurnFailed', 'Task failed');
         titleWrap.append(label);
         const failedToolName = options?.failedToolName?.trim();
         if (failedToolName) {
@@ -209,14 +237,39 @@ export class MobileProjectsTranscriptMessagesToolUi {
         message.className = 'theia-mobile-agent-turn-failure-message';
         message.textContent = formatted;
         body.append(message);
+
+        if (authChallenge) {
+            body.append(this.createTranscriptAgentAuthLoginCard(authChallenge, options));
+        } else if (isQuotaFailure) {
+            const hint = document.createElement('p');
+            hint.className = 'theia-mobile-agent-auth-login-hint';
+            hint.textContent = nls.localize(
+                'qaap/mobileProjects/quotaLimitHint',
+                'Pick another model or effort in the composer, then retry. We do not change effort automatically.',
+            );
+            body.append(hint);
+        }
+
         const technical = technicalContent?.trim();
         if (technical && technical !== formatted && technical !== error.trim()) {
-            body.append(this.createTranscriptClampedPre(
-                this.contentUi.cleanTranscriptDisplayText(technical),
-                'theia-mobile-agent-shell-output',
-            ));
+            // Hide raw URL/code lines already shown in the sign-in card.
+            const cleanedTechnical = this.contentUi.cleanTranscriptDisplayText(technical);
+            const hideTechnical = !!authChallenge?.url
+                && cleanedTechnical.split('\n').every(line => {
+                    const trimmed = line.trim();
+                    return !trimmed
+                        || (authChallenge.url !== undefined && trimmed.includes(authChallenge.url))
+                        || (authChallenge.userCode !== undefined && trimmed.includes(authChallenge.userCode))
+                        || /^code:\s*/i.test(trimmed);
+                });
+            if (!hideTechnical) {
+                body.append(this.createTranscriptClampedPre(
+                    cleanedTechnical,
+                    'theia-mobile-agent-shell-output',
+                ));
+            }
         }
-        if (options?.onRetry) {
+        if (options?.onRetry && !authChallenge) {
             const actions = document.createElement('div');
             actions.className = 'theia-mobile-agent-activity-error-panel-actions theia-mobile-agent-turn-failure-actions';
             const retryBtn = document.createElement('button');
@@ -233,6 +286,146 @@ export class MobileProjectsTranscriptMessagesToolUi {
         }
         details.append(summary, body);
         return details;
+    }
+
+    /**
+     * Sign-in card for CLI session auth — clickable URL + optional device code,
+     * matching the agent TUI login affordance inside the Work Hub chat.
+     */
+    createTranscriptAgentAuthLoginCard(
+        challenge: QaapAgentAuthLoginChallenge,
+        options?: {
+            readonly onOpenAuthUrl?: (url: string) => void;
+            readonly onOpenAgentSignIn?: () => void | Promise<void>;
+            readonly onRetry?: () => void | Promise<void>;
+            readonly agentLabel?: string;
+        },
+    ): HTMLElement {
+        const card = document.createElement('div');
+        card.className = 'theia-mobile-agent-auth-login-card';
+
+        const hint = document.createElement('p');
+        hint.className = 'theia-mobile-agent-auth-login-hint';
+        if (challenge.mode === 'api_key') {
+            hint.textContent = nls.localize(
+                'qaap/mobileProjects/authLoginApiKeyHint',
+                'Add or refresh the API key in Settings, then retry.',
+            );
+        } else if (challenge.url) {
+            hint.textContent = nls.localize(
+                'qaap/mobileProjects/authLoginUrlHint',
+                'Open the sign-in page, authorize the agent, then retry this task.',
+            );
+        } else {
+            hint.textContent = nls.localize(
+                'qaap/mobileProjects/authLoginTerminalHint',
+                'Open the agent terminal to complete sign-in (same as the agent TUI), then retry.',
+            );
+        }
+        card.append(hint);
+
+        if (challenge.userCode) {
+            const codeRow = document.createElement('div');
+            codeRow.className = 'theia-mobile-agent-auth-login-code-row';
+            const codeLabel = document.createElement('span');
+            codeLabel.className = 'theia-mobile-agent-auth-login-code-label';
+            codeLabel.textContent = nls.localize('qaap/mobileProjects/authLoginCodeLabel', 'One-time code');
+            const codeValue = document.createElement('code');
+            codeValue.className = 'theia-mobile-agent-auth-login-code';
+            codeValue.textContent = challenge.userCode;
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'theia-mobile-agent-auth-login-copy codicon codicon-copy';
+            copyBtn.textContent = nls.localizeByDefault('Copy');
+            copyBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void navigator.clipboard?.writeText(challenge.userCode!).then(() => {
+                    copyBtn.classList.remove('codicon-copy');
+                    copyBtn.classList.add('codicon-check');
+                    copyBtn.textContent = nls.localize('qaap/mobileProjects/authLoginCopied', 'Copied');
+                    window.setTimeout(() => {
+                        copyBtn.classList.add('codicon-copy');
+                        copyBtn.classList.remove('codicon-check');
+                        copyBtn.textContent = nls.localizeByDefault('Copy');
+                    }, 1800);
+                }).catch(() => undefined);
+            });
+            codeRow.append(codeLabel, codeValue, copyBtn);
+            card.append(codeRow);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-agent-auth-login-actions';
+
+        if (challenge.url) {
+            const openBtn = document.createElement('button');
+            openBtn.type = 'button';
+            openBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-link-external';
+            openBtn.textContent = nls.localize('qaap/mobileProjects/authLoginOpenUrl', 'Open sign-in page');
+            openBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                if (options?.onOpenAuthUrl) {
+                    options.onOpenAuthUrl(challenge.url!);
+                    return;
+                }
+                window.open(challenge.url!, '_blank', 'noopener,noreferrer');
+            });
+            actions.append(openBtn);
+
+            const urlLine = document.createElement('a');
+            urlLine.className = 'theia-mobile-agent-auth-login-url';
+            urlLine.href = challenge.url;
+            urlLine.target = '_blank';
+            urlLine.rel = 'noopener noreferrer';
+            urlLine.textContent = challenge.url;
+            urlLine.addEventListener('click', event => {
+                event.stopPropagation();
+                if (options?.onOpenAuthUrl) {
+                    event.preventDefault();
+                    options.onOpenAuthUrl(challenge.url!);
+                }
+            });
+            card.append(urlLine);
+        }
+
+        if (options?.onOpenAgentSignIn && challenge.mode !== 'api_key') {
+            const terminalBtn = document.createElement('button');
+            terminalBtn.type = 'button';
+            terminalBtn.className = 'theia-mobile-agent-auth-login-action codicon codicon-terminal';
+            terminalBtn.textContent = options.agentLabel
+                ? nls.localize(
+                    'qaap/mobileProjects/authLoginOpenTerminalNamed',
+                    'Sign in with {0} in terminal',
+                    options.agentLabel,
+                )
+                : nls.localize('qaap/mobileProjects/authLoginOpenTerminal', 'Sign in in terminal');
+            terminalBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void Promise.resolve(options.onOpenAgentSignIn!());
+            });
+            actions.append(terminalBtn);
+        }
+
+        if (options?.onRetry) {
+            const retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-retry codicon codicon-refresh';
+            retryBtn.textContent = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
+            retryBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void Promise.resolve(options.onRetry!());
+            });
+            actions.append(retryBtn);
+        }
+
+        if (actions.childElementCount > 0) {
+            card.append(actions);
+        }
+        return card;
     }
 
     createTranscriptTextTerminalWindow(content: string): HTMLElement {
