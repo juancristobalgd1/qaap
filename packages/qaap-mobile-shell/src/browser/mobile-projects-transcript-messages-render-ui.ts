@@ -539,8 +539,9 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return;
         }
         const scroll = this.resolveTranscriptScrollController(messageHost);
-        // Already on the live edge — keep following; do not yank to the process header.
-        if (scroll.shouldFollowTail()) {
+        // Already following, or the reader was sitting on the live edge as this turn
+        // arrived: follow the stream instead of yanking up to the process header.
+        if (scroll.shouldFollowTail() || scroll.adoptFollowingFromLiveEdge()) {
             this.scrollTranscriptFollowTail(messageHost);
             return;
         }
@@ -667,9 +668,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             return;
         }
         const scroll = this.resolveTranscriptScrollController(messageHost);
-        // Reader already at the live edge — keep the live-status footer in view;
-        // do not pin the turn/process header or install a reading runway.
-        if (scroll.shouldFollowTail()) {
+        // Reader already following, or — only when placing a freshly submitted turn —
+        // sitting on the live edge: keep the live-status footer in view; do not pin
+        // the turn/process header or install a reading runway. The open/restore path
+        // (no asPositionTurn) must not adopt follow from mere proximity.
+        if (scroll.shouldFollowTail()
+            || (options?.asPositionTurn === true && scroll.adoptFollowingFromLiveEdge())) {
             this.scrollTranscriptFollowTail(messageHost);
             return;
         }

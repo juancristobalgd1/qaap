@@ -159,6 +159,59 @@ describe('qaap-transcript-scroll-controller', () => {
         expect(controller.shouldFollowTail()).to.equal(true);
     });
 
+    it('adopts following when a turn is submitted while near the live edge', () => {
+        const scroller = document.createElement('div');
+        Object.defineProperties(scroller, {
+            scrollTop: { configurable: true, value: 0 },
+            clientHeight: { configurable: true, value: 400 },
+            scrollHeight: { configurable: true, value: 420 }, // 20px from bottom ≤ 32px band
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.beginRestore();
+        controller.completeRestore();
+        expect(controller.shouldFollowTail()).to.equal(false);
+
+        expect(controller.adoptFollowingFromLiveEdge()).to.equal(true);
+        expect(controller.phase).to.equal('following');
+        expect(controller.shouldFollowTail()).to.equal(true);
+    });
+
+    it('keeps the reader detached when a turn is submitted away from the live edge', () => {
+        const scroller = document.createElement('div');
+        Object.defineProperties(scroller, {
+            scrollTop: { configurable: true, value: 0 },
+            clientHeight: { configurable: true, value: 400 },
+            scrollHeight: { configurable: true, value: 4000 }, // 3600px from bottom > 32px band
+        });
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.beginRestore();
+        controller.completeRestore();
+        expect(controller.shouldFollowTail()).to.equal(false);
+
+        expect(controller.adoptFollowingFromLiveEdge()).to.equal(false);
+        expect(controller.phase).to.equal('detached');
+        expect(controller.shouldFollowTail()).to.equal(false);
+    });
+
+    it('jumpToLatest clears the reading-runway spacer and anchors', () => {
+        const scroller = document.createElement('div');
+        scroller.classList.add('theia-mod-transcript-reading-runway');
+        scroller.style.setProperty('--qaap-transcript-reading-context-px', '56px');
+        scroller.style.setProperty('--qaap-transcript-reading-runway-px', '344px');
+        const anchor = document.createElement('div');
+        anchor.classList.add('theia-mod-transcript-reading-anchor');
+        scroller.append(anchor);
+
+        const controller = ensureTranscriptScrollController(scroller);
+        controller.jumpToLatest();
+
+        expect(controller.phase).to.equal('following');
+        expect(scroller.classList.contains('theia-mod-transcript-reading-runway')).to.equal(false);
+        expect(scroller.style.getPropertyValue('--qaap-transcript-reading-context-px')).to.equal('');
+        expect(scroller.style.getPropertyValue('--qaap-transcript-reading-runway-px')).to.equal('');
+        expect(anchor.classList.contains('theia-mod-transcript-reading-anchor')).to.equal(false);
+    });
+
     it('completing a position-turn leaves the reader detached', () => {
         const scroller = document.createElement('div');
         const controller = ensureTranscriptScrollController(scroller);

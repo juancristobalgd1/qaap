@@ -409,6 +409,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         chatHost.className = 'theia-mobile-agent-transcript-real-chat';
         document.body.append(chatHost);
         const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        // Reader is scrolled up (far from the live edge) → the new turn must pin for reading.
+        Object.defineProperty(messageHost, 'scrollHeight', { configurable: true, value: 4000 });
         let scrollToCalls = 0;
         messageHost.scrollTo = () => {
             scrollToCalls++;
@@ -436,12 +438,49 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
     });
 
+    it('follows the live edge when a turn is submitted from the bottom', async () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        // Reader is sitting on the live edge (20px from bottom ≤ 32px band).
+        Object.defineProperties(messageHost, {
+            scrollTop: { configurable: true, writable: true, value: 0 },
+            clientHeight: { configurable: true, value: 400 },
+            scrollHeight: { configurable: true, value: 420 },
+        });
+        messageHost.scrollTo = () => { /* follow-tail is glued; no write expected */ };
+
+        const previous = conversationWithMessages([
+            { id: 'user-1', role: 'user', content: 'First', createdAt: 1 },
+            { id: 'agent-1', role: 'agent', content: 'Done', createdAt: 2 },
+        ]);
+        host.transcriptLastConv = previous;
+        host.transcriptLastRenderedConversationId = previous.id;
+
+        renderUi.renderTranscriptMessages(chatHost, conversationWithMessages([
+            ...previous.messages,
+            { id: 'user-2', role: 'user', content: 'Next', createdAt: 3 },
+        ]));
+
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        const controller = ensureTranscriptScrollController(messageHost);
+        // Submitting from the live edge follows the stream instead of pinning the turn.
+        expect(controller.phase).to.equal('following');
+        expect(controller.shouldFollowTail()).to.equal(true);
+        expect(messageHost.classList.contains('theia-mod-transcript-reading-runway')).to.equal(false);
+        expect(messageHost.querySelectorAll('.theia-mod-transcript-reading-anchor')).to.have.length(0);
+    });
+
     it('positions a user turn when SSE coalesces it with the agent placeholder', async () => {
         const { renderUi, host } = createRenderUi();
         const chatHost = document.createElement('div');
         chatHost.className = 'theia-mobile-agent-transcript-real-chat';
         document.body.append(chatHost);
         const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        // Reader is scrolled up (far from the live edge) → the coalesced turn must pin.
+        Object.defineProperty(messageHost, 'scrollHeight', { configurable: true, value: 4000 });
         let scrollToCalls = 0;
         messageHost.scrollTo = () => {
             scrollToCalls++;
@@ -470,6 +509,8 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         const { renderUi } = createRenderUi();
         const messageHost = document.createElement('div');
         Object.defineProperty(messageHost, 'clientHeight', { configurable: true, value: 400 });
+        // Reader is scrolled up (far from the live edge) → position by index, do not follow.
+        Object.defineProperty(messageHost, 'scrollHeight', { configurable: true, value: 4000 });
         const calls: Array<{ index: number; contextPx?: number }> = [];
         const list = {
             scrollToIndex: (index: number, contextPx?: number): void => {

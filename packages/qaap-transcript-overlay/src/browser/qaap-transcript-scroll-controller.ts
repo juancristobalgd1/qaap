@@ -20,6 +20,13 @@ import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scr
 /** Keep in sync with `qaap-transcript-scroll-intent` (string literal avoids circular import). */
 const TRANSCRIPT_USER_SCROLL_INTENT_AT_ATTR = 'data-transcript-user-scroll-intent-at';
 const TRANSCRIPT_USER_SCROLL_INTENT_REASON_ATTR = 'data-transcript-user-scroll-intent-reason';
+/** Reading-runway chrome the consumer (render-ui) installs to pin a turn for reading.
+ * Cleared here whenever the reader (re)adopts the live edge, otherwise the runway
+ * spacer would leave dead space below the tail that follow-tail scrolls into. */
+const TRANSCRIPT_READING_RUNWAY_CLASS = 'theia-mod-transcript-reading-runway';
+const TRANSCRIPT_READING_ANCHOR_CLASS = 'theia-mod-transcript-reading-anchor';
+const TRANSCRIPT_READING_CONTEXT_PROPERTY = '--qaap-transcript-reading-context-px';
+const TRANSCRIPT_READING_RUNWAY_PROPERTY = '--qaap-transcript-reading-runway-px';
 
 const TRANSCRIPT_ANCHOR_SELECTOR = [
     '[data-transcript-message-id]',
@@ -142,20 +149,84 @@ export class TranscriptScrollController {
     jumpToLatest(): void {
         this.primaryScroller.removeAttribute(TRANSCRIPT_USER_SCROLL_INTENT_AT_ATTR);
         this.primaryScroller.removeAttribute(TRANSCRIPT_USER_SCROLL_INTENT_REASON_ATTR);
-        document.getSelection()?.removeAllRanges();
-        this.cancelPendingPreserveAnchor();
-        this.clearFollowBottomLatch();
+        this.enterFollowingLiveEdge();
         this.transition({ type: 'jump-to-latest' });
     }
 
     beginConversation(conversationId: string): void {
         this.currentConversationId = conversationId;
+        this.clearReadingRunway();
+        this.cancelPendingPositionTurn();
         this.clearFollowBottomLatch();
         this.transition({ type: 'conversation-open' });
     }
 
     protected clearFollowBottomLatch(): void {
         this.followBottomLatchedScrollHeight = 0;
+    }
+
+    /**
+     * Adopt the live edge from a discrete decision point — Jump to latest, a
+     * gesture that settled on the live edge, or a turn submitted while the reader
+     * was already near the edge. Drops the reading-runway spacer, any queued
+     * position-turn / preserve-anchor intents, and the follow latch so the follow
+     * path can re-glue cleanly. Never called from the passive streaming path:
+     * near-bottom proximity during streaming must not auto-follow.
+     */
+    protected enterFollowingLiveEdge(): void {
+        this.clearReadingRunway();
+        this.cancelPendingPositionTurn();
+        this.cancelPendingPreserveAnchor();
+        this.clearFollowBottomLatch();
+        document.getSelection()?.removeAllRanges();
+    }
+
+    protected clearReadingRunway(): void {
+        this.primaryScroller.classList.remove(TRANSCRIPT_READING_RUNWAY_CLASS);
+        this.primaryScroller.style.removeProperty(TRANSCRIPT_READING_CONTEXT_PROPERTY);
+        this.primaryScroller.style.removeProperty(TRANSCRIPT_READING_RUNWAY_PROPERTY);
+        this.primaryScroller.querySelectorAll(`.${TRANSCRIPT_READING_ANCHOR_CLASS}`).forEach(element => {
+            element.classList.remove(TRANSCRIPT_READING_ANCHOR_CLASS);
+        });
+    }
+
+    protected isScrollerNearLiveEdge(scroller: HTMLElement): boolean {
+        return isTranscriptScrollNearBottom(
+            scroller.scrollTop,
+            scroller.clientHeight,
+            scroller.scrollHeight,
+            TRANSCRIPT_SCROLL_TO_BOTTOM_NEAR_BOTTOM_PX,
+        );
+    }
+
+    /**
+     * Submit-time opt-in: when the reader was sitting on the live edge as a new
+     * turn is placed, adopt following (Claude Code style) instead of pinning the
+     * turn header and detaching. Proximity is read from the *real* scroll
+     * position, so the choice tracks where the reader actually is rather than a
+     * latched phase — this is the hybrid decision the reader controls. Returns
+     * true when following was adopted.
+     */
+    adoptFollowingFromLiveEdge(): boolean {
+        if (!this.isScrollerNearLiveEdge(this.primaryScroller)) {
+            return false;
+        }
+        this.enterFollowingLiveEdge();
+        this.transition({ type: 'jump-to-latest' });
+        return true;
+    }
+
+    /** Drop a queued position-turn reconciliation so follow-tail can own the frame. */
+    cancelPendingPositionTurn(): void {
+        if (this.reconcileIntent?.kind === 'position-turn') {
+            this.reconcileIntent = undefined;
+            this.reconcileNeedsSettlePass = false;
+        }
+        if (this.reconcileRaf && !this.reconcileIntent) {
+            cancelAnimationFrame(this.reconcileRaf);
+            this.reconcileRaf = 0;
+            this.reconcileScroller = undefined;
+        }
     }
 
     /** Bind conversation identity without resetting follow/detach phase. */
@@ -453,6 +524,7 @@ export class TranscriptScrollController {
             // Re-check against the settled position: momentum may have carried the reader
             // back out of the band after the last scroll event.
             if (isNearLiveEdge()) {
+                this.enterFollowingLiveEdge();
                 this.transition({ type: 'user-return-to-live-edge' });
             }
         };
