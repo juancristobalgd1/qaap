@@ -58,6 +58,12 @@ export function restoreTranscriptReadPosition(scroller: HTMLElement, conversatio
     }
     const scrollerRect = scroller.getBoundingClientRect();
     const rowRect = row.getBoundingClientRect();
+    // Anchor the row's top `stored.offsetTop` px below the scroller's top. The delta form is
+    // deliberate: `rowRect.top - scrollerRect.top` is the row's current position relative to the
+    // viewport, which already carries the current scrollTop, so applying it with `+=` cancels that
+    // term and lands at `absoluteRowOffset - stored.offsetTop` regardless of where the scroll was.
+    // An absolute assignment (`scrollTop = rowRect.top - scrollerRect.top + …`) leaves the current
+    // scrollTop uncancelled and restores to an essentially arbitrary position — see the spec's 136.
     scroller.scrollTop += rowRect.top - scrollerRect.top - stored.offsetTop;
     return true;
 }

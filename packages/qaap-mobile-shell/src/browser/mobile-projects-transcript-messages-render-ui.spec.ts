@@ -428,6 +428,10 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
 
         await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
         expect(scrollToCalls).to.equal(1);
+        expect(messageHost.querySelectorAll('.theia-mod-transcript-reading-anchor')).to.have.length.at.least(2);
+        expect(messageHost.classList.contains('theia-mod-transcript-reading-runway')).to.equal(true);
+        expect(messageHost.style.getPropertyValue('--qaap-transcript-reading-context-px')).to.equal('40px');
+        expect(messageHost.style.getPropertyValue('--qaap-transcript-reading-runway-px')).to.equal('0px');
         // New turn pins for reading; stream may grow off-screen until Jump to latest.
         expect(ensureTranscriptScrollController(messageHost).phase).to.equal('detached');
     });
