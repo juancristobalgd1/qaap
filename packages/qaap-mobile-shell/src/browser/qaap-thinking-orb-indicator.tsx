@@ -183,8 +183,17 @@ function scheduleAttach(callback: () => void): void {
     setTimeout(callback, 0);
 }
 
+/** ~2s of frames; late-attached hosts fall back to the FinalizationRegistry cleanup. */
+const WATCH_ATTACH_MAX_ATTEMPTS = 120;
+
 function watchHostDisconnect(host: HTMLElement, record: MountRecord): void {
+    let attempts = 0;
     const attach = (): void => {
+        // Stop when the record was destroyed/replaced, or the host was never inserted — an
+        // unbounded rAF retry spins one frame forever (and overflows with synchronous rAF shims).
+        if (mounts.get(host) !== record || attempts++ >= WATCH_ATTACH_MAX_ATTEMPTS) {
+            return;
+        }
         const parent = host.parentNode;
         if (!parent) {
             scheduleAttach(attach);

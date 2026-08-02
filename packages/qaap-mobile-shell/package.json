@@ -72,7 +72,7 @@
     "sync:mcp-plugin-icons": "node scripts/qaap-mcp-plugin-icons-sync.js",
     "check:mcp-plugin-icons": "node scripts/qaap-mcp-plugin-icons-sync.js --check",
     "lint": "theiaext lint",
-    "test": "theiaext test",
+    "test": "nyc mocha --config ../../configs/mocharc.yml --require ./test-support/ensure-jsdom.js \"./lib/**/*.*spec.js\"",
     "watch": "theiaext watch"
   },
   "devDependencies": {

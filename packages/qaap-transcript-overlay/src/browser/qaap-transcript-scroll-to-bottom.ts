@@ -252,7 +252,9 @@ export function attachTranscriptScrollToBottomButton(mountHost: HTMLElement): Di
     };
 
     const readShouldShow = (scroller: HTMLElement | undefined): { visible: boolean; mode: TranscriptScrollFabMode } => {
-        if (!scroller) {
+        // A detached scroller (DOM swapped out between a deferred timer and its execution, or a
+        // torn-down test host) has no computed style to read — treat as hidden.
+        if (!scroller || !scroller.isConnected) {
             return { visible: false, mode: 'bottom' };
         }
         const state = readTranscriptScrollToBottomState(scroller, mountHost);

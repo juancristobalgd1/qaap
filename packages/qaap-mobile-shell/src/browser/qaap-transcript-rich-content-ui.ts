@@ -414,13 +414,13 @@ function tryCitationFromBlockquote(block: HTMLElement): TranscriptToolUiCitation
 
 /** Upgrade rendered markdown with Tool UI rich surfaces (code block, link preview, citation). */
 export function enhanceTranscriptMarkdownRichContent(host: HTMLElement): void {
+    // NOTE: no `instanceof HTMLElement` guards here — bare DOM globals throw ReferenceError in
+    // hosts without a global document (Node-side specs). Tag selectors already narrow the type.
     host.querySelectorAll('pre').forEach(node => {
-        if (node instanceof HTMLPreElement) {
-            wrapMarkdownCodeBlock(node);
-        }
+        wrapMarkdownCodeBlock(node);
     });
     host.querySelectorAll('blockquote').forEach(node => {
-        if (!(node instanceof HTMLElement) || node.closest(`.${TRANSCRIPT_CITATION_CARD_CLASS}`)) {
+        if (node.closest(`.${TRANSCRIPT_CITATION_CARD_CLASS}`)) {
             return;
         }
         const payload = tryCitationFromBlockquote(node);
@@ -429,14 +429,14 @@ export function enhanceTranscriptMarkdownRichContent(host: HTMLElement): void {
         }
     });
     host.querySelectorAll('p').forEach(node => {
-        if (!(node instanceof HTMLElement) || node.childElementCount !== 1) {
+        if (node.childElementCount !== 1) {
             return;
         }
         const anchor = node.firstElementChild;
-        if (!(anchor instanceof HTMLAnchorElement) || anchor.tagName !== 'A') {
+        if (!anchor || anchor.tagName !== 'A') {
             return;
         }
-        const payload = tryLinkPreviewFromAnchor(anchor);
+        const payload = tryLinkPreviewFromAnchor(anchor as HTMLAnchorElement);
         if (payload) {
             node.replaceWith(buildTranscriptLinkPreviewCard(payload));
         }
