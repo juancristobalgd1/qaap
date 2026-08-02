@@ -59,6 +59,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly priority?: boolean;
     /** User-flagged "paused" — sinks to the bottom and renders dimmed. */
     readonly paused?: boolean;
+    /** User-flagged "archived" — hidden from the main task list. */
+    readonly archived?: boolean;
     /** When `false`, tool calls need manual CLI approval on the VPS. */
     readonly autoApprove?: boolean;
     /** Last explicit model picked in the composer for this thread. */
@@ -184,6 +186,7 @@ export interface QaapAgentConversationDTO {
     readonly messages: QaapAgentMessageDTO[];
     readonly priority?: boolean;
     readonly paused?: boolean;
+    readonly archived?: boolean;
     readonly autoApprove?: boolean;
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     /** @deprecated Use {@link agentModel}. */
@@ -358,6 +361,7 @@ export function conversationToSummary(conv: QaapAgentConversationDTO): QaapAgent
         lastMessageRole: last?.role,
         priority: conv.priority,
         paused: conv.paused,
+        archived: conv.archived,
         autoApprove: conv.autoApprove === false ? false : undefined,
         ...(conv.agentModel ?? conv.qaiqModel
             ? { agentModel: conv.agentModel ?? conv.qaiqModel }
@@ -568,6 +572,7 @@ export interface QaapUpdateConversationBody {
     readonly title?: string;
     readonly priority?: boolean;
     readonly paused?: boolean;
+    readonly archived?: boolean;
     readonly autoApprove?: boolean;
     readonly linkedPullRequest?: QaapLinkedPullRequest | null;
     /** Composer agent picker — persisted on the conversation thread. */

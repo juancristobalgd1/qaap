@@ -104,6 +104,8 @@ export interface MobileProjectsPanelLifecycleHost {
     ensureAgentsHubExecutionShellRendered(): void;
     refreshWorkHubConversationChrome(): void;
     patchWorkHubConversationRowInPlace(conversationId: string): void;
+    /** Bumps the project's lastActiveAt to now and re-sorts projects so the most recent is on top. */
+    touchProjectActivityByConversationId(conversationId: string): void;
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[];
     updateTasksAttentionChrome(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;

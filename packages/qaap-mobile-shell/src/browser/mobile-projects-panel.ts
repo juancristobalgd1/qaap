@@ -441,6 +441,8 @@ export interface MobileProjectsPanelOptions {
         getActiveId(): string;
         onSelect(id: string): void | Promise<void>;
     };
+    /** Agent-finished toast contribution — the panel registers navigation callbacks on it. */
+    agentFinishedToast?: import('./qaap-agent-finished-toast-contribution').QaapAgentFinishedToastContribution;
     /** Persistent dev-server orchestration for transcript Preview tab. */
     projectBootstrap?: QaapProjectBootstrapService;
     /** AG-UI frontend tool registry for live transcript tool execution. */
@@ -774,6 +776,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerOverflowMenuGroups: MobileProjectsPanelOptions['headerOverflowMenuGroups'];
     protected readonly sessionsSidebarContainer: MobileProjectsPanelOptions['sessionsSidebarContainer'];
     protected readonly mobileIdeViewPicker: MobileProjectsPanelOptions['mobileIdeViewPicker'];
+    protected readonly agentFinishedToast: MobileProjectsPanelOptions['agentFinishedToast'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
     readonly agUiFrontendTools: MobileProjectsPanelOptions['agUiFrontendTools'];
     protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
@@ -910,6 +913,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.headerOverflowMenuGroups = options.headerOverflowMenuGroups;
         this.sessionsSidebarContainer = options.sessionsSidebarContainer ?? (() => this.shouldEmbedSessionsSidebarInPanel() ? this.root : undefined);
         this.mobileIdeViewPicker = options.mobileIdeViewPicker;
+        this.agentFinishedToast = options.agentFinishedToast;
         this.projectBootstrap = options.projectBootstrap;
         this.agUiFrontendTools = options.agUiFrontendTools;
         this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
@@ -929,6 +933,29 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.panelChromeUi.wirePanelInteractions(grabber, this.onAuthSessionChanged);
         this.installAgentsHubEmptySurfaceGuard();
         window.addEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
+        this.bindAgentFinishedToastCallbacks();
+    }
+
+    /** Wires the agent-finished toast contribution with panel navigation callbacks. */
+    protected bindAgentFinishedToastCallbacks(): void {
+        this.agentFinishedToast?.bindPanelCallbacks({
+            resolveOpenConversationId: () => this.transcriptController.state.transcriptOpenSummaryId,
+            openConversation: (project, summary) => { void this.openConversationSummary(project, summary); },
+            resolveProjectForConversation: conversationId => {
+                for (const project of this.projects) {
+                    const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
+                    if (!cwd) {
+                        continue;
+                    }
+                    const summary = this.conversations?.threadStore.getSummariesForCwd(cwd)
+                        .find(s => s.id === conversationId);
+                    if (summary) {
+                        return { project, summary };
+                    }
+                }
+                return undefined;
+            },
+        });
     }
 
     /**
@@ -1283,6 +1310,47 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async refreshProjects(): Promise<void> {
         await this.repoLifecycleUi.refreshProjects();
+    }
+
+    /**
+     * Bumps the project's lastActiveAt to the current time and re-sorts the projects array
+     * so the most recently active project is always at the top. Called when a conversation
+     * change event arrives (new message, status change) to keep the project list ordered
+     * by real-time activity, not just by the last full loadProjects() snapshot.
+     */
+    touchProjectActivityByConversationId(conversationId: string): void {
+        if (!conversationId) {
+            return;
+        }
+        // Find the project that owns this conversation.
+        let touched = false;
+        const now = new Date().toISOString();
+        for (const project of this.projects) {
+            const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
+            if (!cwd) {
+                continue;
+            }
+            const hasConversation = this.conversations?.threadStore.getSummariesForCwd(cwd)
+                .some(s => s.id === conversationId);
+            if (hasConversation) {
+                // Only bump if the conversation is newer than the project's current lastActiveAt.
+                const current = project.lastActiveAt ? Date.parse(project.lastActiveAt) : 0;
+                if (Date.now() > current) {
+                    project.lastActiveAt = now;
+                    project.lastActive = nls.localize('qaap/mobileProjects/lastActiveNow', 'now');
+                }
+                touched = true;
+                break;
+            }
+        }
+        if (touched) {
+            // Re-sort: most recent first.
+            this.projects.sort((a, b) => {
+                const timeA = a.lastActiveAt ? Date.parse(a.lastActiveAt) : 0;
+                const timeB = b.lastActiveAt ? Date.parse(b.lastActiveAt) : 0;
+                return timeB - timeA;
+            });
+        }
     }
 
     /** Publish Work Hub project roots so SkillService scans repo `.agents/skills` without opening IDE. */
@@ -3010,6 +3078,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
         return this.conversationActionsUi.onDeleteConversation(project, summary);
+    }
+
+    protected async onArchiveConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        return this.conversationActionsUi.onArchiveConversation(project, summary);
     }
 
     protected async onRenameProject(project: MobileProjectEntry): Promise<void> {

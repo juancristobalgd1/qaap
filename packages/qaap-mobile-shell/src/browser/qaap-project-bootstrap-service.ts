@@ -216,6 +216,10 @@ export class QaapProjectBootstrapService {
     /** Fires whenever the list of detected ports changes (added / removed / opened in preview). */
     readonly onForwardedPortsChanged: Event<QaapForwardedPort[]> = this.forwardedPortsEmitter.event;
 
+    protected readonly devOutputEmitter = new Emitter<string>();
+    /** Fires whenever new dev-server output is appended (for live streaming in the Preview tab). */
+    readonly onDevOutput: Event<string> = this.devOutputEmitter.event;
+
     protected _forwardedPorts: QaapForwardedPort[] = [];
     get forwardedPorts(): QaapForwardedPort[] { return this._forwardedPorts.slice(); }
 
@@ -255,6 +259,16 @@ export class QaapProjectBootstrapService {
         readonly previewId: string;
         readonly previewUrl: string;
         readonly port: number;
+    }>();
+    /**
+     * Per-conversation dev terminal registry: supports multiple simultaneous dev servers
+     * (one per section/conversation). The singular {@link devTerminal} field remains as
+     * a pointer to the active conversation's terminal for backward compatibility with the
+     * ~75 existing references; this map is the source of truth.
+     */
+    protected readonly devTerminalByConversationId = new Map<string, {
+        readonly terminal: TerminalWidget;
+        readonly listener: Disposable;
     }>();
     /** Conversation that owns {@link devTerminal}, when a dev run is in flight or attached. */
     protected devTerminalConversationId: string | undefined;
@@ -981,6 +995,8 @@ export class QaapProjectBootstrapService {
             });
             this.devTerminalListener = new DisposableCollection(onOutput, onProcessExit, onWidgetClose);
             this.toDispose.push(this.devTerminalListener);
+            // Register in the per-conversation map (multi-preview support).
+            this.registerDevTerminalForConversation(this.activePreviewConversationId, terminal, this.devTerminalListener);
 
             // Fallback: if the user has a known framework we already know the default port; route
             // through the port-forwarding machinery so the fallback shows up in the strip just like
@@ -1750,7 +1766,11 @@ export class QaapProjectBootstrapService {
 
     protected appendDevOutput(data: string): void {
         this.devOutputTail = (this.devOutputTail + data).slice(-DEV_OUTPUT_TAIL_MAX);
+        this.devOutputEmitter.fire(this.devOutputTail);
     }
+
+    /** Returns the recent dev-server output tail (for live streaming in the Preview tab). */
+    get devOutput(): string { return this.devOutputTail; }
 
     protected readTerminalTail(terminal: TerminalWidget, maxLines: number = 40): string {
         try {
@@ -2080,6 +2100,8 @@ export class QaapProjectBootstrapService {
         });
         this.devTerminalListener = new DisposableCollection(onOutput, onProcessExit, onWidgetClose);
         this.toDispose.push(this.devTerminalListener);
+        // Register in the per-conversation map (multi-preview support).
+        this.registerDevTerminalForConversation(this.activePreviewConversationId, terminal, this.devTerminalListener);
         const previewId = this.activePreviewClaim?.previewId;
         if (previewId) {
             this.monitorPreviewProcessLifetime(terminal, previewId);
@@ -2201,6 +2223,60 @@ export class QaapProjectBootstrapService {
             this.devTerminal = undefined;
             this.devTerminalConversationId = undefined;
         }
+        // Also clean up the per-conversation map entry (multi-preview support).
+        this.releaseDevTerminalForConversation(scope);
+    }
+
+    /**
+     * Registers a dev terminal in the per-conversation map so multiple dev servers can
+     * coexist (one per section). The singular {@link devTerminal} field still points to
+     * the active conversation's terminal for backward compatibility.
+     */
+    protected registerDevTerminalForConversation(
+        conversationId: string | undefined,
+        terminal: TerminalWidget,
+        listener: Disposable,
+    ): void {
+        if (!conversationId) {
+            return;
+        }
+        // Dispose any previous terminal for this conversation before registering the new one.
+        const existing = this.devTerminalByConversationId.get(conversationId);
+        if (existing && existing.terminal !== terminal) {
+            existing.listener.dispose();
+            this.disposeBootstrapTerminal(existing.terminal);
+        }
+        this.devTerminalByConversationId.set(conversationId, { terminal, listener });
+    }
+
+    /** Removes a conversation's dev terminal from the per-conversation map and disposes it. */
+    protected releaseDevTerminalForConversation(conversationId: string): void {
+        const entry = this.devTerminalByConversationId.get(conversationId);
+        if (!entry) {
+            return;
+        }
+        entry.listener.dispose();
+        this.disposeBootstrapTerminal(entry.terminal);
+        this.devTerminalByConversationId.delete(conversationId);
+    }
+
+    /**
+     * Returns the dev terminal for a specific conversation, or undefined when no dev server
+     * is running for that section. Enables multi-preview: each section can have its own
+     * independent dev terminal without displacing another section's terminal.
+     */
+    getDevTerminalForConversation(conversationId: string): TerminalWidget | undefined {
+        const entry = this.devTerminalByConversationId.get(conversationId);
+        return entry?.terminal && !entry.terminal.isDisposed ? entry.terminal : undefined;
+    }
+
+    /** Returns the conversation IDs that currently have an active dev terminal. */
+    get activeDevTerminalConversationIds(): readonly string[] {
+        return Array.from(this.devTerminalByConversationId.keys())
+            .filter(id => {
+                const entry = this.devTerminalByConversationId.get(id);
+                return entry?.terminal && !entry.terminal.isDisposed;
+            });
     }
 
     /** Full reset when switching workspace or reloading bootstrap state. */
@@ -2226,6 +2302,12 @@ export class QaapProjectBootstrapService {
         this.previewRunIdByConversation.clear();
         this.previewClaimByConversation.clear();
         this.devTerminalConversationId = undefined;
+        // Dispose all per-conversation dev terminals (full workspace reset).
+        for (const [, entry] of this.devTerminalByConversationId) {
+            entry.listener.dispose();
+            this.disposeBootstrapTerminal(entry.terminal);
+        }
+        this.devTerminalByConversationId.clear();
         this.disposeBootstrapTerminal(this.installTerminal);
         this.installTerminal = undefined;
     }
@@ -2335,6 +2417,11 @@ export class QaapProjectBootstrapService {
         this.devTerminalListener = Disposable.NULL;
         this.disposeBootstrapTerminal(this.devTerminal);
         this.devTerminal = undefined;
+        // Clean up the active conversation's entry from the per-conversation map.
+        if (this.devTerminalConversationId) {
+            this.devTerminalByConversationId.delete(this.devTerminalConversationId);
+        }
+        this.devTerminalConversationId = undefined;
     }
 
     protected disposeBootstrapTerminal(terminal: TerminalWidget | undefined): void {

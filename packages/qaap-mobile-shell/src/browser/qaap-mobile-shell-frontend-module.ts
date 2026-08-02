@@ -116,6 +116,7 @@ import { QaapAgentCompletionContribution } from './qaap-agent-completion-contrib
 import { QaapAgentDevPreviewAutopilotContribution } from './qaap-agent-dev-preview-autopilot-contribution';
 import { QaapTranscriptImageLightboxContribution } from './qaap-transcript-image-lightbox';
 import { QaapTurnSettleNotifyContribution } from './qaap-turn-settle-notify-contribution';
+import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from './qaap-copilot-owner-binding';
 import { QaapMobileAppPreferenceContribution } from './qaap-mobile-app-preferences';
@@ -327,6 +328,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(QaapTranscriptImageLightboxContribution);
     bind(QaapTurnSettleNotifyContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapTurnSettleNotifyContribution);
+    bind(QaapAgentFinishedToastContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapAgentFinishedToastContribution);
 
     bind(QaapMobileAppTesterContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapMobileAppTesterContribution);

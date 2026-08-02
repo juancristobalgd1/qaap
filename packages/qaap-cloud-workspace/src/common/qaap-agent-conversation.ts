@@ -165,6 +165,8 @@ export interface QaapAgentConversation {
     readonly priority?: boolean;
     /** User-flagged "paused" — sinks to the bottom; active turn is cancelled when paused. */
     readonly paused?: boolean;
+    /** User-flagged "archived" — hidden from the main task list, accessible via filter. */
+    readonly archived?: boolean;
     /**
      * When `false`, agent turns require manual CLI approval (will hang unattended).
      * Omitted/`true` enables YOLO / auto-approve for background runs.
@@ -224,6 +226,8 @@ export interface QaapAgentConversationSummary {
     readonly lastMessageRole?: QaapAgentMessageRole;
     readonly priority?: boolean;
     readonly paused?: boolean;
+    /** User-flagged "archived" — hidden from the main task list. */
+    readonly archived?: boolean;
     /** Present and `false` when the user disabled YOLO for this thread. */
     readonly autoApprove?: boolean;
     /** Last explicit model picked in the composer for this thread. */
@@ -344,6 +348,8 @@ export interface QaapUpdateAgentConversationRequest {
     readonly title?: string;
     readonly priority?: boolean;
     readonly paused?: boolean;
+    /** `true` archives the conversation (hides it from the main list). */
+    readonly archived?: boolean;
     /** `true` clears an explicit opt-out; `false` requires manual tool approval on future turns. */
     readonly autoApprove?: boolean;
     readonly linkedPullRequest?: QaapLinkedPullRequest | null;
@@ -434,6 +440,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         lastMessageRole: last?.role,
         priority: conv.priority || undefined,
         paused: conv.paused || undefined,
+        archived: conv.archived || undefined,
         autoApprove: conv.autoApprove === false ? false : undefined,
         ...(conv.agentModel ?? conv.qaiqModel
             ? { agentModel: conv.agentModel ?? conv.qaiqModel }

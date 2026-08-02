@@ -770,6 +770,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         if (typeof body.paused === 'boolean') {
             patch.paused = body.paused;
         }
+        if (typeof body.archived === 'boolean') {
+            patch.archived = body.archived;
+        }
         if (typeof body.autoApprove === 'boolean') {
             patch.autoApprove = body.autoApprove;
         }

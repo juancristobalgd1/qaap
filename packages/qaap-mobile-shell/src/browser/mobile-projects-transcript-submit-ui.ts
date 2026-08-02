@@ -6,7 +6,6 @@
 import { AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia/ai-core';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import {
-    cancelConversation,
     conversationToSummary,
     getConversation,
     postConversationMessage,
@@ -324,11 +323,18 @@ export class MobileProjectsTranscriptSubmitUi {
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_start');
         let base = await getConversation(summary.id);
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
-        // A settled-looking streaming turn is normally a dead turn worth cancelling before
-        // taking over — but a parallel run is meant to stream NEXT TO it, so it stays alive.
-        if (!options.parallel && base.status === 'streaming' && isConversationTurnVisuallySettled(base)) {
-            await cancelConversation(summary.id);
-            base = await getConversation(summary.id);
+        // In-session multitasking: when the conversation is already streaming, a new user
+        // message spawns a peer run alongside the in-flight turn instead of cancelling it.
+        // The backend supports up to MAX_CONCURRENT_CONVERSATION_RUNS (3) simultaneous runs
+        // per conversation; if the cap is hit, it throws QaapMaxConcurrentRunsError which
+        // the caller catches and queues. Previously, a "visually settled" streaming turn was
+        // cancelled here — but that killed legitimate in-flight work (e.g. a turn that had
+        // finished its tool calls but was still finalizing on the backend).
+        if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel) {
+            // Don't cancel — let the POST go through as a peer run. The backend handles
+            // concurrency limits and will throw if the cap is exceeded.
+            // Mark as parallel so the POST path knows this is a concurrent send.
+            options.parallel = true;
         }
         const optimistic: QaapAgentConversationDTO = {
             ...base,
@@ -352,7 +358,7 @@ export class MobileProjectsTranscriptSubmitUi {
                     ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
                 toolApprovalRules: reconcileAgentToolApprovalRules(
                     (options.approvalPolicyId as QaapAgentApprovalPolicyId | undefined)
-                        ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
+                    ?? reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, summary.cwd),
                     summary.cwd,
                     this.host.transcriptComposerToolApprovalRules,
                 ),

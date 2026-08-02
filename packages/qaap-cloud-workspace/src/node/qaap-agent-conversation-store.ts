@@ -872,6 +872,9 @@ export class QaapAgentConversationStore {
                 patch.status = 'idle';
             }
         }
+        if (request.archived !== undefined) {
+            patch.archived = request.archived || undefined;
+        }
         if (request.autoApprove !== undefined) {
             patch.autoApprove = request.autoApprove ? undefined : false;
         }
@@ -1172,7 +1175,7 @@ export class QaapAgentConversationStore {
             this.buildVisualRepairPrompt(latestTarget, attempt),
             turnAgentId,
             sourceUserMessage.turnAgentModel
-                ?? (conv.agentId === turnAgentId ? conv.agentModel ?? conv.qaiqModel : undefined),
+            ?? (conv.agentId === turnAgentId ? conv.agentModel ?? conv.qaiqModel : undefined),
             conv.autoApprove,
             conv.interactionModeId,
             conv.approvalPolicyId,

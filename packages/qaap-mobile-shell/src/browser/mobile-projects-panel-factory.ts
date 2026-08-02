@@ -126,7 +126,7 @@ export interface MobileProjectsPanelFactoryDeps {
 export interface MobileProjectsPanelFactoryOptions {
     deps: MobileProjectsPanelFactoryDeps;
     delegate: MobileProjectsPanelFactoryDelegate;
-    panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups' | 'sessionsSidebarContainer' | 'mobileIdeViewPicker' | 'whenFrontendReady'>;
+    panelOptions?: Pick<MobileProjectsPanelOptions, 'headerOverflowMenuGroups' | 'sessionsSidebarContainer' | 'mobileIdeViewPicker' | 'whenFrontendReady' | 'agentFinishedToast'>;
     createPanel?: (
         projectsService: MobileProjectsService,
         commands: CommandRegistry,
@@ -303,6 +303,7 @@ export class MobileProjectsPanelFactory {
                 sessionsSidebarContainer: this.panelOptions?.sessionsSidebarContainer,
                 mobileIdeViewPicker: this.panelOptions?.mobileIdeViewPicker,
                 whenFrontendReady: this.panelOptions?.whenFrontendReady,
+                agentFinishedToast: this.panelOptions?.agentFinishedToast,
             },
         );
     }

@@ -2765,6 +2765,31 @@ export class MobileProjectsTranscriptSurfacesUi {
         label.textContent = nls.localize('qaap/mobileProjects/previewLoading', 'Loading…');
         line.append(dot, label);
         wrap.append(line);
+
+        // Live dev-server output stream: show the last few lines of the dev server log so the
+        // user sees compile/install progress instead of a static spinner (cold starts on the
+        // VPS can take 10-30s; this feedback prevents the "is it stuck?" feeling).
+        const bootstrap = this.host.projectBootstrap;
+        if (bootstrap) {
+            const log = document.createElement('pre');
+            log.className = 'theia-mobile-transcript-preview-devlog';
+            log.setAttribute('aria-hidden', 'true');
+            const renderTail = (): void => {
+                const tail = bootstrap.devOutput?.trim();
+                log.textContent = tail ? tail.split('\n').slice(-6).join('\n') : '';
+            };
+            renderTail();
+            const listener = bootstrap.onDevOutput(() => renderTail());
+            wrap.append(log);
+            // Auto-clean when the loading element is removed from the DOM (preview ready).
+            const observer = new MutationObserver(() => {
+                if (!wrap.isConnected) {
+                    listener.dispose();
+                    observer.disconnect();
+                }
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
         return wrap;
     }
 

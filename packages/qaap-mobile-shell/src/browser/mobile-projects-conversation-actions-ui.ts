@@ -346,6 +346,39 @@ export class MobileProjectsConversationActionsUi {
         }
     }
 
+    async onArchiveConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        const nextArchived = !summary.archived;
+        // Optimistically update the snapshot so the UI hides/shows immediately.
+        this.host.conversations?.recordSnapshot({ ...summary, archived: nextArchived || undefined });
+        this.refreshConversationLists();
+
+        try {
+            const updated = await updateConversation(summary.id, { archived: nextArchived });
+            this.host.conversations?.recordSnapshot(conversationToSummary(updated));
+            this.refreshConversationLists();
+            MobileSnackbar.show(
+                nextArchived
+                    ? nls.localize('qaap/mobileProjects/taskArchived', 'Task archived')
+                    : nls.localize('qaap/mobileProjects/taskUnarchived', 'Task restored'),
+                { kind: 'success', duration: 1400 },
+            );
+        } catch (error) {
+            // Roll back on failure.
+            this.host.conversations?.recordSnapshot(summary);
+            this.refreshConversationLists();
+            void reportQaapClientError(error, 'onArchiveConversation');
+            this.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/archiveTaskFailed',
+                'Could not archive: {0}',
+                error instanceof Error ? error.message : String(error),
+            ));
+        }
+    }
+
     async onDeleteConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

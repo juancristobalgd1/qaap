@@ -23,6 +23,7 @@ import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
+import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
 
 export const MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT = 6;
 
@@ -47,6 +48,8 @@ export interface MobileProjectsProjectRowsHost {
     toggleRowExpanded(project: MobileProjectEntry): void | Promise<void>;
     renderList(): void;
     onRetryConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onArchiveConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onDeleteConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     openTaskInAgent(project: MobileProjectEntry, task?: MobileProjectTaskView): Promise<void>;
 }
 
@@ -771,22 +774,22 @@ export class MobileProjectsProjectRowsUi {
                     taskTitleRow.insertBefore(shield, taskTitleRow.firstChild);
                 }
             }
-            if (isFailed && summary.source !== 'theia-chat') {
-                const retryBtn = document.createElement('button');
-                retryBtn.type = 'button';
-                retryBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-retry-btn';
-                const retryLabel = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
-                retryBtn.setAttribute('aria-label', retryLabel);
-                retryBtn.title = retryLabel;
-                const retryIcon = document.createElement('span');
-                retryIcon.className = 'codicon codicon-debug-restart';
-                retryIcon.setAttribute('aria-hidden', 'true');
-                retryBtn.append(retryIcon);
-                retryBtn.addEventListener('click', ev => {
+            if (summary.source !== 'theia-chat' && !summary.archived) {
+                const archiveBtn = document.createElement('button');
+                archiveBtn.type = 'button';
+                archiveBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-archive-btn';
+                const archiveLabel = nls.localize('qaap/mobileProjects/archiveTask', 'Archive task');
+                archiveBtn.setAttribute('aria-label', archiveLabel);
+                archiveBtn.title = archiveLabel;
+                const archiveIcon = document.createElement('span');
+                archiveIcon.className = 'codicon codicon-archive';
+                archiveIcon.setAttribute('aria-hidden', 'true');
+                archiveBtn.append(archiveIcon);
+                archiveBtn.addEventListener('click', ev => {
                     ev.stopPropagation();
-                    void this.host.onRetryConversation(project, summary);
+                    void this.host.onArchiveConversation(project, summary);
                 });
-                row.append(retryBtn);
+                row.append(archiveBtn);
             }
 
             const menuBtn = document.createElement('button');
@@ -822,6 +825,15 @@ export class MobileProjectsProjectRowsUi {
         );
 
         this.registerTaskElapsedTickers(row, task, summary, isRunning);
+
+        // Swipe-to-delete: mobile-only progressive enhancement. The existing card-menu
+        // kebab → Delete path remains on desktop and as a fallback.
+        if (summary && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-')) {
+            attachSwipeToDelete(row, {
+                onDelete: () => { void this.host.onDeleteConversation(project, summary); },
+            });
+        }
+
         return row;
     }
 

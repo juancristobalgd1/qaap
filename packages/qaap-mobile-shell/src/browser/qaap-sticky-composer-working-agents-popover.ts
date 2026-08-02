@@ -327,6 +327,7 @@ export function reclaimParkedWorkingControlIntoRow(
             }
             if (workingExpandSession.detailLarge) {
                 control.classList.add('theia-mod-detail-large');
+                clip.classList.add('theia-mod-detail-large-clip');
             }
             markWorkingPillExpanded(pill, true);
             activeWorkingAgentsExpand = {
@@ -651,7 +652,7 @@ export function renderWorkingAgentsDetailPanel(options: {
             'qaap/workHubChrome/workingParentOf',
             'Under {0}',
             options.parent.title?.trim()
-                || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'),
+            || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'),
         );
         body.append(parentLine);
     }
@@ -745,7 +746,15 @@ function renderWorkingAgentsPopoverRow(
     status.dataset.memberId = entry.member.id;
     applyWorkingAgentStatusLoader(status, entry.member);
 
+    // Progress timeline bar: when the member reports turnProgressCurrent/Total, show a
+    // visual progress bar inline in the row so the user sees step-level progress at a
+    // glance (not just a shimmer). This is the "mini-Gantt" for subtask progress.
+    const progressTrack = renderWorkingAgentProgressTrack(entry.member);
     row.append(icon, title, status);
+    if (progressTrack) {
+        row.append(progressTrack);
+        row.classList.add('qaap-mod-has-progress');
+    }
     row.setAttribute('aria-label', nls.localize(
         'qaap/workHubChrome/workingAgentRowAria',
         '{0}, {1}',
@@ -758,6 +767,53 @@ function renderWorkingAgentsPopoverRow(
         onSelect(entry.member);
     });
     return row;
+}
+
+/**
+ * Renders a visual progress track (mini-timeline) for a working agent when
+ * `progressCurrent` / `progressTotal` are available. Returns undefined when
+ * no meaningful progress data is present (the row keeps its text-only status).
+ *
+ * The track is a horizontal bar split into `progressTotal` segments, with the
+ * first `progressCurrent` segments filled. This gives the user a step-level
+ * visual of how far along the agent's turn is — the same data the transcript
+ * shows as "Step 3/7", now visible in the working agents popover.
+ */
+function renderWorkingAgentProgressTrack(member: WorkHubTeamMember): HTMLElement | undefined {
+    const total = member.progressTotal ?? 0;
+    const current = member.progressCurrent ?? 0;
+    if (total <= 0 || current <= 0) {
+        return undefined;
+    }
+    const clampedCurrent = Math.min(current, total);
+    const track = document.createElement('div');
+    track.className = 'qaap-working-agents-progress-track';
+    track.setAttribute('role', 'progressbar');
+    track.setAttribute('aria-valuenow', String(clampedCurrent));
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', String(total));
+    const label = nls.localize(
+        'qaap/workHubChrome/workingAgentProgress',
+        'Step {0} of {1}',
+        clampedCurrent,
+        total,
+    );
+    track.setAttribute('aria-label', label);
+    track.title = label;
+
+    // Cap segments at 20 for visual density (long turns with 50+ steps would
+    // render individual segments too thin to see; the fill ratio stays accurate).
+    const visualSegments = Math.min(total, 20);
+    const filledSegments = Math.round((clampedCurrent / total) * visualSegments);
+    for (let i = 0; i < visualSegments; i++) {
+        const seg = document.createElement('span');
+        seg.className = 'qaap-working-agents-progress-segment';
+        if (i < filledSegments) {
+            seg.classList.add('theia-mod-filled');
+        }
+        track.append(seg);
+    }
+    return track;
 }
 
 function formatWorkingAgentTitle(member: WorkHubTeamMember): string {
@@ -863,6 +919,7 @@ function showWorkingAgentsListView(): void {
         String(entries.length),
     ));
     active.shell.classList.remove('theia-mod-detail', 'theia-mod-detail-large');
+    active.clip.classList.remove('theia-mod-detail-large-clip');
 }
 
 function showWorkingAgentsDetailView(memberId: string): void {
@@ -923,6 +980,7 @@ function showWorkingAgentsDetailView(memberId: string): void {
             workingExpandSession.detailLarge = !workingExpandSession.detailLarge;
             const current = activeWorkingAgentsExpand;
             current?.shell.classList.toggle('theia-mod-detail-large', !!workingExpandSession.detailLarge);
+            current?.clip.classList.toggle('theia-mod-detail-large-clip', !!workingExpandSession.detailLarge);
             showWorkingAgentsDetailView(memberId);
         },
         onSelectChild: child => showWorkingAgentsDetailView(child.id),
@@ -932,6 +990,7 @@ function showWorkingAgentsDetailView(memberId: string): void {
         || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task'));
     active.shell.classList.add('theia-mod-detail');
     active.shell.classList.toggle('theia-mod-detail-large', detailLarge);
+    active.clip.classList.toggle('theia-mod-detail-large-clip', detailLarge);
     // Always re-bind so remounts (expand toggle) re-seed activity + command log into the new DOM.
     notifyDetailMemberChange(member);
 }
@@ -999,7 +1058,7 @@ function tearDownWorkingAgentsExpand(immediate: boolean, clearSession = true): v
         markWorkingPillExpanded(anchor, false);
     }
     shell.classList.remove('theia-mod-expanded', 'theia-mod-detail', 'theia-mod-detail-large');
-    clip.classList.remove('theia-mod-open');
+    clip.classList.remove('theia-mod-open', 'theia-mod-detail-large-clip');
 
     if (immediate) {
         clip.remove();
@@ -1242,6 +1301,7 @@ function mountWorkingAgentsExpand(
     shell.classList.add('theia-mod-expanded');
     if (workingExpandSession.detailLarge && restoreDetailMemberId) {
         shell.classList.add('theia-mod-detail-large');
+        clip.classList.add('theia-mod-detail-large-clip');
     }
 
     const cleanup = wireWorkingAgentsExpandDismiss(shell, options.anchor, onClose);

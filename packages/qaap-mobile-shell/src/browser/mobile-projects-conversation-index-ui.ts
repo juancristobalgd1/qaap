@@ -120,7 +120,10 @@ export class MobileProjectsConversationIndexUi {
         }
         // Parallel-run variants live in a tmpdir worktree but belong to this repo (parallelBaseCwd).
         const variants = cwd ? threadStore.getVariantsForBaseCwd(cwd) : [];
-        return this.mergeConversationSummaries(directChatSessions, [...list, ...variants]);
+        const merged = this.mergeConversationSummaries(directChatSessions, [...list, ...variants]);
+        // Hide archived conversations from the main list. They remain in the thread store
+        // and can be restored via the kebab menu's "Unarchive" action.
+        return merged.filter(summary => !summary.archived);
     }
 
     mergeConversationSummaries(

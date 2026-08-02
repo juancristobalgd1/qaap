@@ -106,6 +106,7 @@ import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-bro
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
@@ -279,6 +280,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
+
+    @inject(QaapAgentFinishedToastContribution)
+    protected readonly agentFinishedToast: QaapAgentFinishedToastContribution;
 
     @inject(QaapWorkHubProjectSkillRoots)
     protected readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots;
@@ -508,6 +512,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
             },
             panelOptions: {
                 whenFrontendReady: () => this.frontendStateService.reachedState('ready'),
+                agentFinishedToast: this.agentFinishedToast,
                 mobileIdeViewPicker: {
                     isVisible: () => this.mobileActive && !peekPreferDesktopIde(),
                     getOptions: () => this.bottomBarController.getMobileIdeHeaderViewButtons(),

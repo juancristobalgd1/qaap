@@ -82,22 +82,22 @@ export class QaapDiffReviewWidget extends ReactWidget {
     static readonly LABEL = nls.localize('qaap/diff/reviewLabel', 'Working changes');
 
     @inject(ScmService)
-    protected readonly scmService: ScmService;
+    protected readonly scmService!: ScmService;
 
     @inject(FileService)
-    protected readonly fileService: FileService;
+    protected readonly fileService!: FileService;
 
     @inject(LabelProvider)
-    protected readonly labelProvider: LabelProvider;
+    protected readonly labelProvider!: LabelProvider;
 
     @inject(OpenerService)
-    protected readonly openerService: OpenerService;
+    protected readonly openerService!: OpenerService;
 
     @inject(CommandService)
-    protected readonly commands: CommandService;
+    protected readonly commands!: CommandService;
 
     @inject(QuickInputService)
-    protected readonly quickInputService: QuickInputService;
+    protected readonly quickInputService!: QuickInputService;
 
     /** Generates commit messages automatically from the diff (Cursor-agents style). */
     @inject(QaapCommitMessageAi) @optional()
@@ -144,8 +144,6 @@ export class QaapDiffReviewWidget extends ReactWidget {
     /** Agent Changes tab: per-file diff sections expanded in the accordion. */
     protected readonly expandedAgentFiles = new Set<string>();
     protected readonly expandedContextBlocks = new Set<string>();
-    /** Cursor-style collapse for the whole "Uncommitted Changes" group. */
-    protected uncommittedGroupCollapsed = false;
     protected onTranscriptAgentFeedback: ((message: string) => void | Promise<void>) | undefined;
     protected onTranscriptClose: (() => void) | undefined;
     protected onReviewStatsChange: ((stats: { fileCount: number; adds: number; dels: number; pending: number }) => void) | undefined;
@@ -176,7 +174,6 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.agentDiffGeneration++;
         this.expandedAgentFiles.clear();
         this.expandedContextBlocks.clear();
-        this.uncommittedGroupCollapsed = false;
         this.branchName = undefined;
         this.removeClass('qaap-diff-review--work-hub');
         this.addClass('qaap-diff-review--transcript');
@@ -589,18 +586,16 @@ export class QaapDiffReviewWidget extends ReactWidget {
         return (
             <div className='qaap-agent-changes'>
                 {this.renderAgentToolbar(totals, count)}
-                {!this.uncommittedGroupCollapsed && (
-                    <div className='qaap-agent-changes-scroll'>
-                        {this.loadingAgentDiffPaths.size > 0 && this.agentFileDiffs.size === 0 && (
-                            <div className='qaap-agent-changes-loading' aria-busy='true'>
-                                <div className='qaap-agent-changes-loading-bar' />
-                                <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
-                                <div className='qaap-agent-changes-loading-bar qaap-mod-shorter' />
-                            </div>
-                        )}
-                        {this.files.map(file => this.renderAgentFileSection(file))}
-                    </div>
-                )}
+                <div className='qaap-agent-changes-scroll'>
+                    {this.loadingAgentDiffPaths.size > 0 && this.agentFileDiffs.size === 0 && (
+                        <div className='qaap-agent-changes-loading' aria-busy='true'>
+                            <div className='qaap-agent-changes-loading-bar' />
+                            <div className='qaap-agent-changes-loading-bar qaap-mod-short' />
+                            <div className='qaap-agent-changes-loading-bar qaap-mod-shorter' />
+                        </div>
+                    )}
+                    {this.files.map(file => this.renderAgentFileSection(file))}
+                </div>
             </div>
         );
     }
@@ -611,7 +606,6 @@ export class QaapDiffReviewWidget extends ReactWidget {
             ? nls.localize('qaap/mobileProjects/uncommittedChangeOne', '1 Uncommitted Change')
             : nls.localize('qaap/mobileProjects/uncommittedChangeMany', '{0} Uncommitted Changes', String(count));
         const bulkDisabled = !this.bulkActionsEnabled || this.runningBulkAction || count === 0;
-        const groupExpanded = !this.uncommittedGroupCollapsed;
         return (
             <header className='qaap-agent-changes-toolbar'>
                 <div className='qaap-agent-changes-toolbar-primary'>
@@ -628,41 +622,18 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     {this.bulkActionsEnabled && this.renderAgentCommitControls(bulkDisabled)}
                 </div>
                 <div className='qaap-agent-changes-toolbar-secondary'>
-                    <button
-                        type='button'
-                        className='qaap-agent-changes-summary'
-                        aria-expanded={groupExpanded}
-                        onClick={this.onToggleUncommittedGroup}
-                    >
-                        <i
-                            className={`${codicon(groupExpanded ? 'chevron-down' : 'chevron-right')} qaap-agent-changes-summary-chevron`}
-                            aria-hidden='true'
-                        />
+                    <div className='qaap-agent-changes-summary'>
                         <span className='qaap-agent-changes-summary-label'>{summaryLabel}</span>
                         <span className='qaap-agent-changes-summary-stats'>
                             <span className='qaap-diff-add'>+{totals.adds}</span>
                             <span className='qaap-diff-del'>-{totals.dels}</span>
                         </span>
-                    </button>
+                    </div>
                     {this.renderAgentBulkActions(bulkDisabled)}
                 </div>
             </header>
         );
     }
-
-    protected readonly onToggleUncommittedGroup = (): void => {
-        this.uncommittedGroupCollapsed = !this.uncommittedGroupCollapsed;
-        this.update();
-    };
-
-    protected readonly onCloseChanges = (): void => {
-        if (this.onTranscriptClose) {
-            this.onTranscriptClose();
-            return;
-        }
-        this.uncommittedGroupCollapsed = true;
-        this.update();
-    };
 
     protected renderAgentCommitControls(disabled: boolean): React.ReactNode {
         return (
@@ -897,15 +868,6 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     onClick={this.onAcceptAll}
                 >
                     <i className={codicon('diff')} />
-                </button>
-                <button
-                    type='button'
-                    className='qaap-diff-review-icon-btn'
-                    title={nls.localize('qaap/diff/closeChanges', 'Close changes')}
-                    aria-label={nls.localize('qaap/diff/closeChanges', 'Close changes')}
-                    onClick={this.onCloseChanges}
-                >
-                    <i className={codicon('close')} />
                 </button>
             </span>
         );

@@ -135,6 +135,72 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(rows[2].querySelector('.theia-mod-parent-icon')).to.not.equal(null);
     });
 
+    it('renders a progress track with filled segments when progressCurrent/Total are set', () => {
+        const agent = member({
+            id: 'progress-agent',
+            title: 'Multi-step task',
+            progressCurrent: 3,
+            progressTotal: 7,
+        });
+        const panel = renderWorkingAgentsPopoverPanel({
+            entries: flattenWorkingAgentsTree([agent]),
+            onStopAll: () => undefined,
+            onClose: () => undefined,
+            onSelect: () => undefined,
+        });
+        const row = panel.querySelector<HTMLElement>('.qaap-working-agents-popover-row');
+        expect(row).to.not.equal(null);
+        expect(row!.classList.contains('qaap-mod-has-progress')).to.equal(true);
+        const track = row!.querySelector<HTMLElement>('.qaap-working-agents-progress-track');
+        expect(track).to.not.equal(null);
+        expect(track!.getAttribute('role')).to.equal('progressbar');
+        expect(track!.getAttribute('aria-valuenow')).to.equal('3');
+        expect(track!.getAttribute('aria-valuemax')).to.equal('7');
+        const segments = track!.querySelectorAll('.qaap-working-agents-progress-segment');
+        expect(segments.length).to.equal(7);
+        const filled = track!.querySelectorAll('.qaap-working-agents-progress-segment.theia-mod-filled');
+        expect(filled.length).to.equal(3);
+    });
+
+    it('does NOT render a progress track when progressTotal is zero or missing', () => {
+        const agent = member({
+            id: 'no-progress-agent',
+            title: 'No progress task',
+        });
+        const panel = renderWorkingAgentsPopoverPanel({
+            entries: flattenWorkingAgentsTree([agent]),
+            onStopAll: () => undefined,
+            onClose: () => undefined,
+            onSelect: () => undefined,
+        });
+        const row = panel.querySelector<HTMLElement>('.qaap-working-agents-popover-row');
+        expect(row).to.not.equal(null);
+        expect(row!.classList.contains('qaap-mod-has-progress')).to.equal(false);
+        expect(row!.querySelector('.qaap-working-agents-progress-track')).to.equal(null);
+    });
+
+    it('caps visual segments at 20 while keeping the fill ratio accurate', () => {
+        const agent = member({
+            id: 'long-task',
+            title: '50-step task',
+            progressCurrent: 25,
+            progressTotal: 50,
+        });
+        const panel = renderWorkingAgentsPopoverPanel({
+            entries: flattenWorkingAgentsTree([agent]),
+            onStopAll: () => undefined,
+            onClose: () => undefined,
+            onSelect: () => undefined,
+        });
+        const track = panel.querySelector<HTMLElement>('.qaap-working-agents-progress-track');
+        expect(track).to.not.equal(null);
+        const segments = track!.querySelectorAll('.qaap-working-agents-progress-segment');
+        expect(segments.length).to.equal(20); // capped
+        const filled = track!.querySelectorAll('.qaap-working-agents-progress-segment.theia-mod-filled');
+        // 25/50 = 50% → 10 of 20 segments filled
+        expect(filled.length).to.equal(10);
+    });
+
     it('renders header Stop All / close and indented child rows', () => {
         const parent = member({ id: 'parent', title: 'Parent task', activityLabel: 'Building' });
         const child = member({

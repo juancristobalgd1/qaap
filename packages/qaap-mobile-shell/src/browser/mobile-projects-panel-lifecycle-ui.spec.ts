@@ -108,6 +108,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
             ensureAgentsHubExecutionShellRendered: () => undefined,
             refreshWorkHubConversationChrome: () => { refreshChromeCalls.value++; },
             patchWorkHubConversationRowInPlace: () => { patchRowCalls.value++; },
+            touchProjectActivityByConversationId: () => undefined,
             mergeInboxPullRequests: polled => polled,
             updateTasksAttentionChrome: () => undefined,
             cardMenuUi: { closeCardMenu: () => undefined } as MobileProjectsPanelLifecycleHost['cardMenuUi'],

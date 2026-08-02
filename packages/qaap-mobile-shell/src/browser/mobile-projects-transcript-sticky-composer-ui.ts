@@ -2493,10 +2493,20 @@ export class MobileProjectsTranscriptStickyComposerUi {
             }
         } catch (error) {
             restoreComposerSubmission();
-            const detail = error instanceof Error ? error.message : String(error);
-            this.host.messageService?.error(nls.localize(
-                'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail
-            ));
+            if (isMaxConcurrentRunsError(error)) {
+                // The conversation already has the maximum number of concurrent agent runs.
+                // Show a friendly message instead of a generic error — the user can wait for
+                // one of the running tasks to finish and then resend.
+                this.host.messageService?.warn(nls.localize(
+                    'qaap/mobileProjects/maxConcurrentRuns',
+                    'This task already has the maximum number of agents running. Wait for one to finish, then resend.',
+                ));
+            } else {
+                const detail = error instanceof Error ? error.message : String(error);
+                this.host.messageService?.error(nls.localize(
+                    'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail
+                ));
+            }
         } finally {
             this.remountTranscriptStickyComposer();
         }

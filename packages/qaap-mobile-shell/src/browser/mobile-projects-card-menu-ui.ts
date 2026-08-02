@@ -40,6 +40,7 @@ export interface MobileProjectsCardMenuHost {
     resolveConversationFlags(summary: QaapAgentConversationSummaryDTO): { priority: boolean; paused: boolean };
     openConversationSummary(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onRetryConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onArchiveConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onForkConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onRenameConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     onSetConversationPriority(summary: QaapAgentConversationSummaryDTO, priority: boolean): Promise<void>;
@@ -378,6 +379,17 @@ export class MobileProjectsCardMenuUi {
                 iconClass: 'codicon-debug-stop',
                 danger: true,
                 onSelect: () => { void this.host.onCancelConversation(project, summary); },
+            });
+        }
+
+        // Archive / Unarchive — available for all VPS agent tasks (not theia-chat sessions).
+        if (!isTheiaChat) {
+            this.appendCardMenuItem(menu, {
+                label: summary.archived
+                    ? nls.localize('qaap/mobileProjects/unarchiveTask', 'Unarchive task')
+                    : nls.localize('qaap/mobileProjects/archiveTask', 'Archive task'),
+                iconClass: summary.archived ? 'codicon-archive' : 'codicon-archive',
+                onSelect: () => { void this.host.onArchiveConversation(project, summary); },
             });
         }
 
