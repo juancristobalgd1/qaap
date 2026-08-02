@@ -55,9 +55,19 @@ describe('MobileWorkHubInboxStream', () => {
         } else {
             delete (globalThis as Partial<typeof globalThis>).cancelAnimationFrame;
         }
+        if (typeof document !== 'undefined') {
+            // Drop the own property so the prototype accessor is visible again.
+            delete (document as { hidden?: boolean }).hidden;
+        }
     });
 
     it('coalesces bursty inbox events into one change notification per frame', () => {
+        // The shared JSDOM reports document.hidden=true (visibilityState 'prerender'),
+        // which sends the stream down the background-timer path; this test exercises
+        // the visible-tab per-frame coalescing, so pin the tab as visible.
+        if (typeof document !== 'undefined') {
+            Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+        }
         previousRequestAnimationFrame = globalThis.requestAnimationFrame;
         previousCancelAnimationFrame = globalThis.cancelAnimationFrame;
         let rafCallback: (() => void) | undefined;

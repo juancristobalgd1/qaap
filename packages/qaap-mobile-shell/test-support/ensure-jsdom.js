@@ -19,5 +19,15 @@ const { enableJSDOM } = require('@theia/core/lib/browser/test/jsdom');
 exports.mochaHooks = {
     beforeEach() {
         enableJSDOM();
+        // Several suites replace `global.window` with a partial mock ({ sessionStorage } only,
+        // no localStorage, …) in their own beforeEach and never restore it, starving whichever
+        // suite runs next. This root hook runs BEFORE suite-level beforeEach hooks, so pointing
+        // `window` back at the JSDOM document's paired view repairs the victims while mocking
+        // suites re-install their mock right after, unaffected.
+        const doc = global.document;
+        const pairedView = doc && doc.defaultView;
+        if (pairedView && global.window !== pairedView) {
+            global.window = pairedView;
+        }
     },
 };

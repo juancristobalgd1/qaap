@@ -14,8 +14,10 @@ const MESSAGE_SELECTOR = '.theia-mobile-agent-transcript-msg';
 
 // A no-op tool UI is enough: the boundary rows in these tests are empty-content agent messages, so
 // createTranscriptMessageRowAtIndex takes the plain-row path (renderTranscriptRichContent only) and
-// never reaches the segments/artifacts renderer that would drag in @lumino.
+// never reaches the segments/artifacts renderer that would drag in @lumino. The plain-row path does
+// resolve turn provenance for the standalone badge, so the artifacts stub answers that one call.
 const noopToolUi = { renderTranscriptRichContent(): void { /* no-op */ } };
+const provenanceOnlyArtifactsUi = { resolveTurnProvenance: (): {} => ({}) };
 
 class TestRenderUi extends MobileProjectsTranscriptMessagesRenderUi {
     constructor() {
@@ -24,7 +26,7 @@ class TestRenderUi extends MobileProjectsTranscriptMessagesRenderUi {
             {} as never,
             {} as never,
             {} as never,
-            {} as never,
+            provenanceOnlyArtifactsUi as never,
             noopToolUi as never,
         );
     }

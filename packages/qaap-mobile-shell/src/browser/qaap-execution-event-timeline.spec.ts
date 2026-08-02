@@ -900,27 +900,27 @@ describe('qaap-execution-event-timeline', () => {
             expect(label?.textContent).to.equal('Processed in 45s');
         });
 
-        it('shows "Processing… Xm Ys" label when working with elapsed', () => {
+        it('shows "Processing for Xm Ys" label when working with elapsed', () => {
             const segments = [toolSegment('read', 't1', '{}', false)];
             const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 125000 });
             const label = accordion.querySelector('.theia-mobile-process-accordion-label');
-            expect(label?.textContent).to.equal('Processing… 2m 5s');
+            expect(label?.textContent).to.equal('Processing for 2m 5s');
         });
 
-        it('shows the "<Verb>… Xs" label when working with a known activityVerb', () => {
+        it('keeps the duration-only label even when an activityVerb is known', () => {
             const segments = [toolSegment('read', 't1', '{}', false)];
             const accordion = createMobileProcessAccordion(
                 segments, { isWorking: true, isError: false, elapsedMs: 45000, activityVerb: 'Read' },
             );
             const label = accordion.querySelector('.theia-mobile-process-accordion-label');
-            expect(label?.textContent).to.equal('Read… 45s');
+            expect(label?.textContent).to.equal('Processing for 45s');
         });
 
-        it('falls back to the generic "Processing… Xs" label when no activityVerb is given', () => {
+        it('shows the "Processing for Xs" label when no activityVerb is given', () => {
             const segments = [toolSegment('read', 't1', '{}', false)];
             const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 45000 });
             const label = accordion.querySelector('.theia-mobile-process-accordion-label');
-            expect(label?.textContent).to.equal('Processing… 45s');
+            expect(label?.textContent).to.equal('Processing for 45s');
         });
 
         it('applies theia-mod-working class when working', () => {
@@ -1149,12 +1149,12 @@ describe('qaap-execution-event-timeline', () => {
             expect(accordion.classList.contains('theia-mod-complete')).to.be.false;
         });
 
-        it('shows the live verb label on a sync while working', () => {
+        it('keeps the duration-only label on a sync while working', () => {
             const segments = [toolSegment('read', 't1', '{}', false)];
             const accordion = createMobileProcessAccordion(segments, { isWorking: true, isError: false, elapsedMs: 5000 });
             syncMobileProcessAccordionState(accordion, { isWorking: true, isError: false, elapsedMs: 8000, activityVerb: 'Explore' });
             const label = accordion.querySelector('.theia-mobile-process-accordion-label');
-            expect(label?.textContent).to.equal('Explore… 8s');
+            expect(label?.textContent).to.equal('Processing for 8s');
         });
 
     });

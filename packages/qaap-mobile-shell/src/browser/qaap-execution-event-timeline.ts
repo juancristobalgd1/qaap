@@ -1134,15 +1134,6 @@ export function syncTranscriptStandaloneTurnProvenance(
     body.prepend(badge);
 }
 
-/**
- * Formats the process accordion header label. While `outcome === 'processing'`
- * and an `activityVerb` is known (the Codex-style live activity verb, e.g.
- * `'Read'` / `'Run'` / `'Explore'` — see {@link resolveMobileActivityVerb}),
- * the label reads `'<Verb>… Xs'` instead of the generic `'Processing… Xs'`.
- * The verb is reused verbatim from {@link MobileExecutionEvent.verb} — never
- * conjugated (e.g. no invented `'Reading'` from `'Read'`) — so this never
- * introduces a new display string beyond what the timeline already shows.
- */
 export const MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS = 'theia-mobile-process-accordion-run-stop';
 
 /**

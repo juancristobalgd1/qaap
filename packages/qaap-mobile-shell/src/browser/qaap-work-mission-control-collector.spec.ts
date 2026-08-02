@@ -118,6 +118,6 @@ describe('collectMissionControlItems', () => {
         const item = items.find(entry => entry.conversationId === 'c-quota');
         expect(item?.lane).to.equal('needs-you');
         expect(item?.failureKind).to.equal('quota');
-        expect(item?.preview).to.include('credit');
+        expect(item?.preview).to.include('quota');
     });
 });

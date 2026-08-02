@@ -34,7 +34,7 @@ describe('resolveMissionControlFailure', () => {
             cwd: '/repo',
         });
         expect(result?.kind).to.equal('quota');
-        expect(result?.preview).to.include('credit');
+        expect(result?.preview).to.include('quota');
     });
 
     it('localizes legacy agent failure previews', () => {

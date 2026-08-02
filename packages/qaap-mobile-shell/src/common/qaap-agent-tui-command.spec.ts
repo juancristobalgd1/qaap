@@ -27,21 +27,23 @@ describe('resolveInteractiveAgentCliBin', () => {
 
 describe('resolveInteractiveAgentLoginCommand', () => {
     it('returns the real CLI login command for OAuth agents', () => {
+        // Commands audited against the installed CLIs (Aug 2026): headless cloud
+        // workspaces need device-code / paste flows, so prefer those flags.
         expect(resolveInteractiveAgentLoginCommand('codex')).to.equal('codex login --device-auth');
         expect(resolveInteractiveAgentLoginCommand('claude')).to.equal('claude auth login');
         expect(resolveInteractiveAgentLoginCommand('cursor')).to.equal('cursor-agent login');
-        expect(resolveInteractiveAgentLoginCommand('copilot')).to.equal('gh auth login');
+        expect(resolveInteractiveAgentLoginCommand('copilot')).to.equal('gh auth login --web');
+        expect(resolveInteractiveAgentLoginCommand('grok')).to.equal('grok login --device-auth');
     });
 
     it('does NOT fall back to the bare interactive binary for BYOK/Settings agents', () => {
         // Regression guard: launching the bare TUI never signs anyone in, so login
         // intent must resolve to undefined (the UI then points to Settings).
         expect(resolveInteractiveAgentLoginCommand('qaiq')).to.equal(undefined);
-        expect(resolveInteractiveAgentLoginCommand('grok')).to.equal(undefined);
         expect(resolveInteractiveAgentLoginCommand('opencode')).to.equal(undefined);
-        // The bare interactive binary still exists for these agents — proving the
+        expect(resolveInteractiveAgentLoginCommand('gemini')).to.equal(undefined);
+        // The bare interactive binary still exists for opencode — proving the
         // login path deliberately declines it rather than there being no binary.
-        expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
 
