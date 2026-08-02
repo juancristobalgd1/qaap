@@ -391,11 +391,29 @@ export class MobileProjectsTasksHubUi {
             && (this.host.homeMode || composerMounted || reading)
             ? Math.max(realCount, reading ? 1 : 0)
             : 0;
+        // Per-section count: the transcript composer pill shows only agents working in the
+        // currently open conversation/section (and its forks/subagents), not the global hub
+        // count. The home sticky composer keeps the global count. When both hosts are the same
+        // element (e.g. transcript overlay reusing the home host), a single sync with the
+        // section-scoped count wins.
+        const transcriptCount = this.countWorkingAgentsForTranscriptPill();
+        const forceHide = isWorkingPillSuppressedAfterStopAll() || suppressForEmptyComposer;
+        const homeRoot = this.host.stickyComposerHost;
+        const transcriptRoot = this.host.transcriptComposerHost;
+        const sameRoot = !!homeRoot && homeRoot === transcriptRoot;
         syncStickyComposerWorkingPillInRoots(
-            [this.host.stickyComposerHost, this.host.transcriptComposerHost],
+            sameRoot ? [] : [homeRoot],
             {
                 count,
-                forceHide: isWorkingPillSuppressedAfterStopAll() || suppressForEmptyComposer,
+                forceHide,
+                onOpen: anchor => this.openWorkingAgentsPopoverFromPill(anchor),
+            },
+        );
+        syncStickyComposerWorkingPillInRoots(
+            [transcriptRoot],
+            {
+                count: sameRoot ? count : transcriptCount,
+                forceHide: sameRoot ? forceHide : (forceHide || transcriptCount <= 0),
                 onOpen: anchor => this.openWorkingAgentsPopoverFromPill(anchor),
             },
         );
@@ -410,12 +428,15 @@ export class MobileProjectsTasksHubUi {
                     break;
                 }
             }
-            const members = this.host.collectTeamMembersForHub();
+            const isTranscriptPill = !!pill?.closest('.theia-mobile-agent-transcript-root');
+            const members = isTranscriptPill
+                ? this.collectTeamMembersForTranscriptSection()
+                : this.host.collectTeamMembersForHub();
             if (pill && (isWorkingAgentsPopoverOpen() || isWorkingAgentsExpandSessionOpen())) {
                 restoreWorkingAgentsExpandIfNeeded({
                     anchor: pill,
                     members,
-                    transcriptOverlay: !!pill.closest('.theia-mobile-agent-transcript-root'),
+                    transcriptOverlay: isTranscriptPill,
                     onSelect: member => this.host.onTeamMemberClick(member),
                     onStop: member => this.stopWorkingAgent(member),
                     onStopAll: working => this.stopAllWorkingAgents(working),
@@ -429,8 +450,12 @@ export class MobileProjectsTasksHubUi {
     }
 
     openWorkingAgentsPopoverFromPill(anchor: HTMLButtonElement): void {
-        const members = this.host.collectTeamMembersForHub();
         const transcriptOverlay = !!anchor.closest('.theia-mobile-agent-transcript-root');
+        // When the pill is in the transcript overlay, show only this section's working agents.
+        // The home sticky composer pill shows the full hub team.
+        const members = transcriptOverlay
+            ? this.collectTeamMembersForTranscriptSection()
+            : this.host.collectTeamMembersForHub();
         this.prefetchWorkingDetailDocuments(members);
         openWorkingAgentsPopover({
             anchor,
@@ -831,6 +856,60 @@ export class MobileProjectsTasksHubUi {
      */
     countWorkingAgentsForPill(): number {
         return filterWorkingTeamMembers(this.host.collectTeamMembersForHub()).length;
+    }
+
+    /**
+     * Working agents scoped to the currently open transcript section only — the conversation
+     * itself plus its forks/subagents (matched via conversationId or parentId chain). The
+     * transcript composer pill is per-section, not global.
+     */
+    countWorkingAgentsForTranscriptPill(): number {
+        const sectionMembers = this.collectTeamMembersForTranscriptSection();
+        return filterWorkingTeamMembers(sectionMembers).length;
+    }
+
+    /**
+     * Returns hub team members that belong to the currently open transcript section: the
+     * conversation itself, its forks (parentId === conversationId chain), and VPS subtasks
+     * whose parent chain leads back to this conversation. Returns [] when no section is open.
+     */
+    collectTeamMembersForTranscriptSection(): WorkHubTeamMember[] {
+        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
+        const conversationId = summary?.id?.trim();
+        if (!conversationId) {
+            return [];
+        }
+        const all = this.host.collectTeamMembersForHub();
+        // Collect conversation ids that belong to this section: the root conversation plus
+        // any forks (parentId chain). Also match VPS tasks whose parentId resolves to
+        // a conversation in this section.
+        const sectionConversationIds = new Set<string>([conversationId]);
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const member of all) {
+                if (member.kind === 'conversation' && member.parentId
+                    && sectionConversationIds.has(member.parentId)
+                    && member.conversationId
+                    && !sectionConversationIds.has(member.conversationId)) {
+                    sectionConversationIds.add(member.conversationId);
+                    changed = true;
+                }
+            }
+        }
+        return all.filter(member => {
+            if (member.conversationId && sectionConversationIds.has(member.conversationId)) {
+                return true;
+            }
+            // VPS subtask: include if its parent conversation is in this section.
+            if (member.kind === 'subtask' && member.parentId) {
+                const parent = all.find(m => m.id === member.parentId);
+                if (parent?.conversationId && sectionConversationIds.has(parent.conversationId)) {
+                    return true;
+                }
+            }
+            return false;
+        });
     }
 
     /**

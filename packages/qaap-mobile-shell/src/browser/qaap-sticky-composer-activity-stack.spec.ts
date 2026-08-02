@@ -306,7 +306,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             document.body.append(host!);
 
             const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
-            expect(nextActions.map(action => action.textContent)).to.deep.equal(['Open preview']);
+            expect(nextActions.map(action => action.textContent)).to.deep.equal(['View Preview']);
             nextActions[0].click();
             expect(actions).to.deep.equal(['preview']);
         });
@@ -373,7 +373,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             // …but Commit & Push and Open preview remain.
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.exist;
             const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
-            expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
+            expect(nextActions.map(a => a.textContent)).to.deep.equal(['View Preview']);
         });
 
         // Regression tests for the Accept/Discard pill-resurrection bug:
@@ -464,7 +464,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
             // …but Open preview remains.
             const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
-            expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
+            expect(nextActions.map(a => a.textContent)).to.deep.equal(['View Preview']);
         });
 
         it('drops the Commit button once the tree is clean (Discard), keeping the preview', () => {
@@ -481,7 +481,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(host!.querySelector('.theia-mobile-sticky-composer-changes-group')).to.equal(null);
             expect(host!.querySelector('.theia-mobile-sticky-composer-commit-group')).to.equal(null);
             const nextActions = Array.from(host!.querySelectorAll<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action'));
-            expect(nextActions.map(a => a.textContent)).to.deep.equal(['Open preview']);
+            expect(nextActions.map(a => a.textContent)).to.deep.equal(['View Preview']);
         });
 
         it('patchStickyComposerChangesPillHost updates stats without replacing the pill node', () => {

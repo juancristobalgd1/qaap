@@ -281,6 +281,10 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
     transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
+    beginTranscriptDevPreviewRequest(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void;
 }
 
 /** Transcript overlay sticky composer: mount, prefs, follow-up queue, and submit wiring. */
