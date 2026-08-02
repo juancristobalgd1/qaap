@@ -1035,7 +1035,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 this.host.executionSurfaceTabsUi.selectTranscriptTab('review', project, summary);
             },
             onRunApp: () => {
-                void this.submitRunGeneratedAppFollowUp(project, summary);
+                void this.launchComposerDevPreview(project, summary);
             },
             onOpenPreview: verifiedPreviewUrl
                 ? () => { void this.openComposerPreview(project.id); }
@@ -1048,6 +1048,27 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 : undefined,
             commitBusy: this.composerCommitBusy || this.composerChangedFilesBulkBusy,
         };
+    }
+
+    /**
+     * Directly launches the dev server via the project bootstrap service and switches to the
+     * Preview tab so the user sees the preview loading in the integrated browser — without
+     * delegating to the agent. Once the preview URL is verified, the Run app button is replaced
+     * by View Preview (existing onOpenPreview wiring).
+     */
+    protected async launchComposerDevPreview(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        const bootstrap = this.host.projectBootstrap;
+        if (!bootstrap) {
+            return;
+        }
+        // Clear any stale preview state for this section and switch to the Preview tab so the
+        // user sees the loading surface immediately while the dev server starts.
+        this.host.beginTranscriptDevPreviewRequest(project, summary);
+        this.host.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
+        await bootstrap.runDevServer({ conversationId: summary.id });
     }
 
     protected async submitRunGeneratedAppFollowUp(

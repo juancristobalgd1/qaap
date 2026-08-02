@@ -65,3 +65,7 @@ conversation_history/
 
 # Generated Playwright screenshots.
 /output/
+
+# Ad-hoc test scratch repos (nested git repos — never track as submodules).
+.tmp-branch-delete-test/
+.tmp.cfg

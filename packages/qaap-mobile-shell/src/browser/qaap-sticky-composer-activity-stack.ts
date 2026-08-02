@@ -651,7 +651,7 @@ function patchChangesNextActions(group: HTMLElement, options: StickyComposerActi
     if (options.onOpenPreview) {
         group.append(createChangesNextActionButton({
             className: 'theia-mod-preview',
-            label: nls.localize('qaap/mobileProjects/openPreview', 'Open preview'),
+            label: nls.localize('qaap/mobileProjects/viewPreview', 'View Preview'),
             iconClass: 'codicon-globe',
             onClick: options.onOpenPreview,
         }));
