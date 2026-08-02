@@ -622,6 +622,52 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(registry.records()[0].projectId).to.equal(root);
         });
 
+        it('persists a client-supplied osProcessId on a fresh process claim', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/pid-project';
+            const res = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, {
+                workspaceId: root,
+                projectId: root,
+                processId: 'process-pid',
+                osProcessId: 4242,
+            }, root), res);
+
+            expect(res.record.code).to.equal(200);
+            const previewId = (res.record.body as { previewId: string }).previewId;
+            expect(registry.getForOwner(previewId, 'alice')?.osProcessId).to.equal(4242);
+        });
+
+        it('a reattach claim without osProcessId keeps the previously attached PID (merge, not clobber)', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const ep = new ClaimTestEndpoint();
+            ep.setClaimFakes('alice', registry);
+            const root = 'file:///workspace/alice/pid-reattach';
+            const identity = {
+                workspaceId: root,
+                projectId: root,
+                processId: 'process-pid-reattach',
+            };
+            // process.pid is used instead of a fake number because isPreviewProcessDead() sends a
+            // real `process.kill(pid, 0)` liveness probe — an arbitrary PID would read as dead.
+            const firstRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, { ...identity, osProcessId: process.pid }, root), firstRes);
+            expect(firstRes.record.code).to.equal(200);
+            const previewId = (firstRes.record.body as { previewId: string }).previewId;
+            expect(registry.getForOwner(previewId, 'alice')?.osProcessId).to.equal(process.pid);
+
+            ep.listeningPorts.add(5173);
+            const secondRes = makeRes();
+            await ep.exposeHandleClaim(claimReq(5173, identity, root), secondRes);
+
+            expect(secondRes.record.code).to.equal(200);
+            expect(registry.getForOwner(previewId, 'alice')?.osProcessId).to.equal(process.pid);
+        });
+
         it('keeps independent previews for different conversations with different process ids', async () => {
             const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
             const registry = new Registry();

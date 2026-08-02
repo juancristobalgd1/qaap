@@ -613,7 +613,7 @@ export class QaapProjectBootstrapService {
         };
     }
 
-    protected reserveActivePreview(port: number, cwd: URI): Promise<QaapPreviewPortClaimResult> {
+    protected reserveActivePreview(port: number, cwd: URI, osProcessId?: number): Promise<QaapPreviewPortClaimResult> {
         const processId = this.activePreviewRunId;
         const workspaceRoot = this.activeWorkspaceRoot ?? this._descriptor?.rootUri ?? cwd;
         if (!processId) {
@@ -625,6 +625,7 @@ export class QaapProjectBootstrapService {
             processId,
             root: workspaceRoot.toString(),
             conversationId: this.activePreviewConversationId,
+            osProcessId,
         });
     }
 
@@ -943,6 +944,7 @@ export class QaapProjectBootstrapService {
             const processClaim = this.activePreviewClaim;
             if (processClaim) {
                 this.monitorPreviewProcessLifetime(terminal, processClaim.previewId);
+                this.attachTerminalOsProcessId(terminal, processClaim.previewId, processClaim.port, plan.cwd);
             }
             this.devTerminal = terminal;
             this.devTerminalConversationId = this.activePreviewConversationId;
@@ -1663,6 +1665,21 @@ export class QaapProjectBootstrapService {
         }));
         lifecycle.push(terminal.onTerminalDidClose(release));
         this.toDispose.push(lifecycle);
+    }
+
+    /**
+     * Best-effort: once node-pty resolves the shell's OS PID, re-sends the claim so the backend can
+     * attach it to the registry record — release-time cleanup can then SIGTERM the process group
+     * even where kill-by-port is unavailable (sandboxed containers without SYS_PTRACE/lsof). Only
+     * attaches if this exact claim is still the section's active one; a mid-spawn project/section
+     * switch must not attach the PID to a claim it no longer belongs to.
+     */
+    protected attachTerminalOsProcessId(terminal: TerminalWidget, previewId: string, port: number, cwd: URI): void {
+        void terminal.processId.then(pid => {
+            if (this.activePreviewClaim?.previewId === previewId) {
+                void this.reserveActivePreview(port, cwd, pid);
+            }
+        }).catch(() => undefined);
     }
 
     /**

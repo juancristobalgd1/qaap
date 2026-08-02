@@ -62,6 +62,11 @@ function getQaapBackendListenPort(): number {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 3000;
 }
 
+/** Validates a client-supplied PID before trusting it for `process.kill` (never trust raw input for a syscall). */
+function parseClaimOsProcessId(raw: unknown): number | undefined {
+    return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 && raw <= 2 ** 31 - 1 ? raw : undefined;
+}
+
 @injectable()
 export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
 
@@ -263,6 +268,9 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             readonly conversationId?: string;
         },
     ): Promise<void> {
+        // Client-supplied OS PID of the terminal shell (node-pty); lets release() SIGTERM the
+        // process group when the sandboxed container cannot discover listeners by port.
+        const osProcessId = parseClaimOsProcessId((req.body as { osProcessId?: unknown } | undefined)?.osProcessId);
         const rootPath = path.resolve(FileUri.fsPath(root));
         let canonicalRoot = rootPath;
         try {
@@ -289,6 +297,9 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 return;
             }
             if (!this.isPreviewProcessDead(existing) && await this.probeLocalDevServer(existing.port)) {
+                if (osProcessId !== undefined) {
+                    this.portRegistry.attachProcess(existing.previewId, owner, osProcessId);
+                }
                 res.status(200).json({
                     previewId: existing.previewId,
                     previewUrl: this.buildIdentityPreviewUrl(req, existing),
@@ -301,6 +312,9 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             if (preferredPort !== existing.port && await this.probeLocalDevServer(preferredPort)) {
                 const rebound = this.portRegistry.rebindPort(existing.previewId, owner, preferredPort);
                 if (rebound) {
+                    if (osProcessId !== undefined) {
+                        this.portRegistry.attachProcess(rebound.previewId, owner, osProcessId);
+                    }
                     console.info('[qaap-preview] rebound process claim to listening preferred port', {
                         previewId: rebound.previewId,
                         ownerLogin: owner,
@@ -333,6 +347,9 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 || right.touchedAt - left.touchedAt);
         for (const record of previousSectionRecords) {
             if (!this.isPreviewProcessDead(record) && await this.probeLocalDevServer(record.port)) {
+                if (osProcessId !== undefined) {
+                    this.portRegistry.attachProcess(record.previewId, owner, osProcessId);
+                }
                 console.info('[qaap-preview] reattached existing live section preview', {
                     previewId: record.previewId,
                     ownerLogin: owner,
@@ -384,6 +401,7 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
                 ownerLogin: owner,
                 root: canonicalRoot,
                 port,
+                osProcessId,
             });
             if (!record) {
                 continue; // concurrent allocator won this candidate; try the next one

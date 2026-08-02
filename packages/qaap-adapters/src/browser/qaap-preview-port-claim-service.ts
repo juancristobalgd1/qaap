@@ -29,6 +29,8 @@ export interface QaapPreviewExecutionIdentity {
     /** Legacy turn-scoped fields accepted for already persisted preview links. */
     readonly conversationId?: string;
     readonly runId?: string;
+    /** OS PID of the terminal shell running the dev process, attached once node-pty resolves it. */
+    readonly osProcessId?: number;
 }
 
 /**
