@@ -77,7 +77,20 @@ if ! has_flag --print "$@"; then
 fi
 
 if has_flag --input-format "$@"; then
-  PROMPT="$(cat)"
+  # stream-json mode: Qaap writes one NDJSON user line and keeps stdin OPEN for
+  # control_responses until end-of-turn — `$(cat)` would block on EOF forever.
+  IFS= read -r PROMPT_LINE
+  PROMPT="$(printf '%s' "$PROMPT_LINE" | python3 -c 'import json,sys
+try:
+    content = json.load(sys.stdin)["message"]["content"]
+except Exception:
+    sys.exit(0)
+if isinstance(content, list):
+    content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+print(content)')"
+  if [[ -z "${PROMPT//[[:space:]]/}" ]]; then
+    PROMPT="$PROMPT_LINE"
+  fi
 else
   PROMPT="${@: -1}"
 fi
