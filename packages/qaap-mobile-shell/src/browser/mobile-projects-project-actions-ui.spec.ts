@@ -84,4 +84,31 @@ describe('MobileProjectsProjectActionsUi', () => {
         expect(errors).to.have.length(1);
         expect(errors[0]).to.contain('storage unavailable');
     });
+
+    it('releases each conversation preview before removing the project', async () => {
+        const removed = project('removed');
+        const kept = project('kept');
+        const released: string[] = [];
+        const host = {
+            projects: [removed, kept],
+            projectsService: {
+                canRemove: () => true,
+                removeProject: async () => true,
+                loadProjects: async () => [kept],
+            },
+            cardMenuUi: { closeCardMenu: () => undefined },
+            delegate: {},
+            render: () => undefined,
+            conversationIndexUi: {
+                conversationsForProject: (entry: MobileProjectEntry) => entry.id === 'removed'
+                    ? [{ id: 'task-a' }, { id: 'task-b' }] as any
+                    : [],
+            },
+            releasePreviewForConversation: (_project: { id: string }, summary: { id: string }) => { released.push(summary.id); },
+        } as unknown as MobileProjectsProjectActionsHost;
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(released).to.deep.equal(['task-a', 'task-b']);
+    });
 });

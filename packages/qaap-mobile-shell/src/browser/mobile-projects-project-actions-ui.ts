@@ -7,7 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { ChatService } from '@theia/ai-chat';
-import { deleteConversation, isFailedRunSummary } from '../common/qaap-agent-conversation-client';
+import { deleteConversation, isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -28,6 +28,11 @@ export interface MobileProjectsProjectActionsHost {
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+    /** Frees the embedded preview iframe, terminals, and backend dev-server claim owned by a section. */
+    releasePreviewForConversation?(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void;
 }
 
 /** Repository card actions: rename, duplicate, clear tasks, clear failed tasks, remove. */
@@ -75,6 +80,7 @@ export class MobileProjectsProjectActionsUi {
         }
         try {
             for (const summary of conversations) {
+                this.host.releasePreviewForConversation?.(project, summary);
                 if (summary.source === 'theia-chat') {
                     if (summary.sessionId && this.host.chatService) {
                         await this.host.chatService.deleteSession(summary.sessionId);
@@ -123,6 +129,7 @@ export class MobileProjectsProjectActionsUi {
         }
         try {
             for (const summary of failed) {
+                this.host.releasePreviewForConversation?.(project, summary);
                 await deleteConversation(summary.id);
                 this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
             }
@@ -147,6 +154,14 @@ export class MobileProjectsProjectActionsUi {
         this.host.projects = previousProjects.filter(candidate => candidate.id !== project.id);
         this.host.render();
         this.host.delegate.onProjectsChanged?.();
+
+        // Release every section's embedded preview + backend dev-server claim owned by this
+        // project before the project (and its conversations) go away, so removing a project does
+        // not leave parked iframes / VPS dev servers running for its tasks.
+        const projectConversations = this.host.conversationIndexUi?.conversationsForProject(project) ?? [];
+        for (const summary of projectConversations) {
+            this.host.releasePreviewForConversation?.(project, summary);
+        }
 
         try {
             const removed = await this.host.projectsService.removeProject(project);

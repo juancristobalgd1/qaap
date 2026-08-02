@@ -45,7 +45,7 @@ export interface MobileProjectsCardMenuHost {
     onSetConversationPriority(summary: QaapAgentConversationSummaryDTO, priority: boolean): Promise<void>;
     onSetConversationPaused(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, paused: boolean): Promise<void>;
     onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
-    onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    onDeleteConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
     openAgentComposer(project: MobileProjectEntry): Promise<void>;
     openEmptyMobileChatSheet(project: MobileProjectEntry): Promise<void>;
     showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void>;
@@ -391,7 +391,7 @@ export class MobileProjectsCardMenuUi {
             iconClass: 'codicon-trash',
             danger: true,
             disabled: summary.source === 'theia-chat' && !summary.sessionId,
-            onSelect: () => { void this.host.onDeleteConversation(summary); },
+            onSelect: () => { void this.host.onDeleteConversation(project, summary); },
         });
 
         return menu;

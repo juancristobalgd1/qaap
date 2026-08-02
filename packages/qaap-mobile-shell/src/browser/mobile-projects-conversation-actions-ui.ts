@@ -50,6 +50,11 @@ export interface MobileProjectsConversationActionsHost {
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+    /** Frees the embedded preview iframe, terminals, and backend dev-server claim owned by a section. */
+    releasePreviewForConversation?(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void;
 }
 
 /** Task card actions invoked from project lists and the sessions sidebar. */
@@ -341,7 +346,10 @@ export class MobileProjectsConversationActionsUi {
         }
     }
 
-    async onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void> {
+    async onDeleteConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
         const confirmed = await new ConfirmDialog({
             title: nls.localize('qaap/mobileProjects/deleteTask', 'Delete task'),
@@ -359,6 +367,10 @@ export class MobileProjectsConversationActionsUi {
         // its own DOM/fingerprint cache, so renderList() alone cannot remove the visible row.
         this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
         this.host.transcriptSheetUi.closeTranscriptSheet();
+        // Free this section's embedded preview iframe, terminal slides, and backend dev-server
+        // claim so closing a task does not leave parked iframes / terminals / VPS dev servers
+        // running (per-section isolation).
+        this.host.releasePreviewForConversation?.(project, summary);
         this.refreshConversationLists();
 
         try {

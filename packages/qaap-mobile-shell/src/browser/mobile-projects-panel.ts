@@ -2384,8 +2384,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                         ? state.transcriptComposerSummary
                         : buildAgentsHubIdleConversationSummary(
                             this.projectsService.getProjectCwd(project)
-                                ?? this.preparedCwdByProjectId.get(project.id)
-                                ?? '',
+                            ?? this.preparedCwdByProjectId.get(project.id)
+                            ?? '',
                         );
                 const selectedAgentId = this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
                     project,
@@ -3005,8 +3005,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         void this.openAiConfigurationSheet?.();
     }
 
-    protected async onDeleteConversation(summary: QaapAgentConversationSummaryDTO): Promise<void> {
-        return this.conversationActionsUi.onDeleteConversation(summary);
+    protected async onDeleteConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): Promise<void> {
+        return this.conversationActionsUi.onDeleteConversation(project, summary);
     }
 
     protected async onRenameProject(project: MobileProjectEntry): Promise<void> {
@@ -3405,6 +3408,21 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected disposeTranscriptEmbeddedPreview(): void {
         this.transcriptSurfacesUi.disposeTranscriptEmbeddedPreview();
+    }
+
+    /**
+     * Releases the embedded preview iframe, terminal slides, AND the backend dev-server claim owned
+     * by a specific task/section. Called when a task or project is deleted so a closed section's
+     * preview, terminals, and VPS dev server are freed without disturbing other sections
+     * (per-section isolation contract).
+     */
+    releasePreviewForConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        this.transcriptSurfacesUi.disposePreviewForConversation(summary);
+        this.transcriptSurfacesUi.disposeTranscriptTerminalSlidesForConversation(project, summary);
+        this.projectBootstrap?.releasePreviewForConversation(summary.id);
     }
 
     protected detachTranscriptWorkspaceSurfacesFromSheet(): void {

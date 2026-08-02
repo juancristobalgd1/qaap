@@ -202,6 +202,8 @@ export class MobileProjectsTranscriptSurfacesUi {
     protected transcriptPreviewProbeTimer: number | undefined;
     protected transcriptPreviewIdentityWatchTimer: number | undefined;
     protected readonly previewRuntimeByConversationId = new Map<string, ConversationPreviewRuntimeState>();
+    protected readonly embeddedPreviewByConversationScopeId = new Map<string, EmbeddedAgentPreviewChrome>();
+    protected offscreenPreviewHostElement: HTMLElement | undefined;
     protected transcriptPreviewProjectId: string | undefined;
     protected transcriptPreviewConversationScopeId: string | undefined;
     /** Bumped on Stop / new Play so in-flight ensureTranscriptDevPreview callbacks are ignored. */
@@ -415,9 +417,9 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.transcriptPreviewProjectId === project.id) {
             return;
         }
-        this.transcriptPreviewProjectId = project.id;
         this.stopTranscriptPreviewTabProbe();
-        this.disposeTranscriptEmbeddedPreview();
+        this.suspendTranscriptPreviewIframe();
+        this.transcriptPreviewProjectId = project.id;
     }
 
     mountProjectDetailSurfaceTab(
@@ -740,19 +742,69 @@ export class MobileProjectsTranscriptSurfacesUi {
         this.host.transcriptHistoryLoading = false;
     }
 
-    disposeTranscriptEmbeddedPreview(): void {
+    protected getOrCreateOffscreenPreviewHost(): HTMLElement {
+        if (!this.offscreenPreviewHostElement) {
+            const host = document.createElement('div');
+            host.id = 'qaap-preview-offscreen-host';
+            host.style.display = 'none';
+            document.body.appendChild(host);
+            this.offscreenPreviewHostElement = host;
+        }
+        return this.offscreenPreviewHostElement;
+    }
+
+    disposeTranscriptEmbeddedPreview(conversationScopeId?: string): void {
+        const targetScopeId = conversationScopeId ?? this.transcriptPreviewConversationScopeId;
         this.stopTranscriptPreviewIdentityWatch();
-        this.host.transcriptEmbeddedPreview?.dispose();
-        this.host.transcriptEmbeddedPreview = undefined;
-        if (this.transcriptPreviewConversationScopeId) {
-            this.setMountedPreviewUrl(this.transcriptPreviewConversationScopeId, undefined);
+        if (targetScopeId) {
+            const cached = this.embeddedPreviewByConversationScopeId.get(targetScopeId);
+            if (cached) {
+                cached.dispose();
+                this.embeddedPreviewByConversationScopeId.delete(targetScopeId);
+            }
+            if (this.host.transcriptEmbeddedPreview === cached) {
+                this.host.transcriptEmbeddedPreview = undefined;
+            }
+            this.setMountedPreviewUrl(targetScopeId, undefined);
+        } else if (this.host.transcriptEmbeddedPreview) {
+            this.host.transcriptEmbeddedPreview.dispose();
+            this.host.transcriptEmbeddedPreview = undefined;
         }
     }
 
     /**
-     * Tear down the preview iframe when another execution tab is active so embedded
-     * dev servers (e.g. Vite HMR) stop running in a hidden `display:none` host.
-     * Keeps the last preview URL staged for a fast remount when Preview is opened again.
+     * Tears down the embedded preview chrome AND the per-conversation runtime state for a specific
+     * section, even when it is not the active one. Called when a task or project is deleted so the
+     * parked iframe is freed and the backend dev-server claim can be released by the bootstrap
+     * service. Idempotent: a no-op when the section never owned a preview.
+     */
+    disposePreviewForConversation(summary: Pick<QaapAgentConversationSummaryDTO, 'id'>): void {
+        const scopeId = this.previewScopeId(summary);
+        if (!scopeId) {
+            return;
+        }
+        this.disposeTranscriptEmbeddedPreview(scopeId);
+        this.clearPreviewRuntimeForConversation(scopeId);
+    }
+
+    /**
+     * Disposes the terminal slides owned by a specific conversation/section. Terminals are keyed
+     * per-section (project + conversation id), so closing a task releases its terminal tabs without
+     * disturbing sibling sections' terminals. Idempotent.
+     */
+    disposeTranscriptTerminalSlidesForConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+    ): void {
+        const workspaceKey = this.resolveTranscriptWorkspaceKey(project, summary);
+        if (workspaceKey) {
+            this.disposeTranscriptTerminalSlides(workspaceKey);
+        }
+    }
+
+    /**
+     * Park the preview iframe offscreen when switching sections or tabs so embedded
+     * dev servers keep running with full DOM state (inputs, scroll, HMR) preserved.
      */
     suspendTranscriptPreviewIframe(): void {
         this.stopTranscriptPreviewIdentityWatch();
@@ -764,19 +816,22 @@ export class MobileProjectsTranscriptSurfacesUi {
         const isEmptyPlaceholder = chrome.root.classList.contains('theia-mod-empty-preview');
         const stagedUrl = (conversationScopeId ? this.mountedPreviewUrl(conversationScopeId) : undefined)
             ?? this.getTranscriptEmbeddedPreviewUrl();
-        chrome.dispose();
+
+        if (conversationScopeId && !isEmptyPlaceholder) {
+            const offscreen = this.getOrCreateOffscreenPreviewHost();
+            offscreen.appendChild(chrome.root);
+            if (stagedUrl) {
+                this.setProbeReadyPreviewUrl(conversationScopeId, stagedUrl);
+            }
+        } else {
+            chrome.dispose();
+            if (conversationScopeId) {
+                this.embeddedPreviewByConversationScopeId.delete(conversationScopeId);
+                this.setMountedPreviewUrl(conversationScopeId, undefined);
+            }
+        }
         this.host.transcriptEmbeddedPreview = undefined;
         this.executionPreviewHost()?.replaceChildren();
-        if (!conversationScopeId) {
-            return;
-        }
-        if (isEmptyPlaceholder) {
-            this.setMountedPreviewUrl(conversationScopeId, undefined);
-            return;
-        }
-        if (stagedUrl) {
-            this.setProbeReadyPreviewUrl(conversationScopeId, stagedUrl);
-        }
     }
 
     protected clearTranscriptEmptyPreviewChrome(): void {
@@ -806,35 +861,34 @@ export class MobileProjectsTranscriptSurfacesUi {
     ): void {
         const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
         const conversationScopeId = this.previewScopeId(summary);
+
+        if (this.transcriptPreviewConversationScopeId && this.transcriptPreviewConversationScopeId !== conversationScopeId) {
+            this.suspendTranscriptPreviewIframe();
+        }
+
         this.transcriptPreviewProjectId = project.id;
         this.transcriptPreviewConversationScopeId = conversationScopeId;
         this.scheduleTranscriptPreviewIdentityWatch(project);
-        if (this.host.transcriptEmbeddedPreview) {
+
+        let chrome = this.embeddedPreviewByConversationScopeId.get(conversationScopeId);
+        if (chrome) {
+            this.host.transcriptEmbeddedPreview = chrome;
             this.clearTranscriptEmptyPreviewChrome();
-            const root = this.host.transcriptEmbeddedPreview.root;
+            const root = chrome.root;
             const current = this.getTranscriptEmbeddedPreviewUrl();
-            if (current === normalized
-                && this.transcriptPreviewProjectId === project.id
-                && root.isConnected
-                && host.contains(root)
-                && !root.classList.contains('theia-mod-empty-preview')) {
-                this.setMountedPreviewUrl(conversationScopeId, normalized);
-                // Re-wire opener/scope even on same-URL remounts (controller may have been
-                // created before Work Hub comment composer was available).
-                this.wireTranscriptPreviewAnnotationScope(project, normalized);
-                this.syncHeaderPreviewRunButton(project, summary);
-                return;
+            if (!host.contains(root)) {
+                host.replaceChildren(root);
             }
-            this.host.transcriptEmbeddedPreview.setUrl(normalized);
+            if (current !== normalized) {
+                chrome.setUrl(normalized);
+            }
             this.wireTranscriptPreviewAnnotationScope(project, normalized);
             this.setMountedPreviewUrl(conversationScopeId, normalized);
-            if (!host.contains(root)) {
-                host.append(root);
-            }
             this.syncHeaderPreviewRunButton(project, summary);
             return;
         }
-        this.host.transcriptEmbeddedPreview = mountEmbeddedAgentPreviewChrome(host, {
+
+        chrome = mountEmbeddedAgentPreviewChrome(host, {
             url: normalized,
             messageService: this.host.messageService,
             clipboard: this.host.previewClipboard,
@@ -849,6 +903,8 @@ export class MobileProjectsTranscriptSurfacesUi {
             getAnnotationScope: () => this.resolvePreviewAnnotationScope(project, normalized),
             composerSession: this.host.resolveAnnotationComposerSession(),
         });
+        this.embeddedPreviewByConversationScopeId.set(conversationScopeId, chrome);
+        this.host.transcriptEmbeddedPreview = chrome;
         this.wireTranscriptPreviewAnnotationScope(project, normalized);
         this.setMountedPreviewUrl(conversationScopeId, normalized);
         this.syncHeaderPreviewRunButton(project, summary);
@@ -1791,7 +1847,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         if (this.host.transcriptOpenProject?.id === cleared.id) {
             this.host.transcriptOpenProject = cleared;
         }
-        this.disposeTranscriptEmbeddedPreview();
+        this.disposeTranscriptEmbeddedPreview(this.previewScopeId(summary));
         // Paint Play immediately — sync before remount so the icon never waits on empty chrome.
         this.syncHeaderPreviewRunButton(cleared, summary);
         const host = this.executionPreviewHost();
@@ -2080,16 +2136,23 @@ export class MobileProjectsTranscriptSurfacesUi {
         }
         const terminalServices = this.host.createTranscriptTerminalViewServices?.();
         const resolved = terminalServices ? terminalServices.resolveCwd(cwd) : cwd;
-        return this.resolveProjectScopedWorkspaceKey(project, resolved);
+        return this.resolveProjectScopedWorkspaceKey(project, resolved, summary.id);
     }
 
     protected resolveProjectScopedWorkspaceKey(
         project: MobileProjectEntry,
         resolvedPath: string,
+        conversationId?: string,
     ): TranscriptWorkspaceSurfaceKey {
         const workspaceKey = normalizeTranscriptWorkspaceKey(resolvedPath);
         const projectKey = project.id.trim() || project.uri?.toString() || project.name || 'unknown-project';
-        return `project:${encodeURIComponent(projectKey)}:${workspaceKey}`;
+        // Include the conversation/section id so terminals and files are isolated per-section,
+        // matching the per-section preview model: each task keeps its own terminal tabs and file
+        // mounts, and closing a task releases them without disturbing sibling sections.
+        const conversationKey = conversationId?.trim()
+            ? `:conv:${encodeURIComponent(conversationId.trim())}`
+            : '';
+        return `project:${encodeURIComponent(projectKey)}:${workspaceKey}${conversationKey}`;
     }
 
     ensureTranscriptFilesTab(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {

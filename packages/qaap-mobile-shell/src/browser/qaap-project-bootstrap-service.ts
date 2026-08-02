@@ -1736,8 +1736,8 @@ export class QaapProjectBootstrapService {
         const diagnosedError = nextLock
             ? extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message))
             : portConflict && conflictPort
-            ? `Port :${conflictPort} is already in use. Qaap exhausted ${DEV_PORT_RECOVERY_MAX_ATTEMPTS} alternate ports; stop stale dev servers, then retry.`
-            : extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message));
+                ? `Port :${conflictPort} is already in use. Qaap exhausted ${DEV_PORT_RECOVERY_MAX_ATTEMPTS} alternate ports; stop stale dev servers, then retry.`
+                : extractTerminalFailureLine(this.devOutputTail, this.toUserFacingDevError(message));
         this._error = this.enrichDevRunError(diagnosedError);
         this.releaseActivePreview();
         this.setPhase('run-failed');
@@ -2172,6 +2172,37 @@ export class QaapProjectBootstrapService {
         this.activePreviewRunId = this.previewRunIdByConversation.get(scope);
     }
 
+    /**
+     * Releases the backend dev-preview claim AND the dev-server terminal owned by a specific
+     * conversation/section — used when a task or project is deleted while it is NOT the active
+     * section. {@link releaseActivePreview} only touches the active scope, so without this a closed
+     * section's dev server keeps running on the VPS (holding a port + RAM) and its terminal widget
+     * leaks. Never disturbs the active claim/terminal unless the released scope is the active one.
+     */
+    releasePreviewForConversation(conversationId: string | undefined): void {
+        const scope = normalizeQaapPreviewConversationId(conversationId);
+        const claim = this.previewClaimByConversation.get(scope);
+        if (!claim) {
+            return;
+        }
+        this.previewClaimByConversation.delete(scope);
+        this.previewRunIdByConversation.delete(scope);
+        if (this.activePreviewConversationId === scope) {
+            this.activePreviewClaim = undefined;
+        }
+        void this.previewPortClaimService.release?.(claim.previewId);
+        // Dispose the dev-server terminal if it belongs to this conversation. The terminal is
+        // per-section (keyed by devTerminalConversationId), so closing a task must release its
+        // terminal without killing another section's dev terminal.
+        if (this.devTerminalConversationId === scope) {
+            this.devTerminalListener.dispose();
+            this.devTerminalListener = Disposable.NULL;
+            this.disposeBootstrapTerminal(this.devTerminal);
+            this.devTerminal = undefined;
+            this.devTerminalConversationId = undefined;
+        }
+    }
+
     /** Full reset when switching workspace or reloading bootstrap state. */
     protected resetBootstrapSessionForWorkspace(): void {
         this.installGeneration++;
@@ -2377,8 +2408,8 @@ export class QaapProjectBootstrapService {
     protected syncHubSession(phase: QaapBootstrapPhase): void {
         const agentState = phase === 'running' ? 'working'
             : phase === 'install-failed' || phase === 'run-failed' ? 'review'
-            : phase === 'idle' || phase === 'dismissed' ? 'idle'
-            : 'working';
+                : phase === 'idle' || phase === 'dismissed' ? 'idle'
+                    : 'working';
         void this.hubProjects.recordProjectSession({
             repoKey: this.activeProjectId,
             bootstrapPhase: phase,
@@ -2387,10 +2418,10 @@ export class QaapProjectBootstrapService {
             lastTask: phase === 'running'
                 ? 'Dev preview running'
                 : phase === 'installing'
-                ? 'Installing dependencies…'
-                : phase === 'starting'
-                ? 'Starting dev server…'
-                : undefined,
+                    ? 'Installing dependencies…'
+                    : phase === 'starting'
+                        ? 'Starting dev server…'
+                        : undefined,
         }).catch(() => undefined);
     }
 

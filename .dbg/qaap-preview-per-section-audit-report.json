@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-08-02T21:32:26.010Z",
+  "qaapUrl": "http://localhost:3000",
+  "desktop": {
+    "viewport": "desktop",
+    "steps": [],
+    "metrics": [],
+    "error": "page.waitForSelector: Timeout 120000ms exceeded.\nCall log:\n  - waiting for locator('.theia-mobile-projects-sticky-composer-input, .theia-mobile-work-hub') to be visible\n    - locator resolved to hidden <textarea rows=\"2\" spellcheck=\"false\" placeholder=\"Delegate a task…\" class=\"theia-mobile-projects-sticky-composer-input theia-mod-highlight-input\"></textarea>\n    222 × locator resolved to 2 elements. Proceeding with the first one: <textarea rows=\"2\" spellcheck=\"false\" placeholder=\"Delegate a task…\" class=\"theia-mobile-projects-sticky-composer-input theia-mod-highlight-input\"></textarea>\n"
+  },
+  "mobile": {
+    "viewport": "mobile",
+    "steps": [
+      {
+        "step": "initial-load",
+        "ttiMs": 771,
+        "ttftMs": 6776
+      }
+    ],
+    "metrics": [],
+    "error": "page.waitForSelector: Timeout 180000ms exceeded.\nCall log:\n  - waiting for locator('iframe[src*=\"qaap-dev/\"], iframe[src*=\"qaap-preview/\"]') to be visible\n"
+  }
+}
