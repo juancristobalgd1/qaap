@@ -302,8 +302,12 @@ export interface QaapAgentTaskCwdGroup {
 }
 
 export interface QaapAgentTaskAllResponse {
-    /** One entry per distinct cwd known to the runner. */
-    readonly groups: QaapAgentTaskCwdGroup[];
+    /**
+     * One entry per distinct cwd known to the runner. Present on the WebSocket snapshot only —
+     * HTTP `GET /all` omits it because the full history (with whole prompts in `command`) grows
+     * into tens of MB and the HTTP consumers read agents/models exclusively.
+     */
+    readonly groups?: QaapAgentTaskCwdGroup[];
     readonly agentConfigured: boolean;
     readonly agents: QaapAgentDescriptor[];
     readonly defaultAgent: string;

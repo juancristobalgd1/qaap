@@ -29,7 +29,8 @@ const BOOT_DELAY_MS = 2_500;
 
 /**
  * On app start, ask the backend which agent CLIs are outdated and surface a T3-like toast
- * (Cancel / Update / dismiss). Non-blocking: failures are swallowed; dismiss is session-scoped.
+ * (Cancel / Update / dismiss). Non-blocking: failures are swallowed; dismiss persists per
+ * agentId + latestVersion in localStorage, so a newer release still re-prompts.
  */
 @injectable()
 export class QaapAgentCliUpdateContribution implements FrontendApplicationContribution {
@@ -151,12 +152,12 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             this.toast = undefined;
             MobileSnackbar.show(
                 result.message
-                    ?? nls.localize(
-                        'qaap/agentCliUpdate/updated',
-                        '{0} updated to v{1}.',
-                        info.label,
-                        result.installedVersion ?? info.latestVersion,
-                    ),
+                ?? nls.localize(
+                    'qaap/agentCliUpdate/updated',
+                    '{0} updated to v{1}.',
+                    info.label,
+                    result.installedVersion ?? info.latestVersion,
+                ),
                 { kind: 'success', duration: 3200 },
             );
             void this.checkAndShow();
@@ -165,7 +166,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
 
         MobileSnackbar.show(
             result.message
-                ?? nls.localize('qaap/agentCliUpdate/updateFailed', 'Could not update {0}.', info.label),
+            ?? nls.localize('qaap/agentCliUpdate/updateFailed', 'Could not update {0}.', info.label),
             {
                 kind: 'warning',
                 duration: 5000,

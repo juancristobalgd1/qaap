@@ -86,8 +86,6 @@ export function recomputeMobileWorkHubHideIdeSidePanels(): void {
     setMobileWorkHubHideIdeSidePanels(!peekPreferDesktopIde() && !mobileWorkHubSideSheetOpen);
 }
 
-installMobileWorkHubBootGuard();
-
 export function markMobileProjectsLeftLanding(): void {
     /* Intentionally no-op. The shell keeps this state in memory for the current runtime only. */
 }
@@ -325,3 +323,8 @@ export function clearMobileProjectReadmeOpenRequest(): void {
         sessionStorage.removeItem(QAAP_MOBILE_PROJECTS_OPEN_README_KEY);
     }
 }
+
+// Runs at module load so the guard installs from the first bundle tick. Must stay below every
+// body-class constant above: in the bundled CommonJS output those exports are plain assignments
+// executed in source order, and calling this earlier toggles a class that is still `undefined`.
+installMobileWorkHubBootGuard();

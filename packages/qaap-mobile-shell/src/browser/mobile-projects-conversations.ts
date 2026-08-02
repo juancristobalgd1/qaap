@@ -38,11 +38,14 @@ import {
     type QaapConversationChangeEvent,
 } from '../common/qaap-conversation-change';
 import { backfillConversationTraceEvents } from '../common/qaap-transcript-trace-backfill';
+import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-landing';
 import { QaapThreadStore } from '../common/qaap-thread-store';
 import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
 import { cwdMatchesProject, lookupByCwd, normalizeCwd } from './mobile-projects-active-tasks';
 
 const STREAM_URL = `${QAAP_AGENT_CONVERSATION_API_PATH}/stream`;
+/** Minimum gap between full `/all` primes; live WS/SSE events reconcile state in between. */
+const PRIME_FROM_ALL_TTL_MS = 20_000;
 const SSE_RECONNECT_DELAY_MS = 5_000;
 /** Exponential backoff cap for WebSocket reconnects. */
 const WS_RECONNECT_MAX_MS = 30_000;
@@ -226,13 +229,24 @@ export class MobileProjectsConversations {
 
     protected primeFromAllInFlight: Promise<void> | undefined;
 
+    /** Fallback prime timer armed on WS open; cancelled once the server snapshot arrives. */
+    protected wsSnapshotFallbackHandle: number | undefined;
+
     protected schedulePrimeFromAll(): void {
+        // Collapse redundant primes (boot warms + SSE/WS open listeners fire together); live
+        // events reconcile anything that changes inside the window.
+        if (Date.now() - this.lastPrimeFromAllAt < PRIME_FROM_ALL_TTL_MS) {
+            return;
+        }
         if (!this.primeFromAllInFlight) {
+            this.lastPrimeFromAllAt = Date.now();
             this.primeFromAllInFlight = this.primeFromAll().finally(() => {
                 this.primeFromAllInFlight = undefined;
             });
         }
     }
+
+    protected lastPrimeFromAllAt = 0;
 
     /** iOS Safari suspends EventSource in background tabs — reconnect when the page is visible again. */
     protected installVisibilityReconnect(): void {
@@ -428,7 +442,7 @@ export class MobileProjectsConversations {
 
     /** Warm the full document in threadStore (deduped, best-effort). */
     prefetchDocument(conversationId: string): void {
-        if (!conversationId || conversationId.startsWith('pending-')) {
+        if (!conversationId || conversationId.startsWith('pending-') || conversationId === QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID) {
             return;
         }
         const cached = this.threadStore.getDocument(conversationId);
@@ -565,7 +579,12 @@ export class MobileProjectsConversations {
                     this.onDidReconnectTransportEmitter.fire();
                 }
                 this.markStreamingTransports('ws');
-                this.schedulePrimeFromAll();
+                // The server primes an equivalent `snapshot` on connect — only fall back to the
+                // HTTP /all prime if that snapshot never arrives (saves ~340KB per (re)connect).
+                this.wsSnapshotFallbackHandle = window.setTimeout(() => {
+                    this.wsSnapshotFallbackHandle = undefined;
+                    this.schedulePrimeFromAll();
+                }, 4000);
             });
 
             socket.addEventListener('message', ev => {
@@ -578,6 +597,10 @@ export class MobileProjectsConversations {
 
             socket.addEventListener('close', () => {
                 this.socket = undefined;
+                if (this.wsSnapshotFallbackHandle !== undefined) {
+                    window.clearTimeout(this.wsSnapshotFallbackHandle);
+                    this.wsSnapshotFallbackHandle = undefined;
+                }
                 this.transportWasDisconnected = true;
                 if (this.transport === 'ws') {
                     this.transport = 'none';
@@ -636,6 +659,10 @@ export class MobileProjectsConversations {
     protected dispatchServerPayload(payload: ConversationServerEvent): void {
         switch (payload.type) {
             case 'snapshot':
+                if (this.wsSnapshotFallbackHandle !== undefined) {
+                    window.clearTimeout(this.wsSnapshotFallbackHandle);
+                    this.wsSnapshotFallbackHandle = undefined;
+                }
                 this.applyConversationGroups(payload.groups);
                 return;
             case 'created':

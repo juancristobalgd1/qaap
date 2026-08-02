@@ -89,7 +89,7 @@ export async function hasAnyAgentConversationWork(): Promise<boolean> {
         return false;
     }
     try {
-        const response = await fetch('/qaap/api/agent-conversations/all', {
+        const response = await fetch('/qaap/api/agent-conversations/all?peek=1', {
             credentials: 'include',
             cache: 'no-store',
         });
@@ -99,11 +99,15 @@ export async function hasAnyAgentConversationWork(): Promise<boolean> {
         const body = await response.json() as {
             readonly groups?: ReadonlyArray<{
                 readonly streamingCount?: number;
+                /** Peek mode: count without payloads. */
+                readonly conversationCount?: number;
+                /** Full payload fallback (older servers / tests). */
                 readonly conversations?: ReadonlyArray<unknown>;
             }>;
         };
         for (const group of body.groups ?? []) {
-            if ((group.conversations?.length ?? 0) > 0 || (group.streamingCount ?? 0) > 0) {
+            const count = group.conversationCount ?? group.conversations?.length ?? 0;
+            if (count > 0 || (group.streamingCount ?? 0) > 0) {
                 return true;
             }
         }
@@ -125,7 +129,7 @@ export async function hasBlockingAgentConversationWork(): Promise<boolean> {
         return false;
     }
     try {
-        const response = await fetch('/qaap/api/agent-conversations/all', {
+        const response = await fetch('/qaap/api/agent-conversations/all?peek=1', {
             credentials: 'include',
             cache: 'no-store',
         });

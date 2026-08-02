@@ -35,6 +35,22 @@ const WS_PATH = `${QAAP_AGENT_TASK_API_PATH}/ws`;
 /** Header carrying the helper-CLI token when an agent calls back to spawn a sub-task. */
 const HELPER_TOKEN_HEADER = 'x-qaap-task-token';
 
+/**
+ * Wire cap for `task.command` in the WebSocket snapshot. Commands carry the FULL agent prompt
+ * (100KB+ observed), the history spans thousands of tasks, and the UI only reads the first ~80
+ * chars as a title fallback — ship a generous prefix instead of the whole prompt.
+ */
+const TASK_COMMAND_WIRE_MAX_CHARS = 2048;
+
+function trimTaskGroupCommandsForWire(group: QaapAgentTaskCwdGroup): QaapAgentTaskCwdGroup {
+    return {
+        ...group,
+        tasks: group.tasks.map(task => task.command.length > TASK_COMMAND_WIRE_MAX_CHARS
+            ? { ...task, command: task.command.slice(0, TASK_COMMAND_WIRE_MAX_CHARS) }
+            : task),
+    };
+}
+
 /** HTTP surface for the background agent-task runner. */
 @injectable()
 export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
@@ -92,8 +108,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             if (!ctx) {
                 return;
             }
+            // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
+            // full task history (with whole prompts) multiplies into tens of MB per call. Live
+            // task groups arrive over the WebSocket snapshot instead.
             res.json({
-                groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()),
                 agentConfigured: this.runner.isAgentConfigured(),
                 agents: this.runner.listAgents(),
                 defaultAgent: this.runner.defaultAgent(),
@@ -203,7 +221,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }
             const snapshot = {
                 type: 'snapshot',
-                groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()),
+                groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()).map(trimTaskGroupCommandsForWire),
                 agentConfigured: this.runner.isAgentConfigured(),
                 agents: this.runner.listAgents(),
                 defaultAgent: this.runner.defaultAgent(),

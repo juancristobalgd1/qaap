@@ -141,7 +141,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         if (auth.kind === 'skip') {
-            res.status(503).json({ error: 'GitHub sign-in required to sync project sessions' });
+            // Dev bypass: no GitHub identity to persist against. Mirror the GET's empty 200 so
+            // clients don't surface a console 503 on every session sync attempt.
+            res.json({});
             return;
         }
         const stored = auth.session;

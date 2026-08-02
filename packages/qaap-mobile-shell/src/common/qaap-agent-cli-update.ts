@@ -13,7 +13,7 @@ import { QAAP_AGENT_TASK_API_PATH } from './qaap-agent-task-client';
 /** GET list / POST update under the agent-tasks API. */
 export const QAAP_AGENT_CLI_UPDATES_PATH = `${QAAP_AGENT_TASK_API_PATH}/cli-updates`;
 
-/** sessionStorage key for per-agent dismissals of a specific latest version. */
+/** localStorage key for per-agent dismissals of a specific latest version. */
 export const QAAP_AGENT_CLI_UPDATE_DISMISS_KEY = 'qaap.agentCliUpdate.dismissed';
 
 /**
@@ -58,7 +58,7 @@ export interface QaapAgentCliUpdateResult {
     readonly message?: string;
 }
 
-/** Map of agentId → latestVersion that the user dismissed for this tab session. */
+/** Map of agentId → dismissed latestVersion (persists across reloads; a newer version re-prompts). */
 export type QaapAgentCliUpdateDismissMap = Readonly<Record<string, string>>;
 
 /**
@@ -160,7 +160,7 @@ export function pickNextAgentUpdateToShow(
 }
 
 export function readAgentCliUpdateDismissMap(
-    storage: Pick<Storage, 'getItem'> | undefined = typeof sessionStorage === 'undefined' ? undefined : sessionStorage,
+    storage: Pick<Storage, 'getItem'> | undefined = typeof localStorage === 'undefined' ? undefined : localStorage,
 ): QaapAgentCliUpdateDismissMap {
     if (!storage) {
         return {};
@@ -190,7 +190,7 @@ export function rememberAgentCliUpdateDismiss(
     agentId: string,
     latestVersion: string,
     storage: Pick<Storage, 'getItem' | 'setItem'> | undefined =
-        typeof sessionStorage === 'undefined' ? undefined : sessionStorage,
+        typeof localStorage === 'undefined' ? undefined : localStorage,
 ): void {
     if (!storage || !agentId || !latestVersion) {
         return;
@@ -199,7 +199,7 @@ export function rememberAgentCliUpdateDismiss(
     try {
         storage.setItem(QAAP_AGENT_CLI_UPDATE_DISMISS_KEY, JSON.stringify(next));
     } catch {
-        /* sessionStorage may be unavailable (private mode / quota) — ignore */
+        /* localStorage may be unavailable (private mode / quota) — ignore */
     }
 }
 

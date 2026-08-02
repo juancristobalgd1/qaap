@@ -95,8 +95,21 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!ctx) {
                 return;
             }
+            const groups = this.filterGroups(ctx, this.store.listAllGroupedByCwd());
+            if (req.query.peek === '1') {
+                // Existence/count probe (onboarding guards) — skips serializing the full
+                // conversation summaries (~340KB) just to answer a boolean.
+                res.json({
+                    groups: groups.map(group => ({
+                        cwd: group.cwd,
+                        streamingCount: group.streamingCount,
+                        conversationCount: group.conversations.length,
+                    })),
+                });
+                return;
+            }
             res.json({
-                groups: this.filterGroups(ctx, this.store.listAllGroupedByCwd()),
+                groups,
             } satisfies QaapAgentConversationAllResponse);
         });
         app.get(`${QAAP_AGENT_CONVERSATION_API_PATH}/stream`, (req, res) => {
