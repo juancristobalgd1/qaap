@@ -59,6 +59,12 @@ describe('qaap-project-bootstrap-port', () => {
         expect(command).to.include('--strictPort');
     });
 
+    it('wrapDevCommandForPort skips the `--` separator for pnpm (it forwards args literally)', () => {
+        const command = wrapDevCommandForPort('pnpm run dev', 5174, 'node-vite');
+        expect(command).to.match(/pnpm run dev --port 5174 --strictPort$/);
+        expect(command).not.to.include(' -- --port');
+    });
+
     it('wrapDevCommandForPort injects port flags into concurrently vite subcommands', () => {
         const command = wrapDevCommandForPort(
             'npx concurrently "vite" "node bridge.js"',
@@ -98,6 +104,12 @@ describe('qaap-project-bootstrap-port', () => {
 
     it('wrapDevCommandForPort passes -p to Next after PORT=', () => {
         expect(wrapDevCommandForPort('npm run dev', 3001, 'node-next')).to.match(/npm run dev -- -p 3001$/);
+    });
+
+    it('wrapDevCommandForPort skips `--` for pnpm+Next too', () => {
+        const command = wrapDevCommandForPort('pnpm run dev', 3001, 'node-next');
+        expect(command).to.match(/pnpm run dev -p 3001$/);
+        expect(command).not.to.include(' -- -p');
     });
 
     it('forces the allocated port when an npm script overwrites PORT inline', function (): void {

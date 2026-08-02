@@ -452,10 +452,11 @@ export class QaapProjectBootstrapService {
         if (!workspaceRoot) {
             return false;
         }
+        // Scope to this session's section so it never adopts another section's live claim.
         const current = await fetchQaapCurrentDevPreview([
             this.previewProjectId(workspaceRoot),
             this.activeProjectId,
-        ]);
+        ], this.activePreviewConversationId);
         if (!current?.ready) {
             return false;
         }

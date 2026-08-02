@@ -284,8 +284,15 @@ export function injectFrameworkPortIntoMultiProcessCommand(command: string, port
     return result;
 }
 
+// pnpm forwards args after the script name to the child literally: `--` would reach vite/next as
+// a real token (end-of-options) instead of being consumed, silently dropping the port flags.
+const PNPM_RUNNER_PATTERN = /(?:^|\s)pnpm\s+(?:run\s+)?\S+/;
+
 function appendCliPortFlag(command: string, port: number, isWindows: boolean, strictPort?: boolean): string {
     const strictSuffix = strictPort ? ' --strictPort' : '';
+    if (PNPM_RUNNER_PATTERN.test(command)) {
+        return `${command} --port ${port}${strictSuffix}`;
+    }
     if (isWindows) {
         return `${command} -- --port ${port}${strictSuffix}`;
     }
@@ -294,6 +301,10 @@ function appendCliPortFlag(command: string, port: number, isWindows: boolean, st
 
 /** Next.js reads `-p` / `--port` on `next dev`; keep explicit flags in addition to `PORT=`. */
 function appendNextDevPort(command: string, port: number, isWindows: boolean): string {
+    // Same pnpm caveat as appendCliPortFlag.
+    if (PNPM_RUNNER_PATTERN.test(command)) {
+        return `${command} -p ${port}`;
+    }
     if (isWindows) {
         return `${command} -- -p ${port}`;
     }

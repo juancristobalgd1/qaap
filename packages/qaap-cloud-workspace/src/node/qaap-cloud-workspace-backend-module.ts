@@ -206,6 +206,13 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
         const originalCreate = server.create.bind(server);
         server.create = async (options: IShellTerminalServerOptions) => {
             if (options.strictEnv !== true) {
+                // Under a PTY, corepack's interactive download prompt blocks stdin forever (no
+                // packageManager pin ⇒ latest-resolve too); explicit incoming env still wins below.
+                options.env = {
+                    COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
+                    COREPACK_DEFAULT_TO_LATEST: '0',
+                    ...(options.env ?? {}),
+                };
                 // Seed PATH from process.env so the helper-bin prefix builds on top of it.
                 // mergeProcessEnv (called inside super.create) keeps options.env entries over
                 // process.env, so anything we set here survives.

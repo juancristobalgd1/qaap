@@ -514,6 +514,9 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
             res.sendStatus(404);
             return;
         }
+        // Kill the dev server before releasing the claim (mirrors supersedeConversationPreviews),
+        // otherwise it keeps listening on the now-unclaimed port — the VPS orphan-process path.
+        this.terminatePreviewProcess(record);
         this.portRegistry.releasePreview(previewId, owner);
         console.info('[qaap-preview] released', { previewId, ownerLogin: owner, port: record.port });
         res.sendStatus(204);

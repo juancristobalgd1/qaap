@@ -1126,11 +1126,12 @@ export class MobileProjectsTranscriptSurfacesUi {
         } catch {
             cwdUri = undefined;
         }
+        // Scope to the open section so this surface never adopts another section's live claim.
         const current = await fetchQaapCurrentDevPreview([
             cwdUri,
             project.uri?.toString(),
             project.id,
-        ]);
+        ], this.previewScopeId());
         if (!current?.ready || !current.previewUrl) {
             return undefined;
         }

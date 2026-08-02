@@ -97,6 +97,7 @@ export async function probeQaapDevPreviewPort(port: number): Promise<QaapDevPrev
  */
 export async function fetchQaapCurrentDevPreview(
     projectCandidates: Array<string | undefined>,
+    conversationId?: string,
 ): Promise<QaapDevPreviewProbeResponse | undefined> {
     const origin = getQaapPublicOrigin();
     const candidates = projectCandidates.filter((value): value is string => !!value?.trim());
@@ -104,7 +105,12 @@ export async function fetchQaapCurrentDevPreview(
         return undefined;
     }
     try {
-        const query = candidates.map(value => `projectId=${encodeURIComponent(value)}`).join('&');
+        const projectQuery = candidates.map(value => `projectId=${encodeURIComponent(value)}`).join('&');
+        // Scope to this Work Hub section so it never adopts a sibling section's live claim.
+        const conversationQuery = conversationId?.trim()
+            ? `&conversationId=${encodeURIComponent(conversationId.trim())}`
+            : '';
+        const query = `${projectQuery}${conversationQuery}`;
         const response = await fetch(`${origin}${QAAP_DEV_PREVIEW_CURRENT_PATH}?${query}`, {
             cache: 'no-store',
             signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
