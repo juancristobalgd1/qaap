@@ -158,7 +158,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
                     info.label,
                     result.installedVersion ?? info.latestVersion,
                 ),
-                { kind: 'success', duration: 3200 },
+                { kind: 'success', duration: 3200, position: 'top' },
             );
             void this.checkAndShow();
             return;
@@ -170,6 +170,7 @@ export class QaapAgentCliUpdateContribution implements FrontendApplicationContri
             {
                 kind: 'warning',
                 duration: 5000,
+                position: 'top',
                 actionLabel: nls.localize('qaap/agentCliUpdate/settings', 'Settings'),
                 onAction: () => this.openSettings(),
             },

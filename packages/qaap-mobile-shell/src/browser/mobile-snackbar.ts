@@ -37,6 +37,13 @@ export namespace MobileSnackbar {
         actionLabel?: string;
         /** Invoked when the user taps the action button. */
         onAction?: () => void;
+        /**
+         * Anchor edge on narrow viewports. `top` mirrors the agent-CLI update toast
+         * (which drops from the top because the Work Hub composer owns the bottom
+         * edge), so outcome feedback lands where the prompt was. Defaults to `bottom`;
+         * wide viewports always keep the bottom placement.
+         */
+        position?: 'bottom' | 'top';
     }
 
     let host: HTMLElement | undefined;
@@ -67,6 +74,7 @@ export namespace MobileSnackbar {
             ? 0
             : Math.max(800, Math.min(8000, options.duration ?? 1800));
         node.classList.remove('theia-mod-kind-success', 'theia-mod-kind-warning', 'theia-mod-kind-loading');
+        node.classList.toggle('theia-mod-position-top', options.position === 'top');
         if (options.kind === 'success') {
             node.classList.add('theia-mod-kind-success');
         } else if (options.kind === 'warning') {

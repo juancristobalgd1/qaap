@@ -16714,6 +16714,21 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   pointer-events: auto;
 }
 
+/* Top-anchored variant (narrow viewports only): outcome feedback for prompts that
+ * drop from the top — e.g. the agent-CLI update toast — lands where the prompt was
+ * instead of on the Work Hub composer, which owns the bottom edge there. */
+@media (max-width: 767px) {
+  .theia-mobile-snackbar.theia-mod-position-top {
+    bottom: auto;
+    top: calc(env(safe-area-inset-top, 0px) + 60px);
+    transform: translate(-50%, -12px);
+  }
+
+  .theia-mobile-snackbar.theia-mod-position-top.theia-mod-visible {
+    transform: translate(-50%, 0);
+  }
+}
+
 .theia-mobile-snackbar.theia-mod-kind-success {
   background: var(--theia-debugConsole-infoForeground, #2c844a);
   border-color: color-mix(in srgb, var(--theia-debugConsole-infoForeground, #2c844a) 55%, #fff 20%);
