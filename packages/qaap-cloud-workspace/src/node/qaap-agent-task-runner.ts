@@ -7,7 +7,7 @@ import { Emitter, Event } from '@theia/core/lib/common/event';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { ChildProcess, spawnSync } from 'child_process';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
@@ -48,7 +48,6 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { extractRetrievalKeywords, formatRelevantFilesHint } from '../common/qaap-agent-retrieval';
 import { listNativeAgentModels } from './qaap-agent-native-models';
@@ -106,7 +105,6 @@ import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
-import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import {
     buildAgentReviewPrompt,
     parseAgentReviewVerdict,
@@ -138,10 +136,20 @@ import {
     changedSensitiveFiles as changedSensitiveFilesHelper,
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
 } from './qaap-agent-task-runner-utils';
-
-const WORKTREE_FINGERPRINT_MAX_BUFFER = 64 * 1024 * 1024;
-const WORKTREE_FINGERPRINT_MAX_UNTRACKED_BYTES = 512 * 1024 * 1024;
-const WORKTREE_FINGERPRINT_HASH_BATCH_SIZE = 128;
+import {
+    parseCustomAgent as parseCustomAgentHelper,
+    maxConcurrentAgents as maxConcurrentAgentsHelper,
+    maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper,
+    buildRepoTree as buildRepoTreeHelper,
+    buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper,
+    readGitStatusSnapshot as readGitStatusSnapshotHelper,
+    captureWorktreeStatus as captureWorktreeStatusHelper,
+    captureWorktreeFingerprint as captureWorktreeFingerprintHelper,
+    resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper,
+    appendBoundedCommandOutput as appendBoundedCommandOutputHelper,
+    readUserSettingsFromDisk as readUserSettingsFromDiskHelper,
+    stripSharedProviderEnv as stripSharedProviderEnvHelper,
+} from './qaap-agent-task-runner-utils2';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 interface AgentCandidate {
@@ -190,12 +198,9 @@ export interface QaapGenericCommandResult {
     readonly timedOut: boolean;
 }
 
-const GENERIC_COMMAND_TRUNCATED_PREFIX = '...[truncated]...\n';
 
 /** Cap on the generated repo-map block (shallow tree + recently-changed files). */
 const REPO_MAP_MAX_CHARS = 4000;
-/** Cap on the git status snapshot block (branch + working tree + recent commits). */
-const GIT_STATUS_SNAPSHOT_MAX_CHARS = 1500;
 /**
  * Query-specific retrieval: ripgrep the user's message keywords over source and inject the top
  * matching file paths as a "likely relevant files" hint. Default-on (bounded, 4s timeout) so the
@@ -213,7 +218,6 @@ const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
     '.venv', 'venv', '__pycache__', 'target', 'vendor', '.idea', '.vscode',
 ]);
 /** Source-ish top-level directories worth expanding one level deeper in the repo map. */
-const REPO_MAP_SOURCE_DIRS = new Set<string>(['src', 'app', 'components', 'pages', 'packages', 'server', 'api']);
 
 /** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
 const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'grok', 'codex', 'claude'];
@@ -263,8 +267,6 @@ const IDLE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
  */
 const QUEUED_APPROVAL_GRACE_TIMEOUT_MS = 5 * 60 * 1000;
 /** Default cap on simultaneously running VPS agent processes per backend instance. */
-const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
-const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
 /**
  * Default cap on simultaneously running agents for ONE authenticated user. Without it the global
  * cap is per-instance, so one user (or a fan-out of sub-tasks) fills every slot and starves all
@@ -272,8 +274,6 @@ const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
  * VPS. Only enforced for authenticated owners; the shared/anonymous (local single-user) bucket
  * keeps using the global cap alone.
  */
-const DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER = 2;
-const MAX_CONCURRENT_AGENTS_PER_USER_ENV = 'QAAP_MAX_CONCURRENT_AGENTS_PER_USER';
 
 /** Legacy single-token file (pre per-user tokens); retained only for directory creation. */
 const TOKEN_PATH = path.join(os.homedir(), '.qaap', 'task-token');
@@ -679,34 +679,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected parseCustomAgent(entry: unknown, index: number): AgentCandidate[] {
-        if (!entry || typeof entry !== 'object') {
-            console.warn(`[qaap-agent-tasks] ignored ${CUSTOM_AGENTS_ENV}[${index}]: entry must be an object.`);
-            return [];
-        }
-        const record = entry as { id?: unknown; label?: unknown; bin?: unknown; template?: unknown; command?: unknown };
-        const id = typeof record.id === 'string' ? record.id.trim().toLowerCase() : '';
-        const label = typeof record.label === 'string' ? record.label.trim() : '';
-        const bin = typeof record.bin === 'string' ? record.bin.trim() : undefined;
-        const template = typeof record.template === 'string'
-            ? record.template.trim()
-            : typeof record.command === 'string'
-                ? record.command.trim()
-                : '';
-        if (
-            !/^[a-z][a-z0-9-]{1,63}$/.test(id)
-            || id === SHELL_AGENT_ID
-            || id === ENV_AGENT_ID
-            || id === QAIQ_AGENT_ID
-            || AGENT_CANDIDATES.some(candidate => candidate.id === id)
-        ) {
-            console.warn(`[qaap-agent-tasks] ignored ${CUSTOM_AGENTS_ENV}[${index}]: invalid or reserved id "${id}".`);
-            return [];
-        }
-        if (!template) {
-            console.warn(`[qaap-agent-tasks] ignored ${CUSTOM_AGENTS_ENV}[${index}]: template is required.`);
-            return [];
-        }
-        return [{ id, label: label || id, bin, template }];
+        return parseCustomAgentHelper(entry, index, AGENT_CANDIDATES, SHELL_AGENT_ID, ENV_AGENT_ID, CUSTOM_AGENTS_ENV);
     }
 
     protected isOnPath(bin: string): boolean {
@@ -759,12 +732,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected maxConcurrentAgents(): number {
-        const raw = process.env[MAX_CONCURRENT_AGENTS_ENV]?.trim();
-        if (!raw) {
-            return DEFAULT_MAX_CONCURRENT_AGENTS;
-        }
-        const parsed = Number.parseInt(raw, 10);
-        return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENT_AGENTS;
+        return maxConcurrentAgentsHelper();
     }
 
     protected countRunningTasks(): number {
@@ -778,12 +746,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected maxConcurrentAgentsPerUser(): number {
-        const raw = process.env[MAX_CONCURRENT_AGENTS_PER_USER_ENV]?.trim();
-        if (!raw) {
-            return DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER;
-        }
-        const parsed = Number.parseInt(raw, 10);
-        return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER;
+        return maxConcurrentAgentsPerUserHelper();
     }
 
     protected runningTaskCountForOwner(ownerLogin: string): number {
@@ -1362,73 +1325,12 @@ export class QaapAgentTaskRunner {
 
     /** Two-level directory listing, source dirs expanded one level, hygiene dirs excluded. */
     protected buildRepoTree(cwd: string): string | undefined {
-        let entries: fs.Dirent[];
-        try {
-            entries = fs.readdirSync(cwd, { withFileTypes: true });
-        } catch {
-            return undefined;
-        }
-        const lines: string[] = [];
-        const dirs = entries.filter(e => e.isDirectory() && !REPO_MAP_EXCLUDED_DIRS.has(e.name) && !e.name.startsWith('.'))
-            .map(e => e.name).sort();
-        const files = entries.filter(e => e.isFile() && !e.name.startsWith('.')).map(e => e.name).sort();
-        for (const dir of dirs) {
-            lines.push(`${dir}/`);
-            if (REPO_MAP_SOURCE_DIRS.has(dir)) {
-                let children: fs.Dirent[] = [];
-                try {
-                    children = fs.readdirSync(path.join(cwd, dir), { withFileTypes: true });
-                } catch {
-                    children = [];
-                }
-                const childNames = children
-                    .filter(c => !REPO_MAP_EXCLUDED_DIRS.has(c.name) && !c.name.startsWith('.'))
-                    .map(c => (c.isDirectory() ? `${c.name}/` : c.name))
-                    .sort()
-                    .slice(0, 40);
-                for (const child of childNames) {
-                    lines.push(`  ${child}`);
-                }
-            }
-        }
-        for (const file of files.slice(0, 30)) {
-            lines.push(file);
-        }
-        if (lines.length === 0) {
-            return undefined;
-        }
-        return `Source tree (depth 2):\n${lines.join('\n')}`;
+        return buildRepoTreeHelper(cwd);
     }
 
     /** Recently-changed files via git, so the agent knows where work is already in flight. */
     protected buildRecentlyChangedFiles(cwd: string): string | undefined {
-        if (!fs.existsSync(path.join(cwd, '.git'))) {
-            return undefined;
-        }
-        const names = new Set<string>();
-        for (const args of [['diff', '--name-only', 'HEAD~5', '--'], ['status', '--porcelain', '--untracked-files=all']]) {
-            try {
-                const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
-                if (out.status !== 0 || !out.stdout) {
-                    continue;
-                }
-                for (const raw of out.stdout.split('\n')) {
-                    const line = args[0] === 'status' ? raw.slice(3).trim() : raw.trim();
-                    if (line) {
-                        names.add(line);
-                    }
-                    if (names.size >= 25) {
-                        break;
-                    }
-                }
-            } catch {
-                // git unavailable or slow — skip this source.
-            }
-        }
-        if (names.size === 0) {
-            return undefined;
-        }
-        return `Recently changed files:\n${[...names].slice(0, 25).map(n => `- ${n}`).join('\n')}`;
+        return buildRecentlyChangedFilesHelper(cwd);
     }
 
     /**
@@ -1437,42 +1339,7 @@ export class QaapAgentTaskRunner {
      * working tree drifts as the agent edits between turns.
      */
     protected readGitStatusSnapshot(cwd: string): string | undefined {
-        if (!fs.existsSync(path.join(cwd, '.git'))) {
-            return undefined;
-        }
-        const run = (args: string[]): string | undefined => {
-            try {
-                const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
-                return out.status === 0 && out.stdout.trim() ? out.stdout.trim() : undefined;
-            } catch {
-                return undefined;
-            }
-        };
-        const sections: string[] = [];
-        const branch = run(['rev-parse', '--abbrev-ref', 'HEAD']);
-        if (branch) {
-            sections.push(`Branch: ${branch}`);
-        }
-        const status = run(['status', '--porcelain']);
-        if (status) {
-            const lines = status.split('\n');
-            const shown = lines.slice(0, 20);
-            const more = lines.length > shown.length ? `\n…(${lines.length - shown.length} more)` : '';
-            sections.push(`Working tree:\n${shown.join('\n')}${more}`);
-        } else {
-            sections.push('Working tree: clean');
-        }
-        const log = run(['log', '--oneline', '-5']);
-        if (log) {
-            sections.push(`Recent commits:\n${log}`);
-        }
-        if (sections.length === 0) {
-            return undefined;
-        }
-        const text = sections.join('\n\n');
-        return text.length > GIT_STATUS_SNAPSHOT_MAX_CHARS
-            ? `${text.slice(0, GIT_STATUS_SNAPSHOT_MAX_CHARS - 1).trimEnd()}…`
-            : text;
+        return readGitStatusSnapshotHelper(cwd);
     }
 
     /**
@@ -2597,21 +2464,7 @@ export class QaapAgentTaskRunner {
      * equivalent dirty trees compare equal even when git emits paths in different orders.
      */
     protected captureWorktreeStatus(cwd: string): string | undefined {
-        const result = spawnSync('git', ['-C', cwd, 'status', '--porcelain', '--untracked-files=all'], {
-            cwd,
-            encoding: 'utf8',
-            maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        if (result.status !== 0 || result.error || typeof result.stdout !== 'string') {
-            return undefined;
-        }
-        return result.stdout
-            .split('\n')
-            .map(line => line.trimEnd())
-            .filter(Boolean)
-            .sort()
-            .join('\n');
+        return captureWorktreeStatusHelper(cwd);
     }
 
     /**
@@ -2621,76 +2474,11 @@ export class QaapAgentTaskRunner {
      * instead of a bare "any dirty path" probe.
      */
     protected captureWorktreeFingerprint(cwd: string): string | undefined {
-        const runGit = (args: readonly string[]): string | undefined => {
-            const result = spawnSync('git', ['-C', cwd, ...args], {
-                cwd,
-                encoding: 'utf8',
-                maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
-                stdio: ['ignore', 'pipe', 'pipe'],
-            });
-            return result.status === 0 && !result.error && typeof result.stdout === 'string'
-                ? result.stdout
-                : undefined;
-        };
-        const head = runGit(['rev-parse', '--verify', 'HEAD']);
-        const diff = runGit(['diff', '--no-ext-diff', '--binary', 'HEAD', '--']);
-        const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z']);
-        if (head === undefined || diff === undefined || untracked === undefined) {
-            return undefined;
-        }
-        const root = path.resolve(cwd);
-        const hash = createHash('sha256');
-        hash.update('head\0').update(head).update('\0diff\0').update(diff).update('\0untracked\0');
-        const regularUntrackedFiles: string[] = [];
-        let untrackedBytes = 0n;
-        try {
-            for (const relativePath of untracked.split('\0')) {
-                if (!relativePath) {
-                    continue;
-                }
-                const absolutePath = path.resolve(root, relativePath);
-                const relativeToRoot = path.relative(root, absolutePath);
-                if (relativeToRoot === '..' || relativeToRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeToRoot)) {
-                    return undefined;
-                }
-                const stat = fs.lstatSync(absolutePath, { bigint: true });
-                hash.update(relativePath).update('\0');
-                hash.update(`${stat.mode}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`).update('\0');
-                if (stat.isFile()) {
-                    untrackedBytes += stat.size;
-                    if (untrackedBytes > BigInt(WORKTREE_FINGERPRINT_MAX_UNTRACKED_BYTES)) {
-                        return undefined;
-                    }
-                    regularUntrackedFiles.push(relativePath);
-                } else if (stat.isSymbolicLink()) {
-                    hash.update(fs.readlinkSync(absolutePath)).update('\0');
-                }
-            }
-        } catch {
-            return undefined;
-        }
-        for (let offset = 0; offset < regularUntrackedFiles.length; offset += WORKTREE_FINGERPRINT_HASH_BATCH_SIZE) {
-            const contentHashes = runGit([
-                'hash-object',
-                '--no-filters',
-                '--',
-                ...regularUntrackedFiles.slice(offset, offset + WORKTREE_FINGERPRINT_HASH_BATCH_SIZE),
-            ]);
-            if (contentHashes === undefined) {
-                return undefined;
-            }
-            hash.update('content\0').update(contentHashes).update('\0');
-        }
-        return hash.digest('hex');
+        return captureWorktreeFingerprintHelper(cwd);
     }
 
     protected async resolveVerificationScriptsForCwd(cwd: string): Promise<string[]> {
-        try {
-            const raw = await fsp.readFile(path.join(cwd, 'package.json'), 'utf8');
-            return resolveQaapAgentVerificationScripts(JSON.parse(raw) as unknown);
-        } catch {
-            return [];
-        }
+        return resolveVerificationScriptsForCwdHelper(cwd);
     }
 
     protected async runVerificationScripts(
@@ -2886,27 +2674,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected appendBoundedCommandOutput(current: string, chunk: string, maxChars: number | undefined): string {
-        if (maxChars === undefined) {
-            return `${current}${chunk}`;
-        }
-        if (!Number.isFinite(maxChars) || maxChars <= 0) {
-            return '';
-        }
-        const boundedMax = Math.floor(maxChars);
-        if (boundedMax <= GENERIC_COMMAND_TRUNCATED_PREFIX.length) {
-            return `${current}${chunk}`.slice(-boundedMax);
-        }
-        const contentMax = boundedMax - GENERIC_COMMAND_TRUNCATED_PREFIX.length;
-        const wasTruncated = current.startsWith(GENERIC_COMMAND_TRUNCATED_PREFIX);
-        const currentContent = wasTruncated ? current.slice(GENERIC_COMMAND_TRUNCATED_PREFIX.length) : current;
-        if (!wasTruncated && currentContent.length + chunk.length <= boundedMax) {
-            return `${currentContent}${chunk}`;
-        }
-        if (chunk.length >= contentMax) {
-            return `${GENERIC_COMMAND_TRUNCATED_PREFIX}${chunk.slice(-contentMax)}`;
-        }
-        const keepFromCurrent = Math.max(0, contentMax - chunk.length);
-        return `${GENERIC_COMMAND_TRUNCATED_PREFIX}${currentContent.slice(-keepFromCurrent)}${chunk}`;
+        return appendBoundedCommandOutputHelper(current, chunk, maxChars);
     }
 
     protected appendAndFireOutput(taskId: string, chunk: string): void {
@@ -3123,46 +2891,14 @@ export class QaapAgentTaskRunner {
      *  don't leak across users. Operator-level keys are intentionally stripped;
      *  each user must configure their own keys via per-user settings. */
     protected stripSharedProviderEnv(env: NodeJS.ProcessEnv): void {
-        for (const mapping of AGENT_ENV_PREFS) {
-            delete env[mapping.env];
-        }
-        // Also strip compat-derived keys that would short-circuit per-user resolution.
-        delete env.OPENAI_BASE_URL;
-        delete env.CLAUDE_CODE_USE_OPENAI;
-        delete env.NVIDIA_NIM;
-        // Backend-only secrets the agent never needs. Without this the child inherits them via
-        // {...process.env}, so any user could exfiltrate them with `env | grep -i secret`: the OAuth
-        // client secret enables app impersonation, and the VAPID private key lets it forge Web Push
-        // to other users. Deleting them here (the single spawn-env chokepoint) closes SEC-3.
-        delete env.QAAP_GITHUB_CLIENT_SECRET;
-        delete env.QAAP_VAPID_PRIVATE_KEY;
-        delete env.QAAP_VAPID_SUBJECT;
+        stripSharedProviderEnvHelper(env);
     }
 
     /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
      *  When ownerLogin is provided, prefers the per-user settings file; falls back to the shared
      *  ~/.theia/settings.json so single-user VPS deployments keep working with Settings → AI. */
     protected readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
-        try {
-            const userSettingsPath = ownerLogin?.trim()
-                ? path.join(os.homedir(), '.qaap', 'users', safeUserIdSegment(ownerLogin), 'settings.json')
-                : undefined;
-            const sharedSettingsPath = path.join(os.homedir(), '.theia', 'settings.json');
-            const settingsPath = userSettingsPath && fs.existsSync(userSettingsPath)
-                ? userSettingsPath
-                : sharedSettingsPath;
-            if (!fs.existsSync(settingsPath)) {
-                return {};
-            }
-            const raw = fs.readFileSync(settingsPath, 'utf8');
-            if (!raw.trim()) {
-                return {};
-            }
-            return JSON.parse(raw) as Record<string, unknown>;
-        } catch (error) {
-            console.warn('[qaap-agent-tasks] failed to read user settings from disk:', error instanceof Error ? error.message : String(error));
-            return {};
-        }
+        return readUserSettingsFromDiskHelper(ownerLogin);
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map OpenRouter prefs when needed. */
