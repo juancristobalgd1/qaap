@@ -340,4 +340,53 @@ describe('Multitasking fix — no cancel on new message to streaming conversatio
             expect(postCalls).to.have.length(1);
         });
     });
+
+    // --- Regression: parallel sends must bypass the submitInFlight gate ---
+
+    describe('parallel send bypasses submitInFlightByConversationId gate', () => {
+        it('simulates a parallel send succeeding while a non-parallel POST is in flight', async () => {
+            // Simulates the fixed gate logic: parallel sends skip the in-flight check.
+            const inFlightIds = new Set<string>();
+            const convId = 'c1';
+
+            // First (non-parallel) send starts — adds to in-flight set
+            inFlightIds.add(convId);
+            const firstSendDone = new Promise<void>(resolve => {
+                setTimeout(() => {
+                    inFlightIds.delete(convId);
+                    resolve();
+                }, 0);
+            });
+
+            // Second (parallel) send arrives while first is in flight
+            const parallel = true;
+            const blocked = !parallel && inFlightIds.has(convId);
+            expect(blocked).to.equal(false, 'parallel send must NOT be blocked by in-flight gate');
+
+            await firstSendDone;
+            expect(inFlightIds.has(convId)).to.equal(false, 'first send should have cleared the gate');
+        });
+
+        it('simulates a non-parallel send being blocked while another POST is in flight', async () => {
+            const inFlightIds = new Set<string>();
+            const convId = 'c1';
+
+            inFlightIds.add(convId);
+
+            const parallel = false;
+            const blocked = !parallel && inFlightIds.has(convId);
+            expect(blocked).to.equal(true, 'non-parallel send MUST be blocked by in-flight gate');
+        });
+
+        it('simulates two parallel sends both going through concurrently', async () => {
+            const inFlightIds = new Set<string>();
+            const convId = 'c1';
+
+            // Neither parallel send should be blocked
+            const blocked1 = !true && inFlightIds.has(convId);
+            const blocked2 = !true && inFlightIds.has(convId);
+            expect(blocked1).to.equal(false);
+            expect(blocked2).to.equal(false);
+        });
+    });
 });

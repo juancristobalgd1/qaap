@@ -201,13 +201,17 @@ export class MobileProjectsTranscriptSubmitUi {
         // Reports whether the message was actually submitted. A concurrent send that lands while
         // another POST for this conversation is still open is skipped here — the caller must be
         // able to tell that apart from a completed send, or the message is silently lost (it was
-        // already cleared from the composer draft by then).
-        if (this.submitInFlightByConversationId.has(summary.id)) {
+        // already cleared from the composer draft by then). Parallel (peer-run) sends bypass this
+        // gate because they are intentionally concurrent with the in-flight POST.
+        const parallel = !!options.parallel;
+        if (!parallel && this.submitInFlightByConversationId.has(summary.id)) {
             return false;
         }
         const submitAt = Date.now();
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'ui_submit_clicked', submitAt);
-        this.submitInFlightByConversationId.add(summary.id);
+        if (!parallel) {
+            this.submitInFlightByConversationId.add(summary.id);
+        }
         // Fire-and-forget: a user starting a task is the natural consent moment to ask whether
         // they want a notification when it settles — browsers require a user gesture for this.
         void this.turnSettleNotifier.maybeRequestPermission();
@@ -215,7 +219,9 @@ export class MobileProjectsTranscriptSubmitUi {
             await this.submitTranscriptViaBackendConversationInner(project, summary, content, options, submitAt);
             return true;
         } finally {
-            this.submitInFlightByConversationId.delete(summary.id);
+            if (!parallel) {
+                this.submitInFlightByConversationId.delete(summary.id);
+            }
         }
     }
 
@@ -336,14 +342,21 @@ export class MobileProjectsTranscriptSubmitUi {
             // Mark as parallel so the POST path knows this is a concurrent send.
             options.parallel = true;
         }
-        const optimistic: QaapAgentConversationDTO = {
-            ...base,
-            status: 'streaming',
-            messages: appendOptimisticPendingUserMessage(base.messages, pendingUserMessage),
-        };
-        const activeChatHost = this.host.resolveActiveTranscriptChatHost();
-        if (activeChatHost) {
-            this.renderTranscriptSubmitMessages(activeChatHost, optimistic, summary);
+        // Skip the second optimistic render if the pending is already in transcriptLastConv
+        // from renderInstantSubmitOptimistic — avoids double-painting the pending bubble when
+        // an SSE tick from the first agent updated transcriptLastConv between the two renders.
+        const pendingAlreadyRendered = this.host.transcriptLastConv?.id === summary.id
+            && this.host.transcriptLastConv.messages.some(m => m.id === pendingUserMessage.id);
+        if (!pendingAlreadyRendered) {
+            const optimistic: QaapAgentConversationDTO = {
+                ...base,
+                status: 'streaming',
+                messages: appendOptimisticPendingUserMessage(base.messages, pendingUserMessage),
+            };
+            const activeChatHost = this.host.resolveActiveTranscriptChatHost();
+            if (activeChatHost) {
+                this.renderTranscriptSubmitMessages(activeChatHost, optimistic, summary);
+            }
         }
         try {
             const agentModel = options.agentModel ?? this.resolveTranscriptSubmitAgentModel(agent, summary);

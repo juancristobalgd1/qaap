@@ -23,6 +23,7 @@ import {
 } from '../common/qaap-git-review';
 import { leadingTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
 import { isCurrentAgentDiffRequest } from './qaap-diff-review-request-state';
+import { selectFileAfterRefresh } from './qaap-diff-review-select';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import {
     highlightTranscriptCodeInto,
@@ -333,9 +334,8 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 await Promise.all([...this.expandedAgentFiles].map(path => this.loadAgentFileDiff(path)));
                 return;
             }
-            const stillThere = this.files.some(file => file.path === this.selectedPath);
-            const next = stillThere ? this.selectedPath : this.files[0]?.path;
-            if (next !== this.selectedPath || (next && !this.diff)) {
+            const next = selectFileAfterRefresh(this.files, this.selectedPath);
+            if (next) {
                 await this.selectFile(next);
                 return;
             }

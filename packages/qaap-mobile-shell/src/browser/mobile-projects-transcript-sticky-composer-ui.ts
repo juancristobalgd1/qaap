@@ -1677,6 +1677,13 @@ export class MobileProjectsTranscriptStickyComposerUi {
                 // message never left, and the composer draft is already cleared — queue it.
                 return this.queuePeerRunMessage(summary, entry);
             }
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/peerRunStarted',
+                    'Message sent — the agent will process it alongside the running task',
+                ),
+                { duration: 2600 },
+            );
             return true;
         } catch (error) {
             if (!isMaxConcurrentRunsError(error)) {
