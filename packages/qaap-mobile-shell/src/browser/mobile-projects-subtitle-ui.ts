@@ -9,13 +9,9 @@ import {
     QAAP_WORK_HUB_WORKFLOWS,
     countCatalogItems,
 } from '../common/mobile-work-hub-catalog';
-import { filterRoutinesByQuery } from '../common/qaap-work-hub-routine';
-import { filterResearchGoalsByQuery } from '../common/qaap-research-goal';
 import { githubRepoKeysForProjects } from './mobile-work-hub-inbox';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
-import type { QaapWorkHubRoutine } from '../common/qaap-work-hub-routine';
-import type { ResearchGoal } from '../common/qaap-research-goal';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -29,12 +25,6 @@ export interface MobileProjectsSubtitleHost {
     diffScanning: boolean;
     homeMode: boolean;
     query: string;
-    workHubRoutines: QaapWorkHubRoutine[];
-    workHubRoutinesLoading: boolean;
-    workHubRoutinesLoaded: boolean;
-    researchGoals: ResearchGoal[];
-    researchGoalsLoading: boolean;
-    researchGoalsLoaded: boolean;
     agentsHubInlineActive: boolean;
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
@@ -107,54 +97,6 @@ export class MobileProjectsSubtitleUi {
                 '{0} agent workflows for the Qaap mobile workbench',
                 String(count),
             );
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'routines') {
-            this.host.subtitleEl.className = 'theia-mobile-projects-subtitle';
-            const visible = filterRoutinesByQuery(this.host.workHubRoutines, this.host.query);
-            const running = visible.filter(r => r.lastRunState === 'running').length;
-            if (this.host.workHubRoutinesLoading && !this.host.workHubRoutinesLoaded) {
-                this.host.subtitleEl.textContent = nls.localize('qaap/mobileProjects/routinesLoading', 'Loading routines…');
-            } else if (running > 0) {
-                this.host.subtitleEl.textContent = nls.localize(
-                    'qaap/mobileProjects/routinesSubtitleRunning',
-                    '{0} routines · {1} running on the VPS',
-                    String(visible.length),
-                    String(running),
-                );
-            } else {
-                this.host.subtitleEl.textContent = visible.length > 0
-                    ? nls.localize(
-                        'qaap/mobileProjects/routinesSubtitle',
-                        '{0} on your VPS',
-                        String(visible.length),
-                    )
-                    : '';
-            }
-            return;
-        }
-        if (this.host.homeMode && this.host.hubView === 'research') {
-            this.host.subtitleEl.className = 'theia-mobile-projects-subtitle';
-            const visible = filterResearchGoalsByQuery(this.host.researchGoals, this.host.query);
-            const running = visible.filter(goal => goal.status === 'running').length;
-            if (this.host.researchGoalsLoading && !this.host.researchGoalsLoaded) {
-                this.host.subtitleEl.textContent = nls.localize('qaap/mobileProjects/researchLoading', 'Loading research goals…');
-            } else if (running > 0) {
-                this.host.subtitleEl.textContent = nls.localize(
-                    'qaap/mobileProjects/researchSubtitleRunning',
-                    '{0} goals · {1} running on the VPS',
-                    String(visible.length),
-                    String(running),
-                );
-            } else {
-                this.host.subtitleEl.textContent = visible.length > 0
-                    ? nls.localize(
-                        'qaap/mobileProjects/researchSubtitle',
-                        '{0} research goals',
-                        String(visible.length),
-                    )
-                    : '';
-            }
             return;
         }
         if (this.host.homeMode && this.host.hubView === 'tasks') {

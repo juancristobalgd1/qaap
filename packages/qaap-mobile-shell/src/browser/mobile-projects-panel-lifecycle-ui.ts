@@ -46,7 +46,6 @@ export interface MobileProjectsPanelLifecycleHost {
     tasksFirstLoadFallback: number | undefined;
     inboxPullRequests: QaapGithubPullRequestSummary[];
     inboxPullRequestsLoaded: boolean;
-    routinesRefreshTimer: number | undefined;
     chatServiceRefreshHandle: number | undefined;
     chatSessionModelDisposables: Map<string, Disposable>;
     chatSessionProjectIds: Map<string, string>;
@@ -76,7 +75,6 @@ export interface MobileProjectsPanelLifecycleHost {
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
     transcriptSheetUi: MobileProjectsTranscriptSheetUi;
 
-    closeRoutineEditor(): void;
     closeCardMenu(): void;
     stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     workHubSearchUi: import('./mobile-projects-work-hub-search-ui').MobileProjectsWorkHubSearchUi;
@@ -121,9 +119,7 @@ export class MobileProjectsPanelLifecycleUi {
 
     dispose(): void {
         dismissQaapAccountMenu();
-        window.clearTimeout(this.host.routinesRefreshTimer);
         window.clearTimeout(this.host.tasksFirstLoadFallback);
-        this.host.closeRoutineEditor();
         window.removeEventListener('qaap-auth-session-changed', this.host.onAuthSessionChanged);
         this.host.accountBtn.removeEventListener('click', this.host.onAccountClick);
         this.host.cardMenuUi.closeCardMenu();

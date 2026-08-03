@@ -165,7 +165,7 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
             }
             return ctx.toggleProjectsPanel();
         },
-        isEnabled: () => ctx.shouldActivateMobileLayout() && ctx.workspaceService.opened,
+        isEnabled: () => (ctx.shouldActivateMobileLayout() || peekPreferDesktopIde()) && ctx.workspaceService.opened,
         isVisible: () => matchesMobileOneColumnLayout() && ctx.workspaceService.opened,
     });
     // Project card "Open agent" button. Submits to the backend agent-task runner so the work

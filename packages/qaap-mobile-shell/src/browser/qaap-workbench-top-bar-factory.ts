@@ -41,8 +41,8 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
 
-    createLeadingTopBarWidget(commands: CommandRegistry): Widget {
-        return new QaapWorkbenchNavControlsWidget(this.projectsService, this.workspaceService, this.projectSwitcher);
+    createLeadingTopBarWidget(commands: CommandRegistry, shell: ApplicationShell): Widget {
+        return new QaapWorkbenchNavControlsWidget(this.projectsService, this.workspaceService, this.projectSwitcher, shell);
     }
 
     createTrailingTopBarWidgets(commands: CommandRegistry, shell: ApplicationShell): Widget[] {

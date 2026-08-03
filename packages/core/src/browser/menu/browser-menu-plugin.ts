@@ -453,7 +453,7 @@ export class BrowserMenuBarContribution implements FrontendApplicationContributi
     }
 
     protected appendMenu(shell: ApplicationShell): void {
-        shell.addWidget(this.topBarFactory.createLeadingTopBarWidget(this.commandRegistry), { area: 'top' });
+        shell.addWidget(this.topBarFactory.createLeadingTopBarWidget(this.commandRegistry, shell), { area: 'top' });
         const menu = this.factory.createMenuBar();
         shell.addWidget(menu, { area: 'top' });
         for (const widget of this.topBarFactory.createTrailingTopBarWidgets(this.commandRegistry, shell)) {

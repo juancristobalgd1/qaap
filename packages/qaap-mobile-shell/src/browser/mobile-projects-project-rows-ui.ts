@@ -58,9 +58,6 @@ export interface MobileProjectsProjectRowsHost {
     openTaskInAgent(project: MobileProjectEntry, task?: MobileProjectTaskView): Promise<void>;
 }
 
-/** Non-Git statuses that get a text chip in compact rows; every Git/PR status always gets one. */
-export const SIDEBAR_STATUS_CHIP_IDS: ReadonlySet<string> = new Set(['needs-you', 'failed', 'running']);
-
 /** Project list cards, expanded task blocks, and conversation row rendering. */
 export class MobileProjectsProjectRowsUi {
 
@@ -68,10 +65,6 @@ export class MobileProjectsProjectRowsUi {
 
     createTaskLeadingGlyph(codiconClass: string): HTMLElement {
         return createTaskLeadingGlyphExtracted(this, codiconClass);
-    }
-
-    protected createSidebarStatusChip(visualStatus: QaapAgentTaskVisualStatus): HTMLElement {
-        return createSidebarStatusChipExtracted(this, visualStatus);
     }
 
     createRow(project: MobileProjectEntry): HTMLElement {

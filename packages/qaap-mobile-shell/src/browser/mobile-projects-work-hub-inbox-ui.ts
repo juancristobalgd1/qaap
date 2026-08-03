@@ -425,12 +425,7 @@ export class MobileProjectsWorkHubInboxUi {
         const since = document.createElement('span');
         since.className = 'theia-mobile-projects-task-since';
         since.textContent = this.formatInboxPullRequestSince(pullRequest);
-        const statusChip = document.createElement('span');
-        statusChip.className = `theia-mobile-projects-task-status-chip theia-mod-${visualStatus.id}`;
-        statusChip.textContent = statusLabel;
-        statusChip.setAttribute('aria-label', statusLabel);
-        statusChip.title = statusLabel;
-        titleRow.append(title, statusChip, since);
+        titleRow.append(title, since);
         body.append(titleRow);
 
         const foot = document.createElement('div');

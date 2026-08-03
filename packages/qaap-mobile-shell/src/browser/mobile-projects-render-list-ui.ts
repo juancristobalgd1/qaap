@@ -33,8 +33,6 @@ export interface MobileProjectsRenderListHost {
     renderTasksHubView(projects: MobileProjectEntry[]): void;
     renderReviewHubView(projects: MobileProjectEntry[]): void;
     renderCatalogHubView(): void;
-    renderRoutinesHubView(): void;
-    renderResearchHubView(): void;
     createEmptyState(): HTMLElement;
     createProjectDetailView(project: MobileProjectEntry): HTMLElement;
     createRow(project: MobileProjectEntry): HTMLElement;
@@ -110,14 +108,6 @@ export class MobileProjectsRenderListUi {
             }
             if (this.host.hubView === 'workflows') {
                 this.host.renderCatalogHubView();
-                return;
-            }
-            if (this.host.hubView === 'routines') {
-                this.host.renderRoutinesHubView();
-                return;
-            }
-            if (this.host.hubView === 'research') {
-                this.host.renderResearchHubView();
                 return;
             }
 

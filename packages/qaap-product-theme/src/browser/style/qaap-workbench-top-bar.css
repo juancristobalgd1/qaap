@@ -15,24 +15,24 @@
 }
 
 /* Leading cluster: sidebar toggle, then editor history (DOM order is toggle, menu, history, trailing). */
-#theia-top-panel > #theia\:workbench-nav {
+#theia-top-panel>#theia\:workbench-nav {
   order: 1;
   flex: 0 0 auto;
 }
 
-#theia-top-panel > #theia\:workbench-history-nav {
+#theia-top-panel>#theia\:workbench-history-nav {
   order: 2;
   flex: 0 0 auto;
 }
 
-#theia-top-panel > .lm-MenuBar,
-#theia-top-panel > [id='theia:menubar'] {
+#theia-top-panel>.lm-MenuBar,
+#theia-top-panel>[id='theia:menubar'] {
   order: 3;
   flex: 1 1 auto;
   min-width: 0;
 }
 
-#theia-top-panel > #theia\:workbench-right-controls {
+#theia-top-panel>#theia\:workbench-right-controls {
   order: 4;
 }
 
@@ -104,6 +104,37 @@
 
 .theia-workbench-nav-btn.codicon::before {
   font-size: var(--theia-icon-size, 14px);
+}
+
+/* Left panel toggle: ensure strong contrast in both light and dark themes. */
+.theia-workbench-nav-btn.theia-workbench-left-panel-toggle {
+  color: var(--theia-titleBar-activeForeground, var(--theia-foreground));
+}
+
+.theia-workbench-nav-btn.theia-workbench-left-panel-toggle:hover:not(:disabled) {
+  background: var(--theia-toolbar-hoverBackground);
+  color: var(--theia-titleBar-activeForeground, var(--theia-foreground));
+}
+
+.theia-workbench-nav-btn.theia-workbench-left-panel-toggle.theia-mod-toggled:not(:disabled) {
+  background: var(--theia-inputOption-activeBackground, var(--theia-toolbar-hoverBackground));
+  color: var(--theia-inputOption-activeForeground, var(--theia-titleBar-activeForeground, var(--theia-foreground)));
+}
+
+/* Chat tab button: pinned at the far-left of the tab bar row in mobile one-column layout.
+   Lets the user jump back to the AI chat view from any other tab (Outline, Terminal, etc.). */
+.theia-workbench-nav-btn.theia-workbench-mobile-chat-tab-btn {
+  color: var(--theia-titleBar-activeForeground, var(--theia-foreground));
+  flex: 0 0 auto;
+}
+
+.theia-workbench-nav-btn.theia-workbench-mobile-chat-tab-btn:hover:not(:disabled) {
+  background: var(--theia-toolbar-hoverBackground);
+}
+
+.theia-workbench-nav-btn.theia-workbench-mobile-chat-tab-btn.theia-mod-toggled:not(:disabled) {
+  background: var(--theia-inputOption-activeBackground, var(--theia-toolbar-hoverBackground));
+  color: var(--theia-inputOption-activeForeground, var(--theia-titleBar-activeForeground, var(--theia-foreground)));
 }
 
 .theia-workbench-history-nav-group {

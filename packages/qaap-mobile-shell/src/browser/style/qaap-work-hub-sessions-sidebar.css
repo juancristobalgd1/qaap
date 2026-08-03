@@ -563,15 +563,6 @@
   display: none;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-unread {
-  margin-top: 0;
-  align-self: center;
-  flex: 0 0 6px;
-  width: 6px;
-  height: 6px;
-  box-shadow: none;
-}
-
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-conversation-menu-btn,
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-conversation-retry-btn {
   margin-top: 0;

@@ -13,8 +13,9 @@ import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaa
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
-import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountMenu, type MobileViewToggleId, type QaapAccountMenuEntry } from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, type MobileViewToggleId, type QaapAccountMenuEntry } from './qaap-workbench-account-menu';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
+import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
 import { MobileProjectsService } from './mobile-projects-service';
 import { EXPLORER_VIEW_CONTAINER_ID, type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -49,35 +50,54 @@ function createWorkbenchHistoryNavBtn(iconClasses: string, title: string): HTMLB
 
 export class QaapWorkbenchNavControlsWidget extends Widget {
     protected readonly toDispose = new DisposableCollection();
-    protected readonly projectNameEl: HTMLButtonElement;
+    protected readonly leftPanelToggleBtn: HTMLButtonElement;
 
     constructor(
         protected readonly projectsService: MobileProjectsService,
         protected readonly workspaceService: WorkspaceService,
         protected readonly projectSwitcher: QaapProjectSwitcherService,
+        protected readonly shell: ApplicationShell,
     ) {
         const node = document.createElement('motion.div');
         node.classList.add('theia-workbench-nav-controls');
         super({ node });
         this.id = 'theia:workbench-nav';
-        this.projectNameEl = document.createElement('button');
-        this.projectNameEl.type = 'button';
-        this.projectNameEl.className = 'theia-workbench-current-project-name';
-        this.projectNameEl.setAttribute('aria-label', nls.localize('qaap/projectSwitcher/title', 'Switch project'));
-        this.projectNameEl.dataset.branch = '';
-        this.projectNameEl.addEventListener('click', this.onProjectNameClick);
-        node.append(this.projectNameEl);
-        this.toDispose.push(this.workspaceService.onWorkspaceChanged(() => this.updateProjectName()));
-        this.toDispose.push(this.workspaceService.onWorkspaceLocationChanged(() => this.updateProjectName()));
+        this.leftPanelToggleBtn = createWorkbenchNavBtn(
+            'codicon codicon-layout-sidebar-left',
+            nls.localize('theia/core/workbenchBar/toggleLeftPanel', 'Toggle Side Panel')
+        );
+        this.leftPanelToggleBtn.classList.add('theia-workbench-left-panel-toggle');
+        this.leftPanelToggleBtn.setAttribute('role', 'switch');
+        this.leftPanelToggleBtn.setAttribute('aria-checked', 'false');
+        this.leftPanelToggleBtn.addEventListener('click', this.onLeftPanelToggleClick);
+        node.append(this.leftPanelToggleBtn);
     }
 
-    protected readonly onProjectNameClick = (): void => {
-        void this.projectSwitcher.showProjectPicker();
+    protected readonly onLeftPanelToggleClick = (): void => {
+        if (this.shell.isExpanded('left')) {
+            this.shell.collapsePanel('left');
+        } else {
+            this.shell.expandPanel('left');
+        }
+        this.updateLeftPanelToggleVisual();
     };
+
+    protected updateLeftPanelToggleVisual(): void {
+        const on = this.shell.isExpanded('left');
+        this.leftPanelToggleBtn.classList.toggle('theia-mod-toggled', on);
+        this.leftPanelToggleBtn.setAttribute('aria-checked', on ? 'true' : 'false');
+        // Swap icon: sidebar-left when closed (can open), sidebar-left-off when open (can close).
+        this.leftPanelToggleBtn.classList.remove('codicon-layout-sidebar-left', 'codicon-layout-sidebar-left-off');
+        this.leftPanelToggleBtn.classList.add(on ? 'codicon-layout-sidebar-left-off' : 'codicon-layout-sidebar-left');
+        this.leftPanelToggleBtn.title = on
+            ? nls.localize('theia/core/workbenchBar/hideSidePanel', 'Hide Side Panel')
+            : nls.localize('theia/core/workbenchBar/showSidePanel', 'Show Side Panel');
+        this.leftPanelToggleBtn.setAttribute('aria-label', this.leftPanelToggleBtn.title);
+    }
 
     protected override onAfterAttach(msg: Message): void {
         super.onAfterAttach(msg);
-        this.updateProjectName();
+        this.updateLeftPanelToggleVisual();
     }
 
     override dispose(): void {
@@ -85,27 +105,8 @@ export class QaapWorkbenchNavControlsWidget extends Widget {
             return;
         }
         this.toDispose.dispose();
-        this.projectNameEl.removeEventListener('click', this.onProjectNameClick);
+        this.leftPanelToggleBtn.removeEventListener('click', this.onLeftPanelToggleClick);
         super.dispose();
-    }
-
-    protected updateProjectName(): void {
-        const name = this.projectsService.getCurrentWorkspaceDisplayName();
-        if (name) {
-            this.projectNameEl.textContent = name;
-            this.projectNameEl.title = name;
-            this.projectNameEl.hidden = false;
-            this.updateProjectBranch();
-        } else {
-            this.projectNameEl.textContent = '';
-            this.projectNameEl.title = '';
-            this.projectNameEl.dataset.branch = '';
-            this.projectNameEl.hidden = true;
-        }
-    }
-
-    protected updateProjectBranch(): void {
-        this.projectNameEl.dataset.branch = this.projectsService.getCurrentWorkspaceBranch() ?? '';
     }
 }
 
@@ -202,6 +203,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected readonly toDispose = new DisposableCollection();
     protected readonly terminalBtn: HTMLButtonElement;
     protected readonly aiChatBtn: HTMLButtonElement;
+    protected readonly mobileChatTabBtn: HTMLButtonElement;
     protected readonly mobileViewPickerBtn: HTMLButtonElement;
     protected readonly mobileViewPickerSlot: HTMLElement;
     protected readonly accountBtn: HTMLButtonElement;
@@ -240,6 +242,13 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat')
         );
         this.aiChatBtn.classList.add('theia-workbench-in-mobile-bottom-bar');
+        this.mobileChatTabBtn = createWorkbenchNavBtn(
+            'codicon codicon-comment-discussion',
+            nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat')
+        );
+        this.mobileChatTabBtn.classList.add('theia-workbench-mobile-chat-tab-btn');
+        this.mobileChatTabBtn.setAttribute('role', 'switch');
+        this.mobileChatTabBtn.setAttribute('aria-checked', 'false');
         this.mobileViewPickerBtn = document.createElement('button');
         this.mobileViewPickerBtn.type = 'button';
         this.mobileViewPickerBtn.className = 'theia-workbench-nav-btn theia-workbench-mobile-view-picker-btn';
@@ -267,6 +276,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         node.append(this.terminalBtn, this.aiChatBtn, this.mobileViewPickerSlot, this.accountBtn);
         this.terminalBtn.addEventListener('click', this.onTerminalClick);
         this.aiChatBtn.addEventListener('click', this.onAiChatClick);
+        this.mobileChatTabBtn.addEventListener('click', this.onAiChatClick);
         this.mobileViewPickerBtn.addEventListener('pointerdown', this.onMobileViewPickerPointerDown);
         this.mobileViewPickerBtn.addEventListener('click', this.onMobileViewPickerClick);
         this.accountBtn.addEventListener('click', this.onAccountClick);
@@ -309,17 +319,32 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     };
     protected readonly onAccountClick = (): void => {
         const signedIn = readQaapSignedIn();
-        const activeId: MobileViewToggleId = this.isMobileBottomAgentActive() ? 'agent' : 'editor';
-        const canToggle = matchesMobileOneColumnLayout()
-            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE);
-        const viewToggle = canToggle
-            ? {
-                activeId,
-                onSelect: (id: MobileViewToggleId) => {
-                    void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
-                },
-            }
-            : undefined;
+        // In the classic desktop IDE (preferDesktopIde), the switch shows "IDE" as active.
+        // In Work Hub / mobile one-column, it shows "Agents" when the agent surface is visible.
+        const inDesktopIde = peekPreferDesktopIde();
+        const activeId: MobileViewToggleId = inDesktopIde ? 'editor' : (this.isMobileBottomAgentActive() ? 'agent' : 'editor');
+        const viewToggle = {
+            activeId,
+            onSelect: (id: MobileViewToggleId) => {
+                if (id === 'editor') {
+                    // From Work Hub: open the classic IDE.
+                    // From mobile one-column: switch the in-IDE header view to the editor.
+                    if (this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+                        void this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+                    } else {
+                        void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
+                    }
+                } else {
+                    // From the classic IDE: return to Work Hub.
+                    // From mobile one-column: switch the in-IDE header view to the agent.
+                    if (peekPreferDesktopIde() && this.commands.isEnabled(QaapMobileProjectsDashboardCommands.TOGGLE.id)) {
+                        void this.commands.executeCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id);
+                    } else {
+                        void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
+                    }
+                }
+            },
+        };
         toggleQaapAccountMenu(this.accountBtn, this.commands, this.buildAccountMenuEntries(signedIn), undefined, undefined, viewToggle);
     };
 
@@ -347,6 +372,9 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
 
     protected activateIdeAvatarView(id: MobileBottomButtonId): void {
         switch (id) {
+            case 'agent':
+                this.onAiChatClick();
+                return;
             case 'preview':
                 void this.activatePreviewFromAvatar();
                 return;
@@ -393,6 +421,11 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     }
 
     protected async activateTerminalFromAvatar(): Promise<void> {
+        // Toggle: if the bottom panel is already showing a terminal, collapse it.
+        if (this.shell.isExpanded('bottom') && !this.shell.bottomPanel.isEmpty) {
+            this.shell.collapsePanel('bottom');
+            return;
+        }
         const terminal = this.terminalService.currentTerminal
             ?? this.terminalService.lastUsedTerminal
             ?? this.terminalService.all.find(candidate => !candidate.hiddenFromUser)
@@ -495,6 +528,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             this.aiChatBtn.classList.remove('theia-mod-toggled');
             this.aiChatBtn.title = nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat');
             this.aiChatBtn.setAttribute('aria-label', this.aiChatBtn.title);
+            this.mobileChatTabBtn.classList.remove('theia-mod-toggled');
+            this.mobileChatTabBtn.setAttribute('aria-checked', 'false');
             return;
         }
         const title = this.shell.rightPanelHandler.tabBar.currentTitle;
@@ -504,6 +539,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             ? nls.localize('theia/core/workbenchBar/hideAiChat', 'Hide AI Chat')
             : nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat');
         this.aiChatBtn.setAttribute('aria-label', this.aiChatBtn.title);
+        this.mobileChatTabBtn.classList.toggle('theia-mod-toggled', on);
+        this.mobileChatTabBtn.setAttribute('aria-checked', on ? 'true' : 'false');
+        this.mobileChatTabBtn.title = this.aiChatBtn.title;
+        this.mobileChatTabBtn.setAttribute('aria-label', this.aiChatBtn.title);
     }
 
     protected isMobileBottomAgentActive(): boolean {
@@ -595,15 +634,24 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         const historyNav = document.getElementById('theia:workbench-history-nav');
         if (matchesMobileOneColumnLayout() && tabBarRow && !this.mobileViewPickerBtn.hidden) {
             this.hideDashboardReturnButton(historyNav);
+            // Chat tab button: always first in the tab bar row, before the view picker.
+            if (this.mobileChatTabBtn.parentElement !== tabBarRow) {
+                tabBarRow.insertBefore(this.mobileChatTabBtn, tabBarRow.firstChild);
+            } else if (this.mobileChatTabBtn.nextElementSibling !== this.mobileViewPickerBtn) {
+                tabBarRow.insertBefore(this.mobileChatTabBtn, tabBarRow.firstChild);
+            }
             if (this.mobileViewPickerBtn.parentElement !== tabBarRow) {
-                tabBarRow.insertBefore(this.mobileViewPickerBtn, tabBarRow.firstChild);
+                tabBarRow.insertBefore(this.mobileViewPickerBtn, this.mobileChatTabBtn.nextSibling);
             }
             return;
         }
         if (matchesMobileOneColumnLayout() && historyNav && !this.mobileViewPickerBtn.hidden) {
             this.hideDashboardReturnButton(historyNav);
+            if (this.mobileChatTabBtn.parentElement !== historyNav) {
+                historyNav.insertBefore(this.mobileChatTabBtn, historyNav.firstChild);
+            }
             if (this.mobileViewPickerBtn.parentElement !== historyNav) {
-                historyNav.insertBefore(this.mobileViewPickerBtn, historyNav.firstChild);
+                historyNav.insertBefore(this.mobileViewPickerBtn, this.mobileChatTabBtn.nextSibling);
             }
             return;
         }
@@ -717,6 +765,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
 
     protected getFallbackMobileViewPickerOptions(): MobileBottomButton[] {
         return [
+            { id: 'agent', label: nls.localize('theia/core/mobileBottomBar/agent', 'Chat'), icon: 'codicon-comment-discussion' },
             { id: 'preview', label: nls.localize('theia/core/mobileBottomBar/preview', 'Preview'), icon: 'codicon-play' },
             { id: 'terminal', label: nls.localize('theia/core/mobileBottomBar/terminal', 'Terminal'), icon: 'codicon-terminal' },
             { id: 'explore', label: nls.localize('theia/core/mobileBottomBar/explore', 'Explore'), icon: 'codicon-folder-opened' },

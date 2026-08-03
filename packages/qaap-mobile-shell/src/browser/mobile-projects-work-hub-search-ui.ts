@@ -9,7 +9,6 @@ import type { QuickInputService } from '@theia/core/lib/browser';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QAAP_WORK_HUB_WORKFLOWS, type WorkHubCatalogAction } from '../common/mobile-work-hub-catalog';
-import { routineScheduleLabel, type QaapWorkHubRoutine } from '../common/qaap-work-hub-routine';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from './mobile-projects-types';
 
@@ -17,8 +16,7 @@ export type WorkHubSearchTarget =
     | { readonly kind: 'project'; readonly projectId: string }
     | { readonly kind: 'conversation'; readonly projectId: string; readonly conversationId: string }
     | { readonly kind: 'pullRequest'; readonly pullRequest: QaapGithubPullRequestSummary }
-    | { readonly kind: 'catalog'; readonly action: WorkHubCatalogAction }
-    | { readonly kind: 'routine'; readonly routineId: string };
+    | { readonly kind: 'catalog'; readonly action: WorkHubCatalogAction };
 
 export interface WorkHubSearchPickItem extends QuickPickItem {
     readonly target: WorkHubSearchTarget;
@@ -34,7 +32,6 @@ export interface MobileProjectsWorkHubSearchHost {
     filter: MobileProjectFilter;
     tasksHubSurface: QaapComposerSurface;
     inboxPullRequests: QaapGithubPullRequestSummary[];
-    workHubRoutines: QaapWorkHubRoutine[];
     expandedId: string | undefined;
     delegate: { onOpenPullRequest?(pullRequest: QaapGithubPullRequestSummary): void };
 
@@ -44,12 +41,10 @@ export interface MobileProjectsWorkHubSearchHost {
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     isProjectDetailView(): boolean;
     detailComposerSurfaceForProject(project: MobileProjectEntry): import('../common/qaap-composer-surface').QaapComposerSurface;
-    sortRoutinesForDisplay(routines: QaapWorkHubRoutine[]): QaapWorkHubRoutine[];
     openProjectDetail(project: MobileProjectEntry): void | Promise<void>;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     runCatalogAction(action: WorkHubCatalogAction): Promise<void>;
     selectHubLandingView(view: MobileProjectsHubView, preferredDiffProjectId?: string, options?: { force?: boolean }): void;
-    openRoutineEditor(routine: QaapWorkHubRoutine): void;
     syncSearchChrome(): void;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
 }
@@ -112,8 +107,6 @@ export class MobileProjectsWorkHubSearchUi {
                 return this.buildReviewSearchPickItems();
             case 'workflows':
                 return this.buildWorkflowSearchPickItems();
-            case 'routines':
-                return this.buildRoutineSearchPickItems();
             default:
                 return [];
         }
@@ -203,16 +196,6 @@ export class MobileProjectsWorkHubSearchUi {
         return items;
     }
 
-    buildRoutineSearchPickItems(): Array<WorkHubSearchPickItem | QuickPickSeparator> {
-        return this.host.sortRoutinesForDisplay(this.host.workHubRoutines).map(routine => ({
-            label: routine.title,
-            description: routineScheduleLabel(routine),
-            detail: routine.prompt?.trim() || undefined,
-            iconClasses: ['codicon', 'codicon-sync'],
-            target: { kind: 'routine', routineId: routine.id },
-        }));
-    }
-
     conversationToSearchPickItem(
         project: MobileProjectEntry,
         conversation: QaapAgentConversationSummaryDTO,
@@ -260,16 +243,6 @@ export class MobileProjectsWorkHubSearchUi {
             case 'catalog':
                 await this.host.runCatalogAction(target.action);
                 return;
-            case 'routine': {
-                if (this.host.hubView !== 'routines') {
-                    this.host.selectHubLandingView('routines');
-                }
-                const routine = this.host.workHubRoutines.find(entry => entry.id === target.routineId);
-                if (routine) {
-                    this.host.openRoutineEditor(routine);
-                }
-                return;
-            }
         }
     }
 

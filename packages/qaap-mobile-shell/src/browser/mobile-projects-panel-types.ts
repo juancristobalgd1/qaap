@@ -23,10 +23,6 @@ export interface MobileProjectsPanelDelegate {
     onOpenAgentOnTask?(project: MobileProjectEntry): void | Promise<void>;
     /** Show Work Hub (Agents landing) when sidebar actions need the projects panel visible. */
     onShowAgentsHub?(): void | Promise<void>;
-    /** Show Work Hub Routines from the sessions sidebar. */
-    onShowRoutinesHub?(): void | Promise<void>;
-    /** Show Work Hub Research from the sessions sidebar. */
-    onShowResearchHub?(): void | Promise<void>;
     /** Shell bottom bar active state after in-panel hub tab changes. */
     onHubLandingViewChanged?(): void;
     /** Transcript sheet on body: leave Work Hub landing overlay while chat is active. */
@@ -171,8 +167,7 @@ export type WorkHubSearchTarget =
     | { readonly kind: 'project'; readonly projectId: string }
     | { readonly kind: 'conversation'; readonly projectId: string; readonly conversationId: string }
     | { readonly kind: 'pullRequest'; readonly pullRequest: QaapGithubPullRequestSummary }
-    | { readonly kind: 'catalog'; readonly action: WorkHubCatalogAction }
-    | { readonly kind: 'routine'; readonly routineId: string };
+    | { readonly kind: 'catalog'; readonly action: WorkHubCatalogAction };
 
 export interface WorkHubSearchPickItem extends QuickPickItem {
     readonly target: WorkHubSearchTarget;

@@ -17,7 +17,7 @@ export const WorkbenchTopBarFactory = Symbol('WorkbenchTopBarFactory');
 
 export interface WorkbenchTopBarFactory {
     /** Widget at the leading edge of the top panel (upstream: `theia:icon` logo). */
-    createLeadingTopBarWidget(commands: CommandRegistry): Widget;
+    createLeadingTopBarWidget(commands: CommandRegistry, shell: ApplicationShell): Widget;
     /** Optional widgets after the menu bar (e.g. terminal / settings on the right). */
     createTrailingTopBarWidgets(commands: CommandRegistry, shell: ApplicationShell): Widget[];
 }
@@ -25,7 +25,7 @@ export interface WorkbenchTopBarFactory {
 @injectable()
 export class DefaultWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
 
-    createLeadingTopBarWidget(_commands: CommandRegistry): Widget {
+    createLeadingTopBarWidget(_commands: CommandRegistry, _shell: ApplicationShell): Widget {
         const logo = new Widget();
         logo.id = 'theia:icon';
         logo.addClass('theia-icon');

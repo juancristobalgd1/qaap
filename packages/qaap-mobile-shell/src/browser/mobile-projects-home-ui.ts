@@ -19,7 +19,7 @@ import {
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { mobileProjectInitials } from './mobile-projects-types';
 
-export type WorkHubHomeNavigateTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review' | 'routines';
+export type WorkHubHomeNavigateTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review';
 
 export type WorkHubHomeQuickActionId = 'new-chat' | 'delegate-task' | 'all-projects' | 'open-review';
 
@@ -471,9 +471,8 @@ export class MobileProjectsHomeUi {
         const titleRow = document.createElement('span');
         titleRow.className = 'theia-mobile-work-hub-home-row-title-row';
         const dot = document.createElement('span');
-        dot.className = `theia-mobile-work-hub-home-row-dot q-dot ${
-            status === 'running' ? 'q-success' : status === 'open' ? 'q-accent' : 'q-muted'
-        }`;
+        dot.className = `theia-mobile-work-hub-home-row-dot q-dot ${status === 'running' ? 'q-success' : status === 'open' ? 'q-accent' : 'q-muted'
+            }`;
         dot.setAttribute('aria-hidden', 'true');
         const name = document.createElement('span');
         name.className = 'theia-mobile-work-hub-home-row-title';
@@ -507,9 +506,8 @@ export class MobileProjectsHomeUi {
         btn.className = 'theia-mobile-work-hub-home-row';
         btn.addEventListener('click', () => this.deps.onOpenRecent(item));
         const leading = document.createElement('span');
-        leading.className = `theia-mobile-work-hub-home-row-leading codicon ${
-            item.surface === 'chat' ? 'codicon-comment-discussion' : 'codicon-server-process'
-        }`;
+        leading.className = `theia-mobile-work-hub-home-row-leading codicon ${item.surface === 'chat' ? 'codicon-comment-discussion' : 'codicon-server-process'
+            }`;
         leading.setAttribute('aria-hidden', 'true');
         const body = document.createElement('span');
         body.className = 'theia-mobile-work-hub-home-row-body';

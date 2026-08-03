@@ -59,8 +59,6 @@ export interface MobileProjectsSessionsSidebarHost {
     quickInputService?: import('@theia/core/lib/browser').QuickInputService;
     delegate: {
         onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
-        onShowRoutinesHub?(): void | Promise<void>;
-        onShowResearchHub?(): void | Promise<void>;
         cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
         projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     };
@@ -293,14 +291,6 @@ export class MobileProjectsSessionsSidebarUi {
     }
     async openEmptyMobileChatSheet(project: MobileProjectEntry): Promise<void> {
         return openEmptyMobileChatSheetExtracted(this, project);
-    }
-    async onWorkHubSessionsSidebarAutomations(): Promise<void> {
-        this.host.sessionsSidebar?.hide();
-        await this.host.delegate.onShowRoutinesHub?.();
-    }
-    async onWorkHubSessionsSidebarResearch(): Promise<void> {
-        this.host.sessionsSidebar?.hide();
-        await this.host.delegate.onShowResearchHub?.();
     }
     onSessionsSidebarAccountClick(anchor: HTMLButtonElement): void {
         onSessionsSidebarAccountClickExtracted(this, anchor);

@@ -93,7 +93,7 @@ describe('MobileProjectsProjectRowsUi Git/PR status', () => {
         return new MobileProjectsProjectRowsUi(host);
     }
 
-    it('renders an open ready PR in green semantics with icon, text, and accessible name', () => {
+    it('renders an open ready PR in green semantics with icon and accessible name', () => {
         const row = createUi().createTaskItem(
             project,
             task,
@@ -103,12 +103,10 @@ describe('MobileProjectsProjectRowsUi Git/PR status', () => {
             { compact: true },
         );
         const glyph = row.querySelector<HTMLElement>('.theia-mobile-projects-task-dot');
-        const chip = row.querySelector<HTMLElement>('.theia-mobile-projects-task-status-chip');
         expect(glyph?.classList.contains('theia-mod-pr-ready')).to.equal(true);
         expect(glyph?.querySelector('.codicon-git-pull-request')).not.to.equal(null);
         expect(glyph?.getAttribute('aria-label')).to.equal('PR ready');
-        expect(chip?.textContent).to.equal('PR ready');
-        expect(chip?.title).to.equal('PR ready');
+        expect(row.querySelector('.theia-mobile-projects-task-status-chip')).to.equal(null);
     });
 
     it('renders merged purple semantics only for an explicit merged state', () => {
@@ -121,7 +119,7 @@ describe('MobileProjectsProjectRowsUi Git/PR status', () => {
             { compact: true },
         );
         expect(row.querySelector('.theia-mod-pr-merged .codicon-git-merge')).not.to.equal(null);
-        expect(row.querySelector('.theia-mobile-projects-task-status-chip')?.textContent).to.equal('PR merged');
+        expect(row.querySelector('.theia-mobile-projects-task-status-chip')).to.equal(null);
         expect(row.querySelector('.theia-mod-pr-ready')).to.equal(null);
     });
 
@@ -135,7 +133,7 @@ describe('MobileProjectsProjectRowsUi Git/PR status', () => {
             { compact: true },
         );
         expect(row.querySelector('.theia-mod-pr-unknown .codicon-git-pull-request')).not.to.equal(null);
-        expect(row.querySelector('.theia-mobile-projects-task-status-chip')?.textContent).to.equal('PR');
+        expect(row.querySelector('.theia-mobile-projects-task-status-chip')).to.equal(null);
         expect(row.querySelector('.theia-mod-pr-ready, .theia-mod-pr-merged')).to.equal(null);
     });
 });

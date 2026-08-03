@@ -43,8 +43,6 @@ export class MobileProjectsHubRenderUi {
         this.host.root.classList.toggle('theia-mod-hub-review', this.host.hubView === 'review');
         this.host.root.classList.toggle('theia-mod-hub-chat', this.host.hubView === 'chat');
         this.host.root.classList.toggle('theia-mod-hub-workflows', this.host.hubView === 'workflows');
-        this.host.root.classList.toggle('theia-mod-hub-routines', this.host.hubView === 'routines');
-        this.host.root.classList.toggle('theia-mod-hub-research', this.host.hubView === 'research');
         this.host.root.classList.toggle('theia-mod-hub-repos', this.host.hubView === 'repos');
         this.host.root.classList.toggle('theia-mod-agents-hub-landing', this.host.shouldUseAgentsHubLanding());
         this.host.root.classList.toggle('theia-mod-project-detail', this.host.isProjectDetailView());

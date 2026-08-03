@@ -240,6 +240,15 @@ export function wireStickyComposerPopoverDismiss(
         if (target && (popover.contains(target) || anchor.contains(target))) {
             return;
         }
+        // Floating sub-menus (e.g. the branch kebab menu) are appended to
+        // document.body for fixed positioning, so they are NOT DOM children of
+        // the popover. Treat clicks inside any open floating menu as inside
+        // the popover so the sub-menu's own click handler can run the selected
+        // action instead of the popover dismissing first and tearing down the
+        // sub-menu before `click` reaches the menu item.
+        if (target && target instanceof Element && target.closest('.theia-mod-open.theia-mod-floating[role="menu"]')) {
+            return;
+        }
         onClose();
     };
     const onKeyDown = (event: KeyboardEvent): void => {

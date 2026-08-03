@@ -445,4 +445,52 @@ describe('qaap-sticky-composer-popover', () => {
         expect(sheet.style.top).to.equal('');
         expect(sheet.isConnected).to.equal(false);
     });
+
+    it('does not dismiss the popover when clicking inside an open floating sub-menu', () => {
+        if (typeof PointerEvent === 'undefined') {
+            class PointerEventPolyfill extends MouseEvent {
+                constructor(type: string, eventInitDict?: MouseEventInit) {
+                    super(type, eventInitDict);
+                }
+            }
+            (globalThis as typeof globalThis & { PointerEvent: typeof PointerEvent }).PointerEvent =
+                PointerEventPolyfill as unknown as typeof PointerEvent;
+        }
+        const anchor = document.createElement('button');
+        document.body.append(anchor);
+        const panel = document.createElement('section');
+        let closed = false;
+        const mounted = mountStickyComposerSheetPopover(panel, {
+            anchor,
+            onClose: () => { closed = true; },
+        });
+        document.body.append(mounted.root);
+
+        // Simulate a floating sub-menu (e.g. branch kebab menu) appended to
+        // document.body for fixed positioning — NOT a DOM child of the popover.
+        const floatingMenu = document.createElement('div');
+        floatingMenu.className = 'theia-mobile-sticky-composer-sheet-branch-menu theia-mod-open theia-mod-floating';
+        floatingMenu.setAttribute('role', 'menu');
+        const menuItem = document.createElement('button');
+        menuItem.type = 'button';
+        menuItem.setAttribute('role', 'menuitem');
+        floatingMenu.append(menuItem);
+        document.body.append(floatingMenu);
+
+        // pointerdown inside the floating menu must NOT close the popover.
+        floatingMenu.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        expect(closed).to.equal(false);
+
+        // pointerdown outside both the popover and the floating menu still closes.
+        const outside = document.createElement('div');
+        document.body.append(outside);
+        outside.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        expect(closed).to.equal(true);
+
+        mounted.cleanup();
+        mounted.root.remove();
+        floatingMenu.remove();
+        outside.remove();
+        anchor.remove();
+    });
 });

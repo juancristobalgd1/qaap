@@ -264,8 +264,6 @@ export function initProjectsPanelFactoryExtracted(ctx: any): void {
                 void ctx.openPullRequestFromInbox(pullRequest);
             },
             onShowAgentsHub: () => { void ctx.hubNavigation.openMobileWorkHubLanding('tasks'); },
-            onShowRoutinesHub: () => { void ctx.hubNavigation.openMobileWorkHubLanding('routines'); },
-            onShowResearchHub: () => { void ctx.hubNavigation.openMobileWorkHubLanding('research'); },
             onHubLandingViewChanged: () => {
                 ctx.syncMobileHubPrimaryBottomChrome();
                 ctx.refreshBottomBar();

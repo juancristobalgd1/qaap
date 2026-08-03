@@ -27,8 +27,6 @@ export interface MobileProjectsRepoLifecycleHost {
         onWorkspaceOpened?(): void;
     };
 
-    openRoutineEditor(): void;
-    openResearchEditor(): void;
     render(): void;
     renderList(): void;
     openProjectDetail(project: MobileProjectEntry): Promise<void>;
@@ -43,14 +41,6 @@ export class MobileProjectsRepoLifecycleUi {
     constructor(protected readonly host: MobileProjectsRepoLifecycleHost) { }
 
     async onNewClick(): Promise<void> {
-        if (this.host.hubView === 'routines') {
-            this.host.openRoutineEditor();
-            return;
-        }
-        if (this.host.hubView === 'research') {
-            this.host.openResearchEditor();
-            return;
-        }
         if (!this.host.openRepoDialog) {
             this.host.openRepoDialog = new MobileOpenRepositoryDialog(this.host.projectsService, {
                 onProjectsChanged: nextProjects => {
