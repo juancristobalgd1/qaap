@@ -166,6 +166,7 @@ import {
     MobileBottomButtonId,
     WORKBENCH_CHAT_VIEW_WIDGET_ID,
 } from './mobile-shell-bottom-bar-widget';
+import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobile-one-column-shell-helpers';
 
 const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
 
@@ -2007,12 +2008,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     /** True when the preview tab has mini-browser chrome (not a layout-restore shell with no content). */
     protected isMainPreviewWidgetLive(preview: LuminoWidget): boolean {
-        if (!preview.isAttached) {
-            return false;
-        }
-        return !!preview.node.querySelector(
-            '.theia-mini-browser-toolbar, .theia-mini-browser-toolbar-read-only, .qaap-mini-browser-shell .theia-mini-browser'
-        );
+        return isMainPreviewWidgetLiveHelper(preview);
     }
 
     protected async closeStaleMainPreviewWidget(): Promise<void> {
