@@ -29,8 +29,8 @@ import {
     resolveTranscriptBootstrapDiagnosticActivityItems,
     toTranscriptPreviewBootstrapSnapshot,
 } from '../common/qaap-transcript-preview-bootstrap-failure';
-import { formatTranscriptActivityStepDuration, isTranscriptActivityLiveState, shouldApplyTranscriptActivitySettleMotion, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
-import { formatTranscriptActivityStepDurationSuffix, formatTranscriptActivityStepMeta, TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
+import { isTranscriptActivityLiveState, shouldApplyTranscriptActivitySettleMotion, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
+import { TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
 import { resolveTranscriptActivityDiffPeek } from '../common/qaap-transcript-activity-diff-peek';
 import { resolveTranscriptSubagentCardModels, transcriptActivitySubagentCardClassName } from '../common/qaap-transcript-activity-subagent-card';
 import {
@@ -170,6 +170,8 @@ import {
     resolveConversationElapsedMs as resolveConversationElapsedMsHelper,
     scrollTranscriptStreamingTraceIntoView as scrollTranscriptStreamingTraceIntoViewHelper,
     enrichChangedFilesWithComposerGitStats as enrichChangedFilesWithComposerGitStatsHelper,
+    syncTranscriptActivityThinkingCopy as syncTranscriptActivityThinkingCopyHelper,
+    populateTranscriptActivityStepCopy as populateTranscriptActivityStepCopyHelper,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 
 /** Leading "Error: " marker prepended by {@link traceEventsToSegments} when it
@@ -202,6 +204,9 @@ export interface TranscriptActivityTimelineOptions {
     readonly conv?: QaapAgentConversationDTO;
     readonly cursorTrace?: boolean;
 }
+
+// Re-exported for helper modules that need the type.
+export type { TranscriptActivityTimelineOptions as TranscriptActivityTimelineOptionsType };
 
 /**
  * How a closing-narrative text segment should be rendered — shared between
@@ -4683,149 +4688,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         isActive: boolean,
         options?: TranscriptActivityTimelineOptions,
     ): void {
-        copy.querySelector('.theia-mobile-agent-activity-row:not(.theia-mobile-agent-activity-thinking-summary .theia-mobile-agent-activity-row)')?.remove();
-        copy.querySelector('.theia-mobile-agent-activity-label')?.remove();
-        let details = copy.querySelector<HTMLDetailsElement>('.theia-mobile-agent-activity-thinking');
-        if (!details) {
-            details = document.createElement('details');
-            details.className = 'theia-mobile-agent-activity-thinking';
-            const summary = document.createElement('summary');
-            summary.className = 'theia-mobile-agent-activity-thinking-summary';
-            const rowEl = document.createElement('span');
-            rowEl.className = 'theia-mobile-agent-activity-row';
-            const verb = document.createElement('span');
-            verb.className = 'theia-mobile-agent-activity-verb';
-            rowEl.append(verb);
-            const chevron = document.createElement('span');
-            chevron.className = 'theia-mobile-agent-activity-thinking-chevron codicon codicon-chevron-right';
-            chevron.setAttribute('aria-hidden', 'true');
-            summary.append(rowEl, chevron);
-            const body = document.createElement('div');
-            body.className = 'theia-mobile-agent-activity-thinking-body';
-            details.append(summary, body);
-            copy.prepend(details);
-            summary.addEventListener('click', event => event.stopPropagation());
-        }
-        if (item.segmentIndex !== undefined) {
-            details.dataset.transcriptThinkingSegment = String(item.segmentIndex);
-        } else {
-            details.removeAttribute('data-transcript-thinking-segment');
-        }
-        const summaryEl = details.querySelector<HTMLElement>('.theia-mobile-agent-activity-thinking-summary');
-        summaryEl?.querySelector('.theia-mobile-agent-activity-tail')?.remove();
-        copy.querySelector(':scope > .theia-mobile-agent-activity-meta')?.remove();
-        details.querySelector(':scope > .theia-mobile-agent-activity-meta')?.remove();
-        const verbEl = details.querySelector<HTMLElement>('.theia-mobile-agent-activity-verb');
-        const bodyEl = details.querySelector<HTMLElement>('.theia-mobile-agent-activity-thinking-body');
-        const rowEl = details.querySelector<HTMLElement>('.theia-mobile-agent-activity-row');
-        const shimmerActive = isActive
-            && !!options?.streaming
-            && !options?.stalled
-            && isTranscriptActivityLiveState(item.state)
-            && !this.resolveTranscriptStreamVisualIdle(options?.segments ?? [], !!options?.streaming);
-        if (verbEl) {
-            verbEl.textContent = nls.localize('qaap/mobileProjects/transcriptThinking', 'Thinking');
-            verbEl.classList.toggle('theia-mod-shimmer', shimmerActive);
-        }
-        // Add a duration detail inline so the row reads like Devin's
-        // "Thought for 1s" instead of a separate meta tag.
-        let durationEl = rowEl?.querySelector<HTMLElement>('.theia-mobile-agent-activity-detail.theia-mod-thinking-duration');
-        if (rowEl && item.durationMs !== undefined) {
-            const durationText = formatTranscriptActivityStepDuration(item.durationMs);
-            if (durationText) {
-                if (!durationEl) {
-                    durationEl = document.createElement('span');
-                    durationEl.className = 'theia-mobile-agent-activity-detail theia-mod-thinking-duration';
-                    rowEl.append(document.createTextNode(' '), durationEl);
-                }
-                durationEl.textContent = nls.localize('qaap/mobileProjects/transcriptThoughtForDuration', 'for {0}', durationText);
-                durationEl.classList.toggle('theia-mod-shimmer', shimmerActive);
-            }
-        } else {
-            durationEl?.remove();
-        }
-        // Add a dim excerpt preview below the verb so the user can see what the
-        // model was reasoning about. Always visible — even when the thinking
-        // details is open — to show a chain of thought below each reasoning step.
-        const thinkingSummaryEl = details.querySelector<HTMLElement>('.theia-mobile-agent-activity-thinking-summary');
-        const excerptEl = thinkingSummaryEl?.querySelector<HTMLElement>('.theia-mobile-agent-activity-detail.theia-mod-thinking-excerpt');
-        if (thinkingSummaryEl && item.thinkingContent) {
-            const excerpt = excerptTranscriptThought(item.thinkingContent, 120);
-            if (excerpt) {
-                let detail = excerptEl;
-                if (!detail) {
-                    detail = document.createElement('span');
-                    detail.className = 'theia-mobile-agent-activity-detail theia-mod-thinking-excerpt';
-                    thinkingSummaryEl.append(detail);
-                }
-                detail.textContent = excerpt;
-                detail.classList.toggle('theia-mod-shimmer', shimmerActive);
-            } else {
-                excerptEl?.remove();
-            }
-        } else {
-            excerptEl?.remove();
-        }
-        // Duration is rendered inline as 'for 1s'; remove any legacy meta tag.
-        rowEl?.querySelector('.theia-mobile-agent-activity-meta')?.remove();
-        if (bodyEl && item.thinkingContent) {
-            bodyEl.textContent = this.contentUi.cleanTranscriptDisplayText(item.thinkingContent);
-        }
-        details.classList.toggle('theia-mod-live', shimmerActive);
-        // Track if the thinking was ever shown live so we can keep it expanded
-        // while tools run after thinking (don't auto-collapse reasoning mid-turn).
-        if (shimmerActive) {
-            details.dataset.thinkingWasLive = '1';
-        }
-        // Detect the overall message phase. Writing/finalizing is still part
-        // of the active turn, so it must not auto-collapse the chain of
-        // thought. Collapse only after the backend has committed the final
-        // response and returned to ready/idle.
-        const segments = options?.segments ?? [];
-        const phase = resolveTranscriptTraceDisplayPhase(segments, !!options?.streaming);
-        const isStreaming = !!options?.streaming;
-        const executionComplete = this.isConversationFinalResponseCommitted(options?.conv, isStreaming);
-        const shouldCollapseForFinalResponse = executionComplete && phase === 'settled';
-        if (shouldCollapseForFinalResponse) {
-            details.dataset.thinkingCollapsedForWriting = '1';
-        }
-        if (!details.dataset.thinkingUserToggled) {
-            // Once opened during streaming, keep thinking visible while tools
-            // run, while final text streams, and during finalizing.
-            if (!executionComplete) {
-                if (details.dataset.thinkingWasLive === '1' && !details.open) {
-                    details.dataset.thinkingProgrammaticToggle = '1';
-                    details.open = true;
-                }
-            } else {
-                // Final response committed — auto-collapse unless user toggled.
-                const collapsedForWriting = details.dataset.thinkingCollapsedForWriting === '1';
-                const desiredOpen = shimmerActive
-                    || (details.dataset.thinkingWasLive === '1' && !collapsedForWriting);
-                if (details.open !== desiredOpen) {
-                    details.dataset.thinkingProgrammaticToggle = '1';
-                    details.open = desiredOpen;
-                }
-            }
-        }
-        // Reflect the open state on the copy element so CSS can hide the
-        // streaming cursor when the thinking body is already visible.
-        copy.classList.toggle('theia-mod-thinking-open', details.open);
-        if (!details.dataset.thinkingToggleBound) {
-            details.dataset.thinkingToggleBound = '1';
-            details.addEventListener('toggle', () => {
-                if (details.dataset.thinkingProgrammaticToggle) {
-                    details.removeAttribute('data-thinking-programmatic-toggle');
-                    copy.classList.toggle('theia-mod-thinking-open', details.open);
-                    return;
-                }
-                details.dataset.thinkingUserToggled = '1';
-                copy.classList.toggle('theia-mod-thinking-open', details.open);
-                if (!details.open) {
-                    this.guardTranscriptActivityExpandClose(copy);
-                }
-            });
-        }
+        syncTranscriptActivityThinkingCopyHelper(copy, item, isActive, options, {
+            resolveTranscriptStreamVisualIdle: (s, st) => this.resolveTranscriptStreamVisualIdle(s, st),
+            cleanTranscriptDisplayText: c => this.contentUi.cleanTranscriptDisplayText(c),
+            isConversationFinalResponseCommitted: (c, st) => this.isConversationFinalResponseCommitted(c, st),
+            guardTranscriptActivityExpandClose: cp => this.guardTranscriptActivityExpandClose(cp),
+        });
     }
 
     protected populateTranscriptActivityStepCopy(
@@ -4834,161 +4702,22 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         isActive: boolean,
         options?: TranscriptActivityTimelineOptions,
     ): void {
-        if (item.thinkingContent || item.navigate === 'thought') {
-            this.syncTranscriptActivityThinkingCopy(copy, item, isActive, options);
-            return;
-        }
-        this.unwrapTranscriptActivityExpandCopy(copy);
-
-        let label: HTMLElement | undefined = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-label') ?? undefined;
-        if (options?.cursorTrace && item.verb && item.detail) {
-            let rowEl = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-row');
-            if (!rowEl) {
-                label?.remove();
-                label = undefined;
-                rowEl = document.createElement('span');
-                rowEl.className = 'theia-mobile-agent-activity-row';
-                copy.prepend(rowEl);
-            }
-            if (!this.syncTranscriptActivityStepCopyCursorTrace(rowEl, item)) {
-                rowEl.replaceChildren();
-                const verb = document.createElement('span');
-                verb.className = 'theia-mobile-agent-activity-verb';
-                verb.textContent = item.verb;
-                const detail = document.createElement('span');
-                detail.className = 'theia-mobile-agent-activity-detail';
-                const detailAsPill = this.shouldRenderTranscriptActivityDetailAsPill(item.detail, item.toolKind);
-                detail.classList.toggle('theia-mod-pill', detailAsPill);
-                detail.classList.toggle('theia-mod-command', item.toolKind === 'terminal' && !detailAsPill);
-                detail.classList.toggle('theia-mod-edit-file', item.toolKind === 'editing' && detailAsPill);
-                if (detailAsPill && item.detail) {
-                    detail.append(this.createTranscriptActivityFileChip(item.detail, item.toolKind, item.filePath));
-                } else {
-                    detail.textContent = item.detail ?? '';
-                }
-                if (item.filePath) {
-                    detail.title = item.filePath;
-                }
-                rowEl.append(verb, document.createTextNode(' '), detail);
-                if (item.editAdded !== undefined || item.editRemoved !== undefined) {
-                    this.appendTranscriptActivityEditDiffTail(rowEl, item.editAdded ?? 0, item.editRemoved ?? 0);
-                } else if (item.tail) {
-                    const tail = document.createElement('span');
-                    tail.className = 'theia-mobile-agent-activity-tail';
-                    tail.textContent = ` ${item.tail}`;
-                    rowEl.append(tail);
-                }
-            }
-        } else {
-            copy.querySelector('.theia-mobile-agent-activity-row')?.remove();
-            if (!label) {
-                label = this.createTranscriptActivityLabel(item.label, false);
-                copy.prepend(label);
-            }
-            label.textContent = item.label;
-        }
-
-        this.applyTranscriptActivityStepShimmer(
-            copy,
-            isActive,
-            isActive
-            && !!options?.streaming
-            && !options?.stalled
-            && isTranscriptActivityLiveState(item.state),
-            !!options?.stalled,
-        );
-        this.syncTranscriptActivityRunningBadge(copy, item, isActive, options);
-
-        let mcpBadge = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-mcp-badge');
-        if (item.toolKind === 'mcp') {
-            if (!mcpBadge) {
-                mcpBadge = document.createElement('span');
-                mcpBadge.className = 'theia-mobile-agent-activity-mcp-badge';
-                mcpBadge.setAttribute('aria-hidden', 'true');
-                (copy.querySelector('.theia-mobile-agent-activity-row') ?? label)?.after(mcpBadge);
-            }
-            mcpBadge.textContent = 'MCP';
-        } else {
-            mcpBadge?.remove();
-        }
-
-        const metaText = options?.cursorTrace
-            ? (() => {
-                const durationSuffix = formatTranscriptActivityStepDurationSuffix(item.durationMs);
-                if (durationSuffix) {
-                    return durationSuffix;
-                }
-                return formatTranscriptActivityStepMeta(item.durationMs, item.timestamp);
-            })()
-            : formatTranscriptActivityStepMeta(item.durationMs, item.timestamp);
-        let meta = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-meta');
-        if (metaText) {
-            if (!meta) {
-                meta = document.createElement('span');
-                meta.className = 'theia-mobile-agent-activity-meta';
-                if (options?.cursorTrace) {
-                    (copy.querySelector('.theia-mobile-agent-activity-row') ?? label)?.after(meta);
-                } else {
-                    copy.append(meta);
-                }
-            }
-            meta.textContent = metaText;
-        } else {
-            meta?.remove();
-        }
-
-        this.syncTranscriptActivityDiffPeek(copy, item, options);
-
-        let errorDetail = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-error-detail');
-        if (item.errorSummary && item.state === 'error') {
-            errorDetail?.remove();
-            copy.querySelector('.theia-mobile-agent-activity-error-expand')?.remove();
-            this.syncTranscriptActivityErrorCopy(copy, item, options);
-        } else {
-            copy.querySelector('.theia-mobile-agent-activity-error-panel')?.remove();
-            errorDetail?.remove();
-            copy.querySelector('.theia-mobile-agent-activity-error-expand')?.remove();
-        }
-
-        let waitingBadge = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-waiting-badge');
-        if (item.state === 'waiting') {
-            if (!waitingBadge) {
-                waitingBadge = document.createElement('span');
-                waitingBadge.className = 'theia-mobile-agent-activity-waiting-badge';
-                const badgeIcon = document.createElement('span');
-                badgeIcon.className = 'codicon codicon-shield';
-                badgeIcon.setAttribute('aria-hidden', 'true');
-                const badgeLabel = document.createElement('span');
-                badgeLabel.className = 'theia-mobile-agent-activity-waiting-badge-label';
-                badgeLabel.textContent = nls.localize('qaap/mobileProjects/transcriptWaitingApproval', 'Awaiting approval');
-                waitingBadge.append(badgeIcon, badgeLabel);
-                (copy.querySelector('.theia-mobile-agent-activity-row') ?? label)?.after(waitingBadge);
-            }
-        } else {
-            waitingBadge?.remove();
-        }
-
-        let resultPreview = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-result-preview');
-        const expandContent = this.resolveTranscriptActivityExpandContent(item, options);
-        const showExpand = shouldShowTranscriptActivityExpandContent(item, expandContent);
-        if (showExpand && expandContent) {
-            resultPreview?.remove();
-            this.syncTranscriptActivityExpandCopy(copy, expandContent);
-        } else {
-            copy.querySelector('.theia-mobile-agent-activity-expand')?.remove();
-            if (item.resultPreview && item.toolKind === 'reading' && !item.grouped) {
-                if (!resultPreview) {
-                    resultPreview = document.createElement('div');
-                    resultPreview.className = 'theia-mobile-agent-activity-result-preview';
-                    copy.append(resultPreview);
-                }
-                if (resultPreview.textContent !== item.resultPreview) {
-                    resultPreview.textContent = item.resultPreview;
-                }
-            } else {
-                resultPreview?.remove();
-            }
-        }
+        populateTranscriptActivityStepCopyHelper(copy, item, isActive, options, {
+            syncTranscriptActivityThinkingCopy: (cp, it, act, opt) => this.syncTranscriptActivityThinkingCopy(cp, it, act, opt),
+            unwrapTranscriptActivityExpandCopy: cp => this.unwrapTranscriptActivityExpandCopy(cp),
+            syncTranscriptActivityStepCopyCursorTrace: (r, it) => this.syncTranscriptActivityStepCopyCursorTrace(r, it),
+            shouldRenderTranscriptActivityDetailAsPill: (d, k) => this.shouldRenderTranscriptActivityDetailAsPill(d, k),
+            createTranscriptActivityFileChip: (d, k, fp) => this.createTranscriptActivityFileChip(d, k, fp),
+            appendTranscriptActivityEditDiffTail: (r, a, rm) => this.appendTranscriptActivityEditDiffTail(r, a, rm),
+            createTranscriptActivityLabel: (l, c) => this.createTranscriptActivityLabel(l, c),
+            applyTranscriptActivityStepShimmer: (cp, act, sh, st) => this.applyTranscriptActivityStepShimmer(cp, act, sh, st),
+            syncTranscriptActivityRunningBadge: (cp, it, act, opt) => this.syncTranscriptActivityRunningBadge(cp, it, act, opt),
+            syncTranscriptActivityDiffPeek: (cp, it, opt) => this.syncTranscriptActivityDiffPeek(cp, it, opt),
+            syncTranscriptActivityErrorCopy: (cp, it, opt) => this.syncTranscriptActivityErrorCopy(cp, it, opt),
+            resolveTranscriptActivityExpandContent: (it, opt) => this.resolveTranscriptActivityExpandContent(it, opt),
+            syncTranscriptActivityExpandCopy: (cp, c) => this.syncTranscriptActivityExpandCopy(cp, c),
+            guardTranscriptActivityExpandClose: cp => this.guardTranscriptActivityExpandClose(cp),
+        });
     }
 
     protected shouldRenderTranscriptActivityDetailAsPill(
