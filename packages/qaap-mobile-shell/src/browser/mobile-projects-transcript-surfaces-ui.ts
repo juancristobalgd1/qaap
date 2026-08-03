@@ -69,7 +69,6 @@ import {
 import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
-    normalizeTranscriptWorkspaceKey,
     TranscriptWorkspaceSurfacesCache,
     type TranscriptWorkspaceSurfaceKey,
 } from './qaap-transcript-workspace-surfaces-cache';
@@ -78,6 +77,13 @@ import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-trans
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
+import {
+    pathsEqual as pathsEqualHelper,
+    transcriptConversationMeta as transcriptConversationMetaHelper,
+    resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,
+    resolveTranscriptTerminalTabTitle as resolveTranscriptTerminalTabTitleHelper,
+    toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
+} from './mobile-projects-transcript-surfaces-helpers';
 
 type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -379,11 +385,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     protected pathsEqual(left: string | undefined, right: string | undefined): boolean {
-        if (!left || !right) {
-            return false;
-        }
-        const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-        return normalize(left) === normalize(right);
+        return pathsEqualHelper(left, right);
     }
 
     /** Bootstrap dev server belongs to the workspace root of this hub project card. */
@@ -627,8 +629,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): string {
-        const agentLabel = summary.agentId ? `@${summary.agentId.replace(/^@/, '')}` : '';
-        return agentLabel ? `${project.name} · ${agentLabel}` : project.name;
+        return transcriptConversationMetaHelper(project, summary);
     }
 
     updateTranscriptHeader(
@@ -2144,15 +2145,7 @@ export class MobileProjectsTranscriptSurfacesUi {
         resolvedPath: string,
         conversationId?: string,
     ): TranscriptWorkspaceSurfaceKey {
-        const workspaceKey = normalizeTranscriptWorkspaceKey(resolvedPath);
-        const projectKey = project.id.trim() || project.uri?.toString() || project.name || 'unknown-project';
-        // Include the conversation/section id so terminals and files are isolated per-section,
-        // matching the per-section preview model: each task keeps its own terminal tabs and file
-        // mounts, and closing a task releases them without disturbing sibling sections.
-        const conversationKey = conversationId?.trim()
-            ? `:conv:${encodeURIComponent(conversationId.trim())}`
-            : '';
-        return `project:${encodeURIComponent(projectKey)}:${workspaceKey}${conversationKey}`;
+        return resolveProjectScopedWorkspaceKeyHelper(project, resolvedPath, conversationId);
     }
 
     ensureTranscriptFilesTab(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
@@ -2606,11 +2599,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     resolveTranscriptTerminalTabTitle(surface: TranscriptTerminalSurface, index: number): string {
-        const title = surface.terminal.title.label?.trim();
-        if (title) {
-            return title;
-        }
-        return nls.localize('qaap/mobileProjects/transcriptTerminalIndex', 'Terminal {0}', String(index + 1));
+        return resolveTranscriptTerminalTabTitleHelper(surface, index);
     }
 
     closeTranscriptTerminalTab(workspaceKey: TranscriptWorkspaceSurfaceKey, index: number): void {
@@ -2673,22 +2662,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     protected toPersistedTerminalWorkspace(
         state: TranscriptTerminalSliderState | undefined,
     ): TranscriptTerminalPersistedWorkspace | undefined {
-        if (!state || state.surfaces.length === 0) {
-            return undefined;
-        }
-        const terminals = state.surfaces
-            .map(surface => ({
-                terminalId: surface.terminal.terminalId,
-                titleLabel: surface.terminal.title.label,
-            }))
-            .filter(terminal => Number.isInteger(terminal.terminalId) && terminal.terminalId >= 0);
-        if (terminals.length === 0) {
-            return undefined;
-        }
-        return {
-            activeIndex: Math.min(Math.max(0, state.activeIndex), terminals.length - 1),
-            terminals,
-        };
+        return toPersistedTerminalWorkspaceHelper(state);
     }
 
     detachTranscriptFilesFromHost(): void {
