@@ -84,6 +84,15 @@ import {
 } from './qaap-preview-terminal-lifecycle';
 import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
 import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
+import {
+    previewProjectId as previewProjectIdHelper,
+    normalizeDevUrl as normalizeDevUrlHelper,
+    extractPortFromInUseMessage as extractPortFromInUseMessageHelper,
+    normalizeRestoredPhase as normalizeRestoredPhaseHelper,
+    readTerminalTail as readTerminalTailHelper,
+    disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
+    delay as delayHelper,
+} from './qaap-project-bootstrap-helpers';
 
 /** Storage key used to remember per-workspace user intent (skip / installed). */
 const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
@@ -112,8 +121,6 @@ const TERMINAL_READY_DELAY_MS = 120;
 /** Let destroyTermOnClose release a restored preview's listener before reserving its replacement. */
 const RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS = 500;
 
-/** Extracts `127.0.0.1:3000` / `localhost:5173` from an `EADDRINUSE` line. */
-const PORT_IN_USE_ADDR_REGEX = /(?:127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]|::1):(\d{2,5})/i;
 
 /** After this delay, open the hinted preview URL even when stdout never prints a parseable URL. */
 const DEV_PREVIEW_FALLBACK_MS = 2500;
@@ -654,7 +661,7 @@ export class QaapProjectBootstrapService {
      * root ⇒ one preview identity ⇒ one widget.
      */
     protected previewProjectId(workspaceRoot: URI): string {
-        return workspaceRoot.toString();
+        return previewProjectIdHelper(workspaceRoot);
     }
 
     /**
@@ -1203,7 +1210,7 @@ export class QaapProjectBootstrapService {
      * appropriate "actionable" phase based on whether `node_modules` is on disk now.
      */
     protected normalizeRestoredPhase(phase: QaapBootstrapPhase, descriptor: QaapProjectDescriptor): QaapBootstrapPhase {
-        return normalizePersistedBootstrapPhase(phase, descriptor.nodeModulesPresent);
+        return normalizeRestoredPhaseHelper(phase, descriptor);
     }
 
     protected scanDevOutput(data: string, plan: { expectedPort?: number }): void {
@@ -1254,15 +1261,7 @@ export class QaapProjectBootstrapService {
     }
 
     protected normalizeDevUrl(raw: string): string | undefined {
-        try {
-            // Trim trailing punctuation introduced by log decorations (e.g. `).`, `,`).
-            const sanitized = raw.replace(/[),.;]+$/, '');
-            const parsed = new URL(sanitized);
-            // Drop empty paths so we keep the URL canonical for the dedup map.
-            return parsed.toString().replace(/\/$/, '');
-        } catch {
-            return undefined;
-        }
+        return normalizeDevUrlHelper(raw);
     }
 
     protected extractPort(url: string): number | undefined {
@@ -1552,12 +1551,7 @@ export class QaapProjectBootstrapService {
     }
 
     protected extractPortFromInUseMessage(text: string): number | undefined {
-        const match = PORT_IN_USE_ADDR_REGEX.exec(text);
-        if (!match) {
-            return undefined;
-        }
-        const port = Number(match[1]);
-        return Number.isFinite(port) ? port : undefined;
+        return extractPortFromInUseMessageHelper(text);
     }
 
     /**
@@ -1773,13 +1767,7 @@ export class QaapProjectBootstrapService {
     get devOutput(): string { return this.devOutputTail; }
 
     protected readTerminalTail(terminal: TerminalWidget, maxLines: number = 40): string {
-        try {
-            const length = terminal.buffer.length;
-            const start = Math.max(0, length - maxLines);
-            return terminal.buffer.getLines(start, length - start, true).join('\n');
-        } catch {
-            return '';
-        }
+        return readTerminalTailHelper(terminal, maxLines);
     }
 
     protected async spawnCommandWithRetry(options: {
@@ -1809,7 +1797,7 @@ export class QaapProjectBootstrapService {
     }
 
     protected delay(ms: number): Promise<void> {
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return delayHelper(ms);
     }
 
     /** Re-scan `node_modules` / dev tooling after a successful install. */
@@ -2425,16 +2413,7 @@ export class QaapProjectBootstrapService {
     }
 
     protected disposeBootstrapTerminal(terminal: TerminalWidget | undefined): void {
-        if (!terminal) {
-            return;
-        }
-        try {
-            if (!terminal.isDisposed) {
-                terminal.dispose();
-            }
-        } catch {
-            /* widget may already be gone after a full page reload */
-        }
+        disposeBootstrapTerminalHelper(terminal);
     }
 
     protected clearForwardedPorts(): void {
