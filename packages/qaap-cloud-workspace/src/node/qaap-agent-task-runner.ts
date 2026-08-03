@@ -58,7 +58,6 @@ import {
     shouldUseQaiqStdioApprovals,
 } from '../common/qaap-agent-approval-flags';
 import {
-    resolveAgentReadOnlyEnforcement,
     type QaapAgentReadOnlyEnforcement,
 } from '../common/qaap-agent-readonly-workspace';
 import {
@@ -98,7 +97,7 @@ import {
     type QaapNativeModelRoutingTable,
 } from '../common/qaap-agent-native-model-routing';
 import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default-workflow';
-import { prependAgentTaskContextToPrompt, truncateProjectInfo, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
+import { prependAgentTaskContextToPrompt, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
 import {
     applyAntigravityModelSetting,
     isAntigravityCliCommand,
@@ -106,7 +105,7 @@ import {
 import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
-import { diffSensitiveFiles, hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
+import { hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import {
     buildAgentReviewPrompt,
@@ -116,6 +115,29 @@ import {
     resolveTaskReviewRisk,
 } from '../common/qaap-agent-review';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
+import {
+    readCodexHelp as readCodexHelpHelper,
+    isQaiqRunner as isQaiqRunnerHelper,
+    isOnPath as isOnPathHelper,
+    applyTemplateVars as applyTemplateVarsHelper,
+    shellQuote as shellQuoteHelper,
+    applyTemplate as applyTemplateHelper,
+    applyTemplateWithoutPrompt as applyTemplateWithoutPromptHelper,
+    truncateForPrompt as truncateForPromptHelper,
+    truncateHead as truncateHeadHelper,
+    loadProjectInfoFromDisk as loadProjectInfoFromDiskHelper,
+    loadAgentInstructionsFromDisk as loadAgentInstructionsFromDiskHelper,
+    readRepoMemory as readRepoMemoryHelper,
+    readResearchLedger as readResearchLedgerHelper,
+    isDirectory as isDirectoryHelper,
+    resolveQaiqProviderFlagsFromEnv as resolveQaiqProviderFlagsFromEnvHelper,
+    applyOpenRouterOpenAiCompatEnv as applyOpenRouterOpenAiCompatEnvHelper,
+    applyNvidiaOpenAiCompatEnv as applyNvidiaOpenAiCompatEnvHelper,
+    applyHuggingfaceOpenAiCompatEnv as applyHuggingfaceOpenAiCompatEnvHelper,
+    noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
+    changedSensitiveFiles as changedSensitiveFilesHelper,
+    findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
+} from './qaap-agent-task-runner-utils';
 
 const WORKTREE_FINGERPRINT_MAX_BUFFER = 64 * 1024 * 1024;
 const WORKTREE_FINGERPRINT_MAX_UNTRACKED_BYTES = 512 * 1024 * 1024;
@@ -170,19 +192,10 @@ export interface QaapGenericCommandResult {
 
 const GENERIC_COMMAND_TRUNCATED_PREFIX = '...[truncated]...\n';
 
-/** Cap on the per-project info artifact injected into prompts, to keep the agent command bounded. */
-const PROJECT_INFO_MAX_CHARS = 8000;
-
-/** Cap on the workspace agent-instructions file (CLAUDE.md / AGENTS.md) injected into prompts. */
-const AGENT_INSTRUCTIONS_MAX_CHARS = 6000;
-/** Candidate agent-instruction filenames, in priority order (first match wins). */
-const AGENT_INSTRUCTION_FILES: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.cursorrules'];
 /** Cap on the generated repo-map block (shallow tree + recently-changed files). */
 const REPO_MAP_MAX_CHARS = 4000;
 /** Cap on the git status snapshot block (branch + working tree + recent commits). */
 const GIT_STATUS_SNAPSHOT_MAX_CHARS = 1500;
-/** Cap on the durable repo memory (`.qaap/memory.md`) injected into prompts. */
-const REPO_MEMORY_MAX_CHARS = 2000;
 /**
  * Query-specific retrieval: ripgrep the user's message keywords over source and inject the top
  * matching file paths as a "likely relevant files" hint. Default-on (bounded, 4s timeout) so the
@@ -626,19 +639,11 @@ export class QaapAgentTaskRunner {
     }
 
     protected readCodexHelp(): string {
-        try {
-            const probe = spawnSync('codex', ['--help'], { encoding: 'utf8' });
-            return `${probe.stdout || ''}\n${probe.stderr || ''}`;
-        } catch {
-            return '';
-        }
+        return readCodexHelpHelper();
     }
 
     protected isQaiqRunner(agentId: string | undefined, command: string): boolean {
-        if (agentId === QAIQ_AGENT_ID) {
-            return true;
-        }
-        return /\b(qaiq|openclaude)\b/.test(command);
+        return isQaiqRunnerHelper(agentId, command);
     }
 
     /**
@@ -705,12 +710,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected isOnPath(bin: string): boolean {
-        const cmd = process.platform === 'win32' ? 'where' : 'which';
-        try {
-            return spawnSync(cmd, [bin], { stdio: 'ignore' }).status === 0;
-        } catch {
-            return false;
-        }
+        return isOnPathHelper(bin);
     }
 
     /** Reload persisted tasks; any task still marked running lost its process on backend restart. */
@@ -1253,16 +1253,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected loadProjectInfoFromDisk(cwd: string): string | undefined {
-        try {
-            const file = path.join(cwd, '.prompts', 'project-info.prompttemplate');
-            const text = fs.readFileSync(file, 'utf8').trim();
-            if (!text) {
-                return undefined;
-            }
-            return truncateProjectInfo(text, PROJECT_INFO_MAX_CHARS);
-        } catch {
-            return undefined;
-        }
+        return loadProjectInfoFromDiskHelper(cwd);
     }
 
     /**
@@ -1281,17 +1272,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected loadAgentInstructionsFromDisk(cwd: string): string | undefined {
-        for (const name of AGENT_INSTRUCTION_FILES) {
-            try {
-                const text = fs.readFileSync(path.join(cwd, name), 'utf8').trim();
-                if (text) {
-                    return truncateProjectInfo(text, AGENT_INSTRUCTIONS_MAX_CHARS);
-                }
-            } catch {
-                // Try the next candidate filename.
-            }
-        }
-        return undefined;
+        return loadAgentInstructionsFromDiskHelper(cwd);
     }
 
     /**
@@ -1499,12 +1480,7 @@ export class QaapAgentTaskRunner {
      * lasting preferences, non-obvious repo facts. Never cached: the agent updates it between turns.
      */
     protected readRepoMemory(cwd: string): string | undefined {
-        try {
-            const text = fs.readFileSync(path.join(cwd, '.qaap', 'memory.md'), 'utf8').trim();
-            return text ? truncateProjectInfo(text, REPO_MEMORY_MAX_CHARS) : undefined;
-        } catch {
-            return undefined;
-        }
+        return readRepoMemoryHelper(cwd);
     }
 
     /**
@@ -1516,17 +1492,7 @@ export class QaapAgentTaskRunner {
      * commits. Never cached: the runner rewrites the ledger after every phase.
      */
     protected readResearchLedger(cwd: string): string | undefined {
-        try {
-            const raw = fs.readFileSync(path.join(cwd, '.qaap', 'experiments.jsonl'), 'utf8');
-            const rounds = raw.split('\n').map(line => line.trim()).filter(line => line.length > 0).length;
-            if (rounds === 0) {
-                return undefined;
-            }
-            return `An auto-researcher loop is active in this repository (${rounds} experiment round${rounds === 1 ? '' : 's'} `
-                + 'recorded so far). Do not edit `.qaap/experiments.jsonl` — it is written by the research runner, not agents.';
-        } catch {
-            return undefined;
-        }
+        return readResearchLedgerHelper(cwd);
     }
 
     protected resolveAgentId(prompt: string, agentId: string | undefined): string {
@@ -1665,22 +1631,7 @@ export class QaapAgentTaskRunner {
 
     /** Env-only fallback when no model alias or provider list is configured yet. */
     protected resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string {
-        if (env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim()) {
-            return '--provider gemini --model gemini-2.5-flash';
-        }
-        if (env.OPENROUTER_API_KEY?.trim()) {
-            return '--provider openai --model nvidia/nemotron-3-super-120b-a12b:free';
-        }
-        if (env.NVIDIA_API_KEY?.trim()) {
-            return '--provider openai --model meta/llama-3.3-70b-instruct';
-        }
-        if (env.OLLAMA_HOST?.trim()) {
-            return '--provider ollama --model qwen2.5-coder:7b';
-        }
-        if (env.OPENAI_API_KEY?.trim()) {
-            return '--provider openai';
-        }
-        return '';
+        return resolveQaiqProviderFlagsFromEnvHelper(env);
     }
 
     /** Fail fast when QAIQ would fall back to Anthropic OAuth / empty auth and hang. */
@@ -1703,29 +1654,21 @@ export class QaapAgentTaskRunner {
     }
 
     protected applyTemplate(template: string, prompt: string, vars: Record<string, string> = {}): string {
-        const quoted = this.shellQuote(prompt);
-        const resolved = template.includes('{prompt}')
-            ? template.split('{prompt}').join(quoted)
-            : `${template} ${quoted}`;
-        return this.applyTemplateVars(resolved, vars);
+        return applyTemplateHelper(template, prompt, vars);
     }
 
     /** Template expansion for stdio-approval runs: the prompt is delivered over stdin, not argv. */
     protected applyTemplateWithoutPrompt(template: string, vars: Record<string, string> = {}): string {
-        return this.applyTemplateVars(template.split('{prompt}').join(' '), vars);
+        return applyTemplateWithoutPromptHelper(template, vars);
     }
 
     protected applyTemplateVars(template: string, vars: Record<string, string>): string {
-        let resolved = template;
-        for (const [key, value] of Object.entries(vars)) {
-            resolved = resolved.split(`{${key}}`).join(value.trim());
-        }
-        return resolved.replace(/\s+/g, ' ').trim();
+        return applyTemplateVarsHelper(template, vars);
     }
 
     /** POSIX single-quote escaping so the prompt is passed as one safe argument. */
     protected shellQuote(value: string): string {
-        return `'${value.split('\'').join('\'\\\'\'')}'`;
+        return shellQuoteHelper(value);
     }
 
     cancel(id: string): QaapAgentTask | undefined {
@@ -1889,15 +1832,7 @@ export class QaapAgentTaskRunner {
         pending: QaapQaiqPendingControlRequest[],
         idFromApproval?: string,
     ): QaapQaiqPendingControlRequest | undefined {
-        if (idFromApproval) {
-            const matched = pending.find(entry =>
-                entry.toolUseId === idFromApproval || entry.requestId === idFromApproval,
-            );
-            if (matched) {
-                return matched;
-            }
-        }
-        return pending[0];
+        return findPendingControlRequestEntryHelper(pending, idFromApproval);
     }
 
     /**
@@ -2031,14 +1966,7 @@ export class QaapAgentTaskRunner {
      * so nobody reads "cwd-readonly" off a node and assumes the workspace was protected.
      */
     protected noteReadOnlyEnforcement(taskId: string, agentId: string): QaapAgentReadOnlyEnforcement {
-        const enforcement = resolveAgentReadOnlyEnforcement(agentId);
-        if (enforcement === 'none') {
-            console.warn(
-                `[qaap-agent-tasks] task ${taskId} was dispatched read-only, but agent "${agentId}" exposes no `
-                + 'read-only mechanism. The turn can modify its workspace; "read-only" is prompt text only.',
-            );
-        }
-        return enforcement;
+        return noteReadOnlyEnforcementHelper(taskId, agentId);
     }
 
     protected spawnProcess(task: QaapAgentTask): void {
@@ -2637,10 +2565,7 @@ export class QaapAgentTaskRunner {
 
     /** Sensitive (gitignored) files this task changed, or `[]` when none / no baseline. */
     protected changedSensitiveFiles(task: QaapAgentTask): string[] {
-        if (!task.sensitiveBaselineHashes) {
-            return [];
-        }
-        return diffSensitiveFiles(task.sensitiveBaselineHashes, hashSensitiveFiles(task.cwd));
+        return changedSensitiveFilesHelper(task);
     }
 
     /**
@@ -3004,17 +2929,11 @@ export class QaapAgentTaskRunner {
     }
 
     protected truncateForPrompt(value: string, maxChars: number): string {
-        if (value.length <= maxChars) {
-            return value;
-        }
-        return `${value.slice(0, Math.floor(maxChars / 2))}\n...[truncated]...\n${value.slice(value.length - Math.floor(maxChars / 2))}`;
+        return truncateForPromptHelper(value, maxChars);
     }
 
     protected truncateHead(value: string, maxChars: number): string {
-        if (value.length <= maxChars) {
-            return value;
-        }
-        return `...[truncated]...\n${value.slice(value.length - maxChars)}`;
+        return truncateHeadHelper(value, maxChars);
     }
 
     protected fireOutput(taskId: string, chunk: unknown): void {
@@ -3248,38 +3167,17 @@ export class QaapAgentTaskRunner {
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map OpenRouter prefs when needed. */
     protected applyOpenRouterOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
-        if (!env.OPENROUTER_API_KEY?.trim() || env.OPENAI_API_KEY?.trim()) {
-            return;
-        }
-        env.OPENAI_API_KEY = env.OPENROUTER_API_KEY.trim();
-        if (!env.OPENAI_BASE_URL?.trim()) {
-            env.OPENAI_BASE_URL = env.OPENROUTER_BASE_URL?.trim() || 'https://openrouter.ai/api/v1';
-        }
+        applyOpenRouterOpenAiCompatEnvHelper(env);
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map NVIDIA NIM prefs when needed. */
     protected applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
-        if (!env.NVIDIA_API_KEY?.trim() || env.OPENAI_API_KEY?.trim()) {
-            return;
-        }
-        env.OPENAI_API_KEY = env.NVIDIA_API_KEY.trim();
-        if (!env.OPENAI_BASE_URL?.trim()) {
-            env.OPENAI_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-        }
-        env.NVIDIA_NIM = '1';
+        applyNvidiaOpenAiCompatEnvHelper(env);
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map Hugging Face Inference Router prefs when needed. */
     protected applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
-        const hfKey = env.HUGGINGFACE_API_KEY?.trim() || env.HF_TOKEN?.trim();
-        if (!hfKey) {
-            return;
-        }
-        env.HUGGINGFACE_API_KEY = hfKey;
-        env.HF_TOKEN = hfKey;
-        env.OPENAI_API_KEY = hfKey;
-        env.OPENAI_BASE_URL = 'https://router.huggingface.co/v1';
-        delete env.NVIDIA_NIM;
+        applyHuggingfaceOpenAiCompatEnvHelper(env);
     }
 
     /**
@@ -3425,11 +3323,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected isDirectory(target: string): boolean {
-        try {
-            return fs.statSync(target).isDirectory();
-        } catch {
-            return false;
-        }
+        return isDirectoryHelper(target);
     }
 
     /** One-shot prompt rewrite via the selected VPS agent/model (composer "Improve prompt"). */
