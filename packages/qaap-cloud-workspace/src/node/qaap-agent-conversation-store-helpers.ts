@@ -56,6 +56,14 @@ import {
     readTriedFallbackModels as readTriedFallbackModelsHelper,
     countAutoContinueAttempts as countAutoContinueAttemptsHelper,
 } from './qaap-agent-conversation-store-utils';
+import {
+    autoContinueAllowedForInteraction,
+    buildAgentAutoContinuePrompt,
+    buildDevPreviewAutoContinueExhaustedReason,
+    isIncompleteAgentTurn,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
+import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
+import { QAAP_AGENT_AUTO_CONTINUE_ENABLED } from './qaap-agent-conversation-store-constants';
 
 export function clearRunActive(
     conv: QaapAgentConversation,
@@ -450,4 +458,69 @@ export function countDurableLoopSpawns(
     const projectedContinueCount = countAutoContinueAttemptsHelper(conv, rootUserMessageId);
     return Math.max(fallbackTraceCount, fallbackArtifactCount)
         + Math.max(continueTraceCount, projectedContinueCount);
+}
+
+// ─── DI-extracted methods (third pass) ───────────────────────────────────────
+
+export interface AutoContinueDeps {
+    resolveLoopBudgetKey(conv: QaapAgentConversation, userMessageId: string): string;
+    countAutoContinueAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number;
+    hasLoopSpawnBudget(rootUserMessageId: string): boolean;
+    recordLoopSpawn(rootUserMessageId: string): void;
+    postAutoContinueMessage(conversationId: string, prompt: string, conv: QaapAgentConversation, rootUserMessageId: string, turnAgentId: string, turnAgentModel: QaapAgentMessage['turnAgentModel']): void;
+    reportPreviewBootstrapFailure(conversationId: string, reason: string): void;
+}
+
+export function maybeAutoContinueIncompleteTurn(
+    conversationId: string,
+    conv: QaapAgentConversation,
+    userMessageId: string,
+    agentMessageId: string | undefined,
+    turnAgentId: string | undefined,
+    deps: AutoContinueDeps,
+): void {
+    if (!QAAP_AGENT_AUTO_CONTINUE_ENABLED) {
+        return;
+    }
+    const userMessage = conv.messages.find(message => message.id === userMessageId);
+    const agentMessage = agentMessageId
+        ? conv.messages.find(message => message.id === agentMessageId)
+        : [...conv.messages].reverse().find(message =>
+            message.role === 'agent' && message.runUserMessageId === userMessageId
+        );
+    if (!userMessage || !agentMessage || agentMessage.role !== 'agent' || conv.status !== 'idle') {
+        return;
+    }
+    const resolvedTurnAgentId = turnAgentId ?? userMessage.turnAgentId ?? conv.agentId;
+    // Only auto-continue in the fully-autonomous agent contract. plan/ask modes and
+    // request-approval / manual-approve turns are deliberate stops the user opted into —
+    // re-posting a "keep working" prompt there contradicts the chosen interaction mode.
+    if (!autoContinueAllowedForInteraction(conv)) {
+        return;
+    }
+    if (!isIncompleteAgentTurn(userMessage.content, agentMessage)) {
+        return;
+    }
+    const rootUserMessageId = deps.resolveLoopBudgetKey(conv, userMessageId);
+    const rootUserMessage = conv.messages.find(message => message.id === rootUserMessageId && message.role === 'user') ?? userMessage;
+    const attempts = deps.countAutoContinueAttempts(conv, rootUserMessageId);
+    if (attempts >= 2 || !deps.hasLoopSpawnBudget(rootUserMessageId)) {
+        if (attempts >= 2 && messageRequestsDevPreview(rootUserMessage.content)) {
+            deps.reportPreviewBootstrapFailure(conversationId, buildDevPreviewAutoContinueExhaustedReason());
+        }
+        return;
+    }
+    deps.recordLoopSpawn(rootUserMessageId);
+    try {
+        deps.postAutoContinueMessage(
+            conversationId,
+            buildAgentAutoContinuePrompt(rootUserMessage.content),
+            conv,
+            rootUserMessageId,
+            resolvedTurnAgentId,
+            userMessage.turnAgentModel,
+        );
+    } catch {
+        /* turn already replaced or cancelled */
+    }
 }

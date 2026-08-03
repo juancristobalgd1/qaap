@@ -53,11 +53,7 @@ import {
 import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
 import {
     autoContinueAllowedForInteraction,
-    buildAgentAutoContinuePrompt,
-    buildDevPreviewAutoContinueExhaustedReason,
-    isIncompleteAgentTurn,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
-import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
 import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
 import {
     QAAP_CHAT_TURN_NODE,
@@ -209,6 +205,7 @@ import {
     ensureAgUiStream as ensureAgUiStreamHelper,
     buildContextCompactionSummary as buildContextCompactionSummaryHelper,
     countDurableLoopSpawns as countDurableLoopSpawnsHelper,
+    maybeAutoContinueIncompleteTurn as maybeAutoContinueIncompleteTurnHelper,
 } from './qaap-agent-conversation-store-helpers';
 import {
     STORE_DIR,
@@ -216,7 +213,6 @@ import {
     INDEX_PATH,
     MAX_CONCURRENT_CONVERSATION_RUNS,
     TURN_WATCHDOG_SWEEP_MS,
-    QAAP_AGENT_AUTO_CONTINUE_ENABLED,
     QAAP_AUTO_RESUME_TURNS_ENABLED,
     MAX_RESTART_RESUMES,
     MAX_LOOP_SPAWNS_PER_USER_MESSAGE,
@@ -2257,50 +2253,14 @@ export class QaapAgentConversationStore {
         agentMessageId?: string,
         turnAgentId?: string,
     ): void {
-        if (!QAAP_AGENT_AUTO_CONTINUE_ENABLED) {
-            return;
-        }
-        const userMessage = conv.messages.find(message => message.id === userMessageId);
-        const agentMessage = agentMessageId
-            ? conv.messages.find(message => message.id === agentMessageId)
-            : [...conv.messages].reverse().find(message =>
-                message.role === 'agent' && message.runUserMessageId === userMessageId
-            );
-        if (!userMessage || !agentMessage || agentMessage.role !== 'agent' || conv.status !== 'idle') {
-            return;
-        }
-        const resolvedTurnAgentId = turnAgentId ?? userMessage.turnAgentId ?? conv.agentId;
-        // Only auto-continue in the fully-autonomous agent contract. plan/ask modes and
-        // request-approval / manual-approve turns are deliberate stops the user opted into —
-        // re-posting a "keep working" prompt there contradicts the chosen interaction mode.
-        if (!autoContinueAllowedForInteraction(conv)) {
-            return;
-        }
-        if (!isIncompleteAgentTurn(userMessage.content, agentMessage)) {
-            return;
-        }
-        const rootUserMessageId = this.resolveLoopBudgetKey(conv, userMessageId);
-        const rootUserMessage = conv.messages.find(message => message.id === rootUserMessageId && message.role === 'user') ?? userMessage;
-        const attempts = this.countAutoContinueAttempts(conv, rootUserMessageId);
-        if (attempts >= 2 || !this.hasLoopSpawnBudget(rootUserMessageId)) {
-            if (attempts >= 2 && messageRequestsDevPreview(rootUserMessage.content)) {
-                this.reportPreviewBootstrapFailure(conversationId, buildDevPreviewAutoContinueExhaustedReason());
-            }
-            return;
-        }
-        this.recordLoopSpawn(rootUserMessageId);
-        try {
-            this.postAutoContinueMessage(
-                conversationId,
-                buildAgentAutoContinuePrompt(rootUserMessage.content),
-                conv,
-                rootUserMessageId,
-                resolvedTurnAgentId,
-                userMessage.turnAgentModel,
-            );
-        } catch {
-            /* turn already replaced or cancelled */
-        }
+        maybeAutoContinueIncompleteTurnHelper(conversationId, conv, userMessageId, agentMessageId, turnAgentId, {
+            resolveLoopBudgetKey: (c, u) => this.resolveLoopBudgetKey(c, u),
+            countAutoContinueAttempts: (c, u) => this.countAutoContinueAttempts(c, u),
+            hasLoopSpawnBudget: u => this.hasLoopSpawnBudget(u),
+            recordLoopSpawn: u => this.recordLoopSpawn(u),
+            postAutoContinueMessage: (cid, p, c, r, t, m) => this.postAutoContinueMessage(cid, p, c, r, t, m),
+            reportPreviewBootstrapFailure: (cid, r) => this.reportPreviewBootstrapFailure(cid, r),
+        });
     }
 
     /**
