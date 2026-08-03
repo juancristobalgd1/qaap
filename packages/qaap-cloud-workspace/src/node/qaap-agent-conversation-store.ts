@@ -39,18 +39,15 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
-    estimateConversationTokensFromMessages,
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
 import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
-    createAgentStreamAccumulator,
     resolveAgentLogDisplayText,
     type QaapAgentStreamAccumulator,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 import {
-    createAgUiCliStreamEmitter,
     type QaapCliAgUiStreamEmitter,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
 import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
@@ -168,6 +165,10 @@ import {
     resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper,
     countVisualRepairAttempts as countVisualRepairAttemptsHelper,
     buildVisualRepairPrompt as buildVisualRepairPromptHelper,
+    saveVisualEvidenceImage as saveVisualEvidenceImageHelper,
+    saveVisualEvidenceVideo as saveVisualEvidenceVideoHelper,
+    resolveVisualVerificationFile as resolveVisualVerificationFileHelper,
+    sweepUnreferencedVisualEvidence as sweepUnreferencedVisualEvidenceHelper,
 } from './qaap-agent-conversation-store-visual';
 import {
     parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper,
@@ -201,13 +202,18 @@ import {
     resolveCompletedTurnAuthFailureReason as resolveCompletedTurnAuthFailureReasonHelper,
     parseStructuredLog as parseStructuredLogHelper,
     resolveRunAgentMessageId as resolveRunAgentMessageIdHelper,
+    listAllGroupedByCwd as listAllGroupedByCwdHelper,
+    hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper,
+    finalizeTurnContextUsage as finalizeTurnContextUsageHelper,
+    ensureAgentStream as ensureAgentStreamHelper,
+    ensureAgUiStream as ensureAgUiStreamHelper,
+    buildContextCompactionSummary as buildContextCompactionSummaryHelper,
+    countDurableLoopSpawns as countDurableLoopSpawnsHelper,
 } from './qaap-agent-conversation-store-helpers';
 import {
     STORE_DIR,
     STREAMING_PERSIST_DEBOUNCE_MS,
     INDEX_PATH,
-    VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION,
-    VISUAL_EVIDENCE_MAX_VIDEO_BYTES,
     MAX_CONCURRENT_CONVERSATION_RUNS,
     TURN_WATCHDOG_SWEEP_MS,
     QAAP_AGENT_AUTO_CONTINUE_ENABLED,
@@ -323,27 +329,7 @@ export class QaapAgentConversationStore {
     }
 
     listAllGroupedByCwd(): QaapAgentConversationCwdGroup[] {
-        const buckets = new Map<string, QaapAgentConversation[]>();
-        for (const conv of this.conversations.values()) {
-            const list = buckets.get(conv.cwd);
-            if (list) {
-                list.push(conv);
-            } else {
-                buckets.set(conv.cwd, [conv]);
-            }
-        }
-        const groups: QaapAgentConversationCwdGroup[] = [];
-        for (const [cwd, list] of buckets) {
-            list.sort((a, b) => b.updatedAt - a.updatedAt);
-            groups.push({
-                cwd,
-                projectName: path.basename(cwd) || cwd,
-                streamingCount: list.reduce((n, c) => n + (c.status === 'streaming' ? 1 : 0), 0),
-                conversations: list.map(toConversationSummary),
-            });
-        }
-        groups.sort((a, b) => (b.conversations[0]?.updatedAt ?? 0) - (a.conversations[0]?.updatedAt ?? 0));
-        return groups;
+        return listAllGroupedByCwdHelper(this.conversations);
     }
 
     get(id: string): QaapAgentConversation | undefined {
@@ -405,14 +391,7 @@ export class QaapAgentConversationStore {
         userMessageId: string,
         exceptTaskId: string,
     ): boolean {
-        for (const [taskId, ref] of this.taskToConversation) {
-            if (taskId !== exceptTaskId
-                && ref.conversationId === conversationId
-                && ref.userMessageId === userMessageId) {
-                return true;
-            }
-        }
-        return false;
+        return hasActiveTaskForUserMessageHelper(this.taskToConversation, conversationId, userMessageId, exceptTaskId);
     }
 
     /**
@@ -1152,19 +1131,7 @@ export class QaapAgentConversationStore {
      * or swept as an orphan — when {@link recordVisualVerificationFlow} runs.
      */
     async saveVisualEvidenceImage(conversationId: string, png: Buffer): Promise<string | undefined> {
-        const conv = this.conversations.get(conversationId);
-        if (!conv || png.length === 0) {
-            return undefined;
-        }
-        const directory = this.visualEvidenceDirectory(conversationId);
-        await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
-        const existing = await fsp.readdir(directory).catch(() => [] as string[]);
-        if (existing.length >= VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION) {
-            return undefined;
-        }
-        const evidenceId = randomUUID();
-        await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
-        return evidenceId;
+        return saveVisualEvidenceImageHelper(this.conversations, conversationId, png, this.visualEvidenceDirectory(conversationId));
     }
 
     /**
@@ -1172,27 +1139,7 @@ export class QaapAgentConversationStore {
      * Videos are capped separately from screenshots — a few seconds of webm dwarfs any PNG.
      */
     async saveVisualEvidenceVideo(conversationId: string, sourcePath: string): Promise<string | undefined> {
-        const conv = this.conversations.get(conversationId);
-        const stat = await fsp.stat(sourcePath).catch(() => undefined);
-        if (!conv || !stat || stat.size === 0 || stat.size > VISUAL_EVIDENCE_MAX_VIDEO_BYTES) {
-            return undefined;
-        }
-        const directory = this.visualEvidenceDirectory(conversationId);
-        await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
-        const existing = await fsp.readdir(directory).catch(() => [] as string[]);
-        if (existing.length >= VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION) {
-            return undefined;
-        }
-        const evidenceId = randomUUID();
-        const targetPath = path.join(directory, `${evidenceId}.webm`);
-        try {
-            await fsp.rename(sourcePath, targetPath);
-        } catch {
-            await fsp.copyFile(sourcePath, targetPath);
-            await fsp.rm(sourcePath, { force: true }).catch(() => undefined);
-        }
-        await fsp.chmod(targetPath, 0o600).catch(() => undefined);
-        return evidenceId;
+        return saveVisualEvidenceVideoHelper(this.conversations, conversationId, sourcePath, this.visualEvidenceDirectory(conversationId));
     }
 
     /** Attaches a recorded-tour evidence block referencing a stored webm. */
@@ -1235,19 +1182,7 @@ export class QaapAgentConversationStore {
      * The strict ref validation keeps the route traversal-proof.
      */
     resolveVisualVerificationFile(conversationId: string, evidenceRef: string): { path: string; contentType: string } | undefined {
-        if (!this.conversations.has(conversationId)) {
-            return undefined;
-        }
-        const match = /^([a-f\d-]{36})(\.webm)?$/i.exec(evidenceRef);
-        if (!match) {
-            return undefined;
-        }
-        const fileName = match[2] ? `${match[1]}.webm` : `${match[1]}.png`;
-        const filePath = path.join(this.visualEvidenceDirectory(conversationId), fileName);
-        if (!fs.existsSync(filePath)) {
-            return undefined;
-        }
-        return { path: filePath, contentType: match[2] ? 'video/webm' : 'image/png' };
+        return resolveVisualVerificationFileHelper(this.conversations, conversationId, evidenceRef, this.visualEvidenceDirectory(conversationId));
     }
 
     /**
@@ -1305,30 +1240,7 @@ export class QaapAgentConversationStore {
      * The age guard protects a concurrent tab that is still mid-upload.
      */
     protected async sweepUnreferencedVisualEvidence(conversationId: string): Promise<void> {
-        const conv = this.conversations.get(conversationId);
-        if (!conv) {
-            return;
-        }
-        const referenced = new Set<string>();
-        for (const message of conv.messages) {
-            for (const match of message.content.matchAll(/visual-verifications\/([a-f\d-]{36})/gi)) {
-                referenced.add(match[1].toLowerCase());
-            }
-        }
-        const directory = this.visualEvidenceDirectory(conversationId);
-        const files = await fsp.readdir(directory).catch(() => [] as string[]);
-        const cutoff = Date.now() - 60 * 60 * 1000;
-        for (const file of files) {
-            const evidenceId = file.replace(/\.(?:png|webm)$/i, '').toLowerCase();
-            if (referenced.has(evidenceId)) {
-                continue;
-            }
-            const filePath = path.join(directory, file);
-            const stat = await fsp.stat(filePath).catch(() => undefined);
-            if (stat && stat.mtimeMs < cutoff) {
-                await fsp.rm(filePath, { force: true }).catch(() => undefined);
-            }
-        }
+        return sweepUnreferencedVisualEvidenceHelper(this.conversations, conversationId, this.visualEvidenceDirectory(conversationId));
     }
 
     /**
@@ -1749,52 +1661,15 @@ export class QaapAgentConversationStore {
     }
 
     protected finalizeTurnContextUsage(conv: QaapAgentConversation, taskId: string, agentId: string): QaapAgentConversation {
-        let next = conv;
-        const stream = this.agentStreamByTaskId.get(taskId);
-        const turnUsage = stream?.getTurnUsage?.();
-        if (turnUsage) {
-            next = {
-                ...next,
-                // Provider turn usage is the latest context snapshot, not a billing accumulator.
-                // Summing snapshots across turns overstates context fullness.
-                contextUsage: turnUsage,
-                contextUsageEstimated: undefined,
-            };
-        }
-        if (totalTokensFromContextUsage(next.contextUsage) === 0) {
-            const estimated = estimateConversationTokensFromMessages(next.messages, next.contextPreamble);
-            if (estimated > 0) {
-                next = { ...next, contextUsageEstimated: true };
-            }
-        }
-        return {
-            ...next,
-            contextWindowSize: next.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
-        };
+        return finalizeTurnContextUsageHelper(conv, taskId, this.agentStreamByTaskId);
     }
 
     protected ensureAgentStream(taskId: string, agentId: string): QaapAgentStreamAccumulator | undefined {
-        let stream = this.agentStreamByTaskId.get(taskId);
-        if (!stream) {
-            stream = createAgentStreamAccumulator(agentId);
-            if (stream) {
-                this.agentStreamByTaskId.set(taskId, stream);
-            }
-        }
-        return stream;
+        return ensureAgentStreamHelper(taskId, agentId, this.agentStreamByTaskId);
     }
 
     protected ensureAgUiStream(taskId: string, agentId: string): QaapCliAgUiStreamEmitter {
-        let emitter = this.agUiStreamByTaskId.get(taskId);
-        if (!emitter) {
-            const created = createAgUiCliStreamEmitter(agentId);
-            if (!created) {
-                throw new Error(`No AG-UI CLI stream emitter for agent: ${agentId}`);
-            }
-            emitter = created;
-            this.agUiStreamByTaskId.set(taskId, emitter);
-        }
-        return emitter;
+        return ensureAgUiStreamHelper(taskId, agentId, this.agUiStreamByTaskId);
     }
 
     protected parseStructuredLog(
@@ -2784,25 +2659,7 @@ export class QaapAgentConversationStore {
     }
 
     protected buildContextCompactionSummary(messages: readonly QaapAgentMessage[]): string {
-        const lines: string[] = [
-            'Automatic context compaction summary. Use this as the authoritative memory for earlier turns.',
-        ];
-        let lastRole: 'User' | 'Assistant' | undefined;
-        for (const message of messages) {
-            const body = this.contextCompactionMessageText(message);
-            if (!body) {
-                continue;
-            }
-            const role = message.role === 'user' ? 'User' : 'Assistant';
-            const prefix = role === lastRole ? '-' : `${role}:`;
-            lines.push(`${prefix} ${body}`);
-            lastRole = role;
-            if (lines.join('\n').length > 5_500) {
-                lines.push('…');
-                break;
-            }
-        }
-        return lines.join('\n');
+        return buildContextCompactionSummaryHelper(messages);
     }
 
     protected contextCompactionMessageText(message: QaapAgentMessage): string {
@@ -3628,16 +3485,7 @@ export class QaapAgentConversationStore {
         rootUserMessageId: string,
         record: QaapPersistedWorkflowRun | undefined,
     ): number {
-        const trace = record?.trace ?? [];
-        const fallbackTraceCount = trace.filter(entry => entry.outcome === 'retry:model').length;
-        const continueTraceCount = trace.filter(entry => entry.outcome === 'continue:auto').length;
-        // The artifact contains the initial/current model plus every selected fallback. It also
-        // carries pre-adoption imperative history that the run trace can never reconstruct.
-        const uniqueTriedModels = new Set(this.readTriedFallbackModels(record)).size;
-        const fallbackArtifactCount = Math.max(0, uniqueTriedModels - 1);
-        const projectedContinueCount = this.countAutoContinueAttempts(conv, rootUserMessageId);
-        return Math.max(fallbackTraceCount, fallbackArtifactCount)
-            + Math.max(continueTraceCount, projectedContinueCount);
+        return countDurableLoopSpawnsHelper(conv, rootUserMessageId, record);
     }
 
     /**

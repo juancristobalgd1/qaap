@@ -7,10 +7,13 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import { randomUUID } from 'crypto';
-import type {
-    QaapAgentConversation,
-    QaapAgentMessage,
-    QaapConversationCheckpoint,
+import * as path from 'path';
+import {
+    toConversationSummary,
+    type QaapAgentConversation,
+    type QaapAgentConversationCwdGroup,
+    type QaapAgentMessage,
+    type QaapConversationCheckpoint,
 } from '../common/qaap-agent-conversation';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import {
@@ -32,7 +35,27 @@ import {
     resolveAgentTurnFailureMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import { extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
-import { parseAgentLogForTranscript } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
+import {
+    parseAgentLogForTranscript,
+    createAgentStreamAccumulator,
+    type QaapAgentStreamAccumulator,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
+import {
+    createAgUiCliStreamEmitter,
+    type QaapCliAgUiStreamEmitter,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
+import {
+    DEFAULT_QAAP_CONTEXT_WINDOW,
+    estimateConversationTokensFromMessages,
+    totalTokensFromContextUsage,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+import type { QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
+import type { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
+import {
+    contextCompactionMessageText as contextCompactionMessageTextHelper,
+    readTriedFallbackModels as readTriedFallbackModelsHelper,
+    countAutoContinueAttempts as countAutoContinueAttemptsHelper,
+} from './qaap-agent-conversation-store-utils';
 
 export function clearRunActive(
     conv: QaapAgentConversation,
@@ -287,4 +310,144 @@ export function resolveRunAgentMessageId(
         }
     }
     return undefined;
+}
+
+// ─── DI-extracted methods (second pass) ──────────────────────────────────────
+
+export function listAllGroupedByCwd(
+    conversations: Map<string, QaapAgentConversation>,
+): QaapAgentConversationCwdGroup[] {
+    const buckets = new Map<string, QaapAgentConversation[]>();
+    for (const conv of conversations.values()) {
+        const list = buckets.get(conv.cwd);
+        if (list) {
+            list.push(conv);
+        } else {
+            buckets.set(conv.cwd, [conv]);
+        }
+    }
+    const groups: QaapAgentConversationCwdGroup[] = [];
+    for (const [cwd, list] of buckets) {
+        list.sort((a, b) => b.updatedAt - a.updatedAt);
+        groups.push({
+            cwd,
+            projectName: path.basename(cwd) || cwd,
+            streamingCount: list.reduce((n, c) => n + (c.status === 'streaming' ? 1 : 0), 0),
+            conversations: list.map(toConversationSummary),
+        });
+    }
+    groups.sort((a, b) => (b.conversations[0]?.updatedAt ?? 0) - (a.conversations[0]?.updatedAt ?? 0));
+    return groups;
+}
+
+export function hasActiveTaskForUserMessage(
+    taskToConversation: Map<string, QaapConversationTaskRef>,
+    conversationId: string,
+    userMessageId: string,
+    exceptTaskId: string,
+): boolean {
+    for (const [taskId, ref] of taskToConversation) {
+        if (taskId !== exceptTaskId
+            && ref.conversationId === conversationId
+            && ref.userMessageId === userMessageId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export function finalizeTurnContextUsage(
+    conv: QaapAgentConversation,
+    taskId: string,
+    agentStreamByTaskId: Map<string, QaapAgentStreamAccumulator>,
+): QaapAgentConversation {
+    let next = conv;
+    const stream = agentStreamByTaskId.get(taskId);
+    const turnUsage = stream?.getTurnUsage?.();
+    if (turnUsage) {
+        next = {
+            ...next,
+            contextUsage: turnUsage,
+            contextUsageEstimated: undefined,
+        };
+    }
+    if (totalTokensFromContextUsage(next.contextUsage) === 0) {
+        const estimated = estimateConversationTokensFromMessages(next.messages, next.contextPreamble);
+        if (estimated > 0) {
+            next = { ...next, contextUsageEstimated: true };
+        }
+    }
+    return {
+        ...next,
+        contextWindowSize: next.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+    };
+}
+
+export function ensureAgentStream(
+    taskId: string,
+    agentId: string,
+    agentStreamByTaskId: Map<string, QaapAgentStreamAccumulator>,
+): QaapAgentStreamAccumulator | undefined {
+    let stream = agentStreamByTaskId.get(taskId);
+    if (!stream) {
+        stream = createAgentStreamAccumulator(agentId);
+        if (stream) {
+            agentStreamByTaskId.set(taskId, stream);
+        }
+    }
+    return stream;
+}
+
+export function ensureAgUiStream(
+    taskId: string,
+    agentId: string,
+    agUiStreamByTaskId: Map<string, QaapCliAgUiStreamEmitter>,
+): QaapCliAgUiStreamEmitter {
+    let emitter = agUiStreamByTaskId.get(taskId);
+    if (!emitter) {
+        const created = createAgUiCliStreamEmitter(agentId);
+        if (!created) {
+            throw new Error(`No AG-UI CLI stream emitter for agent: ${agentId}`);
+        }
+        emitter = created;
+        agUiStreamByTaskId.set(taskId, emitter);
+    }
+    return emitter;
+}
+
+export function buildContextCompactionSummary(messages: readonly QaapAgentMessage[]): string {
+    const lines: string[] = [
+        'Automatic context compaction summary. Use this as the authoritative memory for earlier turns.',
+    ];
+    let lastRole: 'User' | 'Assistant' | undefined;
+    for (const message of messages) {
+        const body = contextCompactionMessageTextHelper(message);
+        if (!body) {
+            continue;
+        }
+        const role = message.role === 'user' ? 'User' : 'Assistant';
+        const prefix = role === lastRole ? '-' : `${role}:`;
+        lines.push(`${prefix} ${body}`);
+        lastRole = role;
+        if (lines.join('\n').length > 5_500) {
+            lines.push('…');
+            break;
+        }
+    }
+    return lines.join('\n');
+}
+
+export function countDurableLoopSpawns(
+    conv: QaapAgentConversation,
+    rootUserMessageId: string,
+    record: QaapPersistedWorkflowRun | undefined,
+): number {
+    const trace = record?.trace ?? [];
+    const fallbackTraceCount = trace.filter(entry => entry.outcome === 'retry:model').length;
+    const continueTraceCount = trace.filter(entry => entry.outcome === 'continue:auto').length;
+    const uniqueTriedModels = new Set(readTriedFallbackModelsHelper(record)).size;
+    const fallbackArtifactCount = Math.max(0, uniqueTriedModels - 1);
+    const projectedContinueCount = countAutoContinueAttemptsHelper(conv, rootUserMessageId);
+    return Math.max(fallbackTraceCount, fallbackArtifactCount)
+        + Math.max(continueTraceCount, projectedContinueCount);
 }

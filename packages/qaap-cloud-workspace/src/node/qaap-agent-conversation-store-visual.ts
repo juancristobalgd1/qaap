@@ -7,9 +7,17 @@
 // Pure functions that operate only on their parameters.
 
 import * as path from 'path';
+import * as fs from 'fs';
+import * as fsp from 'fs/promises';
+import { randomUUID } from 'crypto';
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentConversation, QaapAgentMessage } from '../common/qaap-agent-conversation';
-import { VISUAL_EVIDENCE_DIR, MAX_VISUAL_REPAIR_ATTEMPTS } from './qaap-agent-conversation-store-constants';
+import {
+    VISUAL_EVIDENCE_DIR,
+    MAX_VISUAL_REPAIR_ATTEMPTS,
+    VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION,
+    VISUAL_EVIDENCE_MAX_VIDEO_BYTES,
+} from './qaap-agent-conversation-store-constants';
 
 export function visualEvidenceDirectory(conversationId: string): string {
     return path.join(VISUAL_EVIDENCE_DIR, conversationId);
@@ -91,4 +99,103 @@ export function buildVisualRepairPrompt(target: QaapAgentMessage, attempt: numbe
         '',
         evidence,
     ].join('\n\n');
+}
+
+export async function saveVisualEvidenceImage(
+    conversations: Map<string, QaapAgentConversation>,
+    conversationId: string,
+    png: Buffer,
+    directory: string,
+): Promise<string | undefined> {
+    const conv = conversations.get(conversationId);
+    if (!conv || png.length === 0) {
+        return undefined;
+    }
+    await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+    const existing = await fsp.readdir(directory).catch(() => [] as string[]);
+    if (existing.length >= VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION) {
+        return undefined;
+    }
+    const evidenceId = randomUUID();
+    await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
+    return evidenceId;
+}
+
+export async function saveVisualEvidenceVideo(
+    conversations: Map<string, QaapAgentConversation>,
+    conversationId: string,
+    sourcePath: string,
+    directory: string,
+): Promise<string | undefined> {
+    const conv = conversations.get(conversationId);
+    const stat = await fsp.stat(sourcePath).catch(() => undefined);
+    if (!conv || !stat || stat.size === 0 || stat.size > VISUAL_EVIDENCE_MAX_VIDEO_BYTES) {
+        return undefined;
+    }
+    await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
+    const existing = await fsp.readdir(directory).catch(() => [] as string[]);
+    if (existing.length >= VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION) {
+        return undefined;
+    }
+    const evidenceId = randomUUID();
+    const targetPath = path.join(directory, `${evidenceId}.webm`);
+    try {
+        await fsp.rename(sourcePath, targetPath);
+    } catch {
+        await fsp.copyFile(sourcePath, targetPath);
+        await fsp.rm(sourcePath, { force: true }).catch(() => undefined);
+    }
+    await fsp.chmod(targetPath, 0o600).catch(() => undefined);
+    return evidenceId;
+}
+
+export function resolveVisualVerificationFile(
+    conversations: Map<string, QaapAgentConversation>,
+    conversationId: string,
+    evidenceRef: string,
+    directory: string,
+): { path: string; contentType: string } | undefined {
+    if (!conversations.has(conversationId)) {
+        return undefined;
+    }
+    const match = /^([a-f\d-]{36})(\.webm)?$/i.exec(evidenceRef);
+    if (!match) {
+        return undefined;
+    }
+    const fileName = match[2] ? `${match[1]}.webm` : `${match[1]}.png`;
+    const filePath = path.join(directory, fileName);
+    if (!fs.existsSync(filePath)) {
+        return undefined;
+    }
+    return { path: filePath, contentType: match[2] ? 'video/webm' : 'image/png' };
+}
+
+export async function sweepUnreferencedVisualEvidence(
+    conversations: Map<string, QaapAgentConversation>,
+    conversationId: string,
+    directory: string,
+): Promise<void> {
+    const conv = conversations.get(conversationId);
+    if (!conv) {
+        return;
+    }
+    const referenced = new Set<string>();
+    for (const message of conv.messages) {
+        for (const match of message.content.matchAll(/visual-verifications\/([a-f\d-]{36})/gi)) {
+            referenced.add(match[1].toLowerCase());
+        }
+    }
+    const files = await fsp.readdir(directory).catch(() => [] as string[]);
+    const cutoff = Date.now() - 60 * 60 * 1000;
+    for (const file of files) {
+        const evidenceId = file.replace(/\.(?:png|webm)$/i, '').toLowerCase();
+        if (referenced.has(evidenceId)) {
+            continue;
+        }
+        const filePath = path.join(directory, file);
+        const stat = await fsp.stat(filePath).catch(() => undefined);
+        if (stat && stat.mtimeMs < cutoff) {
+            await fsp.rm(filePath, { force: true }).catch(() => undefined);
+        }
+    }
 }
