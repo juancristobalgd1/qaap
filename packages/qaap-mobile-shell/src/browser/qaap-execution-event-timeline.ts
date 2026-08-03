@@ -130,41 +130,21 @@ export function resetTimelineDetailsOpenStateForTesting(): void {
  *  touching DOM at all on duplicate SSE frames. */
 const timelineEventSignatureCache = new WeakMap<HTMLElement, string>();
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export type MobileEventKind = 'explore' | 'read' | 'write' | 'edit' | 'delete' | 'run' | 'verification' | 'other';
-
-export interface MobileExecutionTool {
-    segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>;
-    segmentIndex: number;
-    kind: MobileEventKind;
-    verb: string;
-    detail: string;
-    filePath?: string;
-    isTerminal: boolean;
-    isVerification: boolean;
-    isError: boolean;
-    isFinished: boolean;
-}
-
-export interface MobileExecutionEvent {
-    id: string;
-    narrative: string;
-    narrativeSource: 'agent' | 'synthetic';
-    kind: MobileEventKind;
-    icon: string;
-    verb: string;
-    tools: MobileExecutionTool[];
-    hasPending: boolean;
-    hasError: boolean;
-}
-
-export interface MobileExecutionTimeline {
-    events: MobileExecutionEvent[];
-    closingNarrative?: string;
-}
-
-export const MOBILE_TOOL_FILE_OPEN_EVENT = 'qaap-mobile-tool-file-open';
+// ─── Types (extracted to mobile-execution-event-types.ts) ────────────────────
+export type {
+    MobileEventKind,
+    MobileExecutionTool,
+    MobileExecutionEvent,
+    MobileExecutionTimeline
+} from './mobile-execution-event-types';
+export { MOBILE_TOOL_FILE_OPEN_EVENT } from './mobile-execution-event-types';
+import { MOBILE_TOOL_FILE_OPEN_EVENT } from './mobile-execution-event-types';
+import type {
+    MobileEventKind,
+    MobileExecutionTool,
+    MobileExecutionEvent,
+    MobileExecutionTimeline
+} from './mobile-execution-event-types';
 
 // ─── Builder ─────────────────────────────────────────────────────────────────
 
