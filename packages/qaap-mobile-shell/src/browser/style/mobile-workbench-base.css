@@ -1,0 +1,2498 @@
+/********************************************************************************
+ * Copyright (C) 2026 theia-ide and others.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License v. 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0.
+ *
+ * This Source Code may also be made available under the following Secondary
+ * Licenses when the conditions for such availability set forth in the Eclipse
+ * Public License v. 2.0 are satisfied: GNU General Public License, version 2
+ * with the GNU Classpath Exception which is available at
+ * https://www.gnu.org/software/classpath/license.html.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/* Split from mobile-workbench.css — order of @import in the frontend module
+   preserves the original cascade. Do not reorder. */
+
+/********************************************************************************
+ * Copyright (C) 2026 theia-ide and others.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License v. 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0.
+ *
+ * This Source Code may also be made available under the following Secondary
+ * Licenses when the conditions for such availability set forth in the Eclipse
+ * Public License v. 2.0 are satisfied: GNU General Public License, version 2
+ * with the GNU Classpath Exception which is available at
+ * https://www.gnu.org/software/classpath/license.html.
+ *
+ * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+ ********************************************************************************/
+
+/*-----------------------------------------------------------------------------
+| Mobile / touch / narrow viewport `(max-width: 767px), (pointer: coarse)`: larger type, touch targets,
+| safe-area insets, editor tab scrolling. Desktop (>= 768px) is unchanged.
+| Requires viewport-fit=cover on the page viewport meta tag for safe-area.
+|-----------------------------------------------------------------------------*/
+
+:root {
+  /* Portal `#select-component-container` must stack above mobile chat/side sheets (9600)
+     and the keyboard accessory strip (9700); 9500 was hidden behind the panel. */
+  --theia-select-component-dropdown-z-index: 9800;
+  --qaap-mobile-radius-card: var(--q-radius-card, 12px);
+  --qaap-mobile-radius-row: var(--q-radius-row, 10px);
+  --qaap-mobile-radius-control: var(--q-radius-icon, 8px);
+  --qaap-mobile-pad-row-x: 12px;
+  --qaap-mobile-pad-row-y: 10px;
+  --qaap-mobile-weight-title: 600;
+  --qaap-mobile-weight-body: 500;
+  --qaap-mobile-hover-bg: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  --qaap-mobile-active-bg: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  --qaap-mobile-state-transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease,
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* AI Chat panel replacement: mount Work Hub as the full panel body, not as a mobile overlay sheet. */
+.qaap-work-hub-chat-view-widget,
+.qaap-work-hub-chat-view-widget>.lm-Panel,
+.qaap-work-hub-chat-view-host {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.qaap-work-hub-chat-view-host {
+  position: relative;
+  overflow: clip;
+  overscroll-behavior: none;
+}
+
+.qaap-work-hub-chat-view-widget {
+  position: relative;
+}
+
+.qaap-work-hub-chat-view-widget.chat-view-widget {
+  padding: 0;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  transform: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mobile-projects[hidden] {
+  display: none;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel>.theia-mobile-sheet-grabber {
+  display: none !important;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-chat {
+  --theia-mobile-execution-header-pad-top: 4px;
+  --theia-mobile-execution-header-pad-bottom: 4px;
+  --theia-mobile-execution-header-title-row: 32px;
+  --theia-mobile-execution-header-subtitle-gap: 0px;
+  --theia-mobile-execution-header-subtitle-row: 0px;
+  --theia-mobile-execution-header-text-block: var(--theia-mobile-execution-header-title-row);
+  --theia-mobile-execution-header-block: calc(var(--theia-mobile-execution-header-pad-top) + var(--theia-mobile-execution-header-title-row) + var(--theia-mobile-execution-header-pad-bottom));
+}
+
+/* Desktop IDE right chat panel — tighter execution header + transcript lip. */
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .qaap-work-hub-chat-view-panel.theia-mod-project-surface-chat {
+  --theia-mobile-execution-header-pad-top: 0px;
+  --theia-mobile-execution-header-pad-bottom: 2px;
+  --theia-mobile-execution-header-title-row: 28px;
+  --theia-mobile-execution-header-block: calc(var(--theia-mobile-execution-header-pad-top) + var(--theia-mobile-execution-header-title-row) + var(--theia-mobile-execution-header-pad-bottom));
+}
+
+/*
+ * Work Hub replaces the AI Chat body but Lumino still reserves the sidepanel toolbar band
+ * (~28px) above the dock widget. `display: none` + `top: 0` on dock children does not
+ * collapse BoxLayout — the dock panel itself keeps a y-offset, leaving a dead band above
+ * the hamburger header. Pull the dock out of the toolbar row with absolute fill.
+ */
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget)>.lm-Panel {
+  position: relative;
+  min-height: 0;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-sidepanel-toolbar {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: -1;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-side-panel.lm-DockPanel {
+  position: absolute !important;
+  inset: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-side-panel>.lm-DockPanel-widget,
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-side-panel .chat-view-widget.lm-DockPanel-widget,
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-side-panel .qaap-work-hub-chat-view-widget.lm-DockPanel-widget {
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .qaap-work-hub-chat-view-widget,
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .qaap-work-hub-chat-view-host {
+  margin: 0;
+  padding: 0;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .qaap-work-hub-chat-view-panel .theia-mobile-projects-header {
+  margin-top: 0;
+  height: var(--theia-mobile-execution-header-block);
+  max-height: var(--theia-mobile-execution-header-block);
+  padding-top: var(--theia-mobile-execution-header-pad-top);
+  padding-bottom: var(--theia-mobile-execution-header-pad-bottom);
+  padding-left: max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--theia-mobile-execution-chrome-pad-x, 12px), env(safe-area-inset-right, 0px));
+  box-sizing: border-box;
+  box-shadow: none;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .qaap-work-hub-chat-view-panel .theia-mobile-projects-scroll {
+  padding-top: 0;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-agent-transcript-real-chat>.theia-mobile-agent-transcript {
+  padding-top: 0;
+  scroll-padding-top: 2px;
+}
+
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel.theia-mod-project-surface-chat>.theia-mobile-projects-header {
+  box-shadow: none;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-header-execution-cluster {
+  justify-content: center;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster {
+  justify-content: center;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-header-execution-tabs,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-tabs.theia-mod-header-inline,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-tabs,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-tabs.theia-mod-header-inline,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-tabs,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-tabs.theia-mod-header-inline {
+  justify-content: center;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-scroll,
+body.theia-mobile-mod-desktop-ide .qaap-work-hub-chat-view-widget .theia-mobile-projects-scroll,
+body.theia-mobile-mod-workhub-no-bottom-chrome .qaap-work-hub-chat-view-widget .theia-mobile-projects-scroll {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  align-self: stretch !important;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-agents-hub-inline-execution,
+.qaap-work-hub-chat-view-widget .theia-mobile-agents-hub-inline-transcript,
+.qaap-work-hub-chat-view-widget .theia-mobile-agent-transcript-real-chat,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-plan,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-review,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-preview,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-files-host,
+.qaap-work-hub-chat-view-widget .theia-mobile-transcript-terminal-host,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agent-transcript-real-chat,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-plan,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-review,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-preview,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-files-host,
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-terminal-host,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-transcript,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agent-transcript-real-chat,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-plan,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-review,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-preview,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-files-host,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-transcript-terminal-host {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  align-self: stretch !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-projects-scroll,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-projects-scroll {
+  align-items: stretch !important;
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution,
+body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100% !important;
+  min-height: 0;
+  max-height: 100%;
+  z-index: 120;
+}
+
+.qaap-work-hub-chat-view-widget>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel,
+.qaap-work-hub-chat-view-widget .qaap-work-hub-chat-view-panel>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100%;
+}
+
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-new-chat-btn {
+  display: none !important;
+}
+
+/* Work Hub owns the AI Chat slot, so the side-panel overflow tab would only block app chrome. */
+#shell-tab-chat-view-widget-hidden {
+  display: none !important;
+}
+
+body.theia-mod-mobile-ai-chat-fullwidth .lm-TabBar.theia-app-right.theia-app-sides {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepanel-toolbar {
+  display: none !important;
+}
+
+#theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-sidepanel-toolbar {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  #theia-right-content-panel .theia-sidepanel-toolbar {
+    display: none !important;
+  }
+}
+
+.qaap-work-hub-toolbar-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+}
+
+.qaap-work-hub-toolbar-menu-button::before {
+  content: none !important;
+}
+
+.qaap-work-hub-toolbar-menu-button svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.qaap-work-hub-toolbar-menu-button[hidden] {
+  display: none !important;
+}
+
+.qaap-work-hub-toolbar-menu-button[aria-expanded='true'] {
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-work-hub-toolbar-menu {
+  position: fixed;
+  z-index: 2147483010;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 6px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.24));
+  border-radius: 12px;
+  background: var(--theia-dropdown-background, var(--theia-editor-background));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.qaap-work-hub-toolbar-menu[hidden] {
+  display: none !important;
+}
+
+.qaap-work-hub-toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.qaap-work-hub-toolbar-menu-item:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.qaap-work-hub-toolbar-menu-item:not(:disabled):hover,
+.qaap-work-hub-toolbar-menu-item:not(:disabled):focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  outline: none;
+}
+
+.qaap-work-hub-toolbar-menu-item .codicon {
+  flex: 0 0 auto;
+  width: 16px;
+  color: var(--theia-descriptionForeground);
+  text-align: center;
+}
+
+.qaap-work-hub-toolbar-menu-separator {
+  height: 1px;
+  margin: 4px 4px;
+  background: var(--theia-panel-border, rgba(128, 128, 128, 0.18));
+}
+
+@media (max-width: 767px),
+(pointer: coarse) {
+
+  html,
+  body {
+    height: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+    background: var(--theia-editor-background);
+  }
+
+  /* Monaco quick input lives on `document.body`; keep it above side sheets / backdrops (~10k). */
+  #quick-input-container {
+    z-index: 2147483000 !important;
+  }
+
+  /* Hide desktop menubar only in one-column mobile shell (bottom activity strip replaces it). */
+  #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel .lm-MenuBar,
+  #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel [id='theia:menubar'] {
+    display: none !important;
+  }
+
+  /* Terminal and Agent live in the bottom activity bar on mobile; keep settings in the top bar. */
+  #theia-app-shell.theia-mod-mobile-one-column .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-in-mobile-bottom-bar {
+    display: none !important;
+  }
+
+  #theia-app-shell.theia-mod-mobile-one-column .theia-workbench-right-controls {
+    position: relative;
+    z-index: 2;
+    pointer-events: auto;
+  }
+
+  #theia-app-shell.theia-ApplicationShell:not(.theia-mod-mobile-one-column) {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    /* `--theia-mobile-keyboard-inset` is set by MobileKeyboardHelper from
+       window.visualViewport so the layout shrinks above the virtual keyboard.
+       Bottom navigation and status chrome are hidden while the inset is active. */
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--theia-mobile-keyboard-inset, 0px));
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+
+  /* Match workbench-cursor-typography .mac/.windows/.linux overrides. */
+  :root,
+  .mac,
+  .windows,
+  .linux {
+    /* Same height as `#theia-app-shell.theia-mod-mobile-one-column` bottom strip.
+       Defined here so `document.body` descendants (e.g. `.theia-notifications-overlay`)
+       inherit it — shell-only variables do not apply outside `#theia-app-shell`. */
+    --theia-mobile-bottom-bar-height: 64px;
+    --theia-mobile-status-chrome-height: calc(var(--theia-statusBar-height, 34px) + env(safe-area-inset-bottom, 0px));
+    /* Bottom activity bar + status strip reserved while the keyboard is closed. */
+    --theia-mobile-bottom-chrome-reserved: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px));
+    /* Bottom activity bar + status + virtual keyboard (`MobileKeyboardHelper`) + home indicator. */
+    --theia-mobile-bottom-chrome-stack: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+    /* Keyboard-only lift when the bottom chrome is hidden (Agents landing / active transcript). */
+    --theia-mobile-keyboard-lift: calc(var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+    --theia-ui-font-size1: 15px;
+    --theia-content-font-size: 15px;
+    --theia-content-line-height: 24px;
+    --theia-code-font-size: 14px;
+    --theia-code-line-height: 21px;
+    --theia-ui-padding: 10px;
+    --theia-icon-size: 18px;
+    --theia-ui-icon-font-size: 18px;
+    --theia-statusBar-font-size: 13px;
+    --theia-statusBar-height: 34px;
+    --theia-private-menubar-height: 40px;
+    --theia-private-horizontal-tab-height: 40px;
+    --theia-horizontal-toolbar-height: 40px;
+    --theia-private-sidebar-tab-width: 52px;
+    --theia-scrollbar-width: 12px;
+    --theia-scrollbar-rail-width: 12px;
+  }
+
+  .theia-app-activity-bar-row {
+    --theia-horizontal-toolbar-height: 44px;
+    --theia-private-sidebar-tab-height: 32px;
+    --theia-private-sidebar-icon-size: 18px;
+    --theia-private-sidebar-tab-padding-top-and-bottom: 8px;
+    --theia-private-sidebar-tab-padding-left-and-right: 10px;
+    min-height: 44px;
+  }
+
+  .lm-TabBar.theia-app-sides[data-orientation="horizontal"] {
+    min-height: 44px;
+  }
+
+  .lm-TabBar.theia-app-sides[data-orientation="horizontal"] .theia-tabBar-tab-row {
+    min-height: 44px;
+  }
+
+  .theia-workbench-nav-btn:not(.theia-workbench-account-btn):not(.theia-workbench-history-nav-btn) {
+    min-width: 40px;
+    min-height: 36px;
+    width: auto;
+    height: auto;
+    margin: 0 2px;
+    padding: 0 6px;
+  }
+
+  #theia-top-panel {
+    position: relative;
+    align-items: center;
+  }
+
+  /* Left panel toggle is redundant with the bottom bar Explore action. */
+  .theia-workbench-nav-controls .theia-workbench-nav-btn.codicon-layout-sidebar-left:not(.theia-mod-mobile-sessions-sidebar) {
+    display: none !important;
+  }
+
+  /* Session history while a workspace chat is open. */
+  .theia-workbench-nav-controls .theia-workbench-nav-btn.theia-mod-mobile-sessions-sidebar {
+    display: inline-flex !important;
+    pointer-events: auto;
+  }
+
+  #theia-top-panel>#theia\:workbench-nav .theia-workbench-nav-controls .theia-workbench-nav-btn.theia-mod-mobile-sessions-sidebar {
+    pointer-events: auto;
+  }
+
+  /* Back / forward: leading edge. Project name: dead center. Account: trailing. */
+  #theia-top-panel>#theia\:workbench-history-nav {
+    position: absolute;
+    left: calc(env(safe-area-inset-left, 0px) + 6px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    order: unset;
+    flex: 0 0 auto;
+    pointer-events: auto;
+  }
+
+  #theia-top-panel>#theia\:workbench-nav {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: min(52vw, calc(100% - 140px));
+    margin: 0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  #theia-top-panel>#theia\:workbench-nav .theia-workbench-current-project-name {
+    pointer-events: auto;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name {
+    max-width: 100%;
+    margin-left: 0;
+    text-align: center;
+  }
+
+  #theia-top-panel>#theia\:workbench-right-controls {
+    position: relative;
+    z-index: 3;
+    margin-left: auto;
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-dashboard-nav-btn.theia-mod-toggled {
+    color: var(--theia-focusBorder);
+    background: color-mix(in srgb, var(--theia-focusBorder) 14%, transparent);
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-history-nav-btn {
+    align-self: center;
+    width: clamp(36px, var(--theia-private-menubar-height, 40px), 100%);
+    height: clamp(36px, var(--theia-private-menubar-height, 40px), 100%);
+    min-width: 36px;
+    min-height: 36px;
+    max-width: 100%;
+    max-height: 100%;
+    margin: 0 2px;
+    padding: 0;
+  }
+
+  .theia-workbench-nav-btn.codicon::before {
+    font-size: var(--theia-icon-size, 18px);
+  }
+
+  .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {
+    box-sizing: border-box;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    max-width: 32px !important;
+    max-height: 32px !important;
+    margin: 0 2px;
+    padding: 0 !important;
+    border: none;
+    border-radius: 50%;
+    overflow: hidden;
+    flex: 0 0 32px;
+    flex-shrink: 0;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px !important;
+    height: 26px !important;
+    max-width: 26px !important;
+    max-height: 26px !important;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    background: var(--theia-badge-background, var(--theia-activityBarBadge-background));
+    color: var(--theia-badge-foreground, var(--theia-activityBarBadge-foreground));
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar img {
+    display: block;
+    width: 26px !important;
+    height: 26px !important;
+    max-width: 26px !important;
+    max-height: 26px !important;
+    object-fit: cover;
+    border-radius: 50%;
+  }
+
+  /* Inline IDE/Agents surface toggle — sits left of the terminal button.
+     Reuses the segmented-field primitives from the avatar menu switch but
+     scoped to the top bar so it blends with the nav-button row.
+     Overrides the base segmented-field column layout (flex-direction: column,
+     gap: 8px) and the expanding option flex (flex: 1 1 0) to keep it compact. */
+  .theia-workbench-right-controls .theia-workbench-surface-toggle {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    margin: 0 4px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-field {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 0;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-bar {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 0;
+    padding: 2px;
+    border-radius: var(--q-radius-icon, 10px);
+    background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: auto;
+    min-width: 0;
+    height: 28px;
+    min-height: 28px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--qaap-ink-2, var(--theia-descriptionForeground, var(--q-text-2)));
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option .codicon {
+    font-size: 13px;
+    opacity: 0.7;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option .qaap-icon-message-circle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 13px;
+    height: 13px;
+    opacity: 0.7;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option .qaap-icon-message-circle svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option:hover {
+    background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option.theia-mod-selected {
+    background: var(--theia-menu-selectionBackground, var(--q-accent-soft, var(--qaap-accent-soft, #3A2614)));
+    color: var(--theia-menu-selectionForeground, var(--q-accent, var(--qaap-accent, var(--theia-foreground))));
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option.theia-mod-selected .codicon,
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option.theia-mod-selected .qaap-icon-message-circle {
+    opacity: 1;
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-mobile-view-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 48px;
+    height: 44px;
+    min-width: 48px;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 8px;
+    border-radius: var(--q-radius-icon, 10px);
+    color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-mobile-view-picker-btn[hidden] {
+    display: none !important;
+  }
+
+  #theia-main-content-panel .theia-tabBar-tab-row>.theia-workbench-mobile-view-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 48px;
+    width: 48px;
+    height: 44px;
+    min-width: 48px;
+    min-height: 44px;
+    margin: 0 4px 0 8px;
+    padding: 0 8px;
+    border-radius: var(--q-radius-icon, 10px);
+    color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+    position: relative;
+    z-index: 3;
+  }
+
+  #theia-main-content-panel .theia-tabBar-tab-row>.theia-workbench-mobile-view-picker-btn[hidden] {
+    display: none !important;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar .codicon,
+  .theia-workbench-right-controls .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    line-height: 18px;
+    color: var(--theia-activityBar-foreground, var(--theia-icon-foreground));
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar .theia-workbench-account-initials {
+    font-size: 11px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 40px;
+    min-height: 36px;
+    margin: 0 2px;
+    padding: 0 8px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn[hidden] {
+    display: none !important;
+  }
+
+  .theia-workbench-mobile-view-picker-icon {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .theia-workbench-mobile-view-picker-chevron {
+    font-size: 13px;
+    line-height: 1;
+    opacity: 0.9;
+  }
+
+  #theia-statusBar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  #theia-statusBar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  #theia-statusBar .theia-statusBar-track {
+    min-height: var(--theia-statusBar-height);
+    width: max-content;
+    min-width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  #theia-statusBar .area .element {
+    min-width: 36px;
+    min-height: var(--theia-statusBar-height);
+    flex-shrink: 0;
+  }
+
+  #theia-statusBar .area .element .codicon {
+    font-size: 16px;
+  }
+
+  .theia-TreeNodeContent {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab {
+    min-width: 44px;
+    padding: 0 12px;
+    scroll-snap-align: start;
+  }
+
+  /* Tab close (×): desktop renders at 16px with 2px padding → ~20px hit area,
+     well below WCAG 2.5.5. Expand to 28×28 on the current tab so it can be
+     hit reliably with a fingertip without growing the tab row height. */
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab.lm-mod-closable>.lm-TabBar-tabCloseIcon,
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab.theia-mod-pinned>.lm-TabBar-tabCloseIcon,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab.lm-mod-closable>.lm-TabBar-tabCloseIcon,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab.theia-mod-pinned>.lm-TabBar-tabCloseIcon {
+    width: 28px;
+    height: 28px;
+    padding: 6px;
+    line-height: 16px;
+    margin-left: 6px;
+    font-size: 16px;
+    box-sizing: content-box;
+  }
+
+  /* On touch-only devices, `:hover` never fires; reveal the close icon on the
+     current tab unconditionally so the user has a way to close it. Dynamic
+     tabs (`.dynamic-tabs`) still keep the desktop behaviour of hiding it. */
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"]:not(.dynamic-tabs) .lm-TabBar-tab.lm-mod-closable.lm-mod-current>.lm-TabBar-tabCloseIcon,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"]:not(.dynamic-tabs) .lm-TabBar-tab.lm-mod-closable.lm-mod-current>.lm-TabBar-tabCloseIcon {
+    display: inline-block;
+  }
+
+  /*-----------------------------------------------------------------------------
+  || Breadcrumbs. Desktop row is 22px tall — below WCAG 2.5.5; the dropdown
+  || picker is 300×200 fixed and clips off-screen on a phone.
+  ||----------------------------------------------------------------------------*/
+  .theia-breadcrumbs {
+    height: 36px;
+    padding: 0 4px;
+  }
+
+  .theia-breadcrumbs .theia-breadcrumb-item {
+    padding: 0 6px;
+    min-height: 36px;
+  }
+
+  .theia-breadcrumbs .theia-breadcrumb-item:not(:last-of-type)::after {
+    font-size: var(--theia-ui-font-size3, 14px);
+  }
+
+  /* Pin the breadcrumb picker to the viewport so it doesn't run off the edge. */
+  .theia-breadcrumbs-popup {
+    width: min(calc(100vw - 16px), 480px) !important;
+    max-width: calc(100vw - 16px) !important;
+    max-height: 60vh !important;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .theia-breadcrumbs-popup ul li {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+
+  /*-----------------------------------------------------------------------------
+  || Monaco editor floating widgets (hover, parameter hints, suggest). Monaco
+  || positions them relative to the cursor with no viewport clamp — on a phone
+  || they routinely overflow the viewport horizontally and clip vertically.
+  || Constrain to viewport with an internal scroll for long content.
+  ||----------------------------------------------------------------------------*/
+  .monaco-editor .monaco-hover,
+  .monaco-editor-hover.monaco-hover {
+    max-width: calc(100vw - 16px) !important;
+    max-height: 50vh !important;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    font-size: var(--theia-ui-font-size1);
+    line-height: 1.4;
+  }
+
+  .monaco-editor .parameter-hints-widget {
+    max-width: calc(100vw - 16px) !important;
+    max-height: 40vh !important;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .monaco-editor .suggest-widget {
+    max-width: calc(100vw - 16px) !important;
+    max-height: 50vh !important;
+  }
+
+  /* Flex child of `.theia-tabBar-tab-row` must shrink below tab min-content so overflow-x applies here. */
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container {
+    min-width: 0;
+  }
+
+  /* Same idea as `.theia-mobile-bottom-activity-bar`: row must not shrink so `scrollWidth` exceeds
+     the viewport and horizontal pan scrolls the strip with native inertia. */
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content {
+    flex-shrink: 0;
+    min-width: min-content;
+    flex-wrap: nowrap;
+  }
+
+  /* Horizontal pan only; hide scrollbars so the tab row keeps a single compact height (no rail
+     under the tabs). Native overflow scrolling stays available for touch / trackpad.
+     Selectors omit `.ps` because on narrow viewports PerfectScrollbar is not used (see ScrollableTabBar). */
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container {
+    touch-action: pan-x;
+    user-select: none;
+    -webkit-user-select: none;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container::-webkit-scrollbar,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container>.ps__rail-x,
+  #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container>.ps__rail-x {
+    display: none !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+
+    #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container,
+    #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-content-container {
+      scroll-snap-type: none;
+    }
+
+    #theia-main-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab,
+    #theia-bottom-content-panel .lm-TabBar[data-orientation="horizontal"] .lm-TabBar-tab {
+      scroll-snap-align: none;
+    }
+  }
+
+  .theia-sidepanel-toolbar {
+    min-height: 44px;
+  }
+
+  .theia-sidepanel-toolbar .lm-TabBar-toolbar .item>div {
+    min-width: 36px;
+    min-height: 36px;
+    box-sizing: border-box;
+  }
+
+  .lm-TabBar-toolbar .item>div {
+    /* 32 → 36 to match `.theia-sidepanel-toolbar` and the WCAG 2.5.5 floor.
+       The bottom panel toggle (maximize/minimize) lives here too. */
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .theia-input {
+    min-height: 44px;
+    font-size: var(--theia-ui-font-size1);
+  }
+
+  /*
+   * Symmetric with right panel (sidepanel.css): reclaim width if a collapsed
+   * left strip still participates in layout. Primary sidebar can be reopened
+   * via the workbench nav toggle in the top panel.
+   */
+  #theia-left-content-panel.theia-mod-collapsed {
+    min-width: 0 !important;
+    max-width: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
+    pointer-events: none;
+    border: none !important;
+  }
+}
+
+/*-----------------------------------------------------------------------------
+| Coarse pointer: larger minimum hit areas (often true phones; narrow desktop
+| windows with a mouse keep the block above only).
+|-----------------------------------------------------------------------------*/
+
+@media (pointer: coarse) {
+  .theia-workbench-nav-btn:not(.theia-workbench-account-btn):not(.theia-workbench-history-nav-btn) {
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-history-nav-btn {
+    width: clamp(44px, var(--theia-private-menubar-height, 40px), 100%);
+    height: clamp(44px, var(--theia-private-menubar-height, 40px), 100%);
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    max-width: 36px !important;
+    max-height: 36px !important;
+    flex: 0 0 36px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option {
+    min-height: 32px;
+    padding: 0 10px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar,
+  .theia-workbench-right-controls .theia-workbench-account-avatar img {
+    width: 28px !important;
+    height: 28px !important;
+    max-width: 28px !important;
+    max-height: 28px !important;
+    font-size: 12px;
+  }
+
+  #theia-statusBar .area .element {
+    min-width: 44px;
+  }
+
+  .theia-sidepanel-toolbar .lm-TabBar-toolbar .item>div {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+/*-----------------------------------------------------------------------------
+| Qaap Conservador mobile top bar.
+| Keeps the existing widgets/commands, but presents them as:
+| back / forward · centered workspace/project/branch · account.
+|-----------------------------------------------------------------------------*/
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  #theia-top-panel {
+    min-height: 52px;
+    height: 52px;
+    padding: 0 12px;
+    background: var(--qaap-bg, var(--theia-editor-background, var(--q-bg))) !important;
+    border-bottom: 1px solid var(--qaap-line, var(--theia-panel-border, var(--q-line, #2A2823))) !important;
+    box-sizing: border-box;
+  }
+
+  #theia-top-panel>#theia\:workbench-history-nav {
+    left: calc(env(safe-area-inset-left, 0px) + 14px);
+  }
+
+  #theia-top-panel>#theia\:workbench-nav {
+    max-width: min(46vw, calc(100% - 188px));
+  }
+
+  #theia-top-panel>#theia\:workbench-right-controls {
+    height: 52px;
+    margin-right: 12px;
+  }
+
+  .theia-workbench-history-nav-group {
+    gap: 12px;
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-history-nav-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+    color: var(--qaap-ink-2, var(--theia-descriptionForeground, var(--q-text-2)));
+    border-radius: var(--q-radius-icon, 10px);
+    opacity: 0.82;
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-history-nav-btn:disabled {
+    opacity: 0.38;
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-history-nav-btn:hover:not(:disabled) {
+    background: var(--qaap-line-soft, var(--theia-toolbar-hoverBackground, var(--q-line-soft)));
+  }
+
+  .theia-workbench-history-nav-group .theia-workbench-history-nav-btn.codicon::before {
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name {
+    position: relative;
+    display: block;
+    box-sizing: border-box;
+    max-width: 100%;
+    margin: 0;
+    padding-left: 0;
+    border: 0;
+    background: none;
+    overflow: hidden;
+    color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+    cursor: pointer;
+    font-family: var(--q-font-sans, var(--qaap-font-sans, var(--theia-ui-font-family)));
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 16px;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name::before {
+    content: 'workspace';
+    display: block;
+    margin-left: 0;
+    color: var(--qaap-muted, var(--theia-descriptionForeground, var(--q-muted)));
+    font-family: var(--q-font-sans, var(--qaap-font-sans, var(--theia-ui-font-family)));
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    line-height: 12px;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name::after {
+    content: ' ' attr(data-branch);
+    color: var(--qaap-muted, var(--theia-descriptionForeground, var(--q-muted)));
+    font-family: var(--q-font-mono, var(--qaap-font-mono, var(--theia-code-font-family)));
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 16px;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name[data-branch='']::after {
+    content: none;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name:not([hidden]) {
+    min-width: 0;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name:not([hidden])::marker {
+    content: none;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name:not([hidden]) {
+    background: none;
+  }
+
+  .theia-workbench-nav-controls .theia-workbench-current-project-name:hover {
+    color: var(--theia-textLink-foreground, var(--qaap-ink, var(--theia-foreground, var(--q-text))));
+  }
+
+  .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+    max-width: 44px !important;
+    max-height: 44px !important;
+    margin: 0;
+    padding: 0 !important;
+    border-radius: var(--q-radius-pill, 99px);
+    background: var(--q-accent-soft, var(--qaap-accent-soft, #3A2614));
+    color: var(--q-accent, var(--qaap-accent, #E58E40));
+    flex: 0 0 44px;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar,
+  .theia-workbench-right-controls .theia-workbench-account-avatar img {
+    width: 32px !important;
+    height: 32px !important;
+    max-width: 32px !important;
+    max-height: 32px !important;
+    border-radius: var(--q-radius-pill, 99px);
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar {
+    background: transparent;
+    color: inherit;
+    font-family: var(--q-font-sans, var(--qaap-font-sans, var(--theia-ui-font-family)));
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-account-avatar .codicon,
+  .theia-workbench-right-controls .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
+    color: inherit;
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn {
+    width: 48px;
+    height: 44px;
+    min-width: 48px;
+    min-height: 44px;
+    margin: 0 4px 0 0;
+    padding: 0 8px;
+    border-radius: var(--q-radius-icon, 10px);
+    color: var(--qaap-ink, var(--theia-foreground, var(--q-text)));
+  }
+
+  .theia-workbench-right-controls .theia-workbench-mobile-view-picker-btn:hover:not(:disabled) {
+    background: var(--qaap-line-soft, var(--theia-toolbar-hoverBackground, var(--q-line-soft)));
+  }
+
+  .theia-mobile-projects-header-actions .theia-workbench-nav-btn.theia-workbench-account-btn {
+    border-radius: var(--q-radius-pill, 99px);
+    background: var(--q-accent-soft, var(--qaap-accent-soft, #3A2614));
+    color: var(--q-accent, var(--qaap-accent, #E58E40));
+    opacity: 1;
+  }
+
+  .theia-mobile-projects-header-actions .theia-workbench-account-btn:has(.theia-workbench-account-avatar img) {
+    background: transparent;
+  }
+
+  .theia-mobile-projects-header-actions .theia-workbench-account-avatar,
+  .theia-mobile-projects-header-actions .theia-workbench-account-avatar img {
+    border-radius: var(--q-radius-pill, 99px);
+    opacity: 1;
+  }
+
+  .theia-mobile-projects-header-actions .theia-workbench-account-avatar {
+    background: transparent;
+    font-family: var(--q-font-sans, var(--qaap-font-sans, var(--theia-ui-font-family)));
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .theia-mobile-projects-header-actions .theia-workbench-account-avatar .codicon,
+  .theia-mobile-projects-header-actions .theia-workbench-account-avatar .theia-workbench-account-fallback-icon {
+    color: inherit;
+  }
+}
+
+/*-----------------------------------------------------------------------------
+| One-column shell (class `theia-mod-mobile-one-column` on #theia-app-shell,
+| toggled by MobileOneColumnShellContribution — narrow viewport or Agents surface).
+|-----------------------------------------------------------------------------*/
+
+/* Agents / Work Hub on wide viewports: same chrome rules as narrow mobile. */
+#theia-app-shell.theia-mod-mobile-one-column #theia-top-panel .lm-MenuBar,
+#theia-app-shell.theia-mod-mobile-one-column #theia-top-panel [id='theia:menubar'] {
+  display: none !important;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-in-mobile-bottom-bar {
+  display: none !important;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column .theia-workbench-right-controls {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+#theia-app-shell.theia-ApplicationShell.theia-mod-mobile-one-column {
+  --theia-mobile-bottom-bar-height: 64px;
+  box-sizing: border-box;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  /* Fill viewport; bottom chrome is pinned to body (not in shell flow). */
+  height: 100svh !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-top-panel {
+  flex: 0 0 auto !important;
+  flex-shrink: 0;
+  min-height: 52px;
+  z-index: 2;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-bottom-split-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-bottom-split-panel>#theia-main-content-panel,
+#theia-app-shell.theia-mod-mobile-one-column #theia-bottom-split-panel>#theia-bottom-content-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .theia-mini-browser,
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .qaap-agent-preview-embedded {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .theia-mini-browser-toolbar,
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .theia-mini-browser-toolbar-read-only,
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .qaap-agent-preview-embedded-toolbar {
+  flex-shrink: 0;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .qaap-preview-content-area,
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .qaap-agent-preview-embedded-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Bottom panel layout + terminal scroll: see qaap-mobile-touch-scroll.css */
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  /* Stay above collapsed off-screen sheets so Welcome / editors are never fully obscured. */
+  z-index: 1;
+}
+
+/* Editor / preview widgets must fill the dock content area (not only the tab bar). */
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .lm-DockPanel-widget {
+  min-height: 0;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .theia-mini-browser,
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .theia-mini-browser-content-area,
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .theia-mini-browser-content-area iframe,
+#theia-app-shell.theia-mod-mobile-one-column #theia-main-content-panel .monaco-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100% !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Narrow viewport without one-column class yet: still stretch editor stack. */
+@media (max-width: 767px),
+(pointer: coarse) {
+
+  #theia-main-content-panel,
+  #theia-bottom-split-panel,
+  #theia-left-right-split-panel {
+    min-height: 0;
+    height: 100%;
+  }
+}
+
+/* Bottom chrome host (activity strip + status bar) — appended to `document.body` on mobile. */
+.theia-mobile-bottom-chrome-host {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--theia-mobile-keyboard-inset, 0px);
+  z-index: 9300;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/*
+ * Above Work Hub landing panel (13000 while `theia-mobile-mod-landing`) so Home · Agents ·
+ * Routines receive taps — margin above panel z-index avoids swallowed touches on iOS.
+ */
+body.theia-mobile-mod-landing-hub-list .theia-mobile-bottom-chrome-host {
+  z-index: 15000;
+  pointer-events: none;
+}
+
+body.theia-mobile-mod-landing-hub-list .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar {
+  pointer-events: auto;
+}
+
+.theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar,
+.theia-mobile-bottom-chrome-host>#theia-statusBar {
+  pointer-events: auto;
+  position: relative !important;
+  top: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  right: auto !important;
+  width: 100% !important;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* Widget node is the <nav> itself (id + .theia-mobile-bottom-activity-bar on one element). */
+.theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: stretch;
+  align-items: stretch;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100%;
+  height: var(--theia-mobile-bottom-bar-height, 56px) !important;
+  min-height: var(--theia-mobile-bottom-bar-height, 56px);
+  max-height: var(--theia-mobile-bottom-bar-height, 56px);
+  box-sizing: border-box;
+  overflow-x: hidden !important;
+  overflow-y: hidden;
+  touch-action: manipulation;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.theia-mobile-bottom-chrome-host>#theia-statusBar {
+  background: var(--theia-statusBar-background);
+  color: var(--theia-statusBar-foreground);
+  border-top: var(--theia-border-width, 1px) solid var(--theia-statusBar-border, transparent);
+  height: var(--theia-mobile-status-chrome-height) !important;
+  min-height: var(--theia-mobile-status-chrome-height);
+  max-height: var(--theia-mobile-status-chrome-height);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-sizing: border-box;
+}
+
+.theia-mobile-bottom-chrome-host>#theia-statusBar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.theia-mobile-bottom-chrome-host>#theia-statusBar .theia-statusBar-track {
+  height: var(--theia-statusBar-height, 34px);
+  min-height: var(--theia-statusBar-height, 34px);
+  max-height: var(--theia-statusBar-height, 34px);
+  width: max-content;
+  min-width: 100%;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+}
+
+/* Touch devices: status bar may still pan horizontally; bottom activity bar is equal-width (no scroll). */
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-bottom-chrome-host>#theia-statusBar {
+    overflow-x: scroll !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x !important;
+    overscroll-behavior-x: contain;
+  }
+
+  .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar .theia-mobile-bottom-activity-btn {
+    touch-action: manipulation !important;
+  }
+}
+
+/* Surfaces that already hide bottom chrome should not reserve its height in layout math. */
+body.theia-mobile-mod-workhub-no-bottom-chrome:not(.theia-mobile-mod-desktop-ide),
+body.theia-mobile-mod-active-transcript,
+body.theia-mobile-mod-landing:not(.theia-mobile-mod-landing-hub-list) {
+  --theia-mobile-bottom-chrome-reserved: 0px;
+}
+
+/* Hub list keeps the icon-only bottom bar (no status strip). */
+body.theia-mobile-mod-landing-hub-list {
+  --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-bottom-bar-height, 56px);
+}
+
+/*
+ * Virtual keyboard open: hide bottom navigation + status chrome and reclaim their height
+ * for the editor/terminal instead of lifting the bars above the keyboard.
+ */
+body.theia-mobile-mod-keyboard-open {
+  --theia-mobile-bottom-chrome-reserved: 0px;
+}
+
+body.theia-mobile-mod-keyboard-open .theia-mobile-bottom-chrome-host {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel>.lm-SplitPanel-handle {
+  display: none !important;
+}
+
+/*-----------------------------------------------------------------------------
+| Touch-friendly split handles. Lumino paints the visible drag bar via `::after`
+| at a 2–4px width — invisible to a fingertip. Add a transparent `::before` that
+| extends the hit area ±10px without affecting layout (the handle itself stays
+| at its inline-positioned size). Events on the pseudo bubble to the host
+| handle, so Lumino's mousedown/pointerdown handlers receive them unchanged.
+|-----------------------------------------------------------------------------*/
+@media (max-width: 767px),
+(pointer: coarse) {
+
+  /* Lumino sets `position: absolute` on the handle itself, which already makes
+     it a containing block for absolutely positioned children — no extra
+     `position` rule needed here. */
+  .lm-SplitPanel[data-orientation="vertical"]>.lm-SplitPanel-handle::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -10px;
+    bottom: -10px;
+    pointer-events: auto;
+  }
+
+  .lm-SplitPanel[data-orientation="horizontal"]>.lm-SplitPanel-handle::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -10px;
+    right: -10px;
+    pointer-events: auto;
+  }
+}
+
+/*
+ * Side sheets are position:fixed overlays — they must not consume horizontal split space.
+ * Without this, Lumino keeps ~50% width for a sheet and the editor is crushed to a thin strip.
+ */
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel.lm-SplitPanel[data-orientation="horizontal"]>#theia-left-content-panel,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel.lm-SplitPanel[data-orientation="horizontal"]>#theia-right-content-panel {
+  flex-basis: 0 !important;
+  flex-grow: 0 !important;
+  flex-shrink: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel.lm-SplitPanel[data-orientation="horizontal"]>#theia-bottom-split-panel {
+  flex: 1 1 100% !important;
+  flex-grow: 1 !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* Full-width editor stack; side panels overlay as full-bleed sheets.
+   The panels are always `position: fixed` in mobile mode so the slide-in/out transform animation
+   can run on collapse/expand. `!important` is required because Lumino's BoxLayout writes inline
+   `position/top/left/width/height` to layout children on every fit.
+
+   Sheets keep an opaque sideBar background so their content stays readable without needing a
+   global backdrop that would block the file tree or bottom navigation. */
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel {
+  position: fixed !important;
+  z-index: 9600;
+  /* Full viewport height under the top safe-area only; menubar strip is not reserved so the sheet gains vertical space. */
+  top: env(safe-area-inset-top, 0px) !important;
+  /* Keep sheet content above the fixed bottom navigation and status chrome. */
+  bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px)) !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100vw !important;
+  max-width: 100% !important;
+  height: auto !important;
+  box-sizing: border-box;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  overflow: hidden;
+  overflow: clip;
+  clip-path: inset(0);
+  -webkit-clip-path: inset(0);
+  isolation: isolate;
+  box-shadow: 0 -10px 36px rgba(0, 0, 0, 0.45);
+  background: var(--theia-sideBar-background, var(--theia-editor-background));
+  transition:
+    transform 220ms cubic-bezier(.2, .8, .2, 1),
+    visibility 220ms linear;
+  will-change: transform;
+}
+
+@supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
+
+  #theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel,
+  #theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel {
+    background: var(--theia-sideBar-background, var(--theia-editor-background));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Keep the sheet chrome flush; the sheet panel itself owns the rounded top edge. */
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .lm-TabBar,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .lm-TabBar,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .lm-TabBar-content-container,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .lm-TabBar-content-container,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .lm-TabBar-content,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .lm-TabBar-content,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .lm-TabBar-tab,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .lm-TabBar-tab,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .theia-app-activity-bar-row,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .theia-app-activity-bar-row,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .theia-sidepanel-toolbar,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .theia-sidepanel-toolbar,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .theia-sidebar-menu,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .theia-sidebar-menu {
+  border-radius: 0 !important;
+}
+
+/* Hide the side panel's inner Lumino `DockPanel` TabBar entirely on mobile.
+   The dock panel is created in `single-document` mode and the activity strip already lets the
+   user switch between views; this TabBar would duplicate the same tabs (Explorer / Search /
+   SCM / Debug / Extensions / Testing / plugin views) as closable tiles right under the activity
+   strip, doubling vertical chrome. */
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .lm-DockPanel-tabBar,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .lm-DockPanel-tabBar {
+  display: none !important;
+}
+
+/* Override Lumino's `.lm-mod-hidden { display: none }` so the slide-out animation can run.
+   The panel stays in the DOM but is translated off-screen with no pointer events. */
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel.lm-mod-hidden,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel.lm-mod-hidden {
+  display: block !important;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel.theia-mod-collapsed,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel.lm-mod-hidden {
+  transform: translate3d(-100%, 0, 0);
+  visibility: hidden;
+  pointer-events: none;
+  /* Reclaim the override from the global collapsed rule so animation is visible. */
+  width: 100vw !important;
+  max-width: 100% !important;
+  opacity: 1;
+  overflow: visible !important;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel.theia-mod-collapsed,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel.lm-mod-hidden {
+  transform: translate3d(100%, 0, 0);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) {
+  transform: translate3d(100%, 0, 0) !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden),
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden) {
+  transform: translate3d(0, 0, 0);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel.lm-SplitPanel[data-orientation="horizontal"]>#theia-left-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden),
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-right-split-panel.lm-SplitPanel[data-orientation="horizontal"]>#theia-right-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden) {
+  width: 100vw !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Side sheet body must fill space between activity row and viewport bottom (Lumino often keeps 0 height). */
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden)>.lm-Panel,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel:not(.theia-mod-collapsed):not(.lm-mod-hidden)>.lm-Panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .lm-DockPanel,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .lm-DockPanel,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .theia-side-panel,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .theia-side-panel {
+  min-height: 0;
+  height: 100%;
+}
+
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .theia-Tree,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .theia-TreeContainer,
+#theia-app-shell.theia-mod-mobile-one-column #theia-left-content-panel .treeContainer,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .chat-view-widget,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .chat-view-widget .theia-TreeContainer,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .chat-view-widget .treeContainer,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .chat-view-widget .theia-Tree,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .chat-view-widget .theia-TreeNodeSegment,
+#theia-app-shell.theia-mod-mobile-one-column #theia-right-content-panel .chat-tree-view-widget {
+  min-height: 0;
+}
+
+/* Fast plain-text streaming tail in ChatView before markdown-it paints inline syntax. */
+.chat-view-widget .theia-mod-qaap-chat-stream-plain {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--theia-ui-font-family);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.chat-view-widget .theia-mod-markdown .theia-transcript-stream-frozen,
+.chat-view-widget .theia-mod-markdown .theia-transcript-stream-tail {
+  display: contents;
+}
+
+/* Same match-by-construction rule as the mobile transcript: the un-rendered live suffix must
+   wrap identically to the markdown it is about to become, or every worker patch re-flows the
+   block to a different height. */
+.chat-view-widget .theia-mod-markdown .theia-transcript-stream-plain-preview {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-view-widget .theia-mod-markdown .theia-transcript-stream-plain-preview[hidden] {
+  display: none;
+}
+
+/* Vertical touch scroll: see qaap-mobile-touch-scroll.css */
+
+/* Editor tabs: show every open tab; the narrow-viewport rules above (max-width: 767px) make the
+   main tab row horizontally scrollable with touch pan, proximity scroll snap, and scrollbars
+   hidden so the strip does not grow vertically for a scrollbar rail. */
+
+/* Legacy backdrop is kept inert for restored DOM from older sessions; sheets no longer create it. */
+.theia-mobile-sheet-backdrop {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  left: 0;
+  right: 0;
+  /* Do not cover the bottom activity bar — users switch panels from there while a sheet is open. */
+  bottom: calc(var(--theia-mobile-bottom-bar-height, 56px) + var(--theia-mobile-status-chrome-height, 34px) + env(safe-area-inset-bottom, 0px));
+  z-index: 9500;
+  background: rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@supports (backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px)) {
+  .theia-mobile-sheet-backdrop {
+    background: rgba(0, 0, 0, 0.14);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+.theia-mobile-sheet-backdrop.theia-mod-visible {
+  opacity: 1;
+  /* Decorative only: body-level backdrop (9500) stacks above #theia-app-shell (0) and would
+     close side sheets on the first in-panel touch if this were auto. */
+  pointer-events: none;
+}
+
+/* Agent-first bottom bar (Lumino widget in the shell layout, pinned with `position: fixed` in
+   `.theia-mod-mobile-one-column`). Visually fused with the status bar below: shares its background/foreground tokens. When the
+   browser supports `backdrop-filter`, we replace the opaque background with a translucent token
+   + blur so the bar feels like a floating glass surface above the editor — matching the same
+   frosted look applied to side sheets. */
+.theia-mobile-bottom-activity-bar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: stretch;
+  align-items: stretch;
+  min-height: var(--theia-mobile-bottom-bar-height, 56px);
+  max-height: var(--theia-mobile-bottom-bar-height, 56px);
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 0;
+  background: var(--theia-statusBar-background);
+  color: var(--theia-statusBar-foreground);
+  border-top: 1px solid var(--theia-statusBar-border, transparent);
+  box-sizing: border-box;
+  gap: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  touch-action: manipulation;
+}
+
+@supports (backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px)) {
+  .theia-mobile-bottom-activity-bar {
+    background: color-mix(in srgb,
+        var(--theia-statusBar-background) 72%,
+        transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+  }
+}
+
+.theia-mobile-bottom-activity-bar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.theia-mobile-bottom-activity-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 5px 4px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  position: relative;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.theia-mobile-bottom-activity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.theia-mobile-bottom-activity-icon::before {
+  font-size: 20px;
+  line-height: 1;
+  display: block;
+}
+
+.theia-mobile-bottom-activity-label {
+  font-size: 11px;
+  line-height: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+.theia-mobile-bottom-activity-btn:hover:not(.theia-mod-unavailable):not(.theia-mod-active) {
+  color: var(--theia-statusBar-foreground);
+  background: var(--theia-statusBarItem-hoverBackground, rgba(255, 255, 255, 0.12));
+}
+
+.theia-mobile-bottom-activity-btn.theia-mod-active {
+  color: var(--theia-statusBar-foreground);
+}
+
+.theia-mobile-bottom-activity-btn.theia-mod-active .theia-mobile-bottom-activity-icon {
+  background: var(--theia-statusBarItem-activeBackground, var(--theia-statusBarItem-hoverBackground, rgba(255, 255, 255, 0.18)));
+  color: var(--theia-statusBar-foreground);
+}
+
+.theia-mobile-bottom-activity-btn.theia-mod-active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--theia-statusBar-foreground);
+}
+
+.theia-mobile-bottom-activity-btn.theia-mod-unavailable {
+  opacity: var(--theia-mod-disabled-opacity, 0.4);
+  cursor: default;
+}
+
+/* Edge swipe targets (body children).
+   Bottom follows reserved chrome + keyboard inset so zones stay above the keyboard. */
+.theia-mobile-edgeSwipeZone {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--theia-private-menubar-height, 40px));
+  bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px));
+  width: 20px;
+  z-index: 9650;
+  touch-action: none;
+}
+
+.theia-mobile-edgeSwipeZone-left {
+  left: 0;
+}
+
+.theia-mobile-edgeSwipeZone-right {
+  right: 0;
+}
+
+/*-----------------------------------------------------------------------------
+| Mobile first-launch onboarding overlay (see
+| `mobile-onboarding-tutorial-contribution.ts`).
+|
+| The overlay covers the viewport at a higher z-index than the side sheets
+| (9600) but its backdrop & spotlight have `pointer-events: none` so the
+| underlying gesture (left-edge swipe, tap on Agent, …) being taught can still
+| be performed. The tooltip and its buttons opt back in to pointer events.
+|-----------------------------------------------------------------------------*/
+
+.theia-mobile-onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  pointer-events: none;
+  font-family: var(--theia-ui-font-family);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-onboarding-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: theia-mobile-onboarding-fade-in 180ms ease-out both;
+}
+
+.theia-mobile-onboarding-spotlight {
+  position: absolute;
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 2px var(--theia-focusBorder, rgba(120, 200, 255, 0.95)),
+    0 0 0 9999px rgba(0, 0, 0, 0.55),
+    0 12px 32px rgba(0, 0, 0, 0.35);
+  transition: top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease;
+  pointer-events: none;
+}
+
+/* The spotlight uses a giant ring shadow that visually replaces the backdrop;
+   hide the backdrop element while a spotlight is shown so the two don't compound.
+   Driven by `theia-mod-has-spotlight`, toggled from the contribution — reliable across
+   browsers, unlike matching against the spotlight's inline `display` style. */
+.theia-mobile-onboarding-overlay.theia-mod-has-spotlight .theia-mobile-onboarding-backdrop {
+  display: none;
+}
+
+.theia-mobile-onboarding-demo {
+  position: absolute;
+  pointer-events: none;
+}
+
+.theia-mobile-onboarding-demo.theia-mod-swipe-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--theia-editorWidget-foreground, var(--theia-foreground));
+}
+
+.theia-mobile-onboarding-finger {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25), 0 6px 18px rgba(0, 0, 0, 0.35);
+  flex: 0 0 32px;
+  animation: theia-mobile-onboarding-swipe 1600ms ease-in-out infinite;
+}
+
+.theia-mobile-onboarding-demo .theia-mobile-onboarding-arrow {
+  font-size: 22px;
+  opacity: 0.85;
+  animation: theia-mobile-onboarding-arrow-fade 1600ms ease-in-out infinite;
+}
+
+.theia-mobile-onboarding-demo.theia-mod-tap .theia-mobile-onboarding-pulse {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.85);
+  animation: theia-mobile-onboarding-tap 1400ms ease-out infinite;
+}
+
+@keyframes theia-mobile-onboarding-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes theia-mobile-onboarding-swipe {
+  0% {
+    transform: translateX(0);
+    opacity: 0.0;
+  }
+
+  15% {
+    opacity: 1.0;
+  }
+
+  85% {
+    transform: translateX(160px);
+    opacity: 1.0;
+  }
+
+  100% {
+    transform: translateX(160px);
+    opacity: 0.0;
+  }
+}
+
+@keyframes theia-mobile-onboarding-arrow-fade {
+
+  0%,
+  20% {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+}
+
+@keyframes theia-mobile-onboarding-tap {
+  0% {
+    transform: scale(0.6);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55);
+  }
+
+  70% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 18px rgba(255, 255, 255, 0);
+  }
+
+  100% {
+    transform: scale(0.6);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+.theia-mobile-onboarding-tooltip {
+  position: absolute;
+  pointer-events: auto;
+  max-width: min(360px, calc(100vw - 24px));
+  width: calc(100vw - 24px);
+  background: var(--theia-editorWidget-background, var(--theia-sideBar-background, #2b2b2b));
+  color: var(--theia-editorWidget-foreground, var(--theia-foreground));
+  /* A hairline of light gives the card a visible edge on dark themes, where its surface
+     colour is nearly identical to the panels behind it; the ring + drop shadow lift it
+     clearly off the workbench so it never looks fused with the content underneath. */
+  border: 1px solid var(--theia-editorWidget-border, rgba(255, 255, 255, 0.14));
+  border-radius: 14px;
+  padding: 16px 16px 12px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 24px 56px rgba(0, 0, 0, 0.62);
+  animation: theia-mobile-onboarding-fade-in 220ms ease-out both;
+  box-sizing: border-box;
+}
+
+.theia-mobile-onboarding-tooltip.theia-mod-place-top {
+  /* tooltip above target */
+}
+
+.theia-mobile-onboarding-tooltip.theia-mod-place-bottom {
+  /* tooltip below target */
+}
+
+.theia-mobile-onboarding-tooltip.theia-mod-place-center {
+  /* centered, no anchor */
+}
+
+.theia-mobile-onboarding-progress {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--theia-descriptionForeground);
+  margin-bottom: 4px;
+}
+
+.theia-mobile-onboarding-title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 6px 0;
+  line-height: 1.25;
+}
+
+.theia-mobile-onboarding-body {
+  font-size: 14px;
+  line-height: 20px;
+  margin: 0 0 14px 0;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-onboarding-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.theia-mobile-onboarding-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.theia-mobile-onboarding-dismiss {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.theia-mobile-onboarding-btn.theia-mod-remind {
+  color: var(--theia-descriptionForeground);
+  padding: 0 10px;
+}
+
+.theia-mobile-onboarding-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--theia-foreground);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.theia-mobile-onboarding-btn.theia-mod-skip {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-onboarding-btn.theia-mod-back {
+  border-color: var(--theia-panel-border, transparent);
+  background: var(--theia-button-secondaryBackground, transparent);
+  color: var(--theia-button-secondaryForeground, var(--theia-foreground));
+}
+
+.theia-mobile-onboarding-btn.theia-mod-next {
+  background: var(--theia-button-background, #0e639c);
+  color: var(--theia-button-foreground, #fff);
+}
+
+.theia-mobile-onboarding-btn:hover,
+.theia-mobile-onboarding-btn:focus-visible {
+  filter: brightness(1.08);
+  outline: none;
+}
+
+.theia-mobile-onboarding-btn:active {
+  filter: brightness(0.95);
+}
+
+/* Wider screens that still match the mobile media query (e.g. 600 px tablets in portrait)
+   shrink the tooltip to a card width centered in the viewport. */
+@media (min-width: 480px) and (max-width: 767px),
+(min-width: 480px) and (pointer: coarse) {
+  .theia-mobile-onboarding-tooltip {
+    width: min(420px, calc(100vw - 48px));
+  }
+}
+
+/*-----------------------------------------------------------------------------
+| Code keyboard accessory bar.
+| Floating row with Tab / Esc / arrows / brackets shown above the virtual
+| keyboard while a Monaco editor textarea is focused. Built by
+| MobileKeyboardHelper; appended to document.body and positioned with `bottom`
+| set to the live keyboard inset.
+|-----------------------------------------------------------------------------*/
+
+.theia-mobile-keyboard-accessory {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9700;
+  display: none;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 40px;
+  padding: 4px 6px;
+  gap: 4px;
+  background: var(--theia-editorWidget-background, var(--theia-statusBar-background));
+  color: var(--theia-editorWidget-foreground, var(--theia-statusBar-foreground));
+  border-top: 1px solid var(--theia-editorWidget-border, var(--theia-statusBar-border, transparent));
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  /* iOS treats taps inside a fixed bar that the keyboard "owns" as scroll attempts;
+     opting out keeps key buttons immediately tappable. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.theia-mobile-keyboard-accessory.theia-mod-visible {
+  display: flex;
+}
+
+.theia-mobile-keyboard-accessory::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.theia-mobile-keyboard-accessory-btn {
+  flex: 0 0 auto;
+  min-width: 40px;
+  min-height: 36px;
+  padding: 0 12px;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--theia-button-secondaryBackground, rgba(255, 255, 255, 0.08));
+  color: inherit;
+  font-family: var(--theia-monospace-font-family, monospace);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 100ms ease;
+}
+
+.theia-mobile-keyboard-accessory-btn:active {
+  background: var(--theia-button-secondaryHoverBackground, rgba(255, 255, 255, 0.16));
+}
+
+/*-----------------------------------------------------------------------------
+| iOS Safari triggers a viewport zoom whenever a focused input has a font size
+| smaller than 16px. The mobile breakpoint above sets `.theia-input` to 15px
+| (matching --theia-ui-font-size1) which is otherwise good for density. Bump
+| inputs to 16px on iOS only via `-webkit-touch-callout` (a property only
+| implemented in iOS WebKit) so other platforms keep the tighter sizing.
+|-----------------------------------------------------------------------------*/
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  @supports (-webkit-touch-callout: none) {
+
+    .theia-input,
+    input.theia-input,
+    select.theia-input,
+    textarea.theia-input,
+    #quick-input-container .monaco-inputbox>.ibwrapper>.input,
+    .theia-mobile-projects-search-input,
+    .theia-mobile-open-repo-filter-input,
+    .theia-mobile-open-repo-public-input,
+    .lm-Widget.dialogOverlay input,
+    .lm-Widget.dialogOverlay textarea,
+    .lm-Widget.dialogOverlay select,
+    /* Monaco editor find/replace widget (Ctrl+F): inputs sit above the editor and
+       would otherwise trigger the iOS zoom-on-focus loop, dropping focus and
+       making the widget unusable on phones. */
+    .monaco-editor .find-widget .monaco-inputbox>.ibwrapper>.input,
+    .monaco-editor .find-widget .monaco-inputbox>.ibwrapper>textarea,
+    .monaco-editor .find-widget input,
+    /* SCM commit message textarea. */
+    .theia-scm-input-message-container textarea,
+    /* Transcript Files tab Monaco editor. */
+    .theia-mobile-transcript-files-monaco-host .monaco-editor textarea.inputarea,
+    /* Search across files / replace inputs. */
+    .t-siw-search-container input,
+    .t-siw-search-container textarea,
+    /* Notebook find/replace widget. */
+    .theia-notebook-find-widget input,
+    /* Terminal in-pane search (Ctrl+F in terminal). */
+    .terminal-search-container input,
+    /* Any Monaco-styled inputbox that surfaces above content (peek widgets,
+       rename, parameter hints input) — same zoom-on-focus failure mode. */
+    .monaco-inputbox>.ibwrapper>.input,
+    .monaco-inputbox>.ibwrapper>textarea,
+    /* Monaco rename popup input (F2 on a symbol). */
+    .monaco-editor .rename-box input {
+      font-size: 16px;
+    }
+  }
+}
+
+/* Quick Input dimmed backdrop — tap outside to dismiss (mobile). */
+.theia-mobile-quick-input-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2147482999;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-quick-input-backdrop.theia-mod-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container {
+    top: auto !important;
+    right: 0 !important;
+    bottom: calc(var(--theia-mobile-status-chrome-height, 34px) + 6px) !important;
+    left: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    padding: 0 max(10px, env(safe-area-inset-right, 0px)) 0 max(10px, env(safe-area-inset-left, 0px)) !important;
+    box-sizing: border-box;
+    display: flex;
+    align-items: flex-end;
+    pointer-events: none;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-widget {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: min(72dvh, 560px) !important;
+    margin: 0 !important;
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent) !important;
+    border-radius: 14px !important;
+    background: var(--theia-quickInput-background, var(--theia-editor-background)) !important;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42) !important;
+    overflow: hidden;
+    pointer-events: auto;
+    transform: none !important;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-titlebar {
+    min-height: 34px;
+    padding: 8px 12px 2px;
+    background: var(--theia-quickInput-background, var(--theia-editor-background)) !important;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-box,
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-and-message {
+    padding: 8px 12px 10px;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .monaco-inputbox>.ibwrapper>.input {
+    min-height: 44px !important;
+    font-size: 16px !important;
+    border-radius: 10px !important;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-list {
+    max-height: calc(min(72dvh, 560px) - 104px) !important;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-list .monaco-list-row {
+    min-height: 52px !important;
+    height: 52px !important;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-list .quick-input-list-row {
+    padding: 12px 12px;
+    box-sizing: border-box;
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-list .monaco-list-row:not(:last-child) {
+    border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  }
+
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-list .label-name,
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-list .label-description,
+  body.theia-mobile-mod-project-switcher-quickpick #quick-input-container .quick-input-list .label-detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+

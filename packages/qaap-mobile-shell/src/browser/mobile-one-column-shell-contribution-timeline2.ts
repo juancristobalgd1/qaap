@@ -416,6 +416,7 @@ export async function mountSideSheetWidgetExtracted(ctx: any, side: 'left' | 'ri
 }
 
 export async function openDiffInWorkHubExtracted(ctx: any, projectId?: string): Promise<void> {
+    await ensurePrReviewCss();
     if (!ctx.mobileActive) {
         const widget = await ctx.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID);
         if (!widget.isAttached) {
@@ -581,3 +582,12 @@ export async function closeStaleMainPreviewWidgetExtracted(ctx: any): Promise<vo
     await ctx.shell.closeWidget(preview.id, { save: false });
 }
 
+
+let prReviewCssLoaded = false;
+async function ensurePrReviewCss(): Promise<void> {
+    if (prReviewCssLoaded) {
+        return;
+    }
+    prReviewCssLoaded = true;
+    await import('../../src/browser/style/mobile-workbench-pr-review.css');
+}

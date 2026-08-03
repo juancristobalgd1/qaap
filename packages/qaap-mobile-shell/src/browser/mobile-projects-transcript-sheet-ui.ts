@@ -144,6 +144,7 @@ export class MobileProjectsTranscriptSheetUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<void> {
+        await ensureTranscriptSurfaceCss();
         if (this.workHub.isAgentsHubLanding() && !this.workHub.isProjectDetailView()) {
             await this.workHub.openInlineTranscript(project, summary);
             return;
@@ -558,4 +559,16 @@ export class MobileProjectsTranscriptSheetUi {
         observer.observe(composer);
         this.host.transcriptComposerSizeDispose = Disposable.create(() => observer.disconnect());
     }
+}
+
+let transcriptSurfaceCssLoaded = false;
+async function ensureTranscriptSurfaceCss(): Promise<void> {
+    if (transcriptSurfaceCssLoaded) {
+        return;
+    }
+    transcriptSurfaceCssLoaded = true;
+    await Promise.all([
+        import('../../src/browser/style/mobile-workbench-conversation.css'),
+        import('../../src/browser/style/mobile-workbench-transcript.css'),
+    ]);
 }

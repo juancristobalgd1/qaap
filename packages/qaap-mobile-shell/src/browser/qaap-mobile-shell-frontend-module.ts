@@ -4,7 +4,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import '../../src/browser/style/mobile-workbench.css';
+// mobile-workbench.css was split into 8 partials (cascade order preserved).
+// Boot-critical partials load statically; surface-specific partials lazy-load
+// on activation to reduce initial CSS payload on mobile (~515 KB saved).
+import '../../src/browser/style/mobile-workbench-base.css';
+import '../../src/browser/style/mobile-workbench-projects.css';
+import '../../src/browser/style/mobile-workbench-work-hub.css';
+import '../../src/browser/style/mobile-workbench-chrome.css';
+import '../../src/browser/style/mobile-workbench-ide-chrome.css';
 import '../../src/browser/style/qaap-catalog-card-tap-feedback.css';
 import '../../src/browser/style/qaap-mobile-touch-scroll.css';
 import '../../src/browser/style/qaap-empty-workbench-brand.css';
