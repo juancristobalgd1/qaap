@@ -28,6 +28,7 @@ import {
 } from '../common/qaap-agent-review';
 import type { QaapGenericCommandResult } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
+import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 
 const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIONS;
 const QAAP_AGENT_RETRIEVAL_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
@@ -311,5 +312,137 @@ export async function reviewSuccessfulAgentTask(
         status: 'inconclusive',
         reason: 'Every reviewer agent failed before emitting a verdict.',
         agentId: lastReviewer,
+    };
+}
+
+// ─── DI-extracted: runOneShotCommand (0 field accesses, 5 method calls) ──────
+
+export interface RunOneShotCommandDeps {
+    enforceAgentIsolationPolicy(): void;
+    ensureAgentCwdOwnership(cwd: string): void;
+    spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('ignore' | 'pipe')[] }): ChildProcess;
+    killAgentProcessTree(child: ChildProcess): void;
+    reapAgentProcessGroupAfterExit(child: ChildProcess): void;
+}
+
+export function runOneShotCommand(
+    command: string,
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+    agentId: string | undefined,
+    timeoutMs: number,
+    deps: RunOneShotCommandDeps,
+): Promise<string> {
+    return new Promise((resolve, reject) => {
+        let stdout = '';
+        let stderr = '';
+        let child: ChildProcess;
+        try {
+            deps.enforceAgentIsolationPolicy();
+            deps.ensureAgentCwdOwnership(cwd);
+            child = deps.spawnAgentCommand(command, {
+                cwd,
+                env,
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+        } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+            return;
+        }
+        const timer = setTimeout(() => {
+            deps.killAgentProcessTree(child);
+            reject(new Error('Prompt improvement timed out.'));
+        }, timeoutMs);
+        child.stdout?.on('data', (chunk: Buffer | string) => {
+            stdout += String(chunk);
+        });
+        child.stderr?.on('data', (chunk: Buffer | string) => {
+            stderr += String(chunk);
+        });
+        child.on('error', error => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        child.once('exit', () => {
+            deps.reapAgentProcessGroupAfterExit(child);
+        });
+        child.on('close', code => {
+            clearTimeout(timer);
+            if (code !== 0) {
+                reject(new Error(stderr.trim() || stdout.trim() || `Agent exited with code ${code ?? 'unknown'}.`));
+                return;
+            }
+            const improved = extractImprovedComposerPromptFromAgentStdout(agentId, stdout);
+            if (!improved) {
+                reject(new Error('Agent returned an empty prompt.'));
+                return;
+            }
+            resolve(improved);
+        });
+    });
+}
+
+// ─── DI-extracted: verifySuccessfulAgentTask (0 field accesses, 7 method calls) ─
+
+export const QAAP_AGENT_VERIFY_MAX_ATTEMPTS = 2;
+export const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
+
+export interface VerifySuccessfulAgentTaskDeps {
+    buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
+    hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean>;
+    resolveVerificationScriptsForCwd(cwd: string): Promise<readonly string[]>;
+    isTaskStillRunning(taskId: string): boolean;
+    runVerificationScripts(task: QaapAgentTask, env: NodeJS.ProcessEnv, scripts: readonly string[], startedAt: number): Promise<{ command: string; result: QaapGenericCommandResult } | undefined>;
+    runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number): Promise<QaapGenericCommandResult | undefined>;
+    summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string;
+}
+
+export async function verifySuccessfulAgentTask(
+    task: QaapAgentTask,
+    deps: VerifySuccessfulAgentTaskDeps,
+): Promise<QaapAgentTaskVerification | undefined> {
+    const env = deps.buildChildEnv(task);
+    const startedAt = Date.now();
+    if (!await deps.hasEditedFilesForVerification(task, env)) {
+        return undefined;
+    }
+    const scripts = await deps.resolveVerificationScriptsForCwd(task.cwd);
+    if (scripts.length === 0) {
+        return undefined;
+    }
+    let attempts = 0;
+    let lastCommand = '';
+    let lastFailure: QaapGenericCommandResult | undefined;
+    while (deps.isTaskStillRunning(task.id) && Date.now() - startedAt < QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
+        const failed = await deps.runVerificationScripts(task, env, scripts, startedAt);
+        if (!failed) {
+            return { status: 'passed', command: lastCommand || `npm run ${scripts[scripts.length - 1]}`, attempts };
+        }
+        lastCommand = failed.command;
+        lastFailure = failed.result;
+        if (attempts >= QAAP_AGENT_VERIFY_MAX_ATTEMPTS || Date.now() - startedAt >= QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
+            break;
+        }
+        attempts++;
+        const fixed = await deps.runAgentVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt);
+        if (fixed === undefined) {
+            // No agent was available to attempt a fix — retrying the same failing scripts again
+            // would just burn the remaining attempts for nothing, so stop here.
+            break;
+        }
+    }
+    if (!lastFailure) {
+        return {
+            status: 'failed',
+            command: lastCommand || 'qaap self-verification',
+            attempts,
+            summary: 'Verification did not complete before the task stopped or the wall-clock limit was reached.',
+        };
+    }
+    return {
+        status: 'failed',
+        command: lastCommand,
+        attempts,
+        summary: deps.summarizeVerificationFailure(lastCommand, lastFailure),
     };
 }

@@ -15,7 +15,6 @@ import * as os from 'os';
 import * as path from 'path';
 import {
     buildImproveComposerPromptRequest,
-    extractImprovedComposerPromptFromAgentStdout,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 import {
     isQaapAgentTaskFinished,
@@ -150,6 +149,10 @@ import {
     probeAgentBinOnce as probeAgentBinOnceHelper,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
     reviewSuccessfulAgentTask as reviewSuccessfulAgentTaskHelper,
+    runOneShotCommand as runOneShotCommandHelper,
+    verifySuccessfulAgentTask as verifySuccessfulAgentTaskHelper,
+    QAAP_AGENT_VERIFY_MAX_ATTEMPTS,
+    QAAP_AGENT_VERIFY_WALL_CLOCK_MS,
 } from './qaap-agent-task-runner-utils3';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
@@ -182,8 +185,6 @@ const CUSTOM_AGENTS_ENV = 'QAAP_AGENT_COMMANDS';
 // Default-on so the `[QAAP honest reporting]` prompt contract is backed by a real backend check
 // (mirrors QAAP_AGENT_AUTO_CONTINUE). Opt out with QAAP_AGENT_VERIFY=0 (or `false`/`off`).
 const QAAP_AGENT_VERIFY_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_VERIFY?.trim() ?? '');
-const QAAP_AGENT_VERIFY_MAX_ATTEMPTS = 2;
-const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
 const QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS = 12_000;
 const QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS = 4_000;
 
@@ -2082,50 +2083,15 @@ export class QaapAgentTaskRunner {
      * — a fix-turn re-invokes whichever agent ran the original task (see {@link resolveTaskAgentId}).
      */
     protected async verifySuccessfulAgentTask(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
-        const env = this.buildChildEnv(task);
-        const startedAt = Date.now();
-        if (!await this.hasEditedFilesForVerification(task, env)) {
-            return undefined;
-        }
-        const scripts = await this.resolveVerificationScriptsForCwd(task.cwd);
-        if (scripts.length === 0) {
-            return undefined;
-        }
-        let attempts = 0;
-        let lastCommand = '';
-        let lastFailure: QaapGenericCommandResult | undefined;
-        while (this.isTaskStillRunning(task.id) && Date.now() - startedAt < QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
-            const failed = await this.runVerificationScripts(task, env, scripts, startedAt);
-            if (!failed) {
-                return { status: 'passed', command: lastCommand || `npm run ${scripts[scripts.length - 1]}`, attempts };
-            }
-            lastCommand = failed.command;
-            lastFailure = failed.result;
-            if (attempts >= QAAP_AGENT_VERIFY_MAX_ATTEMPTS || Date.now() - startedAt >= QAAP_AGENT_VERIFY_WALL_CLOCK_MS) {
-                break;
-            }
-            attempts++;
-            const fixed = await this.runAgentVerificationFixTurn(task, env, failed.command, failed.result, attempts, startedAt);
-            if (fixed === undefined) {
-                // No agent was available to attempt a fix — retrying the same failing scripts again
-                // would just burn the remaining attempts for nothing, so stop here.
-                break;
-            }
-        }
-        if (!lastFailure) {
-            return {
-                status: 'failed',
-                command: lastCommand || 'qaap self-verification',
-                attempts,
-                summary: 'Verification did not complete before the task stopped or the wall-clock limit was reached.',
-            };
-        }
-        return {
-            status: 'failed',
-            command: lastCommand,
-            attempts,
-            summary: this.summarizeVerificationFailure(lastCommand, lastFailure),
-        };
+        return verifySuccessfulAgentTaskHelper(task, {
+            buildChildEnv: t => this.buildChildEnv(t),
+            hasEditedFilesForVerification: (t, e) => this.hasEditedFilesForVerification(t, e),
+            resolveVerificationScriptsForCwd: cwd => this.resolveVerificationScriptsForCwd(cwd),
+            isTaskStillRunning: id => this.isTaskStillRunning(id),
+            runVerificationScripts: (t, e, s, sa) => this.runVerificationScripts(t, e, s, sa),
+            runAgentVerificationFixTurn: (t, e, c, r, a, sa) => this.runAgentVerificationFixTurn(t, e, c, r, a, sa),
+            summarizeVerificationFailure: (c, r) => this.summarizeVerificationFailure(c, r),
+        });
     }
 
     /**
@@ -2918,52 +2884,12 @@ export class QaapAgentTaskRunner {
         agentId?: string,
         timeoutMs = 45_000,
     ): Promise<string> {
-        return new Promise((resolve, reject) => {
-            let stdout = '';
-            let stderr = '';
-            let child: ChildProcess;
-            try {
-                this.enforceAgentIsolationPolicy();
-                this.ensureAgentCwdOwnership(cwd);
-                child = this.spawnAgentCommand(command, {
-                    cwd,
-                    env,
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                });
-            } catch (error) {
-                reject(error instanceof Error ? error : new Error(String(error)));
-                return;
-            }
-            const timer = setTimeout(() => {
-                this.killAgentProcessTree(child);
-                reject(new Error('Prompt improvement timed out.'));
-            }, timeoutMs);
-            child.stdout?.on('data', (chunk: Buffer | string) => {
-                stdout += String(chunk);
-            });
-            child.stderr?.on('data', (chunk: Buffer | string) => {
-                stderr += String(chunk);
-            });
-            child.on('error', error => {
-                clearTimeout(timer);
-                reject(error);
-            });
-            child.once('exit', () => {
-                this.reapAgentProcessGroupAfterExit(child);
-            });
-            child.on('close', code => {
-                clearTimeout(timer);
-                if (code !== 0) {
-                    reject(new Error(stderr.trim() || stdout.trim() || `Agent exited with code ${code ?? 'unknown'}.`));
-                    return;
-                }
-                const improved = extractImprovedComposerPromptFromAgentStdout(agentId, stdout);
-                if (!improved) {
-                    reject(new Error('Agent returned an empty prompt.'));
-                    return;
-                }
-                resolve(improved);
-            });
+        return runOneShotCommandHelper(command, cwd, env, agentId, timeoutMs, {
+            enforceAgentIsolationPolicy: () => this.enforceAgentIsolationPolicy(),
+            ensureAgentCwdOwnership: c => this.ensureAgentCwdOwnership(c),
+            spawnAgentCommand: (cmd, opts) => this.spawnAgentCommand(cmd, opts),
+            killAgentProcessTree: c => this.killAgentProcessTree(c),
+            reapAgentProcessGroupAfterExit: c => this.reapAgentProcessGroupAfterExit(c),
         });
     }
 }
