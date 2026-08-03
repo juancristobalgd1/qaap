@@ -165,6 +165,21 @@ export {
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
 import {
+    visualEvidenceDirectory as visualEvidenceDirectoryHelper,
+    resolveVisualEvidenceTarget as resolveVisualEvidenceTargetHelper,
+    resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper,
+    countVisualRepairAttempts as countVisualRepairAttemptsHelper,
+    buildVisualRepairPrompt as buildVisualRepairPromptHelper,
+} from './qaap-agent-conversation-store-visual';
+import {
+    parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper,
+    readGitBranch as readGitBranchHelper,
+    captureGitSha as captureGitShaHelper,
+    computeGitDiffStats as computeGitDiffStatsHelper,
+    checkpointLabel as checkpointLabelHelper,
+    isDirectory as isDirectoryHelper,
+} from './qaap-agent-conversation-store-git';
+import {
     clearRunActive as clearRunActiveHelper,
     appendRunCancelledTrace as appendRunCancelledTraceHelper,
     detectAgentBlockedNeed as detectAgentBlockedNeedHelper,
@@ -179,7 +194,6 @@ import {
     STORE_DIR,
     STREAMING_PERSIST_DEBOUNCE_MS,
     INDEX_PATH,
-    VISUAL_EVIDENCE_DIR,
     VISUAL_EVIDENCE_MAX_FILES_PER_CONVERSATION,
     VISUAL_EVIDENCE_MAX_VIDEO_BYTES,
     MAX_CONCURRENT_CONVERSATION_RUNS,
@@ -192,7 +206,6 @@ import {
     QaapMaxConcurrentRunsError,
     type PostUserMessageInternalOptions,
     type QaapConversationTaskRef,
-    parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
 
 /**
@@ -907,7 +920,7 @@ export class QaapAgentConversationStore {
     }
 
     protected visualEvidenceDirectory(conversationId: string): string {
-        return path.join(VISUAL_EVIDENCE_DIR, conversationId);
+        return visualEvidenceDirectoryHelper(conversationId);
     }
 
     /**
@@ -922,15 +935,7 @@ export class QaapAgentConversationStore {
         conv: QaapAgentConversation,
         targetAgentMessageId: string | undefined,
     ): QaapAgentMessage | undefined {
-        const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
-        if (!lastAgent) {
-            return undefined;
-        }
-        if (targetAgentMessageId !== undefined) {
-            return lastAgent.id === targetAgentMessageId ? lastAgent : undefined;
-        }
-        // Legacy reports (no target): only trust them while the backend turn is truly idle.
-        return conv.status === 'idle' ? lastAgent : undefined;
+        return resolveVisualEvidenceTargetHelper(conv, targetAgentMessageId);
     }
 
     protected attachVisualVerificationBlock(
@@ -964,54 +969,15 @@ export class QaapAgentConversationStore {
         conv: QaapAgentConversation,
         target: QaapAgentMessage,
     ): QaapAgentMessage | undefined {
-        if (target.runUserMessageId) {
-            const runUser = conv.messages.find(message =>
-                message.id === target.runUserMessageId && message.role === 'user'
-            );
-            if (runUser) {
-                return runUser;
-            }
-        }
-        const targetIndex = conv.messages.findIndex(message => message.id === target.id);
-        for (let index = targetIndex - 1; index >= 0; index--) {
-            if (conv.messages[index].role === 'user') {
-                return conv.messages[index];
-            }
-        }
-        return undefined;
+        return resolveVisualRepairSourceUserMessageHelper(conv, target);
     }
 
     protected countVisualRepairAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
-        return conv.messages.filter(message =>
-            message.role === 'user'
-            && message.visualRepairRootMessageId === rootUserMessageId
-            && typeof message.visualRepairAttempt === 'number'
-        ).length;
+        return countVisualRepairAttemptsHelper(conv, rootUserMessageId);
     }
 
     protected buildVisualRepairPrompt(target: QaapAgentMessage, attempt: number): string {
-        const markerIndex = target.content.lastIndexOf('[QAAP visual verification]');
-        const evidence = (markerIndex >= 0 ? target.content.slice(markerIndex) : target.content)
-            .trim()
-            .slice(0, 3_000);
-        return [
-            nls.localize(
-                'qaap/visualRepair/heading',
-                'Automatic visual repair attempt {0} of {1}.',
-                attempt,
-                MAX_VISUAL_REPAIR_ATTEMPTS,
-            ),
-            nls.localize(
-                'qaap/visualRepair/instruction',
-                'The real browser render failed. Inspect the evidence and findings below, reproduce the problem in this same workspace, edit the app until the blocking render/runtime findings are fixed, and verify the change. An HTTP response alone is not visual success.',
-            ),
-            nls.localize(
-                'qaap/visualRepair/capture',
-                'Finish your reply with [QAAP capture] so Qaap runs the browser validation again. Do not claim success before that validation.',
-            ),
-            '',
-            evidence,
-        ].join('\n\n');
+        return buildVisualRepairPromptHelper(target, attempt);
     }
 
     /**
@@ -3250,33 +3216,11 @@ export class QaapAgentConversationStore {
     }
 
     protected parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined {
-        try {
-            const result = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8' });
-            if (result.status !== 0) {
-                return undefined;
-            }
-            const url = result.stdout.trim();
-            const ssh = /^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i.exec(url);
-            if (ssh) {
-                return { owner: ssh[1], name: ssh[2].replace(/\.git$/, '') };
-            }
-            const https = /github\.com[/:]([^/]+)\/(.+?)(?:\.git)?/i.exec(url);
-            if (https) {
-                return { owner: https[1], name: https[2].replace(/\.git$/, '') };
-            }
-        } catch { /* not a git repo */ }
-        return undefined;
+        return parseGithubRepoFromCwdHelper(cwd);
     }
 
     protected readGitBranch(cwd: string): string | undefined {
-        try {
-            const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8' });
-            if (result.status === 0) {
-                const branch = result.stdout.trim();
-                return branch && branch !== 'HEAD' ? branch : undefined;
-            }
-        } catch { /* not a git repo */ }
-        return undefined;
+        return readGitBranchHelper(cwd);
     }
 
     protected async restoreFromDisk(): Promise<void> {
@@ -3981,40 +3925,11 @@ export class QaapAgentConversationStore {
     }
 
     protected captureGitSha(cwd: string): string | undefined {
-        try {
-            const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
-            if (result.status === 0) {
-                return result.stdout.trim();
-            }
-        } catch { /* not a git repo */ }
-        return undefined;
+        return captureGitShaHelper(cwd);
     }
 
     protected computeGitDiffStats(cwd: string, startSha?: string): { added: number; removed: number } | undefined {
-        try {
-            let added = 0;
-            let removed = 0;
-            if (startSha) {
-                const committed = spawnSync('git', ['diff', '--numstat', `${startSha}..HEAD`], { cwd, encoding: 'utf8' });
-                if (committed.status === 0 && committed.stdout) {
-                    const stats = parseGitNumstat(committed.stdout);
-                    added += stats.added;
-                    removed += stats.removed;
-                }
-            }
-            const uncommitted = spawnSync('git', ['diff', '--numstat', 'HEAD'], { cwd, encoding: 'utf8' });
-            if (uncommitted.status === 0 && uncommitted.stdout) {
-                const stats = parseGitNumstat(uncommitted.stdout);
-                added += stats.added;
-                removed += stats.removed;
-            }
-            if (added === 0 && removed === 0) {
-                return undefined;
-            }
-            return { added, removed };
-        } catch {
-            return undefined;
-        }
+        return computeGitDiffStatsHelper(cwd, startSha);
     }
 
     /**
@@ -4064,8 +3979,7 @@ export class QaapAgentConversationStore {
     }
 
     protected checkpointLabel(content: string): string {
-        const clean = content.replace(/\s+/g, ' ').trim();
-        return clean.length > 60 ? `${clean.slice(0, 57)}…` : (clean || 'Turn');
+        return checkpointLabelHelper(content);
     }
 
     /**
@@ -4148,10 +4062,6 @@ export class QaapAgentConversationStore {
     }
 
     protected isDirectory(target: string): boolean {
-        try {
-            return fs.statSync(target).isDirectory();
-        } catch {
-            return false;
-        }
+        return isDirectoryHelper(target);
     }
 }
