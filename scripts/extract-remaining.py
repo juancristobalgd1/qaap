@@ -55,6 +55,8 @@ def find_body_brace(lines, start):
                 continue
             if ch == "'" or ch == '"' or ch == '`':
                 in_str = ch
+                if found_close_paren and seen_return_colon:
+                    seen_return_type_word = True
             elif ch == '/' and j+1 < len(text) and text[j+1] == '/':
                 break
             elif ch == '/' and j+1 < len(text) and text[j+1] == '*':

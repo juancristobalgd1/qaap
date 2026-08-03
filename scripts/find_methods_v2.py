@@ -179,6 +179,8 @@ def find_methods(lines, class_start):
                     continue
                 if ch == "'" or ch == '"' or ch == '`':
                     in_str = ch
+                    if found_close_paren and seen_return_colon:
+                        seen_return_type_word = True
                 elif ch == '/' and j+1 < len(text) and text[j+1] == '/':
                     break
                 elif ch == '/' and j+1 < len(text) and text[j+1] == '*':
