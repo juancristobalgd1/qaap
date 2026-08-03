@@ -85,18 +85,11 @@ import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import {
-    compressAgentMessageForWire,
-    compressAgentMessageWireDeltaForWire,
-} from './qaap-agent-message-wire-compress';
-import {
     QaapConversationStreamMetricsCollector,
     countCompressedWireFields,
     logQaapStreamMetrics,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
-    computeAgentMessageWireDelta,
-    toAgentMessageWirePayload,
-    toAgentMessageWireSnapshot,
     type QaapAgentMessageWireSnapshot,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
 import {
@@ -202,6 +195,8 @@ import {
     prepareContextCompactionForTurn as prepareContextCompactionForTurnHelper,
     sweepZombieStreamingTurns as sweepZombieStreamingTurnsHelper,
     forceStopZombieTurn as forceStopZombieTurnHelper,
+    applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper,
+    fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper,
 } from './qaap-agent-conversation-store-helpers';
 import {
     STORE_DIR,
@@ -1681,67 +1676,14 @@ export class QaapAgentConversationStore {
         ref: QaapConversationTaskRef,
         agentId: string,
     ): void {
-        const conv = this.conversations.get(ref.conversationId);
-        const stream = this.agentStreamByTaskId.get(taskId);
-        if (!conv || !stream) {
-            return;
-        }
-        const segments = [...stream.getSegments()];
-        const content = stream.getDisplayText();
-        if (!content && segments.length === 0) {
-            return;
-        }
-        const now = Date.now();
-        const existingAgentMessage = ref.agentMessageId
-            ? conv.messages.find(message => message.id === ref.agentMessageId)
-            : undefined;
-        const traceEvents = mergeAccumulatorTraceEvents(existingAgentMessage?.traceEvents, stream);
-        let agentMessageId = ref.agentMessageId;
-        let messages: QaapAgentMessage[];
-        if (!agentMessageId) {
-            agentMessageId = randomUUID();
-            ref.agentMessageId = agentMessageId;
-            this.taskToConversation.set(taskId, ref);
-            const message: QaapAgentMessage = preferTraceFirstAgentMessageStorage(materializeAgentMessageForApi({
-                id: agentMessageId,
-                role: 'agent',
-                content: content || '…',
-                segments,
-                ...(traceEvents ? { traceEvents } : {}),
-                createdAt: now,
-                /** See the sibling creation site: the run this message belongs to. */
-                runUserMessageId: ref.userMessageId,
-                /** See the sibling creation site: live-run marker for the per-run stop. */
-                runActive: true,
-            }));
-            messages = [...conv.messages, message];
-            this.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, message);
-        } else {
-            messages = conv.messages.map(message => message.id === agentMessageId
-                ? preferTraceFirstAgentMessageStorage(materializeAgentMessageForApi({
-                    ...message,
-                    content: content || message.content,
-                    segments: segments.length > 0 ? segments : message.segments,
-                    ...(traceEvents ? { traceEvents } : {}),
-                }))
-                : message
-            );
-            const updated = messages.find(message => message.id === agentMessageId);
-            if (updated) {
-                this.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, updated);
-            }
-        }
-        const next: QaapAgentConversation = {
-            ...conv,
-            status: 'streaming',
-            updatedAt: now,
-            messages,
-            ...(totalTokensFromContextUsage(conv.contextUsage) === 0 ? { contextUsageEstimated: true } : {}),
-            contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
-        };
-        this.conversations.set(conv.id, next);
-        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
-        this.schedulePersist();
+        applyAccumulatorStructuredOutputHelper(taskId, ref, agentId, {
+            conversations: this.conversations,
+            agentStreamByTaskId: this.agentStreamByTaskId,
+            taskToConversation: this.taskToConversation,
+            fireAgentMessageWireUpdate: (cid, cwd, aid, msg) => this.fireAgentMessageWireUpdate(cid, cwd, aid, msg),
+            fire: e => this.fire(e),
+            schedulePersist: () => this.schedulePersist(),
+        });
     }
 
     protected backfillAgentMessageFromStructuredLog(
@@ -2853,53 +2795,10 @@ export class QaapAgentConversationStore {
         message: QaapAgentMessage,
         options?: { forceFullMessage?: boolean },
     ): void {
-        const snapshot = toAgentMessageWireSnapshot(message);
-        if (options?.forceFullMessage) {
-            this.lastWireMessageById.set(message.id, snapshot);
-            const wireMessage = {
-                type: 'message' as const,
-                conversationId,
-                cwd,
-                message,
-            };
-            this.stageWireMetricsBaseline(conversationId, message.id, wireMessage);
-            this.fire({
-                ...wireMessage,
-                message: compressAgentMessageForWire(toAgentMessageWirePayload(message)),
-            });
-            return;
-        }
-        const previous = this.lastWireMessageById.get(message.id);
-        const delta = computeAgentMessageWireDelta(previous, snapshot, agentId);
-        if (delta.kind === 'noop') {
-            return;
-        }
-        this.lastWireMessageById.set(message.id, snapshot);
-        if (delta.kind === 'message_start' || delta.kind === 'replace') {
-            const wireMessage = {
-                type: 'message' as const,
-                conversationId,
-                cwd,
-                message: delta.message,
-            };
-            this.stageWireMetricsBaseline(conversationId, message.id, wireMessage);
-            this.fire({
-                ...wireMessage,
-                message: compressAgentMessageForWire(delta.message),
-            });
-            return;
-        }
-        const wireDelta = {
-            type: 'message_delta' as const,
-            conversationId,
-            cwd,
-            messageId: message.id,
-            delta,
-        };
-        this.stageWireMetricsBaseline(conversationId, message.id, wireDelta);
-        this.fire({
-            ...wireDelta,
-            delta: compressAgentMessageWireDeltaForWire(delta),
+        fireAgentMessageWireUpdateHelper(conversationId, cwd, agentId, message, options, {
+            lastWireMessageById: this.lastWireMessageById,
+            stageWireMetricsBaseline: (cid, mid, evt) => this.stageWireMetricsBaseline(cid, mid, evt),
+            fire: e => this.fire(e),
         });
     }
 

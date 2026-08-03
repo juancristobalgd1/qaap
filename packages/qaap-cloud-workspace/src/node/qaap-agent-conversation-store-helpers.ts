@@ -52,6 +52,18 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
 import type { QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
 import type { QaapPersistedWorkflowRun } from './qaap-workflow-run-store';
+import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
+import { preferTraceFirstAgentMessageStorage, materializeAgentMessageForApi } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import {
+    computeAgentMessageWireDelta,
+    toAgentMessageWirePayload,
+    toAgentMessageWireSnapshot,
+    type QaapAgentMessageWireSnapshot,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
+import {
+    compressAgentMessageForWire,
+    compressAgentMessageWireDeltaForWire,
+} from './qaap-agent-message-wire-compress';
 import {
     contextCompactionMessageText as contextCompactionMessageTextHelper,
     readTriedFallbackModels as readTriedFallbackModelsHelper,
@@ -714,4 +726,150 @@ export function forceStopZombieTurn(
         + `after ${elapsedMs}ms streaming (max ${maxTurnMinutes}m).`,
     );
     return true;
+}
+
+// ─── DI-extracted: applyAccumulatorStructuredOutput (6 this. refs) ────────────
+
+export interface ApplyAccumulatorStructuredOutputDeps {
+    conversations: Map<string, QaapAgentConversation>;
+    agentStreamByTaskId: Map<string, QaapAgentStreamAccumulator>;
+    taskToConversation: Map<string, QaapConversationTaskRef>;
+    fireAgentMessageWireUpdate(conversationId: string, cwd: string, agentId: string, message: QaapAgentMessage): void;
+    fire(event: QaapAgentConversationEvent): void;
+    schedulePersist(): void;
+}
+
+export function applyAccumulatorStructuredOutput(
+    taskId: string,
+    ref: QaapConversationTaskRef,
+    agentId: string,
+    deps: ApplyAccumulatorStructuredOutputDeps,
+): void {
+    const conv = deps.conversations.get(ref.conversationId);
+    const stream = deps.agentStreamByTaskId.get(taskId);
+    if (!conv || !stream) {
+        return;
+    }
+    const segments = [...stream.getSegments()];
+    const content = stream.getDisplayText();
+    if (!content && segments.length === 0) {
+        return;
+    }
+    const now = Date.now();
+    const existingAgentMessage = ref.agentMessageId
+        ? conv.messages.find(message => message.id === ref.agentMessageId)
+        : undefined;
+    const traceEvents = mergeAccumulatorTraceEvents(existingAgentMessage?.traceEvents, stream);
+    let agentMessageId = ref.agentMessageId;
+    let messages: QaapAgentMessage[];
+    if (!agentMessageId) {
+        agentMessageId = randomUUID();
+        ref.agentMessageId = agentMessageId;
+        deps.taskToConversation.set(taskId, ref);
+        const message: QaapAgentMessage = preferTraceFirstAgentMessageStorage(materializeAgentMessageForApi({
+            id: agentMessageId,
+            role: 'agent',
+            content: content || '…',
+            segments,
+            ...(traceEvents ? { traceEvents } : {}),
+            createdAt: now,
+            /** See the sibling creation site: the run this message belongs to. */
+            runUserMessageId: ref.userMessageId,
+            /** See the sibling creation site: live-run marker for the per-run stop. */
+            runActive: true,
+        }));
+        messages = [...conv.messages, message];
+        deps.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, message);
+    } else {
+        messages = conv.messages.map(message => message.id === agentMessageId
+            ? preferTraceFirstAgentMessageStorage(materializeAgentMessageForApi({
+                ...message,
+                content: content || message.content,
+                segments: segments.length > 0 ? segments : message.segments,
+                ...(traceEvents ? { traceEvents } : {}),
+            }))
+            : message
+        );
+        const updated = messages.find(message => message.id === agentMessageId);
+        if (updated) {
+            deps.fireAgentMessageWireUpdate(conv.id, conv.cwd, agentId, updated);
+        }
+    }
+    const next: QaapAgentConversation = {
+        ...conv,
+        status: 'streaming',
+        updatedAt: now,
+        messages,
+        ...(totalTokensFromContextUsage(conv.contextUsage) === 0 ? { contextUsageEstimated: true } : {}),
+        contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+    };
+    deps.conversations.set(conv.id, next);
+    deps.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    deps.schedulePersist();
+}
+
+// ─── DI-extracted: fireAgentMessageWireUpdate (4 this. refs) ─────────────────
+
+export interface FireAgentMessageWireUpdateDeps {
+    lastWireMessageById: Map<string, QaapAgentMessageWireSnapshot>;
+    stageWireMetricsBaseline(conversationId: string, messageId: string, event: QaapAgentConversationEvent): void;
+    fire(event: QaapAgentConversationEvent): void;
+}
+
+export function fireAgentMessageWireUpdate(
+    conversationId: string,
+    cwd: string,
+    agentId: string,
+    message: QaapAgentMessage,
+    options: { forceFullMessage?: boolean } | undefined,
+    deps: FireAgentMessageWireUpdateDeps,
+): void {
+    const snapshot = toAgentMessageWireSnapshot(message);
+    if (options?.forceFullMessage) {
+        deps.lastWireMessageById.set(message.id, snapshot);
+        const wireMessage = {
+            type: 'message' as const,
+            conversationId,
+            cwd,
+            message,
+        };
+        deps.stageWireMetricsBaseline(conversationId, message.id, wireMessage);
+        deps.fire({
+            ...wireMessage,
+            message: compressAgentMessageForWire(toAgentMessageWirePayload(message)),
+        });
+        return;
+    }
+    const previous = deps.lastWireMessageById.get(message.id);
+    const delta = computeAgentMessageWireDelta(previous, snapshot, agentId);
+    if (delta.kind === 'noop') {
+        return;
+    }
+    deps.lastWireMessageById.set(message.id, snapshot);
+    if (delta.kind === 'message_start' || delta.kind === 'replace') {
+        const wireMessage = {
+            type: 'message' as const,
+            conversationId,
+            cwd,
+            message: delta.message,
+        };
+        deps.stageWireMetricsBaseline(conversationId, message.id, wireMessage);
+        deps.fire({
+            ...wireMessage,
+            message: compressAgentMessageForWire(delta.message),
+        });
+        return;
+    }
+    const wireDelta = {
+        type: 'message_delta' as const,
+        conversationId,
+        cwd,
+        messageId: message.id,
+        delta,
+    };
+    deps.stageWireMetricsBaseline(conversationId, message.id, wireDelta);
+    deps.fire({
+        ...wireDelta,
+        delta: compressAgentMessageWireDeltaForWire(delta),
+    });
 }
