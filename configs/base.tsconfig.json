@@ -14,6 +14,7 @@
     "emitDecoratorMetadata": true,
     "importHelpers": true,
     "downlevelIteration": true,
+    "ignoreDeprecations": "5.0",
     "resolveJsonModule": true,
     "useDefineForClassFields": false,
     "module": "CommonJS",
