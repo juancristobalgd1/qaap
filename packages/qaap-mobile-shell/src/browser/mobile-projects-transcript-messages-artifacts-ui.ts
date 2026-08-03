@@ -174,6 +174,7 @@ import {
     syncTranscriptActivityHistoryGap as syncTranscriptActivityHistoryGapHelper,
     refreshTranscriptThoughtBriefTitle as refreshTranscriptThoughtBriefTitleHelper,
     syncTranscriptThoughtBriefElement as syncTranscriptThoughtBriefElementHelper,
+    syncTranscriptStreamStallChrome as syncTranscriptStreamStallChromeHelper,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 
 /** Leading "Error: " marker prepended by {@link traceEventsToSegments} when it
@@ -1689,62 +1690,14 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     syncTranscriptStreamStallChrome(row: HTMLElement, conv: QaapAgentConversationDTO): void {
-        const health = this.resolveTranscriptStreamHealth(conv);
-        const { stalled, timedOut, timeoutCause } = health;
-        // Only rebuild the (relatively expensive) activity timeline items when the
-        // stall/timeout state actually changed, or while stalled/timed out (so the
-        // banner/detail text can keep updating). Steady-state streaming ticks skip
-        // the rebuild; the cheap class toggles below still run every tick.
-        const stallState = `${stalled ? 1 : 0}${timedOut ? 1 : 0}`;
-        const stallStateChanged = row.dataset.qaapStallState !== stallState;
-        row.dataset.qaapStallState = stallState;
-        row.classList.toggle('theia-mod-stream-stalled', stalled);
-        row.classList.toggle('theia-mod-stream-timed-out', timedOut);
-        const segmentsBody = row.querySelector('.theia-mobile-agent-transcript-segments');
-        if (segmentsBody) {
-            this.syncTranscriptStreamTimeoutBanner(segmentsBody, timedOut, timeoutCause, conv);
-            // Codex-style execution event timeline: toggle stalled class on the container.
-            if (hasMobileExecutionEventTimeline(row)) {
-                const eventTimeline = segmentsBody.querySelector<HTMLElement>(`.theia-mobile-execution-timeline`);
-                if (eventTimeline) {
-                    eventTimeline.classList.toggle('theia-mod-stalled', stalled);
-                    eventTimeline.classList.toggle('theia-mod-timed-out', timedOut);
-                }
-            }
-            const timeline = segmentsBody.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
-            if (timeline) {
-                timeline.classList.toggle('theia-mod-stalled', stalled);
-                timeline.classList.toggle('theia-mod-timed-out', timedOut);
-                if (stallStateChanged || stalled || timedOut) {
-                    const items = this.resolveTranscriptActivityItemsForDisplay(
-                        this.resolveTranscriptRowSegments(conv, row),
-                        { stalled, timedOut, row, conv, streaming: true },
-                    );
-                    this.syncTranscriptActivityTimelineElement(timeline, buildTranscriptExecutionTimelineItems(items), {
-                        streaming: true,
-                        stalled,
-                        timedOut,
-                        expanded: false,
-                        segments: this.resolveTranscriptRowSegments(conv, row),
-                        conv,
-                        row,
-                    });
-                }
-            }
-            const streamLine = segmentsBody.querySelector('.theia-mobile-agent-stream-line, .qaap-agent-setup');
-            if (streamLine) {
-                this.syncTranscriptStreamingActivityLine(streamLine, conv, stalled, timedOut);
-            }
-        }
-        if (row.hasAttribute(TRANSCRIPT_ACTIVITY_ROW_ATTR)) {
-            const line = row.querySelector('.theia-mobile-agent-stream-line, .qaap-agent-setup');
-            if (line) {
-                this.syncTranscriptStreamingActivityLine(line, conv, stalled, timedOut);
-            }
-            this.syncTranscriptStreamTimeoutBanner(row, timedOut, timeoutCause, conv);
-            row.classList.toggle('theia-mod-stream-stalled', stalled);
-            row.classList.toggle('theia-mod-stream-timed-out', timedOut);
-        }
+        syncTranscriptStreamStallChromeHelper(row, conv, {
+            resolveTranscriptStreamHealth: c => this.resolveTranscriptStreamHealth(c),
+            syncTranscriptStreamTimeoutBanner: (s, t, c, cv) => this.syncTranscriptStreamTimeoutBanner(s, t, c, cv),
+            resolveTranscriptActivityItemsForDisplay: (s, o) => this.resolveTranscriptActivityItemsForDisplay(s, o),
+            resolveTranscriptRowSegments: (c, r) => this.resolveTranscriptRowSegments(c, r),
+            syncTranscriptActivityTimelineElement: (t, i, o) => this.syncTranscriptActivityTimelineElement(t, i, o),
+            syncTranscriptStreamingActivityLine: (l, c, s, t) => this.syncTranscriptStreamingActivityLine(l, c, s, t),
+        });
     }
 
     protected syncTranscriptStreamTimeoutBanner(

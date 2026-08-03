@@ -8,14 +8,27 @@
 
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { nls } from '@theia/core/lib/common/nls';
+import type { AIVariableResolutionRequest } from '@theia/ai-core';
+import { URI } from '@theia/core/lib/common/uri';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { getConversation } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import type { MobileProjectsHeaderOverflowMenuItem } from './mobile-projects-panel';
+import {
+    buildAgentsHubIdleConversationSummary,
+    isAgentsHubIdleConversationSummary,
+} from '../common/qaap-agents-hub-landing';
+import {
+    buildPreviewFeedbackAttachmentRequest,
+    normalizeAttachComposerImages,
+    type QaapAttachComposerImageAttachment,
+} from '../common/qaap-preview-feedback-context';
+import { resolvePreviewFeedbackSubmitTarget } from '../common/qaap-preview-feedback-submit-target';
+import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
 
 export function projectOwnsActiveBootstrap(
     project: MobileProjectEntry,
@@ -185,4 +198,200 @@ export function renderHeaderOverflowMenuItems(
             );
         }
     }
+}
+
+// ─── DI-extracted: sendExternalComposerContext (25 this. refs) ───────────────
+
+export interface SendExternalComposerContextDeps {
+    attachExternalComposerContext(args: {
+        readonly chipTitle: string;
+        readonly contextBody: string;
+        readonly dedupeKey: string;
+    }): boolean;
+    resolveExternalComposerProject(): MobileProjectEntry | undefined;
+    uploadComposerFeedbackImages?: (
+        images: readonly QaapAttachComposerImageAttachment[],
+        targetDir: URI | undefined,
+    ) => Promise<AIVariableResolutionRequest[]>;
+    resolveExternalComposerUploadDir(project: MobileProjectEntry): URI | undefined;
+    activateMessagesSurfaceForExternalSubmit(project: MobileProjectEntry): void;
+    transcriptControllerState: {
+        readonly transcriptOpenSummaryId: string | undefined;
+        readonly transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
+        readonly transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
+    };
+    agentsHubInlineActive: boolean;
+    openInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    transcriptComposerUi: {
+        resolveTranscriptComposerPinnedAgentId(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): string;
+        resolveTranscriptComposerAgentModel(agentId: string, cwd: string | undefined): QaapCreateAgentTaskQaiqModel | undefined;
+    };
+    submitTranscriptViaBackendConversation(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        content: string,
+        options: {
+            selectedAgentId?: string;
+            variables?: AIVariableResolutionRequest[];
+            agentModel?: QaapCreateAgentTaskQaiqModel;
+        },
+    ): Promise<boolean>;
+    projectsService: {
+        getProjectCwd(project: MobileProjectEntry): string | undefined;
+    };
+    preparedCwdByProjectId: Map<string, string>;
+    ensureAgentsHubExecutionShellRendered(): void;
+    resolveActiveTranscriptChatHost(): HTMLElement | undefined;
+    applyComposerAttachmentsToDraft?: (draft: string, variables?: AIVariableResolutionRequest[]) => Promise<string>;
+    renderIdleSubmitOptimistic(
+        chatHost: HTMLElement,
+        summary: QaapAgentConversationSummaryDTO,
+        draft: string,
+        selectedAgentId: string,
+        imagePreviews?: undefined,
+        contentOverride?: string,
+    ): void;
+    transcriptStickyComposerUi: {
+        refreshComposerActivityStack(): void;
+    };
+    submitBackgroundAgentTask(
+        project: MobileProjectEntry,
+        draft: string,
+        options: {
+            openConversation?: boolean;
+            forceVps?: boolean;
+            selectedAgentId?: string;
+            variables?: AIVariableResolutionRequest[];
+            agentModel?: QaapCreateAgentTaskQaiqModel;
+        },
+    ): Promise<QaapAgentConversationSummaryDTO | undefined>;
+    ensureExternalSubmitConversationRendered(): void;
+    attachExternalFeedbackImageEntries(requests: readonly AIVariableResolutionRequest[]): void;
+    removeExternalPreviewFeedbackChip(dedupeKey: string): void;
+}
+
+export async function sendExternalComposerContext(
+    args: {
+        readonly chipTitle: string;
+        readonly contextBody: string;
+        readonly dedupeKey: string;
+        readonly images?: readonly QaapAttachComposerImageAttachment[];
+    },
+    deps: SendExternalComposerContextDeps,
+): Promise<boolean> {
+    // Images are handled below as submit variables — keep the retry chip image-free.
+    if (!deps.attachExternalComposerContext({
+        chipTitle: args.chipTitle,
+        contextBody: args.contextBody,
+        dedupeKey: args.dedupeKey,
+    })) {
+        return false;
+    }
+    const project = deps.resolveExternalComposerProject();
+    if (!project) {
+        return false;
+    }
+    const request = buildPreviewFeedbackAttachmentRequest(args);
+    const feedbackImages = normalizeAttachComposerImages(args.images);
+    let imageRequests: AIVariableResolutionRequest[] = [];
+    if (feedbackImages.length && deps.uploadComposerFeedbackImages) {
+        try {
+            imageRequests = await deps.uploadComposerFeedbackImages(
+                feedbackImages,
+                deps.resolveExternalComposerUploadDir(project),
+            );
+        } catch {
+            // Send the annotations anyway; the screenshot stays on the user's clipboard.
+            imageRequests = [];
+        }
+    }
+    const prompt = nls.localize(
+        'qaap/workHub/previewFeedbackSubmitPrompt',
+        'Please address the attached preview feedback.',
+    );
+    // Annotate Send often fires from the Preview tab — land on Messages first so the
+    // optimistic user bubble + sticky composer match a normal composer submit.
+    deps.activateMessagesSurfaceForExternalSubmit(project);
+    const state = deps.transcriptControllerState;
+    const target = resolvePreviewFeedbackSubmitTarget(
+        state.transcriptOpenSummary,
+        state.transcriptComposerSummary,
+    );
+    try {
+        if (target.kind === 'active') {
+            const summary = target.summary;
+            if (state.transcriptOpenSummaryId !== summary.id || !deps.agentsHubInlineActive) {
+                await deps.openInlineTranscript(project, summary);
+                deps.activateMessagesSurfaceForExternalSubmit(project);
+            }
+            const selectedAgentId = deps.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
+                project,
+                summary,
+            );
+            const agentModel = deps.transcriptComposerUi.resolveTranscriptComposerAgentModel(
+                selectedAgentId,
+                summary.cwd,
+            );
+            await deps.submitTranscriptViaBackendConversation(project, summary, prompt, {
+                selectedAgentId,
+                variables: [request, ...imageRequests],
+                ...(agentModel ? { agentModel } : {}),
+            });
+        } else {
+            const idleSummary = state.transcriptOpenSummary
+                && isAgentsHubIdleConversationSummary(state.transcriptOpenSummary)
+                ? state.transcriptOpenSummary
+                : state.transcriptComposerSummary
+                    && isAgentsHubIdleConversationSummary(state.transcriptComposerSummary)
+                    ? state.transcriptComposerSummary
+                    : buildAgentsHubIdleConversationSummary(
+                        deps.projectsService.getProjectCwd(project)
+                        ?? deps.preparedCwdByProjectId.get(project.id)
+                        ?? '',
+                    );
+            const selectedAgentId = deps.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
+                project,
+                idleSummary,
+            );
+            const agentModel = deps.transcriptComposerUi.resolveTranscriptComposerAgentModel(
+                selectedAgentId,
+                idleSummary.cwd || deps.projectsService.getProjectCwd(project),
+            );
+            // Send usually fires from the Preview tab, where the messages shell may be
+            // unmounted — ensure it exists so the optimistic paint has a live host.
+            deps.ensureAgentsHubExecutionShellRendered();
+            const chatHost = deps.resolveActiveTranscriptChatHost();
+            if (chatHost) {
+                // Paint the rich preview-feedback card immediately: resolve the attachment
+                // preamble for the optimistic row instead of waiting for the server render.
+                let optimisticContent = prompt;
+                if (deps.applyComposerAttachmentsToDraft) {
+                    try {
+                        optimisticContent = await deps.applyComposerAttachmentsToDraft(prompt, [request, ...imageRequests]);
+                    } catch {
+                        // Fall back to the bare prompt; the server render reconciles.
+                    }
+                }
+                deps.renderIdleSubmitOptimistic(chatHost, idleSummary, prompt, selectedAgentId, undefined, optimisticContent);
+            }
+            deps.transcriptStickyComposerUi.refreshComposerActivityStack();
+            await deps.submitBackgroundAgentTask(project, prompt, {
+                forceVps: true,
+                openConversation: true,
+                selectedAgentId,
+                variables: [request, ...imageRequests],
+                ...(agentModel ? { agentModel } : {}),
+            });
+            // create→openInline may preserve Preview; force Messages again after open.
+            deps.activateMessagesSurfaceForExternalSubmit(project);
+            deps.ensureExternalSubmitConversationRendered();
+        }
+    } catch {
+        // Keep the chip so the user can retry from the composer; already-uploaded screenshots
+        // become composer image chips so a retry still includes them.
+        deps.attachExternalFeedbackImageEntries(imageRequests);
+        return false;
+    }
+    deps.removeExternalPreviewFeedbackChip(args.dedupeKey);
+    return true;
 }

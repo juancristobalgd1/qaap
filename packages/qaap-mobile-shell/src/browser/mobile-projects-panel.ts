@@ -39,12 +39,10 @@ import {
 import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import { MobileProjectsService } from './mobile-projects-service';
 import {
-    buildAgentsHubIdleConversationSummary,
     isAgentsHubExecutionSurfacePainted,
     isAgentsHubIdleConversationSummary,
 } from '../common/qaap-agents-hub-landing';
 import { normalizeQaapPreviewConversationId } from '../common/qaap-preview-identity';
-import { resolvePreviewFeedbackSubmitTarget } from '../common/qaap-preview-feedback-submit-target';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
     buildProbeStreamingSummaries,
@@ -313,6 +311,7 @@ import {
     isCopyConversationEnabled as isCopyConversationEnabledHelper,
     resolveActiveConversationForCopy as resolveActiveConversationForCopyHelper,
     renderHeaderOverflowMenuItems as renderHeaderOverflowMenuItemsHelper,
+    sendExternalComposerContext as sendExternalComposerContextHelper,
 } from './mobile-projects-panel-helpers';
 
 export interface MobileProjectsPanelDelegate {
@@ -2250,121 +2249,29 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         readonly dedupeKey: string;
         readonly images?: readonly QaapAttachComposerImageAttachment[];
     }): Promise<boolean> {
-        // Images are handled below as submit variables — keep the retry chip image-free.
-        if (!this.attachExternalComposerContext({
-            chipTitle: args.chipTitle,
-            contextBody: args.contextBody,
-            dedupeKey: args.dedupeKey,
-        })) {
-            return false;
-        }
-        const project = this.resolveExternalComposerProject();
-        if (!project) {
-            return false;
-        }
-        const request = buildPreviewFeedbackAttachmentRequest(args);
-        const feedbackImages = normalizeAttachComposerImages(args.images);
-        let imageRequests: AIVariableResolutionRequest[] = [];
-        if (feedbackImages.length && this.uploadComposerFeedbackImages) {
-            try {
-                imageRequests = await this.uploadComposerFeedbackImages(
-                    feedbackImages,
-                    this.resolveExternalComposerUploadDir(project),
-                );
-            } catch {
-                // Send the annotations anyway; the screenshot stays on the user's clipboard.
-                imageRequests = [];
-            }
-        }
-        const prompt = nls.localize(
-            'qaap/workHub/previewFeedbackSubmitPrompt',
-            'Please address the attached preview feedback.',
-        );
-        // Annotate Send often fires from the Preview tab — land on Messages first so the
-        // optimistic user bubble + sticky composer match a normal composer submit.
-        this.activateMessagesSurfaceForExternalSubmit(project);
-        const state = this.transcriptController.state;
-        const target = resolvePreviewFeedbackSubmitTarget(
-            state.transcriptOpenSummary,
-            state.transcriptComposerSummary,
-        );
-        try {
-            if (target.kind === 'active') {
-                const summary = target.summary;
-                if (state.transcriptOpenSummaryId !== summary.id || !this.agentsHubInlineActive) {
-                    await this.openInlineTranscript(project, summary);
-                    this.activateMessagesSurfaceForExternalSubmit(project);
-                }
-                const selectedAgentId = this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
-                    project,
-                    summary,
-                );
-                const agentModel = this.transcriptComposerUi.resolveTranscriptComposerAgentModel(
-                    selectedAgentId,
-                    summary.cwd,
-                );
-                await this.submitTranscriptViaBackendConversation(project, summary, prompt, {
-                    selectedAgentId,
-                    variables: [request, ...imageRequests],
-                    ...(agentModel ? { agentModel } : {}),
-                });
-            } else {
-                const idleSummary = state.transcriptOpenSummary
-                    && isAgentsHubIdleConversationSummary(state.transcriptOpenSummary)
-                    ? state.transcriptOpenSummary
-                    : state.transcriptComposerSummary
-                        && isAgentsHubIdleConversationSummary(state.transcriptComposerSummary)
-                        ? state.transcriptComposerSummary
-                        : buildAgentsHubIdleConversationSummary(
-                            this.projectsService.getProjectCwd(project)
-                            ?? this.preparedCwdByProjectId.get(project.id)
-                            ?? '',
-                        );
-                const selectedAgentId = this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
-                    project,
-                    idleSummary,
-                );
-                const agentModel = this.transcriptComposerUi.resolveTranscriptComposerAgentModel(
-                    selectedAgentId,
-                    idleSummary.cwd || this.projectsService.getProjectCwd(project),
-                );
-                // Send usually fires from the Preview tab, where the messages shell may be
-                // unmounted — ensure it exists so the optimistic paint has a live host.
-                this.ensureAgentsHubExecutionShellRendered();
-                const chatHost = this.resolveActiveTranscriptChatHost();
-                if (chatHost) {
-                    // Paint the rich preview-feedback card immediately: resolve the attachment
-                    // preamble for the optimistic row instead of waiting for the server render.
-                    let optimisticContent = prompt;
-                    if (this.applyComposerAttachmentsToDraft) {
-                        try {
-                            optimisticContent = await this.applyComposerAttachmentsToDraft(prompt, [request, ...imageRequests]);
-                        } catch {
-                            // Fall back to the bare prompt; the server render reconciles.
-                        }
-                    }
-                    this.renderIdleSubmitOptimistic(chatHost, idleSummary, prompt, selectedAgentId, undefined, optimisticContent);
-                }
-                this.transcriptStickyComposerUi.refreshComposerActivityStack();
-                await this.submitBackgroundAgentTask(project, prompt, {
-                    forceVps: true,
-                    openConversation: true,
-                    selectedAgentId,
-                    variables: [request, ...imageRequests],
-                    ...(agentModel ? { agentModel } : {}),
-                });
-                // create→openInline may preserve Preview; force Messages again after open.
-                this.activateMessagesSurfaceForExternalSubmit(project);
-                this.ensureExternalSubmitConversationRendered();
-            }
-        } catch {
-            // Keep the chip so the user can retry from the composer; already-uploaded screenshots
-            // become composer image chips so a retry still includes them.
-            this.attachExternalFeedbackImageEntries(imageRequests);
-            return false;
-        }
-        this.removeExternalPreviewFeedbackChip(args.dedupeKey);
-        return true;
+        return sendExternalComposerContextHelper(args, {
+            attachExternalComposerContext: a => this.attachExternalComposerContext(a),
+            resolveExternalComposerProject: () => this.resolveExternalComposerProject(),
+            uploadComposerFeedbackImages: this.uploadComposerFeedbackImages,
+            resolveExternalComposerUploadDir: p => this.resolveExternalComposerUploadDir(p),
+            activateMessagesSurfaceForExternalSubmit: p => this.activateMessagesSurfaceForExternalSubmit(p),
+            transcriptControllerState: this.transcriptController.state,
+            agentsHubInlineActive: this.agentsHubInlineActive,
+            openInlineTranscript: (p, s) => this.openInlineTranscript(p, s),
+            transcriptComposerUi: this.transcriptComposerUi,
+            submitTranscriptViaBackendConversation: (p, s, c, o) => this.submitTranscriptViaBackendConversation(p, s, c, o),
+            projectsService: this.projectsService,
+            preparedCwdByProjectId: this.preparedCwdByProjectId,
+            ensureAgentsHubExecutionShellRendered: () => this.ensureAgentsHubExecutionShellRendered(),
+            resolveActiveTranscriptChatHost: () => this.resolveActiveTranscriptChatHost(),
+            applyComposerAttachmentsToDraft: this.applyComposerAttachmentsToDraft,
+            renderIdleSubmitOptimistic: (h, s, d, a, i, c) => this.renderIdleSubmitOptimistic(h, s, d, a, i, c),
+            transcriptStickyComposerUi: this.transcriptStickyComposerUi,
+            submitBackgroundAgentTask: (p, d, o) => this.submitBackgroundAgentTask(p, d, o),
+            ensureExternalSubmitConversationRendered: () => this.ensureExternalSubmitConversationRendered(),
+            attachExternalFeedbackImageEntries: r => this.attachExternalFeedbackImageEntries(r),
+            removeExternalPreviewFeedbackChip: k => this.removeExternalPreviewFeedbackChip(k),
+        });
     }
 
     /** Upload dir mirrors the sticky composer: project workspace, else the project cwd. */
