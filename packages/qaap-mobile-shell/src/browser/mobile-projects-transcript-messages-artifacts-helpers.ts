@@ -11,13 +11,17 @@ import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapAgentMessageSeg
 import { hasUnfinishedAgentWork, shouldShowTranscriptLiveStatus } from '../common/qaap-transcript-turn-status';
 import type { TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { destroyThinkingOrbIndicator, QAAP_THINKING_ORB_INDICATOR_CLASS } from './qaap-thinking-orb-indicator';
-import { resolveTranscriptTurnStartMs, resolveTranscriptTraceDisplayPhase } from '../common/qaap-transcript-stream-status';
+import { isTranscriptAgentThinkingPhase, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
 import { normalizeMobileClosingNarrativeText, type TranscriptActivityTimelineItem } from './mobile-projects-transcript-timeline-utils';
-import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR } from '../common/qaap-transcript-incremental-update';
-import { excerptTranscriptThought } from '../common/qaap-agent-transcript-segments';
+import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_ACTIVITY_ACTIVE_ATTR } from '../common/qaap-transcript-incremental-update';
+import { excerptTranscriptThought, resolveTranscriptThinkingContent } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptActivityStepDuration, isTranscriptActivityLiveState } from '../common/qaap-transcript-activity-step-state';
 import { formatTranscriptActivityStepDurationSuffix, formatTranscriptActivityStepMeta } from '../common/qaap-transcript-activity-timing';
 import { shouldShowTranscriptActivityExpandContent, type TranscriptActivityExpandContent } from '../common/qaap-transcript-activity-expand-core';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { TRANSCRIPT_TIMELINE_GAP_POSITION_ATTR } from '../common/qaap-transcript-timeline-gap-expand';
+import { fingerprintTranscriptActivityHistoryGapSlot, TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR } from '../common/qaap-transcript-timeline-sync-fingerprint';
+import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import type { TranscriptActivityTimelineOptions } from './mobile-projects-transcript-messages-artifacts-ui';
 
 // ─── Thinking orb cleanup ────────────────────────────────────────────────────
@@ -680,4 +684,249 @@ export function populateTranscriptActivityStepCopy(
             resultPreview?.remove();
         }
     }
+}
+
+// ─── Pure DOM: syncTranscriptActivityHistoryGap (0 this. refs) ───────────────
+
+export function syncTranscriptActivityHistoryGap(
+    li: HTMLElement,
+    hiddenCount: number,
+    position: 'before' | 'after',
+): void {
+    const gapFingerprint = fingerprintTranscriptActivityHistoryGapSlot(hiddenCount, position);
+    if (li.getAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR) === gapFingerprint) {
+        recordTranscriptRenderMetric('timeline_item_sync_skipped');
+        return;
+    }
+    const labelText = position === 'before'
+        ? nls.localize(
+            'qaap/mobileProjects/transcriptActivityHiddenSteps',
+            '+{0} earlier steps',
+            String(hiddenCount),
+        )
+        : nls.localize(
+            'qaap/mobileProjects/transcriptActivityHiddenMoreSteps',
+            '+{0} more steps',
+            String(hiddenCount),
+        );
+    const existingLabel = li.querySelector<HTMLElement>('.theia-mobile-agent-activity-label');
+    if (li.classList.contains('theia-mod-history-gap') && existingLabel) {
+        li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR, gapFingerprint);
+        if (existingLabel.textContent !== labelText) {
+            existingLabel.textContent = labelText;
+        }
+        if (li.getAttribute('aria-label') !== labelText) {
+            li.setAttribute('aria-label', labelText);
+        }
+        recordTranscriptRenderMetric('timeline_item_sync_light');
+        return;
+    }
+    li.setAttribute(TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR, gapFingerprint);
+    recordTranscriptRenderMetric('timeline_item_sync');
+    li.className = 'theia-mobile-agent-activity-item theia-mod-history-gap theia-mod-clickable';
+    li.setAttribute(TRANSCRIPT_TIMELINE_GAP_POSITION_ATTR, position);
+    li.removeAttribute(TRANSCRIPT_ACTIVITY_ACTIVE_ATTR);
+    li.removeAttribute('data-transcript-activity-action');
+    li.removeAttribute('data-transcript-activity-segment-index');
+    li.setAttribute('role', 'button');
+    li.setAttribute('tabindex', '0');
+    li.setAttribute('aria-label', labelText);
+    const icon = document.createElement('span');
+    icon.className = 'theia-mobile-agent-activity-icon theia-mod-history-gap codicon codicon-ellipsis';
+    icon.setAttribute('aria-hidden', 'true');
+    const copy = document.createElement('div');
+    copy.className = 'theia-mobile-agent-activity-copy';
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-agent-activity-label';
+    label.textContent = labelText;
+    copy.append(label);
+    li.replaceChildren(icon, copy);
+}
+
+// ─── DI-extracted: refreshTranscriptThoughtBriefTitle (1 this. recursive) ────
+
+export interface RefreshTranscriptThoughtBriefTitleDeps {
+    refreshTranscriptThoughtBriefTitle(
+        title: HTMLElement,
+        block: HTMLElement,
+        options: {
+            readonly thinking: string | undefined;
+            readonly thinkingActive: boolean;
+            readonly streaming: boolean;
+            readonly turnStartMs: number | undefined;
+            readonly segments?: readonly QaapAgentMessageSegmentDTO[];
+        },
+    ): void;
+}
+
+export function refreshTranscriptThoughtBriefTitle(
+    title: HTMLElement,
+    block: HTMLElement,
+    options: {
+        readonly thinking: string | undefined;
+        readonly thinkingActive: boolean;
+        readonly streaming: boolean;
+        readonly turnStartMs: number | undefined;
+        readonly segments?: readonly QaapAgentMessageSegmentDTO[];
+    },
+    deps: RefreshTranscriptThoughtBriefTitleDeps,
+): void {
+    title.classList.remove('theia-mod-shimmer');
+    if (options.thinkingActive && options.turnStartMs !== undefined) {
+        title.classList.add('theia-mod-shimmer');
+        // LobeHub Thinking.thinking = "Deep Thinking..." — shown while
+        // the model is actively reasoning (streaming). The text itself is
+        // constant while thinking is active, so avoid rewriting
+        // `textContent` (and triggering layout/style work) on every tick;
+        // this timer's real job is watching for the live class to drop.
+        const update = (): void => {
+            if (!title.isConnected) {
+                return;
+            }
+            const next = nls.localize('qaap/lobehub/thinking/thinking', 'Deep Thinking...');
+            if (title.textContent !== next) {
+                title.textContent = next;
+            }
+        };
+        update();
+        if (block.dataset.thoughtLiveTimer !== '1') {
+            block.dataset.thoughtLiveTimer = '1';
+            // Capture the block's document view instead of the global `window` so the
+            // interval can clear itself after jsdom teardown between specs without a
+            // global `window is not defined` error (see ensureTranscriptStreamStallWatch).
+            const view = (block.ownerDocument?.defaultView ?? window) as Window & typeof globalThis;
+            const timer = view.setInterval(() => {
+                if (!title.isConnected) {
+                    view.clearInterval(timer);
+                    block.removeAttribute('data-thought-live-timer');
+                    return;
+                }
+                if (!block.classList.contains('theia-mod-thinking-live')) {
+                    view.clearInterval(timer);
+                    block.removeAttribute('data-thought-live-timer');
+                    deps.refreshTranscriptThoughtBriefTitle(title, block, {
+                        ...options,
+                        thinkingActive: false,
+                    });
+                    return;
+                }
+                if (!isTranscriptDocumentVisible()) {
+                    return;
+                }
+                update();
+            }, 1000);
+        }
+        return;
+    }
+    block.removeAttribute('data-thought-live-timer');
+    // LobeHub Thinking.thoughtWithDuration = "Deeply Thought" — shown once
+    // reasoning has settled (whether or not thinking content is present).
+    // Kept in sync with the technical-details thinking branch and the IDE
+    // React renderer (QaapLobehubThinkingRenderer).
+    title.textContent = nls.localize('qaap/lobehub/thinking/thought', 'Deeply Thought');
+}
+
+// ─── DI-extracted: syncTranscriptThoughtBriefElement (4 this. method calls) ──
+
+export interface SyncTranscriptThoughtBriefElementDeps {
+    isConversationFinalResponseCommitted(conv: QaapAgentConversationDTO | undefined, streaming: boolean): boolean;
+    isConversationWorking(conv: QaapAgentConversationDTO | undefined, streaming: boolean): boolean;
+    syncTranscriptThoughtBriefIcon(icon: HTMLElement, active: boolean): void;
+    refreshTranscriptThoughtBriefTitle(
+        title: HTMLElement,
+        block: HTMLElement,
+        options: {
+            readonly thinking: string | undefined;
+            readonly thinkingActive: boolean;
+            readonly streaming: boolean;
+            readonly turnStartMs: number | undefined;
+            readonly segments?: readonly QaapAgentMessageSegmentDTO[];
+        },
+    ): void;
+}
+
+export function syncTranscriptThoughtBriefElement(
+    block: HTMLElement,
+    segments: readonly QaapAgentMessageSegmentDTO[],
+    options: { readonly streaming?: boolean; readonly conv?: QaapAgentConversationDTO },
+    deps: SyncTranscriptThoughtBriefElementDeps,
+): void {
+    const thinking = resolveTranscriptThinkingContent([...segments]);
+    const streaming = !!options.streaming;
+    const thinkingActive = isTranscriptAgentThinkingPhase(segments, streaming);
+    const executionComplete = deps.isConversationFinalResponseCommitted(options.conv, streaming);
+    const title = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-title');
+    if (!title) {
+        return;
+    }
+    const turnStartMs = options.conv ? resolveTranscriptTurnStartMs(options.conv.messages) : undefined;
+    if (thinkingActive) {
+        block.classList.add('theia-mod-thinking-live');
+        block.removeAttribute('data-thought-duration-ms');
+        if (block instanceof HTMLDetailsElement) {
+            block.open = true;
+        }
+    } else if (streaming && block.classList.contains('theia-mod-thinking-live')) {
+        block.classList.remove('theia-mod-thinking-live');
+        if (turnStartMs !== undefined && !block.dataset.thoughtDurationMs) {
+            block.dataset.thoughtDurationMs = String(Math.max(0, Date.now() - turnStartMs));
+        }
+        // Keep the thought brief open during the entire execution turn so
+        // the user can always see what the agent reasoned. It will be
+        // collapsed once the backend is actually ready, not merely when
+        // the transcript render switches to a non-streaming/finalizing mode.
+        if (block instanceof HTMLDetailsElement && !block.dataset.thoughtUserExpanded) {
+            block.open = true;
+        }
+    } else if (block instanceof HTMLDetailsElement
+        && !block.dataset.thoughtUserExpanded
+        && !thinkingActive
+        && executionComplete) {
+        block.open = false;
+    }
+    const meta = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-meta');
+    meta?.remove();
+    // Sync the thought brief icon: spinning loader (LobeHub Loader2) while
+    // the backend is still streaming (including the Finalizing state where
+    // the turn is visually settled but the backend is still active),
+    // lightbulb (LobeHub Atom) when the backend is truly idle.
+    const backendStreaming = deps.isConversationWorking(options.conv, streaming);
+    const briefIcon = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-icon');
+    if (briefIcon) {
+        deps.syncTranscriptThoughtBriefIcon(briefIcon, backendStreaming || thinkingActive);
+    }
+    const bodyWrap = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-body-wrap');
+    if (thinking) {
+        if (!bodyWrap) {
+            const wrap = document.createElement('div');
+            wrap.className = 'theia-mobile-agent-thought-brief-body-wrap';
+            const body = document.createElement('p');
+            body.className = 'theia-mobile-agent-thought-brief-body';
+            wrap.append(body);
+            block.append(wrap);
+        }
+        const body = block.querySelector<HTMLElement>('.theia-mobile-agent-thought-brief-body');
+        if (body) {
+            body.textContent = excerptTranscriptThought(thinking);
+        }
+    } else {
+        bodyWrap?.remove();
+    }
+    if (block instanceof HTMLDetailsElement && block.dataset.thoughtToggleBound !== '1') {
+        block.dataset.thoughtToggleBound = '1';
+        block.addEventListener('toggle', () => {
+            if (block.open) {
+                block.dataset.thoughtUserExpanded = '1';
+            } else {
+                block.removeAttribute('data-thought-user-expanded');
+            }
+        });
+    }
+    deps.refreshTranscriptThoughtBriefTitle(title, block, {
+        thinking,
+        thinkingActive,
+        streaming,
+        turnStartMs,
+        segments: [...segments],
+    });
 }
