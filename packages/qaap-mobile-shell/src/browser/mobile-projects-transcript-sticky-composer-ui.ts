@@ -34,7 +34,6 @@ import {
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
-import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
@@ -118,6 +117,7 @@ import {
     resolveChangedFilesStats as resolveChangedFilesStatsHelper,
     mapGitChangedFileToComposerView as mapGitChangedFileToComposerViewHelper,
     resolveGitCommitWorkflowLabel as resolveGitCommitWorkflowLabelHelper,
+    isComposerBackgroundWorkAllowed as isComposerBackgroundWorkAllowedHelper,
 } from './mobile-projects-transcript-sticky-composer-helpers';
 // Re-export public API functions from the helpers module.
 export { mergeFailedComposerDraft, isIdleComposerFocusStealable } from './mobile-projects-transcript-sticky-composer-helpers';
@@ -350,7 +350,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
     ) { }
 
     protected isComposerBackgroundWorkAllowed(): boolean {
-        return isTranscriptDocumentVisible();
+        return isComposerBackgroundWorkAllowedHelper();
     }
 
     protected resolveComposerPreviewRuntime(project: MobileProjectEntry): ComposerPreviewRuntime {
@@ -622,10 +622,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
             { kind: 'success', duration: 1600 },
         );
         return true;
-    }
-
-    appendTranscriptFollowUpQueueBanner(_shell: HTMLElement, _conversationId: string): void {
-        /* Replaced by composer activity stack inside the codex card. */
     }
 
     protected resolveComposerActivityFilesForStack(

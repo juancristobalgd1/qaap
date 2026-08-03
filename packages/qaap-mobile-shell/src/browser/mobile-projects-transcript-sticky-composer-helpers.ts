@@ -9,6 +9,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapGitChangedFile, QaapGitCommitWorkflowAction } from '../common/qaap-git-review';
 import type { StickyComposerChangedFileView } from './qaap-sticky-composer-activity-stack';
+import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 
 // ─── Draft merge ─────────────────────────────────────────────────────────────
 
@@ -102,4 +103,10 @@ export function resolveGitCommitWorkflowLabel(action: QaapGitCommitWorkflowActio
         default:
             return nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push');
     }
+}
+
+// ─── Background work guard ───────────────────────────────────────────────────
+
+export function isComposerBackgroundWorkAllowed(): boolean {
+    return isTranscriptDocumentVisible();
 }
