@@ -7,7 +7,7 @@ import { Event as TheiaEvent } from '@theia/core/lib/common/event';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { nls } from '@theia/core/lib/common/nls';
+import { } from '@theia/core/lib/common/';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import * as markdownit from '@theia/core/shared/markdown-it';
 import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
@@ -40,29 +40,19 @@ import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQ
 import { MobileProjectsService } from './mobile-projects-service';
 import {
     isAgentsHubExecutionSurfacePainted,
-    isAgentsHubIdleConversationSummary,
 } from '../common/qaap-agents-hub-landing';
-import { normalizeQaapPreviewConversationId } from '../common/qaap-preview-identity';
+import { } from '../common/qaap-preview-identity';
 import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
-import {
-    buildProbeStreamingSummaries,
-    ensureProbeWorkspaceProject,
-    QAAP_PROBE_WORKSPACE_PROJECT_ID,
-} from './qaap-work-hub-perf-probe-host';
-import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
-import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
+import { } from './qaap-work-hub-perf-probe';
+import type { } from '../common/qaap-work-hub-perf-probe';
 import { QaapBoundedLruMap } from './qaap-bounded-lru-map';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
-import {
-    agentHasCliOAuthLogin,
-    localizeAgentSettingsApiKeyLoginMessage,
-} from '../common/qaap-agent-auth-login';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { MobileSnackbar } from './mobile-snackbar';
+import { } from '../common/qaap-conversation-clipboard-text';
+import { } from './qaap-agent-ui';
+import { } from './mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
     type QaapAgentTaskAgentOption,
@@ -79,14 +69,9 @@ import {
     type StickyComposerContextChipView,
 } from './qaap-sticky-composer-context-ui';
 import {
-    createComposerContextEntry,
-    revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
 import {
-    buildPreviewFeedbackAttachmentRequest,
-    findPreviewFeedbackEntryIndex,
-    normalizeAttachComposerImages,
     type QaapAttachComposerImageAttachment,
 } from '../common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
@@ -102,7 +87,7 @@ import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-ses
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
-import { createAnnotationComposerSessionControls } from './qaap-preview-annotation-composer-session';
+import { } from './qaap-preview-annotation-composer-session';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     type ExecutionSurfaceTabId,
@@ -310,9 +295,11 @@ import {
     projectOwnsActiveBootstrap as projectOwnsActiveBootstrapHelper,
     isCopyConversationEnabled as isCopyConversationEnabledHelper,
     resolveActiveConversationForCopy as resolveActiveConversationForCopyHelper,
-    renderHeaderOverflowMenuItems as renderHeaderOverflowMenuItemsHelper,
-    sendExternalComposerContext as sendExternalComposerContextHelper,
 } from './mobile-projects-panel-helpers';
+import { activateAgentsHubProjectExtracted, appendSessionsSidebarConversationItemsExtracted, bindAgentFinishedToastCallbacksExtracted, collectSessionsSidebarPinnedGroupsExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, createSessionsSidebarShowMoreControlExtracted, disposeExtracted, ensureAgentsHubExecutionShellRenderedExtracted, getFilteredTeamHubStateExtracted, getSessionsSidebarConversationDisplayLimitExtracted, hideExtracted, installAgentsHubEmptySurfaceGuardExtracted, maybeInstallWorkHubPerfProbeExtracted, onHeaderProjectClickExtracted, openDesktopIdeFromAgentsHubExtracted, resolveSessionsSidebarVisibleConversationsExtracted, selectHubLandingViewExtracted, syncCurrentProjectsScrollHostExtracted, syncHeaderIdeViewPickerExtracted, syncWorkHubProjectSkillRootsExtracted, touchProjectActivityByConversationIdExtracted, tryPatchHubListBeforeRebuildExtracted } from './mobile-projects-panel-render2';
+import { activateMessagesSurfaceForExternalSubmitExtracted, attachExternalComposerContextExtracted, attachExternalFeedbackImageEntriesExtracted, closeHeaderIdeViewPickerMenuExtracted, closeHeaderOverflowMenuExtracted, copyActiveConversationToClipboardExtracted, ensureExternalSubmitConversationRenderedExtracted, ensureHeaderIdeViewPickerMenuExtracted, ensureHeaderOverflowMenuExtracted, isHeaderOverflowMenuItemEnabledExtracted, isHeaderOverflowMenuItemVisibleExtracted, onHeaderIdeViewPickerClickExtracted, onHeaderOverflowMenuClickExtracted, openConversationSummaryExtracted, openHeaderIdeViewPickerMenuExtracted, openHeaderOverflowMenuExtracted, renderHeaderOverflowMenuItemsExtracted, resolveAnnotationComposerSessionExtracted, resolveExternalComposerUploadDirExtracted, sendExternalComposerContextExtracted, shouldEmbedSessionsSidebarInPanelExtracted, submitBackgroundAgentTaskExtracted } from './mobile-projects-panel-streaming2';
+import { cancelOpenTranscriptStreamExtracted, collectAgentsHubRecentItemsExtracted, collectChatHubGroupsExtracted, collectReviewGroupsExtracted, collectTasksInboxGroupsExtracted, createInboxProjectGroupExtracted, createProjectChatSessionExtracted, forkTheiaConversationExtracted, getOrRestoreProjectChatSessionExtracted, mountTranscriptChatInputExtracted, notifyAgentUsesSettingsApiKeyExtracted, onArchiveConversationExtracted, onCancelConversationExtracted, onDeleteConversationExtracted, onForkConversationExtracted, onRenameConversationExtracted, onRetryConversationExtracted, onSetConversationAutoApproveExtracted, onSetConversationPausedExtracted, onSetConversationPriorityExtracted, openAgentSignInTerminalExtracted, openExternalParallelRunsSheetExtracted, openInlineTranscriptExtracted, patchRoutineLocallyExtracted, patchWorkHubConversationRowInPlaceExtracted, pickAgentAndSubmitExternalPromptExtracted, refreshHubChromeExtracted, refreshInboxPullRequestsExtracted, removeExternalPreviewFeedbackChipExtracted, renderIdleSubmitOptimisticExtracted, resolveExternalComposerProjectExtracted, retryOpenFailedConversationTaskExtracted, retryOpenTranscriptConversationExtracted, retryOpenTranscriptStreamExtracted, seedTranscriptOptimisticSubmitExtracted, selectBackendConversationAgentExtracted, shouldUseTheiaCoderExtracted, submitExternalComposerPromptExtracted, submitTranscriptViaBackendConversationExtracted } from './mobile-projects-panel-timeline2';
+import { attachTranscriptChatViewWidgetExtracted, beginTranscriptDevPreviewRequestExtracted, createComposerEditorContextPanelDelegateExtracted, ensureOverlayUiExtracted, handleTranscriptStatusForAutoVerifyExtracted, openAgentsHubInlineTranscriptExtracted, refreshOpenTranscriptConversationExtracted, refreshTranscriptChecksViewsExtracted, releasePreviewForConversationExtracted, renderAgentsHubIdleSubmitOptimisticExtracted, renderChecksSectionExtracted, resolveActiveComposerContextTargetExtracted, stageTranscriptPreviewReadyUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-panel-activity2';
 
 export interface MobileProjectsPanelDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -499,8 +486,6 @@ interface QaapDiffProjectTab {
 
 /** Tabs of the transcript sheet (execution view). 'messages' is the chat tab. */
 type TranscriptTab = ExecutionSurfaceTabId;
-
-const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
 
 /** Max cached full conversation DTOs kept in memory for a long-lived Work Hub tab (LRU-evicted). */
 const TRANSCRIPT_CONVERSATION_CACHE_LIMIT = 50;
@@ -946,26 +931,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.bindAgentFinishedToastCallbacks();
     }
 
-    /** Wires the agent-finished toast contribution with panel navigation callbacks. */
     protected bindAgentFinishedToastCallbacks(): void {
-        this.agentFinishedToast?.bindPanelCallbacks({
-            resolveOpenConversationId: () => this.transcriptController.state.transcriptOpenSummaryId,
-            openConversation: (project, summary) => { void this.openConversationSummary(project, summary); },
-            resolveProjectForConversation: conversationId => {
-                for (const project of this.projects) {
-                    const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
-                    if (!cwd) {
-                        continue;
-                    }
-                    const summary = this.conversations?.threadStore.getSummariesForCwd(cwd)
-                        .find(s => s.id === conversationId);
-                    if (summary) {
-                        return { project, summary };
-                    }
-                }
-                return undefined;
-            },
-        });
+        bindAgentFinishedToastCallbacksExtracted(this);
     }
 
     /**
@@ -1043,36 +1010,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return isAgentsHubExecutionSurfacePainted(this.agentsHubShellActive, this.currentProjectsScrollHost());
     }
 
-    /** Re-mount the inline Agents shell when the panel is visible but the scroll area is still empty. */
     ensureAgentsHubExecutionShellRendered(): void {
-        this.syncCurrentProjectsScrollHost();
-        if (this.isAgentsHubExecutionSurfaceReady()) {
-            return;
-        }
-        const visible = this.visible || (!this.root.hidden && this.root.classList.contains('theia-mod-visible'));
-        const tasksHub = this.hubView === 'tasks' || this.root.classList.contains('theia-mod-hub-tasks');
-        const agentsLanding = this.shouldUseAgentsHubLanding()
-            || this.root.classList.contains('theia-mod-agents-hub-landing');
-        if (visible && tasksHub && agentsLanding) {
-            this.visible = true;
-            this.hubView = 'tasks';
-            this.agentsHubLegacyInbox = false;
-            const workspaceCwd = this.projectsService.getCurrentWorkspaceCwd();
-            if (workspaceCwd) {
-                this.projects = ensureProbeWorkspaceProject(this.projects, this.projectsService, workspaceCwd);
-                for (const project of this.projects) {
-                    const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
-                        ? workspaceCwd
-                        : this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
-                    if (cwd) {
-                        this.preparedCwdByProjectId.set(project.id, cwd);
-                    }
-                }
-            }
-            this.renderAgentsHubExecutionShell();
-            this.stickyComposerRenderUi.renderStickyComposer();
-            this.composerHeaderUi.syncHeaderComposerSurfacePicker();
-        }
+        ensureAgentsHubExecutionShellRenderedExtracted(this);
     }
 
     protected currentProjectsScrollHost(): HTMLElement {
@@ -1080,45 +1019,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected syncCurrentProjectsScrollHost(): void {
-        const current = this.currentProjectsScrollHost();
-        if (current !== this.scroll) {
-            (this as unknown as { scroll: HTMLElement }).scroll = current;
-        }
+        syncCurrentProjectsScrollHostExtracted(this);
     }
 
     protected installAgentsHubEmptySurfaceGuard(): void {
-        if (!this.homeMode || typeof window === 'undefined') {
-            return;
-        }
-        let frame: number | undefined;
-        let interval: number | undefined;
-        const schedule = (): void => {
-            if (frame !== undefined) {
-                return;
-            }
-            frame = window.requestAnimationFrame(() => {
-                frame = undefined;
-                this.ensureAgentsHubExecutionShellRendered();
-            });
-        };
-        const observer = typeof MutationObserver !== 'undefined'
-            ? new MutationObserver(schedule)
-            : undefined;
-        observer?.observe(this.root, { attributes: true, attributeFilter: ['class', 'hidden'] });
-        observer?.observe(this.scroll, { childList: true });
-        interval = window.setInterval(schedule, 2000);
-        this.agentsHubEmptySurfaceGuardDispose = Disposable.create(() => {
-            observer?.disconnect();
-            if (interval !== undefined) {
-                window.clearInterval(interval);
-                interval = undefined;
-            }
-            if (frame !== undefined) {
-                window.cancelAnimationFrame(frame);
-                frame = undefined;
-            }
-        });
-        schedule();
+        installAgentsHubEmptySurfaceGuardExtracted(this);
     }
 
     getHubView(): MobileProjectsHubView {
@@ -1156,13 +1061,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.projectNavigationUi.resetProjectDetailSurfaces();
     }
 
-    /** Work Hub landing: repos list, chat, tasks, or diff review (collapses any expanded repo row). */
-    selectHubLandingView(
-        view: MobileProjectsHubView,
-        preferredDiffProjectId?: string,
-        options?: { force?: boolean },
-    ): void {
-        this.hubLandingUi.selectHubLandingView(view, preferredDiffProjectId, options);
+    selectHubLandingView(view: MobileProjectsHubView, preferredDiffProjectId?: string, options?: { force?: boolean },): void {
+        selectHubLandingViewExtracted(this, view, preferredDiffProjectId, options);
     }
 
     navigateHubTab(view: MobileProjectsHubView): void {
@@ -1182,19 +1082,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     dispose(): void {
-        window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
-        this.closeHeaderOverflowMenu();
-        this.closeHeaderIdeViewPickerMenu();
-        this.headerOverflowMenu?.remove();
-        this.headerOverflowMenu = undefined;
-        this.headerIdeViewPickerMenu?.remove();
-        this.headerIdeViewPickerMenu = undefined;
-        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
-        this.composerEditorContextService?.registerPanelDelegate(undefined);
-        this.hubListRenderScheduler.dispose();
-        this.agentsHubEmptySurfaceGuardDispose.dispose();
-        this.agentsHubEmptySurfaceGuardDispose = Disposable.NULL;
-        this.panelLifecycleUi.dispose();
+        disposeExtracted(this);
     }
 
     async show(options?: { preferredHubView?: MobileProjectsHubView }): Promise<void> {
@@ -1203,9 +1091,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     hide(): void {
-        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
-        this.closeHeaderIdeViewPickerMenu();
-        this.panelLifecycleUi.hide();
+        hideExtracted(this);
     }
 
     protected updateAccountAvatar(): void {
@@ -1266,35 +1152,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.stickyComposerWorkspaceUi.onCreateNewProjectFromSheet();
     }
 
-    /** After creating a repo from Work Hub, land on Agents with that project selected (not repos drill-in). */
     protected async activateAgentsHubProject(project: MobileProjectEntry): Promise<void> {
-        this.agentsHubSelectedProjectId = project.id;
-        this.expandedId = undefined;
-        this.soloExpanded = false;
-        this.agentsHubLegacyInbox = false;
-        this.projectNavigationUi.resetProjectDetailSurfaces();
-        this.transcriptSheetUi.closeTranscriptSheet();
-        const cwd = await this.projectsService.prepareProjectCwd(project);
-        if (cwd) {
-            this.preparedCwdByProjectId.set(project.id, cwd);
-        }
-        if (this.agentsHubInlineActive) {
-            this.agentsHubInlineUi.closeAgentsHubSession();
-        }
-        if (!this.homeMode) {
-            this.render();
-            this.syncLandingHubListChrome();
-            return;
-        }
-        if (this.hubView !== 'tasks') {
-            this.selectHubLandingView('tasks', undefined, { force: true });
-            return;
-        }
-        this.renderAgentsHubExecutionShell();
-        this.stickyComposerRenderUi.renderStickyComposer();
-        this.render();
-        this.syncLandingHubListChrome();
-        this.notifyWorkspaceHubBottomBarRefresh();
+        return activateAgentsHubProjectExtracted(this, project);
     }
 
     protected async onOpenLocalWorkspaceFolder(): Promise<void> {
@@ -1309,60 +1168,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.repoLifecycleUi.refreshProjects();
     }
 
-    /**
-     * Bumps the project's lastActiveAt to the current time and re-sorts the projects array
-     * so the most recently active project is always at the top. Called when a conversation
-     * change event arrives (new message, status change) to keep the project list ordered
-     * by real-time activity, not just by the last full loadProjects() snapshot.
-     */
     touchProjectActivityByConversationId(conversationId: string): void {
-        if (!conversationId) {
-            return;
-        }
-        // Find the project that owns this conversation.
-        let touched = false;
-        const now = new Date().toISOString();
-        for (const project of this.projects) {
-            const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
-            if (!cwd) {
-                continue;
-            }
-            const hasConversation = this.conversations?.threadStore.getSummariesForCwd(cwd)
-                .some(s => s.id === conversationId);
-            if (hasConversation) {
-                // Only bump if the conversation is newer than the project's current lastActiveAt.
-                const current = project.lastActiveAt ? Date.parse(project.lastActiveAt) : 0;
-                if (Date.now() > current) {
-                    project.lastActiveAt = now;
-                    project.lastActive = nls.localize('qaap/mobileProjects/lastActiveNow', 'now');
-                }
-                touched = true;
-                break;
-            }
-        }
-        if (touched) {
-            // Re-sort: most recent first.
-            this.projects.sort((a, b) => {
-                const timeA = a.lastActiveAt ? Date.parse(a.lastActiveAt) : 0;
-                const timeB = b.lastActiveAt ? Date.parse(b.lastActiveAt) : 0;
-                return timeB - timeA;
-            });
-        }
+        touchProjectActivityByConversationIdExtracted(this, conversationId);
     }
 
-    /** Publish Work Hub project roots so SkillService scans repo `.agents/skills` without opening IDE. */
     syncWorkHubProjectSkillRoots(): void {
-        if (!this.workHubProjectSkillRoots) {
-            return;
-        }
-        const cwds: string[] = [];
-        for (const project of this.projects) {
-            const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
-            if (cwd?.trim()) {
-                cwds.push(cwd.trim());
-            }
-        }
-        this.workHubProjectSkillRoots.syncProjectCwds(cwds);
+        syncWorkHubProjectSkillRootsExtracted(this);
     }
 
     protected render(): void {
@@ -1394,11 +1205,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected tryPatchHubListBeforeRebuild(): boolean {
-        if (this.hubQueryUi.isHomeHubView() && this.missionControlHubUi.tryPatchBeforeRebuild()) {
-            this.subtitleUi.renderSubtitle();
-            return true;
-        }
-        return this.hubIncrementalUi.tryPatchBeforeRebuild();
+        return tryPatchHubListBeforeRebuildExtracted(this);
     }
 
     protected resetHubIncrementalStructure(): void {
@@ -1426,101 +1233,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected maybeInstallWorkHubPerfProbe(): void {
-        const panel = this as MobileProjectsPanel & {
-            transcriptSheet?: HTMLElement;
-            transcriptChatHost?: HTMLElement;
-            transcriptOpenSummaryId?: string;
-        };
-        installQaapWorkHubPerfProbe({
-            scroll: panel.scroll,
-            conversations: panel.conversations,
-            getSessionsSidebar: () => panel.sessionsSidebar,
-            getTranscriptSheet: () => panel.transcriptSheet,
-            setTranscriptSheet: value => { panel.transcriptSheet = value; },
-            getTranscriptChatHost: () => panel.transcriptChatHost,
-            setTranscriptChatHost: value => { panel.transcriptChatHost = value; },
-            getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
-            setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
-            openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
-            navigateToHomeHubForProbe: () => panel.navigateHubTab('home'),
-            expandMissionControlForProbe: () => {
-                panel.setMissionControlExpanded(true);
-                panel.renderList();
-            },
-            showTasksInboxWithTeamForProbe: () => {
-                panel.navigateHubTab('tasks');
-                panel.agentsHubLegacyInbox = true;
-                panel.renderList();
-            },
-            seedMultiAgentProbeConversations: () => {
-                if (!panel.conversations) {
-                    return;
-                }
-                panel.conversations.start();
-                panel.activeTasks?.start();
-                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
-                if (workspaceCwd) {
-                    panel.projects = ensureProbeWorkspaceProject(panel.projects, panel.projectsService, workspaceCwd);
-                    for (const project of panel.projects) {
-                        const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
-                            ? workspaceCwd
-                            : panel.preparedCwdByProjectId.get(project.id)
-                            ?? panel.projectsService.getProjectCwd(project);
-                        if (cwd) {
-                            panel.preparedCwdByProjectId.set(project.id, cwd);
-                        }
-                    }
-                }
-                const cwdSet = new Set<string>();
-                for (const project of panel.projects) {
-                    const cwd = panel.preparedCwdByProjectId.get(project.id)
-                        ?? panel.projectsService.getProjectCwd(project);
-                    if (cwd) {
-                        cwdSet.add(cwd);
-                    }
-                }
-                if (workspaceCwd) {
-                    cwdSet.add(workspaceCwd);
-                }
-                if (cwdSet.size === 0) {
-                    return;
-                }
-                for (const cwd of cwdSet) {
-                    panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
-                }
-                panel.scheduleRenderList();
-            },
-            tickProbeStreamingConversations: () => {
-                if (!panel.conversations) {
-                    return;
-                }
-                const cwdSet = new Set<string>();
-                for (const project of panel.projects) {
-                    const cwd = panel.preparedCwdByProjectId.get(project.id)
-                        ?? panel.projectsService.getProjectCwd(project);
-                    if (cwd) {
-                        cwdSet.add(cwd);
-                    }
-                }
-                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
-                if (workspaceCwd) {
-                    cwdSet.add(workspaceCwd);
-                }
-                for (const cwd of cwdSet) {
-                    panel.conversations.perfProbeTickStreamingSummaries(cwd);
-                }
-            },
-            hasProjectsForProbe: () => panel.projects.length > 0,
-            hasWorkspaceForProbe: () => !!panel.projectsService.getCurrentWorkspaceCwd(),
-            getProbeDiagnostics: (): WorkHubPerfProbeDiagnostics => ({
-                projectCount: panel.projects.length,
-                mcRowCount: panel.scroll.querySelectorAll('.theia-mobile-mission-control-row').length,
-                teamRowCount: panel.scroll.querySelectorAll(
-                    '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks .theia-mobile-hub-team-row',
-                ).length,
-                hubView: panel.hubView,
-            }),
-        });
+        maybeInstallWorkHubPerfProbeExtracted(this);
     }
 
     /** FAB opens "new repository"; hide while a repo row is expanded (conversations + composer). */
@@ -1652,7 +1365,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         members: WorkHubTeamMember[];
         filteredApprovals: WorkHubApprovalItem[];
     } {
-        return this.tasksHubAttentionUi.getFilteredTeamHubState();
+        return getFilteredTeamHubStateExtracted(this);
     }
 
     openWorkHubSessionsSidebar(): void {
@@ -1660,18 +1373,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     async openDesktopIdeFromAgentsHub(): Promise<void> {
-        if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
-            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-            await this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');
-            this.hide();
-            return;
-        }
-        if (!this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
-            || !this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
-            return;
-        }
-        await this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
-        this.hide();
+        return openDesktopIdeFromAgentsHubExtracted(this);
     }
 
     toggleWorkHubSessionsSidebar(): void {
@@ -1707,66 +1409,36 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.sessionsSidebarUi.isSessionsSidebarPinnedConversation(summary);
     }
 
-    protected collectSessionsSidebarPinnedGroups(
-        projects: MobileProjectEntry[],
-        query: string,
-    ): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
-        return this.sessionsSidebarUi.collectSessionsSidebarPinnedGroups(projects, query);
+    protected collectSessionsSidebarPinnedGroups(projects: MobileProjectEntry[], query: string,): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
+        return collectSessionsSidebarPinnedGroupsExtracted(this, projects, query);
     }
 
-    protected createSessionsSidebarPinnedSection(
-        groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>,
-        onActivate: () => void,
-        bypassConversationLimit = false,
-    ): HTMLElement {
-        return this.sessionsSidebarUi.createSessionsSidebarPinnedSection(groups, onActivate, bypassConversationLimit);
+    protected createSessionsSidebarPinnedSection(groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>, onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
+        return createSessionsSidebarPinnedSectionExtracted(this, groups, onActivate);
     }
 
-    protected getSessionsSidebarConversationDisplayLimit(
-        project: MobileProjectEntry,
-        totalCount: number,
-        bypassLimit: boolean,
-    ): number {
-        return this.sessionsSidebarUi.getSessionsSidebarConversationDisplayLimit(project, totalCount, bypassLimit);
+    protected getSessionsSidebarConversationDisplayLimit(project: MobileProjectEntry, totalCount: number, bypassLimit: boolean,): number {
+        return getSessionsSidebarConversationDisplayLimitExtracted(this, project, totalCount, bypassLimit);
     }
 
-    protected resolveSessionsSidebarVisibleConversations(
-        project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        bypassLimit: boolean,
-    ): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
-        return this.sessionsSidebarUi.resolveSessionsSidebarVisibleConversations(project, conversations, bypassLimit);
+    protected resolveSessionsSidebarVisibleConversations(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], bypassLimit: boolean,): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
+        return resolveSessionsSidebarVisibleConversationsExtracted(this, project, conversations, bypassLimit);
     }
 
-    protected appendSessionsSidebarConversationItems(
-        listHost: HTMLElement,
-        project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        onActivate: () => void,
-        bypassLimit: boolean,
-    ): void {
-        this.sessionsSidebarUi.appendSessionsSidebarConversationItems(listHost, project, conversations, onActivate, bypassLimit);
+    protected appendSessionsSidebarConversationItems(listHost: HTMLElement, project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassLimit: boolean,): void {
+        appendSessionsSidebarConversationItemsExtracted(this, listHost, project, conversations, onActivate, bypassLimit);
     }
 
-    protected createSessionsSidebarShowMoreControl(
-        project: MobileProjectEntry,
-        hiddenCount: number,
-        totalCount: number,
-    ): HTMLButtonElement {
-        return this.sessionsSidebarUi.createSessionsSidebarShowMoreControl(project, hiddenCount, totalCount);
+    protected createSessionsSidebarShowMoreControl(project: MobileProjectEntry, hiddenCount: number, totalCount: number,): HTMLButtonElement {
+        return createSessionsSidebarShowMoreControlExtracted(this, project, hiddenCount, totalCount);
     }
 
     protected createSessionsSidebarShowLessControl(project: MobileProjectEntry): HTMLButtonElement {
         return this.sessionsSidebarUi.createSessionsSidebarShowLessControl(project);
     }
 
-    protected createSessionsSidebarPinnedProjectGroup(
-        project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        onActivate: () => void,
-        bypassConversationLimit = false,
-    ): HTMLElement {
-        return this.sessionsSidebarUi.createSessionsSidebarPinnedProjectGroup(project, conversations, onActivate, bypassConversationLimit);
+    protected createSessionsSidebarPinnedProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
+        return createSessionsSidebarPinnedProjectGroupExtracted(this, project, conversations, onActivate);
     }
 
     /** Expand current workspace (+ running) by default; user toggles persist for the session. */
@@ -1774,21 +1446,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.sessionsSidebarUi.seedSessionsSidebarAccordionDefaults(projects);
     }
 
-    protected createSessionsSidebarProjectGroup(
-        project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        onActivate: () => void,
-        bypassConversationLimit = false,
-    ): HTMLElement {
-        return this.sessionsSidebarUi.createSessionsSidebarProjectGroup(project, conversations, onActivate, bypassConversationLimit);
+    protected createSessionsSidebarProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
+        return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate);
     }
 
-    protected createSessionsSidebarProjectRowHead(
-        project: MobileProjectEntry,
-        expanded: boolean,
-        onToggleExpand: () => void,
-    ): HTMLElement {
-        return this.sessionsSidebarUi.createSessionsSidebarProjectRowHead(project, expanded, onToggleExpand);
+    protected createSessionsSidebarProjectRowHead(project: MobileProjectEntry, expanded: boolean, onToggleExpand: () => void,): HTMLElement {
+        return createSessionsSidebarProjectRowHeadExtracted(this, project, expanded, onToggleExpand);
     }
 
     protected createSessionsSidebarIdeOpenControl(project: MobileProjectEntry): HTMLButtonElement {
@@ -1804,20 +1467,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected onHeaderProjectClick(anchor: HTMLButtonElement): void {
-        const project = this.hubHeaderUi.resolveHeaderProject();
-        if (!project) {
-            return;
-        }
-        this.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(project, false, anchor);
+        onHeaderProjectClickExtracted(this, anchor);
     }
 
     protected syncHeaderIdeViewPicker(): void {
-        this.headerIdeViewPickerHost.hidden = true;
-        this.headerIdeViewPickerHost.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
-        this.headerIdeViewPickerHost.replaceChildren();
-        this.headerIdeViewPickerBtn = undefined;
-        this.closeHeaderIdeViewPickerMenu();
+        syncHeaderIdeViewPickerExtracted(this);
     }
 
     protected createHeaderIdeViewIcon(icon: string): HTMLElement {
@@ -1829,87 +1483,19 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected onHeaderIdeViewPickerClick(event: MouseEvent): void {
-        event.preventDefault();
-        event.stopPropagation();
-        if (this.headerIdeViewPickerMenu?.classList.contains('theia-mod-open')) {
-            this.closeHeaderIdeViewPickerMenu();
-            return;
-        }
-        this.openHeaderIdeViewPickerMenu();
+        onHeaderIdeViewPickerClickExtracted(this, event);
     }
 
     protected openHeaderIdeViewPickerMenu(): void {
-        const picker = this.mobileIdeViewPicker;
-        const btn = this.headerIdeViewPickerBtn;
-        if (!picker || !btn) {
-            return;
-        }
-        const menu = this.ensureHeaderIdeViewPickerMenu();
-        menu.replaceChildren();
-        const activeId = picker.getActiveId();
-        for (const option of picker.getOptions()) {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'qaap-work-hub-toolbar-menu-item theia-mobile-projects-ide-view-picker-item';
-            item.setAttribute('role', 'menuitem');
-            item.setAttribute('aria-current', option.id === activeId ? 'true' : 'false');
-            item.append(this.createHeaderIdeViewIcon(option.icon), document.createTextNode(option.label));
-            item.addEventListener('click', event => {
-                event.preventDefault();
-                event.stopPropagation();
-                this.closeHeaderIdeViewPickerMenu();
-                void Promise.resolve(picker.onSelect(option.id)).then(() => this.syncHeaderIdeViewPicker());
-            });
-            menu.append(item);
-        }
-        btn.setAttribute('aria-expanded', 'true');
-        menu.hidden = false;
-        menu.classList.add('theia-mod-open');
-        this.positionHeaderIdeViewPickerMenu();
-
-        const onDismiss = (event: Event): void => {
-            const target = event.target;
-            if (target instanceof Node && (menu.contains(target) || btn.contains(target))) {
-                return;
-            }
-            this.closeHeaderIdeViewPickerMenu();
-        };
-        const onReposition = (): void => this.positionHeaderIdeViewPickerMenu();
-        window.setTimeout(() => window.addEventListener('pointerdown', onDismiss, true), 0);
-        window.addEventListener('resize', onReposition);
-        window.addEventListener('scroll', onReposition, true);
-        this.headerIdeViewPickerDismiss.dispose();
-        this.headerIdeViewPickerDismiss = Disposable.create(() => {
-            window.removeEventListener('pointerdown', onDismiss, true);
-            window.removeEventListener('resize', onReposition);
-            window.removeEventListener('scroll', onReposition, true);
-        });
+        openHeaderIdeViewPickerMenuExtracted(this);
     }
 
     protected ensureHeaderIdeViewPickerMenu(): HTMLElement {
-        if (this.headerIdeViewPickerMenu) {
-            return this.headerIdeViewPickerMenu;
-        }
-        const menu = document.createElement('div');
-        menu.className = 'qaap-work-hub-toolbar-menu theia-mobile-projects-ide-view-picker-menu';
-        menu.hidden = true;
-        menu.setAttribute('role', 'menu');
-        menu.setAttribute('aria-label', nls.localize('qaap/mobileBottomBar/viewSelector', 'View'));
-        document.body.append(menu);
-        this.headerIdeViewPickerMenu = menu;
-        return menu;
+        return ensureHeaderIdeViewPickerMenuExtracted(this);
     }
 
     protected closeHeaderIdeViewPickerMenu(): void {
-        this.headerIdeViewPickerBtn?.setAttribute('aria-expanded', 'false');
-        if (this.headerIdeViewPickerMenu) {
-            this.headerIdeViewPickerMenu.hidden = true;
-            this.headerIdeViewPickerMenu.classList.remove('theia-mod-open');
-            this.headerIdeViewPickerMenu.style.top = '';
-            this.headerIdeViewPickerMenu.style.left = '';
-        }
-        this.headerIdeViewPickerDismiss.dispose();
-        this.headerIdeViewPickerDismiss = Disposable.NULL;
+        closeHeaderIdeViewPickerMenuExtracted(this);
     }
 
     protected positionHeaderIdeViewPickerMenu(): void {
@@ -1917,69 +1503,19 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected onHeaderOverflowMenuClick(event: MouseEvent): void {
-        event.preventDefault();
-        event.stopPropagation();
-        if (this.headerOverflowMenu?.classList.contains('theia-mod-open')) {
-            this.closeHeaderOverflowMenu();
-            return;
-        }
-        this.openHeaderOverflowMenu();
+        onHeaderOverflowMenuClickExtracted(this, event);
     }
 
     protected openHeaderOverflowMenu(): void {
-        const menu = this.ensureHeaderOverflowMenu();
-        this.renderHeaderOverflowMenuItems(menu);
-        if (!menu.childElementCount) {
-            return;
-        }
-        this.headerOverflowMenuBtn.setAttribute('aria-expanded', 'true');
-        menu.hidden = false;
-        menu.classList.add('theia-mod-open');
-        this.positionHeaderOverflowMenu();
-
-        const onDismiss = (event: Event): void => {
-            const target = event.target;
-            if (target instanceof Node && (menu.contains(target) || this.headerOverflowMenuBtn.contains(target))) {
-                return;
-            }
-            this.closeHeaderOverflowMenu();
-        };
-        const onReposition = (): void => this.positionHeaderOverflowMenu();
-        window.setTimeout(() => window.addEventListener('pointerdown', onDismiss, true), 0);
-        window.addEventListener('resize', onReposition);
-        window.addEventListener('scroll', onReposition, true);
-        this.headerOverflowMenuDismiss.dispose();
-        this.headerOverflowMenuDismiss = Disposable.create(() => {
-            window.removeEventListener('pointerdown', onDismiss, true);
-            window.removeEventListener('resize', onReposition);
-            window.removeEventListener('scroll', onReposition, true);
-        });
+        openHeaderOverflowMenuExtracted(this);
     }
 
     protected ensureHeaderOverflowMenu(): HTMLElement {
-        if (this.headerOverflowMenu) {
-            return this.headerOverflowMenu;
-        }
-        const menu = document.createElement('div');
-        menu.className = 'qaap-work-hub-toolbar-menu';
-        menu.hidden = true;
-        menu.setAttribute('role', 'menu');
-        menu.setAttribute('aria-label', this.headerOverflowMenuBtn.title);
-        document.body.append(menu);
-        this.headerOverflowMenu = menu;
-        return menu;
+        return ensureHeaderOverflowMenuExtracted(this);
     }
 
     protected closeHeaderOverflowMenu(): void {
-        this.headerOverflowMenuBtn?.setAttribute('aria-expanded', 'false');
-        if (this.headerOverflowMenu) {
-            this.headerOverflowMenu.hidden = true;
-            this.headerOverflowMenu.classList.remove('theia-mod-open');
-            this.headerOverflowMenu.style.top = '';
-            this.headerOverflowMenu.style.left = '';
-        }
-        this.headerOverflowMenuDismiss.dispose();
-        this.headerOverflowMenuDismiss = Disposable.NULL;
+        closeHeaderOverflowMenuExtracted(this);
     }
 
     protected positionHeaderOverflowMenu(): void {
@@ -1987,35 +1523,15 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected renderHeaderOverflowMenuItems(menu: HTMLElement): void {
-        renderHeaderOverflowMenuItemsHelper(menu, {
-            closeHeaderOverflowMenu: () => this.closeHeaderOverflowMenu(),
-            openHeaderNewChat: () => this.openHeaderNewChat(),
-            isHeaderNewChatVisible: () => this.isHeaderNewChatVisible(),
-            openWorkHubSessionsSidebar: () => this.openWorkHubSessionsSidebar(),
-            copyActiveConversationToClipboard: () => this.copyActiveConversationToClipboard(),
-            isCopyConversationEnabled: () => this.isCopyConversationEnabled(),
-            openAiConfigurationSheet: this.openAiConfigurationSheet,
-            openPreferencesSheet: this.openPreferencesSheet,
-            appendHeaderOverflowSeparator: m => this.appendHeaderOverflowSeparator(m),
-            headerOverflowMenuGroups: this.headerOverflowMenuGroups,
-            isHeaderOverflowMenuItemVisible: i => this.isHeaderOverflowMenuItemVisible(i),
-            isHeaderOverflowMenuItemEnabled: i => this.isHeaderOverflowMenuItemEnabled(i),
-            commands: this.commands,
-        });
+        renderHeaderOverflowMenuItemsExtracted(this, menu);
     }
 
     protected isHeaderOverflowMenuItemVisible(item: MobileProjectsHeaderOverflowMenuItem): boolean {
-        if (item.isVisible) {
-            return item.isVisible();
-        }
-        return item.command ? this.commands.isVisible(item.command) : true;
+        return isHeaderOverflowMenuItemVisibleExtracted(this, item);
     }
 
     protected isHeaderOverflowMenuItemEnabled(item: MobileProjectsHeaderOverflowMenuItem): boolean {
-        if (item.isEnabled) {
-            return item.isEnabled();
-        }
-        return item.command ? this.commands.isEnabled(item.command) : true;
+        return isHeaderOverflowMenuItemEnabledExtracted(this, item);
     }
 
     protected appendHeaderOverflowSeparator(menu: HTMLElement): void {
@@ -2031,31 +1547,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected async copyActiveConversationToClipboard(): Promise<void> {
-        const conv = await this.resolveActiveConversationForCopy();
-        const text = conv ? formatConversationForClipboard(conv) : '';
-        if (!text.trim()) {
-            MobileSnackbar.show(
-                nls.localize('qaap/workHubToolbar/copyConversationEmpty', 'No messages to copy'),
-                { kind: 'warning', duration: 1800 },
-            );
-            return;
-        }
-        try {
-            if (this.previewClipboard) {
-                await this.previewClipboard.writeText(text);
-            } else {
-                await navigator.clipboard.writeText(text);
-            }
-            MobileSnackbar.show(
-                nls.localize('qaap/workHubToolbar/copyConversationCopied', 'Conversation copied'),
-                { kind: 'success', duration: 1800 },
-            );
-        } catch {
-            MobileSnackbar.show(
-                nls.localize('qaap/mobileProjects/transcriptShellCopyFailed', 'Could not copy'),
-                { kind: 'warning' },
-            );
-        }
+        return copyActiveConversationToClipboardExtracted(this);
     }
 
     async openHeaderNewChat(): Promise<void> {
@@ -2067,12 +1559,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected shouldEmbedSessionsSidebarInPanel(): boolean {
-        if (!this.homeMode) {
-            return false;
-        }
-        return window.matchMedia?.('(max-width: 767px), (pointer: coarse)').matches === true
-            || document.body.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome')
-            || document.body.classList.contains('theia-mobile-mod-desktop-ide');
+        return shouldEmbedSessionsSidebarInPanelExtracted(this);
     }
 
     /** Mockup `newChat()`: misma vista vacía que Agents (idle), no una sesión paralela. */
@@ -2112,11 +1599,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.conversationOpenUi.openTaskInAgent(project, task);
     }
 
-    protected async openConversationSummary(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        await this.conversationOpenUi.openConversationSummary(project, summary);
+    protected async openConversationSummary(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return openConversationSummaryExtracted(this, project, summary);
     }
 
     protected async onTogglePin(project: MobileProjectEntry): Promise<void> {
@@ -2131,337 +1615,64 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.backgroundTaskUi.ensureInlineComposerCwd(project);
     }
 
-    protected async submitBackgroundAgentTask(
-        project: MobileProjectEntry,
-        draft: string,
-        options: {
-            openConversation?: boolean;
-            forceVps?: boolean;
-            selectedAgentId?: string;
-            modeId?: string;
-            autoApprove?: boolean;
-            approvalPolicyId?: string;
-            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
-            capabilityOverrides?: Record<string, boolean>;
-            genericCapabilitySelections?: GenericCapabilitySelections;
-            variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-            worktree?: boolean;
-            agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
-        } = {},
-    ): Promise<QaapAgentConversationSummaryDTO | undefined> {
-        return this.backgroundTaskUi.submitBackgroundAgentTask(project, draft, options);
+    protected async submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: { openConversation?: boolean; forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; worktree?: boolean; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<QaapAgentConversationSummaryDTO | undefined> {
+        return submitBackgroundAgentTaskExtracted(this, project, draft, options);
     }
 
-    /**
-     * Sticky-composer agent/model controls for the Cursor-style annotation popover footer.
-     * Shares the same agent sheet + session preference as the Work Hub transcript composer.
-     */
     resolveAnnotationComposerSession(): AnnotationComposerSessionControls | undefined {
-        const state = this.transcriptController.state;
-        // Same resolution as other Work Hub composer entry points — do not require
-        // transcriptOpenProject alone (sticky / shell session may still be active).
-        const project = this.resolveExternalComposerProject();
-        const summary = state.transcriptOpenSummary
-            ?? state.transcriptComposerSummary
-            ?? (project ? this.resolveShellSummary(project) : undefined);
-        if (!project || !summary) {
-            return undefined;
-        }
-        return createAnnotationComposerSessionControls({
-            agentLocked: summary.source === 'theia-chat',
-            resolveAgentId: () => this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(
-                project,
-                summary,
-            ),
-            resolveAgentLabel: () => this.transcriptComposerUi.resolveTranscriptComposerAgentLabel(),
-            resolveAgentModel: () => {
-                const cwd = this.projectsService.getProjectCwd(project) ?? summary.cwd;
-                return this.transcriptComposerUi.resolveTranscriptComposerAgentModel(
-                    this.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary),
-                    cwd,
-                );
-            },
-            onOpenAgentSheet: (anchor, onSelectionApplied) => {
-                this.transcriptComposerUi.openTranscriptComposerAgentSheet(
-                    project,
-                    summary,
-                    anchor,
-                    { onSelectionApplied },
-                );
-            },
-        });
+        return resolveAnnotationComposerSessionExtracted(this);
     }
 
-    /**
-     * Attach a context chip to the active composer (transcript if open, else sticky) without sending.
-     */
-    attachExternalComposerContext(args: {
-        readonly chipTitle: string;
-        readonly contextBody: string;
-        readonly dedupeKey: string;
-        readonly images?: readonly QaapAttachComposerImageAttachment[];
-    }): boolean {
-        const project = this.resolveExternalComposerProject();
-        if (!project) {
-            return false;
-        }
-        const attachImages = normalizeAttachComposerImages(args.images);
-        if (attachImages.length && this.uploadComposerFeedbackImages) {
-            void this.uploadComposerFeedbackImages(attachImages, this.resolveExternalComposerUploadDir(project))
-                .then(requests => this.attachExternalFeedbackImageEntries(requests))
-                .catch(() => undefined);
-        }
-        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
-        const entries = useTranscript
-            ? this.transcriptController.state.transcriptComposerContext
-            : this.stickyComposerContext;
-        const request = buildPreviewFeedbackAttachmentRequest(args);
-        const existingIndex = findPreviewFeedbackEntryIndex(entries, args.dedupeKey);
-        if (existingIndex >= 0) {
-            entries[existingIndex]!.request = request;
-            entries[existingIndex]!.displayName = args.chipTitle;
-        } else {
-            const entry = createComposerContextEntry(request);
-            entry.displayName = args.chipTitle;
-            entries.push(entry);
-        }
-        if (useTranscript) {
-            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-        } else {
-            this.stickyComposerRenderUi.renderStickyComposer();
-        }
-        const input = this.root.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input-editor');
-        input?.focus();
-        return true;
+    attachExternalComposerContext(args: { readonly chipTitle: string; readonly contextBody: string; readonly dedupeKey: string; readonly images?: readonly QaapAttachComposerImageAttachment[]; }): boolean {
+        return attachExternalComposerContextExtracted(this, args);
     }
 
-    /**
-     * Attach preview feedback to the current composer, then submit through the same path as
-     * typing in the Work Hub sticky composer and pressing Send:
-     * - idle Agents Hub → optimistic user turn + {@link submitBackgroundAgentTask}
-     * - open session → {@link submitTranscriptViaBackendConversation}
-     * Leaves unrelated composer draft text intact. On success, removes only the matching
-     * preview-feedback chip (dedupe).
-     */
-    async sendExternalComposerContext(args: {
-        readonly chipTitle: string;
-        readonly contextBody: string;
-        readonly dedupeKey: string;
-        readonly images?: readonly QaapAttachComposerImageAttachment[];
-    }): Promise<boolean> {
-        return sendExternalComposerContextHelper(args, {
-            attachExternalComposerContext: a => this.attachExternalComposerContext(a),
-            resolveExternalComposerProject: () => this.resolveExternalComposerProject(),
-            uploadComposerFeedbackImages: this.uploadComposerFeedbackImages,
-            resolveExternalComposerUploadDir: p => this.resolveExternalComposerUploadDir(p),
-            activateMessagesSurfaceForExternalSubmit: p => this.activateMessagesSurfaceForExternalSubmit(p),
-            transcriptControllerState: this.transcriptController.state,
-            agentsHubInlineActive: this.agentsHubInlineActive,
-            openInlineTranscript: (p, s) => this.openInlineTranscript(p, s),
-            transcriptComposerUi: this.transcriptComposerUi,
-            submitTranscriptViaBackendConversation: (p, s, c, o) => this.submitTranscriptViaBackendConversation(p, s, c, o),
-            projectsService: this.projectsService,
-            preparedCwdByProjectId: this.preparedCwdByProjectId,
-            ensureAgentsHubExecutionShellRendered: () => this.ensureAgentsHubExecutionShellRendered(),
-            resolveActiveTranscriptChatHost: () => this.resolveActiveTranscriptChatHost(),
-            applyComposerAttachmentsToDraft: this.applyComposerAttachmentsToDraft,
-            renderIdleSubmitOptimistic: (h, s, d, a, i, c) => this.renderIdleSubmitOptimistic(h, s, d, a, i, c),
-            transcriptStickyComposerUi: this.transcriptStickyComposerUi,
-            submitBackgroundAgentTask: (p, d, o) => this.submitBackgroundAgentTask(p, d, o),
-            ensureExternalSubmitConversationRendered: () => this.ensureExternalSubmitConversationRendered(),
-            attachExternalFeedbackImageEntries: r => this.attachExternalFeedbackImageEntries(r),
-            removeExternalPreviewFeedbackChip: k => this.removeExternalPreviewFeedbackChip(k),
-        });
+    async sendExternalComposerContext(args: { readonly chipTitle: string; readonly contextBody: string; readonly dedupeKey: string; readonly images?: readonly QaapAttachComposerImageAttachment[]; }): Promise<boolean> {
+        return sendExternalComposerContextExtracted(this, args);
     }
 
-    /** Upload dir mirrors the sticky composer: project workspace, else the project cwd. */
     protected resolveExternalComposerUploadDir(project: MobileProjectEntry): URI | undefined {
-        if (project.uri) {
-            return project.uri;
-        }
-        const cwd = this.projectsService.getProjectCwd(project);
-        return cwd ? new URI().withScheme('file').withPath(cwd) : undefined;
+        return resolveExternalComposerUploadDirExtracted(this, project);
     }
 
     protected attachExternalFeedbackImageEntries(requests: readonly AIVariableResolutionRequest[]): void {
-        if (!requests.length) {
-            return;
-        }
-        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
-        const entries = useTranscript
-            ? this.transcriptController.state.transcriptComposerContext
-            : this.stickyComposerContext;
-        for (const request of requests) {
-            entries.push(createComposerContextEntry(request));
-        }
-        if (useTranscript) {
-            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-        } else {
-            this.stickyComposerRenderUi.renderStickyComposer();
-        }
+        attachExternalFeedbackImageEntriesExtracted(this, requests);
     }
 
-    /** Reveal Messages + remount the Agents Hub sticky composer (same surface as a manual Send). */
     protected activateMessagesSurfaceForExternalSubmit(project: MobileProjectEntry): void {
-        this.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
-        this.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
-        if (this.agentsHubShellActive) {
-            this.stickyComposerRenderUi.renderStickyComposer();
-        }
+        activateMessagesSurfaceForExternalSubmitExtracted(this, project);
     }
 
-    /**
-     * After an external submit created/opened a conversation, the revealed messages host can
-     * still hold the idle "Ready when you are." landing DOM if the surface switch raced the
-     * open (Send fires from the Preview tab). Repaint the opened conversation explicitly.
-     */
     protected ensureExternalSubmitConversationRendered(): void {
-        this.ensureAgentsHubExecutionShellRendered();
-        const state = this.transcriptController.state;
-        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
-        if (!summary || isAgentsHubIdleConversationSummary(summary)) {
-            return;
-        }
-        const conv = state.transcriptLastConv?.id === summary.id
-            ? state.transcriptLastConv
-            : this.transcriptConversationCache.get(summary.id);
-        const chatHost = this.resolveActiveTranscriptChatHost();
-        if (!conv || !chatHost) {
-            return;
-        }
-        state.transcriptLastFingerprint = undefined;
-        this.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
-        this.transcriptLiveUi.ensureTranscriptConversationRefresh();
+        ensureExternalSubmitConversationRenderedExtracted(this);
     }
 
     protected removeExternalPreviewFeedbackChip(dedupeKey: string): void {
-        const useTranscript = this.resolveActiveComposerContextTarget() === 'transcript';
-        const entries = useTranscript
-            ? this.transcriptController.state.transcriptComposerContext
-            : this.stickyComposerContext;
-        const existingIndex = findPreviewFeedbackEntryIndex(entries, dedupeKey);
-        if (existingIndex < 0) {
-            return;
-        }
-        const [removed] = entries.splice(existingIndex, 1);
-        revokeComposerContextPreview(removed);
-        if (useTranscript) {
-            this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-        } else {
-            this.stickyComposerRenderUi.renderStickyComposer();
-        }
+        removeExternalPreviewFeedbackChipExtracted(this, dedupeKey);
     }
 
-    /**
-     * External entry (Element Inspector, etc.): submit to the sticky-composer agent
-     * for the active Work Hub project. Returns false when no project can be resolved.
-     */
-    async submitExternalComposerPrompt(
-        draft: string,
-        options: {
-            readonly agentId?: string;
-            readonly agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
-        } = {},
-    ): Promise<boolean> {
-        const text = draft.trim();
-        if (!text) {
-            return false;
-        }
-        const project = this.resolveExternalComposerProject();
-        if (!project) {
-            return false;
-        }
-        const selectedAgentId = options.agentId
-            ?? this.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project);
-        const agentModel = options.agentModel
-            ?? this.stickyComposerAgentsUi.resolveStickyComposerAgentModel(selectedAgentId, project);
-        await this.submitBackgroundAgentTask(project, text, {
-            forceVps: true,
-            openConversation: true,
-            selectedAgentId,
-            ...(agentModel ? { agentModel } : {}),
-        });
-        return true;
+    async submitExternalComposerPrompt(draft: string, options: { readonly agentId?: string; readonly agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<boolean> {
+        return submitExternalComposerPromptExtracted(this, draft, options);
     }
 
-    /**
-     * Open the agent/model picker, then submit {@link draft} with the chosen agent.
-     * Returns false when no project can be resolved.
-     */
-    pickAgentAndSubmitExternalPrompt(
-        draft: string,
-        options: {
-            readonly title?: string;
-            readonly intro?: string;
-            readonly anchor?: HTMLElement;
-        } = {},
-    ): boolean {
-        const text = draft.trim();
-        if (!text) {
-            return false;
-        }
-        const project = this.resolveExternalComposerProject();
-        if (!project) {
-            return false;
-        }
-        this.stickyComposerSheetsUi.openExternalAgentPickerForSubmit(project, text, options);
-        return true;
+    pickAgentAndSubmitExternalPrompt(draft: string, options: { readonly title?: string; readonly intro?: string; readonly anchor?: HTMLElement; } = {},): boolean {
+        return pickAgentAndSubmitExternalPromptExtracted(this, draft, options);
     }
 
     openExternalParallelRunsSheet(prompt: string): boolean {
-        const text = prompt.trim();
-        if (!text) {
-            return false;
-        }
-        const project = this.resolveExternalComposerProject();
-        if (!project) {
-            return false;
-        }
-        const cwd = this.projectsService.getProjectCwd(project)
-            ?? this.preparedCwdByProjectId.get(project.id);
-        if (!cwd) {
-            return false;
-        }
-        this.ensureOverlayUi().parallel.openParallelRunsSheetForPrompt(project, cwd, text);
-        return true;
+        return openExternalParallelRunsSheetExtracted(this, prompt);
     }
 
     protected resolveExternalComposerProject(): MobileProjectEntry | undefined {
-        return this.transcriptController.state.transcriptOpenProject
-            ?? this.transcriptController.state.transcriptComposerProject
-            ?? this.resolveAgentsHubShellProject()
-            ?? this.projects.find(entry => this.projectsService.getProjectCwd(entry))
-            ?? this.projects[0];
+        return resolveExternalComposerProjectExtracted(this);
     }
 
-    protected async createProjectChatSession(
-        project: MobileProjectEntry,
-        cwd: string,
-        draft: string,
-        options: {
-            forceVps?: boolean;
-            selectedAgentId?: string;
-            modeId?: string;
-            autoApprove?: boolean;
-            approvalPolicyId?: string;
-            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
-            capabilityOverrides?: Record<string, boolean>;
-            genericCapabilitySelections?: GenericCapabilitySelections;
-            variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-            agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
-            latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
-        },
-    ): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated> {
-        return this.backgroundTaskUi.createProjectChatSession(project, cwd, draft, options);
+    protected async createProjectChatSession(project: MobileProjectEntry, cwd: string, draft: string, options: { forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks']; },): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated> {
+        return createProjectChatSessionExtracted(this, project, cwd, draft, options);
     }
 
-    seedTranscriptOptimisticSubmit(
-        summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,
-        outbound: string,
-        agentId?: string,
-        imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
-    ): void {
-        this.agentsHubInlineUi.seedTranscriptOptimisticSubmit(summary, outbound, agentId, imagePreviews);
+    seedTranscriptOptimisticSubmit(summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO, outbound: string, agentId?: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],): void {
+        seedTranscriptOptimisticSubmitExtracted(this, summary, outbound, agentId, imagePreviews);
     }
 
     /** Roll back the pre-create idle optimistic paint after the server rejected the create. */
@@ -2469,25 +1680,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agentsHubInlineUi.rollbackAgentsHubIdleSubmitOptimistic();
     }
 
-    protected shouldUseTheiaCoder(
-        content: string,
-        selectedAgentId?: string,
-        options: { forceVps?: boolean; isLegacyTheiaChat?: boolean } = {},
-    ): boolean {
-        return this.backgroundTaskUi.shouldUseTheiaCoder(content, selectedAgentId, options);
+    protected shouldUseTheiaCoder(content: string, selectedAgentId?: string, options: { forceVps?: boolean; isLegacyTheiaChat?: boolean } = {},): boolean {
+        return shouldUseTheiaCoderExtracted(this, content, selectedAgentId, options);
     }
 
     protected async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
         return this.backgroundTaskUi.loadBackendAgentSnapshot();
     }
 
-    protected async selectBackendConversationAgent(
-        cwd: string,
-        prompt: string,
-        selectedAgentId?: string,
-        conversationAgentId?: string,
-    ): Promise<string> {
-        return this.backgroundTaskUi.selectBackendConversationAgent(cwd, prompt, selectedAgentId, conversationAgentId);
+    protected async selectBackendConversationAgent(cwd: string, prompt: string, selectedAgentId?: string, conversationAgentId?: string,): Promise<string> {
+        return selectBackendConversationAgentExtracted(this, cwd, prompt, selectedAgentId, conversationAgentId);
     }
 
     protected applyTaskStartedToProject(cwd: string, title: string, taskId: string): void {
@@ -2514,42 +1716,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.projectNavigationUi.openProject(project);
     }
 
-    /**
-     * Show the transcript of a conversation in a modal sheet docked inside the projects panel.
-     * The agent is still running server-side, so this works even when no workspace is open and
-     * even when the user is in a different project's workspace — that is the whole point of the
-     * persistent-conversations model.
-     */
-
-    protected async submitTranscriptViaBackendConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        content: string,
-        options: {
-            selectedAgentId?: string;
-            modeId?: string;
-            autoApprove?: boolean;
-            approvalPolicyId?: string;
-            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
-            capabilityOverrides?: Record<string, boolean>;
-            genericCapabilitySelections?: GenericCapabilitySelections;
-            variables?: AIVariableResolutionRequest[];
-            widget?: AIChatInputWidget;
-            agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
-            imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
-            /** Run beside the open turn instead of taking the conversation over. */
-            parallel?: boolean;
-        } = {},
-    ): Promise<boolean> {
-        return this.transcriptSubmitUi.submitTranscriptViaBackendConversation(project, summary, content, options);
+    protected async submitTranscriptViaBackendConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, content: string, options: { selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: AIVariableResolutionRequest[]; widget?: AIChatInputWidget; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[]; parallel?: boolean; } = {},): Promise<boolean> {
+        return submitTranscriptViaBackendConversationExtracted(this, project, summary, content, options);
     }
 
-    protected collectAgentsHubRecentItems(
-        projects: MobileProjectEntry[],
-        limit?: number,
-        scopeProject?: MobileProjectEntry,
-    ): Array<{ project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO }> {
-        return this.tasksHubUi.collectAgentsHubRecentItems(projects, limit, scopeProject);
+    protected collectAgentsHubRecentItems(projects: MobileProjectEntry[], limit?: number, scopeProject?: MobileProjectEntry,): Array<{ project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO }> {
+        return collectAgentsHubRecentItemsExtracted(this, projects, limit, scopeProject);
     }
 
     protected updateTasksAttentionChrome(): void {
@@ -2596,14 +1768,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.inboxPrUi.mergeInboxPullRequests(polled);
     }
 
-    protected async refreshInboxPullRequests(
-        projects: MobileProjectEntry[] | undefined = undefined,
-        force = false,
-    ): Promise<void> {
-        return this.inboxPrUi.refreshInboxPullRequests(
-            projects ?? this.hubQueryUi.projectsForCurrentHubList(),
-            force,
-        );
+    protected async refreshInboxPullRequests(projects: MobileProjectEntry[] | undefined = undefined, force = false,): Promise<void> {
+        return refreshInboxPullRequestsExtracted(this, projects, force = false);
     }
 
     protected async refreshWorkHubRoutines(force = false): Promise<void> {
@@ -2642,11 +1808,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.hubRoutinesUi.sortRoutinesForDisplay(routines);
     }
 
-    protected patchRoutineLocally(
-        id: string,
-        patch: Partial<Pick<QaapWorkHubRoutine, 'enabled' | 'lastRunState'>>,
-    ): void {
-        this.hubRoutinesUi.patchRoutineLocally(id, patch);
+    protected patchRoutineLocally(id: string, patch: Partial<Pick<QaapWorkHubRoutine, 'enabled' | 'lastRunState'>>,): void {
+        patchRoutineLocallyExtracted(this, id, patch);
     }
 
     protected async toggleRoutineEnabled(routine: QaapWorkHubRoutine): Promise<void> {
@@ -2669,194 +1832,72 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubTeamDataUi.onTeamMemberClick(member);
     }
 
-    protected async onForkConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        return this.conversationActionsUi.onForkConversation(project, summary);
+    protected async onForkConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return onForkConversationExtracted(this, project, summary);
     }
 
-    protected async onRenameConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        return this.conversationActionsUi.onRenameConversation(project, summary);
+    protected async onRenameConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return onRenameConversationExtracted(this, project, summary);
     }
 
-    protected async onSetConversationPriority(
-        summary: QaapAgentConversationSummaryDTO,
-        priority: boolean,
-    ): Promise<void> {
-        return this.conversationActionsUi.onSetConversationPriority(summary, priority);
+    protected async onSetConversationPriority(summary: QaapAgentConversationSummaryDTO, priority: boolean,): Promise<void> {
+        return onSetConversationPriorityExtracted(this, summary, priority);
     }
 
-    protected async onSetConversationPaused(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        paused: boolean,
-    ): Promise<void> {
-        return this.conversationActionsUi.onSetConversationPaused(project, summary, paused);
+    protected async onSetConversationPaused(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, paused: boolean,): Promise<void> {
+        return onSetConversationPausedExtracted(this, project, summary, paused);
     }
 
     protected async toggleConversationAutoApproveById(conversationId: string): Promise<void> {
         return this.conversationActionsUi.toggleConversationAutoApproveById(conversationId);
     }
 
-    protected async onSetConversationAutoApprove(
-        summary: QaapAgentConversationSummaryDTO,
-        autoApprove: boolean,
-    ): Promise<void> {
-        return this.conversationActionsUi.onSetConversationAutoApprove(summary, autoApprove);
+    protected async onSetConversationAutoApprove(summary: QaapAgentConversationSummaryDTO, autoApprove: boolean,): Promise<void> {
+        return onSetConversationAutoApproveExtracted(this, summary, autoApprove);
     }
 
-    protected onCancelConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): void {
-        this.conversationActionsUi.onCancelConversation(project, summary);
+    protected onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
+        onCancelConversationExtracted(this, project, summary);
     }
 
     isAgentWorking(): boolean {
         return this.transcriptStickyComposerUi.isTranscriptStickyComposerAgentWorking();
     }
 
-    protected async onRetryConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        return this.conversationActionsUi.onRetryConversation(project, summary);
+    protected async onRetryConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return onRetryConversationExtracted(this, project, summary);
     }
 
     cancelOpenTranscriptStream(): void {
-        let project = this.transcriptController.state.transcriptOpenProject;
-        let summary = this.transcriptController.state.transcriptOpenSummary;
-        if (!project || !summary) {
-            // No transcript sheet is open — the conversation is showing in the
-            // Agents Hub inline shell instead (the default surface). Cancel
-            // that one; a bare sheet-state check silently no-ops there.
-            project = this.resolveAgentsHubShellProject();
-            summary = project ? this.resolveAgentsHubShellSummary(project) : undefined;
-        }
-        if (project && summary) {
-            this.onCancelConversation(project, summary);
-        }
+        cancelOpenTranscriptStreamExtracted(this);
     }
 
-    /**
-     * Retries whichever conversation is currently open, wired to the closing
-     * error card's "Retry" action (see
-     * {@link MobileProjectsTranscriptMessagesHost.retryOpenTranscriptConversation}).
-     * Mirrors {@link cancelOpenTranscriptStream}'s project/summary resolution:
-     * the transcript sheet's open project/summary when a sheet is open,
-     * falling back to the Agents Hub inline shell's conversation otherwise —
-     * a plain sheet-state check would silently no-op there, which is the
-     * default (non-sheet) surface.
-     */
     retryOpenTranscriptConversation(): void {
-        let project = this.transcriptController.state.transcriptOpenProject;
-        let summary = this.transcriptController.state.transcriptOpenSummary;
-        if (!project || !summary) {
-            project = this.resolveAgentsHubShellProject();
-            summary = project ? this.resolveAgentsHubShellSummary(project) : undefined;
-        }
-        if (project && summary) {
-            void this.onRetryConversation(project, summary);
-        }
+        retryOpenTranscriptConversationExtracted(this);
     }
 
     retryOpenTranscriptStream(): void {
-        let project = this.transcriptController.state.transcriptOpenProject;
-        let summary = this.transcriptController.state.transcriptOpenSummary;
-        if (!project || !summary) {
-            // Mirror cancelOpenTranscriptStream: no transcript sheet is open means the
-            // conversation is showing in the Agents Hub inline shell (the default surface).
-            // A bare sheet-state check silently no-ops there — which left the timeout card's
-            // "Retry" dead in the inline shell.
-            project = this.resolveAgentsHubShellProject();
-            summary = project ? this.resolveAgentsHubShellSummary(project) : undefined;
-        }
-        if (!project || !summary || isAgentsHubIdleConversationSummary(summary)) {
-            // Nothing real to retry (no live conversation yet, or it ended between the
-            // watchdog and the click) — never seed a phantom {...idle, streaming} snapshot.
-            return;
-        }
-        this.transcriptLiveUi.applyOptimisticStreamTimeoutRetry(summary);
-        this.conversations?.recordSnapshot({ ...summary, status: 'streaming', updatedAt: Date.now() });
-        this.renderList();
-        void this.transcriptLiveUi.resyncOpenTranscriptStreamAfterTimeout(project, summary);
+        retryOpenTranscriptStreamExtracted(this);
     }
 
     retryOpenFailedConversationTask(): void {
-        const project = this.transcriptController.state.transcriptOpenProject;
-        const summary = this.transcriptController.state.transcriptOpenSummary;
-        if (!project || !summary || summary.status !== 'failed') {
-            return;
-        }
-        void this.onRetryConversation(project, summary);
+        retryOpenFailedConversationTaskExtracted(this);
     }
 
-    /**
-     * Opens the transcript terminal and starts the agent CLI login flow so the
-     * chat can surface the same sign-in URL the agent TUI would print.
-     */
     openAgentSignInTerminal(agentId?: string): void {
-        const state = this.transcriptController.state;
-        const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
-        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
-        const resolvedAgentId = agentId?.trim()
-            || summary?.agentId
-            || state.transcriptLastConv?.agentId;
-        if (!resolvedAgentId) {
-            return;
-        }
-        // BYOK / Settings-catalog agents (qaiq, and any agent without a CLI login
-        // subcommand) have no terminal sign-in — opening the TUI would sign no one
-        // in. Point the user to the API key in Settings instead.
-        if (!agentHasCliOAuthLogin(resolvedAgentId)) {
-            this.notifyAgentUsesSettingsApiKey(resolvedAgentId);
-            return;
-        }
-        if (!project || !summary) {
-            return;
-        }
-        void this.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(
-            project,
-            summary,
-            resolvedAgentId,
-            { login: true },
-        );
+        openAgentSignInTerminalExtracted(this, agentId);
     }
 
-    /**
-     * Tell the user that a BYOK / Settings-catalog agent authenticates via an API
-     * key in Settings (no terminal sign-in), and offer to open the AI settings.
-     */
     protected notifyAgentUsesSettingsApiKey(agentId: string): void {
-        const message = localizeAgentSettingsApiKeyLoginMessage(resolveAgentDisplayLabel(agentId));
-        const openSettings = nls.localize('qaap/agentLogin/openSettings', 'Open Settings');
-        if (this.messageService) {
-            void this.messageService.info(message, openSettings).then(action => {
-                if (action === openSettings) {
-                    void this.openAiConfigurationSheet?.();
-                }
-            });
-            return;
-        }
-        void this.openAiConfigurationSheet?.();
+        notifyAgentUsesSettingsApiKeyExtracted(this, agentId);
     }
 
-    protected async onDeleteConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        return this.conversationActionsUi.onDeleteConversation(project, summary);
+    protected async onDeleteConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return onDeleteConversationExtracted(this, project, summary);
     }
 
-    protected async onArchiveConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        return this.conversationActionsUi.onArchiveConversation(project, summary);
+    protected async onArchiveConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return onArchiveConversationExtracted(this, project, summary);
     }
 
     protected async onRenameProject(project: MobileProjectEntry): Promise<void> {
@@ -2889,37 +1930,28 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.workHubInboxUi.renderChatHubView(projects);
     }
 
-    protected collectChatHubGroups(
-        projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {
-        return this.workHubInboxUi.collectChatHubGroups(projects);
+    protected collectChatHubGroups(projects: MobileProjectEntry[],): Array<{ project: MobileProjectEntry; summaries: QaapAgentConversationSummaryDTO[] }> {
+        return collectChatHubGroupsExtracted(this, projects);
     }
 
     protected projectsForCurrentHubList(): MobileProjectEntry[] {
         return this.hubQueryUi.projectsForCurrentHubList();
     }
 
-    protected collectTasksInboxGroups(
-        projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }> {
-        return this.workHubInboxUi.collectTasksInboxGroups(projects);
+    protected collectTasksInboxGroups(projects: MobileProjectEntry[],): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }> {
+        return collectTasksInboxGroupsExtracted(this, projects);
     }
 
-    protected collectReviewGroups(
-        projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }> {
-        return this.workHubInboxUi.collectReviewGroups(projects);
+    protected collectReviewGroups(projects: MobileProjectEntry[],): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }> {
+        return collectReviewGroupsExtracted(this, projects);
     }
 
     protected compareChatInboxProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number {
         return this.workHubInboxUi.compareChatInboxProjectOrder(a, b);
     }
 
-    protected createInboxProjectGroup(
-        project: MobileProjectEntry,
-        items: MobileWorkHubInboxItem[],
-    ): HTMLElement {
-        return this.workHubInboxUi.createInboxProjectGroup(project, items);
+    protected createInboxProjectGroup(project: MobileProjectEntry, items: MobileWorkHubInboxItem[],): HTMLElement {
+        return createInboxProjectGroupExtracted(this, project, items);
     }
 
     protected createInboxGithubSignInHint(): HTMLElement {
@@ -2942,32 +1974,20 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.theiaChatSessionUi.formatTheiaChatRequestText(content, pinnedAgentId);
     }
 
-    protected async getOrRestoreProjectChatSession(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<ChatSession | undefined> {
-        return this.theiaChatSessionUi.getOrRestoreProjectChatSession(project, summary);
+    protected async getOrRestoreProjectChatSession(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<ChatSession | undefined> {
+        return getOrRestoreProjectChatSessionExtracted(this, project, summary);
     }
 
-    protected async forkTheiaConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<ChatSession | undefined> {
-        return this.theiaChatSessionUi.forkTheiaConversation(project, summary);
+    protected async forkTheiaConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<ChatSession | undefined> {
+        return forkTheiaConversationExtracted(this, project, summary);
     }
 
     protected async getChatServiceConversation(summary: QaapAgentConversationSummaryDTO): Promise<QaapAgentConversationDTO | undefined> {
         return this.theiaChatSessionUi.getChatServiceConversation(summary);
     }
 
-    protected async mountTranscriptChatInput(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        host: HTMLElement,
-        submit: (content: string, modeId?: string, capabilityOverrides?: Record<string, boolean>,
-            genericCapabilitySelections?: GenericCapabilitySelections, widget?: AIChatInputWidget) => Promise<void>,
-    ): Promise<void> {
-        return this.theiaChatSessionUi.mountTranscriptChatInput(project, summary, host, submit);
+    protected async mountTranscriptChatInput(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, host: HTMLElement, submit: (content: string, modeId?: string, capabilityOverrides?: Record<string, boolean>, genericCapabilitySelections?: GenericCapabilitySelections, widget?: AIChatInputWidget) => Promise<void>,): Promise<void> {
+        return mountTranscriptChatInputExtracted(this, project, summary, host, submit);
     }
 
     // ========================================================================
@@ -2990,17 +2010,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.shouldEmbedAgentsHubRecentsInWorkspaceTranscript();
     }
 
-    async openInlineTranscript(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        await this.openAgentsHubInlineTranscript(project, summary);
+    async openInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return openInlineTranscriptExtracted(this, project, summary);
     }
 
     refreshHubChrome(): void {
-        this.renderHeader();
-        this.renderSubtitle();
-        this.renderList();
+        refreshHubChromeExtracted(this);
     }
 
     refreshHubSubtitle(): void {
@@ -3035,15 +2050,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
     }
 
-    renderIdleSubmitOptimistic(
-        chatHost: HTMLElement,
-        summary: QaapAgentConversationSummaryDTO,
-        draft: string,
-        selectedAgentId: string,
-        imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
-        contentOverride?: string,
-    ): void {
-        this.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, selectedAgentId, imagePreviews, contentOverride);
+    renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
+        renderIdleSubmitOptimisticExtracted(this, chatHost, summary, draft, selectedAgentId, imagePreviews, contentOverride);
     }
 
     protected shouldUseAgentsHubLanding(): boolean {
@@ -3070,12 +2078,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agentsHubInlineUi.refreshWorkHubConversationChrome();
     }
 
-    /** Patch just the one inbox row for a preview-only tick, keeping its progress ring/activity live. */
     protected patchWorkHubConversationRowInPlace(conversationId: string): void {
-        const summary = this.conversations?.threadStore.getSummary(conversationId);
-        if (summary) {
-            this.hubIncrementalUi.patchConversationRowInPlace(summary);
-        }
+        patchWorkHubConversationRowInPlaceExtracted(this, conversationId);
     }
 
     protected resolveAgentsHubShellProject(): MobileProjectEntry | undefined {
@@ -3094,26 +2098,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agentsHubInlineUi.renderAgentsHubExecutionShell();
     }
 
-    protected renderAgentsHubIdleSubmitOptimistic(
-        chatHost: HTMLElement,
-        summary: QaapAgentConversationSummaryDTO,
-        draft: string,
-        agentId: string,
-        imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
-        contentOverride?: string,
-    ): void {
-        this.agentsHubInlineUi.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, agentId, imagePreviews, contentOverride);
+    protected renderAgentsHubIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, agentId: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
+        renderAgentsHubIdleSubmitOptimisticExtracted(this, chatHost, summary, draft, agentId, imagePreviews, contentOverride);
     }
 
     protected teardownAgentsHubExecutionShell(): void {
         this.agentsHubInlineUi.teardownAgentsHubExecutionShell();
     }
 
-    protected async openAgentsHubInlineTranscript(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): Promise<void> {
-        await this.agentsHubInlineUi.openAgentsHubInlineTranscript(project, summary);
+    protected async openAgentsHubInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        return openAgentsHubInlineTranscriptExtracted(this, project, summary);
     }
 
     closeAgentsHubSession(): void {
@@ -3148,10 +2142,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.transcriptLiveUi.resolveActiveTranscriptChatHost();
     }
 
-    protected async refreshOpenTranscriptConversation(
-        options?: QaapTranscriptLiveRefreshOptions,
-    ): Promise<void> {
-        await this.transcriptLiveUi.refreshOpenTranscriptConversation(options);
+    protected async refreshOpenTranscriptConversation(options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
+        return refreshOpenTranscriptConversationExtracted(this, options);
     }
 
     protected isWatchingOpenTranscript(conversationId: string): boolean {
@@ -3166,54 +2158,32 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.transcriptVerifyUi.setAutoVerifyEnabled(cwd, on);
     }
 
-    protected refreshTranscriptChecksViews(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): void {
-        this.transcriptVerifyUi.refreshTranscriptChecksViews(project, summary);
+    protected refreshTranscriptChecksViews(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
+        refreshTranscriptChecksViewsExtracted(this, project, summary);
     }
 
     protected onResumePreview(project: MobileProjectEntry): void | Promise<void> | undefined {
         return this.delegate.onResumePreview?.(project);
     }
 
-    protected renderChecksSection(
-        host: HTMLElement | undefined,
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        options: { readonly embedded?: boolean } = {},
-    ): void {
-        this.transcriptVerifyUi.renderChecksSection(host, project, summary, options);
+    protected renderChecksSection(host: HTMLElement | undefined, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, options: { readonly embedded?: boolean } = {},): void {
+        renderChecksSectionExtracted(this, host, project, summary, options);
     }
 
-    protected handleTranscriptStatusForAutoVerify(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        status: QaapAgentConversationSummaryDTO['status'],
-    ): void {
-        this.transcriptVerifyUi.handleTranscriptStatusForAutoVerify(project, summary, status);
+    protected handleTranscriptStatusForAutoVerify(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, status: QaapAgentConversationSummaryDTO['status'],): void {
+        handleTranscriptStatusForAutoVerifyExtracted(this, project, summary, status);
     }
 
-    protected async syncTranscriptPreviewFromConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        conv: QaapAgentConversationDTO,
-    ): Promise<void> {
-        await this.transcriptSurfacesUi.syncTranscriptPreviewFromConversation(project, summary, conv);
+    protected async syncTranscriptPreviewFromConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO,): Promise<void> {
+        return syncTranscriptPreviewFromConversationExtracted(this, project, summary, conv);
     }
 
-    protected beginTranscriptDevPreviewRequest(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): void {
-        this.transcriptSurfacesUi.beginTranscriptDevPreviewRequest(project, summary);
+    protected beginTranscriptDevPreviewRequest(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
+        beginTranscriptDevPreviewRequestExtracted(this, project, summary);
     }
 
     protected stageTranscriptPreviewReadyUrl(readyUrl: string): void {
-        const conversationScopeId = normalizeQaapPreviewConversationId(
-            this.transcriptController.state.transcriptOpenSummaryId,
-        );
-        this.transcriptSurfacesUi.stageTranscriptPreviewReadyUrl(conversationScopeId, readyUrl);
+        stageTranscriptPreviewReadyUrlExtracted(this, readyUrl);
     }
 
     protected ensureOverlayUi(): {
@@ -3222,7 +2192,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         teamHub: MobileProjectsTeamHubUi;
         home: MobileProjectsHomeUi;
     } {
-        return this.overlayFactoryUi.ensureOverlayUi();
+        return ensureOverlayUiExtracted(this);
     }
 
     protected appendTranscriptHeaderActions(header: HTMLElement, title: HTMLElement): HTMLButtonElement {
@@ -3257,31 +2227,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.transcriptSurfacesUi.disposeTranscriptEmbeddedPreview();
     }
 
-    /**
-     * Releases the embedded preview iframe, terminal slides, AND the backend dev-server claim owned
-     * by a specific task/section. Called when a task or project is deleted so a closed section's
-     * preview, terminals, and VPS dev server are freed without disturbing other sections
-     * (per-section isolation contract).
-     */
-    releasePreviewForConversation(
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-    ): void {
-        this.transcriptSurfacesUi.disposePreviewForConversation(summary);
-        this.transcriptSurfacesUi.disposeTranscriptTerminalSlidesForConversation(project, summary);
-        this.projectBootstrap?.releasePreviewForConversation(summary.id);
+    releasePreviewForConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
+        releasePreviewForConversationExtracted(this, project, summary);
     }
 
     protected detachTranscriptWorkspaceSurfacesFromSheet(): void {
         this.transcriptSurfacesUi.detachTranscriptWorkspaceSurfacesFromSheet();
     }
 
-    protected attachTranscriptChatViewWidget(
-        widget: MobileProjectChatViewWidget,
-        chatHost: HTMLElement,
-        session: ChatSession,
-    ): boolean {
-        return this.theiaChatSessionUi.attachTranscriptChatViewWidget(widget, chatHost, session);
+    protected attachTranscriptChatViewWidget(widget: MobileProjectChatViewWidget, chatHost: HTMLElement, session: ChatSession,): boolean {
+        return attachTranscriptChatViewWidgetExtracted(this, widget, chatHost, session);
     }
 
     protected chatAgentForBackendId(agentId: string | undefined): ChatAgent | undefined {
@@ -3305,45 +2260,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected createComposerEditorContextPanelDelegate(): import('./qaap-composer-editor-context-service').QaapComposerEditorContextPanelDelegate {
-        return {
-            resolveActiveComposerContextTarget: () => this.resolveActiveComposerContextTarget(),
-            getComposerContextEntries: target => target === 'transcript'
-                ? this.transcriptController.state.transcriptComposerContext
-                : this.stickyComposerContext,
-            upsertEditorContextEntry: (target, entry) => {
-                const entries = target === 'transcript'
-                    ? this.transcriptController.state.transcriptComposerContext
-                    : this.stickyComposerContext;
-                const existingIndex = entries.findIndex((item: StickyComposerContextEntry) => item.request.variable.name === entry.request.variable.name);
-                if (existingIndex >= 0) {
-                    revokeComposerContextPreview(entries[existingIndex]);
-                    entries.splice(existingIndex, 1, entry);
-                    return;
-                }
-                entries.push(entry);
-            },
-            notifyEditorContextRemoved: entry => {
-                this.handleComposerContextItemRemoved(entry);
-            },
-            refreshComposerAfterContextPin: target => {
-                if (target === 'transcript') {
-                    this.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-                    return;
-                }
-                this.stickyComposerRenderUi.renderStickyComposer();
-            },
-            focusComposerInput: () => {
-                const input = this.root.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input-editor');
-                input?.focus();
-            },
-        };
+        return createComposerEditorContextPanelDelegateExtracted(this);
     }
 
     protected resolveActiveComposerContextTarget(): import('./qaap-composer-editor-context-service').ComposerEditorContextTarget {
-        const state = this.transcriptController.state;
-        if (state.transcriptOpenSummary || state.transcriptComposerSummary) {
-            return 'transcript';
-        }
-        return 'sticky';
+        return resolveActiveComposerContextTargetExtracted(this);
     }
 }

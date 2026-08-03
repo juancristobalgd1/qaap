@@ -183,7 +183,7 @@ def get_param_names(params_str):
     params_str = re.sub(r'/\*.*?\*/', '', params_str, flags=re.DOTALL)
     names = []
     for p in split_params(params_str):
-        p = p.strip()
+        p = p.strip().rstrip(',').strip()
         if not p:
             continue
         p = p.lstrip('.')
