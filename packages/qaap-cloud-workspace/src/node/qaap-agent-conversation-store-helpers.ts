@@ -12,6 +12,7 @@ import {
     toConversationSummary,
     type QaapAgentConversation,
     type QaapAgentConversationCwdGroup,
+    type QaapAgentConversationEvent,
     type QaapAgentMessage,
     type QaapConversationCheckpoint,
 } from '../common/qaap-agent-conversation';
@@ -64,6 +65,20 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
 import { messageRequestsDevPreview } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-preview-offer';
 import { QAAP_AGENT_AUTO_CONTINUE_ENABLED } from './qaap-agent-conversation-store-constants';
+import {
+    partitionConversationHistory,
+    shouldCompressConversationPrompt,
+} from '../common/qaap-agent-conversation-prompt';
+import type { QaapContextCompaction } from '../common/qaap-agent-conversation';
+import {
+    QAAP_MAX_TURN_MINUTES_ENV,
+    buildQaapTurnWatchdogMessage,
+    findExpiredStreamingTurns,
+    resolveQaapMaxTurnMinutes,
+    resolveStreamingSinceMs,
+    type QaapStreamingTurnSnapshot,
+} from '../common/qaap-agent-turn-watchdog';
+import { collectSubtasksForLeader } from '../common/qaap-team-mailbox';
 
 export function clearRunActive(
     conv: QaapAgentConversation,
@@ -523,4 +538,180 @@ export function maybeAutoContinueIncompleteTurn(
     } catch {
         /* turn already replaced or cancelled */
     }
+}
+
+// ─── DI-extracted: prepareContextCompactionForTurn (3 this. refs) ────────────
+
+export interface PrepareContextCompactionForTurnDeps {
+    conversations: Map<string, QaapAgentConversation>;
+    fire(event: QaapAgentConversationEvent): void;
+    buildContextCompactionSummary(messages: readonly QaapAgentMessage[]): string;
+}
+
+export function prepareContextCompactionForTurn(
+    conv: QaapAgentConversation,
+    deps: PrepareContextCompactionForTurnDeps,
+): QaapAgentConversation {
+    if (conv.messages.length < 6 || !shouldCompressConversationPrompt(conv.messages, conv.contextPreamble, conv.contextWindowSize)) {
+        return conv;
+    }
+    const lastUser = conv.messages[conv.messages.length - 1];
+    if (lastUser?.role !== 'user') {
+        return conv;
+    }
+    const history = conv.messages.slice(0, -1);
+    const { compressed } = partitionConversationHistory(history);
+    if (compressed.length === 0) {
+        return conv;
+    }
+    const existing = conv.contextCompaction;
+    if (existing?.status === 'complete' && existing.compactedMessageCount >= compressed.length && existing.summary?.trim()) {
+        return conv;
+    }
+    const now = Date.now();
+    const running: QaapContextCompaction = {
+        status: 'running',
+        startedAt: now,
+        compactedMessageCount: compressed.length,
+        sourceMessageCount: conv.messages.length,
+    };
+    const withRunning: QaapAgentConversation = {
+        ...conv,
+        contextCompaction: running,
+        updatedAt: now,
+    };
+    deps.conversations.set(conv.id, withRunning);
+    deps.fire({ type: 'updated', conversation: toConversationSummary(withRunning) });
+
+    return {
+        ...withRunning,
+        contextCompaction: {
+            ...running,
+            status: 'complete',
+            summary: deps.buildContextCompactionSummary(compressed),
+            completedAt: Date.now(),
+        },
+        contextUsageEstimated: true,
+        contextWindowSize: conv.contextWindowSize ?? DEFAULT_QAAP_CONTEXT_WINDOW,
+        updatedAt: Date.now(),
+    };
+}
+
+// ─── DI-extracted: sweepZombieStreamingTurns + forceStopZombieTurn ───────────
+
+export interface SweepZombieStreamingTurnsDeps {
+    conversations: Map<string, QaapAgentConversation>;
+    turnHasPendingApproval(conv: QaapAgentConversation): boolean;
+    forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean;
+    getActiveTaskIdsForConversation(conversationId: string): readonly string[];
+    interruptStreamingTurnForRestart(conversationId: string, nowMs: number): boolean;
+    flushPersist(): void;
+}
+
+export function sweepZombieStreamingTurns(
+    nowMs: number,
+    options: { readonly resetSurvivorsToIdle?: boolean } | undefined,
+    deps: SweepZombieStreamingTurnsDeps,
+): boolean {
+    const maxTurnMinutes = resolveQaapMaxTurnMinutes(process.env[QAAP_MAX_TURN_MINUTES_ENV]);
+    const streaming: QaapStreamingTurnSnapshot[] = [];
+    for (const conv of deps.conversations.values()) {
+        if (conv.status !== 'streaming') {
+            continue;
+        }
+        // A turn paused on a pending approval is NOT a zombie — the user is being asked to
+        // approve a tool. Force-failing it at the watchdog with a misleading "exceeded max time"
+        // message punishes a present user who simply took a while to decide; the task idle-timer
+        // already makes the same exception. Pending requests only exist while the runner is up,
+        // so a stale post-restart turn (runner empty) is still reset/finalized normally. (REL-5)
+        if (deps.turnHasPendingApproval(conv)) {
+            continue;
+        }
+        const streamingSinceMs = resolveStreamingSinceMs(conv);
+        if (streamingSinceMs !== undefined) {
+            streaming.push({ conversationId: conv.id, streamingSinceMs });
+        }
+    }
+    const expiredIds = new Set(findExpiredStreamingTurns(streaming, nowMs, maxTurnMinutes));
+    let changed = false;
+    for (const turn of streaming) {
+        if (expiredIds.has(turn.conversationId)) {
+            if (deps.forceStopZombieTurn(turn.conversationId, nowMs - turn.streamingSinceMs, maxTurnMinutes)) {
+                changed = true;
+            }
+        } else if (options?.resetSurvivorsToIdle) {
+            // A turn auto-resumed earlier in the same restore now owns a live task, so it is no
+            // longer a zombie — leave it running instead of interrupting it. (taskToConversation
+            // starts empty on boot, so only just-resumed turns have an entry here.)
+            if (deps.getActiveTaskIdsForConversation(turn.conversationId).length > 0) {
+                continue;
+            }
+            if (deps.interruptStreamingTurnForRestart(turn.conversationId, nowMs)) {
+                changed = true;
+            }
+        }
+    }
+    if (changed) {
+        deps.flushPersist();
+    }
+    return changed;
+}
+
+export interface ForceStopZombieTurnDeps {
+    conversations: Map<string, QaapAgentConversation>;
+    taskToConversation: Map<string, { agentMessageId?: string }>;
+    taskRunner: { cancel(taskId: string): void; list(): readonly QaapAgentTask[] };
+    appendRunCancelledTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string): QaapAgentConversation;
+    finalizeStreamingAgentMessage(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string): QaapAgentConversation;
+    markTurnFailed(conv: QaapAgentConversation, info: { userMessageId: string; agentMessageId: string | undefined; reason: string }): { conv: QaapAgentConversation; agentMessageId?: string };
+    publishFinalizedAgentMessage(conversationId: string, conv: QaapAgentConversation, agentMessageId: string | undefined): void;
+    fire(event: QaapAgentConversationEvent): void;
+}
+
+export function forceStopZombieTurn(
+    conversationId: string,
+    elapsedMs: number,
+    maxTurnMinutes: number,
+    deps: ForceStopZombieTurnDeps,
+): boolean {
+    const conv = deps.conversations.get(conversationId);
+    if (!conv || conv.status !== 'streaming') {
+        return false;
+    }
+    const reason = buildQaapTurnWatchdogMessage(elapsedMs);
+    const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
+    const turnRef = lastUser?.taskId ? deps.taskToConversation.get(lastUser.taskId) : undefined;
+    if (lastUser?.taskId) {
+        deps.taskRunner.cancel(lastUser.taskId);
+        for (const subtask of collectSubtasksForLeader(lastUser.taskId, deps.taskRunner.list())) {
+            if (subtask.state === 'running') {
+                deps.taskRunner.cancel(subtask.id);
+            }
+        }
+    }
+    // Re-read: cancelling the task above can synchronously settle it through the normal
+    // task-outcome path first (generic "Turn cancelled." reason) — our watchdog message
+    // below is the one that should stick, so it must be layered on top of the latest state.
+    const latest = deps.conversations.get(conversationId) ?? conv;
+    const agentMessageId = turnRef?.agentMessageId
+        ?? (latest.messages[latest.messages.length - 1]?.role === 'agent'
+            ? latest.messages[latest.messages.length - 1].id
+            : undefined);
+    const withTrace = deps.appendRunCancelledTrace(latest, agentMessageId, reason);
+    const finalized = deps.finalizeStreamingAgentMessage(withTrace, agentMessageId, reason);
+    const failed = deps.markTurnFailed(finalized, {
+        userMessageId: lastUser?.id ?? latest.messages[latest.messages.length - 1]?.id ?? '',
+        agentMessageId,
+        reason,
+    });
+    const resolvedAgentMessageId = failed.agentMessageId ?? agentMessageId;
+    const next: QaapAgentConversation = { ...failed.conv, updatedAt: Date.now() };
+    deps.conversations.set(conversationId, next);
+    deps.publishFinalizedAgentMessage(conversationId, next, resolvedAgentMessageId);
+    deps.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    console.warn(
+        `[qaap-agent-conversation-watchdog] auto-stopped conversation ${conversationId} `
+        + `after ${elapsedMs}ms streaming (max ${maxTurnMinutes}m).`,
+    );
+    return true;
 }
