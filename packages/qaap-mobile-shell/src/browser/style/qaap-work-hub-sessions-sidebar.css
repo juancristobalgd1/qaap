@@ -1207,3 +1207,11 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     transition: none;
   }
 }
+
+/* Hide "Open in IDE" button on mobile/narrow viewport — IDE is desktop-only. */
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-work-hub-sessions-sidebar-project-open {
+    display: none !important;
+  }
+}

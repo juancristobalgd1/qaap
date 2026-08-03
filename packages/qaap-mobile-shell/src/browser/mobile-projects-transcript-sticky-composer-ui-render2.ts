@@ -132,6 +132,7 @@ import {
     resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
+import { COMPOSER_PREVIEW_HEALTH_INTERVAL_MS } from './mobile-projects-transcript-sticky-composer-ui';
 
 export function scheduleIdleComposerFocusRetentionExtracted(ctx: any, textarea: HTMLTextAreaElement): void {
         ctx.clearIdleComposerFocusRetention();

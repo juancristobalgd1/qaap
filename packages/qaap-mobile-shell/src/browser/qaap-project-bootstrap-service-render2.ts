@@ -91,6 +91,7 @@ import {
     disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
     delay as delayHelper,
 } from './qaap-project-bootstrap-helpers';
+import { RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS } from './qaap-project-bootstrap-service';
 
 export function initExtracted(ctx: any): void {
         ctx.toDispose.push(ctx.workspaceService.onWorkspaceChanged(() => {

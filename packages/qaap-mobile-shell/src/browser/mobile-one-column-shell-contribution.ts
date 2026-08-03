@@ -173,10 +173,10 @@ import { ensureWorkHubSurfaceMountedAfterReadyExtracted, initBottomBarController
 import { armAgentsSurfaceWatchdogExtracted, armBootGuardSafetyTimeoutExtracted, armLayoutRecoveryGuardExtracted, ensureDesktopSidePanelSizesExtracted, ensureDesktopWorkHubSessionsSidebarOpenExtracted, ensureMainContentAfterWorkspaceReloadExtracted, ensureOverlayElementsExtracted, enterMobileLayoutExtracted, forceCenterColumnFullWidthExtracted, hasLayoutRecoveryBeenAttemptedExtracted, hideProjectsPanelExtracted, isWorkHubSurfacePresentInDomExtracted, leaveMobileLayoutExtracted, markLayoutRecoveryAttemptedExtracted, onDidInitializeLayoutExtracted, onStopExtracted, recoverEmptyAgentsSurfaceExtracted, refreshProjectsCountExtracted, requestFullShellRelayoutExtracted, restoreDesktopSplitLayoutExtracted, runLayoutRecoveryGuardExtracted, setSidePanelSizeExtracted, shouldActivateMobileLayoutExtracted, teardownMobileUiExtracted } from './mobile-one-column-shell-contribution-streaming2';
 import { activateMobileIdeHeaderViewExtracted, closeStaleMainPreviewWidgetExtracted, enforceWorkHubSurfaceIsolationExtracted, executeAndDismissExtracted, findPreviewWidgetExtracted, getActivePreviewWidgetExtracted, isMobileExploreSheetVisibleExtracted, mountSideSheetWidgetExtracted, onCurrentProjectActivatedExtracted, onProjectsPanelOpenExtracted, onProjectsPanelOpenInIdeExtracted, openAgentTaskComposerExtracted, openDesktopIdeExtracted, openDiffInWorkHubExtracted, openProjectScopedDiffViewExtracted, openWorkHubAiConfigurationSheetExtracted, openWorkHubPreferencesSheetExtracted, prepareDesktopIdeWorkspaceFromHubExtracted, prepareSideSheetOpenExtracted, refreshWorkbenchTopBarExtracted, registerCommandsExtracted, relayoutMainPreviewWidgetsExtracted, resolveCurrentProjectForAgentExtracted, resolveMobileIdeHeaderViewIdExtracted, toggleMobileAgentSheetExtracted, toggleMobileExploreSheetExtracted, toggleProjectsPanelExtracted } from './mobile-one-column-shell-contribution-timeline2';
 
-const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
+export const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
 
 /** Grace after the frontend reaches 'ready' before the last-resort blank-shell recovery guard runs. */
-const LAYOUT_RECOVERY_GRACE_MS = 2000;
+export const LAYOUT_RECOVERY_GRACE_MS = 2000;
 
 /**
  * Narrow-viewport workbench: full-width editor, side panels as sheets, bottom activity strip,
@@ -655,7 +655,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected disposeProjectsPanelForDesktopIde(): void {
-        this.ideFallback.disposeProjectsPanelForDesktopIde();
+        this.ideFallback?.disposeProjectsPanelForDesktopIde();
     }
 
     protected tryBootstrapMobileAgentsChat(): boolean {
@@ -733,7 +733,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     /** Top-bar «Back to Work Hub» from mobile desktop-IDE mode — restore the Agents execution shell. */
     protected returnToAgentsFromDesktopIde(): void {
-        this.ideFallback.returnToAgentsFromDesktopIde();
+        this.ideFallback?.returnToAgentsFromDesktopIde();
     }
 
     protected toggleWorkHubSessionsSidebar(): void {

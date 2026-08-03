@@ -154,6 +154,7 @@ import {
     WORKBENCH_CHAT_VIEW_WIDGET_ID,
 } from './mobile-shell-bottom-bar-widget';
 import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobile-one-column-shell-helpers';
+import { GETTING_STARTED_WIDGET_COMMAND } from './mobile-one-column-shell-contribution';
 
 export function ensureMobilePreviewEditorVisibleExtracted(ctx: any): void {
         if (!ctx.mobileActive) {

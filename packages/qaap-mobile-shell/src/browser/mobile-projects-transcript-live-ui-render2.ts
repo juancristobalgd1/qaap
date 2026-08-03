@@ -92,6 +92,7 @@ import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridge';
+import { TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
 
 export function touchTranscriptSemanticProgressFromConversationExtracted(ctx: any, conv: QaapAgentConversationDTO): void {
         const segments = resolveTranscriptStreamingAgentSegments(conv);

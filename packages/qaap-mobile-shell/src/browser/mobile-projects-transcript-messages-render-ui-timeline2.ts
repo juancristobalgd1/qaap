@@ -57,6 +57,7 @@ import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-t
 import type { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 import { PATCH_NONE_REASON_METRIC } from './mobile-projects-transcript-messages-render-ui';
+import { AGENT_REPLACE_REASON_METRIC } from './mobile-projects-transcript-messages-render-ui';
 
 export function attachTranscriptScrollChromeExtracted(ctx: any, host: HTMLElement,
         messageHost: HTMLElement,

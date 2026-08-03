@@ -165,11 +165,25 @@ export class FrontendGenerator extends AbstractGenerator {
         const splashBranding = appIcon ? this.compileSplashBrandingScript() : '';
         const pwaHead = isWebTarget ? this.compilePwaHeadFragment(appleTitle) : '';
         const swRegister = isWebTarget && this.isServiceWorkerEnabled() ? this.compileServiceWorkerRegistration() : '';
+        // When the Qaap login gate is active, bundle.js is loaded dynamically by the gate
+        // after auth verification. bundle.css (4+ MB) is render-blocking in <head> — the
+        // browser won't paint the splash until it downloads and parses the full stylesheet.
+        // Switch to a non-blocking pattern: preload + async load, so the splash and login
+        // gate render immediately using inline critical CSS while bundle.css loads in the
+        // background. A <noscript> fallback keeps the stylesheet for non-JS clients.
+        const usesLoginGate = this.usesQaapLoginGate();
+        const splashCriticalCss = usesLoginGate ? this.compileSplashCriticalCss() : '';
+        const bundleCssTag = preferEsbuild
+            ? (usesLoginGate
+                ? '<link rel="preload" href="./bundle.css" as="style" onload="this.onload=null;this.rel=\'stylesheet\'">'
+                + '<noscript><link rel="stylesheet" href="./bundle.css"></noscript>'
+                : '<link rel="stylesheet" href="./bundle.css">')
+            : '';
         return `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">${descriptionTag}${pwaHead}
-  <meta name="application-name" content="${this.escapeHtmlAttribute(appName)}">${iconLines}${splashBranding}${swRegister}
-  ${preferEsbuild ? '<link rel="stylesheet" href="./bundle.css">' : ''}
+  <meta name="application-name" content="${this.escapeHtmlAttribute(appName)}">${iconLines}${splashBranding}${swRegister}${splashCriticalCss}
+  ${bundleCssTag}
   <title>${this.escapeHtmlAttribute(appName)}</title>`;
     }
 
@@ -663,6 +677,27 @@ self.addEventListener('notificationclick', event => {
             '}catch(_){}})();'
         ].join('');
         return `\n  <script type="text/javascript">${js}</script>`;
+    }
+
+    /**
+     * Inline critical CSS for the splash screen and Work Hub boot guard.
+     * Rendered immediately in <head> so the splash / login gate paints without
+     * waiting for bundle.css (4+ MB) to download and parse.
+     */
+    protected compileSplashCriticalCss(): string {
+        const css = [
+            '.theia-preload{position:absolute;inset:0;z-index:50000;background:var(--theia-editor-background,#f5f5f5);display:flex;justify-content:center;align-items:center;transition:opacity .8s}',
+            '.theia-preload::after{content:"\\eb19";font:normal normal normal 72px/1 codicon;color:#777;animation:1s theia-preload-rotate infinite}',
+            '@keyframes theia-preload-rotate{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}',
+            '.theia-preload.theia-hidden{opacity:0}',
+            'html.theia-splash-branded .theia-preload{background-image:var(--theia-preload-logo-url);background-size:60px 60px;background-repeat:no-repeat;background-position:center}',
+            'html.theia-splash-branded .theia-preload::after{content:var(--theia-preload-spinner-content,"\\eb19");animation:var(--theia-preload-spinner-animation,1s theia-preload-rotate infinite)}',
+            'html.theia-mobile-workhub-boot,html.theia-mobile-workhub-boot body{background:#f5f5f5!important}',
+            'html.theia-mobile-workhub-boot #theia-app-shell,html.theia-mobile-workhub-boot #theia-top-panel,html.theia-mobile-workhub-boot #theia-left-content-panel,html.theia-mobile-workhub-boot #theia-right-content-panel,html.theia-mobile-workhub-boot #theia-bottom-content-panel,html.theia-mobile-workhub-boot #theia-bottom-split-panel,html.theia-mobile-workhub-boot .theia-mobile-workbench-top-bar,html.theia-mobile-workhub-boot .theia-mobile-bottom-chrome-host,html.theia-mobile-workhub-boot #theia-statusBar,html.theia-mobile-workhub-boot .theia-mobile-bottom-bar{visibility:hidden!important;pointer-events:none!important}',
+            'body.theia-mobile-mod-workhub-composer-header #theia-main-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-top-panel,body.theia-mobile-mod-workhub-composer-header #theia-left-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-right-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-bottom-content-panel,body.theia-mobile-mod-workhub-composer-header #theia-bottom-split-panel{visibility:hidden!important;pointer-events:none!important}',
+            'body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-left-content-panel,body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-right-content-panel,body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-bottom-content-panel,body.theia-mobile-mod-workhub-hide-ide-side-panels #theia-bottom-split-panel{visibility:hidden!important;pointer-events:none!important}'
+        ].join('');
+        return `\n  <style id="qaap-splash-critical">${css}</style>`;
     }
 
     protected compileIndexJs(frontendModules: Map<string, string>, frontendPreloadModules: Map<string, string>): string {

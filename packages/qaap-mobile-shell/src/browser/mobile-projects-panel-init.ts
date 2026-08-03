@@ -6,6 +6,7 @@ import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcrip
 import type { MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-controller';
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './mobile-projects-types';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 
 /**
  * Copies options fields onto the panel instance. Extracted from the constructor
@@ -142,6 +143,9 @@ export function onAccountClickHandler(self: any): void {
         activeId: self.composerHeaderUi.resolveActiveViewToggleId(),
         onSelect: (id: any) => {
             if (id === 'editor') {
+                if (matchesMobileNarrowViewport()) {
+                    return;
+                }
                 void self.commands.executeCommand('qaap.mobile.openDesktopIde');
                 return;
             }

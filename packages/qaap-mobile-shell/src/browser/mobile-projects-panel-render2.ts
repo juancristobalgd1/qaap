@@ -313,405 +313,405 @@ import {
 } from './mobile-projects-panel-helpers';
 
 export function bindAgentFinishedToastCallbacksExtracted(ctx: any): void {
-        ctx.agentFinishedToast?.bindPanelCallbacks({
-            resolveOpenConversationId: () => ctx.transcriptController.state.transcriptOpenSummaryId,
-            openConversation: (project, summary) => { void ctx.openConversationSummary(project, summary); },
-            resolveProjectForConversation: conversationId => {
-                for (const project of ctx.projects) {
-                    const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
-                    if (!cwd) {
-                        continue;
-                    }
-                    const summary = ctx.conversations?.threadStore.getSummariesForCwd(cwd)
-                        .find(s => s.id === conversationId);
-                    if (summary) {
-                        return { project, summary };
-                    }
+    ctx.agentFinishedToast?.bindPanelCallbacks({
+        resolveOpenConversationId: () => ctx.transcriptController.state.transcriptOpenSummaryId,
+        openConversation: (project, summary) => { void ctx.openConversationSummary(project, summary); },
+        resolveProjectForConversation: conversationId => {
+            for (const project of ctx.projects) {
+                const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
+                if (!cwd) {
+                    continue;
                 }
-                return undefined;
-            },
-        });
+                const summary = ctx.conversations?.threadStore.getSummariesForCwd(cwd)
+                    .find(s => s.id === conversationId);
+                if (summary) {
+                    return { project, summary };
+                }
+            }
+            return undefined;
+        },
+    });
 }
 
 export function ensureAgentsHubExecutionShellRenderedExtracted(ctx: any): void {
-        ctx.syncCurrentProjectsScrollHost();
-        if (ctx.isAgentsHubExecutionSurfaceReady()) {
-            return;
-        }
-        const visible = ctx.visible || (!ctx.root.hidden && ctx.root.classList.contains('theia-mod-visible'));
-        const tasksHub = ctx.hubView === 'tasks' || ctx.root.classList.contains('theia-mod-hub-tasks');
-        const agentsLanding = ctx.shouldUseAgentsHubLanding()
-            || ctx.root.classList.contains('theia-mod-agents-hub-landing');
-        if (visible && tasksHub && agentsLanding) {
-            ctx.visible = true;
-            ctx.hubView = 'tasks';
-            ctx.agentsHubLegacyInbox = false;
-            const workspaceCwd = ctx.projectsService.getCurrentWorkspaceCwd();
-            if (workspaceCwd) {
-                ctx.projects = ensureProbeWorkspaceProject(ctx.projects, ctx.projectsService, workspaceCwd);
-                for (const project of ctx.projects) {
-                    const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
-                        ? workspaceCwd
-                        : ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
-                    if (cwd) {
-                        ctx.preparedCwdByProjectId.set(project.id, cwd);
-                    }
+    ctx.syncCurrentProjectsScrollHost();
+    if (ctx.isAgentsHubExecutionSurfaceReady()) {
+        return;
+    }
+    const visible = ctx.visible || (!ctx.root.hidden && ctx.root.classList.contains('theia-mod-visible'));
+    const tasksHub = ctx.hubView === 'tasks' || ctx.root.classList.contains('theia-mod-hub-tasks');
+    const agentsLanding = ctx.shouldUseAgentsHubLanding()
+        || ctx.root.classList.contains('theia-mod-agents-hub-landing');
+    if (visible && tasksHub && agentsLanding) {
+        ctx.visible = true;
+        ctx.hubView = 'tasks';
+        ctx.agentsHubLegacyInbox = false;
+        const workspaceCwd = ctx.projectsService.getCurrentWorkspaceCwd();
+        if (workspaceCwd) {
+            ctx.projects = ensureProbeWorkspaceProject(ctx.projects, ctx.projectsService, workspaceCwd);
+            for (const project of ctx.projects) {
+                const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
+                    ? workspaceCwd
+                    : ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
+                if (cwd) {
+                    ctx.preparedCwdByProjectId.set(project.id, cwd);
                 }
             }
-            ctx.renderAgentsHubExecutionShell();
-            ctx.stickyComposerRenderUi.renderStickyComposer();
-            ctx.composerHeaderUi.syncHeaderComposerSurfacePicker();
-        }
-}
-
-export function syncCurrentProjectsScrollHostExtracted(ctx: any): void {
-        const current = ctx.currentProjectsScrollHost();
-        if (current !== ctx.scroll) {
-            (this as unknown as { scroll: HTMLElement }).scroll = current;
-        }
-}
-
-export function installAgentsHubEmptySurfaceGuardExtracted(ctx: any): void {
-        if (!ctx.homeMode || typeof window === 'undefined') {
-            return;
-        }
-        let frame: number | undefined;
-        let interval: number | undefined;
-        const schedule = (): void => {
-            if (frame !== undefined) {
-                return;
-            }
-            frame = window.requestAnimationFrame(() => {
-                frame = undefined;
-                ctx.ensureAgentsHubExecutionShellRendered();
-            });
-        };
-        const observer = typeof MutationObserver !== 'undefined'
-            ? new MutationObserver(schedule)
-            : undefined;
-        observer?.observe(ctx.root, { attributes: true, attributeFilter: ['class', 'hidden'] });
-        observer?.observe(ctx.scroll, { childList: true });
-        interval = window.setInterval(schedule, 2000);
-        ctx.agentsHubEmptySurfaceGuardDispose = Disposable.create(() => {
-            observer?.disconnect();
-            if (interval !== undefined) {
-                window.clearInterval(interval);
-                interval = undefined;
-            }
-            if (frame !== undefined) {
-                window.cancelAnimationFrame(frame);
-                frame = undefined;
-            }
-        });
-        schedule();
-}
-
-export function selectHubLandingViewExtracted(ctx: any, view: MobileProjectsHubView,
-        preferredDiffProjectId?: string,
-        options?: { force?: boolean },): void {
-        ctx.hubLandingUi.selectHubLandingView(view, preferredDiffProjectId, options);
-}
-
-export function disposeExtracted(ctx: any): void {
-        window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, ctx.onBootstrapPreviewOpened);
-        ctx.closeHeaderOverflowMenu();
-        ctx.closeHeaderIdeViewPickerMenu();
-        ctx.headerOverflowMenu?.remove();
-        ctx.headerOverflowMenu = undefined;
-        ctx.headerIdeViewPickerMenu?.remove();
-        ctx.headerIdeViewPickerMenu = undefined;
-        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
-        ctx.composerEditorContextService?.registerPanelDelegate(undefined);
-        ctx.hubListRenderScheduler.dispose();
-        ctx.agentsHubEmptySurfaceGuardDispose.dispose();
-        ctx.agentsHubEmptySurfaceGuardDispose = Disposable.NULL;
-        ctx.panelLifecycleUi.dispose();
-}
-
-export function hideExtracted(ctx: any): void {
-        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
-        ctx.closeHeaderIdeViewPickerMenu();
-        ctx.panelLifecycleUi.hide();
-}
-
-export async function activateAgentsHubProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
-        ctx.agentsHubSelectedProjectId = project.id;
-        ctx.expandedId = undefined;
-        ctx.soloExpanded = false;
-        ctx.agentsHubLegacyInbox = false;
-        ctx.projectNavigationUi.resetProjectDetailSurfaces();
-        ctx.transcriptSheetUi.closeTranscriptSheet();
-        const cwd = await ctx.projectsService.prepareProjectCwd(project);
-        if (cwd) {
-            ctx.preparedCwdByProjectId.set(project.id, cwd);
-        }
-        if (ctx.agentsHubInlineActive) {
-            ctx.agentsHubInlineUi.closeAgentsHubSession();
-        }
-        if (!ctx.homeMode) {
-            ctx.render();
-            ctx.syncLandingHubListChrome();
-            return;
-        }
-        if (ctx.hubView !== 'tasks') {
-            ctx.selectHubLandingView('tasks', undefined, { force: true });
-            return;
         }
         ctx.renderAgentsHubExecutionShell();
         ctx.stickyComposerRenderUi.renderStickyComposer();
+        ctx.composerHeaderUi.syncHeaderComposerSurfacePicker();
+    }
+}
+
+export function syncCurrentProjectsScrollHostExtracted(ctx: any): void {
+    const current = ctx.currentProjectsScrollHost();
+    if (current !== ctx.scroll) {
+        (ctx as unknown as { scroll: HTMLElement }).scroll = current;
+    }
+}
+
+export function installAgentsHubEmptySurfaceGuardExtracted(ctx: any): void {
+    if (!ctx.homeMode || typeof window === 'undefined') {
+        return;
+    }
+    let frame: number | undefined;
+    let interval: number | undefined;
+    const schedule = (): void => {
+        if (frame !== undefined) {
+            return;
+        }
+        frame = window.requestAnimationFrame(() => {
+            frame = undefined;
+            ctx.ensureAgentsHubExecutionShellRendered();
+        });
+    };
+    const observer = typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(schedule)
+        : undefined;
+    observer?.observe(ctx.root, { attributes: true, attributeFilter: ['class', 'hidden'] });
+    observer?.observe(ctx.scroll, { childList: true });
+    interval = window.setInterval(schedule, 2000);
+    ctx.agentsHubEmptySurfaceGuardDispose = Disposable.create(() => {
+        observer?.disconnect();
+        if (interval !== undefined) {
+            window.clearInterval(interval);
+            interval = undefined;
+        }
+        if (frame !== undefined) {
+            window.cancelAnimationFrame(frame);
+            frame = undefined;
+        }
+    });
+    schedule();
+}
+
+export function selectHubLandingViewExtracted(ctx: any, view: MobileProjectsHubView,
+    preferredDiffProjectId?: string,
+    options?: { force?: boolean },): void {
+    ctx.hubLandingUi.selectHubLandingView(view, preferredDiffProjectId, options);
+}
+
+export function disposeExtracted(ctx: any): void {
+    window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, ctx.onBootstrapPreviewOpened);
+    ctx.closeHeaderOverflowMenu();
+    ctx.closeHeaderIdeViewPickerMenu();
+    ctx.headerOverflowMenu?.remove();
+    ctx.headerOverflowMenu = undefined;
+    ctx.headerIdeViewPickerMenu?.remove();
+    ctx.headerIdeViewPickerMenu = undefined;
+    document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
+    ctx.composerEditorContextService?.registerPanelDelegate(undefined);
+    ctx.hubListRenderScheduler.dispose();
+    ctx.agentsHubEmptySurfaceGuardDispose.dispose();
+    ctx.agentsHubEmptySurfaceGuardDispose = Disposable.NULL;
+    ctx.panelLifecycleUi.dispose();
+}
+
+export function hideExtracted(ctx: any): void {
+    document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
+    ctx.closeHeaderIdeViewPickerMenu();
+    ctx.panelLifecycleUi.hide();
+}
+
+export async function activateAgentsHubProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
+    ctx.agentsHubSelectedProjectId = project.id;
+    ctx.expandedId = undefined;
+    ctx.soloExpanded = false;
+    ctx.agentsHubLegacyInbox = false;
+    ctx.projectNavigationUi.resetProjectDetailSurfaces();
+    ctx.transcriptSheetUi.closeTranscriptSheet();
+    const cwd = await ctx.projectsService.prepareProjectCwd(project);
+    if (cwd) {
+        ctx.preparedCwdByProjectId.set(project.id, cwd);
+    }
+    if (ctx.agentsHubInlineActive) {
+        ctx.agentsHubInlineUi.closeAgentsHubSession();
+    }
+    if (!ctx.homeMode) {
         ctx.render();
         ctx.syncLandingHubListChrome();
-        ctx.notifyWorkspaceHubBottomBarRefresh();
+        return;
+    }
+    if (ctx.hubView !== 'tasks') {
+        ctx.selectHubLandingView('tasks', undefined, { force: true });
+        return;
+    }
+    ctx.renderAgentsHubExecutionShell();
+    ctx.stickyComposerRenderUi.renderStickyComposer();
+    ctx.render();
+    ctx.syncLandingHubListChrome();
+    ctx.notifyWorkspaceHubBottomBarRefresh();
 }
 
 export function touchProjectActivityByConversationIdExtracted(ctx: any, conversationId: string): void {
-        if (!conversationId) {
-            return;
+    if (!conversationId) {
+        return;
+    }
+    // Find the project that owns this conversation.
+    let touched = false;
+    const now = new Date().toISOString();
+    for (const project of ctx.projects) {
+        const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
+        if (!cwd) {
+            continue;
         }
-        // Find the project that owns this conversation.
-        let touched = false;
-        const now = new Date().toISOString();
-        for (const project of ctx.projects) {
-            const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
-            if (!cwd) {
-                continue;
+        const hasConversation = ctx.conversations?.threadStore.getSummariesForCwd(cwd)
+            .some(s => s.id === conversationId);
+        if (hasConversation) {
+            // Only bump if the conversation is newer than the project's current lastActiveAt.
+            const current = project.lastActiveAt ? Date.parse(project.lastActiveAt) : 0;
+            if (Date.now() > current) {
+                project.lastActiveAt = now;
+                project.lastActive = nls.localize('qaap/mobileProjects/lastActiveNow', 'now');
             }
-            const hasConversation = ctx.conversations?.threadStore.getSummariesForCwd(cwd)
-                .some(s => s.id === conversationId);
-            if (hasConversation) {
-                // Only bump if the conversation is newer than the project's current lastActiveAt.
-                const current = project.lastActiveAt ? Date.parse(project.lastActiveAt) : 0;
-                if (Date.now() > current) {
-                    project.lastActiveAt = now;
-                    project.lastActive = nls.localize('qaap/mobileProjects/lastActiveNow', 'now');
-                }
-                touched = true;
-                break;
-            }
+            touched = true;
+            break;
         }
-        if (touched) {
-            // Re-sort: most recent first.
-            ctx.projects.sort((a, b) => {
-                const timeA = a.lastActiveAt ? Date.parse(a.lastActiveAt) : 0;
-                const timeB = b.lastActiveAt ? Date.parse(b.lastActiveAt) : 0;
-                return timeB - timeA;
-            });
-        }
+    }
+    if (touched) {
+        // Re-sort: most recent first.
+        ctx.projects.sort((a, b) => {
+            const timeA = a.lastActiveAt ? Date.parse(a.lastActiveAt) : 0;
+            const timeB = b.lastActiveAt ? Date.parse(b.lastActiveAt) : 0;
+            return timeB - timeA;
+        });
+    }
 }
 
 export function syncWorkHubProjectSkillRootsExtracted(ctx: any): void {
-        if (!ctx.workHubProjectSkillRoots) {
-            return;
+    if (!ctx.workHubProjectSkillRoots) {
+        return;
+    }
+    const cwds: string[] = [];
+    for (const project of ctx.projects) {
+        const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
+        if (cwd?.trim()) {
+            cwds.push(cwd.trim());
         }
-        const cwds: string[] = [];
-        for (const project of ctx.projects) {
-            const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
-            if (cwd?.trim()) {
-                cwds.push(cwd.trim());
-            }
-        }
-        ctx.workHubProjectSkillRoots.syncProjectCwds(cwds);
+    }
+    ctx.workHubProjectSkillRoots.syncProjectCwds(cwds);
 }
 
 export function tryPatchHubListBeforeRebuildExtracted(ctx: any): boolean {
-        if (ctx.hubQueryUi.isHomeHubView() && ctx.missionControlHubUi.tryPatchBeforeRebuild()) {
-            ctx.subtitleUi.renderSubtitle();
-            return true;
-        }
-        return ctx.hubIncrementalUi.tryPatchBeforeRebuild();
+    if (ctx.hubQueryUi.isHomeHubView() && ctx.missionControlHubUi.tryPatchBeforeRebuild()) {
+        ctx.subtitleUi.renderSubtitle();
+        return true;
+    }
+    return ctx.hubIncrementalUi.tryPatchBeforeRebuild();
 }
 
 export function maybeInstallWorkHubPerfProbeExtracted(ctx: any): void {
-        const panel = this as MobileProjectsPanel & {
-            transcriptSheet?: HTMLElement;
-            transcriptChatHost?: HTMLElement;
-            transcriptOpenSummaryId?: string;
-        };
-        installQaapWorkHubPerfProbe({
-            scroll: panel.scroll,
-            conversations: panel.conversations,
-            getSessionsSidebar: () => panel.sessionsSidebar,
-            getTranscriptSheet: () => panel.transcriptSheet,
-            setTranscriptSheet: value => { panel.transcriptSheet = value; },
-            getTranscriptChatHost: () => panel.transcriptChatHost,
-            setTranscriptChatHost: value => { panel.transcriptChatHost = value; },
-            getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
-            setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
-            openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
-            navigateToHomeHubForProbe: () => panel.navigateHubTab('home'),
-            expandMissionControlForProbe: () => {
-                panel.setMissionControlExpanded(true);
-                panel.renderList();
-            },
-            showTasksInboxWithTeamForProbe: () => {
-                panel.navigateHubTab('tasks');
-                panel.agentsHubLegacyInbox = true;
-                panel.renderList();
-            },
-            seedMultiAgentProbeConversations: () => {
-                if (!panel.conversations) {
-                    return;
-                }
-                panel.conversations.start();
-                panel.activeTasks?.start();
-                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
-                if (workspaceCwd) {
-                    panel.projects = ensureProbeWorkspaceProject(panel.projects, panel.projectsService, workspaceCwd);
-                    for (const project of panel.projects) {
-                        const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
-                            ? workspaceCwd
-                            : panel.preparedCwdByProjectId.get(project.id)
-                            ?? panel.projectsService.getProjectCwd(project);
-                        if (cwd) {
-                            panel.preparedCwdByProjectId.set(project.id, cwd);
-                        }
-                    }
-                }
-                const cwdSet = new Set<string>();
+    const panel = ctx as MobileProjectsPanel & {
+        transcriptSheet?: HTMLElement;
+        transcriptChatHost?: HTMLElement;
+        transcriptOpenSummaryId?: string;
+    };
+    installQaapWorkHubPerfProbe({
+        scroll: panel.scroll,
+        conversations: panel.conversations,
+        getSessionsSidebar: () => panel.sessionsSidebar,
+        getTranscriptSheet: () => panel.transcriptSheet,
+        setTranscriptSheet: value => { panel.transcriptSheet = value; },
+        getTranscriptChatHost: () => panel.transcriptChatHost,
+        setTranscriptChatHost: value => { panel.transcriptChatHost = value; },
+        getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
+        setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
+        openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
+        navigateToHomeHubForProbe: () => panel.navigateHubTab('home'),
+        expandMissionControlForProbe: () => {
+            panel.setMissionControlExpanded(true);
+            panel.renderList();
+        },
+        showTasksInboxWithTeamForProbe: () => {
+            panel.navigateHubTab('tasks');
+            panel.agentsHubLegacyInbox = true;
+            panel.renderList();
+        },
+        seedMultiAgentProbeConversations: () => {
+            if (!panel.conversations) {
+                return;
+            }
+            panel.conversations.start();
+            panel.activeTasks?.start();
+            const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+            if (workspaceCwd) {
+                panel.projects = ensureProbeWorkspaceProject(panel.projects, panel.projectsService, workspaceCwd);
                 for (const project of panel.projects) {
-                    const cwd = panel.preparedCwdByProjectId.get(project.id)
+                    const cwd = project.id === QAAP_PROBE_WORKSPACE_PROJECT_ID
+                        ? workspaceCwd
+                        : panel.preparedCwdByProjectId.get(project.id)
                         ?? panel.projectsService.getProjectCwd(project);
                     if (cwd) {
-                        cwdSet.add(cwd);
+                        panel.preparedCwdByProjectId.set(project.id, cwd);
                     }
                 }
-                if (workspaceCwd) {
-                    cwdSet.add(workspaceCwd);
+            }
+            const cwdSet = new Set<string>();
+            for (const project of panel.projects) {
+                const cwd = panel.preparedCwdByProjectId.get(project.id)
+                    ?? panel.projectsService.getProjectCwd(project);
+                if (cwd) {
+                    cwdSet.add(cwd);
                 }
-                if (cwdSet.size === 0) {
-                    return;
+            }
+            if (workspaceCwd) {
+                cwdSet.add(workspaceCwd);
+            }
+            if (cwdSet.size === 0) {
+                return;
+            }
+            for (const cwd of cwdSet) {
+                panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
+            }
+            panel.scheduleRenderList();
+        },
+        tickProbeStreamingConversations: () => {
+            if (!panel.conversations) {
+                return;
+            }
+            const cwdSet = new Set<string>();
+            for (const project of panel.projects) {
+                const cwd = panel.preparedCwdByProjectId.get(project.id)
+                    ?? panel.projectsService.getProjectCwd(project);
+                if (cwd) {
+                    cwdSet.add(cwd);
                 }
-                for (const cwd of cwdSet) {
-                    panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
-                }
-                panel.scheduleRenderList();
-            },
-            tickProbeStreamingConversations: () => {
-                if (!panel.conversations) {
-                    return;
-                }
-                const cwdSet = new Set<string>();
-                for (const project of panel.projects) {
-                    const cwd = panel.preparedCwdByProjectId.get(project.id)
-                        ?? panel.projectsService.getProjectCwd(project);
-                    if (cwd) {
-                        cwdSet.add(cwd);
-                    }
-                }
-                const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
-                if (workspaceCwd) {
-                    cwdSet.add(workspaceCwd);
-                }
-                for (const cwd of cwdSet) {
-                    panel.conversations.perfProbeTickStreamingSummaries(cwd);
-                }
-            },
-            hasProjectsForProbe: () => panel.projects.length > 0,
-            hasWorkspaceForProbe: () => !!panel.projectsService.getCurrentWorkspaceCwd(),
-            getProbeDiagnostics: (): WorkHubPerfProbeDiagnostics => ({
-                projectCount: panel.projects.length,
-                mcRowCount: panel.scroll.querySelectorAll('.theia-mobile-mission-control-row').length,
-                teamRowCount: panel.scroll.querySelectorAll(
-                    '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks .theia-mobile-hub-team-row',
-                ).length,
-                hubView: panel.hubView,
-            }),
-        });
+            }
+            const workspaceCwd = panel.projectsService.getCurrentWorkspaceCwd();
+            if (workspaceCwd) {
+                cwdSet.add(workspaceCwd);
+            }
+            for (const cwd of cwdSet) {
+                panel.conversations.perfProbeTickStreamingSummaries(cwd);
+            }
+        },
+        hasProjectsForProbe: () => panel.projects.length > 0,
+        hasWorkspaceForProbe: () => !!panel.projectsService.getCurrentWorkspaceCwd(),
+        getProbeDiagnostics: (): WorkHubPerfProbeDiagnostics => ({
+            projectCount: panel.projects.length,
+            mcRowCount: panel.scroll.querySelectorAll('.theia-mobile-mission-control-row').length,
+            teamRowCount: panel.scroll.querySelectorAll(
+                '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks .theia-mobile-hub-team-row',
+            ).length,
+            hubView: panel.hubView,
+        }),
+    });
 }
 
 export function getFilteredTeamHubStateExtracted(ctx: any): {
-        members: WorkHubTeamMember[];
-        filteredApprovals: WorkHubApprovalItem[];
-    } {
-        return ctx.tasksHubAttentionUi.getFilteredTeamHubState();
+    members: WorkHubTeamMember[];
+    filteredApprovals: WorkHubApprovalItem[];
+} {
+    return ctx.tasksHubAttentionUi.getFilteredTeamHubState();
 }
 
 export async function openDesktopIdeFromAgentsHubExtracted(ctx: any): Promise<void> {
-        if (ctx.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
-            && ctx.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-            await ctx.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');
-            ctx.hide();
-            return;
-        }
-        if (!ctx.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
-            || !ctx.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
-            return;
-        }
-        await ctx.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+    if (ctx.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
+        && ctx.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+        await ctx.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');
         ctx.hide();
+        return;
+    }
+    if (!ctx.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+        || !ctx.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+        return;
+    }
+    await ctx.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
+    ctx.hide();
 }
 
 export function collectSessionsSidebarPinnedGroupsExtracted(ctx: any, projects: MobileProjectEntry[],
-        query: string,): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
-        return ctx.sessionsSidebarUi.collectSessionsSidebarPinnedGroups(projects, query);
+    query: string,): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
+    return ctx.sessionsSidebarUi.collectSessionsSidebarPinnedGroups(projects, query);
 }
 
 export function createSessionsSidebarPinnedSectionExtracted(ctx: any, groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>,
-        onActivate: () => void,
-        bypassConversationLimit = false,): HTMLElement {
-        return ctx.sessionsSidebarUi.createSessionsSidebarPinnedSection(groups, onActivate, bypassConversationLimit);
+    onActivate: () => void,
+    bypassConversationLimit = false,): HTMLElement {
+    return ctx.sessionsSidebarUi.createSessionsSidebarPinnedSection(groups, onActivate, bypassConversationLimit);
 }
 
 export function getSessionsSidebarConversationDisplayLimitExtracted(ctx: any, project: MobileProjectEntry,
-        totalCount: number,
-        bypassLimit: boolean,): number {
-        return ctx.sessionsSidebarUi.getSessionsSidebarConversationDisplayLimit(project, totalCount, bypassLimit);
+    totalCount: number,
+    bypassLimit: boolean,): number {
+    return ctx.sessionsSidebarUi.getSessionsSidebarConversationDisplayLimit(project, totalCount, bypassLimit);
 }
 
 export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: any, project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        bypassLimit: boolean,): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
-        return ctx.sessionsSidebarUi.resolveSessionsSidebarVisibleConversations(project, conversations, bypassLimit);
+    conversations: readonly QaapAgentConversationSummaryDTO[],
+    bypassLimit: boolean,): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
+    return ctx.sessionsSidebarUi.resolveSessionsSidebarVisibleConversations(project, conversations, bypassLimit);
 }
 
 export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHost: HTMLElement,
-        project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        onActivate: () => void,
-        bypassLimit: boolean,): void {
-        ctx.sessionsSidebarUi.appendSessionsSidebarConversationItems(listHost, project, conversations, onActivate, bypassLimit);
+    project: MobileProjectEntry,
+    conversations: readonly QaapAgentConversationSummaryDTO[],
+    onActivate: () => void,
+    bypassLimit: boolean,): void {
+    ctx.sessionsSidebarUi.appendSessionsSidebarConversationItems(listHost, project, conversations, onActivate, bypassLimit);
 }
 
 export function createSessionsSidebarShowMoreControlExtracted(ctx: any, project: MobileProjectEntry,
-        hiddenCount: number,
-        totalCount: number,): HTMLButtonElement {
-        return ctx.sessionsSidebarUi.createSessionsSidebarShowMoreControl(project, hiddenCount, totalCount);
+    hiddenCount: number,
+    totalCount: number,): HTMLButtonElement {
+    return ctx.sessionsSidebarUi.createSessionsSidebarShowMoreControl(project, hiddenCount, totalCount);
 }
 
 export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: any, project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        onActivate: () => void,
-        bypassConversationLimit = false,): HTMLElement {
-        return ctx.sessionsSidebarUi.createSessionsSidebarPinnedProjectGroup(project, conversations, onActivate, bypassConversationLimit);
+    conversations: readonly QaapAgentConversationSummaryDTO[],
+    onActivate: () => void,
+    bypassConversationLimit = false,): HTMLElement {
+    return ctx.sessionsSidebarUi.createSessionsSidebarPinnedProjectGroup(project, conversations, onActivate, bypassConversationLimit);
 }
 
 export function createSessionsSidebarProjectGroupExtracted(ctx: any, project: MobileProjectEntry,
-        conversations: readonly QaapAgentConversationSummaryDTO[],
-        onActivate: () => void,
-        bypassConversationLimit = false,): HTMLElement {
-        return ctx.sessionsSidebarUi.createSessionsSidebarProjectGroup(project, conversations, onActivate, bypassConversationLimit);
+    conversations: readonly QaapAgentConversationSummaryDTO[],
+    onActivate: () => void,
+    bypassConversationLimit = false,): HTMLElement {
+    return ctx.sessionsSidebarUi.createSessionsSidebarProjectGroup(project, conversations, onActivate, bypassConversationLimit);
 }
 
 export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: MobileProjectEntry,
-        expanded: boolean,
-        onToggleExpand: () => void,): HTMLElement {
-        return ctx.sessionsSidebarUi.createSessionsSidebarProjectRowHead(project, expanded, onToggleExpand);
+    expanded: boolean,
+    onToggleExpand: () => void,): HTMLElement {
+    return ctx.sessionsSidebarUi.createSessionsSidebarProjectRowHead(project, expanded, onToggleExpand);
 }
 
 export function onHeaderProjectClickExtracted(ctx: any, anchor: HTMLButtonElement): void {
-        const project = ctx.hubHeaderUi.resolveHeaderProject();
-        if (!project) {
-            return;
-        }
-        ctx.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(project, false, anchor);
+    const project = ctx.hubHeaderUi.resolveHeaderProject();
+    if (!project) {
+        return;
+    }
+    ctx.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(project, false, anchor);
 }
 
 export function syncHeaderIdeViewPickerExtracted(ctx: any): void {
-        ctx.headerIdeViewPickerHost.hidden = true;
-        ctx.headerIdeViewPickerHost.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
-        ctx.headerIdeViewPickerHost.replaceChildren();
-        ctx.headerIdeViewPickerBtn = undefined;
-        ctx.closeHeaderIdeViewPickerMenu();
+    ctx.headerIdeViewPickerHost.hidden = true;
+    ctx.headerIdeViewPickerHost.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
+    ctx.headerIdeViewPickerHost.replaceChildren();
+    ctx.headerIdeViewPickerBtn = undefined;
+    ctx.closeHeaderIdeViewPickerMenu();
 }
 

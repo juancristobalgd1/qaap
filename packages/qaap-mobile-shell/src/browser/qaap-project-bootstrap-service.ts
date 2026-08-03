@@ -101,7 +101,7 @@ import { adoptExistingPreviewIdentityExtracted, attachTerminalOsProcessIdExtract
 import { beginDevRunExtracted, buildStateChangeExtracted, cancelDevPreviewFallbacksExtracted, cancelDevPreviewHealthMonitorExtracted, cancelDevPreviewWarmupExtracted, cleanupDevTerminalExtracted, clearForwardedPortsExtracted, persistPhaseExtracted, readAllPersistedExtracted, registerDevTerminalForConversationExtracted, releaseActivePreviewExtracted, releaseDevTerminalForConversationExtracted, releasePreviewForConversationExtracted, resetBootstrapSessionForWorkspaceExtracted, scheduleDevPreviewWarmupExtracted, setPhaseExtracted, startDevPreviewHealthMonitorExtracted, syncHubSessionExtracted, waitForExitExtracted, warmupDevPreviewExtracted } from './qaap-project-bootstrap-service-tool-pills2';
 
 /** Storage key used to remember per-workspace user intent (skip / installed). */
-const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
+export const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
 
 /**
  * Matches `http(s)://host:port` tokens printed by common dev servers (Vite, Next, CRA, Astro,
@@ -109,39 +109,39 @@ const STORAGE_KEY = 'qaap.projectBootstrap.state.v1';
  * the user may print in logs (e.g. external API endpoints in startup banners).
  * Used with `matchAll` so a single chunk can yield multiple ports.
  */
-const DEV_URL_REGEX = /\b(https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::(\d{2,5}))?\/?[^\s\u001b]*)/gi;
+export const DEV_URL_REGEX = /\b(https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::(\d{2,5}))?\/?[^\s\u001b]*)/gi;
 
 /** Strip ANSI escape sequences so URL detection works against raw xterm output. */
-const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+export const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
 /** Node / Theia emit this when the dev port is already bound by another process. */
-const PORT_IN_USE_REGEX = /EADDRINUSE|address already in use/i;
+export const PORT_IN_USE_REGEX = /EADDRINUSE|address already in use/i;
 
 /** Keep only the tail of dev stdout so we can surface the last error line on fast exit. */
 const DEV_OUTPUT_TAIL_MAX = 12_000;
 
 /** Retries when mobile UI disposes the terminal widget before the backend session is ready. */
-const TERMINAL_SPAWN_MAX_ATTEMPTS = 3;
-const TERMINAL_SPAWN_RETRY_DELAY_MS = 450;
-const TERMINAL_READY_DELAY_MS = 120;
+export const TERMINAL_SPAWN_MAX_ATTEMPTS = 3;
+export const TERMINAL_SPAWN_RETRY_DELAY_MS = 450;
+export const TERMINAL_READY_DELAY_MS = 120;
 /** Let destroyTermOnClose release a restored preview's listener before reserving its replacement. */
-const RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS = 500;
+export const RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS = 500;
 
 
 /** After this delay, open the hinted preview URL even when stdout never prints a parseable URL. */
-const DEV_PREVIEW_FALLBACK_MS = 2500;
+export const DEV_PREVIEW_FALLBACK_MS = 2500;
 
 /** Poll the backend probe before opening preview (Replit-style: wait until the port responds). */
-const DEV_PREVIEW_OPEN_PROBE_ATTEMPTS = 40;
-const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 250;
+export const DEV_PREVIEW_OPEN_PROBE_ATTEMPTS = 40;
+export const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 250;
 
 /** Delay before auto-attaching or restarting a remembered dev port after workspace load. */
-const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
+export const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
 /** Detect a dead restored process even when Theia reconstructs its terminal after the preview URL. */
-const DEV_PREVIEW_HEALTH_INTERVAL_MS = 2500;
-const DEV_PREVIEW_HEALTH_FAILURE_LIMIT = 2;
+export const DEV_PREVIEW_HEALTH_INTERVAL_MS = 2500;
+export const DEV_PREVIEW_HEALTH_FAILURE_LIMIT = 2;
 /** Bounded conflict recovery: enough to escape a cluster of stale dev servers without looping forever. */
-const DEV_PORT_RECOVERY_MAX_ATTEMPTS = 8;
+export const DEV_PORT_RECOVERY_MAX_ATTEMPTS = 8;
 
 export interface QaapBootstrapStateChange {
     readonly phase: QaapBootstrapPhase;

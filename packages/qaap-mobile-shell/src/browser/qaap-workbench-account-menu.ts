@@ -5,6 +5,7 @@
 
 import { CommandRegistry, nls } from '@theia/core/lib/common';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '../common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
 import { QAAP_MESSAGE_CIRCLE_ICON_CLASS } from '../common/qaap-scm-changes-icon';
@@ -192,7 +193,7 @@ export function openQaapAccountMenu(
     panel.setAttribute('role', 'menu');
     panel.tabIndex = -1;
 
-    if (viewToggle) {
+    if (viewToggle && !matchesMobileNarrowViewport()) {
         const switchHost = document.createElement('div');
         switchHost.className = 'theia-qaap-account-menu-view-switch';
         const field = createSegmentedField<MobileViewToggleId>({

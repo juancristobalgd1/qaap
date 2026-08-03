@@ -159,13 +159,13 @@ export interface MobileProjectsTranscriptLiveHost {
 }
 
 /** Poll pending VPS tool approvals while an interactive agent turn is streaming. */
-const TRANSCRIPT_APPROVAL_REFRESH_MS = 320;
+export const TRANSCRIPT_APPROVAL_REFRESH_MS = 320;
 /** Coalesce bursty SSE token deltas into one paint per frame on mobile. */
-const TRANSCRIPT_SSE_COALESCE_RAF = true;
+export const TRANSCRIPT_SSE_COALESCE_RAF = true;
 /** Debounce composer activity stack scans while the agent is still streaming. */
-const TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS = 450;
-const TRANSCRIPT_PREVIEW_POLL_BASE_MS = 900;
-const TRANSCRIPT_PREVIEW_POLL_MAX_MS = 5_000;
+export const TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS = 450;
+export const TRANSCRIPT_PREVIEW_POLL_BASE_MS = 900;
+export const TRANSCRIPT_PREVIEW_POLL_MAX_MS = 5_000;
 /** While server-side capture runs, poll the open transcript until evidence lands. */
 export const TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS = 3_000;
 // Cover a cold dev-server boot (up to ~180s) before the headless capture can run, so the

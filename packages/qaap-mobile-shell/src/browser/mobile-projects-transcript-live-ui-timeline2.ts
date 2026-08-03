@@ -94,6 +94,8 @@ import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcr
 import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridge';
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS } from './mobile-projects-transcript-live-ui';
+import { TRANSCRIPT_PREVIEW_POLL_BASE_MS } from './mobile-projects-transcript-live-ui';
+import { TRANSCRIPT_APPROVAL_REFRESH_MS, TRANSCRIPT_PREVIEW_POLL_MAX_MS, TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
 
 export function stopTranscriptLiveWatchExtracted(ctx: any): void {
         ctx.transcriptTurnVisuallySettledActive = false;

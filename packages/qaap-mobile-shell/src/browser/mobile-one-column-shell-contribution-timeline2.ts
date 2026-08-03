@@ -26,6 +26,7 @@ import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
 import {
     matchesMobileOneColumnLayout,
+    matchesMobileNarrowViewport,
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
     MOBILE_ONE_COLUMN_LAYOUT_CLASS,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
@@ -156,36 +157,38 @@ import {
 import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobile-one-column-shell-helpers';
 
 export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): void {
-        registry.registerCommand(QaapMobileProjectsDashboardCommands.TOGGLE, {
-            execute: () => {
-                if (peekPreferDesktopIde()) {
-                    ctx.returnToAgentsFromDesktopIde();
-                    return;
-                }
-                return ctx.toggleProjectsPanel();
-            },
-            isEnabled: () => ctx.shouldActivateMobileLayout() && ctx.workspaceService.opened,
-            isVisible: () => matchesMobileOneColumnLayout() && ctx.workspaceService.opened,
-        });
-        // Project card "Open agent" button. Submits to the backend agent-task runner so the work
-        // is a detached child process, not a tab-bound chat; the agent keeps going after the
-        // user closes the tab.
-        registry.registerCommand({ id: 'qaap.mobile.openAgentOnTask' }, {
-            execute: (project: MobileProjectEntry) => ctx.openAgentTaskComposer(project),
-        });
-        registry.registerCommand({ id: 'qaap.mobile.toggleSessionsSidebar' }, {
-            execute: () => ctx.toggleWorkHubSessionsSidebar(),
-            isEnabled: () => ctx.mobileActive && ctx.workspaceService.opened,
-            isVisible: () => matchesMobileOneColumnLayout() && ctx.workspaceService.opened,
-        });
-        registry.registerCommand({
-            id: QAAP_WORK_HUB_OVERVIEW_COMMAND,
-            label: nls.localize('qaap/accountMenu/workHubOverview', 'Work Hub overview'),
-        }, {
-            execute: () => ctx.openMobileWorkHubLanding('tasks'),
-            isEnabled: () => ctx.mobileActive,
-            isVisible: () => matchesMobileOneColumnLayout(),
-        });
+    registry.registerCommand(QaapMobileProjectsDashboardCommands.TOGGLE, {
+        execute: () => {
+            if (peekPreferDesktopIde()) {
+                ctx.returnToAgentsFromDesktopIde();
+                return;
+            }
+            return ctx.toggleProjectsPanel();
+        },
+        isEnabled: () => ctx.shouldActivateMobileLayout() && ctx.workspaceService.opened,
+        isVisible: () => matchesMobileOneColumnLayout() && ctx.workspaceService.opened,
+    });
+    // Project card "Open agent" button. Submits to the backend agent-task runner so the work
+    // is a detached child process, not a tab-bound chat; the agent keeps going after the
+    // user closes the tab.
+    registry.registerCommand({ id: 'qaap.mobile.openAgentOnTask' }, {
+        execute: (project: MobileProjectEntry) => ctx.openAgentTaskComposer(project),
+    });
+    registry.registerCommand({ id: 'qaap.mobile.toggleSessionsSidebar' }, {
+        execute: () => ctx.toggleWorkHubSessionsSidebar(),
+        isEnabled: () => ctx.mobileActive && ctx.workspaceService.opened,
+        isVisible: () => matchesMobileOneColumnLayout() && ctx.workspaceService.opened,
+    });
+    registry.registerCommand({
+        id: QAAP_WORK_HUB_OVERVIEW_COMMAND,
+        label: nls.localize('qaap/accountMenu/workHubOverview', 'Work Hub overview'),
+    }, {
+        execute: () => ctx.openMobileWorkHubLanding('tasks'),
+        isEnabled: () => ctx.mobileActive,
+        isVisible: () => matchesMobileOneColumnLayout(),
+    });
+    // IDE-only commands — skip registration on narrow/touch viewport (IDE is desktop-only).
+    if (!matchesMobileNarrowViewport()) {
         registry.registerCommand({
             id: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
             label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
@@ -211,369 +214,370 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
             isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
             isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
         });
+    }
 }
 
 export async function openDesktopIdeExtracted(ctx: any): Promise<void> {
-        const prepared = await ctx.prepareDesktopIdeWorkspaceFromHub();
-        if (!prepared) {
-            return;
-        }
-        ctx.ideFallback.openDesktopIde();
+    const prepared = await ctx.prepareDesktopIdeWorkspaceFromHub();
+    if (!prepared) {
+        return;
+    }
+    ctx.ideFallback?.openDesktopIde();
 }
 
 export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: any): Promise<boolean> {
-        const projects = await ctx.projectsService.loadProjects();
-        const plan = planDesktopIdeWorkspaceOpen(
-            projects.map(project => ({
-                id: project.id,
-                cwd: ctx.projectsService.getProjectCwd(project),
-            })),
-            ctx.projectsService.getCurrentWorkspaceCwd(),
-        );
-        if (plan.kind === 'reload-empty') {
-            markPreferDesktopIde();
-            await ctx.workspaceService.close();
+    const projects = await ctx.projectsService.loadProjects();
+    const plan = planDesktopIdeWorkspaceOpen(
+        projects.map(project => ({
+            id: project.id,
+            cwd: ctx.projectsService.getProjectCwd(project),
+        })),
+        ctx.projectsService.getCurrentWorkspaceCwd(),
+    );
+    if (plan.kind === 'reload-empty') {
+        markPreferDesktopIde();
+        await ctx.workspaceService.close();
+        return false;
+    }
+    if (plan.kind === 'open-project') {
+        const project = projects[plan.projectIndex];
+        if (!project) {
             return false;
         }
-        if (plan.kind === 'open-project') {
-            const project = projects[plan.projectIndex];
-            if (!project) {
-                return false;
-            }
-            let cwd = ctx.projectsService.getProjectCwd(project);
-            if (!cwd && project.github) {
-                cwd = await ctx.projectsService.prepareProjectCwd(project);
-            }
-            if (!cwd) {
-                MobileSnackbar.show(
-                    nls.localize('qaap/mobile/openDesktopIdeNeedsProject', 'Open a project from Work Hub before opening the IDE.'),
-                    { kind: 'warning' },
-                );
-                return false;
-            }
-            const current = ctx.projectsService.getCurrentWorkspaceCwd();
-            if (current !== cwd) {
-                markPreferDesktopIde();
-                await ctx.projectsService.openInCurrentWindowAsync(project);
-            }
+        let cwd = ctx.projectsService.getProjectCwd(project);
+        if (!cwd && project.github) {
+            cwd = await ctx.projectsService.prepareProjectCwd(project);
         }
-        return true;
+        if (!cwd) {
+            MobileSnackbar.show(
+                nls.localize('qaap/mobile/openDesktopIdeNeedsProject', 'Open a project from Work Hub before opening the IDE.'),
+                { kind: 'warning' },
+            );
+            return false;
+        }
+        const current = ctx.projectsService.getCurrentWorkspaceCwd();
+        if (current !== cwd) {
+            markPreferDesktopIde();
+            await ctx.projectsService.openInCurrentWindowAsync(project);
+        }
+    }
+    return true;
 }
 
 export function enforceWorkHubSurfaceIsolationExtracted(ctx: any): void {
-        if (peekPreferDesktopIde()) {
-            return;
-        }
-        markPreferAgentsSurface();
-        setMobileWorkHubComposerHeaderChrome(true);
-        syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
-        void ctx.sideSheetController.collapseMobileSidePanels();
-        ctx.sideSheetController.settleMobileSidePanelsCollapsed();
-        ctx.scheduleSnapAndUiRefresh();
-        ctx.refreshBottomBar();
-        ctx.refreshWorkbenchTopBar();
+    if (peekPreferDesktopIde()) {
+        return;
+    }
+    markPreferAgentsSurface();
+    setMobileWorkHubComposerHeaderChrome(true);
+    syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
+    void ctx.sideSheetController.collapseMobileSidePanels();
+    ctx.sideSheetController.settleMobileSidePanelsCollapsed();
+    ctx.scheduleSnapAndUiRefresh();
+    ctx.refreshBottomBar();
+    ctx.refreshWorkbenchTopBar();
 }
 
 export async function openAgentTaskComposerExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
-        if (!project) {
-            return;
-        }
-        const cwd = ctx.projectsService.getProjectCwd(project);
-        if (!ctx.agentTaskComposer) {
-            ctx.agentTaskComposer = new MobileAgentTaskComposer(ctx.activeTasks, {
-                onSubmitted: () => {
-                    MobileSnackbar.show(
-                        nls.localize('qaap/mobileProjects/agentTaskQueued', 'Agent task started'),
-                        { kind: 'success' }
-                    );
-                },
-            }, ctx.backgroundContext);
-            document.body.appendChild(ctx.agentTaskComposer.node);
-            ctx.toDispose.push(Disposable.create(() => {
-                ctx.agentTaskComposer?.dispose();
-                ctx.agentTaskComposer?.node.parentElement?.removeChild(ctx.agentTaskComposer.node);
-                ctx.agentTaskComposer = undefined;
-            }));
-        }
-        await ctx.agentTaskComposer.show(project, cwd);
+    if (!project) {
+        return;
+    }
+    const cwd = ctx.projectsService.getProjectCwd(project);
+    if (!ctx.agentTaskComposer) {
+        ctx.agentTaskComposer = new MobileAgentTaskComposer(ctx.activeTasks, {
+            onSubmitted: () => {
+                MobileSnackbar.show(
+                    nls.localize('qaap/mobileProjects/agentTaskQueued', 'Agent task started'),
+                    { kind: 'success' }
+                );
+            },
+        }, ctx.backgroundContext);
+        document.body.appendChild(ctx.agentTaskComposer.node);
+        ctx.toDispose.push(Disposable.create(() => {
+            ctx.agentTaskComposer?.dispose();
+            ctx.agentTaskComposer?.node.parentElement?.removeChild(ctx.agentTaskComposer.node);
+            ctx.agentTaskComposer = undefined;
+        }));
+    }
+    await ctx.agentTaskComposer.show(project, cwd);
 }
 
 export async function openWorkHubPreferencesSheetExtracted(ctx: any, query?: string): Promise<void> {
-        if (!ctx.workHubPreferencesSheet) {
-            ctx.workHubPreferencesSheet = new MobileWorkHubPreferencesSheet(ctx.widgetManager, ctx.preferenceService);
-            document.body.appendChild(ctx.workHubPreferencesSheet.node);
-            ctx.toDispose.push(Disposable.create(() => {
-                ctx.workHubPreferencesSheet?.dispose();
-                ctx.workHubPreferencesSheet = undefined;
-            }));
-        }
-        await ctx.workHubPreferencesSheet.show(query);
+    if (!ctx.workHubPreferencesSheet) {
+        ctx.workHubPreferencesSheet = new MobileWorkHubPreferencesSheet(ctx.widgetManager, ctx.preferenceService);
+        document.body.appendChild(ctx.workHubPreferencesSheet.node);
+        ctx.toDispose.push(Disposable.create(() => {
+            ctx.workHubPreferencesSheet?.dispose();
+            ctx.workHubPreferencesSheet = undefined;
+        }));
+    }
+    await ctx.workHubPreferencesSheet.show(query);
 }
 
 export async function openWorkHubAiConfigurationSheetExtracted(ctx: any, tabId?: string): Promise<void> {
-        if (!ctx.workHubAiConfigurationSheet) {
-            ctx.workHubAiConfigurationSheet = new MobileWorkHubAiConfigurationSheet(
-                ctx.widgetManager,
-                ctx.aiConfigurationSelectionService,
-            );
-            document.body.appendChild(ctx.workHubAiConfigurationSheet.node);
-            ctx.toDispose.push(Disposable.create(() => {
-                ctx.workHubAiConfigurationSheet?.dispose();
-                ctx.workHubAiConfigurationSheet = undefined;
-            }));
-        }
-        await ctx.workHubAiConfigurationSheet.show(tabId);
+    if (!ctx.workHubAiConfigurationSheet) {
+        ctx.workHubAiConfigurationSheet = new MobileWorkHubAiConfigurationSheet(
+            ctx.widgetManager,
+            ctx.aiConfigurationSelectionService,
+        );
+        document.body.appendChild(ctx.workHubAiConfigurationSheet.node);
+        ctx.toDispose.push(Disposable.create(() => {
+            ctx.workHubAiConfigurationSheet?.dispose();
+            ctx.workHubAiConfigurationSheet = undefined;
+        }));
+    }
+    await ctx.workHubAiConfigurationSheet.show(tabId);
 }
 
 export async function toggleProjectsPanelExtracted(ctx: any): Promise<void> {
-        if (ctx.projectsPanel?.isHomeMode() && ctx.projectsPanel.isVisible()) {
-            return;
-        }
-        ctx.hidePullRequestPanel();
-        await ctx.dismissSheetsAsync();
-        if (ctx.shell.isExpanded('bottom')) {
-            await ctx.shell.collapsePanel('bottom');
-        }
-        await ctx.showMobileProjectsHome('tasks');
+    if (ctx.projectsPanel?.isHomeMode() && ctx.projectsPanel.isVisible()) {
+        return;
+    }
+    ctx.hidePullRequestPanel();
+    await ctx.dismissSheetsAsync();
+    if (ctx.shell.isExpanded('bottom')) {
+        await ctx.shell.collapsePanel('bottom');
+    }
+    await ctx.showMobileProjectsHome('tasks');
 }
 
 export async function onProjectsPanelOpenExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
-        ctx.landing.leaveMobileProjectsLandingNow();
-        try {
-            if (project.isCurrent) {
-                await ctx.onCurrentProjectActivated();
-                return;
-            }
-            await ctx.projectsService.openInCurrentWindowAsync(project);
-        } finally {
-            ctx.scheduleSnapAndUiRefresh();
+    ctx.landing.leaveMobileProjectsLandingNow();
+    try {
+        if (project.isCurrent) {
+            await ctx.onCurrentProjectActivated();
+            return;
         }
+        await ctx.projectsService.openInCurrentWindowAsync(project);
+    } finally {
+        ctx.scheduleSnapAndUiRefresh();
+    }
 }
 
 export async function onProjectsPanelOpenInIdeExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
-        try {
-            if (project.isCurrent) {
-                const cwd = ctx.projectsService.getCurrentWorkspaceCwd();
-                if (cwd && isQaapWorkspaceContainerPath(cwd)) {
-                    markPreferDesktopIde();
-                    await ctx.projectsService.openInCurrentWindowAsync(project);
-                    return;
-                }
-                ctx.ideFallback.openDesktopIde();
-                await ctx.onCurrentProjectActivated();
+    try {
+        if (project.isCurrent) {
+            const cwd = ctx.projectsService.getCurrentWorkspaceCwd();
+            if (cwd && isQaapWorkspaceContainerPath(cwd)) {
+                markPreferDesktopIde();
+                await ctx.projectsService.openInCurrentWindowAsync(project);
                 return;
             }
-            markPreferDesktopIde();
-            await ctx.projectsService.openInCurrentWindowAsync(project);
-        } finally {
-            if (!peekPreferDesktopIde()) {
-                ctx.scheduleSnapAndUiRefresh();
-            }
+            ctx.ideFallback?.openDesktopIde();
+            await ctx.onCurrentProjectActivated();
+            return;
         }
+        markPreferDesktopIde();
+        await ctx.projectsService.openInCurrentWindowAsync(project);
+    } finally {
+        if (!peekPreferDesktopIde()) {
+            ctx.scheduleSnapAndUiRefresh();
+        }
+    }
 }
 
 export async function onCurrentProjectActivatedExtracted(ctx: any): Promise<void> {
-        const opened = await ctx.projectsReadme.openReadmeForCurrentWorkspace();
-        if (opened) {
-            return;
-        }
-        // No README to show: focus an existing editor if any, so the user lands in the editor area.
-        const widgets = toArray(ctx.shell.mainPanel.widgets());
-        const target = ctx.shell.activeWidget && widgets.includes(ctx.shell.activeWidget)
-            ? ctx.shell.activeWidget
-            : widgets[0];
-        if (target) {
-            void ctx.shell.activateWidget(target.id);
-        }
+    const opened = await ctx.projectsReadme.openReadmeForCurrentWorkspace();
+    if (opened) {
+        return;
+    }
+    // No README to show: focus an existing editor if any, so the user lands in the editor area.
+    const widgets = toArray(ctx.shell.mainPanel.widgets());
+    const target = ctx.shell.activeWidget && widgets.includes(ctx.shell.activeWidget)
+        ? ctx.shell.activeWidget
+        : widgets[0];
+    if (target) {
+        void ctx.shell.activateWidget(target.id);
+    }
 }
 
 export async function prepareSideSheetOpenExtracted(ctx: any, side: 'left' | 'right'): Promise<void> {
-        const other: 'left' | 'right' = side === 'left' ? 'right' : 'left';
-        // Explicit intent to reveal an IDE side sheet in the Work Hub — the only thing that may
-        // un-hide the left/right panel while Work Hub is the surface. Cleared when the sheet collapses.
-        setMobileWorkHubSideSheetOpen(true);
-        ctx.hideProjectsPanel();
-        ctx.hidePullRequestPanel();
-        if (ctx.shell.isExpanded(other)) {
-            await ctx.shell.collapsePanel(other);
-        }
+    const other: 'left' | 'right' = side === 'left' ? 'right' : 'left';
+    // Explicit intent to reveal an IDE side sheet in the Work Hub — the only thing that may
+    // un-hide the left/right panel while Work Hub is the surface. Cleared when the sheet collapses.
+    setMobileWorkHubSideSheetOpen(true);
+    ctx.hideProjectsPanel();
+    ctx.hidePullRequestPanel();
+    if (ctx.shell.isExpanded(other)) {
+        await ctx.shell.collapsePanel(other);
+    }
 }
 
 export async function mountSideSheetWidgetExtracted(ctx: any, side: 'left' | 'right', widgetId: string): Promise<void> {
-        const widget = await ctx.widgetManager.getOrCreateWidget(widgetId);
-        const area = widget.isAttached ? ctx.shell.getAreaFor(widget) : undefined;
-        if (!widget.isAttached || area !== side) {
-            await ctx.shell.addWidget(widget, { area: side });
-        }
-        await ctx.shell.activateWidget(widgetId);
-        if (!ctx.shell.isExpanded(side)) {
-            ctx.shell.expandPanel(side);
-        }
+    const widget = await ctx.widgetManager.getOrCreateWidget(widgetId);
+    const area = widget.isAttached ? ctx.shell.getAreaFor(widget) : undefined;
+    if (!widget.isAttached || area !== side) {
+        await ctx.shell.addWidget(widget, { area: side });
+    }
+    await ctx.shell.activateWidget(widgetId);
+    if (!ctx.shell.isExpanded(side)) {
+        ctx.shell.expandPanel(side);
+    }
 }
 
 export async function openDiffInWorkHubExtracted(ctx: any, projectId?: string): Promise<void> {
-        if (!ctx.mobileActive) {
-            const widget = await ctx.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID);
-            if (!widget.isAttached) {
-                ctx.shell.addWidget(widget, { area: 'main' });
-            }
-            await ctx.shell.activateWidget(widget.id);
-            return;
+    if (!ctx.mobileActive) {
+        const widget = await ctx.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID);
+        if (!widget.isAttached) {
+            ctx.shell.addWidget(widget, { area: 'main' });
         }
-        const onHubLanding = ctx.projectsPanel?.isHomeMode() === true
-            && ctx.projectsPanel.isVisible()
-            && document.body.classList.contains('theia-mobile-mod-landing')
-            && !ctx.landingLeftThisSession;
-        if (onHubLanding) {
-            ctx.landing.applyLandingChrome();
-            await ctx.projectsPanel?.openDiffView(projectId);
-            ctx.refreshBottomBar();
-            return;
-        }
-        await ctx.openProjectScopedDiffView(projectId);
+        await ctx.shell.activateWidget(widget.id);
+        return;
+    }
+    const onHubLanding = ctx.projectsPanel?.isHomeMode() === true
+        && ctx.projectsPanel.isVisible()
+        && document.body.classList.contains('theia-mobile-mod-landing')
+        && !ctx.landingLeftThisSession;
+    if (onHubLanding) {
+        ctx.landing.applyLandingChrome();
+        await ctx.projectsPanel?.openDiffView(projectId);
+        ctx.refreshBottomBar();
+        return;
+    }
+    await ctx.openProjectScopedDiffView(projectId);
 }
 
 export async function openProjectScopedDiffViewExtracted(ctx: any, projectId?: string): Promise<void> {
-        ctx.hidePullRequestPanel();
-        await ctx.dismissSheetsAsync();
-        if (ctx.shell.isExpanded('bottom')) {
-            await ctx.shell.collapsePanel('bottom');
-        }
-        if (ctx.projectsPanel?.isHomeMode()) {
-            ctx.projectsPanel.hide();
-            ctx.projectsPanel.dispose();
-            ctx.projectsPanel.node.parentElement?.removeChild(ctx.projectsPanel.node);
-            ctx.setTrackedProjectsPanel(undefined);
-        }
-        ctx.ensureProjectsPanel(false);
-        const panel = ctx.projectsPanel;
-        if (!panel) {
-            return;
-        }
-        document.body.classList.remove('theia-mobile-mod-landing');
-        await panel.show();
-        const resolvedProjectId = projectId ?? (await ctx.projectsService.loadProjects())
-            .find(project => project.isCurrent)?.id;
-        await panel.openProjectDiffView(resolvedProjectId);
-        ctx.refreshBottomBar();
-        ctx.refreshWorkbenchTopBar();
+    ctx.hidePullRequestPanel();
+    await ctx.dismissSheetsAsync();
+    if (ctx.shell.isExpanded('bottom')) {
+        await ctx.shell.collapsePanel('bottom');
+    }
+    if (ctx.projectsPanel?.isHomeMode()) {
+        ctx.projectsPanel.hide();
+        ctx.projectsPanel.dispose();
+        ctx.projectsPanel.node.parentElement?.removeChild(ctx.projectsPanel.node);
+        ctx.setTrackedProjectsPanel(undefined);
+    }
+    ctx.ensureProjectsPanel(false);
+    const panel = ctx.projectsPanel;
+    if (!panel) {
+        return;
+    }
+    document.body.classList.remove('theia-mobile-mod-landing');
+    await panel.show();
+    const resolvedProjectId = projectId ?? (await ctx.projectsService.loadProjects())
+        .find(project => project.isCurrent)?.id;
+    await panel.openProjectDiffView(resolvedProjectId);
+    ctx.refreshBottomBar();
+    ctx.refreshWorkbenchTopBar();
 }
 
 export function refreshWorkbenchTopBarExtracted(ctx: any): void {
-        for (const widget of toArray(ctx.shell.topPanel.widgets)) {
-            if (widget instanceof QaapWorkbenchHistoryNavWidget) {
-                widget.refreshChrome();
-            }
-            if (widget instanceof QaapWorkbenchRightControlsWidget) {
-                widget.refreshChrome();
-            }
+    for (const widget of toArray(ctx.shell.topPanel.widgets)) {
+        if (widget instanceof QaapWorkbenchHistoryNavWidget) {
+            widget.refreshChrome();
         }
+        if (widget instanceof QaapWorkbenchRightControlsWidget) {
+            widget.refreshChrome();
+        }
+    }
 }
 
 export async function executeAndDismissExtracted(ctx: any, commandId: string): Promise<void> {
-        try {
-            await ctx.commands.executeCommand(commandId);
-        } catch (e) {
-            console.error(`[qaap-mobile-shell] secondary action failed: ${commandId}`, e);
-        }
-        ctx.scheduleSnapAndUiRefresh();
+    try {
+        await ctx.commands.executeCommand(commandId);
+    } catch (e) {
+        console.error(`[qaap-mobile-shell] secondary action failed: ${commandId}`, e);
+    }
+    ctx.scheduleSnapAndUiRefresh();
 }
 
 export function resolveMobileIdeHeaderViewIdExtracted(ctx: any): MobileBottomButtonId {
-        if (ctx.bottomBarController.isMobileBottomButtonActive('agent')) {
-            return 'agent';
-        }
-        const active = ctx.bottomBarController.getMobileIdeHeaderViewButtons()
-            .find(def => ctx.bottomBarController.isMobileBottomButtonActive(def.id));
-        return active?.id ?? 'editor';
+    if (ctx.bottomBarController.isMobileBottomButtonActive('agent')) {
+        return 'agent';
+    }
+    const active = ctx.bottomBarController.getMobileIdeHeaderViewButtons()
+        .find(def => ctx.bottomBarController.isMobileBottomButtonActive(def.id));
+    return active?.id ?? 'editor';
 }
 
 export async function activateMobileIdeHeaderViewExtracted(ctx: any, id: MobileBottomButtonId): Promise<void> {
-        await ctx.bottomBarController.activateMobileIdeHeaderView(id);
-        ctx.refreshBottomBar();
-        ctx.refreshWorkbenchTopBar();
+    await ctx.bottomBarController.activateMobileIdeHeaderView(id);
+    ctx.refreshBottomBar();
+    ctx.refreshWorkbenchTopBar();
 }
 
 export function relayoutMainPreviewWidgetsExtracted(ctx: any): void {
-        for (const widget of toArray(ctx.shell.mainPanel.widgets())) {
-            if (widget.id.startsWith('mini-browser:')) {
-                ctx.sideSheetController.relayoutSheetTree(widget);
-            }
+    for (const widget of toArray(ctx.shell.mainPanel.widgets())) {
+        if (widget.id.startsWith('mini-browser:')) {
+            ctx.sideSheetController.relayoutSheetTree(widget);
         }
+    }
 }
 
 export async function toggleMobileAgentSheetExtracted(ctx: any): Promise<void> {
-        ctx.hideProjectsPanel();
-        ctx.hidePullRequestPanel();
-        if (ctx.isMobileAgentSheetVisible()) {
-            await ctx.collapseMobileSidePanels();
-            ctx.scheduleSnapAndUiRefresh();
-            return;
-        }
-        const project = await ctx.resolveCurrentProjectForAgent();
-        if (project) {
-            const cwd = ctx.projectsService.getProjectCwd(project);
-            writeStoredComposerSurface(cwd, 'chat');
-            ctx.projectsPanel?.preferComposerSurface('chat', cwd);
-        }
-        // Mobile "Agent" opens Theia AI Chat in the right sheet.
-        await ctx.openMobileSideSheet('right', WORKBENCH_CHAT_VIEW_WIDGET_ID);
+    ctx.hideProjectsPanel();
+    ctx.hidePullRequestPanel();
+    if (ctx.isMobileAgentSheetVisible()) {
+        await ctx.collapseMobileSidePanels();
         ctx.scheduleSnapAndUiRefresh();
+        return;
+    }
+    const project = await ctx.resolveCurrentProjectForAgent();
+    if (project) {
+        const cwd = ctx.projectsService.getProjectCwd(project);
+        writeStoredComposerSurface(cwd, 'chat');
+        ctx.projectsPanel?.preferComposerSurface('chat', cwd);
+    }
+    // Mobile "Agent" opens Theia AI Chat in the right sheet.
+    await ctx.openMobileSideSheet('right', WORKBENCH_CHAT_VIEW_WIDGET_ID);
+    ctx.scheduleSnapAndUiRefresh();
 }
 
 export async function resolveCurrentProjectForAgentExtracted(ctx: any): Promise<MobileProjectEntry | undefined> {
-        try {
-            const projects = await ctx.projectsService.loadProjects();
-            return ctx.projectsService.resolveCurrentWorkspaceProject(projects);
-        } catch {
-            return undefined;
-        }
+    try {
+        const projects = await ctx.projectsService.loadProjects();
+        return ctx.projectsService.resolveCurrentWorkspaceProject(projects);
+    } catch {
+        return undefined;
+    }
 }
 
 export async function toggleMobileExploreSheetExtracted(ctx: any): Promise<void> {
-        ctx.hideProjectsPanel();
-        ctx.hidePullRequestPanel();
-        if (ctx.isMobileExploreSheetVisible()) {
-            await ctx.collapseMobileSidePanels();
-            syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
-            ctx.scheduleSnapAndUiRefresh();
-            return;
-        }
-        await ctx.openMobileSideSheet('left', EXPLORER_VIEW_CONTAINER_ID);
+    ctx.hideProjectsPanel();
+    ctx.hidePullRequestPanel();
+    if (ctx.isMobileExploreSheetVisible()) {
+        await ctx.collapseMobileSidePanels();
+        syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
         ctx.scheduleSnapAndUiRefresh();
+        return;
+    }
+    await ctx.openMobileSideSheet('left', EXPLORER_VIEW_CONTAINER_ID);
+    ctx.scheduleSnapAndUiRefresh();
 }
 
 export function isMobileExploreSheetVisibleExtracted(ctx: any): boolean {
-        if (!ctx.shell.isExpanded('left') || ctx.sideSheetController.isSidePanelSheetCollapsedInDom('left')) {
-            return false;
-        }
-        const currentTitle = ctx.shell.leftPanelHandler.tabBar.currentTitle;
-        return currentTitle?.owner?.id === EXPLORER_VIEW_CONTAINER_ID;
+    if (!ctx.shell.isExpanded('left') || ctx.sideSheetController.isSidePanelSheetCollapsedInDom('left')) {
+        return false;
+    }
+    const currentTitle = ctx.shell.leftPanelHandler.tabBar.currentTitle;
+    return currentTitle?.owner?.id === EXPLORER_VIEW_CONTAINER_ID;
 }
 
 export function getActivePreviewWidgetExtracted(ctx: any): LuminoWidget | undefined {
-        const active = ctx.shell.activeWidget ?? ctx.shell.currentWidget;
-        if (isMiniBrowserPreviewWidgetId(active?.id) && active && ctx.shell.getAreaFor(active) === 'main') {
-            return active;
-        }
-        return undefined;
+    const active = ctx.shell.activeWidget ?? ctx.shell.currentWidget;
+    if (isMiniBrowserPreviewWidgetId(active?.id) && active && ctx.shell.getAreaFor(active) === 'main') {
+        return active;
+    }
+    return undefined;
 }
 
 export function findPreviewWidgetExtracted(ctx: any): LuminoWidget | undefined {
-        for (const area of ['main', 'right', 'left', 'bottom'] as ApplicationShell.Area[]) {
-            const match = ctx.shell.getWidgets(area).find(widget => isMiniBrowserPreviewWidgetId(widget.id));
-            if (match) {
-                return match;
-            }
+    for (const area of ['main', 'right', 'left', 'bottom'] as ApplicationShell.Area[]) {
+        const match = ctx.shell.getWidgets(area).find(widget => isMiniBrowserPreviewWidgetId(widget.id));
+        if (match) {
+            return match;
         }
-        return undefined;
+    }
+    return undefined;
 }
 
 export async function closeStaleMainPreviewWidgetExtracted(ctx: any): Promise<void> {
-        const preview = ctx.getMainPreviewWidget();
-        if (!preview || ctx.isMainPreviewWidgetLive(preview)) {
-            return;
-        }
-        await ctx.shell.closeWidget(preview.id, { save: false });
+    const preview = ctx.getMainPreviewWidget();
+    if (!preview || ctx.isMainPreviewWidgetLive(preview)) {
+        return;
+    }
+    await ctx.shell.closeWidget(preview.id, { save: false });
 }
 

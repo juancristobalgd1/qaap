@@ -40,7 +40,7 @@ export const PATCH_NONE_REASON_METRIC: Record<QaapTranscriptStreamingPatchNoneRe
 
 type TranscriptAgentPatchRejectReason = 'no_prev' | 'predicates' | 'applier' | 'thinking';
 
-const AGENT_REPLACE_REASON_METRIC: Record<TranscriptAgentPatchRejectReason, QaapTranscriptRenderMetricKind> = {
+export const AGENT_REPLACE_REASON_METRIC: Record<TranscriptAgentPatchRejectReason, QaapTranscriptRenderMetricKind> = {
     no_prev: 'render_patch_last_agent_replace_no_prev',
     predicates: 'render_patch_last_agent_replace_predicates',
     applier: 'render_patch_last_agent_replace_applier',

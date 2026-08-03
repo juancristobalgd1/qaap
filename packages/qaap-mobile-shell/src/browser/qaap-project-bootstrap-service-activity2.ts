@@ -91,6 +91,7 @@ import {
     disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
     delay as delayHelper,
 } from './qaap-project-bootstrap-helpers';
+import { DEV_PORT_RECOVERY_MAX_ATTEMPTS, PORT_IN_USE_REGEX, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS, TERMINAL_READY_DELAY_MS, TERMINAL_SPAWN_MAX_ATTEMPTS, TERMINAL_SPAWN_RETRY_DELAY_MS } from './qaap-project-bootstrap-service';
 
 export async function failDevRunExtracted(ctx: any, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },

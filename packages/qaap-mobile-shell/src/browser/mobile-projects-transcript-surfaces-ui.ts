@@ -112,7 +112,7 @@ interface ConversationPreviewRuntimeState {
  * backend restart) retire the claim the iframe is mounted on; nothing else probes once mounted,
  * so without this watch the surface shows the proxy's 403 page until a full reload.
  */
-const TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS = 8_000;
+export const TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS = 8_000;
 
 /** Panel surface for Plan, Changes, Preview, Files, and Terminal execution tabs. */
 export interface MobileProjectsTranscriptSurfacesHost {

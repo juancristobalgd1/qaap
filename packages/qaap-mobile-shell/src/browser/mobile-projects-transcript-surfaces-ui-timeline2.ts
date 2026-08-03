@@ -82,6 +82,7 @@ import {
     resolveTranscriptTerminalTabTitle as resolveTranscriptTerminalTabTitleHelper,
     toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
 } from './mobile-projects-transcript-surfaces-helpers';
+import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS } from './mobile-projects-transcript-surfaces-ui';
 
 export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: any, host: HTMLElement,
         project: MobileProjectEntry,

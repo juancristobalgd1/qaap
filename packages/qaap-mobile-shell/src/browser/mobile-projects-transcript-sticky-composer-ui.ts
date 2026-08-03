@@ -144,7 +144,7 @@ import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptions
 import { appendRunningGitActionToTranscriptExtracted, applyGitActionTranscriptConversationExtracted, buildComposerActivityFingerprintExtracted, buildTranscriptComposerActivityStackExtracted, buildTranscriptComposerChangesPillExtracted, dispatchQueuedFollowUpInParallelExtracted, flushTranscriptFollowUpQueueExtracted, isTranscriptFollowUpReadyExtracted, markPendingGitActionFailedExtracted, recordComposerGitActionInTranscriptExtracted, refreshComposerActivityStackExtracted, refreshTranscriptComposerActivityIfNeededExtracted, sendQueuedFollowUpNowExtracted, startIsolatedRunIfRequestedExtracted, syncComposerActivityFingerprintExtracted } from './mobile-projects-transcript-sticky-composer-ui-timeline2';
 import { mountTranscriptStickyComposerAsyncExtracted } from './mobile-projects-transcript-sticky-composer-ui-tool-pills2';
 
-const COMPOSER_PREVIEW_HEALTH_INTERVAL_MS = 5_000;
+export const COMPOSER_PREVIEW_HEALTH_INTERVAL_MS = 5_000;
 
 export interface TranscriptStickyComposerColumnOptions {
     project: MobileProjectEntry;

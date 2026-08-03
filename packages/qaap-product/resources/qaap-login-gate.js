@@ -563,15 +563,35 @@
             });
     }
 
+    // Speculatively preload bundle.js while the auth check is in flight.
+    // On a warm session the user is signed in — the bundle starts downloading
+    // immediately instead of waiting for the /auth/session round-trip.
+    // On a cold session the preload is wasted bandwidth, but the login gate
+    // is shown quickly (it has its own inline CSS) so the UX is still fast.
+    function speculativePreloadBundle() {
+        try {
+            var link = document.createElement('link');
+            link.rel = 'modulepreload';
+            link.href = './bundle.js';
+            link.as = 'script';
+            link.crossOrigin = 'anonymous';
+            (document.head || document.documentElement).appendChild(link);
+        } catch (_) { /* ignore */ }
+    }
+
     if (window.location.search.indexOf('qaap_oauth=github') !== -1
         || window.location.search.indexOf('qaap_oauth_error=1') !== -1) {
+        speculativePreloadBundle();
         resumeAfterOAuthOrSession();
     } else if (isSignedIn()) {
+        speculativePreloadBundle();
         verifyStoredSessionThenLoad();
     } else {
         trySkipAuthDevMode().then(function (skipped) {
             if (!skipped) {
                 resumeAfterOAuthOrSession();
+            } else {
+                speculativePreloadBundle();
             }
         }).catch(function () {
             resumeAfterOAuthOrSession();

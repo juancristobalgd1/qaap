@@ -13,6 +13,7 @@ import {
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
 } from './mobile-projects-open';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileShellSessionState } from './mobile-shell-session-state';
 
@@ -67,6 +68,10 @@ export class MobileShellIdeFallbackController {
     }
 
     openDesktopIde(): void {
+        // Classic IDE is desktop-only — never activate it on a narrow/touch viewport.
+        if (matchesMobileNarrowViewport()) {
+            return;
+        }
         this.host.cancelAgentsBootstrap();
         clearPreferAgentsSurface();
         markPreferDesktopIde();
@@ -76,25 +81,12 @@ export class MobileShellIdeFallbackController {
         document.body.classList.remove('theia-mobile-mod-landing');
         clearMobileWorkHubBootGuard();
         this.disposeProjectsPanelForDesktopIde();
-        if (this.host.shouldActivateMobileLayout()) {
-            if (!this.host.isMobileActive()) {
-                this.host.enterMobileLayout();
-            } else {
-                this.host.syncMobileHubPrimaryBottomChrome();
-                this.host.refreshBottomBar();
-                this.host.refreshWorkbenchTopBar();
-                this.host.forceCenterColumnFullWidth();
-                this.host.scheduleSnapAndUiRefresh();
-            }
-        } else {
-            this.host.leaveMobileLayout();
-        }
+        // Classic IDE always uses the normal desktop layout (never the mobile one-column view).
+        this.host.leaveMobileLayout();
         this.host.syncOverlayEdgeSwipeZones();
         this.host.onMediaChange();
         window.requestAnimationFrame(() => {
-            if (!this.host.shouldActivateMobileLayout()) {
-                void this.host.ensureDesktopSidePanelSizes();
-            }
+            void this.host.ensureDesktopSidePanelSizes();
             this.host.requestFullShellRelayout();
         });
     }

@@ -32836,3 +32836,20 @@ body.theia-dark .theia-mobile-agent-web-search,
 .theia-mobile-process-accordion-run-stop+.theia-mobile-process-accordion-chevron {
   margin-left: 8px;
 }
+
+/* === Mobile IDE chrome: hidden on narrow viewport (IDE is desktop-only) === */
+/* The bottom bar, side sheets, overlay host, and workbench top bar are IDE-only chrome.
+   On narrow viewports the user never enters the IDE, so these elements are never needed.
+   Hiding them via CSS avoids rendering overhead and prevents any flash of IDE chrome. */
+@media (max-width: 767px), (pointer: coarse) {
+    .theia-mobile-bottom-chrome-host,
+    .theia-mobile-bottom-chrome-host > #theia-mobile-bottom-bar,
+    .theia-mobile-bottom-chrome-host > #theia-statusBar,
+    .theia-mobile-bottom-activity-bar,
+    .theia-mobile-side-sheet,
+    .theia-mobile-overlay-host,
+    .theia-mobile-workbench-top-bar:not([data-qaap-work-hub-top-bar]),
+    .theia-mobile-bottom-split-panel {
+        display: none !important;
+    }
+}
