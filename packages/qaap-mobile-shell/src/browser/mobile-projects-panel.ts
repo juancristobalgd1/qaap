@@ -303,6 +303,11 @@ import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-
 import {
     type TranscriptWorkspaceSurfaceKey,
 } from './qaap-transcript-workspace-surfaces-cache';
+import {
+    createHeaderIdeViewIcon as createHeaderIdeViewIconHelper,
+    createHeaderIdeViewChevron as createHeaderIdeViewChevronHelper,
+    appendHeaderOverflowSeparator as appendHeaderOverflowSeparatorHelper,
+} from './mobile-projects-panel-dom-helpers';
 
 export interface MobileProjectsPanelDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -1824,17 +1829,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected createHeaderIdeViewIcon(icon: string): HTMLElement {
-        const span = document.createElement('span');
-        span.className = `codicon ${icon} theia-mobile-projects-ide-view-picker-icon`;
-        span.setAttribute('aria-hidden', 'true');
-        return span;
+        return createHeaderIdeViewIconHelper(icon);
     }
 
     protected createHeaderIdeViewChevron(): HTMLElement {
-        const span = document.createElement('span');
-        span.className = 'codicon codicon-chevron-down theia-mobile-projects-ide-view-picker-chevron';
-        span.setAttribute('aria-hidden', 'true');
-        return span;
+        return createHeaderIdeViewChevronHelper();
     }
 
     protected onHeaderIdeViewPickerClick(event: MouseEvent): void {
@@ -2118,13 +2117,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected appendHeaderOverflowSeparator(menu: HTMLElement): void {
-        if (!menu.childElementCount) {
-            return;
-        }
-        const separator = document.createElement('div');
-        separator.className = 'qaap-work-hub-toolbar-menu-separator';
-        separator.setAttribute('role', 'separator');
-        menu.append(separator);
+        appendHeaderOverflowSeparatorHelper(menu);
     }
 
     protected isCopyConversationEnabled(): boolean {
