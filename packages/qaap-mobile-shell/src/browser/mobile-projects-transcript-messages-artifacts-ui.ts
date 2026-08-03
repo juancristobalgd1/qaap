@@ -19,9 +19,7 @@ import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaiting
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
-    hasUnfinishedAgentWork,
     resolveTranscriptEffectiveStatus,
-    shouldShowTranscriptLiveStatus,
 } from '../common/qaap-transcript-turn-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigateTarget, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
@@ -152,6 +150,21 @@ import {
     normalizeMobileClosingNarrativeText,
     type TranscriptActivityTimelineItem,
 } from './mobile-projects-transcript-timeline-utils';
+import {
+    destroyThinkingOrbHosts as destroyThinkingOrbHostsHelper,
+    queueExecutionTimelineRefresh as queueExecutionTimelineRefreshHelper,
+    skipExecutionTimelineRefresh as skipExecutionTimelineRefreshHelper,
+    consumeExecutionTimelineRefresh as consumeExecutionTimelineRefreshHelper,
+    consumeSkippedExecutionTimelineRefresh as consumeSkippedExecutionTimelineRefreshHelper,
+    didExecutionToolSegmentsChange as didExecutionToolSegmentsChangeHelper,
+    isConversationWorking as isConversationWorkingHelper,
+    isConversationFinalResponseCommitted as isConversationFinalResponseCommittedHelper,
+    isConversationError as isConversationErrorHelper,
+    isAgentMessageCancelled as isAgentMessageCancelledHelper,
+    resolveTranscriptStreamTimeoutDetail as resolveTranscriptStreamTimeoutDetailHelper,
+    shouldShowPinnedTranscriptLiveStatus as shouldShowPinnedTranscriptLiveStatusHelper,
+    resolveTranscriptThoughtBriefIconClass as resolveTranscriptThoughtBriefIconClassHelper,
+} from './mobile-projects-transcript-messages-artifacts-helpers';
 
 /** Leading "Error: " marker prepended by {@link traceEventsToSegments} when it
  *  converts an `error` trace event into a plain text segment. Stripped before
@@ -168,8 +181,6 @@ const transcriptLiveStatusTickerBound = new WeakSet<HTMLElement>();
 const transcriptToolGroupItems = new WeakMap<HTMLElement, Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>[]>();
 const transcriptToolGroupUmbrella = new WeakMap<HTMLElement, ToolUmbrella>();
 const transcriptSummarySpinners = new WeakMap<HTMLElement, HTMLElement>();
-const pendingExecutionTimelineRefreshSegments = new WeakMap<HTMLElement, readonly QaapAgentMessageSegmentDTO[]>();
-const skippedExecutionTimelineRefreshRows = new WeakSet<HTMLElement>();
 
 export interface TranscriptActivityTimelineOptions {
     /** Last N steps in chat; omit or ≤0 to show the full trace (Plan tab). */
@@ -230,68 +241,30 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     protected destroyThinkingOrbHosts(root: ParentNode): void {
-        for (const host of root.querySelectorAll<HTMLElement>(`.${QAAP_THINKING_ORB_INDICATOR_CLASS}`)) {
-            destroyThinkingOrbIndicator(host);
-        }
+        destroyThinkingOrbHostsHelper(root);
     }
 
     protected queueExecutionTimelineRefresh(row: HTMLElement, segments: readonly QaapAgentMessageSegmentDTO[]): void {
-        pendingExecutionTimelineRefreshSegments.set(row, segments);
+        queueExecutionTimelineRefreshHelper(row, segments);
     }
 
     protected skipExecutionTimelineRefresh(row: HTMLElement): void {
-        skippedExecutionTimelineRefreshRows.add(row);
+        skipExecutionTimelineRefreshHelper(row);
     }
 
     protected consumeExecutionTimelineRefresh(row: HTMLElement): readonly QaapAgentMessageSegmentDTO[] | undefined {
-        const segments = pendingExecutionTimelineRefreshSegments.get(row);
-        if (segments) {
-            pendingExecutionTimelineRefreshSegments.delete(row);
-            skippedExecutionTimelineRefreshRows.delete(row);
-        }
-        return segments;
+        return consumeExecutionTimelineRefreshHelper(row);
     }
 
     protected consumeSkippedExecutionTimelineRefresh(row: HTMLElement): boolean {
-        if (!skippedExecutionTimelineRefreshRows.has(row)) {
-            return false;
-        }
-        skippedExecutionTimelineRefreshRows.delete(row);
-        return true;
+        return consumeSkippedExecutionTimelineRefreshHelper(row);
     }
 
     protected didExecutionToolSegmentsChange(
         previousSegments: readonly QaapAgentMessageSegmentDTO[],
         nextSegments: readonly QaapAgentMessageSegmentDTO[],
     ): boolean {
-        const length = Math.max(previousSegments.length, nextSegments.length);
-        for (let index = 0; index < length; index++) {
-            const previous = previousSegments[index];
-            const next = nextSegments[index];
-            if (previous?.type !== 'tool' && next?.type !== 'tool') {
-                continue;
-            }
-            if (previous?.type !== 'tool' || next?.type !== 'tool') {
-                return true;
-            }
-            if (previous.toolUseId !== next.toolUseId
-                || previous.name !== next.name
-                || previous.finished !== next.finished) {
-                return true;
-            }
-            // O(1) length pre-check before walking the full common prefix —
-            // args/result can be large while streaming, and a length
-            // mismatch alone already proves a change without comparing
-            // every character.
-            if ((previous.args?.length ?? 0) !== (next.args?.length ?? 0)
-                || (previous.result?.length ?? 0) !== (next.result?.length ?? 0)) {
-                return true;
-            }
-            if (previous.args !== next.args || previous.result !== next.result) {
-                return true;
-            }
-        }
-        return false;
+        return didExecutionToolSegmentsChangeHelper(previousSegments, nextSegments);
     }
 
     createTranscriptAgentSegmentsRow(
@@ -595,10 +568,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
 
     /** True when the conversation is still actively streaming/working. */
     protected isConversationWorking(conv: QaapAgentConversationDTO | undefined, renderStreaming = false): boolean {
-        if (!conv) {
-            return renderStreaming;
-        }
-        return hasUnfinishedAgentWork(conv) || conv.status === 'streaming' || conv.status === 'settled';
+        return isConversationWorkingHelper(conv, renderStreaming);
     }
 
     /**
@@ -607,15 +577,12 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      * is actually ready/idle, not merely because this render pass is non-streaming.
      */
     protected isConversationFinalResponseCommitted(conv: QaapAgentConversationDTO | undefined, renderStreaming: boolean): boolean {
-        if (!conv) {
-            return !renderStreaming;
-        }
-        return conv.status !== 'streaming' && conv.status !== 'settled';
+        return isConversationFinalResponseCommittedHelper(conv, renderStreaming);
     }
 
     /** True when the conversation ended in a failure. */
     protected isConversationError(conv: QaapAgentConversationDTO | undefined): boolean {
-        return conv?.status === 'failed';
+        return isConversationErrorHelper(conv);
     }
 
     /** The most recent agent message in the conversation, if any. Walks
@@ -675,7 +642,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      * mislabeled whenever a later turn happened to end up cancelled.
      */
     protected isAgentMessageCancelled(message: QaapAgentMessageDTO | undefined): boolean {
-        return message?.traceEvents?.some(event => event.type === 'run_cancelled') ?? false;
+        return isAgentMessageCancelledHelper(message);
     }
 
     /**
@@ -1950,28 +1917,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     protected resolveTranscriptStreamTimeoutDetail(
         cause?: TranscriptStreamTimeoutCause,
     ): string | undefined {
-        switch (cause) {
-            case 'sse_disconnected':
-                return nls.localize(
-                    'qaap/mobileProjects/transcriptStreamTimedOutSse',
-                    'The live connection dropped. Retry to sync this turn.',
-                );
-            case 'active_tool':
-                return nls.localize(
-                    'qaap/mobileProjects/transcriptStreamTimedOutTool',
-                    'A command or tool ran too long without returning a result.',
-                );
-            case 'semantic_idle':
-                return nls.localize(
-                    'qaap/mobileProjects/transcriptStreamTimedOutIdle',
-                    'No visible progress (reads, edits, or a reply) within the expected time.',
-                );
-            default:
-                return nls.localize(
-                    'qaap/mobileProjects/transcriptStreamTimedOutDetail',
-                    'Cancel or retry to continue.',
-                );
-        }
+        return resolveTranscriptStreamTimeoutDetailHelper(cause);
     }
 
     protected createTranscriptStreamTimeoutBanner(
@@ -2286,7 +2232,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      * Backend `streaming` / `settled` only — never hide on mid-stream "visually settled".
      */
     protected shouldShowPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
-        return shouldShowTranscriptLiveStatus(conv);
+        return shouldShowPinnedTranscriptLiveStatusHelper(conv);
     }
 
     /**
@@ -3395,11 +3341,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     protected resolveTranscriptThoughtBriefIconClass(active: boolean): string {
-        // LobeHub: Loader2Icon (spin) while thinking, AtomIcon when settled.
-        // Codicon equivalents: `loading` (with theia-animation-spin) / `lightbulb`.
-        return active
-            ? 'codicon codicon-loading theia-animation-spin'
-            : 'codicon codicon-lightbulb';
+        return resolveTranscriptThoughtBriefIconClassHelper(active);
     }
 
     protected syncTranscriptThoughtBriefIcon(icon: HTMLElement, active: boolean): void {
