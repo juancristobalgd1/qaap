@@ -112,6 +112,16 @@ import {
 } from './qaap-sticky-composer-activity-stack';
 import { syncTranscriptQueuedBubbles } from './qaap-transcript-queued-bubbles';
 import {
+    mergeFailedComposerDraft,
+    isIdleComposerFocusStealable,
+    hasComposerAgentActivity as hasComposerAgentActivityHelper,
+    resolveChangedFilesStats as resolveChangedFilesStatsHelper,
+    mapGitChangedFileToComposerView as mapGitChangedFileToComposerViewHelper,
+    resolveGitCommitWorkflowLabel as resolveGitCommitWorkflowLabelHelper,
+} from './mobile-projects-transcript-sticky-composer-helpers';
+// Re-export public API functions from the helpers module.
+export { mergeFailedComposerDraft, isIdleComposerFocusStealable } from './mobile-projects-transcript-sticky-composer-helpers';
+import {
     parkWorkingControlFromAncestor,
     transferWorkingControlToHost,
 } from './qaap-sticky-composer-working-agents-popover';
@@ -166,33 +176,7 @@ export interface TranscriptStickyComposerColumnOptions {
 }
 
 /** Preserve both a failed send and anything the user typed while it was in flight. */
-export function mergeFailedComposerDraft(failedDraft: string, currentDraft: string): string {
-    const failed = failedDraft.trim();
-    const current = currentDraft.trim();
-    if (!failed) {
-        return currentDraft;
-    }
-    if (!current || current === failed) {
-        return failedDraft;
-    }
-    return `${failedDraft}\n\n${currentDraft}`;
-}
-
 /** Panel surface for transcript sticky composer mount, prefs persistence, and follow-up queue. */
-/**
- * True when `active` is a focus holder the idle composer may take focus from:
- * nothing/body, the composer textarea itself, the composer loading
- * placeholder, or xterm's hidden helper textarea (which grabs focus during
- * terminal boot but is never a user-facing input).
- */
-export function isIdleComposerFocusStealable(active: Element | null, textarea: HTMLTextAreaElement | undefined): boolean {
-    if (!active || active === document.body || (textarea !== undefined && active === textarea)) {
-        return true;
-    }
-    return active instanceof HTMLElement
-        && (active.classList.contains('theia-mod-loading') || active.classList.contains('xterm-helper-textarea'));
-}
-
 export interface MobileProjectsTranscriptStickyComposerHost {
     /** Resolves when the frontend app reached 'ready' (immediately if unwired). */
     whenFrontendReady?(): Promise<void>;
@@ -754,28 +738,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
         readonly files: readonly StickyComposerChangedFileView[];
         readonly stats?: { readonly added: number; readonly removed: number };
     }): boolean {
-        return activityFiles.files.length > 0
-            || (activityFiles.stats?.added ?? 0) > 0
-            || (activityFiles.stats?.removed ?? 0) > 0;
+        return hasComposerAgentActivityHelper(activityFiles);
     }
 
     protected resolveChangedFilesStats(
         files: readonly StickyComposerChangedFileView[],
         fallback?: { readonly added: number; readonly removed: number },
     ): { readonly added: number; readonly removed: number } | undefined {
-        if (files.length === 0) {
-            return fallback;
-        }
-        let added = 0;
-        let removed = 0;
-        for (const file of files) {
-            added += file.added ?? 0;
-            removed += file.removed ?? 0;
-        }
-        if (added > 0 || removed > 0) {
-            return { added, removed };
-        }
-        return fallback;
+        return resolveChangedFilesStatsHelper(files, fallback);
     }
 
     protected resolveComposerWorkspaceRoot(
@@ -919,15 +889,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     protected mapGitChangedFileToComposerView(file: QaapGitChangedFile): StickyComposerChangedFileView {
-        const untracked = file.status === 'U' || file.status === '?';
-        const created = untracked || file.status === 'A';
-        return {
-            path: file.path,
-            kind: created ? 'created' : 'edited',
-            added: file.adds > 0 ? file.adds : undefined,
-            removed: file.dels > 0 ? file.dels : undefined,
-            staged: file.staged,
-        };
+        return mapGitChangedFileToComposerViewHelper(file);
     }
 
     protected async refreshComposerActivityGitFilesIfNeeded(
@@ -1300,19 +1262,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     protected resolveGitCommitWorkflowLabel(action: QaapGitCommitWorkflowAction): string {
-        switch (action) {
-            case 'create-branch-commit':
-                return nls.localize('qaap/mobileProjects/createBranchAndCommit', 'Create Branch & Commit');
-            case 'create-branch-commit-push':
-                return nls.localize('qaap/mobileProjects/createBranchCommitPush', 'Create Branch, Commit & Push');
-            case 'commit':
-                return nls.localize('qaap/mobileProjects/commit', 'Commit');
-            case 'commit-create-pr':
-                return nls.localize('qaap/mobileProjects/commitCreatePr', 'Commit & Create PR');
-            case 'commit-push':
-            default:
-                return nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push');
-        }
+        return resolveGitCommitWorkflowLabelHelper(action);
     }
 
     protected async recordComposerGitActionInTranscript(
