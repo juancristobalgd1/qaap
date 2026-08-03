@@ -296,6 +296,7 @@ import {
     type QaapDiffProjectTab,
     type TranscriptTab,
     type WorkHubSearchTarget,
+    type ExecutionSurfaceTabId,
     TRANSCRIPT_CONVERSATION_CACHE_LIMIT,
 } from './mobile-projects-panel-types';
 
@@ -310,6 +311,14 @@ export {
     type WorkHubSearchTarget,
     TRANSCRIPT_CONVERSATION_CACHE_LIMIT,
 } from './mobile-projects-panel-types';
+
+import {
+    applyPanelOptions,
+    wireTranscriptFileOpeners,
+    createPanelRoot,
+    onBootstrapPreviewOpenedHandler,
+    onAuthSessionChangedHandler,
+} from './mobile-projects-panel-init';
 
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
@@ -624,16 +633,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly onAuthSessionChanged = (): void => {
         this.panelLifecycleUi.updateAccountAvatar();
         this.sessionsSidebar?.updateAccountAvatar();
-        if (this.hubView === 'tasks') {
-            this.resetInboxPullRequestState();
-            void this.refreshInboxPullRequests(undefined, true);
-        }
-        if (this.refreshProjectsInFlight) {
-            return;
-        }
-        this.refreshProjectsInFlight = this.refreshProjects().finally(() => {
-            this.refreshProjectsInFlight = undefined;
-        });
+        onAuthSessionChangedHandler(this);
     };
 
     protected readonly onAccountClick = (): void => {
@@ -671,79 +671,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             this,
         );
         bindTranscriptOverlayStateAccessors(this, this.transcriptController.state);
-        this.homeMode = !!options.homeMode;
-        this.whenFrontendReadyProvider = options.whenFrontendReady;
-        this.activeTasks = options.activeTasks;
-        this.conversations = options.conversations;
-        this.backgroundContext = options.backgroundContext;
-        this.inboxStream = options.inboxStream;
-        this.conversationFlags = options.conversationFlags;
-        this.createChatInputWidget = options.createChatInputWidget;
-        this.createChatViewWidget = options.createChatViewWidget;
-        this.createDiffReviewWidget = options.createDiffReviewWidget;
-        this.pickContextVariable = options.pickContextVariable;
-        this.formatContextChip = options.formatContextChip;
-        this.resolveAttachmentPreview = options.resolveAttachmentPreview;
-        this.getComposerVariables = options.getComposerVariables;
-        this.getComposerSkills = options.getComposerSkills;
-        this.getComposerSlashCommands = options.getComposerSlashCommands;
-        this.chatService = options.chatService;
-        this.chatAgentService = options.chatAgentService;
-        this.messageService = options.messageService;
-        this.resolveVerifyChecks = options.resolveVerifyChecks;
-        this.uploadComposerFeedbackImages = options.uploadComposerFeedbackImages;
-        const editorOpenFallback = options.openTranscriptFile;
-        this.openTranscriptFile = filePath => {
-            const state = this.transcriptController.state;
-            const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
-            const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
-            if (project && summary) {
-                return this.transcriptSurfacesUi.revealTranscriptFile(project, summary, filePath);
-            }
-            if (editorOpenFallback) {
-                return editorOpenFallback(filePath);
-            }
-        };
-        this.openTranscriptReviewFile = filePath => {
-            const state = this.transcriptController.state;
-            const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
-            const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
-            if (project && summary) {
-                return this.transcriptSurfacesUi.revealTranscriptReviewFile(project, summary, filePath);
-            }
-        };
-        this.createTranscriptFilesViewServices = options.createTranscriptFilesViewServices;
-        this.createTranscriptTerminalViewServices = options.createTranscriptTerminalViewServices;
-        this.previewSurfaceRegistry = options.previewSurfaceRegistry;
-        this.previewInspectorDeps = options.previewInspectorDeps;
-        this.previewClipboard = options.clipboard;
-        this.readPreference = options.readPreference;
-        this.preferenceService = options.preferenceService;
-        this.appearanceModeService = options.appearanceModeService;
-        this.getRegisteredLanguageModels = options.getRegisteredLanguageModels;
-        this.quickInputService = options.quickInputService;
-        this.commitMessageAi = options.commitMessageAi;
-        this.composerPromptImprover = options.composerPromptImprover;
-        this.openPreferencesSheet = options.openPreferencesSheet;
-        this.openAiConfigurationSheet = options.openAiConfigurationSheet;
-        this.headerOverflowMenuGroups = options.headerOverflowMenuGroups;
-        this.sessionsSidebarContainer = options.sessionsSidebarContainer ?? (() => this.shouldEmbedSessionsSidebarInPanel() ? this.root : undefined);
-        this.mobileIdeViewPicker = options.mobileIdeViewPicker;
-        this.agentFinishedToast = options.agentFinishedToast;
-        this.projectBootstrap = options.projectBootstrap;
-        this.agUiFrontendTools = options.agUiFrontendTools;
-        this.expandComposerDraftForSubmit = options.expandComposerDraftForSubmit;
-        this.applyComposerAttachmentsToDraft = options.applyComposerAttachmentsToDraft;
-        this.composerEditorContextService = options.composerEditorContextService;
-        this.workHubProjectSkillRoots = options.workHubProjectSkillRoots;
-        this.root = document.createElement('div');
-        this.root.className = this.homeMode ? 'theia-mobile-projects theia-mod-home' : 'theia-mobile-projects';
-        if (!this.homeMode) {
-            this.root.setAttribute('role', 'dialog');
-            this.root.setAttribute('aria-modal', 'true');
-        }
-        this.root.setAttribute('aria-hidden', 'true');
-        this.root.hidden = true;
+        applyPanelOptions(this, options);
+        wireTranscriptFileOpeners(this, options);
+        createPanelRoot(this);
 
         const grabber = this.panelChromeUi.constructPanelShell();
         this.panelChromeUi.wirePanelInteractions(grabber, this.onAuthSessionChanged);
@@ -756,38 +686,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         bindAgentFinishedToastCallbacksExtracted(this);
     }
 
-    /**
-     * The bootstrap just opened/navigated the IDE mini-browser preview widget. While the Work Hub
-     * is the foreground surface that widget sits hidden behind the hub overlay and is suspended to
-     * `about:blank`, so every "Open preview" affordance looked like a silent no-op. Mirror the
-     * navigation into the hub's own Preview tab — but only for explicit user-initiated opens
-     * (pill / link / manual). Agent/auto paths must not yank the transcript to Browser.
-     */
     protected readonly onBootstrapPreviewOpened = (event: Event): void => {
-        if (!this.visible || !this.agentsHubShellActive) {
-            return;
-        }
-        const detail = (event as CustomEvent<{ userInitiated?: boolean }>).detail;
-        // Explicit false = agent/auto path. Missing detail = legacy user focusPreview.
-        if (detail?.userInitiated === false) {
-            return;
-        }
-        const state = this.transcriptController.state;
-        const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
-        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
-        if (!project || !summary) {
-            return;
-        }
-        // The bootstrap is scoped to the ACTIVE workspace. If the open transcript belongs to a
-        // different project, surfacing its Preview tab here would show (and let the surface
-        // record) another app's preview — never mirror a foreign bootstrap navigation.
-        if (!this.projectOwnsActiveBootstrap(project)) {
-            return;
-        }
-        if (this.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
-            return;
-        }
-        this.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
+        onBootstrapPreviewOpenedHandler(this, event);
     };
 
     /** True when `project`'s clone directory is the workspace the bootstrap service operates on. */
@@ -797,6 +697,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected handleHeaderBackClick(): void {
         this.hubHeaderUi.handleHeaderBackClick();
+    }
+
+    protected selectTranscriptTab(tab: ExecutionSurfaceTabId, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+        this.executionSurfaceTabsUi.selectTranscriptTab(tab, project, summary);
     }
 
     /** Seam for {@link MobileProjectsStickyComposerSheetsUi.closeAllComposerSheets}. */

@@ -188,6 +188,7 @@ export interface QaapDiffProjectTab {
 }
 
 /** Tabs of the transcript sheet (execution view). 'messages' is the chat tab. */
+export type { ExecutionSurfaceTabId };
 export type TranscriptTab = ExecutionSurfaceTabId;
 
 /** Max cached full conversation DTOs kept in memory for a long-lived Work Hub tab (LRU-evicted). */
