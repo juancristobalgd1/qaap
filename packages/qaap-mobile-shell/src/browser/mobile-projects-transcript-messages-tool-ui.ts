@@ -12,7 +12,7 @@ import { detectAgentFailureKind, formatStoredAgentFailureMessage } from '../comm
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
-import { getFileIconClass } from '../common/qaap-file-icon-utils';
+
 import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
 import {
     registerDeferredTranscriptMarkdown,
@@ -46,6 +46,16 @@ import {
     type LobeToolTitleParam,
 } from './mobile-projects-transcript-lobehub-ui';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
+import {
+    transcriptToolIconClass as transcriptToolIconClassHelper,
+    transcriptToolVerb as transcriptToolVerbHelper,
+    transcriptShellStateAriaLabel as transcriptShellStateAriaLabelHelper,
+    resolveLobeTraceStatus as resolveLobeTraceStatusHelper,
+    parseTranscriptShellExitCode as parseTranscriptShellExitCodeHelper,
+    isTranscriptActivityTerminalEntryFailed as isTranscriptActivityTerminalEntryFailedHelper,
+    resolveTranscriptActivityTerminalDefaultOpenIndex as resolveTranscriptActivityTerminalDefaultOpenIndexHelper,
+    transcriptFileIconClass as transcriptFileIconClassHelper,
+} from './mobile-projects-transcript-messages-tool-helpers';
 
 /** Sticky expand headers kick in once a grouped panel is long enough to scroll. */
 const TRANSCRIPT_EXPAND_STICKY_TERMINAL_MIN = 6;
@@ -1129,36 +1139,17 @@ export class MobileProjectsTranscriptMessagesToolUi {
     /** Codicon for a tool window header, by resolved tool kind. */
 
     transcriptToolIconClass(kind: string): string {
-        switch (kind) {
-            case 'reading': return 'codicon-file';
-            case 'searching': return 'codicon-search';
-            case 'editing': return 'codicon-edit';
-            case 'terminal': return 'codicon-terminal';
-            case 'mcp': return 'codicon-server-process';
-            default: return 'codicon-tools';
-        }
+        return transcriptToolIconClassHelper(kind);
     }
 
     /** Human verb for a finished/running tool, e.g. "Read", "Edited", "Searched". */
 
     transcriptToolVerb(kind: string, toolName: string): string {
-        switch (kind) {
-            case 'reading': return nls.localize('qaap/mobileProjects/transcriptToolRead', 'Read');
-            case 'searching': return nls.localize('qaap/mobileProjects/transcriptToolSearched', 'Searched');
-            case 'editing': return nls.localize('qaap/mobileProjects/transcriptToolEdited', 'Edited');
-            case 'terminal': return nls.localize('qaap/mobileProjects/transcriptToolRan', 'Ran');
-            case 'mcp': return nls.localize('qaap/mobileProjects/transcriptToolMcp', 'Called');
-            default: return (toolName ?? 'tool').replace(/_/g, ' ');
-        }
+        return transcriptToolVerbHelper(kind, toolName);
     }
 
     transcriptShellStateAriaLabel(finished: boolean, failed: boolean): string {
-        if (!finished) {
-            return nls.localize('qaap/mobileProjects/transcriptShellRunning', 'running');
-        }
-        return failed
-            ? nls.localize('qaap/mobileProjects/transcriptShellFailed', 'failed')
-            : nls.localize('qaap/mobileProjects/transcriptShellDone', 'done');
+        return transcriptShellStateAriaLabelHelper(finished, failed);
     }
 
     createTranscriptTraceStatusIndicator(options: {
@@ -1173,10 +1164,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         readonly finished: boolean;
         readonly failed: boolean;
     }): LobeTraceStatus {
-        if (!options.finished) {
-            return 'running';
-        }
-        return options.failed ? 'failed' : 'completed';
+        return resolveLobeTraceStatusHelper(options);
     }
 
     protected resolveLobeToolTitleOptions(options: {
@@ -1394,12 +1382,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
     }
 
     parseTranscriptShellExitCode(result: string | undefined): number | undefined {
-        if (!result?.trim()) {
-            return undefined;
-        }
-        const match = result.match(/\bexit(?:\s+code)?[:\s]+(\d+)\b/i)
-            ?? result.match(/\b(?:exited|code)\s+(\d+)\b/i);
-        return match ? Number(match[1]) : undefined;
+        return parseTranscriptShellExitCodeHelper(result);
     }
 
     appendTranscriptShellSummaryTail(
@@ -1604,24 +1587,13 @@ export class MobileProjectsTranscriptMessagesToolUi {
     }
 
     protected isTranscriptActivityTerminalEntryFailed(entry: TranscriptActivityTerminalExpandEntry): boolean {
-        if (entry.failed) {
-            return true;
-        }
-        return entry.exitCode !== undefined && entry.exitCode !== 0;
+        return isTranscriptActivityTerminalEntryFailedHelper(entry);
     }
 
     protected resolveTranscriptActivityTerminalDefaultOpenIndex(
         entries: readonly TranscriptActivityTerminalExpandEntry[],
     ): number {
-        const runningIndex = entries.findIndex(entry => entry.finished === false);
-        if (runningIndex >= 0) {
-            return runningIndex;
-        }
-        const failedIndex = entries.findIndex(entry => this.isTranscriptActivityTerminalEntryFailed(entry));
-        if (failedIndex >= 0) {
-            return failedIndex;
-        }
-        return 0;
+        return resolveTranscriptActivityTerminalDefaultOpenIndexHelper(entries);
     }
 
     createTranscriptActivityTerminalExpandCard(
@@ -1978,6 +1950,6 @@ export class MobileProjectsTranscriptMessagesToolUi {
     }
 
     protected transcriptFileIconClass(path: string): string {
-        return getFileIconClass(path);
+        return transcriptFileIconClassHelper(path);
     }
 }
