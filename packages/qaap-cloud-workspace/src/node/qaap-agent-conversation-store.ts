@@ -126,7 +126,6 @@ import {
     type QaapVisualFlowStepEvidence,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 import {
-    createComposerGitActionDisplayMarker,
     type ComposerGitActionDisplayMetadata,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
 import {
@@ -198,6 +197,11 @@ import {
     applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper,
     fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper,
 } from './qaap-agent-conversation-store-helpers';
+import {
+    markTurnFailed as markTurnFailedHelper,
+    buildTaskCreateRequest as buildTaskCreateRequestHelper,
+    recordGitAction as recordGitActionHelper,
+} from './qaap-agent-conversation-store-helpers2';
 import {
     STORE_DIR,
     STREAMING_PERSIST_DEBOUNCE_MS,
@@ -1273,50 +1277,12 @@ export class QaapAgentConversationStore {
             readonly replaceMessageId?: string;
         } = {},
     ): QaapAgentConversation | undefined {
-        const conv = this.conversations.get(conversationId);
-        if (!conv || !metadata.label.trim()) {
-            return undefined;
-        }
-        const content = createComposerGitActionDisplayMarker(metadata);
-        const replaceMessageId = options.replaceMessageId?.trim();
-        if (replaceMessageId) {
-            const replaceIndex = conv.messages.findIndex(message => message.id === replaceMessageId);
-            if (replaceIndex < 0) {
-                return undefined;
-            }
-            const replaced: QaapAgentMessage = {
-                ...conv.messages[replaceIndex],
-                content,
-                createdAt: Date.now(),
-            };
-            const messages = conv.messages.slice();
-            messages[replaceIndex] = replaced;
-            const next: QaapAgentConversation = {
-                ...conv,
-                updatedAt: Date.now(),
-                messages,
-            };
-            this.conversations.set(conversationId, next);
-            this.fire({ type: 'updated', conversation: toConversationSummary(next) });
-            void this.persist();
-            return next;
-        }
-        const userMessage: QaapAgentMessage = {
-            id: options.messageId?.trim() || randomUUID(),
-            role: 'user',
-            content,
-            createdAt: Date.now(),
-        };
-        const next: QaapAgentConversation = {
-            ...conv,
-            updatedAt: Date.now(),
-            messages: [...conv.messages, userMessage],
-        };
-        this.conversations.set(conversationId, next);
-        this.fire({ type: 'message', conversationId, cwd: next.cwd, message: userMessage });
-        this.fire({ type: 'updated', conversation: toConversationSummary(next) });
-        void this.persist();
-        return next;
+        return recordGitActionHelper(conversationId, metadata, options, {
+            getConversation: id => this.conversations.get(id),
+            setConversation: (id, c) => this.conversations.set(id, c),
+            fire: e => this.fire(e),
+            persist: () => this.persist(),
+        });
     }
 
     readVisualVerification(conversationId: string, evidenceId: string): Buffer | undefined {
@@ -2303,45 +2269,7 @@ export class QaapAgentConversationStore {
             readonly status?: QaapAgentConversationStatus;
         },
     ): { readonly conv: QaapAgentConversation; readonly agentMessageId?: string } {
-        let agentMessageId = options.agentMessageId;
-        let messages = conv.messages.map(message => message.id === options.userMessageId
-            ? { ...message, error: undefined }
-            : message
-        );
-        if (agentMessageId) {
-            messages = messages.map(message => message.id === agentMessageId && message.role === 'agent'
-                ? {
-                    ...message,
-                    error: options.reason,
-                    content: message.content?.trim()
-                        ? message.content
-                        : (options.failureBody?.trim() ?? message.content),
-                }
-                : message
-            );
-        } else {
-            const failureMessage: QaapAgentMessage = {
-                id: randomUUID(),
-                role: 'agent',
-                content: options.failureBody?.trim() ?? '',
-                error: options.reason,
-                createdAt: Date.now(),
-                // A run that died before streaming anything still appends at the end of the
-                // array, so the failed turn needs the same explicit link as a streamed one.
-                runUserMessageId: options.userMessageId,
-            };
-            agentMessageId = failureMessage.id;
-            messages = [...messages, failureMessage];
-        }
-        return {
-            conv: {
-                ...conv,
-                status: options.status ?? 'failed',
-                updatedAt: Date.now(),
-                messages,
-            },
-            agentMessageId,
-        };
+        return markTurnFailedHelper(conv, options);
     }
 
     protected finalizeStreamingAgentMessage(
@@ -2532,51 +2460,10 @@ export class QaapAgentConversationStore {
         latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
         turnUserMessageId?: string,
     ): QaapCreateAgentTaskRequest {
-        const turnUserMessage = turnUserMessageId
-            ? conv.messages.find(message => message.id === turnUserMessageId && message.role === 'user')
-            : undefined;
-        // A fallback may be spawned after peer runs appended messages. Build a request-shaped
-        // transcript with this run's user turn at the tail; never let an interleaved peer message
-        // become the command/latest prompt simply because it is last in the shared array.
-        const requestConv = turnUserMessage && conv.messages[conv.messages.length - 1]?.id !== turnUserMessage.id
-            ? {
-                ...conv,
-                messages: [
-                    ...conv.messages.filter(message => message.id !== turnUserMessage.id),
-                    turnUserMessage,
-                ],
-            }
-            : conv;
-        const lastUser = requestConv.messages[requestConv.messages.length - 1];
-        if (turnAgentId === 'shell') {
-            return {
-                command: this.stripLeadingAgentMention(lastUser.content),
-                cwd: requestConv.cwd,
-                title: requestConv.title,
-            };
-        }
-        return {
-            prompt: this.buildPrompt(requestConv, turnAgentId),
-            agent: turnAgentId,
-            cwd: requestConv.cwd,
-            title: requestConv.title,
-            // Clean latest user message (mention-stripped) for opt-in relevance retrieval.
-            ...(lastUser?.content ? { userQuery: this.stripLeadingAgentMention(lastUser.content) } : {}),
-            ...(requestConv.autoApprove === false ? { autoApprove: false } : {}),
-            ...(requestConv.contextPreamble ? { contextPreamble: requestConv.contextPreamble } : {}),
-            ...(requestConv.interactionModeId ? { interactionModeId: requestConv.interactionModeId } : {}),
-            ...(requestConv.approvalPolicyId ? { approvalPolicyId: requestConv.approvalPolicyId } : {}),
-            ...(requestConv.toolApprovalRules ? { toolApprovalRules: requestConv.toolApprovalRules } : {}),
-            ...(latencyMarks ? { latencyMarks } : {}),
-            ...(() => {
-                const agentModel = lastUser?.turnAgentId === turnAgentId
-                    ? lastUser.turnAgentModel ?? requestConv.agentModel ?? requestConv.qaiqModel
-                    : requestConv.agentModel ?? requestConv.qaiqModel;
-                return agentSupportsModelPicker(turnAgentId) && agentModel
-                    ? { agentModel, qaiqModel: agentModel }
-                    : {};
-            })(),
-        };
+        return buildTaskCreateRequestHelper(conv, turnAgentId, latencyMarks, turnUserMessageId, {
+            stripLeadingAgentMention: c => this.stripLeadingAgentMention(c),
+            buildPrompt: (c, a) => this.buildPrompt(c, a),
+        });
     }
 
     protected stripLeadingAgentMention(content: string): string {
