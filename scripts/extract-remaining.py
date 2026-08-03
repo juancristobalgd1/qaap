@@ -176,6 +176,9 @@ def split_params(params_str):
 def get_param_names(params_str):
     if not params_str.strip():
         return []
+    # Strip JSDoc comments from params
+    params_str = re.sub(r'/\*\*.*?\*/', '', params_str, flags=re.DOTALL)
+    params_str = re.sub(r'/\*.*?\*/', '', params_str, flags=re.DOTALL)
     names = []
     for p in split_params(params_str):
         p = p.strip()
@@ -198,10 +201,16 @@ def create_wrapper(parsed):
     return_type = parsed['return_type']
     param_names = get_param_names(params_str)
 
+    # Strip JSDoc comments from params for the wrapper signature
+    clean_params = re.sub(r'/\*\*.*?\*/', '', params_str, flags=re.DOTALL)
+    clean_params = re.sub(r'/\*.*?\*/', '', clean_params, flags=re.DOTALL)
+    # Clean up extra whitespace from removed comments
+    clean_params = re.sub(r'\s+', ' ', clean_params).strip()
+
     mod_str = (modifiers + ' ') if modifiers else ''
     async_str = 'async ' if is_async else ''
 
-    sig = f"    {mod_str}{async_str}{name}({params_str})"
+    sig = f"    {mod_str}{async_str}{name}({clean_params})"
     if return_type:
         sig += f": {return_type}"
     sig += " {"
