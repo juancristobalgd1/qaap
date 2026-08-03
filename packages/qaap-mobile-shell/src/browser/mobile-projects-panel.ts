@@ -312,6 +312,7 @@ import {
     projectOwnsActiveBootstrap as projectOwnsActiveBootstrapHelper,
     isCopyConversationEnabled as isCopyConversationEnabledHelper,
     resolveActiveConversationForCopy as resolveActiveConversationForCopyHelper,
+    renderHeaderOverflowMenuItems as renderHeaderOverflowMenuItemsHelper,
 } from './mobile-projects-panel-helpers';
 
 export interface MobileProjectsPanelDelegate {
@@ -1987,84 +1988,21 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected renderHeaderOverflowMenuItems(menu: HTMLElement): void {
-        menu.replaceChildren();
-        const appendItem = (label: string, icon: string, run: () => void | Promise<void>, enabled = true): void => {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'qaap-work-hub-toolbar-menu-item';
-            item.setAttribute('role', 'menuitem');
-            item.disabled = !enabled;
-            const iconEl = document.createElement('span');
-            iconEl.className = `codicon ${icon}`;
-            iconEl.setAttribute('aria-hidden', 'true');
-            const labelEl = document.createElement('span');
-            labelEl.textContent = label;
-            item.append(iconEl, labelEl);
-            item.addEventListener('click', event => {
-                event.preventDefault();
-                event.stopPropagation();
-                if (item.disabled) {
-                    return;
-                }
-                this.closeHeaderOverflowMenu();
-                void Promise.resolve(run()).catch(() => undefined);
-            });
-            menu.append(item);
-        };
-        appendItem(
-            nls.localize('qaap/workHubToolbar/newChat', 'New Chat'),
-            'codicon-add',
-            () => this.openHeaderNewChat(),
-            this.isHeaderNewChatVisible(),
-        );
-        appendItem(
-            nls.localize('qaap/workHubToolbar/showChats', 'Show Chats'),
-            'codicon-history',
-            () => this.openWorkHubSessionsSidebar(),
-        );
-        appendItem(
-            nls.localize('qaap/workHubToolbar/copyConversation', 'Copy full conversation'),
-            'codicon-copy',
-            () => this.copyActiveConversationToClipboard(),
-            this.isCopyConversationEnabled(),
-        );
-        if (this.openAiConfigurationSheet) {
-            this.appendHeaderOverflowSeparator(menu);
-            appendItem(
-                nls.localize('qaap/workHubToolbar/aiSettings', 'AI Settings'),
-                'codicon-settings-gear',
-                () => this.openAiConfigurationSheet?.(),
-            );
-        }
-        if (this.openPreferencesSheet) {
-            appendItem(
-                nls.localize('qaap/workHubToolbar/preferences', 'Preferences'),
-                'codicon-tools',
-                () => this.openPreferencesSheet?.(),
-            );
-        }
-        for (const group of this.headerOverflowMenuGroups?.() ?? []) {
-            const visibleItems = group.filter(item => this.isHeaderOverflowMenuItemVisible(item));
-            if (!visibleItems.length) {
-                continue;
-            }
-            this.appendHeaderOverflowSeparator(menu);
-            for (const item of visibleItems) {
-                appendItem(
-                    item.label,
-                    item.icon,
-                    () => {
-                        if (item.run) {
-                            return item.run();
-                        }
-                        if (item.command) {
-                            return this.commands.executeCommand(item.command);
-                        }
-                    },
-                    this.isHeaderOverflowMenuItemEnabled(item),
-                );
-            }
-        }
+        renderHeaderOverflowMenuItemsHelper(menu, {
+            closeHeaderOverflowMenu: () => this.closeHeaderOverflowMenu(),
+            openHeaderNewChat: () => this.openHeaderNewChat(),
+            isHeaderNewChatVisible: () => this.isHeaderNewChatVisible(),
+            openWorkHubSessionsSidebar: () => this.openWorkHubSessionsSidebar(),
+            copyActiveConversationToClipboard: () => this.copyActiveConversationToClipboard(),
+            isCopyConversationEnabled: () => this.isCopyConversationEnabled(),
+            openAiConfigurationSheet: this.openAiConfigurationSheet,
+            openPreferencesSheet: this.openPreferencesSheet,
+            appendHeaderOverflowSeparator: m => this.appendHeaderOverflowSeparator(m),
+            headerOverflowMenuGroups: this.headerOverflowMenuGroups,
+            isHeaderOverflowMenuItemVisible: i => this.isHeaderOverflowMenuItemVisible(i),
+            isHeaderOverflowMenuItemEnabled: i => this.isHeaderOverflowMenuItemEnabled(i),
+            commands: this.commands,
+        });
     }
 
     protected isHeaderOverflowMenuItemVisible(item: MobileProjectsHeaderOverflowMenuItem): boolean {
