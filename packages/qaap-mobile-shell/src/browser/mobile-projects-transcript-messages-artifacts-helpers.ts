@@ -11,6 +11,9 @@ import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapAgentMessageSeg
 import { hasUnfinishedAgentWork, shouldShowTranscriptLiveStatus } from '../common/qaap-transcript-turn-status';
 import type { TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { destroyThinkingOrbIndicator, QAAP_THINKING_ORB_INDICATOR_CLASS } from './qaap-thinking-orb-indicator';
+import { resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
+import { normalizeMobileClosingNarrativeText } from './mobile-projects-transcript-timeline-utils';
+import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR } from '../common/qaap-transcript-incremental-update';
 
 // ─── Thinking orb cleanup ────────────────────────────────────────────────────
 
@@ -161,4 +164,173 @@ export function resolveTranscriptThoughtBriefIconClass(active: boolean): string 
     return active
         ? 'codicon codicon-loading theia-animation-spin'
         : 'codicon codicon-lightbulb';
+}
+
+// ─── DI-extracted methods (second pass) ──────────────────────────────────────
+
+export function isLobeWorkflowProcessText(
+    content: string,
+    cleanTranscriptDisplayText: (content: string) => string,
+): boolean {
+    const normalized = cleanTranscriptDisplayText(content).trim();
+    if (!normalized) {
+        return true;
+    }
+    if (normalized.length > 280) {
+        return false;
+    }
+    if (/^#{1,3}\s+\S/.test(normalized) || /^\s*[-*]\s+\S/m.test(normalized) || /\n\s*[-*]\s+\S/.test(normalized)) {
+        return false;
+    }
+    if (/\b(summary|findings|risks|recommendations|review|result|changes|issues)\b/i.test(normalized)
+        && /[:\n]/.test(normalized)) {
+        return false;
+    }
+    return /^(let me|i['']?ll|i will|i need to|i'm going to|i am going to|now\b|next\b|checking\b|reading\b|looking\b|fetching\b|running\b|reviewing\b|analyzing\b|searching\b)/i
+        .test(normalized);
+}
+
+export function collectMobileClosingNarrativeTextsBefore(
+    segments: readonly QaapAgentMessageSegmentDTO[],
+    lastToolIndex: number,
+    beforeIndex: number,
+    isLobeWorkflowProcessTextFn: (content: string) => boolean,
+): Set<string> {
+    const seen = new Set<string>();
+    for (let index = lastToolIndex + 1; index < beforeIndex; index++) {
+        const segment = segments[index];
+        if (segment?.type !== 'text') {
+            continue;
+        }
+        const text = segment.content?.trim() ?? '';
+        if (!text || isLobeWorkflowProcessTextFn(segment.content)) {
+            continue;
+        }
+        seen.add(normalizeMobileClosingNarrativeText(text));
+    }
+    return seen;
+}
+
+export function resolveLobeVisibleTextSegmentIndexes(
+    segments: readonly QaapAgentMessageSegmentDTO[],
+    activityTimelineShown: boolean,
+    isLobeWorkflowProcessTextFn: (content: string) => boolean,
+): ReadonlySet<number> {
+    const textIndexes = segments
+        .map((segment, index) => segment.type === 'text' && segment.content.trim() ? index : -1)
+        .filter(index => index >= 0);
+    if (textIndexes.length === 0) {
+        return new Set();
+    }
+    const hasTools = segments.some(segment => segment.type === 'tool');
+    if (!activityTimelineShown && !hasTools) {
+        return new Set(textIndexes);
+    }
+    const lastToolIndex = segments.reduce(
+        (last, segment, index) => segment.type === 'tool' ? index : last,
+        -1,
+    );
+    const visible = textIndexes.filter(index => {
+        const segment = segments[index];
+        if (segment?.type !== 'text') {
+            return false;
+        }
+        if (index <= lastToolIndex) {
+            return false;
+        }
+        return !isLobeWorkflowProcessTextFn(segment.content);
+    });
+    return new Set(visible);
+}
+
+export function resolveConversationElapsedMs(
+    conv: QaapAgentConversationDTO | undefined,
+    isConversationWorking: (conv: QaapAgentConversationDTO) => boolean,
+): number | undefined {
+    if (!conv) {
+        return undefined;
+    }
+    const startAt = resolveTranscriptTurnStartMs(conv.messages) ?? conv.createdAt;
+    if (isConversationWorking(conv)) {
+        return Math.max(0, Date.now() - startAt);
+    }
+    const lastAgentCreatedAt = conv.messages.length > 0
+        ? conv.messages[conv.messages.length - 1].createdAt
+        : undefined;
+    const endAt = conv.updatedAt >= startAt
+        ? conv.updatedAt
+        : (typeof lastAgentCreatedAt === 'number' && lastAgentCreatedAt >= startAt
+            ? lastAgentCreatedAt
+            : undefined);
+    if (typeof endAt === 'number' && endAt >= startAt) {
+        return endAt - startAt;
+    }
+    return undefined;
+}
+
+export function scrollTranscriptStreamingTraceIntoView(
+    chatHost: HTMLElement | undefined,
+    options?: { readonly expandTimeline?: boolean },
+): void {
+    if (!chatHost?.isConnected) {
+        return;
+    }
+    const messageHost = chatHost.querySelector('.theia-mobile-agent-transcript-real-chat')
+        ?? chatHost.querySelector('.theia-mobile-agent-transcript');
+    if (!(messageHost instanceof HTMLElement)) {
+        return;
+    }
+    const row = messageHost.querySelector<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-agent.theia-mod-streaming')
+        ?? [...messageHost.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-agent')].at(-1);
+    if (!row) {
+        return;
+    }
+    const timeline = row.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
+    if (options?.expandTimeline && timeline instanceof HTMLDetailsElement) {
+        timeline.open = true;
+    }
+    const thought = row.querySelector('.theia-mobile-agent-thought-brief');
+    const target = timeline ?? thought ?? row;
+    target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+export function enrichChangedFilesWithComposerGitStats(
+    files: ReadonlyArray<{
+        readonly path: string;
+        readonly kind: 'edited' | 'created';
+        readonly added?: number;
+        readonly removed?: number;
+    }>,
+    gitFiles: ReadonlyArray<{ readonly path: string; readonly added?: number; readonly removed?: number }> | undefined,
+): Array<{
+    readonly path: string;
+    readonly kind: 'edited' | 'created';
+    readonly added?: number;
+    readonly removed?: number;
+}> {
+    if (!gitFiles?.length) {
+        return [...files];
+    }
+    return files.map(file => {
+        if ((file.added ?? 0) > 0 || (file.removed ?? 0) > 0) {
+            return file;
+        }
+        const match = gitFiles.find(git => {
+            const gitPath = git.path.replace(/\\/g, '/');
+            const filePath = file.path.replace(/\\/g, '/');
+            return gitPath === filePath
+                || gitPath.endsWith(`/${filePath}`)
+                || filePath.endsWith(`/${gitPath}`)
+                || (gitPath.split('/').pop() === filePath.split('/').pop()
+                    && !!filePath.split('/').pop());
+        });
+        if (!match || ((match.added ?? 0) <= 0 && (match.removed ?? 0) <= 0)) {
+            return file;
+        }
+        return {
+            ...file,
+            added: match.added,
+            removed: match.removed,
+        };
+    });
 }

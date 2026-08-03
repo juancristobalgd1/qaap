@@ -164,6 +164,12 @@ import {
     resolveTranscriptStreamTimeoutDetail as resolveTranscriptStreamTimeoutDetailHelper,
     shouldShowPinnedTranscriptLiveStatus as shouldShowPinnedTranscriptLiveStatusHelper,
     resolveTranscriptThoughtBriefIconClass as resolveTranscriptThoughtBriefIconClassHelper,
+    isLobeWorkflowProcessText as isLobeWorkflowProcessTextHelper,
+    collectMobileClosingNarrativeTextsBefore as collectMobileClosingNarrativeTextsBeforeHelper,
+    resolveLobeVisibleTextSegmentIndexes as resolveLobeVisibleTextSegmentIndexesHelper,
+    resolveConversationElapsedMs as resolveConversationElapsedMsHelper,
+    scrollTranscriptStreamingTraceIntoView as scrollTranscriptStreamingTraceIntoViewHelper,
+    enrichChangedFilesWithComposerGitStats as enrichChangedFilesWithComposerGitStatsHelper,
 } from './mobile-projects-transcript-messages-artifacts-helpers';
 
 /** Leading "Error: " marker prepended by {@link traceEventsToSegments} when it
@@ -747,19 +753,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         lastToolIndex: number,
         beforeIndex: number,
     ): Set<string> {
-        const seen = new Set<string>();
-        for (let index = lastToolIndex + 1; index < beforeIndex; index++) {
-            const segment = segments[index];
-            if (segment?.type !== 'text') {
-                continue;
-            }
-            const text = segment.content?.trim() ?? '';
-            if (!text || this.isLobeWorkflowProcessText(segment.content)) {
-                continue;
-            }
-            seen.add(normalizeMobileClosingNarrativeText(text));
-        }
-        return seen;
+        return collectMobileClosingNarrativeTextsBeforeHelper(segments, lastToolIndex, beforeIndex, content => this.isLobeWorkflowProcessText(content));
     }
 
     /**
@@ -808,27 +802,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      * advanced yet, e.g. mid-stream).
      */
     protected resolveConversationElapsedMs(conv: QaapAgentConversationDTO | undefined): number | undefined {
-        if (!conv) {
-            return undefined;
-        }
-        const startAt = resolveTranscriptTurnStartMs(conv.messages) ?? conv.createdAt;
-        if (this.isConversationWorking(conv)) {
-            return Math.max(0, Date.now() - startAt);
-        }
-        // While streaming, updatedAt may not have advanced yet — use the last
-        // agent message's createdAt as the upper bound in that case.
-        const lastAgentCreatedAt = conv.messages.length > 0
-            ? conv.messages[conv.messages.length - 1].createdAt
-            : undefined;
-        const endAt = conv.updatedAt >= startAt
-            ? conv.updatedAt
-            : (typeof lastAgentCreatedAt === 'number' && lastAgentCreatedAt >= startAt
-                ? lastAgentCreatedAt
-                : undefined);
-        if (typeof endAt === 'number' && endAt >= startAt) {
-            return endAt - startAt;
-        }
-        return undefined;
+        return resolveConversationElapsedMsHelper(conv, c => this.isConversationWorking(c));
     }
 
     /**
@@ -937,31 +911,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         segments: readonly QaapAgentMessageSegmentDTO[],
         activityTimelineShown: boolean,
     ): ReadonlySet<number> {
-        const textIndexes = segments
-            .map((segment, index) => segment.type === 'text' && segment.content.trim() ? index : -1)
-            .filter(index => index >= 0);
-        if (textIndexes.length === 0) {
-            return new Set();
-        }
-        const hasTools = segments.some(segment => segment.type === 'tool');
-        if (!activityTimelineShown && !hasTools) {
-            return new Set(textIndexes);
-        }
-        const lastToolIndex = segments.reduce(
-            (last, segment, index) => segment.type === 'tool' ? index : last,
-            -1,
-        );
-        const visible = textIndexes.filter(index => {
-            const segment = segments[index];
-            if (segment?.type !== 'text') {
-                return false;
-            }
-            if (index <= lastToolIndex) {
-                return false;
-            }
-            return !this.isLobeWorkflowProcessText(segment.content);
-        });
-        return new Set(visible);
+        return resolveLobeVisibleTextSegmentIndexesHelper(segments, activityTimelineShown, content => this.isLobeWorkflowProcessText(content));
     }
 
     protected shouldRenderLobeTextSegment(
@@ -973,22 +923,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     protected isLobeWorkflowProcessText(content: string): boolean {
-        const normalized = this.contentUi.cleanTranscriptDisplayText(content).trim();
-        if (!normalized) {
-            return true;
-        }
-        if (normalized.length > 280) {
-            return false;
-        }
-        if (/^#{1,3}\s+\S/.test(normalized) || /^\s*[-*]\s+\S/m.test(normalized) || /\n\s*[-*]\s+\S/.test(normalized)) {
-            return false;
-        }
-        if (/\b(summary|findings|risks|recommendations|review|result|changes|issues)\b/i.test(normalized)
-            && /[:\n]/.test(normalized)) {
-            return false;
-        }
-        return /^(let me|i['’]?ll|i will|i need to|i’m going to|i am going to|now\b|next\b|checking\b|reading\b|looking\b|fetching\b|running\b|reviewing\b|analyzing\b|searching\b)/i
-            .test(normalized);
+        return isLobeWorkflowProcessTextHelper(content, text => this.contentUi.cleanTranscriptDisplayText(text));
     }
 
     /**
@@ -1050,31 +985,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         const gitFiles = summaryId
             ? this.host.transcriptStickyComposerUi.peekComposerGitChangedFiles(summaryId)
             : undefined;
-        if (!gitFiles?.length) {
-            return [...files];
-        }
-        return files.map(file => {
-            if ((file.added ?? 0) > 0 || (file.removed ?? 0) > 0) {
-                return file;
-            }
-            const match = gitFiles.find(git => {
-                const gitPath = git.path.replace(/\\/g, '/');
-                const filePath = file.path.replace(/\\/g, '/');
-                return gitPath === filePath
-                    || gitPath.endsWith(`/${filePath}`)
-                    || filePath.endsWith(`/${gitPath}`)
-                    || (gitPath.split('/').pop() === filePath.split('/').pop()
-                        && !!filePath.split('/').pop());
-            });
-            if (!match || ((match.added ?? 0) <= 0 && (match.removed ?? 0) <= 0)) {
-                return file;
-            }
-            return {
-                ...file,
-                added: match.added,
-                removed: match.removed,
-            };
-        });
+        return enrichChangedFilesWithComposerGitStatsHelper(files, gitFiles);
     }
 
     /**
@@ -1220,27 +1131,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     scrollTranscriptStreamingTraceIntoView(options?: { readonly expandTimeline?: boolean }): void {
-        const chatHost = this.host.transcriptChatHost;
-        if (!chatHost?.isConnected) {
-            return;
-        }
-        const messageHost = chatHost.querySelector('.theia-mobile-agent-transcript-real-chat')
-            ?? chatHost.querySelector('.theia-mobile-agent-transcript');
-        if (!(messageHost instanceof HTMLElement)) {
-            return;
-        }
-        const row = messageHost.querySelector<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-agent.theia-mod-streaming')
-            ?? [...messageHost.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-agent')].at(-1);
-        if (!row) {
-            return;
-        }
-        const timeline = row.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_TIMELINE_ATTR}]`);
-        if (options?.expandTimeline && timeline instanceof HTMLDetailsElement) {
-            timeline.open = true;
-        }
-        const thought = row.querySelector('.theia-mobile-agent-thought-brief');
-        const target = timeline ?? thought ?? row;
-        target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        scrollTranscriptStreamingTraceIntoViewHelper(this.host.transcriptChatHost, options);
     }
 
     protected handleTranscriptActivityNavigation(
