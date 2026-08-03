@@ -380,6 +380,7 @@ function showImagePreviewSrc(preview: HTMLElement, entry: ContextStripEntry, src
     img.className = 'theia-mobile-projects-sticky-composer-context-image-thumb';
     img.alt = entry.view.title;
     img.decoding = 'async';
+    img.loading = 'lazy';
     img.addEventListener('load', () => {
         preview.classList.remove('theia-mod-loading');
         preview.classList.add('theia-mod-ready');

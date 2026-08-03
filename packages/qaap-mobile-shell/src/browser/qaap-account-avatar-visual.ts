@@ -56,6 +56,7 @@ export function renderQaapAccountAvatarVisual(
         img.alt = '';
         img.draggable = false;
         img.referrerPolicy = 'no-referrer';
+        img.decoding = 'async';
         avatarContainer.appendChild(img);
         return;
     }

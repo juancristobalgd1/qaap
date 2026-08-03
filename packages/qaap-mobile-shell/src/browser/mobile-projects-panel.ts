@@ -1109,7 +1109,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             : undefined;
         observer?.observe(this.root, { attributes: true, attributeFilter: ['class', 'hidden'] });
         observer?.observe(this.scroll, { childList: true });
-        interval = window.setInterval(schedule, 500);
+        interval = window.setInterval(schedule, 2000);
         this.agentsHubEmptySurfaceGuardDispose = Disposable.create(() => {
             observer?.disconnect();
             if (interval !== undefined) {

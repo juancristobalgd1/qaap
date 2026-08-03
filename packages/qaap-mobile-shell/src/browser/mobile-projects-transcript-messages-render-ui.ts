@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
 import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
@@ -91,6 +91,14 @@ export class MobileProjectsTranscriptMessagesRenderUi {
      * entry per message while still caching finished messages across re-renders.
      */
     protected readonly transcriptAgentSegmentsCacheKeyByMessage = new Map<string, string>();
+    /**
+     * Tracks which conversation the full scroll chrome (scroll-to-bottom button, scroll pin,
+     * intent observer, inline search, read position, activity timeline, row defer observer) is
+     * currently bound to. Re-creating this chrome on every render tick — especially the
+     * scroll-to-bottom button, which starts hidden and needs a rAF + 100ms debounce to show
+     * again — causes visible flicker during streaming. Only rebuild on conversation switch.
+     */
+    protected transcriptScrollChromeBoundConversationId: string | undefined;
 
     constructor(
         protected readonly host: MobileProjectsTranscriptMessagesHost,
@@ -800,6 +808,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.host.transcriptUserScrollPinDispose = new DisposableCollection(
                 attachTranscriptScrollToBottomButton(host),
             );
+            this.transcriptScrollChromeBoundConversationId = undefined;
             return;
         }
         if (isEmptyChat) {
@@ -817,6 +826,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
             this.host.transcriptUserScrollPinDispose = new DisposableCollection(
                 attachTranscriptScrollToBottomButton(host),
             );
+            this.transcriptScrollChromeBoundConversationId = undefined;
             return;
         }
         if (shouldVirtualize) {
@@ -971,6 +981,17 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         } else if (scroll.conversationId === undefined) {
             scroll.bindConversationId(conv.id);
         }
+        // Skip rebuilding scroll chrome on same-conversation re-renders (streaming ticks,
+        // incremental patches, settle refetches). Re-creating the scroll-to-bottom button
+        // on every render tick causes it to flash hidden→visible: the new button starts
+        // hidden and needs a rAF + 100ms debounce to show again. The existing button's
+        // internal MutationObserver/ResizeObserver already detect content changes and
+        // update visibility without a full teardown.
+        if (this.transcriptScrollChromeBoundConversationId === conv.id
+            && this.host.transcriptUserScrollPinDispose !== Disposable.NULL) {
+            return;
+        }
+        this.transcriptScrollChromeBoundConversationId = conv.id;
         this.host.transcriptUserScrollPinDispose.dispose();
         this.host.transcriptUserScrollPinDispose = new DisposableCollection(
             attachTranscriptUserScrollPin(messageHost),
