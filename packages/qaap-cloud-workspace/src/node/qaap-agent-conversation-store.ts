@@ -42,14 +42,7 @@ import {
     estimateConversationTokensFromMessages,
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
-import { localizeAgentFailureMessage, detectAgentFailureKind, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
-import {
-    detectAgentAuthFailureMode,
-    extractAgentAuthLoginChallenge,
-    isUnauthenticatedCliDeclaration,
-    localizeAgentAuthFailureMessage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-auth-login';
-import { extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
+import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
     createAgentStreamAccumulator,
@@ -82,7 +75,6 @@ import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
-import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import {
     buildConversationAgentPrompt,
     partitionConversationHistory,
@@ -134,12 +126,7 @@ import {
     resolveNextFallbackAgentModel,
 } from '../common/qaap-agent-model-fallback';
 import {
-    appendTraceBlockedEvent,
-    appendTraceCheckpointEvent,
     appendTracePreviewFailureEvent,
-    appendTraceReviewEvent,
-    appendTraceRunCancelledEvent,
-    appendTraceVerificationWarningEvent,
     agentMessageHasStructuredTrace,
     syncSettledTraceEventsOnMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
@@ -177,6 +164,17 @@ export {
     QaapMaxConcurrentRunsError,
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
+import {
+    clearRunActive as clearRunActiveHelper,
+    appendRunCancelledTrace as appendRunCancelledTraceHelper,
+    detectAgentBlockedNeed as detectAgentBlockedNeedHelper,
+    appendReviewTrace as appendReviewTraceHelper,
+    appendBlockedTrace as appendBlockedTraceHelper,
+    appendVerificationWarningTrace as appendVerificationWarningTraceHelper,
+    appendCheckpointTrace as appendCheckpointTraceHelper,
+    appendAgentReply as appendAgentReplyHelper,
+    resolveCompletedTurnAuthFailureReason as resolveCompletedTurnAuthFailureReasonHelper,
+} from './qaap-agent-conversation-store-helpers';
 import {
     STORE_DIR,
     STREAMING_PERSIST_DEBOUNCE_MS,
@@ -2517,19 +2515,7 @@ export class QaapAgentConversationStore {
         /** The run this reply answers — see {@link QaapAgentMessage.runUserMessageId}. */
         runUserMessageId?: string,
     ): QaapAgentConversation {
-        const message: QaapAgentMessage = {
-            id: randomUUID(),
-            role: 'agent',
-            content,
-            createdAt: Date.now(),
-            ...(runUserMessageId ? { runUserMessageId } : {}),
-        };
-        return {
-            ...conv,
-            status: conv.status === 'failed' ? 'failed' : 'idle',
-            updatedAt: message.createdAt,
-            messages: [...conv.messages, message],
-        };
+        return appendAgentReplyHelper(conv, content, runUserMessageId);
     }
 
     /** Fail a just-posted turn synchronously (no task spawned) and publish the failed message. */
@@ -2563,60 +2549,7 @@ export class QaapAgentConversationStore {
      * quota lines ("Individual quota reached…").
      */
     protected resolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined {
-        const trimmed = (log ?? '').trim();
-        if (!trimmed) {
-            return undefined;
-        }
-        // A clean exit (exit 0) is a *delivered* turn. It may only be reclassified as an
-        // auth/quota failure when the CLI itself DECLARED the failure — never because the
-        // raw stdout merely *mentions* auth. The broad session/URL/api-key patterns match
-        // file echoes, diffs and the agent's own prose describing login code (e.g. a task
-        // that edits `src/auth/login.ts` and writes "OAuth session" / "not logged in" /
-        // "user_code"), so scanning the full transcript reclassifies successful turns as a
-        // false "Sign in required". The only trustworthy declarations on a clean exit are:
-        //   (1) a stream-json `is_error:true` result envelope (extractAgentTurnError), or
-        //   (2) for plain-text CLIs, an unmistakable device-code login prompt
-        //       (a login URL on a known auth host AND a one-time code).
-        const turnError = extractAgentTurnError(trimmed);
-        if (turnError) {
-            const mode = detectAgentAuthFailureMode(turnError);
-            const kind = detectAgentFailureKind(turnError);
-            if (mode || kind === 'auth' || kind === 'quota' || kind === 'rate_limit') {
-                return resolveAgentTurnFailureMessage(turnError, { state: 'failed' });
-            }
-        }
-        // No structured error envelope: only a genuine device-code login challenge — a login
-        // URL on a known auth host *and* a one-time code — is unambiguous enough to fail a
-        // clean exit. A bare auth-host link or a loose "not logged in" phrase in prose is not.
-        const challenge = extractAgentAuthLoginChallenge(trimmed);
-        if (challenge?.url && challenge.userCode) {
-            return localizeAgentAuthFailureMessage(challenge);
-        }
-        // Some CLIs (e.g. Copilot) refuse to run when signed out, printing an unmistakable
-        // sign-in instruction to stdout — "No authentication information found … run '/login'
-        // … gh auth login" — yet still exit 0, with no stream-json envelope and no device-code
-        // URL, so neither branch above catches them and the refusal renders as a normal reply.
-        // Only these strong imperative declarations (not a mere mention of auth in prose or tool
-        // output) fail an otherwise-delivered turn, so the Work Hub shows the Sign-in card.
-        if (isUnauthenticatedCliDeclaration(trimmed)) {
-            return localizeAgentAuthFailureMessage({ mode: 'session' });
-        }
-        // Plain-text quota / rate-limit on a clean exit (e.g. Antigravity "Individual quota
-        // reached…") — a short provider-style line, not a long successful transcript that
-        // merely mentions "quota" in tool output.
-        const kind = detectAgentFailureKind(trimmed);
-        if (kind === 'quota' || kind === 'rate_limit') {
-            const looksLikeProviderError = !!turnError
-                || trimmed.length < 2_000
-                || /^(?:Error|error):/m.test(trimmed)
-                || /\bIndividual\s+quota\s+reached\b/i.test(trimmed)
-                || /\binsufficient[_\s-]?quota\b/i.test(trimmed)
-                || /\brate[_\s-]?limit(?:ed|ing)?\b/i.test(trimmed);
-            if (looksLikeProviderError) {
-                return resolveAgentTurnFailureMessage(trimmed, { state: 'failed' });
-            }
-        }
-        return undefined;
+        return resolveCompletedTurnAuthFailureReasonHelper(log);
     }
 
     protected markTurnFailed(
@@ -2720,15 +2653,7 @@ export class QaapAgentConversationStore {
         conv: QaapAgentConversation,
         agentMessageId: string | undefined,
     ): QaapAgentConversation {
-        if (!agentMessageId) {
-            return conv;
-        }
-        return {
-            ...conv,
-            messages: conv.messages.map(message => message.id === agentMessageId && message.runActive
-                ? { ...message, runActive: undefined }
-                : message),
-        };
+        return clearRunActiveHelper(conv, agentMessageId);
     }
 
     protected appendRunCancelledTrace(
@@ -2736,15 +2661,7 @@ export class QaapAgentConversationStore {
         agentMessageId: string | undefined,
         reason: string,
     ): QaapAgentConversation {
-        if (!agentMessageId) {
-            return conv;
-        }
-        return {
-            ...conv,
-            messages: conv.messages.map(message => message.id === agentMessageId && message.role === 'agent'
-                ? appendTraceRunCancelledEvent(message, { reason })
-                : message),
-        };
+        return appendRunCancelledTraceHelper(conv, agentMessageId, reason);
     }
 
     /**
@@ -2757,22 +2674,7 @@ export class QaapAgentConversationStore {
         conv: QaapAgentConversation,
         agentMessageId: string | undefined,
     ): string | undefined {
-        const target = (agentMessageId ? conv.messages.find(message => message.id === agentMessageId) : undefined)
-            ?? [...conv.messages].reverse().find(message => message.role === 'agent');
-        if (!target || target.role !== 'agent') {
-            return undefined;
-        }
-        if (target.content?.trim()) {
-            return parseAgentBlockedSignal(target.content);
-        }
-        const segments = target.segments ?? [];
-        for (let i = segments.length - 1; i >= 0; i--) {
-            const segment = segments[i];
-            if (segment.type === 'text' && segment.content?.trim()) {
-                return parseAgentBlockedSignal(segment.content);
-            }
-        }
-        return undefined;
+        return detectAgentBlockedNeedHelper(conv, agentMessageId);
     }
 
     protected appendReviewTrace(
@@ -2780,16 +2682,7 @@ export class QaapAgentConversationStore {
         agentMessageId: string | undefined,
         note: string,
     ): QaapAgentConversation {
-        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
-        if (!targetId) {
-            return conv;
-        }
-        return {
-            ...conv,
-            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
-                ? appendTraceReviewEvent(message, note)
-                : message),
-        };
+        return appendReviewTraceHelper(conv, agentMessageId, note);
     }
 
     protected appendBlockedTrace(
@@ -2797,16 +2690,7 @@ export class QaapAgentConversationStore {
         agentMessageId: string | undefined,
         need: string,
     ): QaapAgentConversation {
-        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
-        if (!targetId) {
-            return conv;
-        }
-        return {
-            ...conv,
-            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
-                ? appendTraceBlockedEvent(message, `Blocked — needs your input: ${need}`)
-                : message),
-        };
+        return appendBlockedTraceHelper(conv, agentMessageId, need);
     }
 
     /**
@@ -2819,24 +2703,7 @@ export class QaapAgentConversationStore {
         agentMessageId: string | undefined,
         task: QaapAgentTask,
     ): QaapAgentConversation {
-        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
-        if (!targetId) {
-            return conv;
-        }
-        const verification = task.verification;
-        const summary = verification?.status === 'failed' ? verification.summary.trim() : '';
-        const attempts = verification?.status === 'failed' ? verification.attempts : 0;
-        const headline = attempts > 0
-            ? `Verification checks are still failing after ${attempts} fix ${attempts === 1 ? 'attempt' : 'attempts'}.`
-            : 'Verification checks are failing.';
-        const detail = summary.length > 600 ? `${summary.slice(0, 600)}…` : summary;
-        const reason = detail ? `${headline}\n${detail}` : headline;
-        return {
-            ...conv,
-            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
-                ? appendTraceVerificationWarningEvent(message, reason)
-                : message),
-        };
+        return appendVerificationWarningTraceHelper(conv, agentMessageId, task);
     }
 
     protected appendCheckpointTrace(
@@ -2844,16 +2711,7 @@ export class QaapAgentConversationStore {
         agentMessageId: string | undefined,
         checkpoint: QaapConversationCheckpoint,
     ): QaapAgentConversation {
-        const targetId = agentMessageId ?? conv.messages[conv.messages.length - 1]?.id;
-        if (!targetId) {
-            return conv;
-        }
-        return {
-            ...conv,
-            messages: conv.messages.map(message => message.id === targetId && message.role === 'agent'
-                ? appendTraceCheckpointEvent(message, checkpoint)
-                : message),
-        };
+        return appendCheckpointTraceHelper(conv, agentMessageId, checkpoint);
     }
 
     protected publishFinalizedAgentMessage(
