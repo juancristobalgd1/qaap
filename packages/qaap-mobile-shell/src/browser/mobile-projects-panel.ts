@@ -55,7 +55,6 @@ import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
 import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
 import { QaapBoundedLruMap } from './qaap-bounded-lru-map';
 import {
-    getConversation,
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
@@ -297,7 +296,6 @@ import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
-import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
 import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
 import {
@@ -307,7 +305,14 @@ import {
     createHeaderIdeViewIcon as createHeaderIdeViewIconHelper,
     createHeaderIdeViewChevron as createHeaderIdeViewChevronHelper,
     appendHeaderOverflowSeparator as appendHeaderOverflowSeparatorHelper,
+    positionHeaderIdeViewPickerMenu as positionHeaderIdeViewPickerMenuHelper,
+    positionHeaderOverflowMenu as positionHeaderOverflowMenuHelper,
 } from './mobile-projects-panel-dom-helpers';
+import {
+    projectOwnsActiveBootstrap as projectOwnsActiveBootstrapHelper,
+    isCopyConversationEnabled as isCopyConversationEnabledHelper,
+    resolveActiveConversationForCopy as resolveActiveConversationForCopyHelper,
+} from './mobile-projects-panel-helpers';
 
 export interface MobileProjectsPanelDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -999,20 +1004,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     /** True when `project`'s clone directory is the workspace the bootstrap service operates on. */
     protected projectOwnsActiveBootstrap(project: MobileProjectEntry): boolean {
-        const rootUri = this.projectBootstrap?.descriptor?.rootUri;
-        if (!rootUri) {
-            return false;
-        }
-        const cwd = this.projectsService.getProjectCwd(project) ?? this.preparedCwdByProjectId.get(project.id);
-        if (!cwd) {
-            return false;
-        }
-        const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-        try {
-            return normalize(FileUri.fsPath(rootUri.toString())) === normalize(cwd);
-        } catch {
-            return false;
-        }
+        return projectOwnsActiveBootstrapHelper(project, this.projectBootstrap, this.projectsService, this.preparedCwdByProjectId);
     }
 
     protected handleHeaderBackClick(): void {
@@ -1921,19 +1913,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected positionHeaderIdeViewPickerMenu(): void {
-        const menu = this.headerIdeViewPickerMenu;
-        const btn = this.headerIdeViewPickerBtn;
-        if (!menu || !btn || menu.hidden) {
-            return;
-        }
-        const margin = 8;
-        const gap = 6;
-        const anchor = btn.getBoundingClientRect();
-        const menuWidth = Math.max(menu.offsetWidth || menu.scrollWidth, 220);
-        let left = anchor.right - menuWidth;
-        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
-        menu.style.top = `${Math.round(anchor.bottom + gap)}px`;
-        menu.style.left = `${Math.round(left)}px`;
+        positionHeaderIdeViewPickerMenuHelper(this.headerIdeViewPickerMenu, this.headerIdeViewPickerBtn);
     }
 
     protected onHeaderOverflowMenuClick(event: MouseEvent): void {
@@ -2003,22 +1983,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected positionHeaderOverflowMenu(): void {
-        const menu = this.headerOverflowMenu;
-        if (!menu || menu.hidden) {
-            return;
-        }
-        const margin = 8;
-        const gap = 6;
-        const anchor = this.headerOverflowMenuBtn.getBoundingClientRect();
-        const menuWidth = Math.max(menu.offsetWidth || menu.scrollWidth, 220);
-        const menuHeight = menu.offsetHeight || menu.scrollHeight;
-        let left = anchor.right - menuWidth;
-        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
-        const below = anchor.bottom + gap;
-        const above = anchor.top - menuHeight - gap;
-        const top = below + menuHeight <= window.innerHeight - margin ? below : Math.max(margin, above);
-        menu.style.top = `${Math.round(top)}px`;
-        menu.style.left = `${Math.round(left)}px`;
+        positionHeaderOverflowMenuHelper(this.headerOverflowMenu, this.headerOverflowMenuBtn);
     }
 
     protected renderHeaderOverflowMenuItems(menu: HTMLElement): void {
@@ -2121,42 +2086,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected isCopyConversationEnabled(): boolean {
-        const state = this.transcriptController.state;
-        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
-        if (!summary) {
-            return false;
-        }
-        if (state.transcriptLastConv?.id === summary.id && state.transcriptLastConv.messages.length > 0) {
-            return true;
-        }
-        const cached = this.transcriptConversationCache.get(summary.id);
-        if ((cached?.messages.length ?? 0) > 0) {
-            return true;
-        }
-        return (summary.messageCount ?? 0) > 0;
+        return isCopyConversationEnabledHelper(this.transcriptController, this.transcriptConversationCache);
     }
 
     protected async resolveActiveConversationForCopy(): Promise<QaapAgentConversationDTO | undefined> {
-        const state = this.transcriptController.state;
-        const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
-        if (!summary) {
-            return undefined;
-        }
-        if (state.transcriptLastConv?.id === summary.id) {
-            return state.transcriptLastConv;
-        }
-        const cached = this.transcriptConversationCache.get(summary.id);
-        if (cached) {
-            return cached;
-        }
-        if (summary.source === 'theia-chat') {
-            return this.conversations?.getTheiaConversation(summary.id);
-        }
-        try {
-            return await getConversation(summary.id);
-        } catch {
-            return undefined;
-        }
+        return resolveActiveConversationForCopyHelper(this.transcriptController, this.transcriptConversationCache, this.conversations);
     }
 
     protected async copyActiveConversationToClipboard(): Promise<void> {
