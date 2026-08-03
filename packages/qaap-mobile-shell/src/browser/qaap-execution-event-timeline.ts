@@ -50,85 +50,23 @@ import {
 } from './qaap-transcript-web-search-ui';
 import { syncActivityToolIconMotion } from './qaap-activity-tool-icon-motion';
 
-/** Data attribute: stable id of the execution event a `section` element renders. */
-const MOBILE_EVENT_ID_ATTR = 'data-mobile-event-id';
-
-/** Caches the last-rendered event list for a timeline container so streaming
- *  patches can diff against it without re-parsing the DOM. */
-const timelineEventCache = new WeakMap<HTMLElement, readonly MobileExecutionEvent[]>();
-
-/** Latest raw (un-stripped) terminal result for a collapsed terminal `<details>`
- *  card, keyed by the details element. Terminal cards are collapsed by
- *  default, so building the highlighted output (which requires
- *  stripAnsiEscapes over the full — possibly large — result) is deferred
- *  until the card is first opened; this map lets the deferred render pick up
- *  whatever the latest streamed result was by then. */
-const pendingTerminalOutputResult = new WeakMap<HTMLDetailsElement, string>();
-
-/**
- * Global per-tool `<details>` open/closed state, keyed by a stable id: a
- * terminal card's {@link TRANSCRIPT_TOOL_USE_ID_ATTR} value, or a tool
- * group's key as derived by {@link resolveTimelineGroupStateKey} /
- * {@link resolveTimelineGroupCreationKey}. This is deliberately global and
- * long-lived (unlike {@link processAccordionTurnState}, scoped to a turn, or
- * {@link captureTimelineOpenStateById}, scoped to a single in-place rebuild):
- * a long transcript's virtual list fully removes rows that scroll out of
- * view (`row.remove()`) and builds a brand-new row from scratch when the
- * user scrolls back — there is no "existing" element to capture state from
- * at that point, only the stable tool-use id to look up. Capped with a
- * simple LRU eviction so a very long session doesn't grow this unbounded.
- *
- * Keys are namespaced with a `group:`/`terminal:` prefix (see
- * {@link timelineGroupOpenStateKey} / {@link timelineTerminalOpenStateKey}):
- * a tool group's derived key falls back to its *first tool row's* toolUseId,
- * which — for an event with exactly one terminal tool — is the very same
- * toolUseId as that terminal card itself. Without the prefix, toggling the
- * outer group would silently overwrite the independent remembered state of
- * the inner terminal card (and vice versa).
- */
-const timelineDetailsOpenState = new Map<string, boolean>();
-const TIMELINE_DETAILS_OPEN_STATE_MAX = 256;
-
-const TIMELINE_GROUP_OPEN_STATE_PREFIX = 'group:';
-const TIMELINE_TERMINAL_OPEN_STATE_PREFIX = 'terminal:';
-
-function timelineGroupOpenStateKey(key: string): string {
-    return TIMELINE_GROUP_OPEN_STATE_PREFIX + key;
-}
-
-function timelineTerminalOpenStateKey(toolUseId: string): string {
-    return TIMELINE_TERMINAL_OPEN_STATE_PREFIX + toolUseId;
-}
-
-/** Records the latest user/programmatic open state for `key`, evicting the
- *  least-recently-touched entry once the cap is exceeded. */
-function recordTimelineDetailsOpenState(key: string, open: boolean): void {
-    timelineDetailsOpenState.delete(key);
-    timelineDetailsOpenState.set(key, open);
-    while (timelineDetailsOpenState.size > TIMELINE_DETAILS_OPEN_STATE_MAX) {
-        const oldest = timelineDetailsOpenState.keys().next().value;
-        if (oldest === undefined) {
-            break;
-        }
-        timelineDetailsOpenState.delete(oldest);
-    }
-}
-
-/**
- * Test-only helper: clears {@link timelineDetailsOpenState}. This module-level
- * map is deliberately process-lifetime-scoped in production (see the doc
- * comment above), but that means specs that reuse tool-use ids (e.g.
- * `tool-read-page`) across `it()` blocks leak open/closed state between them.
- * Call this from `beforeEach()` in specs that assert default collapsed/open
- * state for a tool group or terminal card. Not for production use.
- */
-export function resetTimelineDetailsOpenStateForTesting(): void {
-    timelineDetailsOpenState.clear();
-}
-
-/** Stable content signature for the whole rendered event list. Used to avoid
- *  touching DOM at all on duplicate SSE frames. */
-const timelineEventSignatureCache = new WeakMap<HTMLElement, string>();
+// ─── State (extracted to mobile-execution-timeline-state.ts) ─────────────────
+export {
+    timelineGroupOpenStateKey,
+    timelineTerminalOpenStateKey,
+    recordTimelineDetailsOpenState,
+    resetTimelineDetailsOpenStateForTesting
+} from './mobile-execution-timeline-state';
+import {
+    MOBILE_EVENT_ID_ATTR,
+    timelineEventCache,
+    pendingTerminalOutputResult,
+    timelineDetailsOpenState,
+    timelineGroupOpenStateKey,
+    timelineTerminalOpenStateKey,
+    recordTimelineDetailsOpenState,
+    timelineEventSignatureCache
+} from './mobile-execution-timeline-state';
 
 // ─── Types (extracted to mobile-execution-event-types.ts) ────────────────────
 export type {
