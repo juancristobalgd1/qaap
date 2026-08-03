@@ -157,20 +157,35 @@ def split_params(params_str):
     if not params_str.strip():
         return []
     parts = []
-    depth = 0
+    depth = 0  # track () [] {} nesting
+    angle_depth = 0  # track <> for generics (not arrow functions)
     current = []
-    for ch in params_str:
-        if ch in '([{<':
+    i = 0
+    while i < len(params_str):
+        ch = params_str[i]
+        if ch in '([{':
             depth += 1
             current.append(ch)
-        elif ch in ')]}>':
+        elif ch in ')]}':
             depth -= 1
             current.append(ch)
-        elif ch == ',' and depth == 0:
+        elif ch == '<':
+            # Count as generic depth only if preceded by identifier (type generic)
+            # Not arrow function (=>) or comparison
+            prev = ''.join(current).rstrip()
+            if prev and re.search(r'\w$', prev):
+                angle_depth += 1
+            current.append(ch)
+        elif ch == '>':
+            if angle_depth > 0:
+                angle_depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0 and angle_depth == 0:
             parts.append(''.join(current))
             current = []
         else:
             current.append(ch)
+        i += 1
     if current:
         parts.append(''.join(current))
     return parts
@@ -315,12 +330,28 @@ def main():
     base_name = Path(file_path).stem
     dir_name = os.path.dirname(file_path)
 
-    # Collect import lines from main file
+    # Collect import lines from main file (handle multi-line imports)
     import_lines = []
-    for line in lines:
-        stripped = line.lstrip()
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].lstrip()
         if stripped.startswith('import '):
-            import_lines.append(line)
+            # Check if this is a single-line import (ends with ;)
+            if stripped.rstrip().endswith(';'):
+                import_lines.append(lines[i])
+                i += 1
+            else:
+                # Multi-line import - collect until closing ;
+                block = []
+                while i < len(lines):
+                    block.append(lines[i])
+                    if lines[i].rstrip().endswith(';'):
+                        break
+                    i += 1
+                import_lines.extend(block)
+                i += 1
+        else:
+            i += 1
 
     print(f"Split into {len(groups)} files")
 

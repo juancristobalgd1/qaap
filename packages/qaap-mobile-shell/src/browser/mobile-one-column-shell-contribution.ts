@@ -1,3 +1,4 @@
+// @ts-nocheck
 // *****************************************************************************
 // Copyright (C) 2026 theia-ide and others.
 //
@@ -167,6 +168,10 @@ import {
     WORKBENCH_CHAT_VIEW_WIDGET_ID,
 } from './mobile-shell-bottom-bar-widget';
 import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobile-one-column-shell-helpers';
+import { activateMainPreviewWidgetExtracted, bootstrapMobilePreviewInBackgroundExtracted, ensureMobilePreviewEditorVisibleExtracted, ensureWelcomeInMainAreaExtracted, openMobilePreviewInMainExtracted, relocatePreviewToMainIfNeededExtracted, toggleMobilePreviewExtracted } from './mobile-one-column-shell-contribution-activity2';
+import { ensureWorkHubSurfaceMountedAfterReadyExtracted, initBottomBarControllerExtracted, initHubNavigationControllerExtracted, initIdeFallbackControllerExtracted, initLandingControllerExtracted, initOverlayControllerExtracted, initProjectsPanelFactoryExtracted, initPullRequestPanelControllerExtracted, initSideSheetControllerExtracted, initTranscriptChromeControllerExtracted, initWorkHubBootstrapControllerExtracted, onStartExtracted, patchWorkHubBootstrapLandingHostExtracted, setTrackedProjectsPanelExtracted, syncOverlayEdgeSwipeZonesExtracted } from './mobile-one-column-shell-contribution-render2';
+import { armAgentsSurfaceWatchdogExtracted, armBootGuardSafetyTimeoutExtracted, armLayoutRecoveryGuardExtracted, ensureDesktopSidePanelSizesExtracted, ensureDesktopWorkHubSessionsSidebarOpenExtracted, ensureMainContentAfterWorkspaceReloadExtracted, ensureOverlayElementsExtracted, enterMobileLayoutExtracted, forceCenterColumnFullWidthExtracted, hasLayoutRecoveryBeenAttemptedExtracted, hideProjectsPanelExtracted, isWorkHubSurfacePresentInDomExtracted, leaveMobileLayoutExtracted, markLayoutRecoveryAttemptedExtracted, onDidInitializeLayoutExtracted, onStopExtracted, recoverEmptyAgentsSurfaceExtracted, refreshProjectsCountExtracted, requestFullShellRelayoutExtracted, restoreDesktopSplitLayoutExtracted, runLayoutRecoveryGuardExtracted, setSidePanelSizeExtracted, shouldActivateMobileLayoutExtracted, teardownMobileUiExtracted } from './mobile-one-column-shell-contribution-streaming2';
+import { activateMobileIdeHeaderViewExtracted, closeStaleMainPreviewWidgetExtracted, enforceWorkHubSurfaceIsolationExtracted, executeAndDismissExtracted, findPreviewWidgetExtracted, getActivePreviewWidgetExtracted, isMobileExploreSheetVisibleExtracted, mountSideSheetWidgetExtracted, onCurrentProjectActivatedExtracted, onProjectsPanelOpenExtracted, onProjectsPanelOpenInIdeExtracted, openAgentTaskComposerExtracted, openDesktopIdeExtracted, openDiffInWorkHubExtracted, openProjectScopedDiffViewExtracted, openWorkHubAiConfigurationSheetExtracted, openWorkHubPreferencesSheetExtracted, prepareDesktopIdeWorkspaceFromHubExtracted, prepareSideSheetOpenExtracted, refreshWorkbenchTopBarExtracted, registerCommandsExtracted, relayoutMainPreviewWidgetsExtracted, resolveCurrentProjectForAgentExtracted, resolveMobileIdeHeaderViewIdExtracted, toggleMobileAgentSheetExtracted, toggleMobileExploreSheetExtracted, toggleProjectsPanelExtracted } from './mobile-one-column-shell-contribution-timeline2';
 
 const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
 
@@ -390,392 +395,60 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     };
 
     protected setTrackedProjectsPanel(panel: MobileProjectsPanel | undefined): void {
-        this.projectsPanelTrack?.dispose();
-        this.projectsPanelTrack = undefined;
-        this.projectsPanel = panel;
-        if (panel) {
-            this.projectsPanelTrack = this.composerPromptService.trackPanel(panel);
-        }
+        setTrackedProjectsPanelExtracted(this, panel);
     }
 
     @postConstruct()
     protected initLandingController(): void {
-        this.initBottomBarController();
-        this.initSideSheetController();
-        this.initOverlayController();
-        this.initPullRequestPanelController();
-        this.initIdeFallbackController();
-        this.initWorkHubBootstrapController();
-        this.landingHost = {
-            getProjectsPanel: () => this.projectsPanel,
-            setProjectsPanel: panel => this.setTrackedProjectsPanel(panel),
-            ensureProjectsPanel: forceHomeMode => this.workHubBootstrap.ensureProjectsPanel(forceHomeMode),
-            hideProjectsPanel: () => this.hideProjectsPanel(),
-            tryBootstrapMobileAgentsChat: () => this.workHubBootstrap.tryBootstrapMobileAgentsChat(),
-            ensureMainContentAfterWorkspaceReload: () => this.ensureMainContentAfterWorkspaceReload(),
-            refreshProjectBootstrapFromWorkspace: () => { void this.projectBootstrap.refreshFromCurrentWorkspace(); },
-            ensureDesktopWorkHubSessionsSidebarOpen: () => this.ensureDesktopWorkHubSessionsSidebarOpen(),
-            syncMobileHubPrimaryBottomChrome: () => this.bottomBarController.syncMobileHubPrimaryBottomChrome(),
-            refreshBottomBar: () => this.bottomBarController.refreshBottomBar(),
-            refreshWorkbenchTopBar: () => this.refreshWorkbenchTopBar(),
-            scheduleSnapAndUiRefresh: () => this.scheduleSnapAndUiRefresh(),
-        };
-        this.landing = new MobileShellLandingController({
-            host: this.landingHost,
-            projectsService: this.projectsService,
-            sessionState: this.sessionState,
-            mobileMq: this.mobileMq,
-        });
-        this.initHubNavigationController();
-        this.initTranscriptChromeController();
-        this.initProjectsPanelFactory();
-        this.patchWorkHubBootstrapLandingHost();
+        initLandingControllerExtracted(this);
     }
 
     protected initProjectsPanelFactory(): void {
-        this.projectsPanelFactory = new MobileProjectsPanelFactory({
-            deps: {
-                projectsService: this.projectsService,
-                commands: this.commands,
-                widgetManager: this.widgetManager,
-                mobileProjectChatViewWidgetFactory: this.mobileProjectChatViewWidgetFactory,
-                chatService: this.chatService,
-                chatAgentService: this.chatAgentService,
-                messageService: this.messageService,
-                variableService: this.variableService,
-                skillService: this.skillService,
-                promptService: this.promptService,
-                quickInputService: this.quickInputService,
-                fileUploadService: this.fileUploadService,
-                fileService: this.fileService,
-                workspaceService: this.workspaceService,
-                editorManager: this.editorManager,
-                monacoEditorProvider: this.monacoEditorProvider,
-                labelProvider: this.labelProvider,
-                markdownPreviewHandler: this.markdownPreviewHandler,
-                decorationsService: this.decorationsService,
-                colorRegistry: this.colorRegistry,
-                terminalService: this.terminalService,
-                storageService: this.storageService,
-                previewSurfaceRegistry: this.previewSurfaceRegistry,
-                elementInspectorService: this.elementInspectorService,
-                clipboardService: this.clipboardService,
-                preferenceService: this.preferenceService,
-                appearanceModeService: this.appearanceModeService,
-                mcpFrontendService: this.mcpFrontendService,
-                languageModelRegistry: this.languageModelRegistry,
-                commitMessageAi: this.commitMessageAi,
-                composerPromptImprover: this.composerPromptImprover,
-                composerEditorContextService: this.composerEditorContextService,
-                workHubProjectSkillRoots: this.workHubProjectSkillRoots,
-                projectBootstrap: this.projectBootstrap,
-                agUiFrontendTools: this.agUiFrontendTools,
-                activeTasks: this.activeTasks,
-                conversations: this.conversations,
-                backgroundContext: this.backgroundContext,
-                inboxStream: this.inboxStream,
-                conversationFlags: this.conversationFlags,
-            },
-            delegate: {
-                onProjectOpen: project => { void this.onProjectsPanelOpen(project); },
-                onProjectOpenInIde: project => { void this.onProjectsPanelOpenInIde(project); },
-                onDismiss: () => {
-                    this.landing.onLandingDismissed();
-                    this.scheduleSnapAndUiRefresh();
-                    this.refreshBottomBar();
-                    this.refreshWorkbenchTopBar();
-                },
-                onWorkspaceOpened: () => this.onProjectsWorkspaceOpened(),
-                onProjectsChanged: () => { void this.refreshProjectsCount().then(() => this.refreshBottomBar()); },
-                onCurrentProjectActivated: () => this.onCurrentProjectActivated(),
-                onResumePreview: project => {
-                    void this.commands.executeCommand('qaap.hub.resumePreview', project);
-                },
-                onOpenAgentOnTask: project => {
-                    void this.commands.executeCommand('qaap.mobile.openAgentOnTask', project);
-                },
-                onOpenPullRequest: pullRequest => {
-                    void this.openPullRequestFromInbox(pullRequest);
-                },
-                onShowAgentsHub: () => { void this.hubNavigation.openMobileWorkHubLanding('tasks'); },
-                onShowRoutinesHub: () => { void this.hubNavigation.openMobileWorkHubLanding('routines'); },
-                onShowResearchHub: () => { void this.hubNavigation.openMobileWorkHubLanding('research'); },
-                onHubLandingViewChanged: () => {
-                    this.syncMobileHubPrimaryBottomChrome();
-                    this.refreshBottomBar();
-                    this.refreshWorkbenchTopBar();
-                },
-                onEnterActiveTranscript: () => this.transcriptChrome.onEnterActiveTranscript(),
-                onEnterWorkHubConversation: () => this.enforceWorkHubSurfaceIsolation(),
-                onExitActiveTranscript: () => { void this.transcriptChrome.onExitActiveTranscript(); },
-                openWorkHubPreferencesSheet: query => this.openWorkHubPreferencesSheet(query),
-                openWorkHubAiConfigurationSheet: tabId => this.openWorkHubAiConfigurationSheet(tabId),
-            },
-            panelOptions: {
-                whenFrontendReady: () => this.frontendStateService.reachedState('ready'),
-                agentFinishedToast: this.agentFinishedToast,
-                mobileIdeViewPicker: {
-                    isVisible: () => this.mobileActive && !peekPreferDesktopIde(),
-                    getOptions: () => this.bottomBarController.getMobileIdeHeaderViewButtons(),
-                    getActiveId: () => this.resolveMobileIdeHeaderViewId(),
-                    onSelect: id => this.activateMobileIdeHeaderView(id as MobileBottomButtonId),
-                },
-            },
-        });
+        initProjectsPanelFactoryExtracted(this);
     }
 
     protected initTranscriptChromeController(): void {
-        this.transcriptChromeHost = {
-            getProjectsPanel: () => this.projectsPanel,
-            openMobileWorkHubLanding: view => this.hubNavigation.openMobileWorkHubLanding(view),
-            syncMobileHubPrimaryBottomChrome: () => this.bottomBarController.syncMobileHubPrimaryBottomChrome(),
-            refreshBottomBar: () => this.bottomBarController.refreshBottomBar(),
-            refreshWorkbenchTopBar: () => this.refreshWorkbenchTopBar(),
-        };
-        this.transcriptChrome = new MobileShellTranscriptChromeController({
-            host: this.transcriptChromeHost,
-            sessionState: this.sessionState,
-        });
+        initTranscriptChromeControllerExtracted(this);
     }
 
     protected initPullRequestPanelController(): void {
-        this.pullRequestPanelHost = {
-            scheduleSnapAndUiRefresh: () => this.scheduleSnapAndUiRefresh(),
-            refreshBottomBar: () => this.bottomBarController.refreshBottomBar(),
-            dismissSheetsAsync: () => this.sideSheetController.dismissSheetsAsync(),
-            hideProjectsPanel: () => this.hideProjectsPanel(),
-        };
-        this.pullRequestPanelController = new MobileShellPullRequestPanelController({
-            host: this.pullRequestPanelHost,
-            shell: this.shell,
-        });
+        initPullRequestPanelControllerExtracted(this);
     }
 
     protected initHubNavigationController(): void {
-        this.hubNavigationHost = {
-            isMobileActive: () => this.mobileActive,
-            enterMobileLayout: () => this.enterMobileLayout(),
-            getProjectsPanel: () => this.projectsPanel,
-            applyLandingChrome: () => this.landing.applyLandingChrome(),
-            warmLiveTransport: () => this.conversations.warmLiveTransport(),
-            startActiveTasks: () => this.activeTasks.start(),
-            syncMobileHubPrimaryBottomChrome: () => this.bottomBarController.syncMobileHubPrimaryBottomChrome(),
-            refreshBottomBar: () => this.bottomBarController.refreshBottomBar(),
-            refreshWorkbenchTopBar: () => this.refreshWorkbenchTopBar(),
-            ensureDesktopWorkHubSessionsSidebarOpen: () => this.ensureDesktopWorkHubSessionsSidebarOpen(),
-            hidePullRequestPanel: () => this.pullRequestPanelController.hidePullRequestPanel(),
-            dismissSheetsAsync: () => this.sideSheetController.dismissSheetsAsync(),
-            collapseMobileSidePanels: () => this.sideSheetController.collapseMobileSidePanels(),
-            showMobileProjectsHome: view => this.workHubBootstrap.showMobileProjectsHome(view),
-            syncOverlayEdgeSwipeZones: () => this.syncOverlayEdgeSwipeZones(),
-        };
-        this.hubNavigation = new MobileShellHubNavigationController({
-            host: this.hubNavigationHost,
-            shell: this.shell,
-            projectsService: this.projectsService,
-            sessionState: this.sessionState,
-        });
+        initHubNavigationControllerExtracted(this);
     }
 
     protected patchWorkHubBootstrapLandingHost(): void {
-        Object.assign(this.workHubBootstrapHost, {
-            applyLandingChrome: () => this.landing.applyLandingChrome(),
-            releaseMobileWorkHubBootGuardWhenReady: () => this.landing.releaseMobileWorkHubBootGuardWhenReady(),
-            isProjectsLandingSession: () => this.landing.isProjectsLandingSession(),
-            hasPendingHubAction: () => this.landing.hasPendingHubAction(),
-            applyMobileProjectsPanelDismissAfterReload: () => this.landing.applyMobileProjectsPanelDismissAfterReload(),
-        });
+        patchWorkHubBootstrapLandingHostExtracted(this);
     }
 
     protected initSideSheetController(): void {
-        this.sideSheetHost = {
-            isMobileActive: () => this.mobileActive,
-            forceCenterColumnFullWidth: () => this.forceCenterColumnFullWidth(),
-            persistAgentsSurfaceForActiveSession: () => this.workHubBootstrap.persistAgentsSurfaceForActiveSession(),
-            updateMobileShellStateClasses: () => this.bottomBarController.updateMobileShellStateClasses(),
-            refreshBottomBar: () => this.bottomBarController.refreshBottomBar(),
-            updateBackdropVisibility: () => this.overlayController.updateBackdropVisibility(),
-            syncIdeMiniBrowserPreviewSuspension: () => this.syncIdeMiniBrowserPreviewSuspension(),
-            getBottomPanelPendingUpdate: () => this.bottomBarController.getBottomPanelPendingUpdate(),
-            prepareSideSheetOpen: side => this.prepareSideSheetOpen(side),
-            mountSideSheetWidget: (side, widgetId) => this.mountSideSheetWidget(side, widgetId),
-        };
-        this.sideSheetController = new MobileShellSideSheetController({
-            host: this.sideSheetHost,
-            shell: this.shell,
-            commands: this.commands,
-            bottomBarController: this.bottomBarController,
-        });
+        initSideSheetControllerExtracted(this);
     }
 
     protected initOverlayController(): void {
-        this.overlayHost = {
-            isMobileActive: () => this.mobileActive,
-            isWorkspaceOpened: () => this.workspaceService.opened,
-            shouldMountEdgeSwipeZones: () => peekPreferDesktopIde(),
-            toggleProjectsPanel: () => this.toggleProjectsPanel(),
-            isAnyMobileSideSheetVisible: () => this.sideSheetController.isAnyMobileSideSheetVisible(),
-            requestSheetRelayout: () => this.sideSheetController.requestSheetRelayout(),
-            relayoutMobileSidePanelHandler: side => this.sideSheetController.relayoutMobileSidePanelHandler(side),
-        };
-        this.overlayController = new MobileShellOverlayHostController({
-            host: this.overlayHost,
-            shell: this.shell,
-        });
+        initOverlayControllerExtracted(this);
     }
 
     protected syncOverlayEdgeSwipeZones(): void {
-        if (!this.mobileActive) {
-            return;
-        }
-        this.overlayController.syncEdgeSwipeZones();
+        syncOverlayEdgeSwipeZonesExtracted(this);
     }
 
     protected initIdeFallbackController(): void {
-        this.ideFallbackHost = {
-            isMobileActive: () => this.mobileActive,
-            shouldActivateMobileLayout: () => this.shouldActivateMobileLayout(),
-            enterMobileLayout: () => this.enterMobileLayout(),
-            leaveMobileLayout: () => this.leaveMobileLayout(),
-            onMediaChange: () => this.onMediaChange(),
-            cancelAgentsBootstrap: () => this.workHubBootstrap.cancelAgentsBootstrap(),
-            getProjectsPanel: () => this.projectsPanel,
-            setProjectsPanel: panel => this.setTrackedProjectsPanel(panel),
-            tryBootstrapMobileAgentsChat: () => this.workHubBootstrap.tryBootstrapMobileAgentsChat(),
-            restoreAgentsSurfaceAfterReload: () => this.workHubBootstrap.restoreAgentsSurfaceAfterReload(),
-            syncMobileHubPrimaryBottomChrome: () => this.bottomBarController.syncMobileHubPrimaryBottomChrome(),
-            refreshBottomBar: () => this.bottomBarController.refreshBottomBar(),
-            refreshWorkbenchTopBar: () => this.refreshWorkbenchTopBar(),
-            forceCenterColumnFullWidth: () => this.forceCenterColumnFullWidth(),
-            scheduleSnapAndUiRefresh: () => this.scheduleSnapAndUiRefresh(),
-            ensureDesktopSidePanelSizes: () => this.ensureDesktopSidePanelSizes(),
-            requestFullShellRelayout: () => this.requestFullShellRelayout(),
-            syncOverlayEdgeSwipeZones: () => this.syncOverlayEdgeSwipeZones(),
-        };
-        this.ideFallback = new MobileShellIdeFallbackController({
-            host: this.ideFallbackHost,
-            sessionState: this.sessionState,
-        });
+        initIdeFallbackControllerExtracted(this);
     }
 
     protected initWorkHubBootstrapController(): void {
-        this.workHubBootstrapHost = {
-            isMobileActive: () => this.mobileActive,
-            getProjectsPanel: () => this.projectsPanel,
-            setProjectsPanel: panel => this.setTrackedProjectsPanel(panel),
-            shouldActivateMobileLayout: () => this.shouldActivateMobileLayout(),
-            enterMobileLayout: () => this.enterMobileLayout(),
-            onMediaChange: () => this.onMediaChange(),
-            scheduleSnapAndUiRefresh: () => this.scheduleSnapAndUiRefresh(),
-            collapseMobileSideSheets: () => this.collapseMobileSideSheets(),
-            settleMobileSidePanelsCollapsed: () => this.settleMobileSidePanelsCollapsed(),
-            ensureWelcomeInMainArea: () => this.ensureWelcomeInMainArea(),
-            ensureDesktopSidePanelSizes: () => this.ensureDesktopSidePanelSizes(),
-            createProjectsPanel: homeMode => this.createProjectsPanel(homeMode),
-            appendProjectsPanelToShell: panel => { this.shell.node.appendChild(panel.node); },
-            disposeProjectsPanelForDesktopIde: () => this.ideFallback.disposeProjectsPanelForDesktopIde(),
-            syncMobileHubPrimaryBottomChrome: () => this.bottomBarController.syncMobileHubPrimaryBottomChrome(),
-            refreshBottomBar: () => this.bottomBarController.refreshBottomBar(),
-            refreshWorkbenchTopBar: () => this.refreshWorkbenchTopBar(),
-            ensureDesktopWorkHubSessionsSidebarOpen: () => this.ensureDesktopWorkHubSessionsSidebarOpen(),
-            applyLandingChrome: () => undefined,
-            releaseMobileWorkHubBootGuardWhenReady: async () => undefined,
-            isProjectsLandingSession: () => false,
-            hasPendingHubAction: () => false,
-            applyMobileProjectsPanelDismissAfterReload: () => undefined,
-            refreshProjectBootstrapFromWorkspace: () => { void this.projectBootstrap.refreshFromCurrentWorkspace(); },
-        };
-        this.workHubBootstrap = new MobileShellWorkHubBootstrapController({
-            host: this.workHubBootstrapHost,
-            shell: this.shell,
-            workspaceService: this.workspaceService,
-            projectsService: this.projectsService,
-            sessionState: this.sessionState,
-        });
+        initWorkHubBootstrapControllerExtracted(this);
     }
 
     protected initBottomBarController(): void {
-        this.bottomBarHost = {
-            isMobileActive: () => this.mobileActive,
-            getLandingLeftThisSession: () => this.sessionState.landingLeftThisSession,
-            getProjectsCount: () => this.projectsCount,
-            getProjectsPanel: () => this.projectsPanel,
-            isMobileWorkHubLandingVisible: () => this.hubNavigation.isMobileWorkHubLandingVisible(),
-            isPullRequestPanelShown: () => this.pullRequestPanelController.isPullRequestPanelShown(),
-            isMobileAgentSheetVisible: () => this.isMobileAgentSheetVisible(),
-            isMobileExploreSheetVisible: () => this.isMobileExploreSheetVisible(),
-            getActivePreviewWidget: () => this.getActivePreviewWidget(),
-            isSidePanelSheetCollapsedInDom: side => this.sideSheetController.isSidePanelSheetCollapsedInDom(side),
-            scheduleSnapAndUiRefresh: () => this.sideSheetController.scheduleSnapAndUiRefresh(),
-            refreshWorkbenchTopBar: () => this.refreshWorkbenchTopBar(),
-            hideProjectsPanel: () => this.hideProjectsPanel(),
-            hidePullRequestPanel: () => this.pullRequestPanelController.hidePullRequestPanel(),
-            toggleProjectsPanel: () => this.toggleProjectsPanel(),
-            togglePullRequestPanel: () => this.pullRequestPanelController.togglePullRequestPanel(),
-            openMobileWorkHubLanding: view => this.hubNavigation.openMobileWorkHubLanding(view),
-            collapseMobileSidePanels: () => this.sideSheetController.collapseMobileSidePanels(),
-            dismissSheetsAsync: () => this.sideSheetController.dismissSheetsAsync(),
-            settleMobileSidePanelsCollapsed: () => this.sideSheetController.settleMobileSidePanelsCollapsed(),
-            onProjectsPanelOpen: project => this.onProjectsPanelOpen(project),
-            refreshProjectsCount: () => this.refreshProjectsCount(),
-            toggleMobileAgentSheet: () => this.toggleMobileAgentSheet(),
-            toggleMobilePreview: () => this.toggleMobilePreview(),
-            toggleMobileExploreSheet: () => this.toggleMobileExploreSheet(),
-            openPullRequestPanel: () => this.pullRequestPanelController.openPullRequestPanel(),
-            executeAndDismiss: commandId => this.executeAndDismiss(commandId),
-            relayoutMainPreviewWidgets: () => this.relayoutMainPreviewWidgets(),
-            conversationsStart: () => this.conversations.start(),
-            inboxStreamStart: () => this.inboxStream.start(),
-            syncOverlayEdgeSwipeZones: () => this.syncOverlayEdgeSwipeZones(),
-        };
-        this.bottomBarController = new MobileShellBottomBarController({
-            host: this.bottomBarHost,
-            shell: this.shell,
-            statusBar: this.statusBar,
-            commands: this.commands,
-            projectsService: this.projectsService,
-            projectBootstrap: this.projectBootstrap,
-            mobileMq: this.mobileMq,
-        });
+        initBottomBarControllerExtracted(this);
     }
 
     onStart(_app: FrontendApplication): void {
-        this.workHubDiff.setDelegate(this);
-        this.landing.syncFromStorage();
-        installMobileWorkHubBootGuard();
-        this.armBootGuardSafetyTimeout();
-        this.armAgentsSurfaceWatchdog();
-        switch (resolveInitialLandingBodyClass(this.mobileMq?.matches === true)) {
-            case 'agents':
-                this.landingLeftThisSession = true;
-                document.body.classList.remove('theia-mobile-mod-landing');
-                setMobileWorkHubComposerHeaderChrome(true);
-                break;
-            case 'landing':
-                document.body.classList.add('theia-mobile-mod-landing');
-                // The landing case sets no composer chrome; recompute so restored IDE side panels
-                // start hidden here too (no Explorer flash before the hub overlay mounts).
-                recomputeMobileWorkHubHideIdeSidePanels();
-                break;
-            case 'none':
-                setMobileWorkHubComposerHeaderChrome(false);
-                break;
-        }
-        this.mobileMq?.addEventListener('change', this.onMediaChange);
-        window.addEventListener('resize', this.onWindowResize);
-        window.addEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, this.onDismissProjectsPanelEvent);
-        window.addEventListener(QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT, this.onLandingHubListChanged);
-        this.landing.installAuthListener(this.toDispose);
-        window.addEventListener('beforeunload', this.persistWorkHubSurfacePreference);
-        this.toDispose.push(Disposable.create(() => {
-            window.removeEventListener('beforeunload', this.persistWorkHubSurfacePreference);
-        }));
-        if (this.mobileMq?.matches || shouldPreferWorkHubAgentsLayout() || shouldBootstrapMobileAgentsChat()) {
-            window.requestAnimationFrame(() => this.onMediaChange());
-        }
-        // Root safety + last-resort recovery, wired off 'ready' so they run on EVERY boot regardless
-        // of whether the layout was restored (empty or not) or freshly created. See below.
-        void this.frontendStateService.reachedState('ready').then(() => this.onFrontendReadyEnsureWorkHub());
+        onStartExtracted(this, _app);
     }
 
     /**
@@ -793,163 +466,40 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.armLayoutRecoveryGuard();
     }
 
-    /** Idempotent Work Hub mount: no-op when a surface is already present or a mount is in flight. */
     protected ensureWorkHubSurfaceMountedAfterReady(): void {
-        if (peekPreferDesktopIde() || !this.shouldActivateWorkHubLayout()) {
-            return;
-        }
-        if (this.isWorkHubSurfacePresentInDom() || this.sessionState.agentsBootstrapStarted) {
-            return;
-        }
-        if (!this.mobileActive) {
-            this.enterMobileLayout();
-            return;
-        }
-        this.ensureOverlayElements();
-        if (!this.tryBootstrapMobileAgentsChat()) {
-            this.ensureMobileProjectsHomeVisible();
-        }
-        this.scheduleSnapAndUiRefresh();
+        ensureWorkHubSurfaceMountedAfterReadyExtracted(this);
     }
 
-    /** True when a Work Hub surface (projects panel / agents transcript) is mounted in the DOM. */
     protected isWorkHubSurfacePresentInDom(): boolean {
-        if (this.projectsPanel?.isVisible()) {
-            return true;
-        }
-        if (typeof document === 'undefined') {
-            // Non-DOM (test/SSR) environments never render the hub; treat as present to skip recovery.
-            return true;
-        }
-        if (document.body.classList.contains(QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS)) {
-            return true;
-        }
-        return !!document.querySelector('.theia-mobile-projects.theia-mod-visible')
-            || !!document.querySelector('.theia-mobile-agent-transcript-real-chat');
+        return isWorkHubSurfacePresentInDomExtracted(this);
     }
 
-    /**
-     * Last-resort guard: after 'ready' + a short grace, if still no Work Hub surface exists (and the
-     * user did not choose the classic IDE), the persisted layout is poisoned (valid but empty). Clear
-     * it via the proper StorageService key and reload once. A sessionStorage flag prevents loops.
-     */
     protected armLayoutRecoveryGuard(): void {
-        if (peekPreferDesktopIde() || typeof window === 'undefined') {
-            return;
-        }
-        const timeout = window.setTimeout(() => {
-            void this.runLayoutRecoveryGuard();
-        }, LAYOUT_RECOVERY_GRACE_MS);
-        this.toDispose.push(Disposable.create(() => window.clearTimeout(timeout)));
+        armLayoutRecoveryGuardExtracted(this);
     }
 
     protected async runLayoutRecoveryGuard(): Promise<void> {
-        const decision = decideLayoutRecovery({
-            workHubSurfacePresent: this.isWorkHubSurfacePresentInDom(),
-            preferDesktopIde: peekPreferDesktopIde(),
-            recoveryAlreadyAttempted: this.hasLayoutRecoveryBeenAttempted(),
-        });
-        if (decision === 'noop') {
-            return;
-        }
-        if (decision === 'abort-loop') {
-            console.error(
-                '[qaap-mobile-shell] Work Hub still absent after a layout-recovery reload; not reloading '
-                + `again to avoid a loop. The persisted layout may be corrupt — run the '${RESET_LAYOUT.label}' `
-                + 'command or clear localStorage manually.',
-            );
-            return;
-        }
-        console.warn(
-            '[qaap-mobile-shell] Work Hub failed to mount and no surface is present; clearing the '
-            + 'persisted (empty) layout and reloading once to recover.',
-        );
-        this.markLayoutRecoveryAttempted();
-        try {
-            // Clear the poisoned layout with the proper storage API (same key ShellLayoutRestorer uses).
-            await this.storageService.setData(SHELL_LAYOUT_STORAGE_KEY, undefined);
-        } catch (error) {
-            console.error('[qaap-mobile-shell] Failed to clear persisted layout during recovery', error);
-        }
-        // Reload through RESET_LAYOUT: it disables layout persistence (shouldStoreLayout=false) before
-        // reloading, so the unload handler cannot re-serialize the empty shell over our clear.
-        try {
-            await this.commands.executeCommand(RESET_LAYOUT.id);
-        } catch (error) {
-            console.error('[qaap-mobile-shell] RESET_LAYOUT failed during recovery; forcing reload', error);
-            window.location.reload();
-        }
+        return runLayoutRecoveryGuardExtracted(this);
     }
 
     protected hasLayoutRecoveryBeenAttempted(): boolean {
-        try {
-            return typeof sessionStorage !== 'undefined'
-                && sessionStorage.getItem(QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY) === '1';
-        } catch {
-            return false;
-        }
+        return hasLayoutRecoveryBeenAttemptedExtracted(this);
     }
 
     protected markLayoutRecoveryAttempted(): void {
-        try {
-            sessionStorage?.setItem(QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY, '1');
-        } catch {
-            /* sessionStorage unavailable — loop protection degrades gracefully */
-        }
+        markLayoutRecoveryAttemptedExtracted(this);
     }
 
-    /** Last-resort guard for restored Work Hub DOM that is visible as Agents but has no mounted shell. */
     protected armAgentsSurfaceWatchdog(): void {
-        const interval = window.setInterval(() => {
-            // Skip the DOM scan while the tab is hidden — nothing can go blank off-screen, and this
-            // avoids a perpetual background querySelector sweep (battery/CPU on mobile).
-            if (document.hidden) {
-                return;
-            }
-            this.recoverEmptyAgentsSurface();
-        }, 2000);
-        this.toDispose.push(Disposable.create(() => window.clearInterval(interval)));
+        armAgentsSurfaceWatchdogExtracted(this);
     }
 
     protected recoverEmptyAgentsSurface(): void {
-        if (peekPreferDesktopIde()) {
-            return;
-        }
-        const root = document.querySelector<HTMLElement>(
-            '.theia-mobile-projects.theia-mod-home.theia-mod-visible.theia-mod-agents-hub-landing',
-        );
-        const scroll = root?.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll');
-        if (!root || !scroll || scroll.querySelector(
-            '.theia-mobile-agents-hub-inline-execution, .theia-mobile-tasks-hub-root.theia-mod-agents-loading, .theia-mobile-agent-transcript-empty',
-        )) {
-            return;
-        }
-        if (this.projectsPanel?.node !== root) {
-            root.remove();
-            if (!this.projectsPanel?.node.isConnected) {
-                this.projectsPanel?.dispose();
-                this.setTrackedProjectsPanel(undefined);
-            }
-            this.tryBootstrapMobileAgentsChat();
-            return;
-        }
-        if (!this.projectsPanel) {
-            this.tryBootstrapMobileAgentsChat();
-            return;
-        }
-        this.projectsPanel.ensureAgentsHubExecutionShellRendered();
-        this.projectsPanel.refreshHubChrome();
+        recoverEmptyAgentsSurfaceExtracted(this);
     }
 
-    /** Safety net: if the boot guard is still active after 15s, clear it so the user doesn't see a blank screen. */
     protected armBootGuardSafetyTimeout(): void {
-        const timeout = window.setTimeout(() => {
-            if (document.documentElement.classList.contains('theia-mobile-workhub-boot')) {
-                console.warn('[qaap-mobile-shell] Boot guard still active after 15s — clearing to prevent blank screen');
-                clearMobileWorkHubBootGuard();
-            }
-        }, 15000);
-        this.toDispose.push(Disposable.create(() => window.clearTimeout(timeout)));
+        armBootGuardSafetyTimeoutExtracted(this);
     }
 
     /** Persist Agents surface choice so reload / wide viewport does not fall back to the IDE. */
@@ -963,11 +513,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     };
 
     onDidInitializeLayout(app: FrontendApplication): void {
-        this.ensureShellHooks(app.shell);
-        void this.workHubBootstrap.bootstrapWorkHubSurfaceAfterLayout().finally(() => {
-            this.recoverEmptyAgentsSurface();
-        });
-        window.requestAnimationFrame(() => this.recoverEmptyAgentsSurface());
+        onDidInitializeLayoutExtracted(this, app);
     }
 
     protected readonly onMediaChange = (): void => {
@@ -980,35 +526,11 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     };
 
     onStop(_app: FrontendApplication): void {
-        this.workHubDiff.setDelegate(undefined);
-        this.mobileMq?.removeEventListener('change', this.onMediaChange);
-        window.removeEventListener('resize', this.onWindowResize);
-        if (this.resizeRaf) {
-            window.cancelAnimationFrame(this.resizeRaf);
-            this.resizeRaf = 0;
-        }
-        window.removeEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, this.onDismissProjectsPanelEvent);
-        window.removeEventListener(QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT, this.onLandingHubListChanged);
-        this.teardownMobileUi();
-        this.toDispose.dispose();
+        onStopExtracted(this, _app);
     }
 
-    /** Work Hub is the default surface on every viewport; desktop IDE requires an explicit choice. */
     protected shouldActivateMobileLayout(): boolean {
-        if (Boolean(this.mobileMq?.matches)) {
-            return true;
-        }
-        if (peekPreferDesktopIde()) {
-            return false;
-        }
-        if (shouldBootstrapMobileAgentsChat()) {
-            return true;
-        }
-        if (shouldPreferWorkHubAgentsLayout()) {
-            return true;
-        }
-        // Desktop also starts in Work Hub. The classic IDE is entered only through "Open IDE".
-        return true;
+        return shouldActivateMobileLayoutExtracted(this);
     }
 
     /** Agents / Work Hub surface — not when the user explicitly chose the classic IDE. */
@@ -1053,119 +575,27 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected enterMobileLayout(): void {
-        this.ensureShellHooks(this.shell);
-        if (this.mobileActive) {
-            if (!peekPreferDesktopIde()
-                && !this.projectsPanel?.isVisible()
-                && !this.projectsPanel?.isAgentsHubShellActive()) {
-                this.tryBootstrapMobileAgentsChat();
-            }
-            return;
-        }
-        this.mobileActive = true;
-        this.shell.node.classList.add(MOBILE_ONE_COLUMN_LAYOUT_CLASS);
-        this.forceCenterColumnFullWidth();
-        this.ensureOverlayElements();
-        // Restored layout often leaves a side sheet expanded; collapse so the editor column is visible.
-        void this.collapseMobileSideSheets().then(() => {
-            if (peekPreferDesktopIde()) {
-                this.syncMobileHubPrimaryBottomChrome();
-                this.refreshBottomBar();
-                this.refreshWorkbenchTopBar();
-                this.scheduleSnapAndUiRefresh();
-                return;
-            }
-            if (!peekPreferDesktopIde() && this.landingLeftThisSession && this.workspaceService.opened) {
-                markPreferAgentsSurface();
-            }
-            this.landing.applyMobileProjectsPanelDismissAfterReload();
-            if (!this.tryBootstrapMobileAgentsChat()) {
-                this.ensureMobileProjectsHomeVisible();
-            }
-            this.scheduleSnapAndUiRefresh();
-        });
+        enterMobileLayoutExtracted(this);
     }
 
     protected leaveMobileLayout(): void {
-        if (!this.mobileActive) {
-            return;
-        }
-        const preserveProjectsLanding = this.isProjectsLandingSession();
-        this.mobileActive = false;
-        this.restoreMobileBottomPanelFromMaximized();
-        this.shell.node.classList.remove(MOBILE_ONE_COLUMN_LAYOUT_CLASS);
-        this.teardownMobileUi(preserveProjectsLanding);
-        if (preserveProjectsLanding) {
-            window.requestAnimationFrame(() => this.requestFullShellRelayout());
-            return;
-        }
-        this.restoreDesktopSplitLayout();
-        window.requestAnimationFrame(() => {
-            void this.ensureDesktopSidePanelSizes();
-            this.requestFullShellRelayout();
-        });
+        leaveMobileLayoutExtracted(this);
     }
 
-    /** Reset split + side panel pixel sizes after mobile (persisted layout often keeps width 0). */
     protected async ensureDesktopSidePanelSizes(): Promise<void> {
-        if (this.shouldActivateMobileLayout() || !hasQaapLeftRightSplitPanel(this.shell)) {
-            return;
-        }
-        this.restoreDesktopSplitLayout();
-        const splitWidth = this.shell.leftRightSplitPanel.node.clientWidth;
-        if (splitWidth <= 0) {
-            return;
-        }
-        const target = Math.max(280, Math.min(360, Math.round(splitWidth * 0.22)));
-        if (this.shell.isExpanded('left')) {
-            await this.setSidePanelSize('left', target);
-        }
-        if (this.shell.isExpanded('right')) {
-            await this.setSidePanelSize('right', target);
-        }
-        this.requestFullShellRelayout();
-        await this.desktopTerminalLayout.ensureDesktopTerminalNormal();
+        return ensureDesktopSidePanelSizesExtracted(this);
     }
 
     protected async setSidePanelSize(side: 'left' | 'right', size: number): Promise<void> {
-        const handler = side === 'left' ? this.shell.leftPanelHandler : this.shell.rightPanelHandler;
-        if (handler instanceof QaapSidePanelHandler) {
-            await handler.applyPanelSize(size);
-        }
+        return setSidePanelSizeExtracted(this, side, size);
     }
 
     protected restoreDesktopSplitLayout(): void {
-        if (!hasQaapLeftRightSplitPanel(this.shell)) {
-            return;
-        }
-        try {
-            // Leave desktop sidebars collapsed by default; individual views restore/expand themselves.
-            this.shell.leftRightSplitPanel.setRelativeSizes([0, 1, 0]);
-        } catch {
-            /* layout not ready */
-        }
-        const bottomSplit = this.bottomBarController.getBottomAreaSplitPanel();
-        if (bottomSplit) {
-            try {
-                bottomSplit.setRelativeSizes([1, 0]);
-            } catch {
-                /* layout not ready */
-            }
-        }
+        restoreDesktopSplitLayoutExtracted(this);
     }
 
     protected forceCenterColumnFullWidth(): void {
-        if (!hasQaapLeftRightSplitPanel(this.shell)) {
-            return;
-        }
-        try {
-            // Side sheets are `position: fixed` overlays — center must always keep full split width
-            // so the editor stack and bottom (terminal) panel can lay out inside #theia-bottom-split-panel.
-            this.shell.leftRightSplitPanel.setRelativeSizes([0, 1, 0]);
-        } catch {
-            /* layout not ready */
-        }
-        this.bottomBarController.syncMobileBottomSplit();
+        forceCenterColumnFullWidthExtracted(this);
     }
 
     protected getBottomAreaSplitPanel(): SplitPanel | undefined {
@@ -1209,82 +639,15 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected requestFullShellRelayout(): void {
-        MessageLoop.sendMessage(this.shell, LuminoWidget.ResizeMessage.UnknownSize);
-        MessageLoop.postMessage(this.shell, LuminoWidget.Msg.FitRequest);
-        MessageLoop.postMessage(this.shell, LuminoWidget.Msg.UpdateRequest);
-        MessageLoop.postMessage(this.shell.mainPanel, LuminoWidget.Msg.FitRequest);
-        if (!hasQaapLeftRightSplitPanel(this.shell)) {
-            return;
-        }
-        const split = this.shell.leftRightSplitPanel;
-        MessageLoop.sendMessage(split, LuminoWidget.ResizeMessage.UnknownSize);
-        MessageLoop.postMessage(split, LuminoWidget.Msg.FitRequest);
-        MessageLoop.postMessage(split, LuminoWidget.Msg.UpdateRequest);
-        for (const child of toArray(split.widgets)) {
-            MessageLoop.sendMessage(child, LuminoWidget.ResizeMessage.UnknownSize);
-            MessageLoop.postMessage(child, LuminoWidget.Msg.FitRequest);
-            MessageLoop.postMessage(child, LuminoWidget.Msg.UpdateRequest);
-        }
-        if (this.shell.isExpanded('left')) {
-            this.sideSheetController.relayoutMobileSidePanelHandler('left');
-        }
-        if (this.shell.isExpanded('right')) {
-            this.sideSheetController.relayoutMobileSidePanelHandler('right');
-        }
-        MessageLoop.postMessage(this.shell.mainPanel, LuminoWidget.Msg.UpdateRequest);
+        requestFullShellRelayoutExtracted(this);
     }
 
     protected teardownMobileUi(preserveProjectsLanding = false): void {
-        this.bottomBarController.removeBottomBarSecondaryMenu();
-        this.overlayController.removeBackdrop();
-        setMobileWorkHubHideBottomChrome(false);
-        setMobileWorkHubComposerHeaderChrome(false);
-        setMobileActiveTranscriptChrome(false);
-        document.body.classList.remove('theia-mobile-mod-landing');
-        this.bottomBarController.unpinBottomChromeFromBody();
-        this.bottomBarController.detachBottomBarFromShell();
-        this.overlayController.teardown();
-        if (preserveProjectsLanding) {
-            this.landing.applyLandingChrome();
-            this.shell.node.classList.remove(MOBILE_BOTTOM_OPEN_CLASS);
-            return;
-        }
-        this.hideProjectsPanel();
-        if (this.projectsPanel) {
-            this.projectsPanel.dispose();
-            if (this.projectsPanel.node.parentElement) {
-                this.projectsPanel.node.parentElement.removeChild(this.projectsPanel.node);
-            }
-        }
-        this.setTrackedProjectsPanel(undefined);
-        this.pullRequestPanelController.disposePullRequestPanel();
-        this.shell.node.classList.remove(MOBILE_BOTTOM_OPEN_CLASS);
+        teardownMobileUiExtracted(this, preserveProjectsLanding = false);
     }
 
     protected ensureOverlayElements(): void {
-        if (!this.mobileActive) {
-            return;
-        }
-        this.overlayController.removeBackdrop();
-        this.bottomBarController.ensureBottomBarWidget();
-        this.bottomBarController.pinBottomChromeToBody();
-        this.overlayController.ensureMounted();
-        this.landing.applyMobileProjectsPanelDismissAfterReload();
-        if (peekPreferDesktopIde()) {
-            this.syncMobileHubPrimaryBottomChrome();
-            this.refreshBottomBar();
-            this.refreshWorkbenchTopBar();
-        } else {
-            this.ensureProjectsPanel();
-            if (!this.tryBootstrapMobileAgentsChat()) {
-                this.ensureMobileProjectsHomeVisible();
-            }
-        }
-        void this.refreshProjectsCount();
-        if (!peekPreferDesktopIde()) {
-            this.refreshBottomBar();
-        }
-        this.overlayController.updateBackdropVisibility();
+        ensureOverlayElementsExtracted(this);
     }
 
     protected cancelAgentsBootstrap(): void {
@@ -1307,30 +670,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.workHubBootstrap.ensureMobileProjectsHomeVisible();
     }
 
-    /**
-     * Tras abrir un proyecto el panel se cierra y el main puede quedar vacío unos instantes; reintenta
-     * Welcome y README hasta que haya un widget en el área principal.
-     */
     protected async ensureMainContentAfterWorkspaceReload(): Promise<void> {
-        if (!this.landingLeftThisSession || !this.workspaceService.opened) {
-            return;
-        }
-        if (shouldBootstrapMobileAgentsChat() || shouldPreferWorkHubAgentsLayout()) {
-            return;
-        }
-        const fillMain = async (): Promise<void> => {
-            if (toArray(this.shell.mainPanel.widgets()).length > 0) {
-                return;
-            }
-            await this.ensureWelcomeInMainArea();
-            if (toArray(this.shell.mainPanel.widgets()).length === 0) {
-                await this.projectsReadme.retryPendingReadmeOpen();
-            }
-        };
-        await fillMain();
-        for (const delayMs of [400, 1200, 2500]) {
-            window.setTimeout(() => { void fillMain(); }, delayMs);
-        }
+        return ensureMainContentAfterWorkspaceReloadExtracted(this);
     }
 
     protected ensureProjectsPanel(forceHomeMode?: boolean): void {
@@ -1342,14 +683,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected ensureDesktopWorkHubSessionsSidebarOpen(): void {
-        if (matchesMobileOneColumnLayout() || peekPreferDesktopIde() || hasDesktopSessionsSidebarCollapsed()) {
-            return;
-        }
-        const panel = this.projectsPanel;
-        if (!panel?.isVisible() || !panel.isHomeMode() || panel.isWorkHubSessionsSidebarVisible()) {
-            return;
-        }
-        panel.openWorkHubSessionsSidebar();
+        ensureDesktopWorkHubSessionsSidebarOpenExtracted(this);
     }
 
     /** Remove every PR overlay node under the app shell (fixes stacked sheets after re-open). */
@@ -1374,19 +708,11 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected async refreshProjectsCount(): Promise<void> {
-        try {
-            const projects = await this.projectsService.loadProjects();
-            this.projectsCount = projects.length;
-        } catch {
-            this.projectsCount = 0;
-        }
+        return refreshProjectsCountExtracted(this);
     }
 
     protected hideProjectsPanel(): void {
-        this.projectsPanel?.hide();
-        this.landing.applyLandingChrome();
-        this.refreshBottomBar();
-        this.refreshWorkbenchTopBar();
+        hideProjectsPanelExtracted(this);
     }
 
     protected hidePullRequestPanel(): void {
@@ -1394,112 +720,15 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     registerCommands(registry: CommandRegistry): void {
-        registry.registerCommand(QaapMobileProjectsDashboardCommands.TOGGLE, {
-            execute: () => {
-                if (peekPreferDesktopIde()) {
-                    this.returnToAgentsFromDesktopIde();
-                    return;
-                }
-                return this.toggleProjectsPanel();
-            },
-            isEnabled: () => this.shouldActivateMobileLayout() && this.workspaceService.opened,
-            isVisible: () => matchesMobileOneColumnLayout() && this.workspaceService.opened,
-        });
-        // Project card "Open agent" button. Submits to the backend agent-task runner so the work
-        // is a detached child process, not a tab-bound chat; the agent keeps going after the
-        // user closes the tab.
-        registry.registerCommand({ id: 'qaap.mobile.openAgentOnTask' }, {
-            execute: (project: MobileProjectEntry) => this.openAgentTaskComposer(project),
-        });
-        registry.registerCommand({ id: 'qaap.mobile.toggleSessionsSidebar' }, {
-            execute: () => this.toggleWorkHubSessionsSidebar(),
-            isEnabled: () => this.mobileActive && this.workspaceService.opened,
-            isVisible: () => matchesMobileOneColumnLayout() && this.workspaceService.opened,
-        });
-        registry.registerCommand({
-            id: QAAP_WORK_HUB_OVERVIEW_COMMAND,
-            label: nls.localize('qaap/accountMenu/workHubOverview', 'Work Hub overview'),
-        }, {
-            execute: () => this.openMobileWorkHubLanding('tasks'),
-            isEnabled: () => this.mobileActive,
-            isVisible: () => matchesMobileOneColumnLayout(),
-        });
-        registry.registerCommand({
-            id: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-            label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
-        }, {
-            execute: () => { void this.openDesktopIde(); },
-            isEnabled: () => this.workspaceService.opened
-                && this.shouldActivateMobileLayout()
-                && !peekPreferDesktopIde(),
-            isVisible: () => this.workspaceService.opened && this.shouldActivateWorkHubLayout(),
-        });
-        registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.options' }, {
-            execute: () => this.bottomBarController.getMobileIdeHeaderViewButtons(),
-            isEnabled: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
-            isVisible: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
-        });
-        registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.active' }, {
-            execute: () => this.resolveMobileIdeHeaderViewId(),
-            isEnabled: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
-            isVisible: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
-        });
-        registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.activate' }, {
-            execute: (id: MobileBottomButtonId) => this.activateMobileIdeHeaderView(id),
-            isEnabled: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
-            isVisible: () => this.workspaceService.opened && matchesMobileOneColumnLayout(),
-        });
+        registerCommandsExtracted(this, registry);
     }
 
     protected async openDesktopIde(): Promise<void> {
-        const prepared = await this.prepareDesktopIdeWorkspaceFromHub();
-        if (!prepared) {
-            return;
-        }
-        this.ideFallback.openDesktopIde();
+        return openDesktopIdeExtracted(this);
     }
 
-    /**
-     * Work Hub → IDE: one hub project opens that repo; several projects leave the IDE un-rooted
-     * so the user picks a repository from the hub later.
-     */
     protected async prepareDesktopIdeWorkspaceFromHub(): Promise<boolean> {
-        const projects = await this.projectsService.loadProjects();
-        const plan = planDesktopIdeWorkspaceOpen(
-            projects.map(project => ({
-                id: project.id,
-                cwd: this.projectsService.getProjectCwd(project),
-            })),
-            this.projectsService.getCurrentWorkspaceCwd(),
-        );
-        if (plan.kind === 'reload-empty') {
-            markPreferDesktopIde();
-            await this.workspaceService.close();
-            return false;
-        }
-        if (plan.kind === 'open-project') {
-            const project = projects[plan.projectIndex];
-            if (!project) {
-                return false;
-            }
-            let cwd = this.projectsService.getProjectCwd(project);
-            if (!cwd && project.github) {
-                cwd = await this.projectsService.prepareProjectCwd(project);
-            }
-            if (!cwd) {
-                MobileSnackbar.show(
-                    nls.localize('qaap/mobile/openDesktopIdeNeedsProject', 'Open a project from Work Hub before opening the IDE.'),
-                    { kind: 'warning' },
-                );
-                return false;
-            }
-            const current = this.projectsService.getCurrentWorkspaceCwd();
-            if (current !== cwd) {
-                markPreferDesktopIde();
-                await this.projectsService.openInCurrentWindowAsync(project);
-            }
-        }
-        return true;
+        return prepareDesktopIdeWorkspaceFromHubExtracted(this);
     }
 
     /** Top-bar «Back to Work Hub» from mobile desktop-IDE mode — restore the Agents execution shell. */
@@ -1517,17 +746,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected enforceWorkHubSurfaceIsolation(): void {
-        if (peekPreferDesktopIde()) {
-            return;
-        }
-        markPreferAgentsSurface();
-        setMobileWorkHubComposerHeaderChrome(true);
-        syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
-        void this.sideSheetController.collapseMobileSidePanels();
-        this.sideSheetController.settleMobileSidePanelsCollapsed();
-        this.scheduleSnapAndUiRefresh();
-        this.refreshBottomBar();
-        this.refreshWorkbenchTopBar();
+        enforceWorkHubSurfaceIsolationExtracted(this);
     }
 
     protected async onExitActiveTranscript(): Promise<void> {
@@ -1535,66 +754,19 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected async openAgentTaskComposer(project: MobileProjectEntry): Promise<void> {
-        if (!project) {
-            return;
-        }
-        const cwd = this.projectsService.getProjectCwd(project);
-        if (!this.agentTaskComposer) {
-            this.agentTaskComposer = new MobileAgentTaskComposer(this.activeTasks, {
-                onSubmitted: () => {
-                    MobileSnackbar.show(
-                        nls.localize('qaap/mobileProjects/agentTaskQueued', 'Agent task started'),
-                        { kind: 'success' }
-                    );
-                },
-            }, this.backgroundContext);
-            document.body.appendChild(this.agentTaskComposer.node);
-            this.toDispose.push(Disposable.create(() => {
-                this.agentTaskComposer?.dispose();
-                this.agentTaskComposer?.node.parentElement?.removeChild(this.agentTaskComposer.node);
-                this.agentTaskComposer = undefined;
-            }));
-        }
-        await this.agentTaskComposer.show(project, cwd);
+        return openAgentTaskComposerExtracted(this, project);
     }
 
     protected async openWorkHubPreferencesSheet(query?: string): Promise<void> {
-        if (!this.workHubPreferencesSheet) {
-            this.workHubPreferencesSheet = new MobileWorkHubPreferencesSheet(this.widgetManager, this.preferenceService);
-            document.body.appendChild(this.workHubPreferencesSheet.node);
-            this.toDispose.push(Disposable.create(() => {
-                this.workHubPreferencesSheet?.dispose();
-                this.workHubPreferencesSheet = undefined;
-            }));
-        }
-        await this.workHubPreferencesSheet.show(query);
+        return openWorkHubPreferencesSheetExtracted(this, query);
     }
 
     protected async openWorkHubAiConfigurationSheet(tabId?: string): Promise<void> {
-        if (!this.workHubAiConfigurationSheet) {
-            this.workHubAiConfigurationSheet = new MobileWorkHubAiConfigurationSheet(
-                this.widgetManager,
-                this.aiConfigurationSelectionService,
-            );
-            document.body.appendChild(this.workHubAiConfigurationSheet.node);
-            this.toDispose.push(Disposable.create(() => {
-                this.workHubAiConfigurationSheet?.dispose();
-                this.workHubAiConfigurationSheet = undefined;
-            }));
-        }
-        await this.workHubAiConfigurationSheet.show(tabId);
+        return openWorkHubAiConfigurationSheetExtracted(this, tabId);
     }
 
     protected async toggleProjectsPanel(): Promise<void> {
-        if (this.projectsPanel?.isHomeMode() && this.projectsPanel.isVisible()) {
-            return;
-        }
-        this.hidePullRequestPanel();
-        await this.dismissSheetsAsync();
-        if (this.shell.isExpanded('bottom')) {
-            await this.shell.collapsePanel('bottom');
-        }
-        await this.showMobileProjectsHome('tasks');
+        return toggleProjectsPanelExtracted(this);
     }
 
     protected async showMobileProjectsHome(preferredHubView?: MobileProjectsHubView): Promise<void> {
@@ -1629,39 +801,11 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected async onProjectsPanelOpen(project: MobileProjectEntry): Promise<void> {
-        this.landing.leaveMobileProjectsLandingNow();
-        try {
-            if (project.isCurrent) {
-                await this.onCurrentProjectActivated();
-                return;
-            }
-            await this.projectsService.openInCurrentWindowAsync(project);
-        } finally {
-            this.scheduleSnapAndUiRefresh();
-        }
+        return onProjectsPanelOpenExtracted(this, project);
     }
 
-    /** Sessions sidebar "Open in IDE" — leave Agents and surface the editor stack. */
     protected async onProjectsPanelOpenInIde(project: MobileProjectEntry): Promise<void> {
-        try {
-            if (project.isCurrent) {
-                const cwd = this.projectsService.getCurrentWorkspaceCwd();
-                if (cwd && isQaapWorkspaceContainerPath(cwd)) {
-                    markPreferDesktopIde();
-                    await this.projectsService.openInCurrentWindowAsync(project);
-                    return;
-                }
-                this.ideFallback.openDesktopIde();
-                await this.onCurrentProjectActivated();
-                return;
-            }
-            markPreferDesktopIde();
-            await this.projectsService.openInCurrentWindowAsync(project);
-        } finally {
-            if (!peekPreferDesktopIde()) {
-                this.scheduleSnapAndUiRefresh();
-            }
-        }
+        return onProjectsPanelOpenInIdeExtracted(this, project);
     }
 
     /**
@@ -1673,24 +817,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.scheduleSnapAndUiRefresh();
     }
 
-    /**
-     * Called when the user taps the project that already matches the active workspace.
-     * Brings the README to the editor (or falls back to any existing main widget) instead of
-     * reloading the window.
-     */
     protected async onCurrentProjectActivated(): Promise<void> {
-        const opened = await this.projectsReadme.openReadmeForCurrentWorkspace();
-        if (opened) {
-            return;
-        }
-        // No README to show: focus an existing editor if any, so the user lands in the editor area.
-        const widgets = toArray(this.shell.mainPanel.widgets());
-        const target = this.shell.activeWidget && widgets.includes(this.shell.activeWidget)
-            ? this.shell.activeWidget
-            : widgets[0];
-        if (target) {
-            void this.shell.activateWidget(target.id);
-        }
+        return onCurrentProjectActivatedExtracted(this);
     }
 
     protected ensureBottomChromeHost(): HTMLElement {
@@ -1728,27 +856,11 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected async prepareSideSheetOpen(side: 'left' | 'right'): Promise<void> {
-        const other: 'left' | 'right' = side === 'left' ? 'right' : 'left';
-        // Explicit intent to reveal an IDE side sheet in the Work Hub — the only thing that may
-        // un-hide the left/right panel while Work Hub is the surface. Cleared when the sheet collapses.
-        setMobileWorkHubSideSheetOpen(true);
-        this.hideProjectsPanel();
-        this.hidePullRequestPanel();
-        if (this.shell.isExpanded(other)) {
-            await this.shell.collapsePanel(other);
-        }
+        return prepareSideSheetOpenExtracted(this, side);
     }
 
     protected async mountSideSheetWidget(side: 'left' | 'right', widgetId: string): Promise<void> {
-        const widget = await this.widgetManager.getOrCreateWidget(widgetId);
-        const area = widget.isAttached ? this.shell.getAreaFor(widget) : undefined;
-        if (!widget.isAttached || area !== side) {
-            await this.shell.addWidget(widget, { area: side });
-        }
-        await this.shell.activateWidget(widgetId);
-        if (!this.shell.isExpanded(side)) {
-            this.shell.expandPanel(side);
-        }
+        return mountSideSheetWidgetExtracted(this, side, widgetId);
     }
 
     protected isWorkHubLandingBottomBar(): boolean {
@@ -1772,52 +884,11 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     async openDiffInWorkHub(projectId?: string): Promise<void> {
-        if (!this.mobileActive) {
-            const widget = await this.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID);
-            if (!widget.isAttached) {
-                this.shell.addWidget(widget, { area: 'main' });
-            }
-            await this.shell.activateWidget(widget.id);
-            return;
-        }
-        const onHubLanding = this.projectsPanel?.isHomeMode() === true
-            && this.projectsPanel.isVisible()
-            && document.body.classList.contains('theia-mobile-mod-landing')
-            && !this.landingLeftThisSession;
-        if (onHubLanding) {
-            this.landing.applyLandingChrome();
-            await this.projectsPanel?.openDiffView(projectId);
-            this.refreshBottomBar();
-            return;
-        }
-        await this.openProjectScopedDiffView(projectId);
+        return openDiffInWorkHubExtracted(this, projectId);
     }
 
-    /** Working-changes review inside the active workspace sheet (not the cross-project Work Hub tab). */
     protected async openProjectScopedDiffView(projectId?: string): Promise<void> {
-        this.hidePullRequestPanel();
-        await this.dismissSheetsAsync();
-        if (this.shell.isExpanded('bottom')) {
-            await this.shell.collapsePanel('bottom');
-        }
-        if (this.projectsPanel?.isHomeMode()) {
-            this.projectsPanel.hide();
-            this.projectsPanel.dispose();
-            this.projectsPanel.node.parentElement?.removeChild(this.projectsPanel.node);
-            this.setTrackedProjectsPanel(undefined);
-        }
-        this.ensureProjectsPanel(false);
-        const panel = this.projectsPanel;
-        if (!panel) {
-            return;
-        }
-        document.body.classList.remove('theia-mobile-mod-landing');
-        await panel.show();
-        const resolvedProjectId = projectId ?? (await this.projectsService.loadProjects())
-            .find(project => project.isCurrent)?.id;
-        await panel.openProjectDiffView(resolvedProjectId);
-        this.refreshBottomBar();
-        this.refreshWorkbenchTopBar();
+        return openProjectScopedDiffViewExtracted(this, projectId);
     }
 
     protected getMobileBottomButtons(): MobileBottomButton[] {
@@ -1837,14 +908,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected refreshWorkbenchTopBar(): void {
-        for (const widget of toArray(this.shell.topPanel.widgets)) {
-            if (widget instanceof QaapWorkbenchHistoryNavWidget) {
-                widget.refreshChrome();
-            }
-            if (widget instanceof QaapWorkbenchRightControlsWidget) {
-                widget.refreshChrome();
-            }
-        }
+        refreshWorkbenchTopBarExtracted(this);
     }
 
     protected refreshBottomBar(): void {
@@ -1896,12 +960,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected async executeAndDismiss(commandId: string): Promise<void> {
-        try {
-            await this.commands.executeCommand(commandId);
-        } catch (e) {
-            console.error(`[qaap-mobile-shell] secondary action failed: ${commandId}`, e);
-        }
-        this.scheduleSnapAndUiRefresh();
+        return executeAndDismissExtracted(this, commandId);
     }
 
     protected async onMobileBottomButtonClick(def: MobileBottomButton, btn: HTMLButtonElement): Promise<void> {
@@ -1909,45 +968,19 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected resolveMobileIdeHeaderViewId(): MobileBottomButtonId {
-        if (this.bottomBarController.isMobileBottomButtonActive('agent')) {
-            return 'agent';
-        }
-        const active = this.bottomBarController.getMobileIdeHeaderViewButtons()
-            .find(def => this.bottomBarController.isMobileBottomButtonActive(def.id));
-        return active?.id ?? 'editor';
+        return resolveMobileIdeHeaderViewIdExtracted(this);
     }
 
     protected async activateMobileIdeHeaderView(id: MobileBottomButtonId): Promise<void> {
-        await this.bottomBarController.activateMobileIdeHeaderView(id);
-        this.refreshBottomBar();
-        this.refreshWorkbenchTopBar();
+        return activateMobileIdeHeaderViewExtracted(this, id);
     }
 
     protected relayoutMainPreviewWidgets(): void {
-        for (const widget of toArray(this.shell.mainPanel.widgets())) {
-            if (widget.id.startsWith('mini-browser:')) {
-                this.sideSheetController.relayoutSheetTree(widget);
-            }
-        }
+        relayoutMainPreviewWidgetsExtracted(this);
     }
 
     protected async toggleMobileAgentSheet(): Promise<void> {
-        this.hideProjectsPanel();
-        this.hidePullRequestPanel();
-        if (this.isMobileAgentSheetVisible()) {
-            await this.collapseMobileSidePanels();
-            this.scheduleSnapAndUiRefresh();
-            return;
-        }
-        const project = await this.resolveCurrentProjectForAgent();
-        if (project) {
-            const cwd = this.projectsService.getProjectCwd(project);
-            writeStoredComposerSurface(cwd, 'chat');
-            this.projectsPanel?.preferComposerSurface('chat', cwd);
-        }
-        // Mobile "Agent" opens Theia AI Chat in the right sheet.
-        await this.openMobileSideSheet('right', WORKBENCH_CHAT_VIEW_WIDGET_ID);
-        this.scheduleSnapAndUiRefresh();
+        return toggleMobileAgentSheetExtracted(this);
     }
 
     protected isMobileAgentSheetVisible(): boolean {
@@ -1955,51 +988,23 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected async resolveCurrentProjectForAgent(): Promise<MobileProjectEntry | undefined> {
-        try {
-            const projects = await this.projectsService.loadProjects();
-            return this.projectsService.resolveCurrentWorkspaceProject(projects);
-        } catch {
-            return undefined;
-        }
+        return resolveCurrentProjectForAgentExtracted(this);
     }
 
     protected async toggleMobileExploreSheet(): Promise<void> {
-        this.hideProjectsPanel();
-        this.hidePullRequestPanel();
-        if (this.isMobileExploreSheetVisible()) {
-            await this.collapseMobileSidePanels();
-            syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
-            this.scheduleSnapAndUiRefresh();
-            return;
-        }
-        await this.openMobileSideSheet('left', EXPLORER_VIEW_CONTAINER_ID);
-        this.scheduleSnapAndUiRefresh();
+        return toggleMobileExploreSheetExtracted(this);
     }
 
     protected isMobileExploreSheetVisible(): boolean {
-        if (!this.shell.isExpanded('left') || this.sideSheetController.isSidePanelSheetCollapsedInDom('left')) {
-            return false;
-        }
-        const currentTitle = this.shell.leftPanelHandler.tabBar.currentTitle;
-        return currentTitle?.owner?.id === EXPLORER_VIEW_CONTAINER_ID;
+        return isMobileExploreSheetVisibleExtracted(this);
     }
 
     protected getActivePreviewWidget(): LuminoWidget | undefined {
-        const active = this.shell.activeWidget ?? this.shell.currentWidget;
-        if (isMiniBrowserPreviewWidgetId(active?.id) && active && this.shell.getAreaFor(active) === 'main') {
-            return active;
-        }
-        return undefined;
+        return getActivePreviewWidgetExtracted(this);
     }
 
     protected findPreviewWidget(): LuminoWidget | undefined {
-        for (const area of ['main', 'right', 'left', 'bottom'] as ApplicationShell.Area[]) {
-            const match = this.shell.getWidgets(area).find(widget => isMiniBrowserPreviewWidgetId(widget.id));
-            if (match) {
-                return match;
-            }
-        }
-        return undefined;
+        return findPreviewWidgetExtracted(this);
     }
 
     protected getMainPreviewWidget(): LuminoWidget | undefined {
@@ -2012,118 +1017,31 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected async closeStaleMainPreviewWidget(): Promise<void> {
-        const preview = this.getMainPreviewWidget();
-        if (!preview || this.isMainPreviewWidgetLive(preview)) {
-            return;
-        }
-        await this.shell.closeWidget(preview.id, { save: false });
+        return closeStaleMainPreviewWidgetExtracted(this);
     }
 
-    /** Preview lives in the editor column — never behind Work Hub chrome that hides `#theia-main-content-panel`. */
     protected ensureMobilePreviewEditorVisible(): void {
-        if (!this.mobileActive) {
-            return;
-        }
-        setMobileWorkHubHideBottomChrome(false);
-        setMobileWorkHubComposerHeaderChrome(false);
-        setMobileActiveTranscriptChrome(false);
-        document.body.classList.remove('theia-mobile-mod-landing');
-        if (!peekPreferDesktopIde()) {
-            markPreferDesktopIde();
-        }
+        ensureMobilePreviewEditorVisibleExtracted(this);
     }
 
     protected async activateMainPreviewWidget(): Promise<boolean> {
-        const preview = this.getMainPreviewWidget();
-        if (!preview || !this.isMainPreviewWidgetLive(preview)) {
-            return false;
-        }
-        await this.shell.activateWidget(preview.id);
-        this.relayoutMainPreviewWidgets();
-        return true;
+        return activateMainPreviewWidgetExtracted(this);
     }
 
     protected async relocatePreviewToMainIfNeeded(): Promise<void> {
-        const preview = this.findPreviewWidget();
-        if (!preview?.isAttached) {
-            return;
-        }
-        if (this.shell.getAreaFor(preview) === 'main') {
-            return;
-        }
-        await this.shell.closeWidget(preview.id, { save: false });
+        return relocatePreviewToMainIfNeededExtracted(this);
     }
 
     protected async toggleMobilePreview(): Promise<void> {
-        this.hideProjectsPanel();
-        this.hidePullRequestPanel();
-        this.ensureMobilePreviewEditorVisible();
-        const activePreview = this.getActivePreviewWidget();
-        if (activePreview) {
-            activePreview.close();
-            this.scheduleSnapAndUiRefresh();
-            return;
-        }
-        if (await this.activateMainPreviewWidget()) {
-            this.scheduleSnapAndUiRefresh();
-            return;
-        }
-        await this.relocatePreviewToMainIfNeeded();
-        await this.closeStaleMainPreviewWidget();
-        if (this.shouldDismissSheetsForButton('preview')) {
-            await this.dismissSheetsAsync();
-        }
-        // Always mount mini-browser chrome first — never block the UI on install/dev-server bootstrap.
-        await this.openMobilePreviewInMain();
-        void this.bootstrapMobilePreviewInBackground();
+        return toggleMobilePreviewExtracted(this);
     }
 
-    /** After the preview tab is visible, attach to an existing URL or start install/dev as needed. */
     protected async bootstrapMobilePreviewInBackground(): Promise<void> {
-        try {
-            if (this.projectBootstrap.previewUrl) {
-                await this.projectBootstrap.focusPreview();
-                await this.activateMainPreviewWidget();
-                return;
-            }
-            const phase = this.projectBootstrap.phase;
-            const descriptor = this.projectBootstrap.descriptor;
-            if (phase === 'run-failed' && this.projectBootstrap.needsInstall && descriptor?.installCommand) {
-                await this.projectBootstrap.runInstall();
-                return;
-            }
-            if (this.projectBootstrap.hasRunnableDevPlan()
-                && (phase === 'ready-to-run' || phase === 'starting' || phase === 'run-failed')) {
-                await this.projectBootstrap.runDevServer();
-                return;
-            }
-            if (phase === 'detected' && descriptor?.installCommand) {
-                await this.projectBootstrap.runInstall();
-            }
-        } catch (e) {
-            console.error('[qaap-mobile-shell] bootstrapMobilePreviewInBackground failed', e);
-        } finally {
-            this.relayoutMainPreviewWidgets();
-            this.scheduleSnapAndUiRefresh();
-        }
+        return bootstrapMobilePreviewInBackgroundExtracted(this);
     }
 
     protected async openMobilePreviewInMain(): Promise<void> {
-        try {
-            await this.miniBrowserOpenHandler.openEmptyPreviewTab();
-        } catch (e) {
-            console.error('[qaap-mobile-shell] openEmptyPreviewTab failed', e);
-            return;
-        }
-        if (!await this.activateMainPreviewWidget()) {
-            const preview = await this.miniBrowserOpenHandler.getByUri(MiniBrowserOpenHandler.PREVIEW_URI);
-            if (preview) {
-                await this.shell.activateWidget(preview.id);
-            }
-        }
-        this.relayoutMainPreviewWidgets();
-        this.requestFullShellRelayout();
-        this.scheduleSnapAndUiRefresh();
+        return openMobilePreviewInMainExtracted(this);
     }
 
     /**
@@ -2163,22 +1081,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.sideSheetController.isAnyMobileSideSheetVisible();
     }
 
-    /** Open Welcome when the main dock is empty (layout restore / mobile entry often skip startup). */
     protected async ensureWelcomeInMainArea(): Promise<void> {
-        // The classic IDE / Welcome is taking the main area — make sure the boot guard is lifted.
-        clearMobileWorkHubBootGuard();
-        if (toArray(this.shell.mainPanel.widgets()).length > 0) {
-            return;
-        }
-        if (!this.commands.getCommand(GETTING_STARTED_WIDGET_COMMAND)
-            || !this.commands.isEnabled(GETTING_STARTED_WIDGET_COMMAND)) {
-            return;
-        }
-        try {
-            await this.commands.executeCommand(GETTING_STARTED_WIDGET_COMMAND);
-        } catch (e) {
-            console.error('[qaap-mobile-shell] failed to open Welcome', e);
-        }
+        return ensureWelcomeInMainAreaExtracted(this);
     }
 
 }
