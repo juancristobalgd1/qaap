@@ -73,7 +73,6 @@ import {
 } from '../common/qaap-chat-turn-workflow';
 import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
-import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
 import {
     buildConversationAgentPrompt,
@@ -179,6 +178,18 @@ import {
     checkpointLabel as checkpointLabelHelper,
     isDirectory as isDirectoryHelper,
 } from './qaap-agent-conversation-store-git';
+import {
+    resolveStructuredParsedTraceEvents as resolveStructuredParsedTraceEventsHelper,
+    resolveLoopBudgetKey as resolveLoopBudgetKeyHelper,
+    countAutoContinueAttempts as countAutoContinueAttemptsHelper,
+    resolveAgentIdForAgentMessage as resolveAgentIdForAgentMessageHelper,
+    contextCompactionMessageText as contextCompactionMessageTextHelper,
+    contextPreambleWithCompaction as contextPreambleWithCompactionHelper,
+    filterAgentLogChunk as filterAgentLogChunkHelper,
+    deriveTitle as deriveTitleHelper,
+    isTurnGraphEnabled as isTurnGraphEnabledHelper,
+    readTriedFallbackModels as readTriedFallbackModelsHelper,
+} from './qaap-agent-conversation-store-utils';
 import {
     clearRunActive as clearRunActiveHelper,
     appendRunCancelledTrace as appendRunCancelledTraceHelper,
@@ -1907,13 +1918,7 @@ export class QaapAgentConversationStore {
             traceEvents?: QaapAgentMessage['traceEvents'];
         },
     ): QaapAgentMessage['traceEvents'] {
-        if (parsed.traceEvents?.length) {
-            return parsed.traceEvents;
-        }
-        if (parsed.segments?.length) {
-            return mergeSegmentTraceEvents(message.traceEvents, parsed.segments);
-        }
-        return message.traceEvents;
+        return resolveStructuredParsedTraceEventsHelper(message, parsed);
     }
 
     protected async applyTaskOutcome(
@@ -2210,17 +2215,12 @@ export class QaapAgentConversationStore {
 
     /** Resolve every generated continuation in a chain back to the human-authored root turn. */
     protected resolveLoopBudgetKey(conv: QaapAgentConversation, userMessageId: string): string {
-        const userMessage = conv.messages.find(message => message.id === userMessageId && message.role === 'user');
-        return userMessage?.autoContinueRootMessageId ?? userMessageId;
+        return resolveLoopBudgetKeyHelper(conv, userMessageId);
     }
 
     /** Persisted count so a backend restart cannot reset the per-chain auto-continue ceiling. */
     protected countAutoContinueAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
-        return conv.messages.filter(message =>
-            message.role === 'user'
-            && message.autoContinueRootMessageId === rootUserMessageId
-            && message.visualRepairAttempt === undefined
-        ).length;
+        return countAutoContinueAttemptsHelper(conv, rootUserMessageId);
     }
 
     /**
@@ -2704,10 +2704,7 @@ export class QaapAgentConversationStore {
     }
 
     protected resolveAgentIdForAgentMessage(conv: QaapAgentConversation, agentMessage: QaapAgentMessage): string {
-        const runUserMessage = agentMessage.runUserMessageId
-            ? conv.messages.find(message => message.id === agentMessage.runUserMessageId && message.role === 'user')
-            : undefined;
-        return runUserMessage?.turnAgentId ?? conv.agentId;
+        return resolveAgentIdForAgentMessageHelper(conv, agentMessage);
     }
 
     /** Agent for the current user turn: `@mention` in this message beats the picker, then stored agent. */
@@ -2812,21 +2809,7 @@ export class QaapAgentConversationStore {
     }
 
     protected contextCompactionMessageText(message: QaapAgentMessage): string {
-        const parts: string[] = [];
-        const content = message.content.replace(/\s+/g, ' ').trim();
-        if (content) {
-            parts.push(content);
-        }
-        for (const segment of message.segments ?? []) {
-            if (segment.type === 'text' && segment.content.trim()) {
-                parts.push(segment.content.replace(/\s+/g, ' ').trim());
-            } else if (segment.type === 'tool') {
-                const result = segment.result?.replace(/\s+/g, ' ').trim();
-                parts.push(result ? `[tool ${segment.name}] ${result}` : `[tool ${segment.name}]`);
-            }
-        }
-        const text = parts.join(' ').trim();
-        return text.length > 520 ? `${text.slice(0, 519).trimEnd()}…` : text;
+        return contextCompactionMessageTextHelper(message);
     }
 
     protected buildTaskCreateRequest(
@@ -2923,9 +2906,7 @@ export class QaapAgentConversationStore {
     }
 
     protected contextPreambleWithCompaction(contextPreamble: string | undefined, summary: string): string {
-        const parts = [contextPreamble?.trim(), `Earlier conversation context has been compacted:\n${summary.trim()}`]
-            .filter((part): part is string => !!part);
-        return parts.join('\n\n');
+        return contextPreambleWithCompactionHelper(contextPreamble, summary);
     }
 
     /** Inject lightweight team-delegation instructions so the leader can spawn sub-tasks via `qaap-task`. */
@@ -2936,7 +2917,7 @@ export class QaapAgentConversationStore {
 
     /** Drop repetitive QAIQ/OpenClaude metadata noise from chat transcripts (still kept in task logs). */
     protected filterAgentLogChunk(chunk: string): string {
-        return filterAgentProcessLogChunk(chunk);
+        return filterAgentLogChunkHelper(chunk);
     }
 
     /**
@@ -2948,7 +2929,7 @@ export class QaapAgentConversationStore {
      * touched. See {@link deriveConversationTitle}'s doc for the documented LLM-title upgrade seam.
      */
     protected deriveTitle(seed: string): string {
-        return deriveConversationTitle(seed);
+        return deriveTitleHelper(seed);
     }
 
     protected fire(event: QaapAgentConversationEvent): void {
@@ -3512,7 +3493,7 @@ export class QaapAgentConversationStore {
 
     /** ADR-002 turnstile: whether restart-resume is governed by the chat-turn workflow graph. */
     protected isTurnGraphEnabled(): boolean {
-        return /^(1|true|on)$/i.test(process.env.QAAP_TURN_GRAPH?.trim() ?? '');
+        return isTurnGraphEnabledHelper();
     }
 
     /**
@@ -3646,16 +3627,7 @@ export class QaapAgentConversationStore {
 
     /** The durable tried-model keys of a run's fallback ladder ({@link QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT}). */
     protected readTriedFallbackModels(record: QaapPersistedWorkflowRun | undefined): readonly string[] {
-        const raw = record?.artifacts[QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT];
-        if (!raw) {
-            return [];
-        }
-        try {
-            const parsed: unknown = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : [];
-        } catch {
-            return [];
-        }
+        return readTriedFallbackModelsHelper(record);
     }
 
     /**
