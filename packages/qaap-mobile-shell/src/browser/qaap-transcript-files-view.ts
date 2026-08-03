@@ -1319,19 +1319,33 @@ export function mountTranscriptFilesView(
         }));
     }
 
+    let resizeRaf = 0;
     const onWindowResize = (): void => {
-        if (moreMenuOpen) {
-            positionAnchorMenu(moreBtn, moreMenu);
+        // Throttle via rAF: resize fires continuously on mobile; Monaco editor layout()
+        // and menu repositioning are expensive synchronous reflows — coalesce to one pass per frame.
+        if (resizeRaf) {
+            return;
         }
-        if (newMenuOpen) {
-            positionAnchorMenu(newFileBtn, newMenu, 196);
-        }
-        updateSplitHandleAria();
-        applyTreePaneSize();
-        state.previewMonacoEditor?.layout();
+        resizeRaf = window.requestAnimationFrame(() => {
+            resizeRaf = 0;
+            if (moreMenuOpen) {
+                positionAnchorMenu(moreBtn, moreMenu);
+            }
+            if (newMenuOpen) {
+                positionAnchorMenu(newFileBtn, newMenu, 196);
+            }
+            updateSplitHandleAria();
+            applyTreePaneSize();
+            state.previewMonacoEditor?.layout();
+        });
     };
     window.addEventListener('resize', onWindowResize);
-    disposables.push(Disposable.create(() => window.removeEventListener('resize', onWindowResize)));
+    disposables.push(Disposable.create(() => {
+        window.removeEventListener('resize', onWindowResize);
+        if (resizeRaf) {
+            window.cancelAnimationFrame(resizeRaf);
+        }
+    }));
 
     renderEmptyPreview();
     void ensureChildren(state.rootUri).then(async children => {

@@ -33,6 +33,14 @@ export class QaapBuildFreshnessContribution implements FrontendApplicationContri
 
     protected loadedBuild: string | undefined;
     protected lastCheckAt = 0;
+    protected disposed = false;
+    protected checkInterval: number | undefined;
+    protected onVisibilityChange = (): void => {
+        if (this.disposed || document.visibilityState !== 'visible') {
+            return;
+        }
+        void this.checkForNewBuild();
+    };
 
     onStart(): void {
         void fetchQaapAuthConfig().then(config => {
@@ -40,21 +48,26 @@ export class QaapBuildFreshnessContribution implements FrontendApplicationContri
             // the build this tab runs. No embedded constant needed.
             this.loadedBuild = config.build?.trim() || undefined;
         }).catch(() => undefined);
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                void this.checkForNewBuild();
-            }
-        });
-        window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
+        document.addEventListener('visibilitychange', this.onVisibilityChange);
+        this.checkInterval = window.setInterval(() => {
+            if (!this.disposed && document.visibilityState === 'visible') {
                 void this.checkForNewBuild();
             }
         }, CHECK_INTERVAL_MS);
     }
 
+    onStop(): void {
+        this.disposed = true;
+        document.removeEventListener('visibilitychange', this.onVisibilityChange);
+        if (this.checkInterval !== undefined) {
+            window.clearInterval(this.checkInterval);
+            this.checkInterval = undefined;
+        }
+    }
+
     protected async checkForNewBuild(): Promise<void> {
         const now = Date.now();
-        if (!this.loadedBuild || now - this.lastCheckAt < MIN_CHECK_SPACING_MS) {
+        if (this.disposed || !this.loadedBuild || now - this.lastCheckAt < MIN_CHECK_SPACING_MS) {
             return;
         }
         this.lastCheckAt = now;

@@ -38,7 +38,7 @@ export class QaapChatScrollFadeContribution implements FrontendApplicationContri
                     }
                 }
                 if (mutation.type === 'attributes' && mutation.target instanceof HTMLElement) {
-                    this.patchExisting(mutation.target);
+                    this.patchAttributeTarget(mutation.target);
                 }
             }
         });
@@ -48,6 +48,24 @@ export class QaapChatScrollFadeContribution implements FrontendApplicationContri
             this.observer = undefined;
             this.fadePatches.dispose();
         }));
+    }
+
+    /**
+     * Attribute changes (class/hidden toggles) fire constantly across the whole DOM.
+     * Only the scroll-host selectors that depend on the element's OWN classes need a
+     * `matches()` check; the single parent-dependent selector
+     * (`.theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-scroll`)
+     * additionally needs a subtree scan when the target is a `.theia-mobile-projects`.
+     * Skipping the querySelectorAll for unrelated class toggles avoids a per-frame
+     * subtree sweep on every highlight/selection/active-state change in the app.
+     */
+    protected patchAttributeTarget(target: HTMLElement): void {
+        if (target.matches(CHAT_SCROLL_FADE_SCROLLER_SELECTOR)) {
+            this.patchElement(target);
+        }
+        if (target.classList.contains('theia-mobile-projects')) {
+            target.querySelectorAll<HTMLElement>(CHAT_SCROLL_FADE_SCROLLER_SELECTOR).forEach(el => this.patchElement(el));
+        }
     }
 
     onStop(_app: FrontendApplication): void {

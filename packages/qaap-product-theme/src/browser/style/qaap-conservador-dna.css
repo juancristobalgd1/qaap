@@ -685,6 +685,7 @@ body.qaap-theme-light .q-skeleton::after {
   );
   transform: translateX(-100%);
   animation: q-skeleton-shimmer 1.4s var(--qaap-ease, ease) infinite;
+  will-change: transform;
 }
 
 @keyframes q-skeleton-shimmer {

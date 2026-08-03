@@ -906,7 +906,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
                 return;
             }
             this.recoverEmptyAgentsSurface();
-        }, 500);
+        }, 2000);
         this.toDispose.push(Disposable.create(() => window.clearInterval(interval)));
     }
 
@@ -982,6 +982,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.workHubDiff.setDelegate(undefined);
         this.mobileMq?.removeEventListener('change', this.onMediaChange);
         window.removeEventListener('resize', this.onWindowResize);
+        if (this.resizeRaf) {
+            window.cancelAnimationFrame(this.resizeRaf);
+            this.resizeRaf = 0;
+        }
         window.removeEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, this.onDismissProjectsPanelEvent);
         window.removeEventListener(QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT, this.onLandingHubListChanged);
         this.teardownMobileUi();
@@ -1011,8 +1015,17 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.shouldActivateMobileLayout() && !peekPreferDesktopIde();
     }
 
+    protected resizeRaf = 0;
     protected readonly onWindowResize = (): void => {
-        this.onMediaChange();
+        // Throttle via rAF: resize fires dozens of times/sec on mobile rotation/viewport
+        // adjustments; coalescing to one layout pass per frame avoids reflow storms.
+        if (this.resizeRaf) {
+            return;
+        }
+        this.resizeRaf = window.requestAnimationFrame(() => {
+            this.resizeRaf = 0;
+            this.onMediaChange();
+        });
     };
 
     protected ensureShellHooks(shell: ApplicationShell): void {

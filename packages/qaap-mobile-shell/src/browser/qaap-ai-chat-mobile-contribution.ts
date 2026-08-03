@@ -32,6 +32,7 @@ export class QaapAiChatMobileContribution extends AIChatContribution implements 
     protected readonly mobileFullWidthLayoutDisposables = new DisposableCollection();
     protected readonly bootstrapChip = new QaapAiChatBootstrapChip();
     protected bootstrapChipHost: HTMLElement | undefined;
+    protected resizeRaf = 0;
 
     override initialize(): void {
         super.initialize();
@@ -53,6 +54,10 @@ export class QaapAiChatMobileContribution extends AIChatContribution implements 
 
     onStop(_app: FrontendApplication): void {
         window.removeEventListener('resize', this.onWindowResizeForMobileChatLayout);
+        if (this.resizeRaf) {
+            window.cancelAnimationFrame(this.resizeRaf);
+            this.resizeRaf = 0;
+        }
         this.teardownBootstrapChip();
         this.mobileFullWidthLayoutDisposables.dispose();
         if (typeof document !== 'undefined') {
@@ -61,7 +66,15 @@ export class QaapAiChatMobileContribution extends AIChatContribution implements 
     }
 
     protected readonly onWindowResizeForMobileChatLayout = (): void => {
-        this.scheduleMobileAiChatFullWidthUpdate();
+        // Throttle via rAF: resize fires continuously during mobile viewport changes;
+        // coalesce to one layout pass per frame.
+        if (this.resizeRaf) {
+            return;
+        }
+        this.resizeRaf = window.requestAnimationFrame(() => {
+            this.resizeRaf = 0;
+            this.scheduleMobileAiChatFullWidthUpdate();
+        });
     };
 
     protected scheduleMobileAiChatFullWidthUpdate(): void {

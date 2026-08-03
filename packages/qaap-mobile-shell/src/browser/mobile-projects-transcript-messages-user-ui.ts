@@ -287,7 +287,7 @@ export class MobileProjectsTranscriptMessagesUserUi {
             const img = document.createElement('img');
             img.className = 'theia-mobile-agent-transcript-user-attachment-image';
             img.alt = preview.fileName;
-            img.loading = 'eager';
+            img.loading = 'lazy';
             img.decoding = 'async';
             if (preview.src) {
                 img.src = preview.src;

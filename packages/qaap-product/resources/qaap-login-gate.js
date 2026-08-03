@@ -107,6 +107,17 @@
 
     function isSignedIn() {
         try {
+            // Fast path: the common case is a reload of the same workspace, so the signed-in
+            // flag lives under the current pathname prefix. Avoids iterating all of localStorage
+            // (and JSON.parse on every match) before the first paint.
+            var directRaw = localStorage.getItem(storagePrefix() + SIGNED_IN_SUFFIX);
+            if (directRaw !== null) {
+                var directValue = JSON.parse(directRaw);
+                if (directValue === true || directValue === 'true') {
+                    return true;
+                }
+            }
+            // Fallback: the user may be signed in under a different workspace prefix.
             var i, key, raw, value;
             for (i = 0; i < localStorage.length; i++) {
                 key = localStorage.key(i);
