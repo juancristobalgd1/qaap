@@ -32,6 +32,7 @@ import {
     resolveAgentTurnFailureMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import { extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
+import { parseAgentLogForTranscript } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
 
 export function clearRunActive(
     conv: QaapAgentConversation,
@@ -252,6 +253,37 @@ export function resolveCompletedTurnAuthFailureReason(log: string | undefined): 
             || /\brate[_\s-]?limit(?:ed|ing)?\b/i.test(trimmed);
         if (looksLikeProviderError) {
             return resolveAgentTurnFailureMessage(trimmed, { state: 'failed' });
+        }
+    }
+    return undefined;
+}
+
+export function parseStructuredLog(
+    agentId: string,
+    log: string,
+): {
+    content: string;
+    segments: QaapAgentMessage['segments'];
+    traceEvents: QaapAgentMessage['traceEvents'];
+} | undefined {
+    const parsed = parseAgentLogForTranscript(agentId, log);
+    if (!parsed.segments?.length && !parsed.traceEvents?.length && !parsed.content?.trim()) {
+        return undefined;
+    }
+    return parsed;
+}
+
+export function resolveRunAgentMessageId(
+    conv: QaapAgentConversation,
+    run: { readonly userMessageId: string; readonly agentMessageId?: string },
+): string | undefined {
+    if (run.agentMessageId && conv.messages.some(message => message.id === run.agentMessageId)) {
+        return run.agentMessageId;
+    }
+    for (let index = conv.messages.length - 1; index >= 0; index--) {
+        const message = conv.messages[index];
+        if (message.role === 'agent' && message.runUserMessageId === run.userMessageId) {
+            return message.id;
         }
     }
     return undefined;

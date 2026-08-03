@@ -46,7 +46,6 @@ import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@th
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
     createAgentStreamAccumulator,
-    parseAgentLogForTranscript,
     resolveAgentLogDisplayText,
     type QaapAgentStreamAccumulator,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
@@ -200,6 +199,8 @@ import {
     appendCheckpointTrace as appendCheckpointTraceHelper,
     appendAgentReply as appendAgentReplyHelper,
     resolveCompletedTurnAuthFailureReason as resolveCompletedTurnAuthFailureReasonHelper,
+    parseStructuredLog as parseStructuredLogHelper,
+    resolveRunAgentMessageId as resolveRunAgentMessageIdHelper,
 } from './qaap-agent-conversation-store-helpers';
 import {
     STORE_DIR,
@@ -1804,11 +1805,7 @@ export class QaapAgentConversationStore {
         segments: QaapAgentMessage['segments'];
         traceEvents: QaapAgentMessage['traceEvents'];
     } | undefined {
-        const parsed = parseAgentLogForTranscript(agentId, log);
-        if (!parsed.segments?.length && !parsed.traceEvents?.length && !parsed.content?.trim()) {
-            return undefined;
-        }
-        return parsed;
+        return parseStructuredLogHelper(agentId, log);
     }
 
     /** When AG-UI event mapping is empty but the segment accumulator parsed NDJSON, persist that snapshot. */
@@ -2948,16 +2945,7 @@ export class QaapAgentConversationStore {
         conv: QaapAgentConversation,
         run: { readonly userMessageId: string; readonly agentMessageId?: string },
     ): string | undefined {
-        if (run.agentMessageId && conv.messages.some(message => message.id === run.agentMessageId)) {
-            return run.agentMessageId;
-        }
-        for (let index = conv.messages.length - 1; index >= 0; index--) {
-            const message = conv.messages[index];
-            if (message.role === 'agent' && message.runUserMessageId === run.userMessageId) {
-                return message.id;
-            }
-        }
-        return undefined;
+        return resolveRunAgentMessageIdHelper(conv, run);
     }
 
     /**
