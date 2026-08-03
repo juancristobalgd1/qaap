@@ -104,13 +104,6 @@ import { QaapWebPushService } from './qaap-web-push-service';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import { hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
-import {
-    buildAgentReviewPrompt,
-    parseAgentReviewVerdict,
-    parseGitNumstat,
-    resolveAgentReviewMode,
-    resolveTaskReviewRisk,
-} from '../common/qaap-agent-review';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
 import {
     readCodexHelp as readCodexHelpHelper,
@@ -156,6 +149,7 @@ import {
     listAgents as listAgentsHelper,
     probeAgentBinOnce as probeAgentBinOnceHelper,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
+    reviewSuccessfulAgentTask as reviewSuccessfulAgentTaskHelper,
 } from './qaap-agent-task-runner-utils3';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
@@ -192,9 +186,6 @@ const QAAP_AGENT_VERIFY_MAX_ATTEMPTS = 2;
 const QAAP_AGENT_VERIFY_WALL_CLOCK_MS = 5 * 60 * 1000;
 const QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS = 12_000;
 const QAAP_AGENT_FIX_PROMPT_OUTPUT_CHARS = 4_000;
-/** Wall clock for the independent adversarial review pass (phase C). Mode knob: QAAP_AGENT_REVIEW. */
-const QAAP_AGENT_REVIEW_WALL_CLOCK_MS = 3 * 60 * 1000;
-const QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS = 15_000;
 
 /** Exported so other node/ services that reuse {@link QaapAgentTaskRunner.runGenericCommand} — the
  *  auto-researcher runner's `run`/`measure` phases — can type its result. */
@@ -2149,113 +2140,18 @@ export class QaapAgentTaskRunner {
         task: QaapAgentTask,
         verification: QaapAgentTaskVerification | undefined,
     ): Promise<QaapAgentTaskReview | undefined> {
-        const mode = resolveAgentReviewMode(process.env.QAAP_AGENT_REVIEW);
-        if (mode === 'off' || !this.isTaskStillRunning(task.id)) {
-            return undefined;
-        }
-        if (task.externalReview) {
-            // A workflow run owns the review for this turn (its judge node). Reviewing here as well
-            // would spend a second reviewer agent on the same diff and delay the turn for nothing.
-            return undefined;
-        }
-        const agentId = this.resolveTaskAgentId(task);
-        if (agentId === SHELL_AGENT_ID) {
-            return undefined;
-        }
-        const env = this.buildChildEnv(task);
-        // Verification already proved edits exist when it ran; re-check only when it was skipped
-        // (undefined covers both "no edits" and "no scripts" — review only cares about the former).
-        if (verification === undefined && !await this.hasEditedFilesForVerification(task, env)) {
-            return undefined;
-        }
-        const numstat = await this.runGenericCommand('git diff --numstat HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
-        const untracked = await this.runGenericCommand('git ls-files --others --exclude-standard', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
-        // Gitignored secrets files never appear in either git listing; a rewritten .env must both
-        // count as a change and trip the sensitive-path high-risk signal.
-        const sensitiveChanges = this.changedSensitiveFiles(task);
-        const changedFiles = [
-            ...parseGitNumstat(numstat.stdout),
-            // Untracked (new) files never show in `diff HEAD` — count them for the file-count and
-            // sensitive-path signals; their line counts are unknown and stay at 0.
-            ...untracked.stdout.split('\n').map(line => line.trim()).filter(Boolean)
-                .map(path => ({ path, added: 0, removed: 0 })),
-            ...sensitiveChanges.map(path => ({ path, added: 0, removed: 0 })),
-        ];
-        if (mode === 'high-risk' && resolveTaskReviewRisk(changedFiles) === 'low') {
-            return undefined;
-        }
-        const diff = await this.runGenericCommand('git diff HEAD', task.cwd, env, task.id, QAAP_AGENT_REVIEW_GIT_TIMEOUT_MS, {});
-        // Name the secrets files the diff cannot show, so the reviewer inspects them read-only
-        // instead of judging a change it cannot see. Contents are never inlined.
-        const diffForReview = sensitiveChanges.length > 0
-            ? `${diff.stdout}\n# gitignored sensitive files CHANGED by this task (not shown above — inspect them):\n${sensitiveChanges.map(name => `#   ${name}`).join('\n')}\n`
-            : diff.stdout;
-        const prompt = buildAgentReviewPrompt({ originalCommand: task.command, diff: diffForReview });
-        // Composer tasks share the workflow judge's brain: routing picks an INDEPENDENT reviewer
-        // (not the agent that wrote the change), health cooldowns skip backends whose CLI is down,
-        // and an infra-failed reviewer fails over to the next candidate instead of burning the
-        // review. UX is unchanged — same streaming into the task log, same review shape.
-        const candidates = this.resolveReviewerCandidates(task);
-        let ranAnyReviewer = false;
-        let lastReviewer = agentId;
-        for (const reviewerId of candidates) {
-            if (!this.isTaskStillRunning(task.id)) {
-                return undefined;
-            }
-            lastReviewer = reviewerId;
-            let command: string;
-            try {
-                ({ command } = this.buildAgentCommand(
-                    prompt,
-                    reviewerId,
-                    true,
-                    // The task's model binding only makes sense on the task's own CLI.
-                    reviewerId === agentId ? resolveTaskAgentModel(task) : undefined,
-                    task.cwd,
-                    undefined,
-                    undefined,
-                    'full-access',
-                ));
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                this.appendAndFireOutput(task.id, `\n[qaap] Skipping reviewer ${reviewerId}: ${message}\n`);
-                continue;
-            }
-            ranAnyReviewer = true;
-            const result = await this.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
-                header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
-                streamOutput: true,
-            });
-            const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
-            if (verdict) {
-                this.agentHealth?.noteSuccess(reviewerId);
-                return { status: verdict.status, reason: verdict.reason, agentId: reviewerId };
-            }
-            if (result.exitCode !== 0 && !result.timedOut) {
-                // The reviewer CLI itself died (quota, auth, broken install): cool it down and try
-                // the next candidate, exactly like a failed workflow judge turn.
-                this.agentHealth?.noteFailure(reviewerId);
-                continue;
-            }
-            // Ran to completion but stayed silent, or timed out: a second reviewer would double the
-            // cost for the same fail-open outcome — keep the single-attempt behavior.
-            return {
-                status: 'inconclusive',
-                reason: result.timedOut
-                    ? 'Reviewer timed out before emitting a verdict.'
-                    : 'Reviewer did not emit a verdict.',
-                agentId: reviewerId,
-            };
-        }
-        if (!ranAnyReviewer) {
-            // No candidate could even be started (all build failures) — same skip as before.
-            return undefined;
-        }
-        return {
-            status: 'inconclusive',
-            reason: 'Every reviewer agent failed before emitting a verdict.',
-            agentId: lastReviewer,
-        };
+        return reviewSuccessfulAgentTaskHelper(task, verification, {
+            isTaskStillRunning: id => this.isTaskStillRunning(id),
+            resolveTaskAgentId: t => this.resolveTaskAgentId(t),
+            buildChildEnv: t => this.buildChildEnv(t),
+            hasEditedFilesForVerification: (t, e) => this.hasEditedFilesForVerification(t, e),
+            runGenericCommand: (c, cwd, e, id, t, o) => this.runGenericCommand(c, cwd, e, id, t, o),
+            changedSensitiveFiles: t => this.changedSensitiveFiles(t),
+            resolveReviewerCandidates: t => this.resolveReviewerCandidates(t),
+            buildAgentCommand: (p, a, ap, m, cwd, cp, im, pol) => this.buildAgentCommand(p, a, ap, m, cwd, cp, im, pol),
+            appendAndFireOutput: (id, text) => this.appendAndFireOutput(id, text),
+            agentHealth: this.agentHealth,
+        });
     }
 
     /**
