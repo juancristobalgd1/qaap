@@ -49,7 +49,6 @@ import {
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { extractRetrievalKeywords, formatRelevantFilesHint } from '../common/qaap-agent-retrieval';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
 import {
@@ -150,6 +149,14 @@ import {
     readUserSettingsFromDisk as readUserSettingsFromDiskHelper,
     stripSharedProviderEnv as stripSharedProviderEnvHelper,
 } from './qaap-agent-task-runner-utils2';
+import {
+    readRelevantFiles as readRelevantFilesHelper,
+    reapAgentProcessGroupAfterExit as reapAgentProcessGroupAfterExitHelper,
+    resolveProjectName as resolveProjectNameHelper,
+    listAgents as listAgentsHelper,
+    probeAgentBinOnce as probeAgentBinOnceHelper,
+    recordTaskLatencyMark as recordTaskLatencyMarkHelper,
+} from './qaap-agent-task-runner-utils3';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 interface AgentCandidate {
@@ -206,17 +213,8 @@ const REPO_MAP_MAX_CHARS = 4000;
  * matching file paths as a "likely relevant files" hint. Default-on (bounded, 4s timeout) so the
  * agent starts oriented in large repos; opt out with QAAP_AGENT_RETRIEVAL=0 (or `false`/`off`).
  */
-const QAAP_AGENT_RETRIEVAL_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');
-/** Max relevant-file paths injected, and the char cap on that block. */
-const RETRIEVAL_MAX_FILES = 5;
-const RETRIEVAL_HINT_MAX_CHARS = 400;
 /** Repo-map cache TTL — short, because the changed-files list drifts as the agent edits. */
 const REPO_MAP_CACHE_TTL_MS = 60_000;
-/** Directories never listed in the repo map (mirrors the search-hygiene exclude list). */
-const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
-    'node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage', '.turbo', '.cache',
-    '.venv', 'venv', '__pycache__', 'target', 'vendor', '.idea', '.vscode',
-]);
 /** Source-ish top-level directories worth expanding one level deeper in the repo map. */
 
 /** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
@@ -844,21 +842,7 @@ export class QaapAgentTaskRunner {
      * back to the directory basename when no package manifest is present or readable.
      */
     protected resolveProjectName(cwd: string): string {
-        const cached = this.projectNameCache.get(cwd);
-        if (cached !== undefined) {
-            return cached;
-        }
-        let name = path.basename(cwd) || cwd;
-        try {
-            const manifest = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8')) as { name?: unknown };
-            if (typeof manifest.name === 'string' && manifest.name.trim()) {
-                name = manifest.name.trim();
-            }
-        } catch {
-            /* no package.json — fall back to basename */
-        }
-        this.projectNameCache.set(cwd, name);
-        return name;
+        return resolveProjectNameHelper(cwd, this.projectNameCache);
     }
 
     /** True when at least one coding agent is available — autodetected or env-configured. */
@@ -868,22 +852,7 @@ export class QaapAgentTaskRunner {
 
     /** Agents the UI can offer in its picker, in priority order. */
     listAgents(): QaapAgentDescriptor[] {
-        const result: QaapAgentDescriptor[] = [];
-        for (const candidate of AGENT_CANDIDATES) {
-            if (this.detectedAgents.has(candidate.id)) {
-                result.push({ id: candidate.id, label: candidate.label, available: true });
-            }
-        }
-        for (const [, candidate] of this.detectedAgents) {
-            if (!AGENT_CANDIDATES.some(builtIn => builtIn.id === candidate.id)) {
-                result.push({ id: candidate.id, label: candidate.label, available: true });
-            }
-        }
-        if (process.env.QAAP_AGENT_COMMAND?.trim()) {
-            result.push({ id: ENV_AGENT_ID, label: 'Custom (QAAP_AGENT_COMMAND)', available: true });
-        }
-        result.push({ id: SHELL_AGENT_ID, label: 'Shell command', available: true });
-        return result.filter(agent => !isUiHiddenVpsAgent(agent.id));
+        return listAgentsHelper(this.detectedAgents);
     }
 
     /**
@@ -910,20 +879,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected probeAgentBinOnce(agentId: string, resolveBin: () => string | undefined): boolean {
-        if (this.probedAgentBins.has(agentId)) {
-            return true;
-        }
-        const bin = resolveBin();
-        if (!bin) {
-            return false;
-        }
-        try {
-            spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 8000 });
-            this.probedAgentBins.add(agentId);
-            return true;
-        } catch {
-            return false;
-        }
+        return probeAgentBinOnceHelper(agentId, resolveBin, this.probedAgentBins);
     }
 
     listQaiqModels(): QaapQaiqModelOption[] {
@@ -1261,43 +1217,7 @@ export class QaapAgentTaskRunner {
      * never blocks a turn.
      */
     protected readRelevantFiles(cwd: string, userQuery: string | undefined): string | undefined {
-        if (!QAAP_AGENT_RETRIEVAL_ENABLED) {
-            return undefined;
-        }
-        const keywords = extractRetrievalKeywords(userQuery);
-        if (keywords.length === 0) {
-            return undefined;
-        }
-        try {
-            // Case-insensitive, files-with-matches, count per file so we can rank by hit count.
-            // Exclude the hygiene dirs; -g globs keep it scoped to source.
-            const pattern = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-            const args = ['--count-matches', '--no-messages', '-i', '-e', pattern, '--max-count', '50'];
-            for (const dir of REPO_MAP_EXCLUDED_DIRS) {
-                args.push('-g', `!${dir}/**`);
-            }
-            args.push('--', '.');
-            const out = spawnSync('rg', args, { cwd, encoding: 'utf8', timeout: 4000, maxBuffer: 4 * 1024 * 1024 });
-            if (out.status !== 0 && out.status !== 1 || !out.stdout) {
-                return undefined; // status 1 = no matches; other non-zero = rg missing/error
-            }
-            const ranked: Array<{ file: string; hits: number }> = [];
-            for (const line of out.stdout.split('\n')) {
-                const sep = line.lastIndexOf(':');
-                if (sep <= 0) {
-                    continue;
-                }
-                const file = line.slice(0, sep).replace(/^\.\//, '');
-                const hits = Number.parseInt(line.slice(sep + 1), 10);
-                if (file && Number.isFinite(hits)) {
-                    ranked.push({ file, hits });
-                }
-            }
-            ranked.sort((a, b) => b.hits - a.hits);
-            return formatRelevantFilesHint(ranked.slice(0, RETRIEVAL_MAX_FILES).map(r => r.file), RETRIEVAL_HINT_MAX_CHARS);
-        } catch {
-            return undefined;
-        }
+        return readRelevantFilesHelper(cwd, userQuery);
     }
 
     protected buildRepoMap(cwd: string): string | undefined {
@@ -1618,15 +1538,7 @@ export class QaapAgentTaskRunner {
      * descendants of the agent, so they continue running across navigation and reloads.
      */
     protected reapAgentProcessGroupAfterExit(child: ChildProcess): void {
-        const pid = child.pid;
-        if (!pid || globalThis.process.platform === 'win32') {
-            return;
-        }
-        try {
-            globalThis.process.kill(-pid, 'SIGKILL');
-        } catch {
-            // ESRCH is the common clean case: the agent left no descendants behind.
-        }
+        reapAgentProcessGroupAfterExitHelper(child);
     }
 
     /** Pending QAIQ stdio `can_use_tool` requests for a running task. */
@@ -2720,17 +2632,7 @@ export class QaapAgentTaskRunner {
     }
 
     protected recordTaskLatencyMark(taskId: string, mark: QaapTurnLatencyMark, at = Date.now()): void {
-        const task = this.tasks.get(taskId);
-        if (!task || task.latencyMarks?.[mark] !== undefined) {
-            return;
-        }
-        this.tasks.set(taskId, {
-            ...task,
-            latencyMarks: {
-                ...task.latencyMarks,
-                [mark]: at,
-            },
-        });
+        recordTaskLatencyMarkHelper(taskId, mark, this.tasks, at);
     }
 
     /**
