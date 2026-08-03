@@ -8,18 +8,16 @@ import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { } from '@theia/core/lib/common/';
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import * as markdownit from '@theia/core/shared/markdown-it';
 import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
 import type { QuickPick } from '@theia/core/lib/common/quick-pick-service';
-import { QuickInputService, QuickPickItem } from '@theia/core/lib/browser';
+import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { AIVariable, AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia/ai-core';
+import { AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia/ai-core';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatAgent, ChatService, ChatSession } from '@theia/ai-chat';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
-import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import {
     MobileProjectEntry,
     MobileProjectFilter,
@@ -66,16 +64,12 @@ import {
     type QaapAgentToolApprovalRules,
 } from '../common/qaap-agent-tool-approval-rules';
 import {
-    type StickyComposerContextChipView,
-} from './qaap-sticky-composer-context-ui';
-import {
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
 import {
     type QaapAttachComposerImageAttachment,
 } from '../common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
-import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import {
     buildQaapAccountMenuEntries,
@@ -84,14 +78,9 @@ import {
     type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import { } from './qaap-preview-annotation-composer-session';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import {
-    type ExecutionSurfaceTabId,
-} from '../common/qaap-execution-surface-tabs';
 import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
 import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-host';
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
@@ -276,11 +265,8 @@ import {
     type MobileWorkHubInboxItem,
 } from './mobile-work-hub-inbox';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
-import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
-import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
 import {
     type TranscriptWorkspaceSurfaceKey,
 } from './qaap-transcript-workspace-surfaces-cache';
@@ -301,194 +287,29 @@ import { activateMessagesSurfaceForExternalSubmitExtracted, attachExternalCompos
 import { cancelOpenTranscriptStreamExtracted, collectAgentsHubRecentItemsExtracted, collectChatHubGroupsExtracted, collectReviewGroupsExtracted, collectTasksInboxGroupsExtracted, createInboxProjectGroupExtracted, createProjectChatSessionExtracted, forkTheiaConversationExtracted, getOrRestoreProjectChatSessionExtracted, mountTranscriptChatInputExtracted, notifyAgentUsesSettingsApiKeyExtracted, onArchiveConversationExtracted, onCancelConversationExtracted, onDeleteConversationExtracted, onForkConversationExtracted, onRenameConversationExtracted, onRetryConversationExtracted, onSetConversationAutoApproveExtracted, onSetConversationPausedExtracted, onSetConversationPriorityExtracted, openAgentSignInTerminalExtracted, openExternalParallelRunsSheetExtracted, openInlineTranscriptExtracted, patchRoutineLocallyExtracted, patchWorkHubConversationRowInPlaceExtracted, pickAgentAndSubmitExternalPromptExtracted, refreshHubChromeExtracted, refreshInboxPullRequestsExtracted, removeExternalPreviewFeedbackChipExtracted, renderIdleSubmitOptimisticExtracted, resolveExternalComposerProjectExtracted, retryOpenFailedConversationTaskExtracted, retryOpenTranscriptConversationExtracted, retryOpenTranscriptStreamExtracted, seedTranscriptOptimisticSubmitExtracted, selectBackendConversationAgentExtracted, shouldUseTheiaCoderExtracted, submitExternalComposerPromptExtracted, submitTranscriptViaBackendConversationExtracted } from './mobile-projects-panel-timeline2';
 import { attachTranscriptChatViewWidgetExtracted, beginTranscriptDevPreviewRequestExtracted, createComposerEditorContextPanelDelegateExtracted, ensureOverlayUiExtracted, handleTranscriptStatusForAutoVerifyExtracted, openAgentsHubInlineTranscriptExtracted, refreshOpenTranscriptConversationExtracted, refreshTranscriptChecksViewsExtracted, releasePreviewForConversationExtracted, renderAgentsHubIdleSubmitOptimisticExtracted, renderChecksSectionExtracted, resolveActiveComposerContextTargetExtracted, stageTranscriptPreviewReadyUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-panel-activity2';
 
-export interface MobileProjectsPanelDelegate {
-    onProjectOpen(project: MobileProjectEntry): void;
-    /** Leave the Agents shell and show the classic IDE for this project. */
-    onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
-    onDismiss(): void;
-    /** Work Hub inbox: open the mobile PR review sheet for this pull request. */
-    onOpenPullRequest?(pullRequest: QaapGithubPullRequestSummary): void;
-    /** Clone/create/open from the projects UI finished and switched the IDE workspace. */
-    onWorkspaceOpened?(): void;
-    onProjectsChanged?(): void;
-    /**
-     * Invoked when the user taps the project that already matches the active workspace.
-     * The shell uses it to surface the README in the editor instead of triggering a no-op reload.
-     */
-    onCurrentProjectActivated?(project: MobileProjectEntry): void | Promise<void>;
-    onResumePreview?(project: MobileProjectEntry): void | Promise<void>;
-    onOpenAgentOnTask?(project: MobileProjectEntry): void | Promise<void>;
-    /** Show Work Hub (Agents landing) when sidebar actions need the projects panel visible. */
-    onShowAgentsHub?(): void | Promise<void>;
-    /** Show Work Hub Routines from the sessions sidebar. */
-    onShowRoutinesHub?(): void | Promise<void>;
-    /** Show Work Hub Research from the sessions sidebar. */
-    onShowResearchHub?(): void | Promise<void>;
-    /** Shell bottom bar active state after in-panel hub tab changes. */
-    onHubLandingViewChanged?(): void;
-    /** Transcript sheet on body: leave Work Hub landing overlay while chat is active. */
-    onEnterActiveTranscript?(): void;
-    /** Work Hub conversation became active; keep IDE-only panels out of the Work Hub surface. */
-    onEnterWorkHubConversation?(): void;
-    /** Transcript closed: restore Agents hub if the user had opened chat from the landing. */
-    onExitActiveTranscript?(): void;
-}
 
-export interface MobileProjectsPanelOptions {
-    /**
-     * Render as the workbench home view instead of a transient sheet: no drag-to-dismiss, no
-     * outside-tap dismiss, no `dialog` ARIA role. The user lives here when there is no workspace
-     * open, so the panel must not be dismissable.
-     */
-    homeMode?: boolean;
-    /**
-     * Resolves when the frontend application reached the 'ready' state
-     * (FrontendApplicationStateService). Used to defer composer autofocus
-     * until the boot sequence has finished fighting over focus.
-     */
-    whenFrontendReady?: () => Promise<void>;
-    /** Live cross-project task tracker. When provided the panel updates cards from SSE events. */
-    activeTasks?: MobileProjectsActiveTasks;
-    /**
-     * Cross-project tracker of persistent agent conversations. When provided, each project card
-     * lists its VPS-backed conversations and the inline composer creates / continues them instead
-     * of firing fire-and-forget background tasks.
-     */
-    conversations?: MobileProjectsConversations;
-    /** Resolves the editable global background-agent context for VPS conversations. */
-    backgroundContext?: QaapBackgroundContextProvider;
-    /** GitHub webhook inbox SSE — refreshes the Work Hub inbox without polling. */
-    inboxStream?: MobileWorkHubInboxStream;
-    /**
-     * Browser-local store of per-conversation priority/pause overrides for Theia-chat sessions
-     * (the VPS conversation store handles its own flags). Optional — when omitted the menu items
-     * fall back to no-op.
-     */
-    conversationFlags?: MobileProjectsConversationFlags;
-    /** Creates the same chat input widget used by the Agent view. */
-    createChatInputWidget?: (id: string) => Promise<AIChatInputWidget>;
-    /** Creates a full Agent chat view for opening real workspace chat sessions from Projects. */
-    createChatViewWidget?: (id: string) => Promise<ChatViewWidget>;
-    /** Embeds the diff-review React surface inside the Work Hub. */
-    createDiffReviewWidget?: () => Promise<QaapDiffReviewWidget>;
-    /** Context attach picker; anchor is the sticky composer attach button. */
-    pickContextVariable?: (
-        anchor: HTMLElement,
-        handlers: MobileComposerAttachHandlers,
-    ) => Promise<AIVariableResolutionRequest[]>;
-    /** Labels/icons for attached context chips (Agent chat label provider). */
-    formatContextChip?: (item: AIVariableResolutionRequest) => StickyComposerContextChipView;
-    /** Loads image attachment previews (inline base64 or workspace files). */
-    resolveAttachmentPreview?: (item: AIVariableResolutionRequest) => Promise<string | undefined>;
-    /** Variables offered for `#` completion in the sticky composer (same pool as Agent chat). */
-    getComposerVariables?: () => readonly AIVariable[];
-    getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
-    getComposerSlashCommands?: (agentId?: string) => readonly import('@theia/ai-core').PromptFragment[];
-    chatService?: ChatService;
-    chatAgentService?: ChatAgentService;
-    messageService?: MessageService;
-    /** Picks compile/build/test verification commands from the conversation workspace. */
-    resolveVerifyChecks?: (cwd: string) => Promise<Array<{ readonly label: string; readonly command: string }>>;
-    /** Sync Work Hub project cwds into {@link QaapProjectSkillRoots} for skill discovery without IDE workspace. */
-    workHubProjectSkillRoots?: QaapWorkHubProjectSkillRoots;
-    /** Opens a workspace file when the user taps a transcript read chip. */
-    openTranscriptFile?: (filePath: string) => void | Promise<void>;
-    /** Uploads inline preview-feedback screenshots into the workspace as imageContext requests. */
-    uploadComposerFeedbackImages?: (
-        images: readonly QaapAttachComposerImageAttachment[],
-        targetDir: URI | undefined,
-    ) => Promise<AIVariableResolutionRequest[]>;
-    openTranscriptReviewFile?: (filePath: string) => void | Promise<void>;
-    /** Codex-style workspace browser for the transcript Files tab. */
-    createTranscriptFilesViewServices?: () => TranscriptFilesViewServices | undefined;
-    /** Integrated terminal for the transcript Terminal tab (same {@link TerminalService} as the workbench). */
-    createTranscriptTerminalViewServices?: () => TranscriptTerminalViewServices | undefined;
-    /** Shared preview surfaces (element picker + inspector) for the transcript Preview tab. */
-    previewSurfaceRegistry?: QaapPreviewSurfaceRegistry;
-    /** Element Inspector service + commands for inline Design/CSS editing in Preview. */
-    previewInspectorDeps?: QaapPreviewInspectorDeps;
-    /** Clipboard for preview overflow actions (screenshot, copy URL). */
-    clipboard?: ClipboardService;
-    /** Reads AI provider settings (API keys + model lists) for the QAIQ model submenu. */
-    readPreference?: (key: string) => unknown;
-    /** User preferences — MCP plugin install/remove from the composer slash menu. */
-    preferenceService?: PreferenceService;
-    /** Light / Dark / System mode for the sessions sidebar foot switch. */
-    appearanceModeService?: import('./qaap-appearance-mode-service').QaapAppearanceModeService;
-    /** Registered BYOK language models from AI Configuration (same source as the agents UI). */
-    getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
-    /** Monaco quick input — Work Hub search opens as a top overlay instead of an inline field. */
-    quickInputService?: QuickInputService;
-    /** Generates commit messages automatically from the diff for the commit split-button. */
-    commitMessageAi?: import('./qaap-commit-message-ai').QaapCommitMessageAi;
-    /** Rewrites composer drafts via the selected language model. */
-    composerPromptImprover?: import('./qaap-composer-prompt-improver').QaapComposerPromptImprover;
-    /** Opens AI / Settings preferences inside the Work Hub instead of the IDE main area. */
-    openPreferencesSheet?: (query?: string) => Promise<void>;
-    /** Opens AI Configuration (agents, MCP, prompts) inside the Work Hub overlay. */
-    openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
-    /** Extra header overflow menu groups for embedding surfaces such as the IDE AI Chat slot. */
-    headerOverflowMenuGroups?: () => MobileProjectsHeaderOverflowMenuItem[][];
-    /** Container used by the sessions sidebar; defaults to document.body for the full WorkHub shell. */
-    sessionsSidebarContainer?: () => HTMLElement | undefined;
-    /** IDE mobile view selector mounted in the WorkHub header. */
-    mobileIdeViewPicker?: {
-        isVisible(): boolean;
-        getOptions(): Array<{ id: string; label: string; icon: string }>;
-        getActiveId(): string;
-        onSelect(id: string): void | Promise<void>;
-    };
-    /** Agent-finished toast contribution — the panel registers navigation callbacks on it. */
-    agentFinishedToast?: import('./qaap-agent-finished-toast-contribution').QaapAgentFinishedToastContribution;
-    /** Persistent dev-server orchestration for transcript Preview tab. */
-    projectBootstrap?: QaapProjectBootstrapService;
-    /** AG-UI frontend tool registry for live transcript tool execution. */
-    agUiFrontendTools?: import('./qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;
-    /** Expands `/skill-name` slash tokens into inline skill instructions before VPS submit. */
-    expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
-    /** Resolves attached files/images/context chips into the outbound VPS prompt. */
-    applyComposerAttachmentsToDraft?: (
-        draft: string,
-        variables?: import('@theia/ai-core').AIVariableResolutionRequest[],
-    ) => Promise<string>;
-    /** Bridges Monaco editor selection into sticky/transcript composer context chips. */
-    composerEditorContextService?: import('./qaap-composer-editor-context-service').QaapComposerEditorContextService;
-}
+import {
+    type MobileProjectsPanelDelegate,
+    type MobileProjectsPanelOptions,
+    type MobileProjectsHeaderOverflowMenuItem,
+    type WorkHubSearchPickItem,
+    type QaapDiffProjectTab,
+    type TranscriptTab,
+    type WorkHubSearchTarget,
+    TRANSCRIPT_CONVERSATION_CACHE_LIMIT,
+} from './mobile-projects-panel-types';
 
-export interface MobileProjectsHeaderOverflowMenuItem {
-    label: string;
-    icon: string;
-    command?: string;
-    isVisible?: () => boolean;
-    isEnabled?: () => boolean;
-    run?: () => void | Promise<void>;
-}
-
-type WorkHubSearchTarget =
-    | { readonly kind: 'project'; readonly projectId: string }
-    | { readonly kind: 'conversation'; readonly projectId: string; readonly conversationId: string }
-    | { readonly kind: 'pullRequest'; readonly pullRequest: QaapGithubPullRequestSummary }
-    | { readonly kind: 'catalog'; readonly action: WorkHubCatalogAction }
-    | { readonly kind: 'routine'; readonly routineId: string };
-
-interface WorkHubSearchPickItem extends QuickPickItem {
-    readonly target: WorkHubSearchTarget;
-}
-
-interface QaapDiffProjectTab {
-    projectId: string;
-    label: string;
-    rootUri: string;
-    rootFsPath: string;
-    isActiveWorkspace: boolean;
-    fileCount: number;
-}
-
-/** Tabs of the transcript sheet (execution view). 'messages' is the chat tab. */
-type TranscriptTab = ExecutionSurfaceTabId;
-
-/** Max cached full conversation DTOs kept in memory for a long-lived Work Hub tab (LRU-evicted). */
-const TRANSCRIPT_CONVERSATION_CACHE_LIMIT = 50;
+// Re-export types for external consumers
+export {
+    type MobileProjectsPanelDelegate,
+    type MobileProjectsPanelOptions,
+    type MobileProjectsHeaderOverflowMenuItem,
+    type WorkHubSearchPickItem,
+    type QaapDiffProjectTab,
+    type TranscriptTab,
+    type WorkHubSearchTarget,
+    TRANSCRIPT_CONVERSATION_CACHE_LIMIT,
+} from './mobile-projects-panel-types';
 
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
