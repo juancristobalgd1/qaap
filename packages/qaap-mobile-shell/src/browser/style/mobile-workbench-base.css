@@ -658,94 +658,6 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     border-radius: 50%;
   }
 
-  /* Inline IDE/Agents surface toggle — sits left of the terminal button.
-     Reuses the segmented-field primitives from the avatar menu switch but
-     scoped to the top bar so it blends with the nav-button row.
-     Overrides the base segmented-field column layout (flex-direction: column,
-     gap: 8px) and the expanding option flex (flex: 1 1 0) to keep it compact. */
-  .theia-workbench-right-controls .theia-workbench-surface-toggle {
-    display: inline-flex;
-    align-items: center;
-    flex: 0 0 auto;
-    margin: 0 4px;
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-field {
-    display: inline-flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0;
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-bar {
-    display: inline-flex;
-    align-items: center;
-    flex: 0 0 auto;
-    gap: 0;
-    padding: 2px;
-    border-radius: var(--q-radius-icon, 10px);
-    background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    width: auto;
-    min-width: 0;
-    height: 28px;
-    min-height: 28px;
-    padding: 0 8px;
-    border: none;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--qaap-ink-2, var(--theia-descriptionForeground, var(--q-text-2)));
-    font-size: 11px;
-    font-weight: 600;
-    line-height: 1.2;
-    cursor: pointer;
-    transition: background-color 120ms ease, color 120ms ease;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option .codicon {
-    font-size: 13px;
-    opacity: 0.7;
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option .qaap-icon-message-circle {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 13px;
-    height: 13px;
-    opacity: 0.7;
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option .qaap-icon-message-circle svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option:hover {
-    background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option.theia-mod-selected {
-    background: var(--theia-menu-selectionBackground, var(--q-accent-soft, var(--qaap-accent-soft, #3A2614)));
-    color: var(--theia-menu-selectionForeground, var(--q-accent, var(--qaap-accent, var(--theia-foreground))));
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option.theia-mod-selected .codicon,
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option.theia-mod-selected .qaap-icon-message-circle {
-    opacity: 1;
-  }
-
   .theia-workbench-history-nav-group .theia-workbench-mobile-view-picker-btn {
     display: inline-flex;
     align-items: center;
@@ -1078,11 +990,6 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     max-width: 36px !important;
     max-height: 36px !important;
     flex: 0 0 36px;
-  }
-
-  .theia-workbench-right-controls .theia-workbench-surface-toggle .theia-qaap-segmented-option {
-    min-height: 32px;
-    padding: 0 10px;
   }
 
   .theia-workbench-right-controls .theia-workbench-account-avatar,
@@ -2495,4 +2402,3 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
     text-overflow: ellipsis;
   }
 }
-

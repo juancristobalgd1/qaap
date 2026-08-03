@@ -210,15 +210,138 @@ function applyWorkingDetailTaskLogText(
         return;
     }
     output.classList.remove('theia-mod-empty', 'theia-mod-waiting');
+    const humanReadable = formatVpsTaskLogForHuman(trimmed);
     if (options.truncated) {
         const notice = nls.localize(
             'qaap/workHubChrome/workingDetailCommandOutputTruncated',
             '… earlier output truncated',
         );
-        output.textContent = `${notice}\n${trimmed}`;
+        output.textContent = `${notice}\n${humanReadable}`;
         return;
     }
-    output.textContent = trimmed;
+    output.textContent = humanReadable;
+}
+
+/**
+ * Transform raw VPS task log (JSON stream events, one per line) into human-readable text.
+ * Extracts assistant text, tool calls, and results — skips wire-protocol noise.
+ * Non-JSON lines are kept as-is (shell output, plain text logs).
+ */
+function formatVpsTaskLogForHuman(raw: string): string {
+    const lines = raw.split('\n');
+    const out: string[] = [];
+    let sawJson = false;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            continue;
+        }
+        // Try to parse as JSON stream event.
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                const formatted = formatStreamEventLine(parsed);
+                if (formatted) {
+                    out.push(formatted);
+                    sawJson = true;
+                }
+                continue;
+            } catch {
+                // Not valid JSON — fall through to keep as raw text.
+            }
+        }
+        // Keep non-JSON lines as-is (shell output, plain text).
+        out.push(line);
+    }
+
+    // If we didn't find any JSON, return the original text unchanged.
+    if (!sawJson) {
+        return raw;
+    }
+    return out.join('\n');
+}
+
+/** Extract a human-readable summary from a single JSON stream event object. */
+function formatStreamEventLine(obj: any): string | undefined {
+    if (!obj || typeof obj !== 'object') {
+        return undefined;
+    }
+
+    const type = obj.type;
+
+    // Assistant message — extract text and tool_use content blocks.
+    if (type === 'assistant' && obj.message?.content) {
+        const blocks = Array.isArray(obj.message.content) ? obj.message.content : [];
+        const parts: string[] = [];
+        for (const block of blocks) {
+            if (block.type === 'text' && block.text?.trim()) {
+                parts.push(block.text.trim());
+            } else if (block.type === 'tool_use') {
+                const toolName = block.name ?? 'tool';
+                const input = block.input ?? {};
+                // Show a compact summary of the tool call.
+                const detail = input.command
+                    ?? input.path
+                    ?? input.pattern
+                    ?? input.prompt
+                    ?? input.query
+                    ?? input.file_path
+                    ?? '';
+                const detailStr = typeof detail === 'string' ? detail.trim() : '';
+                if (detailStr) {
+                    const shortDetail = detailStr.length > 120
+                        ? `${detailStr.slice(0, 117).trimEnd()}…`
+                        : detailStr;
+                    parts.push(`→ ${toolName}: ${shortDetail}`);
+                } else {
+                    parts.push(`→ ${toolName}`);
+                }
+            }
+        }
+        return parts.length > 0 ? parts.join('\n') : undefined;
+    }
+
+    // Tool result — show a truncated preview of the output.
+    if (type === 'user' && obj.message?.content) {
+        const blocks = Array.isArray(obj.message.content) ? obj.message.content : [];
+        for (const block of blocks) {
+            if (block.type === 'tool_result' && block.content) {
+                const content = typeof block.content === 'string'
+                    ? block.content
+                    : JSON.stringify(block.content);
+                const trimmed = content.trim();
+                if (!trimmed) {
+                    return undefined;
+                }
+                // Strip ANSI escape codes for readability.
+                const clean = trimmed.replace(/\x1b\[[0-9;]*m/g, '');
+                // Truncate long results to keep the log scannable.
+                if (clean.length > 500) {
+                    return `  ${clean.slice(0, 497).trimEnd()}…`;
+                }
+                return `  ${clean}`;
+            }
+        }
+        return undefined;
+    }
+
+    // Final result — show completion status.
+    if (type === 'result') {
+        const subtype = obj.subtype ?? 'success';
+        const icon = subtype === 'success' ? '✓' : subtype === 'error' ? '✗' : '•';
+        const resultText = typeof obj.result === 'string' ? obj.result.trim() : '';
+        if (resultText) {
+            const short = resultText.length > 200
+                ? `${resultText.slice(0, 197).trimEnd()}…`
+                : resultText;
+            return `${icon} ${short}`;
+        }
+        return `${icon} ${subtype}`;
+    }
+
+    // Skip wire-protocol noise: stream_event, control_request, message_start, etc.
+    return undefined;
 }
 
 /** VPS DETAIL members without a conversation stream command output here. */

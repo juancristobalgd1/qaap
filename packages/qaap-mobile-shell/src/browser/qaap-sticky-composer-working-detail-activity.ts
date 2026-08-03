@@ -257,19 +257,56 @@ export function resolveWorkingMemberCommand(member: WorkHubTeamMember): string |
 
 export function buildRunningCommandActivityFeed(command: string): WorkingAgentDetailActivityFeed {
     const liveLabel = nls.localize('qaap/mobileProjects/activityRunningCommand', 'Running command');
+    const summary = summarizeVpsCommand(command);
     const item: TranscriptActivityNavigationItem = {
-        label: `${liveLabel} ${command}`,
+        label: `${liveLabel} ${summary}`,
         verb: liveLabel,
-        detail: command,
+        detail: summary,
         state: 'running',
         navigate: 'terminal',
         toolKind: 'terminal',
     };
     return {
         liveLabel,
-        liveDetail: command,
+        liveDetail: summary,
         items: [item],
     };
+}
+
+/**
+ * Reduce a potentially long VPS command/prompt to a single-line human-readable summary.
+ * Strips delegation instructions and keeps only the actual task (last meaningful line).
+ */
+function summarizeVpsCommand(command: string): string {
+    const trimmed = command.trim();
+    if (!trimmed) {
+        return '';
+    }
+    // If it's already a short single-line command, keep it as-is.
+    if (trimmed.length <= 120 && !trimmed.includes('\n')) {
+        return trimmed;
+    }
+    // For multi-line prompts, find the last non-empty paragraph that looks like the actual task.
+    // Skip instruction blocks like "[Team delegation — qaap-task]" and helper text.
+    const lines = trimmed.split('\n');
+    const meaningfulLines = lines
+        .map(l => l.trim())
+        .filter(l => l.length > 0
+            && !l.startsWith('---')
+            && !l.startsWith('[')
+            && !l.startsWith('qaap-task')
+            && !l.startsWith('Sub-tasks')
+            && !l.startsWith('Use delegation')
+            && !l.startsWith('For a broad')
+            && !l.startsWith('Do not repeat')
+            && !l.startsWith('When sub-tasks')
+            && !l.startsWith('Available --agent'));
+    // Take the last meaningful line (usually the actual task prompt).
+    const last = meaningfulLines[meaningfulLines.length - 1] ?? lines[0]?.trim() ?? trimmed;
+    if (last.length <= 140) {
+        return last;
+    }
+    return `${last.slice(0, 137).trimEnd()}…`;
 }
 
 function resolveMeaningfulActivityLabel(member: WorkHubTeamMember): string | undefined {
