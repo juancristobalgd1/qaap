@@ -704,8 +704,12 @@
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mod-sessions-sidebar-projects-head {
-  padding-top: 10px;
-  padding-bottom: 2px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -6px 0 -8px;
+  padding: 12px 16px 8px;
+  background: var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e));
 }
 
 /* Accordion project groups (Projects → project → sessions). */
