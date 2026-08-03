@@ -232,10 +232,10 @@ import {
 export class QaapAgentConversationStore {
 
     @inject(QaapAgentTaskRunner)
-    protected readonly taskRunner: QaapAgentTaskRunner;
+    protected readonly taskRunner!: QaapAgentTaskRunner;
 
     @inject(QaapTenantSpawnService)
-    protected readonly tenantSpawn: QaapTenantSpawnService;
+    protected readonly tenantSpawn!: QaapTenantSpawnService;
 
     /**
      * SEC-1/C-3: run a MUTATING git command (checkout/restore/add/write-tree/…) over a tenant repo
