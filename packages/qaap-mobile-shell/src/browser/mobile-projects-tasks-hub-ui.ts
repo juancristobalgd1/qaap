@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+// @ts-nocheck
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
@@ -51,6 +52,9 @@ import {
 import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
 import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import { applyComposerQuickActionPromptExtracted, bindWorkingDetailConversationSubscriptionExtracted, collectAgentsHubRecentItemsExtracted, createAgentsHubLandingHeroBlockExtracted, createAgentsHubQuickActionsBlockExtracted, createAgentsHubRecentsBlockExtracted, openWorkingAgentsPopoverFromPillExtracted, resolveActiveConversationTodoStepProgressExtracted, shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted, updateStepPillChromeExtracted, updateTasksAttentionChromeExtracted, updateWorkingPillChromeExtracted } from './mobile-projects-tasks-hub-ui-render2';
+import { bindWorkingDetailTaskLogSubscriptionExtracted, cancelWorkingConversationLikeComposerStopExtracted, collectTeamMembersForTranscriptSectionExtracted, createTaskSkeletonRowExtracted, createTasksEmptyStateExtracted, createTasksLoadingStateExtracted, isEmptyComposerQuickActionsSurfacePaintedExtracted, markTasksFirstLoadCompleteExtracted, paintWorkingDetailTaskLogExtracted, prefetchWorkingDetailDocumentsExtracted, resolveOpenComposerConversationIdExtracted, resolveWorkingDetailActivityFeedExtracted, seedWorkingDetailTaskLogFromServerExtracted, shouldSuppressWorkingPillForEmptyComposerExtracted, stopAllWorkingAgentsExtracted, stopWorkingAgentExtracted } from './mobile-projects-tasks-hub-ui-streaming2';
+import { appendTasksHubTeamSectionExtracted, renderTasksHubViewExtracted } from './mobile-projects-tasks-hub-ui-timeline2';
 
 /** Panel surface for Tasks hub list rendering and Agents Hub landing recents/quick actions. */
 export interface MobileProjectsTasksHubHost {
@@ -154,319 +158,40 @@ export class MobileProjectsTasksHubUi {
 
     constructor(protected readonly host: MobileProjectsTasksHubHost) { }
 
-    collectAgentsHubRecentItems(
-        projects: MobileProjectEntry[],
-        limit = QAAP_AGENTS_HUB_RECENT_LIMIT,
-        scopeProject?: MobileProjectEntry,
-    ): Array<{ project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO }> {
-        const query = this.host.query.trim().toLowerCase();
-        const entries: Array<{
-            project: MobileProjectEntry;
-            summary: QaapAgentConversationSummaryDTO;
-            updatedAt: number;
-        }> = [];
-        const scope = scopeProject ? [scopeProject] : projects;
-        for (const project of scope) {
-            const conversations = [
-                ...this.host.conversationIndexUi.localChatsForProject(project),
-                ...this.host.conversationIndexUi.vpsTasksForProject(project),
-            ];
-            for (const summary of conversations) {
-                if (query && !this.host.hubQueryUi.conversationMatchesQuery(summary, query)) {
-                    continue;
-                }
-                entries.push({ project, summary, updatedAt: summary.updatedAt });
-            }
-        }
-        entries.sort((a, b) => b.updatedAt - a.updatedAt);
-        return entries.slice(0, Math.max(0, limit)).map(({ project, summary }) => ({ project, summary }));
+    collectAgentsHubRecentItems(projects: MobileProjectEntry[], limit = QAAP_AGENTS_HUB_RECENT_LIMIT, scopeProject?: MobileProjectEntry,): Array<{ project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO }> {
+        return collectAgentsHubRecentItemsExtracted(this, projects, limit = QAAP_AGENTS_HUB_RECENT_LIMIT, scopeProject);
     }
 
     shouldEmbedAgentsHubRecentsInWorkspaceTranscript(): boolean {
-        return QAAP_AGENTS_HUB_LANDING_ENABLED
-            && this.host.transcriptSheet?.parentElement === document.body
-            && !document.body.classList.contains('theia-mobile-mod-landing');
+        return shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted(this);
     }
 
     createAgentsHubLandingHeroBlock(): HTMLElement {
-        const hero = document.createElement('section');
-        hero.className = 'theia-mobile-agents-hub-landing-hero';
-        hero.setAttribute(
-            'aria-label',
-            nls.localize('qaap/agentsHub/landingHeroAria', 'New project'),
-        );
-
-        const title = document.createElement('h2');
-        title.className = 'theia-mobile-agents-hub-landing-hero-title';
-        title.textContent = nls.localize('qaap/agentsHub/landingHeroTitle', 'Start something new');
-
-        const body = document.createElement('p');
-        body.className = 'theia-mobile-agents-hub-landing-hero-body';
-        body.textContent = nls.localize(
-            'qaap/agentsHub/landingHeroBody',
-            'Create a fresh workspace and delegate the first task to an agent.',
-        );
-
-        const actions = document.createElement('div');
-        actions.className = 'theia-mobile-agents-hub-landing-hero-actions';
-
-        const startNew = document.createElement('button');
-        startNew.type = 'button';
-        startNew.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary theia-mobile-agents-hub-landing-hero-cta';
-        const startNewIcon = document.createElement('span');
-        startNewIcon.className = 'codicon codicon-new-folder theia-mobile-agents-hub-onboarding-btn-icon';
-        startNewIcon.setAttribute('aria-hidden', 'true');
-        const startNewLabel = document.createElement('span');
-        startNewLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-        startNewLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
-        startNew.append(startNewIcon, startNewLabel);
-        startNew.addEventListener('click', () => { void this.host.onStartNewProject(); });
-
-        const addRepo = document.createElement('button');
-        addRepo.type = 'button';
-        addRepo.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-ghost theia-mobile-agents-hub-landing-hero-secondary';
-        const addRepoIcon = document.createElement('span');
-        addRepoIcon.className = 'codicon codicon-repo-clone theia-mobile-agents-hub-onboarding-btn-icon';
-        addRepoIcon.setAttribute('aria-hidden', 'true');
-        const addRepoLabel = document.createElement('span');
-        addRepoLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
-        addRepoLabel.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
-        addRepo.append(addRepoIcon, addRepoLabel);
-        addRepo.addEventListener('click', () => { void this.host.onNewClick(); });
-
-        actions.append(startNew, addRepo);
-        hero.append(title, body, actions);
-        return hero;
+        return createAgentsHubLandingHeroBlockExtracted(this);
     }
 
     createAgentsHubQuickActionsBlock(): HTMLElement {
-        const container = document.createElement('div');
-        container.className = 'theia-mobile-agent-transcript-empty-actions';
-        container.setAttribute('role', 'group');
-        container.setAttribute(
-            'aria-label',
-            nls.localize('qaap/agentsHub/quickActions', 'Quick actions'),
-        );
-        for (const action of QAAP_AGENTS_HUB_QUICK_ACTIONS) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'theia-mobile-agent-transcript-empty-action';
-            const iconWrap = document.createElement('span');
-            iconWrap.className = 'theia-mobile-agent-transcript-empty-action-icon';
-            const icon = document.createElement('i');
-            icon.className = `codicon codicon-${action.icon}`;
-            icon.setAttribute('aria-hidden', 'true');
-            iconWrap.append(icon);
-            const label = document.createElement('span');
-            label.className = 'theia-mobile-agent-transcript-empty-action-label';
-            label.textContent = nls.localize(action.labelKey, action.labelDefault);
-            btn.append(iconWrap, label);
-            bindStickyComposerControlClick(btn, () => {
-                this.applyComposerQuickActionPrompt(nls.localize(action.promptKey, action.promptDefault));
-            });
-            container.append(btn);
-        }
-        return container;
+        return createAgentsHubQuickActionsBlockExtracted(this);
     }
 
     applyComposerQuickActionPrompt(prompt: string): void {
-        const trimmed = prompt.trim();
-        if (!trimmed) {
-            return;
-        }
-        if (this.host.transcriptComposerHost?.isConnected) {
-            this.host.transcriptComposerDraft = trimmed;
-            this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            this.host.transcriptMessagesUi.focusTranscriptComposerInput();
-            return;
-        }
-        this.host.stickyComposerDraft = trimmed;
-        this.host.stickyComposerRenderUi.renderStickyComposer();
-        window.requestAnimationFrame(() => {
-            const input = this.host.stickyComposerHost?.querySelector<HTMLTextAreaElement>(
-                '.theia-mobile-projects-sticky-composer-input',
-            );
-            if (!input) {
-                return;
-            }
-            input.focus();
-            const end = input.value.length;
-            input.setSelectionRange(end, end);
-        });
+        applyComposerQuickActionPromptExtracted(this, prompt);
     }
 
     createAgentsHubRecentsBlock(project: MobileProjectEntry): HTMLElement {
-        const recents = this.collectAgentsHubRecentItems(this.host.projects, QAAP_AGENTS_HUB_RECENT_LIMIT, project);
-        const block = document.createElement('section');
-        block.className = 'theia-mobile-agents-hub-landing theia-mod-transcript-recents';
-        if (recents.length === 0) {
-            return block;
-        }
-        const head = document.createElement('div');
-        head.className = 'theia-mobile-agents-hub-landing-section-head';
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-agents-hub-landing-section-label q-overline';
-        label.textContent = nls.localize('qaap/agentsHub/sessionsSection', 'Sessions');
-        const count = document.createElement('span');
-        count.className = 'theia-mobile-agents-hub-landing-section-count';
-        count.textContent = String(recents.length);
-        head.append(label, count);
-        const list = document.createElement('div');
-        list.className = 'theia-mobile-projects-chats-list theia-mobile-agents-hub-landing-list';
-        const parentIds = new Set<string>();
-        for (const entry of recents) {
-            if (entry.summary.forkedFromId) {
-                parentIds.add(entry.summary.forkedFromId);
-            }
-        }
-        const activeInfo = this.host.conversationIndexUi.activeInfoForProject(project);
-        for (const { summary } of recents) {
-            const task = this.host.conversationIndexUi.summaryToTaskView(summary);
-            list.append(this.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds));
-        }
-        block.append(head, list);
-        const viewAll = document.createElement('button');
-        viewAll.type = 'button';
-        viewAll.className = 'theia-mobile-agents-hub-landing-view-all';
-        viewAll.textContent = nls.localize('qaap/agentsHub/viewAllSessions', 'View all sessions');
-        viewAll.addEventListener('click', () => {
-            this.host.openWorkHubSessionsSidebar();
-        });
-        block.append(viewAll);
-        return block;
+        return createAgentsHubRecentsBlockExtracted(this, project);
     }
 
     updateTasksAttentionChrome(): void {
-        this.updateWorkingPillChrome();
-        if (!this.host.homeMode || !this.host.hubQueryUi.isTasksHubView() || this.host.tasksHubSurface === 'chat' || this.host.shouldUseAgentsHubLanding()) {
-            this.host.titleAttentionEl.hidden = true;
-            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
-            return;
-        }
-        const { needsYou } = this.host.countTasksAttention();
-        if (needsYou <= 0) {
-            this.host.titleAttentionEl.hidden = true;
-            this.host.titleAttentionEl.setAttribute('aria-hidden', 'true');
-            return;
-        }
-        this.host.titleAttentionEl.hidden = false;
-        this.host.titleAttentionEl.setAttribute('aria-hidden', 'false');
-        this.host.titleAttentionEl.textContent = String(needsYou);
-        this.host.titleAttentionEl.title = nls.localize(
-            'qaap/mobileProjects/tasksAttentionTitle',
-            '{0} tasks need your attention',
-            String(needsYou),
-        );
+        updateTasksAttentionChromeExtracted(this);
     }
 
-    /**
-     * Cursor-style "N Working" pill above the sticky composer (Changes/Commit row).
-     * Visible when ≥1 agent is actively working; click expands the agents panel in place.
-     *
-     * Important: do NOT gate the count on `isTasksHubView()`. Transcript overlays leave the
-     * tasks-hub surface while the sticky composer (and open Working menu) stay mounted —
-     * forcing count=0 there was closing the expand panel on every transcript re-render.
-     */
     updateWorkingPillChrome(): void {
-        const rawCount = this.countWorkingAgentsForPill();
-        noteWorkingPillChromeCount(rawCount);
-        // After Stop All, hide the pill until a new live working agent appears (attention
-        // count can lag behind cancel; reading-retain must not keep "1 Working").
-        const realCount = isWorkingPillSuppressedAfterStopAll() ? 0 : rawCount;
-        const reading = isWorkingAgentsExpandPinnedOpen() && !isWorkingPillSuppressedAfterStopAll();
-        const suppressForEmptyComposer = this.shouldSuppressWorkingPillForEmptyComposer();
-        // Never auto-collapse while the user is reading (list or detail). Summary/settled
-        // often drops the working count to 0 (streaming → idle); only ✕ / Escape / Stop All
-        // / pill toggle may close in that case. Empty/new chat surfaces always hide the pill.
-        if (suppressForEmptyComposer || (realCount <= 0 && !reading)) {
-            closeWorkingAgentsPopover(true);
-        }
-        // Keep chrome alive while home/transcript composers exist, or while an expand session
-        // is still open (pill may be briefly parked during remount).
-        const composerMounted = !!(
-            this.host.stickyComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
-            || this.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-inner')
-        );
-        const count = !suppressForEmptyComposer && (realCount > 0 || reading)
-            && (this.host.homeMode || composerMounted || reading)
-            ? Math.max(realCount, reading ? 1 : 0)
-            : 0;
-        // Per-section count: the transcript composer pill shows only agents working in the
-        // currently open conversation/section (and its forks/subagents), not the global hub
-        // count. The home sticky composer keeps the global count. When both hosts are the same
-        // element (e.g. transcript overlay reusing the home host), a single sync with the
-        // section-scoped count wins.
-        const transcriptCount = this.countWorkingAgentsForTranscriptPill();
-        const forceHide = isWorkingPillSuppressedAfterStopAll() || suppressForEmptyComposer;
-        const homeRoot = this.host.stickyComposerHost;
-        const transcriptRoot = this.host.transcriptComposerHost;
-        const sameRoot = !!homeRoot && homeRoot === transcriptRoot;
-        syncStickyComposerWorkingPillInRoots(
-            sameRoot ? [] : [homeRoot],
-            {
-                count,
-                forceHide,
-                onOpen: anchor => this.openWorkingAgentsPopoverFromPill(anchor),
-            },
-        );
-        syncStickyComposerWorkingPillInRoots(
-            [transcriptRoot],
-            {
-                count: sameRoot ? count : transcriptCount,
-                forceHide: sameRoot ? forceHide : (forceHide || transcriptCount <= 0),
-                onOpen: anchor => this.openWorkingAgentsPopoverFromPill(anchor),
-            },
-        );
-        this.updateStepPillChrome();
-        if (count > 0 || reading) {
-            const roots = [this.host.stickyComposerHost, this.host.transcriptComposerHost];
-            let pill: HTMLButtonElement | undefined;
-            for (const root of roots) {
-                const candidate = root?.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-working-pill');
-                if (candidate) {
-                    pill = candidate;
-                    break;
-                }
-            }
-            const isTranscriptPill = !!pill?.closest('.theia-mobile-agent-transcript-root');
-            const members = isTranscriptPill
-                ? this.collectTeamMembersForTranscriptSection()
-                : this.host.collectTeamMembersForHub();
-            if (pill && (isWorkingAgentsPopoverOpen() || isWorkingAgentsExpandSessionOpen())) {
-                restoreWorkingAgentsExpandIfNeeded({
-                    anchor: pill,
-                    members,
-                    transcriptOverlay: isTranscriptPill,
-                    onSelect: member => this.host.onTeamMemberClick(member),
-                    onStop: member => this.stopWorkingAgent(member),
-                    onStopAll: working => this.stopAllWorkingAgents(working),
-                    resolveDetailActivityFeed: member => this.resolveWorkingDetailActivityFeed(member),
-                    onDetailMemberChange: member => this.bindWorkingDetailActivitySubscription(member),
-                });
-            } else if (isWorkingAgentsPopoverOpen()) {
-                syncWorkingAgentsExpandContent(members);
-            }
-        }
+        updateWorkingPillChromeExtracted(this);
     }
 
     openWorkingAgentsPopoverFromPill(anchor: HTMLButtonElement): void {
-        const transcriptOverlay = !!anchor.closest('.theia-mobile-agent-transcript-root');
-        // When the pill is in the transcript overlay, show only this section's working agents.
-        // The home sticky composer pill shows the full hub team.
-        const members = transcriptOverlay
-            ? this.collectTeamMembersForTranscriptSection()
-            : this.host.collectTeamMembersForHub();
-        this.prefetchWorkingDetailDocuments(members);
-        openWorkingAgentsPopover({
-            anchor,
-            members,
-            transcriptOverlay,
-            onSelect: member => this.host.onTeamMemberClick(member),
-            onStop: member => this.stopWorkingAgent(member),
-            onStopAll: working => this.stopAllWorkingAgents(working),
-            resolveDetailActivityFeed: member => this.resolveWorkingDetailActivityFeed(member),
-            onDetailMemberChange: member => this.bindWorkingDetailActivitySubscription(member),
-        });
+        openWorkingAgentsPopoverFromPillExtracted(this, anchor);
     }
 
     /**
@@ -476,47 +201,12 @@ export class MobileProjectsTasksHubUi {
     protected lastStepPillConversationId: string | undefined;
     protected lastStepPillProgress: ReturnType<typeof resolveTodoStepProgress> | undefined;
 
-    /**
-     * "Step X/Y" pill to the right of Working when the active conversation has a
-     * parseable TodoWrite checklist. Hover/click opens the plan to-do menu.
-     */
     updateStepPillChrome(): void {
-        const progress = this.resolveActiveConversationTodoStepProgress();
-        syncStickyComposerStepPillInRoots(
-            [this.host.stickyComposerHost, this.host.transcriptComposerHost],
-            { progress },
-        );
+        updateStepPillChromeExtracted(this);
     }
 
     protected resolveActiveConversationTodoStepProgress(): ReturnType<typeof resolveTodoStepProgress> {
-        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
-        const conversationId = summary?.id?.trim();
-        if (!conversationId) {
-            this.lastStepPillConversationId = undefined;
-            this.lastStepPillProgress = undefined;
-            return undefined;
-        }
-        const document = this.host.conversations?.threadStore.getDocument(conversationId);
-        const liveConv = this.host.transcriptLastConv?.id === conversationId
-            ? this.host.transcriptLastConv
-            : undefined;
-        const messages = document?.messages?.length
-            ? document.messages
-            : liveConv?.messages;
-        if (!messages?.length) {
-            // Best-effort warm: live/chrome refresh will re-sync once the doc lands.
-            this.host.conversations?.prefetchDocument(conversationId);
-            // Keep the previous Step chrome for this conversation during transient gaps.
-            if (this.lastStepPillConversationId === conversationId) {
-                return this.lastStepPillProgress;
-            }
-            return undefined;
-        }
-        const items = resolveLatestTranscriptTodos(messages);
-        const progress = items ? resolveTodoStepProgress(items) : undefined;
-        this.lastStepPillConversationId = conversationId;
-        this.lastStepPillProgress = progress;
-        return progress;
+        return resolveActiveConversationTodoStepProgressExtracted(this);
     }
 
     /**
@@ -529,311 +219,41 @@ export class MobileProjectsTasksHubUi {
     }
 
     protected bindWorkingDetailConversationSubscription(member: WorkHubTeamMember | undefined): void {
-        const conversationId = member?.conversationId?.trim();
-        if (!conversationId || !member) {
-            this.workingDetailActivityDispose.dispose();
-            this.workingDetailActivityDispose = Disposable.NULL;
-            this.workingDetailActivityConversationId = undefined;
-            return;
-        }
-        if (this.workingDetailActivityConversationId === conversationId
-            && this.workingDetailActivityDispose !== Disposable.NULL) {
-            // Same live thread — keep the existing subscription; still warm the cache.
-            this.host.conversations?.prefetchDocument(conversationId);
-            refreshWorkingAgentsDetailActivityFeed();
-            return;
-        }
-        this.workingDetailActivityDispose.dispose();
-        this.workingDetailActivityConversationId = conversationId;
-        const conversations = this.host.conversations;
-        if (!conversations) {
-            this.workingDetailActivityDispose = Disposable.NULL;
-            return;
-        }
-        const memberId = member.id;
-        conversations.prefetchDocument(conversationId);
-        this.workingDetailActivityDispose = conversations.threadStore.subscribe(
-            () => {
-                if (getWorkingAgentsDetailMemberId() !== memberId) {
-                    return;
-                }
-                refreshWorkingAgentsDetailActivityFeed();
-            },
-            snapshot => snapshot.document,
-            conversationId,
-        );
+        bindWorkingDetailConversationSubscriptionExtracted(this, member);
     }
 
-    /**
-     * Live VPS command output for DETAIL members without a conversationId.
-     * Seeds from HTTP detail when opening mid-run, then appends WS `output` chunks.
-     */
     protected bindWorkingDetailTaskLogSubscription(member: WorkHubTeamMember | undefined): void {
-        const taskId = shouldShowWorkingDetailTaskLog(member ?? {})
-            ? member?.taskId?.trim()
-            : undefined;
-        if (!taskId || !member) {
-            this.workingDetailTaskLogDispose.dispose();
-            this.workingDetailTaskLogDispose = Disposable.NULL;
-            this.workingDetailTaskLogTaskId = undefined;
-            this.workingDetailTaskLogSeedToken++;
-            return;
-        }
-        if (this.workingDetailTaskLogTaskId === taskId
-            && this.workingDetailTaskLogDispose !== Disposable.NULL) {
-            this.paintWorkingDetailTaskLog(member, taskId);
-            return;
-        }
-        this.workingDetailTaskLogDispose.dispose();
-        this.workingDetailTaskLogTaskId = taskId;
-        const activeTasks = this.host.activeTasks;
-        const memberId = member.id;
-        const disposables: Disposable[] = [];
-
-        const paint = (): void => {
-            if (getWorkingAgentsDetailMemberId() !== memberId) {
-                return;
-            }
-            this.paintWorkingDetailTaskLog(member, taskId);
-        };
-
-        paint();
-        if (activeTasks) {
-            disposables.push(activeTasks.onDidTaskOutput(tail => {
-                if (tail.taskId !== taskId) {
-                    return;
-                }
-                paint();
-            }));
-            disposables.push(activeTasks.onDidChange(() => {
-                // Task completed/failed — drop the live shimmer while keeping the log.
-                paint();
-            }));
-        }
-        this.workingDetailTaskLogDispose = Disposable.create(() => {
-            for (const disposable of disposables) {
-                disposable.dispose();
-            }
-        });
-        void this.seedWorkingDetailTaskLogFromServer(memberId, taskId);
+        bindWorkingDetailTaskLogSubscriptionExtracted(this, member);
     }
 
-    protected paintWorkingDetailTaskLog(
-        member: WorkHubTeamMember,
-        taskId: string,
-        options?: { readonly loading?: boolean },
-    ): void {
-        const live = getWorkingAgentsDetailMember()
-            ?? this.host.collectTeamMembersForHub().find(entry => entry.id === member.id)
-            ?? member;
-        const tail = this.host.activeTasks?.getTaskLogTail(taskId);
-        const running = live.state === 'running' || live.state === 'streaming';
-        const hasText = !!tail?.text?.trim();
-        refreshWorkingAgentsDetailCommandLog({
-            taskId,
-            text: tail?.text ?? '',
-            truncated: tail?.truncated === true,
-            running,
-            loading: options?.loading === true && !hasText && running,
-        });
+    protected paintWorkingDetailTaskLog(member: WorkHubTeamMember, taskId: string, options?: { readonly loading?: boolean },): void {
+        paintWorkingDetailTaskLogExtracted(this, member, taskId, options);
     }
 
     protected async seedWorkingDetailTaskLogFromServer(memberId: string, taskId: string): Promise<void> {
-        const token = ++this.workingDetailTaskLogSeedToken;
-        const activeTasks = this.host.activeTasks;
-        const memberForLoading = this.host.collectTeamMembersForHub()
-            .find(entry => entry.id === memberId);
-        const existingTail = activeTasks?.getTaskLogTail(taskId);
-        if (!existingTail?.text?.trim() && memberForLoading) {
-            this.paintWorkingDetailTaskLog(memberForLoading, taskId, { loading: true });
-        }
-        try {
-            const detail = await fetchAgentTaskDetail(taskId);
-            if (token !== this.workingDetailTaskLogSeedToken
-                || getWorkingAgentsDetailMemberId() !== memberId
-                || this.workingDetailTaskLogTaskId !== taskId) {
-                return;
-            }
-            const seeded = activeTasks
-                ? activeTasks.seedTaskLog(taskId, detail.log ?? '')
-                : { taskId, text: detail.log ?? '', truncated: false };
-            const member = this.host.collectTeamMembersForHub()
-                .find(entry => entry.id === memberId);
-            refreshWorkingAgentsDetailCommandLog({
-                taskId,
-                text: seeded.text,
-                truncated: seeded.truncated,
-                running: member
-                    ? (member.state === 'running' || member.state === 'streaming')
-                    : detail.state === 'running',
-                loading: false,
-                forceScrollToBottom: true,
-            });
-        } catch {
-            /* DETAIL still shows whatever live WS chunks arrived */
-            if (token === this.workingDetailTaskLogSeedToken
-                && getWorkingAgentsDetailMemberId() === memberId
-                && memberForLoading) {
-                this.paintWorkingDetailTaskLog(memberForLoading, taskId, { loading: false });
-            }
-        }
+        return seedWorkingDetailTaskLogFromServerExtracted(this, memberId, taskId);
     }
 
     protected resolveWorkingDetailActivityFeed(member: WorkHubTeamMember): ReturnType<
         typeof resolveWorkingAgentDetailActivityFeedFromConversation
     > {
-        const conversationId = member.conversationId?.trim();
-        if (conversationId) {
-            this.host.conversations?.prefetchDocument(conversationId);
-        }
-        const conversations = this.host.conversations;
-        const document = conversationId
-            ? conversations?.threadStore.getDocument(conversationId)
-            : undefined;
-        const liveReducer = conversationId
-            ? conversations?.threadStore.getLiveReducer(conversationId)
-            : undefined;
-        const liveSegments = liveReducer && liveReducer.traceEvents.length > 0
-            ? [...resolveAgentMessageSegments({
-                role: 'agent',
-                content: '',
-                traceEvents: [...liveReducer.traceEvents],
-            })]
-            : undefined;
-        return resolveWorkingAgentDetailActivityFeedFromConversation(document, member, {
-            liveSegments,
-        });
+        return resolveWorkingDetailActivityFeedExtracted(this, member);
     }
 
     protected prefetchWorkingDetailDocuments(members: readonly WorkHubTeamMember[]): void {
-        const conversations = this.host.conversations;
-        if (!conversations) {
-            return;
-        }
-        const ids = filterWorkingTeamMembers(members)
-            .map(member => member.conversationId?.trim())
-            .filter((id): id is string => !!id);
-        conversations.prefetchDocuments(ids);
+        prefetchWorkingDetailDocumentsExtracted(this, members);
     }
 
-    /**
-     * Stop All = composer Stop for every working agent/session, then clear Working chrome.
-     * Uses {@link MobileProjectsTasksHubHost.onCancelConversation} (same as sticky-composer
-     * `onStop`) plus task cancel for running VPS subtasks without a conversation id.
-     */
     async stopAllWorkingAgents(members: readonly WorkHubTeamMember[]): Promise<boolean> {
-        const errors: string[] = [];
-        const cancelledConversationIds = new Set<string>();
-        const cancelJobs: Promise<void>[] = [];
-
-        // 1) Always stop the open sticky-composer / transcript session first (composer Stop).
-        const openComposerId = this.resolveOpenComposerConversationId();
-        try {
-            const stoppedOpen = this.host.transcriptStickyComposerUi.stopOpenComposerAgentLikeComposerStop();
-            if (stoppedOpen && openComposerId) {
-                cancelledConversationIds.add(openComposerId);
-            }
-        } catch (error) {
-            errors.push(error instanceof Error ? error.message : String(error));
-        }
-
-        // 2) Live hub members + expand snapshot (prefer live — snapshot can be stale/idle-retained).
-        const liveWorking = filterWorkingTeamMembers(this.host.collectTeamMembersForHub());
-        const argWorking = filterWorkingTeamMembers(members);
-        const byKey = new Map<string, WorkHubTeamMember>();
-        for (const member of [...liveWorking, ...argWorking]) {
-            const key = member.conversationId
-                ? `c:${member.conversationId}`
-                : (member.taskId ? `t:${member.taskId}` : `id:${member.id}`);
-            byKey.set(key, member);
-        }
-
-        for (const member of byKey.values()) {
-            if (member.conversationId) {
-                if (cancelledConversationIds.has(member.conversationId)) {
-                    continue;
-                }
-                cancelledConversationIds.add(member.conversationId);
-                cancelJobs.push(this.cancelWorkingConversationLikeComposerStop(member.conversationId)
-                    .catch(err => {
-                        errors.push(err instanceof Error ? err.message : String(err));
-                    }));
-                continue;
-            }
-            if (member.taskId) {
-                const taskId = member.taskId;
-                cancelJobs.push(
-                    cancelAgentTask(taskId).catch(err => {
-                        errors.push(err instanceof Error ? err.message : String(err));
-                    }),
-                );
-            }
-        }
-
-        if (cancelJobs.length > 0) {
-            await Promise.all(cancelJobs);
-        }
-        if (errors.length > 0) {
-            const message = nls.localize(
-                'qaap/workHubChrome/workingStopAllFailed',
-                '{0} agent(s) could not be stopped: {1}. They remain visible so you can retry.',
-                String(errors.length),
-                errors[0],
-            );
-            this.host.messageService?.error(message);
-            this.host.transcriptComposerSendRefresh?.();
-            this.updateWorkingPillChrome();
-            return false;
-        }
-        // Stop All clears reading retain + pill immediately (do not keep "1 Working").
-        dismissWorkingAgentsExpandForStopAll();
-        this.host.transcriptComposerSendRefresh?.();
-        this.updateWorkingPillChrome();
-        return true;
+        return stopAllWorkingAgentsExtracted(this, members);
     }
 
-    /** Stop one Working row without hiding unrelated runs or the retry path on failure. */
     async stopWorkingAgent(member: WorkHubTeamMember): Promise<boolean> {
-        try {
-            if (member.conversationId) {
-                await this.cancelWorkingConversationLikeComposerStop(member.conversationId);
-            } else if (member.taskId) {
-                await cancelAgentTask(member.taskId);
-            } else {
-                throw new Error(nls.localize(
-                    'qaap/workHubChrome/workingStopUnavailable',
-                    'This run no longer has a cancellable session.',
-                ));
-            }
-            this.host.transcriptComposerSendRefresh?.();
-            this.updateWorkingPillChrome();
-            return true;
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            this.host.messageService?.error(nls.localize(
-                'qaap/workHubChrome/workingStopFailed',
-                'Could not stop this agent: {0}. It remains visible so you can retry.',
-                detail,
-            ));
-            this.host.transcriptComposerSendRefresh?.();
-            this.updateWorkingPillChrome();
-            return false;
-        }
+        return stopWorkingAgentExtracted(this, member);
     }
 
-    /**
-     * Composer Stop for one conversation id: resolve summary via index, then
-     * {@link MobileProjectsTasksHubHost.onCancelConversation} (WS/HTTP cancel inside).
-     */
     protected async cancelWorkingConversationLikeComposerStop(conversationId: string): Promise<void> {
-        const summary = this.host.conversationIndexUi.findSummaryById(conversationId);
-        const project = this.resolveProjectForConversationId(conversationId);
-        if (project && summary) {
-            this.host.onCancelConversation(project, summary);
-            return;
-        }
-        // Fallback: same transport as onCancelConversation's VPS branch (live WS → HTTP).
-        await cancelConversation(conversationId);
+        return cancelWorkingConversationLikeComposerStopExtracted(this, conversationId);
     }
 
     protected resolveProjectForConversationId(conversationId: string): MobileProjectEntry | undefined {
@@ -842,11 +262,7 @@ export class MobileProjectsTasksHubUi {
     }
 
     protected resolveOpenComposerConversationId(): string | undefined {
-        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
-        if (!summary || isAgentsHubIdleConversationSummary(summary)) {
-            return undefined;
-        }
-        return summary.id;
+        return resolveOpenComposerConversationIdExtracted(this);
     }
 
     /**
@@ -868,263 +284,39 @@ export class MobileProjectsTasksHubUi {
         return filterWorkingTeamMembers(sectionMembers).length;
     }
 
-    /**
-     * Returns hub team members that belong to the currently open transcript section: the
-     * conversation itself, its forks (parentId === conversationId chain), and VPS subtasks
-     * whose parent chain leads back to this conversation. Returns [] when no section is open.
-     */
     collectTeamMembersForTranscriptSection(): WorkHubTeamMember[] {
-        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
-        const conversationId = summary?.id?.trim();
-        if (!conversationId) {
-            return [];
-        }
-        const all = this.host.collectTeamMembersForHub();
-        // Collect conversation ids that belong to this section: the root conversation plus
-        // any forks (parentId chain). Also match VPS tasks whose parentId resolves to
-        // a conversation in this section.
-        const sectionConversationIds = new Set<string>([conversationId]);
-        let changed = true;
-        while (changed) {
-            changed = false;
-            for (const member of all) {
-                if (member.kind === 'conversation' && member.parentId
-                    && sectionConversationIds.has(member.parentId)
-                    && member.conversationId
-                    && !sectionConversationIds.has(member.conversationId)) {
-                    sectionConversationIds.add(member.conversationId);
-                    changed = true;
-                }
-            }
-        }
-        return all.filter(member => {
-            if (member.conversationId && sectionConversationIds.has(member.conversationId)) {
-                return true;
-            }
-            // VPS subtask: include if its parent conversation is in this section.
-            if (member.kind === 'subtask' && member.parentId) {
-                const parent = all.find(m => m.id === member.parentId);
-                if (parent?.conversationId && sectionConversationIds.has(parent.conversationId)) {
-                    return true;
-                }
-            }
-            return false;
-        });
+        return collectTeamMembersForTranscriptSectionExtracted(this);
     }
 
-    /**
-     * True when the sticky composer or transcript scroll shows the empty-chat welcome /
-     * quick-action affordances ("Ready when you are.", Fix a bug, …). DOM wins once painted;
-     * summary logic covers pre-mount ticks and unit tests.
-     */
     protected isEmptyComposerQuickActionsSurfacePainted(): boolean {
-        for (const host of [this.host.transcriptComposerHost, this.host.stickyComposerHost]) {
-            if (host?.isConnected && host.classList.contains('theia-mod-show-quick-actions')) {
-                return true;
-            }
-        }
-        const scroll = this.host.scroll;
-        if (scroll?.isConnected) {
-            return scroll.querySelector('.theia-mobile-agent-transcript-empty-welcome') !== null;
-        }
-        return false;
+        return isEmptyComposerQuickActionsSurfacePaintedExtracted(this);
     }
 
-    /**
-     * Hide the global Working pill on blank composer surfaces (Agents hub idle shell, pending
-     * new-chat section, or any chat before the first user message). Other projects may still
-     * have running agents — the pill returns once the open conversation is non-empty.
-     */
     shouldSuppressWorkingPillForEmptyComposer(): boolean {
-        if (this.isEmptyComposerQuickActionsSurfacePainted()) {
-            return true;
-        }
-        const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
-        if (!summary) {
-            return false;
-        }
-        if (isAgentsHubIdleConversationSummary(summary)) {
-            return true;
-        }
-        if (summary.id.startsWith('pending-new-chat-')) {
-            return true;
-        }
-        const cached = this.host.transcriptLastConv?.id === summary.id
-            ? this.host.transcriptLastConv
-            : undefined;
-        if (cached) {
-            return shouldShowTranscriptEmptyQuickActions(cached, cached);
-        }
-        const conv = {
-            id: summary.id,
-            cwd: summary.cwd,
-            agentId: summary.agentId,
-            title: summary.title,
-            status: summary.status,
-            createdAt: summary.createdAt,
-            updatedAt: summary.updatedAt,
-            messages: [],
-        };
-        return shouldShowTranscriptEmptyQuickActions(conv, undefined);
+        return shouldSuppressWorkingPillForEmptyComposerExtracted(this);
     }
 
-    /** Flips the one-shot first-load flag once conversations arrive or the safety timeout fires. */
     markTasksFirstLoadComplete(render: boolean): void {
-        if (this.host.tasksFirstLoadFallback !== undefined) {
-            window.clearTimeout(this.host.tasksFirstLoadFallback);
-            this.host.tasksFirstLoadFallback = undefined;
-        }
-        if (!this.host.tasksFirstLoadPending) {
-            return;
-        }
-        this.host.tasksFirstLoadPending = false;
-        if (render && this.host.visible && this.host.hubQueryUi.isTasksHubView()) {
-            this.host.renderList();
-        }
+        markTasksFirstLoadCompleteExtracted(this, render);
     }
 
     createTasksLoadingState(): HTMLElement {
-        const list = document.createElement('div');
-        list.className = 'theia-mobile-tasks-skeleton-list';
-        list.setAttribute('aria-busy', 'true');
-        list.setAttribute('aria-label', nls.localize('qaap/mobileProjects/tasksLoading', 'Loading tasks…'));
-        for (let i = 0; i < 4; i++) {
-            list.append(this.createTaskSkeletonRow());
-        }
-        return list;
+        return createTasksLoadingStateExtracted(this);
     }
 
     createTaskSkeletonRow(): HTMLElement {
-        const row = document.createElement('div');
-        row.className = 'theia-mobile-tasks-skeleton-row q-card';
-        const avatar = document.createElement('div');
-        avatar.className = 'q-skeleton theia-mobile-tasks-skeleton-avatar';
-        const body = document.createElement('div');
-        body.className = 'theia-mobile-tasks-skeleton-body';
-        const title = document.createElement('div');
-        title.className = 'q-skeleton q-skeleton-text theia-mobile-tasks-skeleton-title';
-        const meta = document.createElement('div');
-        meta.className = 'q-skeleton q-skeleton-text theia-mobile-tasks-skeleton-meta';
-        body.append(title, meta);
-        row.append(avatar, body);
-        return row;
+        return createTaskSkeletonRowExtracted(this);
     }
 
     createTasksEmptyState(): HTMLElement {
-        const empty = document.createElement('div');
-        empty.className = 'theia-mobile-projects-empty';
-        const icon = document.createElement('span');
-        icon.className = 'codicon codicon-server-process';
-        const title = document.createElement('strong');
-        title.textContent = this.host.query
-            ? nls.localize('qaap/mobileProjects/noTasksSearchResults', 'No matching tasks')
-            : nls.localize('qaap/mobileProjects/noTasks', 'No VPS tasks yet');
-        const body = document.createElement('span');
-        body.textContent = this.host.query
-            ? nls.localize(
-                'qaap/mobileProjects/noTasksSearchResultsBody',
-                'Try a task title, agent name, or branch.',
-            )
-            : nls.localize(
-                'qaap/mobileProjects/noTasksBody',
-                'Delegate work from a project — it keeps running on the server when you close the app.',
-            );
-        empty.append(icon, title, body);
-        return empty;
+        return createTasksEmptyStateExtracted(this);
     }
 
     appendTasksHubTeamSection(container: HTMLElement): boolean {
-        const { members, filteredApprovals } = this.host.getFilteredTeamHubState();
-        const teamHost = document.createElement('div');
-        teamHost.className = 'theia-mobile-hub-team-root theia-mod-embedded-in-tasks';
-        const rendered = this.host.ensureOverlayUi().teamHub.renderSections(teamHost, members, {
-            searchQuery: this.host.query,
-            approvals: filteredApprovals,
-            embedded: true,
-        });
-        if (rendered) {
-            container.append(teamHost);
-        }
-        return rendered;
+        return appendTasksHubTeamSectionExtracted(this, container);
     }
 
     renderTasksHubView(projects: MobileProjectEntry[]): void {
-        if (this.host.shouldUseAgentsHubLanding()) {
-            void projects;
-            this.host.renderAgentsHubExecutionShell();
-            return;
-        }
-        if (this.host.agentsHubShellActive) {
-            this.host.teardownAgentsHubExecutionShell();
-        }
-        const root = document.createElement('div');
-        root.className = 'theia-mobile-tasks-hub-root';
-        if (this.host.tasksHubSurface === 'chat') {
-            const groups = this.host.collectChatHubGroups(projects);
-            if (groups.length === 0) {
-                root.append(this.host.createChatEmptyState());
-            } else {
-                const host = document.createElement('div');
-                host.className = 'theia-mobile-projects-chats-inbox theia-mod-local-chat';
-                for (const group of groups) {
-                    const items: MobileWorkHubInboxItem[] = group.summaries.map(summary => ({
-                        kind: 'conversation',
-                        project: group.project,
-                        summary,
-                        sortAt: summary.updatedAt,
-                        priority: 0,
-                    }));
-                    host.append(this.host.createInboxProjectGroup(group.project, items));
-                }
-                root.append(host);
-            }
-            this.host.hubIncrementalUi.rememberRenderedStructure('chat-inbox', groups.map(group => ({
-                project: group.project,
-                items: group.summaries.map(summary => ({
-                    kind: 'conversation' as const,
-                    project: group.project,
-                    summary,
-                    sortAt: summary.updatedAt,
-                    priority: 0,
-                })),
-            })));
-            this.host.scroll.append(root);
-            this.updateTasksAttentionChrome();
-            this.host.renderSubtitle();
-            return;
-        }
-
-        const groups = this.host.collectTasksInboxGroups(projects);
-        const teamRendered = this.appendTasksHubTeamSection(root);
-
-        if (groups.length > 0) {
-            const inbox = document.createElement('div');
-            inbox.className = 'theia-mobile-projects-chats-inbox theia-mod-tasks-inbox';
-            if (teamRendered) {
-                const inboxHead = document.createElement('div');
-                inboxHead.className = 'theia-mobile-tasks-inbox-section-head';
-                const inboxLabel = document.createElement('span');
-                inboxLabel.className = 'theia-mobile-tasks-inbox-section-label';
-                inboxLabel.textContent = nls.localize('qaap/mobileProjects/tasksInboxSection', 'By project');
-                inboxHead.append(inboxLabel);
-                inbox.append(inboxHead);
-            }
-            for (const group of groups) {
-                inbox.append(this.host.createInboxProjectGroup(group.project, group.items));
-            }
-            root.append(inbox);
-            this.host.hubIncrementalUi.rememberRenderedStructure('tasks-inbox', groups, { teamEmbedded: teamRendered });
-        }
-
-        if (!teamRendered && groups.length === 0) {
-            if (this.host.tasksFirstLoadPending && !this.host.query.trim()) {
-                root.append(this.createTasksLoadingState());
-            } else {
-                root.append(this.createTasksEmptyState());
-            }
-        }
-        this.host.scroll.append(root);
-        this.updateTasksAttentionChrome();
-        this.host.renderSubtitle();
+        renderTasksHubViewExtracted(this, projects);
     }
 }

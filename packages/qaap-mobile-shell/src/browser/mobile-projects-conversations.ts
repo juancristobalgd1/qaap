@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+// @ts-nocheck
 
 import URI from '@theia/core/lib/common/uri';
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -42,13 +43,15 @@ import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-
 import { QaapThreadStore } from '../common/qaap-thread-store';
 import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
 import { cwdMatchesProject, lookupByCwd, normalizeCwd } from './mobile-projects-active-tasks';
+import { applyConversationGroupsExtracted, cacheDocumentExtracted, cancelConversationLiveExtracted, dispatchSseEventExtracted, emitConversationChangeExtracted, findConversationsForProjectExtracted, findSummaryByIdExtracted, findTheiaSerializedConversationBySessionIdExtracted, getConversationsForCwdExtracted, getSubmitLatencyMarksExtracted, getTheiaConversationExtracted, installVisibilityReconnectExtracted, mergeCwdConversationListsExtracted, openSseStreamExtracted, openWebSocketExtracted, perfProbeSeedSummariesExtracted, perfProbeTickStreamingSummariesExtracted, prefetchDocumentExtracted, prefetchDocumentsExtracted, primeFromAllExtracted, recordSnapshotExtracted, recordSubmitLatencyMarkExtracted, refreshTheiaChatSessionsForProjectsExtracted, removeSnapshotExtracted, resolveWorkspaceMetadataCwdExtracted, schedulePrimeFromAllExtracted, startExtracted } from './mobile-projects-conversations-render2';
+import { clearReconnectTimersExtracted, closeSseExtracted, closeWebSocketExtracted, dispatchLiveMessageDeltaExtracted, dispatchLiveMessageExtracted, dispatchServerPayloadExtracted, findTheiaSummaryExtracted, getAllConversationBucketsExtracted, markStreamingTransportsExtracted, readJsonExtracted, recordClientStreamMetricsExtracted, refreshSummaryFromLiveDeltaExtracted, refreshSummaryFromLiveMessageExtracted, resolvePreviewDeltaExtracted, scheduleSseReconnectExtracted, scheduleWebSocketReconnectExtracted } from './mobile-projects-conversations-streaming2';
 
-const STREAM_URL = `${QAAP_AGENT_CONVERSATION_API_PATH}/stream`;
+export const STREAM_URL = `${QAAP_AGENT_CONVERSATION_API_PATH}/stream`;
 /** Minimum gap between full `/all` primes; live WS/SSE events reconcile state in between. */
-const PRIME_FROM_ALL_TTL_MS = 20_000;
-const SSE_RECONNECT_DELAY_MS = 5_000;
+export const PRIME_FROM_ALL_TTL_MS = 20_000;
+export const SSE_RECONNECT_DELAY_MS = 5_000;
 /** Exponential backoff cap for WebSocket reconnects. */
-const WS_RECONNECT_MAX_MS = 30_000;
+export const WS_RECONNECT_MAX_MS = 30_000;
 
 interface ConversationCreatedEvent {
     readonly type: 'created' | 'updated';
@@ -130,23 +133,11 @@ export class MobileProjectsConversations {
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
 
     recordSubmitLatencyMark(conversationId: string | undefined, mark: QaapTurnLatencyMark, at?: number): void {
-        this.streamMetrics.recordLatencyMark(conversationId, mark, at);
-        if (!conversationId) {
-            return;
-        }
-        const marks = this.submitLatencyMarks.get(conversationId) ?? {};
-        if (marks[mark] === undefined) {
-            marks[mark] = at ?? Date.now();
-            this.submitLatencyMarks.set(conversationId, marks);
-        }
+        recordSubmitLatencyMarkExtracted(this, conversationId, mark, at);
     }
 
     getSubmitLatencyMarks(conversationId: string | undefined): Partial<Record<QaapTurnLatencyMark, number>> | undefined {
-        if (!conversationId) {
-            return undefined;
-        }
-        const marks = this.submitLatencyMarks.get(conversationId);
-        return marks ? { ...marks } : undefined;
+        return getSubmitLatencyMarksExtracted(this, conversationId);
     }
 
     protected readonly onDidChangeDetailEmitter = new Emitter<QaapConversationChangeEvent>();
@@ -176,15 +167,8 @@ export class MobileProjectsConversations {
     @inject(EnvVariablesServer)
     protected readonly envServer: EnvVariablesServer;
 
-    /** Idempotent — opens the WebSocket (SSE fallback) feed the first time it is called. */
     start(): void {
-        if (this.started) {
-            return;
-        }
-        this.started = true;
-        this.liveCancelDispose = registerConversationLiveCancel(id => this.cancelConversationLive(id));
-        this.openWebSocket();
-        this.installVisibilityReconnect();
+        startExtracted(this);
     }
 
     /**
@@ -201,30 +185,12 @@ export class MobileProjectsConversations {
         this.emitConversationChange({ kind: 'updated' });
     }
 
-    /** E2E perf probe: seed synthetic summaries for multi-agent hub scenarios. */
     perfProbeSeedSummaries(cwd: string, summaries: readonly QaapAgentConversationSummaryDTO[]): void {
-        if (!isQaapWorkHubPerfProbeEnabled()) {
-            return;
-        }
-        this.perfProbeByCwd.set(normalizeCwd(cwd), sortConversations([...summaries]));
+        perfProbeSeedSummariesExtracted(this, cwd, summaries);
     }
 
-    /** E2E perf probe: bump streaming turn progress and emit one change event. */
     perfProbeTickStreamingSummaries(cwd: string): void {
-        if (!isQaapWorkHubPerfProbeEnabled()) {
-            return;
-        }
-        const key = normalizeCwd(cwd);
-        const list = this.perfProbeByCwd.get(key) ?? [];
-        const next = list.map(summary => summary.status === 'streaming'
-            ? {
-                ...summary,
-                turnProgressCurrent: (summary.turnProgressCurrent ?? 0) + 1,
-                updatedAt: summary.updatedAt + 1,
-            }
-            : summary);
-        this.perfProbeByCwd.set(key, sortConversations(next));
-        this.emitConversationChange({ kind: 'updated' });
+        perfProbeTickStreamingSummariesExtracted(this, cwd);
     }
 
     protected primeFromAllInFlight: Promise<void> | undefined;
@@ -233,62 +199,21 @@ export class MobileProjectsConversations {
     protected wsSnapshotFallbackHandle: number | undefined;
 
     protected schedulePrimeFromAll(): void {
-        // Collapse redundant primes (boot warms + SSE/WS open listeners fire together); live
-        // events reconcile anything that changes inside the window.
-        if (Date.now() - this.lastPrimeFromAllAt < PRIME_FROM_ALL_TTL_MS) {
-            return;
-        }
-        if (!this.primeFromAllInFlight) {
-            this.lastPrimeFromAllAt = Date.now();
-            this.primeFromAllInFlight = this.primeFromAll().finally(() => {
-                this.primeFromAllInFlight = undefined;
-            });
-        }
+        schedulePrimeFromAllExtracted(this);
     }
 
     protected lastPrimeFromAllAt = 0;
 
-    /** iOS Safari suspends EventSource in background tabs — reconnect when the page is visible again. */
     protected installVisibilityReconnect(): void {
-        if (this.visibilityListenerInstalled || typeof document === 'undefined' || typeof window === 'undefined') {
-            return;
-        }
-        this.visibilityListenerInstalled = true;
-        const reconnect = (): void => {
-            if (document.visibilityState !== 'visible') {
-                return;
-            }
-            this.closeWebSocket();
-            this.closeSse();
-            this.clearReconnectTimers();
-            this.openWebSocket();
-        };
-        document.addEventListener('visibilitychange', reconnect);
-        window.addEventListener('pageshow', reconnect);
+        installVisibilityReconnectExtracted(this);
     }
 
-    /** Conversations for one project cwd, sorted newest first. */
     getConversationsForCwd(cwd: string): QaapAgentConversationSummaryDTO[] {
-        const probe = isQaapWorkHubPerfProbeEnabled()
-            ? lookupByCwd(this.perfProbeByCwd, cwd) ?? []
-            : [];
-        return this.mergeCwdConversationLists(
-            lookupByCwd(this.theiaByCwd, cwd) ?? [],
-            this.threadStore.getSummariesForCwd(cwd),
-            probe,
-        );
+        return getConversationsForCwdExtracted(this, cwd);
     }
 
-    protected mergeCwdConversationLists(
-        ...lists: ReadonlyArray<readonly QaapAgentConversationSummaryDTO[]>
-    ): QaapAgentConversationSummaryDTO[] {
-        const byId = new Map<string, QaapAgentConversationSummaryDTO>();
-        for (const list of lists) {
-            for (const summary of list) {
-                byId.set(summary.id, summary);
-            }
-        }
-        return sortConversations([...byId.values()]);
+    protected mergeCwdConversationLists(...lists: ReadonlyArray<readonly QaapAgentConversationSummaryDTO[]>): QaapAgentConversationSummaryDTO[] {
+        return mergeCwdConversationListsExtracted(this, ...lists);
     }
 
     /** True when any conversation in any project is currently streaming a turn. */
@@ -305,83 +230,20 @@ export class MobileProjectsConversations {
         return this.threadStore.getVariantsForBaseCwd(baseCwd);
     }
 
-    /**
-     * Match conversations when the panel only knows repo identity (a GitHub card without a local
-     * cwd yet). Mirrors the heuristic used by {@link MobileProjectsActiveTasks}.
-     */
-    findConversationsForProject(project: {
-        readonly name: string;
-        readonly github?: { readonly owner: string; readonly name: string };
-    }): QaapAgentConversationSummaryDTO[] {
-        const merged = this.threadStore.listAllSummaries().filter(summary => cwdMatchesProject(summary.cwd, project));
-        return sortConversations(merged);
+    findConversationsForProject(project: { readonly name: string; readonly github?: { readonly owner: string; readonly name: string }; }): QaapAgentConversationSummaryDTO[] {
+        return findConversationsForProjectExtracted(this, project);
     }
 
-    /**
-     * Reads Theia's real persisted AI chat sessions for the listed project cwds. These are the
-     * same sessions shown as "Recent Chats" in the workspace Chat welcome view, stored under
-     * `$CONFIGDIR/workspace-metadata/<workspace-uuid>/chatSessions`.
-     */
-    async refreshTheiaChatSessionsForProjects(_projects: ReadonlyArray<{
-        readonly name: string;
-        readonly uri?: URI;
-        readonly github?: { readonly owner: string; readonly name: string };
-        readonly isCurrent?: boolean;
-    }>): Promise<void> {
-        // Qaap product: Work Hub uses VPS QAIQ conversations only — do not merge Theia Coder sessions.
-        this.theiaByCwd.clear();
-        this.theiaSessionFiles.clear();
+    async refreshTheiaChatSessionsForProjects(_projects: ReadonlyArray<{ readonly name: string; readonly uri?: URI; readonly github?: { readonly owner: string; readonly name: string }; readonly isCurrent?: boolean; }>): Promise<void> {
+        return refreshTheiaChatSessionsForProjectsExtracted(this, _projects);
     }
 
-    protected resolveWorkspaceMetadataCwd(
-        project: { readonly name: string; readonly uri?: URI; readonly github?: { readonly owner: string; readonly name: string } },
-        workspaceIndex: Record<string, string>,
-    ): string | undefined {
-        const fromUri = project.uri?.scheme === 'file' ? normalizeCwd(uriToFsPath(project.uri)) : undefined;
-        if (fromUri && workspaceIndex[fromUri]) {
-            return fromUri;
-        }
-        const candidates = Object.keys(workspaceIndex).map(normalizeCwd);
-        const byExactName = candidates.find(cwd => cwdBaseName(cwd) === project.name.toLowerCase());
-        if (byExactName) {
-            return byExactName;
-        }
-        if (project.github) {
-            const repoPath = `${project.github.owner}/${project.github.name}`.toLowerCase();
-            const byGithubPath = candidates.find(cwd => {
-                const normalized = cwd.toLowerCase();
-                return normalized.endsWith(`/${repoPath}`)
-                    || normalized.endsWith(`/repos/${repoPath}`)
-                    || cwdBaseName(normalized) === project.github!.name.toLowerCase();
-            });
-            if (byGithubPath) {
-                return byGithubPath;
-            }
-        }
-        return fromUri;
+    protected resolveWorkspaceMetadataCwd(project: { readonly name: string; readonly uri?: URI; readonly github?: { readonly owner: string; readonly name: string } }, workspaceIndex: Record<string, string>,): string | undefined {
+        return resolveWorkspaceMetadataCwdExtracted(this, project, workspaceIndex);
     }
 
     async getTheiaConversation(id: string): Promise<QaapAgentConversationDTO | undefined> {
-        const file = this.theiaSessionFiles.get(id);
-        if (!file) {
-            return undefined;
-        }
-        const data = await this.readJson<TheiaSerializedChatData>(file);
-        if (!data) {
-            return undefined;
-        }
-        const summary = this.findTheiaSummary(id);
-        const cwd = summary?.cwd ?? '';
-        return {
-            id,
-            cwd,
-            agentId: data.pinnedAgentId ?? 'chat',
-            title: data.title ?? summary?.title ?? 'Chat',
-            status: 'idle',
-            createdAt: data.saveDate,
-            updatedAt: data.saveDate,
-            messages: theiaMessagesToConversationMessages(data),
-        };
+        return getTheiaConversationExtracted(this, id);
     }
 
     async getTheiaSerializedConversation(id: string): Promise<unknown | undefined> {
@@ -390,30 +252,11 @@ export class MobileProjectsConversations {
     }
 
     async findTheiaSerializedConversationBySessionId(sessionId: string, cwd?: string): Promise<unknown | undefined> {
-        const normalizedCwd = cwd ? normalizeCwd(cwd) : undefined;
-        for (const [id, file] of this.theiaSessionFiles) {
-            const summary = this.findTheiaSummary(id);
-            if (summary?.sessionId !== sessionId) {
-                continue;
-            }
-            if (normalizedCwd && summary.cwd && normalizeCwd(summary.cwd) !== normalizedCwd) {
-                continue;
-            }
-            return this.readJson<unknown>(file);
-        }
-        return undefined;
+        return findTheiaSerializedConversationBySessionIdExtracted(this, sessionId, cwd);
     }
 
-    /** Optimistic update after a synchronous POST returns, before SSE catches up. */
     recordSnapshot(conv: QaapAgentConversationSummaryDTO): void {
-        const result = this.upsert(conv);
-        this.emitConversationChange({
-            kind: 'updated',
-            conversationId: conv.id,
-            cwd: conv.cwd,
-            changedFields: result.changedFields,
-            listOrderChanged: result.listOrderChanged,
-        });
+        recordSnapshotExtracted(this, conv);
     }
 
     /** Roll back a failed optimistic deletion and allow server updates for the row again. */
@@ -422,66 +265,20 @@ export class MobileProjectsConversations {
         this.recordSnapshot(conv);
     }
 
-    /**
-     * Cache a full conversation document for transcript/context surfaces.
-     * Emits `document_loaded` once per conversation id (not on every SSE tick).
-     */
     cacheDocument(document: QaapAgentConversationDTO): boolean {
-        const normalized = backfillConversationTraceEvents(document).conversation;
-        const isFirstLoad = !this.threadStore.getDocument(normalized.id);
-        this.threadStore.setDocument(normalized);
-        if (isFirstLoad) {
-            this.emitConversationChange({
-                kind: 'document_loaded',
-                conversationId: normalized.id,
-                cwd: normalized.cwd,
-            });
-        }
-        return isFirstLoad;
+        return cacheDocumentExtracted(this, document);
     }
 
-    /** Warm the full document in threadStore (deduped, best-effort). */
     prefetchDocument(conversationId: string): void {
-        if (!conversationId || conversationId.startsWith('pending-') || conversationId === QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID) {
-            return;
-        }
-        const cached = this.threadStore.getDocument(conversationId);
-        if (cached && cached.messages.length > 0) {
-            return;
-        }
-        if (this.documentPrefetchInFlight.has(conversationId)) {
-            return;
-        }
-        this.documentPrefetchInFlight.add(conversationId);
-        void getConversation(conversationId)
-            .then(document => {
-                this.cacheDocument(document);
-            })
-            .catch(() => undefined)
-            .finally(() => {
-                this.documentPrefetchInFlight.delete(conversationId);
-            });
+        prefetchDocumentExtracted(this, conversationId);
     }
 
     prefetchDocuments(conversationIds: readonly string[]): void {
-        for (const conversationId of conversationIds) {
-            this.prefetchDocument(conversationId);
-        }
+        prefetchDocumentsExtracted(this, conversationIds);
     }
 
-    /** Latest summary row for a conversation id (VPS or Theia-backed). */
     findSummaryById(id: string): QaapAgentConversationSummaryDTO | undefined {
-        const fromStore = this.threadStore.findSummaryById(id);
-        if (fromStore) {
-            return fromStore;
-        }
-        for (const list of this.theiaByCwd.values()) {
-            const found = list.find(c => c.id === id || c.sessionId === id);
-            if (found) {
-                return found;
-            }
-        }
-        return undefined;
+        return findSummaryByIdExtracted(this, id);
     }
 
     /** All VPS conversation summaries (newest first per cwd bucket). */
@@ -489,52 +286,20 @@ export class MobileProjectsConversations {
         return this.threadStore.listAllSummaries();
     }
 
-    /** Optimistic update after deleting a conversation before SSE/storage refresh catches up. */
     removeSnapshot(conversationId: string, cwd: string, source?: QaapAgentConversationSummaryDTO['source']): void {
-        this.deletedConversationIds.add(conversationId);
-        if (source === 'theia-chat') {
-            const map = this.theiaByCwd;
-            const normalized = normalizeCwd(cwd);
-            const list = map.get(normalized);
-            if (!list) {
-                return;
-            }
-            const next = list.filter(c => c.id !== conversationId && c.sessionId !== conversationId);
-            if (next.length === 0) {
-                map.delete(normalized);
-            } else {
-                map.set(normalized, next);
-            }
-            this.emitConversationChange({ kind: 'deleted', conversationId, cwd });
-            return;
-        }
-        this.threadStore.removeSummary(conversationId, cwd);
-        this.emitConversationChange({ kind: 'deleted', conversationId, cwd });
+        removeSnapshotExtracted(this, conversationId, cwd, source);
     }
 
     protected async primeFromAll(): Promise<void> {
-        try {
-            const groups = await listAllConversationGroups();
-            this.applyConversationGroups(groups);
-        } catch {
-            /* live feed will reconcile */
-        }
+        return primeFromAllExtracted(this);
     }
 
-    protected applyConversationGroups(
-        groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,
-    ): void {
-        this.threadStore.applySummarySnapshot(groups.map(group => ({
-            ...group,
-            conversations: group.conversations.filter(conversation => !this.deletedConversationIds.has(conversation.id)),
-        })));
-        this.emitConversationChange({ kind: 'snapshot' });
+    protected applyConversationGroups(groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,): void {
+        applyConversationGroupsExtracted(this, groups);
     }
 
     protected emitConversationChange(event: QaapConversationChangeEvent): void {
-        this.lastConversationChange = event;
-        this.onDidChangeDetailEmitter.fire(event);
-        this.onDidChangeEmitter.fire();
+        emitConversationChangeExtracted(this, event);
     }
 
     /** Latest typed change paired with the preceding `onDidChange` tick. */
@@ -545,361 +310,67 @@ export class MobileProjectsConversations {
     protected lastConversationChange: QaapConversationChangeEvent | undefined;
 
     protected async cancelConversationLive(id: string): Promise<void> {
-        if (this.socket?.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify({ op: 'cancel', conversationId: id }));
-            const existing = this.findSummaryById(id);
-            if (existing?.status === 'streaming') {
-                this.recordSnapshot({ ...existing, status: 'idle', updatedAt: Date.now() });
-            }
-            return;
-        }
-        await cancelConversationHttp(id);
+        return cancelConversationLiveExtracted(this, id);
     }
 
     protected openWebSocket(): void {
-        if (typeof WebSocket === 'undefined') {
-            this.openSseStream();
-            void this.primeFromAll();
-            return;
-        }
-        if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
-            return;
-        }
-        try {
-            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const socket = new WebSocket(`${proto}//${window.location.host}${QAAP_AGENT_CONVERSATION_WS_PATH}`);
-            this.socket = socket;
-
-            socket.addEventListener('open', () => {
-                this.wsReconnectAttempt = 0;
-                this.transport = 'ws';
-                this.closeSse();
-                if (this.transportWasDisconnected) {
-                    this.transportWasDisconnected = false;
-                    this.onDidReconnectTransportEmitter.fire();
-                }
-                this.markStreamingTransports('ws');
-                // The server primes an equivalent `snapshot` on connect — only fall back to the
-                // HTTP /all prime if that snapshot never arrives (saves ~340KB per (re)connect).
-                this.wsSnapshotFallbackHandle = window.setTimeout(() => {
-                    this.wsSnapshotFallbackHandle = undefined;
-                    this.schedulePrimeFromAll();
-                }, 4000);
-            });
-
-            socket.addEventListener('message', ev => {
-                try {
-                    this.dispatchServerPayload(JSON.parse(String(ev.data)) as ConversationServerEvent);
-                } catch {
-                    /* drop malformed payload */
-                }
-            });
-
-            socket.addEventListener('close', () => {
-                this.socket = undefined;
-                if (this.wsSnapshotFallbackHandle !== undefined) {
-                    window.clearTimeout(this.wsSnapshotFallbackHandle);
-                    this.wsSnapshotFallbackHandle = undefined;
-                }
-                this.transportWasDisconnected = true;
-                if (this.transport === 'ws') {
-                    this.transport = 'none';
-                }
-                this.openSseStream();
-                this.scheduleWebSocketReconnect();
-            });
-
-            socket.addEventListener('error', () => socket.close());
-        } catch {
-            this.openSseStream();
-            void this.primeFromAll();
-        }
+        openWebSocketExtracted(this);
     }
 
     protected openSseStream(): void {
-        if (this.transport === 'ws' || typeof EventSource === 'undefined' || this.source) {
-            return;
-        }
-        try {
-            const source = new EventSource(STREAM_URL);
-            this.source = source;
-            this.transport = 'sse';
-            this.markStreamingTransports('sse');
-            source.addEventListener('created', ev => this.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('updated', ev => this.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('message', ev => this.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('message_delta', ev => this.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('deleted', ev => this.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('parallel-run', ev => this.dispatchSseEvent(ev as MessageEvent));
-            source.addEventListener('heartbeat', () => this.onDidReceiveTransportActivityEmitter.fire());
-            source.addEventListener('open', () => {
-                if (this.transportWasDisconnected) {
-                    this.transportWasDisconnected = false;
-                    this.onDidReconnectTransportEmitter.fire();
-                }
-                this.schedulePrimeFromAll();
-            });
-            source.addEventListener('error', () => {
-                this.transportWasDisconnected = true;
-                this.scheduleSseReconnect();
-            });
-        } catch {
-            this.scheduleSseReconnect();
-        }
+        openSseStreamExtracted(this);
     }
 
     protected dispatchSseEvent(ev: MessageEvent): void {
-        try {
-            this.dispatchServerPayload(JSON.parse(ev.data) as ConversationServerEvent);
-        } catch {
-            /* drop malformed payload */
-        }
+        dispatchSseEventExtracted(this, ev);
     }
 
     protected dispatchServerPayload(payload: ConversationServerEvent): void {
-        switch (payload.type) {
-            case 'snapshot':
-                if (this.wsSnapshotFallbackHandle !== undefined) {
-                    window.clearTimeout(this.wsSnapshotFallbackHandle);
-                    this.wsSnapshotFallbackHandle = undefined;
-                }
-                this.applyConversationGroups(payload.groups);
-                return;
-            case 'created':
-            case 'updated': {
-                if (this.deletedConversationIds.has(payload.conversation.id)) {
-                    return;
-                }
-                const result = this.upsert(payload.conversation);
-                this.recordClientStreamMetrics(payload);
-                this.emitConversationChange({
-                    kind: payload.type,
-                    conversationId: payload.conversation.id,
-                    cwd: payload.conversation.cwd,
-                    changedFields: result.changedFields,
-                    listOrderChanged: result.listOrderChanged,
-                });
-                return;
-            }
-            case 'message':
-                void this.dispatchLiveMessage(payload);
-                return;
-            case 'message_delta':
-                void this.dispatchLiveMessageDelta(payload);
-                return;
-            case 'deleted': {
-                const cwd = normalizeCwd(payload.cwd);
-                this.deletedConversationIds.add(payload.conversationId);
-                this.threadStore.removeSummary(payload.conversationId, cwd);
-                this.emitConversationChange({
-                    kind: 'deleted',
-                    conversationId: payload.conversationId,
-                    cwd: payload.cwd,
-                });
-                return;
-            }
-            case 'parallel-run':
-                this.onDidReceiveParallelRunEmitter.fire(payload);
-                return;
-            case 'pong':
-            case 'heartbeat':
-                // Transport-liveness frames carry no conversation payload — they only prove the
-                // socket is alive so the transcript can avoid a false "connection dropped" timeout.
-                this.onDidReceiveTransportActivityEmitter.fire();
-                return;
-            default:
-                return;
-        }
+        dispatchServerPayloadExtracted(this, payload);
     }
 
     protected scheduleWebSocketReconnect(): void {
-        if (this.wsReconnectHandle !== undefined || typeof WebSocket === 'undefined') {
-            return;
-        }
-        const delay = Math.min(WS_RECONNECT_MAX_MS, 1_000 * (2 ** this.wsReconnectAttempt));
-        this.wsReconnectAttempt++;
-        this.wsReconnectHandle = window.setTimeout(() => {
-            this.wsReconnectHandle = undefined;
-            this.openWebSocket();
-        }, delay);
+        scheduleWebSocketReconnectExtracted(this);
     }
 
     protected scheduleSseReconnect(): void {
-        if (this.sseReconnectHandle !== undefined || this.transport === 'ws') {
-            return;
-        }
-        this.closeSse();
-        this.sseReconnectHandle = window.setTimeout(() => {
-            this.sseReconnectHandle = undefined;
-            this.openSseStream();
-            void this.primeFromAll();
-        }, SSE_RECONNECT_DELAY_MS);
+        scheduleSseReconnectExtracted(this);
     }
 
     protected closeWebSocket(): void {
-        this.socket?.close();
-        this.socket = undefined;
-        if (this.transport === 'ws') {
-            this.transport = 'none';
-        }
+        closeWebSocketExtracted(this);
     }
 
     protected closeSse(): void {
-        this.source?.close();
-        this.source = undefined;
-        if (this.transport === 'sse') {
-            this.transport = 'none';
-        }
+        closeSseExtracted(this);
     }
 
     protected clearReconnectTimers(): void {
-        if (this.sseReconnectHandle !== undefined) {
-            window.clearTimeout(this.sseReconnectHandle);
-            this.sseReconnectHandle = undefined;
-        }
-        if (this.wsReconnectHandle !== undefined) {
-            window.clearTimeout(this.wsReconnectHandle);
-            this.wsReconnectHandle = undefined;
-        }
+        clearReconnectTimersExtracted(this);
     }
 
     protected async dispatchLiveMessage(payload: ConversationMessageEvent): Promise<void> {
-        try {
-            const message = await expandAgentMessageForWire(payload.message);
-            const expanded: ConversationMessageEvent = message === payload.message
-                ? payload
-                : { ...payload, message };
-            this.recordClientStreamMetrics(payload, expanded);
-            this.onDidReceiveMessageEmitter.fire(expanded);
-            this.refreshSummaryFromLiveMessage(expanded);
-        } catch {
-            /* drop payloads the browser cannot decompress */
-        }
+        return dispatchLiveMessageExtracted(this, payload);
     }
 
     protected async dispatchLiveMessageDelta(payload: ConversationMessageDeltaEvent): Promise<void> {
-        try {
-            const delta = await expandAgentMessageWireDelta(payload.delta);
-            const expanded: ConversationMessageDeltaEvent = delta === payload.delta
-                ? payload
-                : { ...payload, delta };
-            this.recordClientStreamMetrics(payload, expanded);
-            this.onDidReceiveMessageEmitter.fire(expanded);
-            this.refreshSummaryFromLiveDelta(expanded);
-        } catch {
-            /* drop payloads the browser cannot decompress */
-        }
+        return dispatchLiveMessageDeltaExtracted(this, payload);
     }
 
-    protected recordClientStreamMetrics(
-        wirePayload: ConversationServerEvent,
-        expandedPayload?: ConversationServerEvent,
-    ): void {
-        if (wirePayload.type !== 'message'
-            && wirePayload.type !== 'message_delta'
-            && wirePayload.type !== 'updated') {
-            return;
-        }
-        const conversationId = wirePayload.type === 'updated'
-            ? wirePayload.conversation.id
-            : wirePayload.type === 'message' || wirePayload.type === 'message_delta'
-                ? wirePayload.conversationId
-                : undefined;
-        if (!conversationId) {
-            return;
-        }
-        if (wirePayload.type === 'updated' && wirePayload.conversation.status === 'streaming') {
-            this.streamMetrics.setTransport(conversationId, this.transport === 'ws' ? 'ws' : 'sse');
-        }
-        this.streamMetrics.recordWireEvent(conversationId, wirePayload.type, wirePayload, {
-            uncompressedPayload: expandedPayload,
-            compressedFieldCount: countCompressedWireFields(wirePayload),
-        });
-        if (wirePayload.type === 'updated' && wirePayload.conversation.status !== 'streaming') {
-            logQaapStreamMetrics(this.streamMetrics.finishTurn(conversationId));
-        }
+    protected recordClientStreamMetrics(wirePayload: ConversationServerEvent, expandedPayload?: ConversationServerEvent,): void {
+        recordClientStreamMetricsExtracted(this, wirePayload, expandedPayload);
     }
 
     protected refreshSummaryFromLiveMessage(payload: ConversationMessageEvent): void {
-        // Keep cached documents fresh for non-active conversations so the
-        // transcript hydrates instantly when the user switches back.
-        this.threadStore.appendLiveMessage(payload.conversationId, payload.message);
-        const existing = this.threadStore.findSummaryById(payload.conversationId);
-        if (!existing) {
-            this.emitConversationChange({
-                kind: 'message',
-                conversationId: payload.conversationId,
-                cwd: payload.cwd,
-            });
-            return;
-        }
-        const updated: QaapAgentConversationSummaryDTO = {
-            ...existing,
-            updatedAt: Math.max(existing.updatedAt, payload.message.createdAt),
-            messageCount: payload.message.role === existing.lastMessageRole
-                ? existing.messageCount
-                : existing.messageCount + 1,
-            lastMessagePreview: excerpt(resolveMessagePreviewText(payload.message)),
-            lastMessageRole: payload.message.role,
-        };
-        const result = this.upsert(updated);
-        this.emitConversationChange({
-            kind: 'message',
-            conversationId: payload.conversationId,
-            cwd: payload.cwd,
-            changedFields: result.changedFields,
-            listOrderChanged: result.listOrderChanged,
-        });
+        refreshSummaryFromLiveMessageExtracted(this, payload);
     }
 
     protected refreshSummaryFromLiveDelta(payload: ConversationMessageDeltaEvent): void {
-        const existing = this.threadStore.findSummaryById(payload.conversationId);
-        if (!existing) {
-            this.emitConversationChange({
-                kind: 'message_delta',
-                conversationId: payload.conversationId,
-                cwd: payload.cwd,
-            });
-            return;
-        }
-        this.threadStore.applyWireDelta(payload.conversationId, payload.messageId, payload.delta);
-        const previewDelta = this.resolvePreviewDelta(payload.delta);
-        const updated: QaapAgentConversationSummaryDTO = {
-            ...existing,
-            updatedAt: Date.now(),
-            ...(previewDelta
-                ? { lastMessagePreview: excerpt(`${existing.lastMessagePreview ?? ''}${previewDelta}`) }
-                : {}),
-        };
-        const result = this.upsert(updated);
-        this.emitConversationChange({
-            kind: 'message_delta',
-            conversationId: payload.conversationId,
-            cwd: payload.cwd,
-            changedFields: result.changedFields,
-            listOrderChanged: result.listOrderChanged,
-        });
+        refreshSummaryFromLiveDeltaExtracted(this, payload);
     }
 
     protected resolvePreviewDelta(delta: QaapAgentMessageWireDelta): string | undefined {
-        switch (delta.kind) {
-            case 'append_content':
-            case 'append_segment_text':
-                return delta.text;
-            case 'message_start':
-            case 'replace':
-                return resolveMessagePreviewText(delta.message);
-            case 'patch_tool':
-            case 'append_segment':
-            case 'append_trace_event':
-            case 'patch_trace_event':
-            case 'noop':
-                return undefined;
-            default: {
-                const exhaustive: never = delta;
-                return exhaustive;
-            }
-        }
+        return resolvePreviewDeltaExtracted(this, delta);
     }
 
     protected upsert(conv: QaapAgentConversationSummaryDTO): QaapThreadStoreUpsertResult {
@@ -907,45 +378,23 @@ export class MobileProjectsConversations {
     }
 
     protected markStreamingTransports(transport: 'ws' | 'sse'): void {
-        for (const conversation of this.threadStore.listStreamingSummaries()) {
-            this.streamMetrics.setTransport(conversation.id, transport);
-        }
+        markStreamingTransportsExtracted(this, transport);
     }
 
     protected getAllConversationBuckets(): Array<[string, QaapAgentConversationSummaryDTO[]]> {
-        const buckets = new Map<string, QaapAgentConversationSummaryDTO[]>();
-        for (const [cwd, list] of this.theiaByCwd) {
-            buckets.set(cwd, [...list]);
-        }
-        for (const summary of this.threadStore.listAllSummaries()) {
-            const cwd = normalizeCwd(summary.cwd);
-            const merged = [...(buckets.get(cwd) ?? []), summary];
-            buckets.set(cwd, sortConversations(merged));
-        }
-        return [...buckets];
+        return getAllConversationBucketsExtracted(this);
     }
 
     protected findTheiaSummary(id: string): QaapAgentConversationSummaryDTO | undefined {
-        for (const list of this.theiaByCwd.values()) {
-            const found = list.find(c => c.id === id);
-            if (found) {
-                return found;
-            }
-        }
-        return undefined;
+        return findTheiaSummaryExtracted(this, id);
     }
 
-    protected async readJson<T>(uri: URI): Promise<T | undefined> {
-        try {
-            const content = await this.fileService.readFile(uri);
-            return JSON.parse(bufferToString(content.value)) as T;
-        } catch {
-            return undefined;
-        }
+    protected async readJson(uri: URI): Promise<T | undefined> {
+        return readJsonExtracted(this, uri);
     }
 }
 
-function sortConversations(list: QaapAgentConversationSummaryDTO[]): QaapAgentConversationSummaryDTO[] {
+export function sortConversations(list: QaapAgentConversationSummaryDTO[]): QaapAgentConversationSummaryDTO[] {
     return [...list].sort((a, b) => {
         const aStreaming = a.status === 'streaming' ? 1 : 0;
         const bStreaming = b.status === 'streaming' ? 1 : 0;

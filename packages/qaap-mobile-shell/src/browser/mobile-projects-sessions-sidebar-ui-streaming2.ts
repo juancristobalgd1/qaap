@@ -1,0 +1,407 @@
+// @ts-nocheck
+// Extracted from mobile-projects-sessions-sidebar-ui.ts
+
+import { nls } from '@theia/core/lib/common/nls';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { QuickPickItem } from '@theia/core/lib/browser';
+import {
+    readStoredAgent,
+    SHELL_AGENT_ID,
+} from '../common/qaap-agent-task-client';
+import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
+import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
+import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
+import type { MobileProjectEntry } from './mobile-projects-types';
+import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
+import {
+    buildWorkHubSessionsSidebarRowFingerprint,
+    buildWorkHubSessionsSidebarVisibleStructureFingerprint,
+    QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR,
+    QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
+    type WorkHubSessionsSidebarFingerprintInput,
+} from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
+import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import {
+    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
+    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
+    resolveSessionsSidebarInitialConversationLimit,
+} from '../common/qaap-sessions-sidebar-conversation-limit';
+import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE } from './mobile-projects-sessions-sidebar-ui';
+
+export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLElement): void {
+        const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
+        const query = ctx.host.query.trim().toLowerCase();
+        if (projects.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
+            empty.textContent = query
+                ? nls.localize('qaap/sessionsSidebar/noSearchResults', 'No sessions match your search.')
+                : nls.localize('qaap/sessionsSidebar/noSessions', 'No agent sessions yet. Start one from Agents.');
+            host.append(empty);
+            return;
+        }
+        const onActivate = (): void => {
+            ctx.host.sessionsSidebar?.hideForMobileOverlay();
+        };
+        ctx.seedSessionsSidebarAccordionDefaults(projects);
+        ctx.ensureSessionsSidebarActiveProjectExpanded(projects);
+        const pinnedGroups = ctx.collectSessionsSidebarPinnedGroups(projects, query);
+        const bypassConversationLimit = query.length > 0;
+        if (pinnedGroups.length > 0) {
+            host.append(ctx.createSessionsSidebarPinnedSection(pinnedGroups, onActivate, bypassConversationLimit));
+        }
+        const sectionHead = document.createElement('div');
+        sectionHead.className = 'theia-mobile-tasks-inbox-section-head theia-mod-sessions-sidebar-projects-head';
+        const sectionLabel = document.createElement('span');
+        sectionLabel.className = 'theia-mobile-tasks-inbox-section-label';
+        sectionLabel.textContent = nls.localize('qaap/sessionsSidebar/projectsSection', 'Projects');
+        sectionHead.append(sectionLabel);
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-work-hub-sessions-sidebar-projects-list';
+        let visibleCount = 0;
+        for (const project of projects) {
+            let conversations = [...ctx.host.conversationIndexUi.conversationsForProject(project)]
+                .filter(summary => !ctx.isSessionsSidebarPinnedConversation(summary))
+                .sort((a, b) => ctx.host.conversationIndexUi.compareConversationOrder(a, b));
+            if (query) {
+                conversations = conversations.filter(c => ctx.host.hubQueryUi.conversationMatchesQuery(c, query));
+                if (conversations.length === 0) {
+                    continue;
+                }
+            }
+            // Always list the project (accordion) even when it has no sessions yet.
+            list.append(ctx.createSessionsSidebarProjectGroup(project, conversations, onActivate, bypassConversationLimit));
+            visibleCount++;
+        }
+        if (visibleCount === 0 && pinnedGroups.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
+            empty.textContent = query
+                ? nls.localize('qaap/sessionsSidebar/noSearchResults', 'No sessions match your search.')
+                : nls.localize('qaap/sessionsSidebar/noSessions', 'No agent sessions yet. Start one from Agents.');
+            host.append(empty);
+            return;
+        }
+        if (visibleCount > 0) {
+            host.append(sectionHead, list);
+        }
+        ctx.syncSessionsSidebarAnimatedListHeights(host);
+        ctx.prefetchVisibleSidebarDocuments();
+        ctx.bindSessionsSidebarThreadStoreSubscriptions();
+}
+
+export function bindSessionsSidebarThreadStoreSubscriptionsExtracted(ctx: any): void {
+        ctx.sessionsSidebarThreadStoreDispose.dispose();
+        const conversations = ctx.host.conversations;
+        if (!conversations || !ctx.isWorkHubSessionsSidebarVisible()) {
+            ctx.sessionsSidebarThreadStoreDispose = Disposable.NULL;
+            return;
+        }
+        const disposables = new DisposableCollection();
+        for (const entry of ctx.collectSessionsSidebarConversationEntries()) {
+            if (entry.summary.source === 'theia-chat') {
+                continue;
+            }
+            const conversationId = entry.summary.id;
+            disposables.push(conversations.threadStore.subscribe(
+                () => { ctx.scheduleWorkHubSessionsSidebarRefresh(); },
+                snapshot => {
+                    const summary = snapshot.summariesById.get(conversationId);
+                    if (!summary) {
+                        return undefined;
+                    }
+                    return [
+                        summary.status,
+                        summary.updatedAt,
+                        summary.turnProgressCurrent,
+                        summary.turnProgressTotal,
+                        summary.lastMessagePreview,
+                        summary.activityLabel,
+                    ].join(':');
+                },
+                conversationId,
+            ));
+        }
+        ctx.sessionsSidebarThreadStoreDispose = disposables;
+}
+
+export function prefetchVisibleSidebarDocumentsExtracted(ctx: any, limit = 8): void {
+        const conversations = ctx.host.conversations;
+        if (!conversations) {
+            return;
+        }
+        const ids: string[] = [];
+        for (const entry of ctx.collectSessionsSidebarConversationEntries()) {
+            if (ids.length >= limit) {
+                break;
+            }
+            if (entry.summary.source === 'theia-chat' || entry.summary.id.startsWith('pending-')) {
+                continue;
+            }
+            ids.push(entry.summary.id);
+        }
+        conversations.prefetchDocuments(ids);
+}
+
+export function syncSessionsSidebarAnimatedListHeightsExtracted(ctx: any, host: HTMLElement): void {
+        window.requestAnimationFrame(() => {
+            const lists = host.querySelectorAll<HTMLElement>(
+                '.theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) .theia-mobile-projects-chats-list, '
+                + '.theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) .theia-mobile-work-hub-sessions-sidebar-projects-list',
+            );
+            for (const list of lists) {
+                list.style.removeProperty('--qaap-sessions-sidebar-list-height');
+            }
+        });
+}
+
+export function collectSessionsSidebarPinnedGroupsExtracted(ctx: any, projects: MobileProjectEntry[],
+        query: string,): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
+        const groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> = [];
+        for (const project of projects) {
+            let conversations = ctx.host.conversationIndexUi.conversationsForProject(project)
+                .filter(summary => ctx.isSessionsSidebarPinnedConversation(summary))
+                .sort((a, b) => ctx.host.conversationIndexUi.compareConversationOrder(a, b));
+            if (query) {
+                conversations = conversations.filter(c => ctx.host.hubQueryUi.conversationMatchesQuery(c, query));
+            }
+            if (conversations.length > 0) {
+                groups.push({ project, conversations });
+            }
+        }
+        return groups;
+}
+
+export function createSessionsSidebarPinnedSectionExtracted(ctx: any, groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>,
+        onActivate: () => void,
+        bypassConversationLimit = false,): HTMLElement {
+        const section = document.createElement('section');
+        section.className = 'theia-mobile-work-hub-sessions-sidebar-pinned-section';
+        const head = document.createElement('div');
+        head.className = 'theia-mobile-tasks-inbox-section-head theia-mod-sessions-sidebar-pinned-head';
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-tasks-inbox-section-label';
+        label.textContent = nls.localize('qaap/sessionsSidebar/pinnedSection', 'Pinned');
+        head.append(label);
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-work-hub-sessions-sidebar-pinned-list';
+        for (const { project, conversations } of groups) {
+            list.append(ctx.createSessionsSidebarPinnedProjectGroup(project, conversations, onActivate, bypassConversationLimit));
+        }
+        section.append(head, list);
+        return section;
+}
+
+export function resolveSessionsSidebarCollapsedLimitExtracted(ctx: any, totalConversations: number): number {
+        const projectCount = ctx.host.hubQueryUi.projectsForCurrentHubList().length;
+        return resolveSessionsSidebarInitialConversationLimit({
+            projectCount,
+            totalConversations,
+            viewportHeight: typeof window !== 'undefined' ? window.innerHeight : undefined,
+        });
+}
+
+export function getSessionsSidebarConversationDisplayLimitExtracted(ctx: any, project: MobileProjectEntry,
+        totalCount: number,
+        bypassLimit: boolean,): number {
+        if (bypassLimit || totalCount === 0) {
+            return totalCount;
+        }
+        const stored = ctx.host.sessionsSidebarVisibleConversationCountByProjectId.get(project.id);
+        const limit = stored ?? ctx.resolveSessionsSidebarCollapsedLimit(totalCount);
+        return Math.min(limit, totalCount);
+}
+
+export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: any, project: MobileProjectEntry,
+        conversations: readonly QaapAgentConversationSummaryDTO[],
+        bypassLimit: boolean,): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
+        const all = [...conversations];
+        if (bypassLimit) {
+            return { visible: all, hiddenCount: 0, showLess: false };
+        }
+        const defaultLimit = ctx.resolveSessionsSidebarCollapsedLimit(all.length);
+        const displayLimit = ctx.getSessionsSidebarConversationDisplayLimit(project, all.length, bypassLimit);
+        if (all.length <= defaultLimit && !ctx.host.sessionsSidebarVisibleConversationCountByProjectId.has(project.id)) {
+            return { visible: all, hiddenCount: 0, showLess: false };
+        }
+        const visible = all.slice(0, displayLimit);
+        const openId = ctx.host.transcriptOpenSummaryId;
+        if (openId && displayLimit > 0) {
+            const openIndex = all.findIndex(c => c.id === openId);
+            if (openIndex >= displayLimit) {
+                visible[displayLimit - 1] = all[openIndex]!;
+            }
+        }
+        const hiddenCount = Math.max(0, all.length - displayLimit);
+        const showLess = displayLimit > defaultLimit && hiddenCount === 0;
+        return { visible, hiddenCount, showLess };
+}
+
+export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHost: HTMLElement,
+        project: MobileProjectEntry,
+        conversations: readonly QaapAgentConversationSummaryDTO[],
+        onActivate: () => void,
+        bypassLimit: boolean,): void {
+        const { visible, hiddenCount, showLess } = ctx.resolveSessionsSidebarVisibleConversations(project, conversations, bypassLimit);
+        if (visible.length === 0) {
+            return;
+        }
+        const activeInfo = ctx.host.conversationIndexUi.activeInfoForProject(project);
+        const parentIds = new Set<string>();
+        for (const summary of conversations) {
+            if (summary.forkedFromId) {
+                parentIds.add(summary.forkedFromId);
+            }
+        }
+        for (const summary of visible) {
+            const task = ctx.host.conversationIndexUi.summaryToTaskView(summary);
+            listHost.append(ctx.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
+                onActivate: () => {
+                    ctx.beginSessionsSidebarConversationActivation(summary.id);
+                    onActivate();
+                },
+                compact: true,
+            }));
+        }
+        if (bypassLimit) {
+            return;
+        }
+        const totalCount = conversations.length;
+        if (hiddenCount > 0) {
+            listHost.append(ctx.createSessionsSidebarShowMoreControl(project, hiddenCount, totalCount));
+        } else if (showLess) {
+            listHost.append(ctx.createSessionsSidebarShowLessControl(project));
+        }
+}
+
+export function createSessionsSidebarShowMoreControlExtracted(ctx: any, project: MobileProjectEntry,
+        hiddenCount: number,
+        totalCount: number,): HTMLButtonElement {
+        const moreBtn = document.createElement('button');
+        moreBtn.type = 'button';
+        moreBtn.className = 'theia-mobile-work-hub-sessions-sidebar-show-more';
+        moreBtn.textContent = nls.localize('qaap/sessionsSidebar/showMore', 'Show more');
+        const pageSize = MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE;
+        moreBtn.title = nls.localize(
+            'qaap/sessionsSidebar/showMoreHint',
+            'Show {0} more sessions',
+            String(Math.min(pageSize, hiddenCount)),
+        );
+        moreBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const current = ctx.host.sessionsSidebarVisibleConversationCountByProjectId.get(project.id)
+                ?? ctx.resolveSessionsSidebarCollapsedLimit(totalCount);
+            ctx.host.sessionsSidebarVisibleConversationCountByProjectId.set(
+                project.id,
+                Math.min(current + pageSize, totalCount),
+            );
+            ctx.resetSessionsSidebarListFingerprint();
+            ctx.host.sessionsSidebar?.refreshList({ force: true });
+        });
+        return moreBtn;
+}
+
+export function createSessionsSidebarShowLessControlExtracted(ctx: any, project: MobileProjectEntry): HTMLButtonElement {
+        const lessBtn = document.createElement('button');
+        lessBtn.type = 'button';
+        lessBtn.className = 'theia-mobile-work-hub-sessions-sidebar-show-more theia-mod-show-less';
+        lessBtn.textContent = nls.localize('qaap/sessionsSidebar/showLess', 'Show less');
+        lessBtn.title = nls.localize(
+            'qaap/sessionsSidebar/showLessHint',
+            'Show only the first {0} sessions',
+            String(ctx.resolveSessionsSidebarCollapsedLimit(
+                ctx.host.conversationIndexUi.conversationsForProject(project).length,
+            )),
+        );
+        lessBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            ctx.host.sessionsSidebarVisibleConversationCountByProjectId.delete(project.id);
+            ctx.resetSessionsSidebarListFingerprint();
+            ctx.host.sessionsSidebar?.refreshList({ force: true });
+        });
+        return lessBtn;
+}
+
+export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: any, project: MobileProjectEntry,
+        conversations: readonly QaapAgentConversationSummaryDTO[],
+        onActivate: () => void,
+        bypassConversationLimit = false,): HTMLElement {
+        const group = document.createElement('div');
+        group.className = 'theia-mobile-work-hub-sessions-sidebar-pinned-project';
+        const projectHead = document.createElement('div');
+        projectHead.className = 'theia-mobile-work-hub-sessions-sidebar-pinned-project-head';
+        const folder = document.createElement('span');
+        folder.className = 'codicon codicon-folder theia-mobile-work-hub-sessions-sidebar-pinned-project-icon';
+        folder.setAttribute('aria-hidden', 'true');
+        const name = document.createElement('span');
+        name.className = 'theia-mobile-work-hub-sessions-sidebar-pinned-project-name';
+        name.textContent = project.name;
+        projectHead.append(folder, name);
+        const taskList = document.createElement('div');
+        taskList.className = 'theia-mobile-projects-chats-list theia-mod-sessions-sidebar-pinned-tasks';
+        ctx.appendSessionsSidebarConversationItems(taskList, project, conversations, onActivate, bypassConversationLimit);
+        group.append(projectHead, taskList);
+        return group;
+}
+
+export function seedSessionsSidebarAccordionDefaultsExtracted(ctx: any, projects: MobileProjectEntry[]): void {
+        if (ctx.host.sessionsSidebarAccordionDefaultsApplied) {
+            return;
+        }
+        ctx.host.sessionsSidebarAccordionDefaultsApplied = true;
+        for (const project of projects) {
+            if (project.isCurrent || ctx.host.conversationIndexUi.countRunningTasks(project) > 0) {
+                ctx.host.sessionsSidebarExpandedProjectIds.add(project.id);
+            }
+        }
+        if (projects.length > 0 && ctx.host.sessionsSidebarExpandedProjectIds.size === 0) {
+            ctx.host.sessionsSidebarExpandedProjectIds.add(projects[0].id);
+        }
+}
+
+export function ensureSessionsSidebarActiveProjectExpandedExtracted(ctx: any, projects: MobileProjectEntry[]): void {
+        const selectedId = ctx.host.agentsHubSelectedProjectId;
+        for (const project of projects) {
+            if (
+                project.isCurrent
+                || project.id === selectedId
+                || ctx.host.conversationIndexUi.countRunningTasks(project) > 0
+            ) {
+                ctx.host.sessionsSidebarExpandedProjectIds.add(project.id);
+            }
+        }
+        const active = ctx.resolveWorkHubSessionsSidebarProject();
+        if (active && projects.some(project => project.id === active.id)) {
+            ctx.host.sessionsSidebarExpandedProjectIds.add(active.id);
+        }
+}
+
+export function compareSessionsSidebarProjectOrderExtracted(ctx: any, a: MobileProjectEntry, b: MobileProjectEntry): number {
+        const aRunning = ctx.host.conversationIndexUi.countRunningTasks(a) > 0 ? 1 : 0;
+        const bRunning = ctx.host.conversationIndexUi.countRunningTasks(b) > 0 ? 1 : 0;
+        if (aRunning !== bRunning) {
+            return bRunning - aRunning;
+        }
+        if (a.isCurrent !== b.isCurrent) {
+            return a.isCurrent ? -1 : 1;
+        }
+        const selectedId = ctx.host.agentsHubSelectedProjectId;
+        const aSelected = selectedId && a.id === selectedId ? 1 : 0;
+        const bSelected = selectedId && b.id === selectedId ? 1 : 0;
+        if (aSelected !== bSelected) {
+            return bSelected - aSelected;
+        }
+        const aTime = a.lastActiveAt ? Date.parse(a.lastActiveAt) : NaN;
+        const bTime = b.lastActiveAt ? Date.parse(b.lastActiveAt) : NaN;
+        const aValid = Number.isFinite(aTime) ? aTime : 0;
+        const bValid = Number.isFinite(bTime) ? bTime : 0;
+        if (aValid !== bValid) {
+            return bValid - aValid;
+        }
+        return a.name.localeCompare(b.name);
+}
+

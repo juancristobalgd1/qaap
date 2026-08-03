@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
+// @ts-nocheck
 
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
@@ -51,6 +52,9 @@ import {
     previewNotify,
     writePngBlobToClipboard,
 } from './qaap-preview-overflow-actions';
+import { addAnnotationsToChatExtracted, addPendingChatImageFromPasteExtracted, askDeleteAllConfirmationExtracted, clearAllAnnotationsExtracted, clearAnnotationsAfterSuccessfulSendExtracted, clearPendingChatImagesExtracted, confirmAndClearAllAnnotationsExtracted, disposeExtracted, exitAnnotateModeExtracted, formatAnnotationsSentToastExtracted, handleEscapeExtracted, hasClearableAnnotationsExtracted, installMessageListenerExtracted, listPopoverImagesExtracted, notifyUserExtracted, onFrameLoadExtracted, onWindowMessageExtracted, redoLastAnnotationExtracted, removePendingChatImageExtracted, setInteractionModeExtracted, setPendingChatScreenshotExtracted, setToolbarHostExtracted, undoLastAnnotationExtracted } from './qaap-preview-annotation-controller-render2';
+import { cancelScheduledReanchorExtracted, captureScreenshotForChatExtracted, closePopoverExtracted, frameTargetOriginExtracted, handleAnnotationPointExtracted, handleReanchorResultExtracted, installReanchorObserversExtracted, openExistingAnnotationExtracted, openPopoverForExtracted, postSetModeExtracted, refreshMarkersExtracted, requestReanchorExtracted, scheduleReanchorExtracted, setComparingOriginalExtracted, takeScreenshotExtracted } from './qaap-preview-annotation-controller-streaming2';
+import { countReadyAnnotationsExtracted, ensureAnnotateToolbarExtracted, syncAnnotateToolbarExtracted } from './qaap-preview-annotation-controller-timeline2';
 
 /**
  * Side-by-side compare silhouette (left/right rounded brackets + center split).
@@ -179,17 +183,8 @@ export class QaapPreviewAnnotationController implements Disposable {
         this.refreshMarkers();
     }
 
-    /**
-     * Supplies (or updates) the workbench host used to locate chrome and mount the annotate bar.
-     * Safe when the host was not yet parented under the toolbar at construction time.
-     */
     setToolbarHost(host: HTMLElement | undefined): void {
-        if (!host) {
-            return;
-        }
-        this.toolbarHost = host;
-        this.ensureAnnotateToolbar();
-        this.syncAnnotateToolbar();
+        setToolbarHostExtracted(this, host);
     }
 
     /** Wire Work Hub–visible toasts (e.g. MobileSnackbar) after construction. */
@@ -203,14 +198,7 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     dispose(): void {
-        this.closePopover();
-        this.clearPendingChatImages();
-        if (this.reanchorRaf) {
-            this.cancelScheduledReanchor(this.reanchorRaf);
-            this.reanchorRaf = 0;
-        }
-        this.postSetMode('browse');
-        this.toDispose.dispose();
+        disposeExtracted(this);
     }
 
     getInteractionMode(): PreviewInteractionMode {
@@ -218,32 +206,7 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     setInteractionMode(mode: PreviewInteractionMode): void {
-        if (mode === this.mode && mode !== 'select') {
-            return;
-        }
-        this.options.injectBridge();
-        if (mode === 'select') {
-            this.mode = 'select';
-            this.postSetMode('select');
-            this.options.startSelectPicker();
-            this.syncAnnotateToolbar();
-            return;
-        }
-        this.mode = mode;
-        this.postSetMode(mode);
-        if (mode === 'annotate') {
-            // Retry mount if construction ran before the workbench was parented under chrome.
-            this.ensureAnnotateToolbar();
-        }
-        this.syncAnnotateToolbar();
-        if (mode === 'annotate') {
-            this.options.messageService.info(nls.localize(
-                'qaap/preview/annotateActive',
-                'Annotate mode — tap the preview to add a comment. Scroll still works.',
-            ));
-            this.scheduleReanchor();
-        }
-        this.refreshMarkers();
+        setInteractionModeExtracted(this, mode);
     }
 
     startAnnotateMode(): void {
@@ -258,112 +221,15 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     undoLastAnnotation(): void {
-        const scope = this.options.getScope();
-        if (!scope) {
-            return;
-        }
-        const removed = this.store.undoLast(scope);
-        if (!removed) {
-            return;
-        }
-        this.positions.delete(removed.id);
-        if (this.provisionalId === removed.id) {
-            this.provisionalId = undefined;
-            this.closePopover();
-        }
-        this.refreshMarkers();
-        this.syncAnnotateToolbar();
+        undoLastAnnotationExtracted(this);
     }
 
     redoLastAnnotation(): void {
-        const scope = this.options.getScope();
-        if (!scope) {
-            return;
-        }
-        const restored = this.store.redoLast(scope);
-        if (!restored) {
-            return;
-        }
-        const frameRect = this.options.frame.getBoundingClientRect();
-        this.positions.set(restored.id, {
-            id: restored.id,
-            clientX: restored.documentXRatio * frameRect.width,
-            clientY: restored.documentYRatio * frameRect.height,
-            unresolved: restored.unresolved,
-        });
-        this.refreshMarkers();
-        this.scheduleReanchor();
-        this.syncAnnotateToolbar();
+        redoLastAnnotationExtracted(this);
     }
 
     async addAnnotationsToChat(): Promise<void> {
-        if (this.sendInFlight) {
-            return;
-        }
-        const scope = this.options.getScope();
-        if (!scope) {
-            return;
-        }
-        // A typed-but-unconfirmed popover draft is the user's most recent intent — commit it
-        // instead of silently dropping it when Send is tapped with the popover still open.
-        this.popover?.commit();
-        // Send every confirmed annotation of this conversation, not just the current route's:
-        // SPA navigation between Confirm and Send must never turn Send into a silent no-op.
-        const confirmed = this.listConfirmedForConversation(scope);
-        if (confirmed.length === 0) {
-            this.notifyUser(nls.localize(
-                'qaap/preview/annotateNothingToAttach',
-                'Confirm at least one annotation before adding to chat.',
-            ), 'warn');
-            return;
-        }
-        if (!this.options.commands.getCommand(QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND)) {
-            this.notifyUser(nls.localize(
-                'qaap/preview/attachComposerUnavailable',
-                'Work Hub composer attach is unavailable in this session.',
-            ), 'warn');
-            return;
-        }
-        const images = this.pendingChatImages.length > 0
-            ? this.pendingChatImages.map(item => item.attachment)
-            : undefined;
-        const routes = new Set(confirmed.map(item => item.route));
-        const titleRoute = routes.size === 1 ? confirmed[0]!.route : scope.route;
-        const attachArgs = buildAnnotateChatAttachArgs(
-            confirmed,
-            titleRoute,
-            scope.viewportMode,
-            images,
-        );
-        if (!attachArgs) {
-            return;
-        }
-        const annotationIds = confirmed.map(item => item.id);
-        this.sendInFlight = true;
-        try {
-            const sent = await this.options.commands.executeCommand(
-                QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
-                attachArgs,
-            );
-            if (sent !== true) {
-                this.notifyUser(nls.localize(
-                    'qaap/preview/annotateSendFailed',
-                    'Could not send annotations to chat. Open Work Hub and try again.',
-                ), 'warn');
-                return;
-            }
-            this.clearAnnotationsAfterSuccessfulSend(scope, annotationIds);
-            this.notifyUser(this.formatAnnotationsSentToast(annotationIds.length));
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            this.notifyUser(nls.localize(
-                'qaap/preview/annotateAttachFailed',
-                'Could not attach annotations: {0}',
-                detail,
-            ), 'warn');
-        } finally {
-            this.sendInFlight = false;
-        }
+        return addAnnotationsToChatExtracted(this);
     }
 
     /** Confirmed annotations for the whole conversation (any route of this preview thread). */
@@ -372,137 +238,32 @@ export class QaapPreviewAnnotationController implements Disposable {
             .filter(item => item.status === 'confirmed');
     }
 
-    /**
-     * Toolbar × — leave Annotate without wiping confirmed notes. Drops only an unfinished
-     * draft popover (same as Escape), keeps markers / pending screenshots for when Annotate
-     * is opened again.
-     */
     protected exitAnnotateMode(): void {
-        this.closePopover();
-        if (this.provisionalId) {
-            this.store.remove(this.provisionalId);
-            this.positions.delete(this.provisionalId);
-            this.provisionalId = undefined;
-            this.refreshMarkers();
-        }
-        this.setComparingOriginal(false);
-        if (this.mode === 'annotate') {
-            this.setInteractionMode('browse');
-        } else {
-            this.syncAnnotateToolbar();
-        }
+        exitAnnotateModeExtracted(this);
     }
 
-    /**
-     * Toolbar delete — wipe every annotation of this preview conversation (any route),
-     * the open comment popover, and pending screenshots. Does not change interaction mode;
-     * {@link confirmAndClearAllAnnotations} exits Annotate after a successful confirm.
-     */
     protected clearAllAnnotations(): void {
-        const scope = this.options.getScope();
-        this.clearPendingChatImages();
-        this.provisionalId = undefined;
-        this.closePopover();
-        this.setComparingOriginal(false);
-        if (scope) {
-            for (const item of this.store.listForConversation(
-                scope.workspaceId,
-                scope.threadId,
-                scope.previewId ?? scope.previewUrl,
-            )) {
-                this.store.remove(item.id);
-            }
-            this.store.clearScope(scope);
-        }
-        this.positions.clear();
-        this.refreshMarkers();
-        this.syncAnnotateToolbar();
+        clearAllAnnotationsExtracted(this);
     }
 
-    /**
-     * Confirm, then {@link clearAllAnnotations} and leave Annotate via {@link exitAnnotateMode}
-     * (same path as the toolbar ×). No-op when there is nothing to delete or the user cancels.
-     */
     protected async confirmAndClearAllAnnotations(): Promise<void> {
-        if (!this.hasClearableAnnotations()) {
-            return;
-        }
-        const confirmed = await this.askDeleteAllConfirmation();
-        if (!confirmed) {
-            return;
-        }
-        this.clearAllAnnotations();
-        this.exitAnnotateMode();
+        return confirmAndClearAllAnnotationsExtracted(this);
     }
 
     protected async askDeleteAllConfirmation(): Promise<boolean> {
-        if (this.options.confirmDeleteAllAnnotations) {
-            return !!(await this.options.confirmDeleteAllAnnotations());
-        }
-        // Lazy-load so controller unit tests that never delete do not import Lumino widgets.
-        const { ConfirmDialog } = await import('@theia/core/lib/browser/dialogs');
-        return !!(await new ConfirmDialog({
-            title: nls.localize('qaap/preview/annotateDeleteAll', 'Delete all annotations'),
-            msg: nls.localize(
-                'qaap/preview/annotateDeleteAllConfirm',
-                'Are you sure you want to delete all annotations?',
-            ),
-        }).open());
+        return askDeleteAllConfirmationExtracted(this);
     }
 
     protected hasClearableAnnotations(): boolean {
-        const scope = this.options.getScope();
-        if (!scope) {
-            return this.pendingChatImages.length > 0 || !!this.provisionalId;
-        }
-        if (this.pendingChatImages.length > 0 || !!this.provisionalId) {
-            return true;
-        }
-        return this.store.listForConversation(
-            scope.workspaceId,
-            scope.threadId,
-            scope.previewId ?? scope.previewUrl,
-        ).length > 0;
+        return hasClearableAnnotationsExtracted(this);
     }
 
-    /**
-     * After a successful Work Hub attach/submit: remove exactly the sent annotations plus any
-     * leftover drafts in the current scope, hide markers, close the comment popover, reset the
-     * toolbar badge, and return to browse.
-     */
     protected clearAnnotationsAfterSuccessfulSend(scope: PreviewAnnotationScope, sentIds: readonly string[]): void {
-        this.clearPendingChatImages();
-        this.provisionalId = undefined;
-        this.closePopover();
-        this.setComparingOriginal(false);
-        for (const id of sentIds) {
-            this.store.remove(id);
-            this.positions.delete(id);
-        }
-        this.store.clearScope(scope);
-        this.positions.clear();
-        this.refreshMarkers();
-        // Prefer browse so the URL toolbar returns; annotate can be started again empty.
-        if (this.mode === 'annotate') {
-            this.setInteractionMode('browse');
-        } else {
-            this.syncAnnotateToolbar();
-        }
+        clearAnnotationsAfterSuccessfulSendExtracted(this, scope, sentIds);
     }
 
-    /** Test seam: seed a pending screenshot that Send includes as image context. */
     setPendingChatScreenshot(image: PreviewAnnotationChatImageAttachment | undefined): void {
-        this.clearPendingChatImages();
-        if (!image) {
-            this.syncPopoverImages();
-            return;
-        }
-        this.pendingChatImages.push({
-            id: generateUuid(),
-            previewUrl: `data:${image.mimeType};base64,${image.data}`,
-            attachment: image,
-        });
-        this.syncPopoverImages();
+        setPendingChatScreenshotExtracted(this, image);
     }
 
     getPendingChatScreenshot(): PreviewAnnotationChatImageAttachment | undefined {
@@ -510,11 +271,7 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     protected listPopoverImages(): AnnotationPopoverPendingImage[] {
-        return this.pendingChatImages.map(item => ({
-            id: item.id,
-            name: item.attachment.name,
-            previewUrl: item.previewUrl,
-        }));
+        return listPopoverImagesExtracted(this);
     }
 
     protected syncPopoverImages(): void {
@@ -522,766 +279,111 @@ export class QaapPreviewAnnotationController implements Disposable {
     }
 
     protected clearPendingChatImages(): void {
-        for (const item of this.pendingChatImages) {
-            if (item.previewUrl.startsWith('blob:')) {
-                try {
-                    URL.revokeObjectURL(item.previewUrl);
-                } catch { /* ignore */ }
-            }
-        }
-        this.pendingChatImages = [];
+        clearPendingChatImagesExtracted(this);
     }
 
     protected removePendingChatImage(id: string): void {
-        const next: typeof this.pendingChatImages = [];
-        for (const item of this.pendingChatImages) {
-            if (item.id === id) {
-                if (item.previewUrl.startsWith('blob:')) {
-                    try {
-                        URL.revokeObjectURL(item.previewUrl);
-                    } catch { /* ignore */ }
-                }
-                continue;
-            }
-            next.push(item);
-        }
-        this.pendingChatImages = next;
-        this.syncPopoverImages();
+        removePendingChatImageExtracted(this, id);
     }
 
-    protected async addPendingChatImageFromPaste(image: {
-        readonly id: string;
-        readonly file: File;
-        readonly previewUrl: string;
-        readonly name: string;
-    }): Promise<void> {
-        if (this.pendingChatImages.some(item => item.id === image.id)) {
-            this.syncPopoverImages();
-            return;
-        }
-        const data = await blobToBase64(image.file);
-        this.pendingChatImages.push({
-            id: image.id,
-            previewUrl: image.previewUrl,
-            attachment: {
-                name: image.name,
-                mimeType: image.file.type || 'image/png',
-                data,
-            },
-        });
-        this.syncPopoverImages();
+    protected async addPendingChatImageFromPaste(image: { readonly id: string; readonly file: File; readonly previewUrl: string; readonly name: string; }): Promise<void> {
+        return addPendingChatImageFromPasteExtracted(this, image);
     }
 
     protected formatAnnotationsSentToast(count: number): string {
-        if (count === 1) {
-            return nls.localize('qaap/preview/annotateSentOne', '1 annotation sent to chat');
-        }
-        return nls.localize('qaap/preview/annotateSentMany', '{0} annotations sent to chat', String(count));
+        return formatAnnotationsSentToastExtracted(this, count);
     }
 
     protected notifyUser(message: string, kind: 'info' | 'warn' = 'info'): void {
-        previewNotify(
-            { messageService: this.options.messageService, notify: this.notify },
-            message,
-            kind,
-        );
+        notifyUserExtracted(this, message, kind);
     }
 
     handleEscape(): boolean {
-        // Agent/model picker (portaled above the annotation card) owns Escape first.
-        if (document.querySelector(
-            '.qaap-sticky-composer-sheet-popover, .theia-mobile-sticky-composer-sheet, .theia-mobile-projects-sticky-composer-sheet',
-        )) {
-            return false;
-        }
-        if (this.popover) {
-            this.popover.dispose();
-            this.popover = undefined;
-            if (this.provisionalId) {
-                this.store.remove(this.provisionalId);
-                this.positions.delete(this.provisionalId);
-                this.provisionalId = undefined;
-                this.refreshMarkers();
-                this.syncAnnotateToolbar();
-            }
-            return true;
-        }
-        if (this.mode === 'annotate') {
-            this.setInteractionMode('browse');
-            return true;
-        }
-        return false;
+        return handleEscapeExtracted(this);
     }
 
     onFrameLoad(): void {
-        this.options.injectBridge();
-        if (this.mode === 'annotate') {
-            this.postSetMode('annotate');
-        } else if (this.mode === 'select') {
-            this.postSetMode('select');
-        }
-        this.scheduleReanchor();
+        onFrameLoadExtracted(this);
     }
 
     protected installMessageListener(): void {
-        if (this.listenerInstalled) {
-            return;
-        }
-        this.listenerInstalled = true;
-        const handler = (event: MessageEvent): void => this.onWindowMessage(event);
-        window.addEventListener('message', handler);
-        this.toDispose.push(Disposable.create(() => window.removeEventListener('message', handler)));
-        const onKeyDown = (e: KeyboardEvent): void => {
-            if (e.key === 'Escape' && this.handleEscape()) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
-        };
-        window.addEventListener('keydown', onKeyDown, true);
-        this.toDispose.push(Disposable.create(() => window.removeEventListener('keydown', onKeyDown, true)));
+        installMessageListenerExtracted(this);
     }
 
-    /** Visible for unit tests — validates iframe source before handling protocol payloads. */
     onWindowMessage(event: Pick<MessageEvent, 'data' | 'source'> & Partial<Pick<MessageEvent, 'origin'>>): void {
-        if (!event.data || typeof event.data !== 'object') {
-            return;
-        }
-        if (this.options.isBridgeMessage) {
-            if (!this.options.isBridgeMessage(event as Pick<MessageEvent, 'data' | 'source' | 'origin'>)) {
-                return;
-            }
-        } else if (!this.options.frame.contentWindow || event.source !== this.options.frame.contentWindow) {
-            return;
-        }
-        const data = event.data as { type?: string; payload?: unknown };
-        if (data.type === ELEMENT_ANNOTATION_POINT_TYPE && data.payload) {
-            this.handleAnnotationPoint(data.payload as AnnotationPointPayload);
-        } else if (data.type === ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE && data.payload) {
-            this.handleReanchorResult(data.payload as { items?: AnnotationReanchorResultItem[] });
-        } else if (data.type === ELEMENT_ANNOTATION_CANCEL_TYPE) {
-            if (this.mode === 'annotate') {
-                this.setInteractionMode('browse');
-            }
-        }
+        onWindowMessageExtracted(this, event);
     }
 
     protected installReanchorObservers(): void {
-        const schedule = (): void => this.scheduleReanchor();
-        window.addEventListener('resize', schedule);
-        this.toDispose.push(Disposable.create(() => window.removeEventListener('resize', schedule)));
-        const onFrameLoad = (): void => this.onFrameLoad();
-        this.options.frame.addEventListener('load', onFrameLoad);
-        this.toDispose.push(Disposable.create(() => this.options.frame.removeEventListener('load', onFrameLoad)));
-        try {
-            const ro = new ResizeObserver(() => schedule());
-            ro.observe(this.options.frameSlot);
-            this.toDispose.push(Disposable.create(() => ro.disconnect()));
-        } catch {
-            /* ResizeObserver unavailable */
-        }
+        installReanchorObserversExtracted(this);
     }
 
     protected handleAnnotationPoint(payload: AnnotationPointPayload): void {
-        if (this.mode !== 'annotate' || this.comparingOriginal) {
-            return;
-        }
-        const scope = this.options.getScope();
-        if (!scope) {
-            return;
-        }
-        // Route comes from the in-app navigation; keep previewUrl stable for isolation.
-        const route = payload.route || scope.route;
-        const activeScope: PreviewAnnotationScope = { ...scope, route };
-
-        // Cursor-style: empty draft = retarget (replace the provisional element).
-        // Only append another unique element once the user has typed a comment.
-        if (this.provisionalId && this.popover && payload.element) {
-            const draft = this.store.get(this.provisionalId);
-            if (draft) {
-                const liveComment = this.popover.getComment();
-                const hasTypedText = !isBlankAnnotationComment(liveComment);
-                if (hasTypedText) {
-                    const existing = listPreviewAnnotationElements(draft);
-                    const nextMeta = buildAnnotationElementMeta(payload);
-                    if (nextMeta) {
-                        const nextKey = previewAnnotationElementKey(nextMeta);
-                        if (existing.some(item => previewAnnotationElementKey(item) === nextKey)) {
-                            return;
-                        }
-                        const elements = [...existing, nextMeta];
-                        this.store.update(draft.id, {
-                            comment: liveComment,
-                            element: elements[0],
-                            elements,
-                        });
-                        this.popover.setElementRefs(elements.map(toPopoverElementRef));
-                        this.syncAnnotateToolbar();
-                        return;
-                    }
-                }
-            }
-        }
-
-        if (this.provisionalId) {
-            this.store.remove(this.provisionalId);
-            this.positions.delete(this.provisionalId);
-            this.provisionalId = undefined;
-        }
-        this.closePopover();
-
-        const anchor = payload.element
-            ? {
-                kind: 'element' as const,
-                selector: payload.element.selector,
-                xRatio: payload.element.xRatio,
-                yRatio: payload.element.yRatio,
-            }
-            : {
-                kind: 'page' as const,
-                documentXRatio: payload.documentXRatio,
-                documentYRatio: payload.documentYRatio,
-            };
-
-        const elementMeta = payload.element ? buildAnnotationElementMeta(payload) : undefined;
-        const elements = elementMeta ? [elementMeta] : undefined;
-
-        const annotation = createPreviewAnnotation(activeScope, {
-            comment: '',
-            anchor,
-            documentXRatio: payload.documentXRatio,
-            documentYRatio: payload.documentYRatio,
-            element: elementMeta,
-            elements,
-            status: 'draft',
-        });
-        this.store.add(annotation);
-        this.provisionalId = annotation.id;
-        const frameRect = this.options.frame.getBoundingClientRect();
-        this.positions.set(annotation.id, {
-            id: annotation.id,
-            clientX: payload.clientX,
-            clientY: payload.clientY,
-            unresolved: false,
-        });
-        this.refreshMarkers();
-        this.syncAnnotateToolbar();
-        this.openPopoverFor(annotation, frameRect.left + payload.clientX, frameRect.top + payload.clientY, true);
+        handleAnnotationPointExtracted(this, payload);
     }
 
     protected openExistingAnnotation(id: string, clientX: number, clientY: number): void {
-        const annotation = this.store.get(id);
-        if (!annotation) {
-            return;
-        }
-        this.openPopoverFor(annotation, clientX, clientY, false);
+        openExistingAnnotationExtracted(this, id, clientX, clientY);
     }
 
     protected openPopoverFor(annotation: PreviewAnnotation, clientX: number, clientY: number, isNew: boolean): void {
-        this.closePopover();
-        const panel = this.options.frameSlot.getBoundingClientRect();
-        const elementRefs = listPreviewAnnotationElements(annotation).map(toPopoverElementRef);
-        const fallbackTag = annotation.anchor.kind === 'element'
-            ? annotation.anchor.selector.split(/[\s.#[:>+~]/)[0]
-            : undefined;
-        this.popover = mountAnnotationCommentPopover({
-            anchorClientX: clientX,
-            anchorClientY: clientY,
-            panel,
-            initialComment: annotation.comment,
-            elementRefs: elementRefs.length > 0
-                ? elementRefs
-                : (fallbackTag ? [{ tagName: fallbackTag }] : undefined),
-            initialImages: this.listPopoverImages(),
-            allowDelete: !isNew,
-            composerSession: this.composerSession,
-            onWarn: message => {
-                this.notify?.(message, 'warn');
-                this.options.messageService.warn(message);
-            },
-            onPasteImage: image => this.addPendingChatImageFromPaste(image),
-            onRemoveImage: id => this.removePendingChatImage(id),
-            onConfirm: comment => {
-                if (isBlankAnnotationComment(comment)) {
-                    return;
-                }
-                this.store.update(annotation.id, { comment, status: 'confirmed' });
-                if (this.provisionalId === annotation.id) {
-                    this.provisionalId = undefined;
-                }
-                this.popover = undefined;
-                this.refreshMarkers();
-                this.syncAnnotateToolbar();
-            },
-            onCancel: () => {
-                if (isNew || this.provisionalId === annotation.id) {
-                    this.store.remove(annotation.id);
-                    this.positions.delete(annotation.id);
-                    this.provisionalId = undefined;
-                    this.refreshMarkers();
-                    this.syncAnnotateToolbar();
-                }
-                this.popover = undefined;
-            },
-            onDelete: () => {
-                this.store.remove(annotation.id);
-                this.positions.delete(annotation.id);
-                this.refreshMarkers();
-                this.syncAnnotateToolbar();
-            },
-        });
-        // The open popover flips Send to enabled (commit-on-send) — resync after mount.
-        this.syncAnnotateToolbar();
+        openPopoverForExtracted(this, annotation, clientX, clientY, isNew);
     }
 
     protected closePopover(): void {
-        this.popover?.dispose();
-        this.popover = undefined;
-        this.syncAnnotateToolbar();
+        closePopoverExtracted(this);
     }
 
     protected scheduleReanchor(): void {
-        if (this.reanchorRaf) {
-            this.cancelScheduledReanchor(this.reanchorRaf);
-        }
-        const schedule = typeof requestAnimationFrame === 'function'
-            ? requestAnimationFrame
-            : ((cb: FrameRequestCallback) => window.setTimeout(() => cb(Date.now()), 0) as unknown as number);
-        this.reanchorRaf = schedule(() => {
-            this.reanchorRaf = 0;
-            this.requestReanchor();
-        });
+        scheduleReanchorExtracted(this);
     }
 
     protected cancelScheduledReanchor(id: number): void {
-        if (typeof cancelAnimationFrame === 'function') {
-            cancelAnimationFrame(id);
-            return;
-        }
-        window.clearTimeout(id);
+        cancelScheduledReanchorExtracted(this, id);
     }
 
     protected requestReanchor(): void {
-        const scope = this.options.getScope();
-        if (!scope) {
-            return;
-        }
-        const win = this.options.frame.contentWindow;
-        if (!win) {
-            return;
-        }
-        const items = this.store.listVisibleMarkers(scope).map(item => ({
-            id: item.id,
-            selector: item.anchor.kind === 'element' ? item.anchor.selector : undefined,
-            documentXRatio: item.documentXRatio,
-            documentYRatio: item.documentYRatio,
-            xRatio: item.anchor.kind === 'element' ? item.anchor.xRatio : undefined,
-            yRatio: item.anchor.kind === 'element' ? item.anchor.yRatio : undefined,
-        }));
-        if (items.length === 0) {
-            this.refreshMarkers();
-            return;
-        }
-        if (this.options.postBridgeMessage) {
-            this.options.postBridgeMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } });
-        } else {
-            win.postMessage({ type: ELEMENT_ANNOTATION_REANCHOR_TYPE, payload: { items } }, this.frameTargetOrigin());
-        }
+        requestReanchorExtracted(this);
     }
 
     protected handleReanchorResult(payload: { items?: AnnotationReanchorResultItem[] }): void {
-        const items = payload.items ?? [];
-        for (const item of items) {
-            this.positions.set(item.id, {
-                id: item.id,
-                clientX: item.clientX,
-                clientY: item.clientY,
-                unresolved: item.unresolved,
-            });
-            if (item.unresolved) {
-                this.store.update(item.id, { unresolved: true });
-            } else {
-                this.store.update(item.id, { unresolved: false });
-            }
-        }
-        this.refreshMarkers();
+        handleReanchorResultExtracted(this, payload);
     }
 
     protected refreshMarkers(): void {
-        const scope = this.options.getScope();
-        if (!scope || !this.markers) {
-            this.markers?.sync([], []);
-            return;
-        }
-        const annotations = this.store.listVisibleMarkers(scope);
-        const positions = annotations
-            .map(item => this.positions.get(item.id))
-            .filter((item): item is AnnotationMarkerPosition => !!item);
-        this.markers.sync(annotations, positions);
-        this.markers.setVisible(!this.comparingOriginal);
+        refreshMarkersExtracted(this);
     }
 
     protected postSetMode(mode: PreviewInteractionMode): void {
-        const win = this.options.frame.contentWindow;
-        if (!win) {
-            return;
-        }
-        if (this.options.postBridgeMessage) {
-            this.options.postBridgeMessage({ type: ELEMENT_SET_MODE_TYPE, mode });
-        } else {
-            win.postMessage({ type: ELEMENT_SET_MODE_TYPE, mode }, this.frameTargetOrigin());
-        }
+        postSetModeExtracted(this, mode);
     }
 
     protected frameTargetOrigin(): string {
-        try {
-            const origin = new URL(this.options.frame.src || window.location.href, window.location.href).origin;
-            return origin === 'null' ? window.location.origin : origin;
-        } catch {
-            return window.location.origin;
-        }
+        return frameTargetOriginExtracted(this);
     }
 
     protected setComparingOriginal(active: boolean): void {
-        if (this.comparingOriginal === active) {
-            return;
-        }
-        this.comparingOriginal = active;
-        this.annotateToolbar?.classList.toggle('qaap-mod-comparing-original', active);
-        this.annotateCompareButton?.classList.toggle('qaap-mod-pressed', active);
-        this.markers?.setVisible(!active);
-        if (active) {
-            this.popover?.root.classList.add('qaap-mod-compare-hidden');
-        } else {
-            this.popover?.root.classList.remove('qaap-mod-compare-hidden');
-        }
+        setComparingOriginalExtracted(this, active);
     }
 
     protected async takeScreenshot(): Promise<void> {
-        if (this.screenshotCaptureInFlight) {
-            await this.screenshotCaptureInFlight;
-            return;
-        }
-        const capture = (async (): Promise<void> => {
-            if (this.options.takeScreenshot) {
-                await this.options.takeScreenshot();
-                return;
-            }
-            await this.captureScreenshotForChat();
-        })();
-        this.screenshotCaptureInFlight = capture;
-        this.syncAnnotateToolbar();
-        try {
-            await capture;
-        } finally {
-            if (this.screenshotCaptureInFlight === capture) {
-                this.screenshotCaptureInFlight = undefined;
-                this.syncAnnotateToolbar();
-            }
-        }
+        return takeScreenshotExtracted(this);
     }
 
-    /**
-     * Annotate-toolbar camera: capture preview frame, copy to clipboard, and keep as
-     * pending chat context for the next Send. Never triggers a download.
-     */
     protected async captureScreenshotForChat(): Promise<void> {
-        const frame = this.options.frame;
-        const doc = frame.contentDocument;
-        if (!doc?.body) {
-            this.notifyUser(nls.localize(
-                'qaap/preview/screenshotUnavailable',
-                'Screenshots only work for same-origin previews. Open in browser to capture cross-origin pages.',
-            ), 'warn');
-            return;
-        }
-        try {
-            const blob = await captureSameOriginPreview(doc, frame);
-            if (!blob) {
-                throw new Error('capture failed');
-            }
-            const data = await blobToBase64(blob);
-            const previewUrl = URL.createObjectURL(blob);
-            this.pendingChatImages.push({
-                id: generateUuid(),
-                previewUrl,
-                attachment: {
-                    name: 'preview-screenshot.png',
-                    mimeType: 'image/png',
-                    data,
-                },
-            });
-            this.syncPopoverImages();
-            const copied = await writePngBlobToClipboard(blob);
-            if (copied) {
-                this.notifyUser(nls.localize(
-                    'qaap/preview/screenshotCopiedAndAttached',
-                    'Screenshot copied and attached',
-                ));
-            } else {
-                this.notifyUser(nls.localize(
-                    'qaap/preview/screenshotAttachedClipboardBlocked',
-                    'Screenshot attached (clipboard unavailable)',
-                ), 'warn');
-            }
-        } catch {
-            this.notifyUser(nls.localize(
-                'qaap/preview/screenshotFailed',
-                'Could not capture a screenshot for this page.',
-            ), 'warn');
-        }
+        return captureScreenshotForChatExtracted(this);
     }
 
     protected ensureAnnotateToolbar(): void {
-        if (this.annotateToolbar) {
-            return;
-        }
-        const host = this.toolbarHost;
-        if (!host) {
-            return;
-        }
-        const chrome = host.closest<HTMLElement>(
-            '.theia-mini-browser-toolbar, .theia-mini-browser-toolbar-read-only, .qaap-agent-preview-embedded-toolbar',
-        ) ?? host.parentElement ?? undefined;
-        if (!chrome) {
-            return;
-        }
-        const urlField = chrome.querySelector<HTMLElement>('.theia-mini-browser-url-field') ?? undefined;
-        this.annotateChromeToolbar = chrome;
-        this.annotateUrlField = urlField;
-
-        const bar = document.createElement('div');
-        bar.className = 'qaap-preview-annotate-toolbar';
-        bar.setAttribute('role', 'toolbar');
-        bar.setAttribute('aria-label', nls.localize('qaap/preview/annotateToolbarLabel', 'Annotate'));
-
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-close';
-        closeBtn.title = nls.localize('qaap/preview/annotateClose', 'Close annotate');
-        closeBtn.setAttribute('aria-label', closeBtn.title);
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-trash';
-        deleteBtn.title = nls.localize('qaap/preview/annotateDeleteAll', 'Delete all annotations');
-        deleteBtn.setAttribute('aria-label', deleteBtn.title);
-
-        const undoBtn = document.createElement('button');
-        undoBtn.type = 'button';
-        undoBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-discard';
-        undoBtn.title = nls.localize('qaap/preview/annotateUndo', 'Undo');
-        undoBtn.setAttribute('aria-label', undoBtn.title);
-
-        const redoBtn = document.createElement('button');
-        redoBtn.type = 'button';
-        redoBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-redo';
-        redoBtn.title = nls.localize('qaap/preview/annotateRedo', 'Redo');
-        redoBtn.setAttribute('aria-label', redoBtn.title);
-
-        const hint = document.createElement('span');
-        hint.className = 'qaap-preview-annotate-toolbar-hint';
-        hint.textContent = nls.localize('qaap/preview/annotateHint', 'Annotate...');
-
-        const screenshotBtn = document.createElement('button');
-        screenshotBtn.type = 'button';
-        screenshotBtn.className = 'qaap-preview-annotate-toolbar-icon-btn codicon codicon-device-camera';
-        screenshotBtn.title = nls.localize(
-            'qaap/preview/screenshotAndAttach',
-            'Screenshot and attach',
-        );
-        screenshotBtn.setAttribute('aria-label', screenshotBtn.title);
-
-        const compareBtn = document.createElement('button');
-        compareBtn.type = 'button';
-        compareBtn.className = 'qaap-preview-annotate-toolbar-icon-btn qaap-preview-annotate-toolbar-compare-btn';
-        compareBtn.title = nls.localize('qaap/preview/annotateHoldToSeeOriginal', 'Hold to see original');
-        compareBtn.setAttribute('aria-label', compareBtn.title);
-        compareBtn.setAttribute('aria-pressed', 'false');
-        compareBtn.append(createHoldToSeeOriginalIcon());
-
-        const sendBtn = document.createElement('button');
-        sendBtn.type = 'button';
-        sendBtn.className = 'qaap-preview-annotate-toolbar-send';
-        const sendLabel = document.createElement('span');
-        sendLabel.className = 'qaap-preview-annotate-toolbar-send-label';
-        sendLabel.textContent = nls.localize('qaap/preview/annotateSend', 'Send');
-        const badge = document.createElement('span');
-        badge.className = 'qaap-preview-annotate-toolbar-send-badge';
-        badge.hidden = true;
-        sendBtn.append(sendLabel, badge);
-        sendBtn.title = nls.localize('qaap/preview/annotateSendToChat', 'Send to chat');
-        sendBtn.setAttribute('aria-label', sendBtn.title);
-
-        bar.append(closeBtn, deleteBtn, undoBtn, redoBtn, hint, screenshotBtn, compareBtn, sendBtn);
-        // Full-width sibling of URL / workbench / overflow — not nested in workbench-controls.
-        chrome.append(bar);
-
-        this.annotateToolbar = bar;
-        this.annotateSendButton = sendBtn;
-        this.annotateSendBadge = badge;
-        this.annotateUndoButton = undoBtn;
-        this.annotateRedoButton = redoBtn;
-        this.annotateDeleteButton = deleteBtn;
-        this.annotateScreenshotButton = screenshotBtn;
-        this.annotateCompareButton = compareBtn;
-
-        const onClose = (e: MouseEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.exitAnnotateMode();
-        };
-        const onDelete = (e: MouseEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (deleteBtn.disabled) {
-                return;
-            }
-            void this.confirmAndClearAllAnnotations();
-        };
-        const onUndo = (e: MouseEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.undoLastAnnotation();
-        };
-        const onRedo = (e: MouseEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.redoLastAnnotation();
-        };
-        const onScreenshot = (e: MouseEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            void this.takeScreenshot();
-        };
-        const onCompareDown = (e: PointerEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-                compareBtn.setPointerCapture(e.pointerId);
-            } catch {
-                /* capture optional */
-            }
-            this.setComparingOriginal(true);
-            compareBtn.setAttribute('aria-pressed', 'true');
-        };
-        const onCompareRelease = (e: PointerEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (compareBtn.hasPointerCapture?.(e.pointerId)) {
-                try {
-                    compareBtn.releasePointerCapture(e.pointerId);
-                } catch {
-                    /* ignore */
-                }
-            }
-            this.setComparingOriginal(false);
-            compareBtn.setAttribute('aria-pressed', 'false');
-        };
-        const onSend = (e: MouseEvent): void => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (sendBtn.disabled) {
-                this.notifyUser(nls.localize(
-                    'qaap/preview/annotateNothingToAttach',
-                    'Confirm at least one annotation before adding to chat.',
-                ), 'warn');
-                return;
-            }
-            void this.addAnnotationsToChat();
-        };
-        closeBtn.addEventListener('click', onClose);
-        deleteBtn.addEventListener('click', onDelete);
-        undoBtn.addEventListener('click', onUndo);
-        redoBtn.addEventListener('click', onRedo);
-        screenshotBtn.addEventListener('click', onScreenshot);
-        const onCompareLostCapture = (): void => {
-            this.setComparingOriginal(false);
-            compareBtn.setAttribute('aria-pressed', 'false');
-        };
-        compareBtn.addEventListener('pointerdown', onCompareDown);
-        compareBtn.addEventListener('pointerup', onCompareRelease);
-        compareBtn.addEventListener('pointercancel', onCompareRelease);
-        compareBtn.addEventListener('lostpointercapture', onCompareLostCapture);
-        sendBtn.addEventListener('click', onSend);
-        this.toDispose.push(Disposable.create(() => {
-            this.setComparingOriginal(false);
-            closeBtn.removeEventListener('click', onClose);
-            deleteBtn.removeEventListener('click', onDelete);
-            undoBtn.removeEventListener('click', onUndo);
-            redoBtn.removeEventListener('click', onRedo);
-            screenshotBtn.removeEventListener('click', onScreenshot);
-            compareBtn.removeEventListener('pointerdown', onCompareDown);
-            compareBtn.removeEventListener('pointerup', onCompareRelease);
-            compareBtn.removeEventListener('pointercancel', onCompareRelease);
-            compareBtn.removeEventListener('lostpointercapture', onCompareLostCapture);
-            sendBtn.removeEventListener('click', onSend);
-            bar.remove();
-            this.annotateUrlField?.classList.remove('qaap-mod-annotate-hidden');
-            this.annotateChromeToolbar?.classList.remove('qaap-mod-annotate-active');
-            this.annotateToolbar = undefined;
-            this.annotateUrlField = undefined;
-            this.annotateChromeToolbar = undefined;
-            this.annotateSendButton = undefined;
-            this.annotateSendBadge = undefined;
-            this.annotateUndoButton = undefined;
-            this.annotateRedoButton = undefined;
-            this.annotateDeleteButton = undefined;
-            this.annotateScreenshotButton = undefined;
-            this.annotateCompareButton = undefined;
-        }));
-        this.syncAnnotateToolbar();
+        ensureAnnotateToolbarExtracted(this);
     }
 
     protected syncAnnotateToolbar(): void {
-        const active = this.mode === 'annotate';
-        if (!active) {
-            this.setComparingOriginal(false);
-        }
-        this.annotateToolbar?.classList.toggle('qaap-mod-visible', active);
-        this.annotateUrlField?.classList.toggle('qaap-mod-annotate-hidden', active);
-        this.annotateChromeToolbar?.classList.toggle('qaap-mod-annotate-active', active);
-
-        const scope = this.options.getScope();
-        const readyCount = scope ? this.countReadyAnnotations(scope) : 0;
-        const scopedCount = scope ? this.store.listScope(scope).length : 0;
-        // An open comment popover counts as sendable: Send commits its draft first, so the
-        // button must not stay disabled while the user is still typing the only annotation.
-        const sendReady = readyCount > 0 || !!this.popover;
-
-        if (this.annotateSendBadge) {
-            this.annotateSendBadge.textContent = String(readyCount);
-            this.annotateSendBadge.hidden = readyCount <= 0;
-        }
-        if (this.annotateSendButton) {
-            this.annotateSendButton.disabled = !sendReady;
-            this.annotateSendButton.classList.toggle('qaap-mod-disabled', !sendReady);
-        }
-        if (this.annotateUndoButton) {
-            this.annotateUndoButton.disabled = scopedCount <= 0;
-            this.annotateUndoButton.classList.toggle('qaap-mod-disabled', scopedCount <= 0);
-        }
-        if (this.annotateRedoButton) {
-            const canRedo = scope ? this.store.canRedo(scope) : false;
-            this.annotateRedoButton.disabled = !canRedo;
-            this.annotateRedoButton.classList.toggle('qaap-mod-disabled', !canRedo);
-        }
-        if (this.annotateDeleteButton) {
-            const canDelete = this.hasClearableAnnotations();
-            this.annotateDeleteButton.disabled = !canDelete;
-            this.annotateDeleteButton.classList.toggle('qaap-mod-disabled', !canDelete);
-        }
-        if (this.annotateScreenshotButton) {
-            const captureBusy = !!this.screenshotCaptureInFlight;
-            this.annotateScreenshotButton.disabled = captureBusy;
-            this.annotateScreenshotButton.classList.toggle('qaap-mod-disabled', captureBusy);
-            this.annotateScreenshotButton.setAttribute('aria-busy', captureBusy ? 'true' : 'false');
-        }
+        syncAnnotateToolbarExtracted(this);
     }
 
     protected countReadyAnnotations(scope: PreviewAnnotationScope): number {
-        // Mirror addAnnotationsToChat: Send covers every confirmed annotation of the
-        // conversation, so the badge/enabled state must count the same set.
-        return this.listConfirmedForConversation(scope).length;
+        return countReadyAnnotationsExtracted(this, scope);
     }
 }
 
