@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { MOBILE_CLOSING_TEXT_ERROR_PREFIX,TRANSCRIPT_TRACE_STATUS_ATTR,transcriptActivityTimelineResync,transcriptSummarySpinners } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';

@@ -150,7 +150,7 @@ export const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: st
 ];
 
 /** Pseudo-agent that runs the prompt verbatim as a shell command. */
-const SHELL_AGENT_ID = 'shell';
+export const SHELL_AGENT_ID = 'shell';
 /** Reserved id for the QAAP_AGENT_COMMAND env-var template, when set. */
 const ENV_AGENT_ID = 'env';
 

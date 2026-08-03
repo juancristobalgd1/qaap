@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { lazyTranscriptToolPillBodies } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';

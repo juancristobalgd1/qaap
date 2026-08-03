@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { SHELL_AGENT_ID, QAIQ_AGENT_ID, SHELL_AGENT_ID,QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS,REPO_MAP_MAX_CHARS } from './qaap-agent-task-runner';
 // Extracted from qaap-agent-task-runner.ts
 
 import { Emitter, Event } from '@theia/core/lib/common/event';
