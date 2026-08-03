@@ -49,6 +49,7 @@ import {
     previewNotify,
     writePngBlobToClipboard,
 } from './qaap-preview-overflow-actions';
+import { buildAnnotationElementMeta,toPopoverElementRef } from './qaap-preview-annotation-controller';
 
 export function installReanchorObserversExtracted(ctx: any): void {
         const schedule = (): void => ctx.scheduleReanchor();

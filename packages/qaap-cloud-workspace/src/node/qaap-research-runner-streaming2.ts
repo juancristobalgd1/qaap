@@ -33,6 +33,8 @@ import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
 import { COMMAND_FAILURE_OUTPUT_TAIL_CHARS, GIT_COMMAND_TIMEOUT_MS, LEDGER_PATHSPEC_EXCLUDE, MAX_RUN_RESUME_ATTEMPTS, RESEARCH_COMMAND_CAPTURE_MAX_CHARS } from './qaap-research-runner';
+import { resolveResearchMeasureTimeoutMs } from './qaap-research-runner';
+import { parseResearchMetricFromStdout } from './qaap-research-runner';
 
 export async function finishAsNoopExtracted(ctx: any, goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         const finished: ResearchExperimentRecord = {

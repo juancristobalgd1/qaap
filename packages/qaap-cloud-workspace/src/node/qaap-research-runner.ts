@@ -109,7 +109,7 @@ export const REMINDER_NOOP_ROUND =
     + 'to run or measure. Either actually change a file for the lever you are testing, or if you are '
     + 'only reasoning this round, still end your reply with the marker and the fenced JSON block.';
 
-function reminderRepeatedFingerprint(round: number): string {
+export function reminderRepeatedFingerprint(round: number): string {
     return `The actual file changes you made this turn are identical to round ${round}'s (the runner compared `
         + 'the resulting file contents on disk, not the config text you declared — fingerprint collision). '
         + 'Change a DIFFERENT lever this time — repeating a change you already made wastes a full round.';
@@ -123,7 +123,7 @@ function reminderRepeatedFingerprint(round: number): string {
  * `provider` is validated non-empty by `normalizeResearchGoal` but not against the task runner's
  * narrower provider union, so the cast trusts that validation rather than re-checking it here.
  */
-function toAgentTaskModel(agentModel: ResearchAgentModel | undefined): QaapCreateAgentTaskQaiqModel | undefined {
+export function toAgentTaskModel(agentModel: ResearchAgentModel | undefined): QaapCreateAgentTaskQaiqModel | undefined {
     if (!agentModel) {
         return undefined;
     }

@@ -61,7 +61,7 @@ import { countReadyAnnotationsExtracted, ensureAnnotateToolbarExtracted, syncAnn
  * Closer to the hold-to-see-original affordance than `codicon-diff-single` or
  * filled pane icons like `codicon-split-horizontal`.
  */
-function createHoldToSeeOriginalIcon(): SVGSVGElement {
+export function createHoldToSeeOriginalIcon(): SVGSVGElement {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 16 16');
     svg.setAttribute('width', '14');
@@ -420,7 +420,7 @@ function extractElementIdHint(element: NonNullable<AnnotationPointPayload['eleme
     return undefined;
 }
 
-function buildAnnotationElementMeta(payload: AnnotationPointPayload): PreviewAnnotationElementMeta | undefined {
+export function buildAnnotationElementMeta(payload: AnnotationPointPayload): PreviewAnnotationElementMeta | undefined {
     if (!payload.element) {
         return undefined;
     }
@@ -444,7 +444,7 @@ function buildAnnotationElementMeta(payload: AnnotationPointPayload): PreviewAnn
     return elementMeta;
 }
 
-function toPopoverElementRef(meta: PreviewAnnotationElementMeta): AnnotationPopoverElementRef {
+export function toPopoverElementRef(meta: PreviewAnnotationElementMeta): AnnotationPopoverElementRef {
     // Tag only in the chip UI; idHint stays on the annotation for agent context / dedupe.
     return { tagName: meta.tagName.trim().toLowerCase() || 'div' };
 }

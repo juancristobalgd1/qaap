@@ -49,6 +49,7 @@ import {
     previewNotify,
     writePngBlobToClipboard,
 } from './qaap-preview-overflow-actions';
+import { createHoldToSeeOriginalIcon } from './qaap-preview-annotation-controller';
 
 export function ensureAnnotateToolbarExtracted(ctx: any): void {
         if (ctx.annotateToolbar) {

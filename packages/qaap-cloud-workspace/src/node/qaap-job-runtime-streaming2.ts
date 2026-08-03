@@ -31,6 +31,7 @@ import { QaapJobFunctionRegistry } from './qaap-job-function-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { MAX_FUNCTION_RESULT_CHARS } from './qaap-job-runtime';
+import { QaapJobRequestError } from './qaap-job-runtime';
 
 export function assertAcyclicGraphExtracted(ctx: any, dependenciesByKey: ReadonlyMap<string, readonly string[]>): void {
         const visiting = new Set<string>();

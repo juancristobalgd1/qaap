@@ -31,6 +31,8 @@ import { QaapJobFunctionRegistry } from './qaap-job-function-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { DEFAULT_TIMEOUT_MS, MAX_FUNCTION_INPUT_CHARS, MAX_GRAPH_NODES, STORE_MODE } from './qaap-job-runtime';
+import { QaapJobConflictError } from './qaap-job-runtime';
+import { QaapJobRequestError } from './qaap-job-runtime';
 
 export function initExtracted(ctx: any): void {
         let stateIsWritable = true;

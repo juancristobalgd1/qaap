@@ -33,6 +33,7 @@ import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
 import { LEDGER_PATHSPEC_EXCLUDE, LEDGER_RELATIVE_PATH, PREFLIGHT_PROMPT, PREFLIGHT_TIMEOUT_MS, REMINDER_MISSING_BLOCK, REMINDER_NOOP_ROUND } from './qaap-research-runner';
+import { toAgentTaskModel,reminderRepeatedFingerprint } from './qaap-research-runner';
 
 export async function reconcileOnBootExtracted(ctx: any): Promise<void> {
         for (const goal of ctx.store.listRunning()) {

@@ -31,6 +31,7 @@ import { QaapJobFunctionRegistry } from './qaap-job-function-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { INDEX_MODE, JOB_PRUNE_START_DELAY_MS, MAX_RETRY_ATTEMPTS, STORE_MODE } from './qaap-job-runtime';
+import { QaapJobRequestError } from './qaap-job-runtime';
 
 export function buildChildEnvExtracted(ctx: any, job: QaapJob): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = {};
