@@ -15,6 +15,7 @@ import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import {
     QAAP_AGENT_CONVERSATION_API_PATH,
+    QAAP_DEFAULT_DELIVERY_MODE,
     QaapAgentConversation,
     QaapAgentConversationCwdGroup,
     QaapAgentConversationEvent,
@@ -24,6 +25,8 @@ import {
     QaapConversationCheckpoint,
     QaapCreateAgentConversationRequest,
     QaapLinkConversationsByBranchRequest,
+    QaapMessageDeliveryMode,
+    QaapPendingUserMessage,
     QaapRenameAgentConversationRequest,
     QaapUpdateAgentConversationRequest,
     toConversationSummary,
@@ -197,6 +200,9 @@ import {
     STREAMING_PERSIST_DEBOUNCE_MS,
     INDEX_PATH,
     MAX_CONCURRENT_CONVERSATION_RUNS,
+    QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION,
+    QAAP_MAX_BATCH_SIZE,
+    QAAP_COALESCE_WINDOW_MS,
     TURN_WATCHDOG_SWEEP_MS,
     QAAP_AUTO_RESUME_TURNS_ENABLED,
     MAX_RESTART_RESUMES,
@@ -208,410 +214,643 @@ import {
 } from './qaap-agent-conversation-store-constants';
 
 export function mutatingGitSyncExtracted(ctx: any, cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
-        const wrapped = ctx.tenantSpawn.wrapShellForTenant(cwd, 'git', args);
-        const runEnv = { ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) };
-        return spawnSync(wrapped.file, wrapped.args, { cwd, env: runEnv, encoding: 'utf8' });
+    const wrapped = ctx.tenantSpawn.wrapShellForTenant(cwd, 'git', args);
+    const runEnv = { ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) };
+    return spawnSync(wrapped.file, wrapped.args, { cwd, env: runEnv, encoding: 'utf8' });
 }
 
 export function initExtracted(ctx: any): void {
-        ctx.sseBatcher = new QaapAgentConversationSseBatcher(event => {
-            ctx.recordStreamMetrics(event);
-            ctx.onDidChangeEmitter.fire(event);
-        });
-        ctx.restoreReady = ctx.restoreFromDisk();
-        ctx.taskRunner.onDidChangeTask(event => ctx.onTaskChanged(event));
-        ctx.startTurnWatchdog();
+    ctx.sseBatcher = new QaapAgentConversationSseBatcher(event => {
+        ctx.recordStreamMetrics(event);
+        ctx.onDidChangeEmitter.fire(event);
+    });
+    ctx.restoreReady = ctx.restoreFromDisk();
+    ctx.taskRunner.onDidChangeTask(event => ctx.onTaskChanged(event));
+    ctx.startTurnWatchdog();
 }
 
 export function listExtracted(ctx: any, cwd: string | undefined): QaapAgentConversationSummary[] {
-        const all = [...ctx.conversations.values()];
-        const filtered = cwd ? all.filter(c => c.cwd === path.resolve(cwd)) : all;
-        return filtered
-            .sort((a, b) => b.updatedAt - a.updatedAt)
-            .map(toConversationSummary);
+    const all = [...ctx.conversations.values()];
+    const filtered = cwd ? all.filter(c => c.cwd === path.resolve(cwd)) : all;
+    return filtered
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(toConversationSummary);
 }
 
 export function getExtracted(ctx: any, id: string): QaapAgentConversation | undefined {
-        const conv = ctx.conversations.get(id);
-        if (!conv) {
-            return undefined;
-        }
-        const { conversation, changed } = backfillConversationTraceEvents(conv);
-        const materialized = materializeConversationForApiWithChanges(conversation);
-        if (changed || materialized.changed) {
-            ctx.conversations.set(id, materialized.conversation);
-            ctx.schedulePersist();
-        }
-        return materialized.conversation;
+    const conv = ctx.conversations.get(id);
+    if (!conv) {
+        return undefined;
+    }
+    const { conversation, changed } = backfillConversationTraceEvents(conv);
+    const materialized = materializeConversationForApiWithChanges(conversation);
+    if (changed || materialized.changed) {
+        ctx.conversations.set(id, materialized.conversation);
+        ctx.schedulePersist();
+    }
+    return materialized.conversation;
 }
 
 export function getActiveTaskIdForConversationExtracted(ctx: any, conversationId: string): string | undefined {
-        for (const [taskId, ref] of ctx.taskToConversation) {
-            if (ref.conversationId === conversationId) {
-                return taskId;
-            }
+    for (const [taskId, ref] of ctx.taskToConversation) {
+        if (ref.conversationId === conversationId) {
+            return taskId;
         }
-        return undefined;
+    }
+    return undefined;
 }
 
 export function getActiveTaskIdsForConversationExtracted(ctx: any, conversationId: string): string[] {
-        const taskIds: string[] = [];
-        for (const [taskId, ref] of ctx.taskToConversation) {
-            if (ref.conversationId === conversationId) {
-                taskIds.push(taskId);
-            }
+    const taskIds: string[] = [];
+    for (const [taskId, ref] of ctx.taskToConversation) {
+        if (ref.conversationId === conversationId) {
+            taskIds.push(taskId);
         }
-        return taskIds;
+    }
+    return taskIds;
 }
 
 export function hasOtherActiveTaskForConversationExtracted(ctx: any, conversationId: string, exceptTaskId: string): boolean {
-        for (const [taskId, ref] of ctx.taskToConversation) {
-            if (ref.conversationId === conversationId && taskId !== exceptTaskId) {
-                return true;
-            }
+    for (const [taskId, ref] of ctx.taskToConversation) {
+        if (ref.conversationId === conversationId && taskId !== exceptTaskId) {
+            return true;
         }
-        return false;
+    }
+    return false;
 }
 
 export function hasActiveTaskForUserMessageExtracted(ctx: any, conversationId: string,
-        userMessageId: string,
-        exceptTaskId: string,): boolean {
-        return hasActiveTaskForUserMessageHelper(ctx.taskToConversation, conversationId, userMessageId, exceptTaskId);
+    userMessageId: string,
+    exceptTaskId: string,): boolean {
+    return hasActiveTaskForUserMessageHelper(ctx.taskToConversation, conversationId, userMessageId, exceptTaskId);
 }
 
 export function settleStatusForRunExtracted(ctx: any, conversationId: string,
-        finishedTaskId: string,
-        settled: QaapAgentConversationStatus,): QaapAgentConversationStatus {
-        return ctx.hasOtherActiveTaskForConversation(conversationId, finishedTaskId) ? 'streaming' : settled;
+    finishedTaskId: string,
+    settled: QaapAgentConversationStatus,): QaapAgentConversationStatus {
+    return ctx.hasOtherActiveTaskForConversation(conversationId, finishedTaskId) ? 'streaming' : settled;
 }
 
 export function createExtracted(ctx: any, request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
-        const cwd = path.resolve(request.cwd ?? '');
-        if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
-            throw new Error('A valid absolute "cwd" directory is required.');
-        }
-        // See QaapAgentTaskRunner.create: a container cwd feeds every repository to the agent.
-        if (isQaapWorkspaceContainerPath(cwd)) {
-            throw new Error(QAAP_CONTAINER_CWD_ERROR);
-        }
-        const seedAgent = (request.agent ?? '').trim() || ctx.taskRunner.defaultAgent();
-        const firstMessage = (request.message ?? '').trim();
-        const agentId = firstMessage
-            ? ctx.resolveTurnAgent({ id: '', cwd, agentId: seedAgent, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, firstMessage, request.agent)
-            : seedAgent;
-        const now = Date.now();
-        const id = randomUUID();
-        const titleSeed = (request.title ?? request.message ?? '').trim();
-        const conversation: QaapAgentConversation = {
+    const cwd = path.resolve(request.cwd ?? '');
+    if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
+        throw new Error('A valid absolute "cwd" directory is required.');
+    }
+    // See QaapAgentTaskRunner.create: a container cwd feeds every repository to the agent.
+    if (isQaapWorkspaceContainerPath(cwd)) {
+        throw new Error(QAAP_CONTAINER_CWD_ERROR);
+    }
+    const seedAgent = (request.agent ?? '').trim() || ctx.taskRunner.defaultAgent();
+    const firstMessage = (request.message ?? '').trim();
+    const agentId = firstMessage
+        ? ctx.resolveTurnAgent({ id: '', cwd, agentId: seedAgent, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, firstMessage, request.agent)
+        : seedAgent;
+    const now = Date.now();
+    const id = randomUUID();
+    const titleSeed = (request.title ?? request.message ?? '').trim();
+    const conversation: QaapAgentConversation = {
+        id,
+        cwd,
+        agentId,
+        title: ctx.deriveTitle(titleSeed) || 'New conversation',
+        status: 'idle',
+        createdAt: now,
+        updatedAt: now,
+        messages: [],
+        ...(ownerLogin ? { ownerLogin } : {}),
+        ...(request.parallelRunId ? { parallelRunId: request.parallelRunId } : {}),
+        ...(request.parallelBaseCwd ? { parallelBaseCwd: request.parallelBaseCwd } : {}),
+        ...(request.worktreeBranch ? { worktreeBranch: request.worktreeBranch } : {}),
+        ...(request.autoApprove === false ? { autoApprove: false } : {}),
+        ...(request.contextPreamble ? { contextPreamble: request.contextPreamble } : {}),
+        ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
+        ...(request.approvalPolicyId ? { approvalPolicyId: request.approvalPolicyId } : {}),
+        ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
+        ...(() => {
+            const agentModel = request.agentModel ?? request.qaiqModel;
+            return agentModel && agentSupportsModelPicker(agentId)
+                ? { agentModel, qaiqModel: agentModel }
+                : {};
+        })(),
+        contextWindowSize: DEFAULT_QAAP_CONTEXT_WINDOW,
+    };
+    ctx.conversations.set(id, conversation);
+    ctx.fire({ type: 'created', conversation: toConversationSummary(conversation) });
+    void ctx.persist();
+    if (request.message?.trim()) {
+        ctx.postUserMessage(
             id,
-            cwd,
-            agentId,
-            title: ctx.deriveTitle(titleSeed) || 'New conversation',
-            status: 'idle',
-            createdAt: now,
-            updatedAt: now,
-            messages: [],
-            ...(ownerLogin ? { ownerLogin } : {}),
-            ...(request.parallelRunId ? { parallelRunId: request.parallelRunId } : {}),
-            ...(request.parallelBaseCwd ? { parallelBaseCwd: request.parallelBaseCwd } : {}),
-            ...(request.worktreeBranch ? { worktreeBranch: request.worktreeBranch } : {}),
-            ...(request.autoApprove === false ? { autoApprove: false } : {}),
-            ...(request.contextPreamble ? { contextPreamble: request.contextPreamble } : {}),
-            ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
-            ...(request.approvalPolicyId ? { approvalPolicyId: request.approvalPolicyId } : {}),
-            ...(request.toolApprovalRules ? { toolApprovalRules: request.toolApprovalRules } : {}),
-            ...(() => {
-                const agentModel = request.agentModel ?? request.qaiqModel;
-                return agentModel && agentSupportsModelPicker(agentId)
-                    ? { agentModel, qaiqModel: agentModel }
-                    : {};
-            })(),
-            contextWindowSize: DEFAULT_QAAP_CONTEXT_WINDOW,
-        };
-        ctx.conversations.set(id, conversation);
-        ctx.fire({ type: 'created', conversation: toConversationSummary(conversation) });
-        void ctx.persist();
-        if (request.message?.trim()) {
-            ctx.postUserMessage(
-                id,
-                request.message.trim(),
-                undefined,
-                undefined,
-                request.autoApprove === false ? false : request.autoApprove === true ? true : undefined,
-                request.interactionModeId,
-                request.approvalPolicyId,
-                request.toolApprovalRules,
-                request.latencyMarks,
-            );
+            request.message.trim(),
+            undefined,
+            undefined,
+            request.autoApprove === false ? false : request.autoApprove === true ? true : undefined,
+            request.interactionModeId,
+            request.approvalPolicyId,
+            request.toolApprovalRules,
+            request.latencyMarks,
+        );
+    }
+    return ctx.conversations.get(id)!;
+
+    // NOTE: enqueuePendingMessageExtracted and drainPendingMessagesExtracted are defined below
+    // and attached to ctx via the store class wrappers.
+}
+
+// ─── Delivery mode helpers ────────────────────────────────────────────────────
+
+/**
+ * Enqueue a user message into the conversation's `pendingUserMessages` queue (delivery mode
+ * `'queue'`). The message is accepted immediately (202) and will be drained when the running
+ * agent finishes its turn. Multiple queued messages may be batched into a single agent turn.
+ *
+ * Inspired by Cursor "Send after current message" and Claude Code `pendingMessages`.
+ */
+export function enqueuePendingMessageExtracted(
+    ctx: any,
+    conv: QaapAgentConversation,
+    userMessage: QaapAgentMessage,
+    turnAgentId?: string,
+    sealedTurnModel?: QaapCreateAgentTaskRequest['agentModel'],
+    clientMessageId?: string,
+): QaapAgentConversation {
+    const pending: QaapPendingUserMessage = {
+        id: userMessage.id,
+        content: userMessage.content,
+        createdAt: userMessage.createdAt,
+        ...(turnAgentId ? { turnAgentId } : {}),
+        ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
+        ...(clientMessageId ? { clientMessageId } : {}),
+    };
+    const next: QaapAgentConversation = {
+        ...conv,
+        pendingUserMessages: [...(conv.pendingUserMessages ?? []), pending],
+        updatedAt: Date.now(),
+    };
+    ctx.conversations.set(conv.id, next);
+    ctx.fire({ type: 'pending-queued', conversationId: conv.id, cwd: conv.cwd, message: pending });
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    void ctx.persist();
+    return next;
+}
+
+/**
+ * Drain pending user messages from a conversation's queue when an agent turn finishes.
+ * If multiple messages are queued, they are batched into a single agent turn (optimization B)
+ * to save tokens: one LLM call with the merged content instead of N calls with the full
+ * conversation history each.
+ *
+ * Called from `applyTaskOutcome` after the conversation status settles to `'idle'`.
+ */
+export function drainPendingMessagesExtracted(ctx: any, conversationId: string): void {
+    const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
+    if (!conv?.pendingUserMessages?.length) {
+        return;
+    }
+    // Only drain when the conversation can accept a new turn — 'idle' or 'failed'. If another
+    // peer run is still streaming, the queue waits for that run to finish too.
+    if (conv.status !== 'idle' && conv.status !== 'failed') {
+        return;
+    }
+    const batch = conv.pendingUserMessages.slice(0, QAAP_MAX_BATCH_SIZE);
+    const remaining = conv.pendingUserMessages.slice(QAAP_MAX_BATCH_SIZE);
+    // Clear the queue (or leave the overflow) before re-entering postUserMessage, which will
+    // set status back to 'streaming' and could otherwise re-enqueue.
+    const cleared: QaapAgentConversation = {
+        ...conv,
+        pendingUserMessages: remaining.length > 0 ? remaining : undefined,
+    };
+    ctx.conversations.set(conversationId, cleared);
+    ctx.fire({
+        type: 'pending-drained',
+        conversationId,
+        cwd: conv.cwd,
+        drainedCount: batch.length,
+    });
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(cleared) });
+
+    if (batch.length === 1) {
+        // Single message: process as a normal turn (no batch metadata needed).
+        const msg = batch[0];
+        ctx.postUserMessage(
+            conversationId,
+            msg.content,
+            msg.turnAgentId,
+            msg.turnAgentModel,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            msg.clientMessageId ? { clientMessageId: msg.clientMessageId } : undefined,
+        );
+    } else {
+        // Multiple messages: batch into a single turn to save tokens.
+        // Join with a visual separator so the agent sees them as distinct inputs.
+        const mergedContent = batch.map(m => m.content).join('\n\n---\n\n');
+        const batchedIds = batch.map(m => m.id);
+        const first = batch[0];
+        ctx.postUserMessage(
+            conversationId,
+            mergedContent,
+            first.turnAgentId,
+            first.turnAgentModel,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            {
+                clientMessageId: first.clientMessageId,
+                batchedFromMessageIds: batchedIds,
+            },
+        );
+    }
+}
+
+/**
+ * Cancel all active tasks for a conversation (delivery mode `'interrupt'`). The running agent
+ * is stopped, in-flight tool segments are finalized, and the conversation status is set to
+ * `'idle'` so the new message can be processed immediately.
+ *
+ * Inspired by Cursor "Stop & send" and Codex "Steer".
+ */
+export function interruptConversationRunsExtracted(ctx: any, conversationId: string): void {
+    const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
+    if (!conv) {
+        return;
+    }
+    // Cancel every active task linked to this conversation.
+    const activeTaskIds = ctx.getActiveTaskIdsForConversation(conversationId);
+    for (const taskId of activeTaskIds) {
+        try {
+            ctx.taskRunner.cancel(taskId);
+        } catch {
+            // Task may have already exited — ignore.
         }
-        return ctx.conversations.get(id)!;
+    }
+    // Finalize any in-flight agent message segments so the transcript shows a clean stop.
+    const messages = conv.messages.map(m => {
+        if (m.role === 'agent' && m.runActive && m.segments) {
+            return {
+                ...m,
+                runActive: false,
+                segments: finalizeUnfinishedAgentToolSegments(m.segments, 'Interrupted by user.'),
+            };
+        }
+        if (m.role === 'agent' && m.runActive) {
+            return { ...m, runActive: false };
+        }
+        return m;
+    });
+    const next: QaapAgentConversation = {
+        ...conv,
+        messages,
+        status: 'idle',
+        updatedAt: Date.now(),
+    };
+    ctx.conversations.set(conversationId, next);
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    void ctx.persist();
 }
 
 export function postUserMessageExtracted(ctx: any, id: string,
-        content: string,
-        agentOverride?: string,
-        agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'],
-        autoApproveOverride?: boolean,
-        interactionModeId?: string,
-        approvalPolicyId?: string,
-        toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'],
-        latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
-        internal?: PostUserMessageInternalOptions,): QaapAgentConversation {
-        let conv = ctx.conversations.get(id);
-        if (!conv) {
-            throw new Error('Conversation not found.');
+    content: string,
+    agentOverride?: string,
+    agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'],
+    autoApproveOverride?: boolean,
+    interactionModeId?: string,
+    approvalPolicyId?: string,
+    toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'],
+    latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
+    internal?: PostUserMessageInternalOptions,
+    deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE,): QaapAgentConversation {
+    let conv = ctx.conversations.get(id);
+    if (!conv) {
+        throw new Error('Conversation not found.');
+    }
+    if (internal?.clientMessageId) {
+        const alreadyAccepted = conv.messages.some(message =>
+            message.role === 'user' && message.clientMessageId === internal.clientMessageId
+        );
+        if (alreadyAccepted) {
+            return conv;
         }
-        if (internal?.clientMessageId) {
-            const alreadyAccepted = conv.messages.some(message =>
-                message.role === 'user' && message.clientMessageId === internal.clientMessageId
-            );
-            if (alreadyAccepted) {
-                return conv;
-            }
-        }
-        if (conv.status === 'streaming') {
-            // In-session multitasking: a new user message no longer waits for (or cancels) the
-            // turn in flight — it spawns a peer run that streams into its own agent message
-            // alongside the others. The cap is what keeps one conversation from fanning out
-            // into an unbounded number of agents over the same working tree.
-            const activeTaskIds = ctx.getActiveTaskIdsForConversation(id);
-            if (activeTaskIds.length === 0) {
-                // 'streaming' with no live run is a stale turn (backend restart, lost task):
-                // recover to idle instead of refusing the message forever.
-                conv = { ...conv, status: 'idle', updatedAt: Date.now() };
-                ctx.conversations.set(id, conv);
-                ctx.fire({ type: 'updated', conversation: toConversationSummary(conv) });
-            } else if (activeTaskIds.length >= MAX_CONCURRENT_CONVERSATION_RUNS) {
-                throw new QaapMaxConcurrentRunsError(
-                    `This conversation already has ${activeTaskIds.length} agent runs in progress `
-                    + `(max ${MAX_CONCURRENT_CONVERSATION_RUNS}).`,
+    }
+    if (conv.status === 'streaming') {
+        const activeTaskIds = ctx.getActiveTaskIdsForConversation(id);
+        if (activeTaskIds.length === 0) {
+            // 'streaming' with no live run is a stale turn (backend restart, lost task):
+            // recover to idle instead of refusing the message forever.
+            conv = { ...conv, status: 'idle', updatedAt: Date.now() };
+            ctx.conversations.set(id, conv);
+            ctx.fire({ type: 'updated', conversation: toConversationSummary(conv) });
+        } else {
+            // An agent is running. Route based on the delivery mode:
+            //
+            // - 'queue' (default): enqueue the message. It will be drained when the agent
+            //   finishes. Multiple queued messages may be batched into a single turn.
+            //   Inspired by Cursor "Send after current message" and Claude Code
+            //   `pendingMessages` (drained at tool-round boundaries).
+            //
+            // - 'parallel': spawn a peer run in an isolated worktree (Parallel Runs). The
+            //   cap on parallel variants is enforced here. If the cap is hit, fall back to
+            //   queueing instead of throwing — the user's message is never lost.
+            //   Inspired by Devin Managed Devins and Cursor Multitask.
+            //
+            // - 'interrupt': cancel the running agent and process the new message
+            //   immediately. Inspired by Cursor "Stop & send" and Codex "Steer".
+            if (deliveryMode === 'interrupt') {
+                ctx.interruptConversationRuns(id);
+                conv = ctx.conversations.get(id);
+                if (!conv || conv.status !== 'idle') {
+                    // Interrupt didn't take effect (edge case) — fall back to queueing.
+                    return ctx.enqueuePendingMessage(
+                        conv ?? ctx.conversations.get(id)!,
+                        {
+                            id: randomUUID(),
+                            role: 'user',
+                            content,
+                            createdAt: Date.now(),
+                            ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+                        },
+                        ctx.resolveTurnAgent(conv!, content, agentOverride),
+                        agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv!, content, agentOverride))
+                            ? agentModelOverride
+                            : undefined,
+                        internal?.clientMessageId,
+                    );
+                }
+                // Status is now idle — fall through to normal processing below.
+            } else if (deliveryMode === 'parallel') {
+                if (activeTaskIds.length >= QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION) {
+                    // Cap hit: fall back to queueing instead of throwing 429.
+                    // The user's message is never lost.
+                    return ctx.enqueuePendingMessage(
+                        conv,
+                        {
+                            id: randomUUID(),
+                            role: 'user',
+                            content,
+                            createdAt: Date.now(),
+                            ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+                        },
+                        ctx.resolveTurnAgent(conv, content, agentOverride),
+                        agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv, content, agentOverride))
+                            ? agentModelOverride
+                            : undefined,
+                        internal?.clientMessageId,
+                    );
+                }
+                // Fall through to normal processing — the backend will spawn a peer run
+                // alongside the existing one (in-session multitasking with shared working
+                // tree, same as before but now explicit opt-in by the user).
+            } else {
+                // Default: 'queue' — enqueue the message, don't spawn a peer run.
+                const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);
+                const sealedTurnModel = agentModelOverride && agentSupportsModelPicker(turnAgentId)
+                    ? agentModelOverride
+                    : undefined;
+                return ctx.enqueuePendingMessage(
+                    conv,
+                    {
+                        id: randomUUID(),
+                        role: 'user',
+                        content,
+                        createdAt: Date.now(),
+                        ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+                    },
+                    turnAgentId,
+                    sealedTurnModel,
+                    internal?.clientMessageId,
                 );
             }
         }
-        const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);
-        const modelPatch = agentModelOverride && agentSupportsModelPicker(turnAgentId)
-            ? { agentModel: agentModelOverride, qaiqModel: agentModelOverride }
-            : {};
-        // The model that will actually drive this turn. Resolved BEFORE the user message is built
-        // so the very first SSE frame already carries the provenance the badge renders from:
-        // sealing it after `taskRunner.create()` would ship an unsealed frame that the client's
-        // replace-by-id merge (`QaapThreadStore.appendLiveMessage`) can never repair on its own.
-        const turnModel = modelPatch.agentModel ?? conv.agentModel ?? conv.qaiqModel;
-        // Agents without a model picker (shell, native CLIs) run no model of ours — sealing one
-        // would badge the turn with a model that never executed. Same guard as buildTaskCreateRequest.
-        const sealedTurnModel = agentSupportsModelPicker(turnAgentId) ? turnModel : undefined;
-        const userMessage: QaapAgentMessage = {
-            id: randomUUID(),
-            role: 'user',
-            content,
-            createdAt: Date.now(),
-            ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
-            turnAgentId,
-            ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
-            ...(internal?.autoContinueRootMessageId
-                ? { autoContinueRootMessageId: internal.autoContinueRootMessageId }
-                : {}),
-            ...(internal?.visualRepair ? {
-                visualRepairRootMessageId: internal.visualRepair.rootUserMessageId,
-                visualRepairAttempt: internal.visualRepair.attempt,
-                visualRepairSourceAgentMessageId: internal.visualRepair.sourceAgentMessageId,
-            } : {}),
-        };
-        const messages = [...conv.messages, userMessage];
-        let next: QaapAgentConversation = {
-            ...conv,
-            ...patchConversationAutoApprove(conv, autoApproveOverride),
-            agentId: turnAgentId,
-            title: conv.messages.length === 0 ? ctx.deriveTitle(content) : conv.title,
-            status: 'streaming',
-            updatedAt: Date.now(),
-            messages,
-            // Posting a new turn implicitly resumes a paused chat.
-            paused: undefined,
-            ...modelPatch,
-            ...(interactionModeId ? { interactionModeId } : {}),
-            ...(approvalPolicyId ? { approvalPolicyId } : {}),
-            ...(toolApprovalRules ? { toolApprovalRules } : {}),
-        };
+    }
+    const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);
+    const modelPatch = agentModelOverride && agentSupportsModelPicker(turnAgentId)
+        ? { agentModel: agentModelOverride, qaiqModel: agentModelOverride }
+        : {};
+    // The model that will actually drive this turn. Resolved BEFORE the user message is built
+    // so the very first SSE frame already carries the provenance the badge renders from:
+    // sealing it after `taskRunner.create()` would ship an unsealed frame that the client's
+    // replace-by-id merge (`QaapThreadStore.appendLiveMessage`) can never repair on its own.
+    const turnModel = modelPatch.agentModel ?? conv.agentModel ?? conv.qaiqModel;
+    // Agents without a model picker (shell, native CLIs) run no model of ours — sealing one
+    // would badge the turn with a model that never executed. Same guard as buildTaskCreateRequest.
+    const sealedTurnModel = agentSupportsModelPicker(turnAgentId) ? turnModel : undefined;
+    const userMessage: QaapAgentMessage = {
+        id: randomUUID(),
+        role: 'user',
+        content,
+        createdAt: Date.now(),
+        ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+        turnAgentId,
+        ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
+        ...(internal?.autoContinueRootMessageId
+            ? { autoContinueRootMessageId: internal.autoContinueRootMessageId }
+            : {}),
+        ...(internal?.visualRepair ? {
+            visualRepairRootMessageId: internal.visualRepair.rootUserMessageId,
+            visualRepairAttempt: internal.visualRepair.attempt,
+            visualRepairSourceAgentMessageId: internal.visualRepair.sourceAgentMessageId,
+        } : {}),
+        ...(internal?.batchedFromMessageIds ? { batchedFromMessageIds: internal.batchedFromMessageIds } : {}),
+    };
+    const messages = [...conv.messages, userMessage];
+    let next: QaapAgentConversation = {
+        ...conv,
+        ...patchConversationAutoApprove(conv, autoApproveOverride),
+        agentId: turnAgentId,
+        title: conv.messages.length === 0 ? ctx.deriveTitle(content) : conv.title,
+        status: 'streaming',
+        updatedAt: Date.now(),
+        messages,
+        // Posting a new turn implicitly resumes a paused chat.
+        paused: undefined,
+        ...modelPatch,
+        ...(interactionModeId ? { interactionModeId } : {}),
+        ...(approvalPolicyId ? { approvalPolicyId } : {}),
+        ...(toolApprovalRules ? { toolApprovalRules } : {}),
+    };
+    ctx.conversations.set(id, next);
+    ctx.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: userMessage });
+    ctx.recordSubmitLatencyMarks(id, latencyMarks);
+    ctx.streamMetrics.recordLatencyMark(id, 'backend_user_message_persisted');
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    next = ctx.prepareContextCompactionForTurn(next);
+    if (ctx.conversations.get(id) !== next) {
         ctx.conversations.set(id, next);
-        ctx.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: userMessage });
-        ctx.recordSubmitLatencyMarks(id, latencyMarks);
-        ctx.streamMetrics.recordLatencyMark(id, 'backend_user_message_persisted');
         ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
-        next = ctx.prepareContextCompactionForTurn(next);
-        if (ctx.conversations.get(id) !== next) {
-            ctx.conversations.set(id, next);
-            ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
-        }
+    }
 
-        // Pre-spawn gate: models confirmed to lack function calling cannot drive the coding
-        // agent — fail the turn typed instead of burning a doomed CLI run.
-        if (agentSupportsModelPicker(turnAgentId) && qaiqModelSupportsToolCalls(turnModel?.modelId) === false) {
-            return ctx.failTurnBeforeSpawn(id, next, userMessage.id, localizeAgentFailureMessage('tool_unsupported'));
-        }
-        let task: QaapAgentTask | undefined;
-        try {
-            task = ctx.taskRunner.create(
-                ctx.buildTaskCreateRequest(next, turnAgentId, latencyMarks, userMessage.id),
-                next.ownerLogin,
-            );
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            return ctx.failTurnBeforeSpawn(id, next, userMessage.id, message);
-        }
-        ctx.streamMetrics.recordLatencyMark(id, 'task_created');
+    // Pre-spawn gate: models confirmed to lack function calling cannot drive the coding
+    // agent — fail the turn typed instead of burning a doomed CLI run.
+    if (agentSupportsModelPicker(turnAgentId) && qaiqModelSupportsToolCalls(turnModel?.modelId) === false) {
+        return ctx.failTurnBeforeSpawn(id, next, userMessage.id, localizeAgentFailureMessage('tool_unsupported'));
+    }
+    let task: QaapAgentTask | undefined;
+    try {
+        task = ctx.taskRunner.create(
+            ctx.buildTaskCreateRequest(next, turnAgentId, latencyMarks, userMessage.id),
+            next.ownerLogin,
+        );
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return ctx.failTurnBeforeSpawn(id, next, userMessage.id, message);
+    }
+    ctx.streamMetrics.recordLatencyMark(id, 'task_created');
 
-        const messagesWithTask = next.messages.map(m => m.id === userMessage.id
-            ? {
-                ...m,
-                taskId: task!.id,
-                // `task.agentId` is only resolved asynchronously (spawnProcessWhenReady →
-                // buildAgentCommand), so it is always undefined at this synchronous point today;
-                // fall back to the id the store itself already resolved for this turn.
-                turnAgentId: task!.agentId ?? turnAgentId,
-                ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
-            }
-            : m);
-        next = { ...next, messages: messagesWithTask };
-        const autoLinked = ctx.tryAutoLinkConversationToGitBranch(next);
-        if (autoLinked) {
-            next = autoLinked;
+    const messagesWithTask = next.messages.map(m => m.id === userMessage.id
+        ? {
+            ...m,
+            taskId: task!.id,
+            // `task.agentId` is only resolved asynchronously (spawnProcessWhenReady →
+            // buildAgentCommand), so it is always undefined at this synchronous point today;
+            // fall back to the id the store itself already resolved for this turn.
+            turnAgentId: task!.agentId ?? turnAgentId,
+            ...(sealedTurnModel ? { turnAgentModel: sealedTurnModel } : {}),
         }
-        ctx.conversations.set(id, next);
-        // Provenance already went out with the first frame; only a task runner that resolved its
-        // own agent id synchronously (none does today) can make that frame stale. Re-emit then,
-        // and only then, so the common path keeps its single user-message frame.
-        const sealedUserMessage = messagesWithTask.find(m => m.id === userMessage.id);
-        if (sealedUserMessage && sealedUserMessage.turnAgentId !== userMessage.turnAgentId) {
-            ctx.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: sealedUserMessage });
-        }
-        const startSha = ctx.captureGitSha(conv.cwd);
-        ctx.taskToConversation.set(task.id, {
-            conversationId: id,
-            userMessageId: userMessage.id,
-            turnAgentId: task.agentId ?? turnAgentId,
-            startSha,
-        });
-        void ctx.persist();
-        return next;
+        : m);
+    next = { ...next, messages: messagesWithTask };
+    const autoLinked = ctx.tryAutoLinkConversationToGitBranch(next);
+    if (autoLinked) {
+        next = autoLinked;
+    }
+    ctx.conversations.set(id, next);
+    // Provenance already went out with the first frame; only a task runner that resolved its
+    // own agent id synchronously (none does today) can make that frame stale. Re-emit then,
+    // and only then, so the common path keeps its single user-message frame.
+    const sealedUserMessage = messagesWithTask.find(m => m.id === userMessage.id);
+    if (sealedUserMessage && sealedUserMessage.turnAgentId !== userMessage.turnAgentId) {
+        ctx.fire({ type: 'message', conversationId: id, cwd: next.cwd, message: sealedUserMessage });
+    }
+    const startSha = ctx.captureGitSha(conv.cwd);
+    ctx.taskToConversation.set(task.id, {
+        conversationId: id,
+        userMessageId: userMessage.id,
+        turnAgentId: task.agentId ?? turnAgentId,
+        startSha,
+    });
+    void ctx.persist();
+    return next;
 }
 
 export function linkConversationsToPullRequestExtracted(ctx: any, input: QaapLinkConversationsByBranchRequest): number {
-        const link: QaapLinkedPullRequest = {
-            owner: input.owner,
-            repo: input.repo,
-            number: input.number,
-            branch: input.branch,
-            title: input.title,
+    const link: QaapLinkedPullRequest = {
+        owner: input.owner,
+        repo: input.repo,
+        number: input.number,
+        branch: input.branch,
+        title: input.title,
+    };
+    let linked = 0;
+    for (const [conversationId, conv] of ctx.conversations) {
+        const existing = conv.linkedPullRequest;
+        if (existing
+            && existing.number === link.number
+            && existing.owner.toLowerCase() === link.owner.toLowerCase()
+            && existing.repo.toLowerCase() === link.repo.toLowerCase()) {
+            continue;
+        }
+        if (!ctx.cwdMatchesGithubRepo(conv.cwd, link.owner, link.repo)) {
+            continue;
+        }
+        const head = ctx.readGitBranch(conv.cwd);
+        if (head && head !== link.branch) {
+            continue;
+        }
+        const next: QaapAgentConversation = {
+            ...conv,
+            linkedPullRequest: link,
+            updatedAt: Date.now(),
         };
-        let linked = 0;
-        for (const [conversationId, conv] of ctx.conversations) {
-            const existing = conv.linkedPullRequest;
-            if (existing
-                && existing.number === link.number
-                && existing.owner.toLowerCase() === link.owner.toLowerCase()
-                && existing.repo.toLowerCase() === link.repo.toLowerCase()) {
-                continue;
-            }
-            if (!ctx.cwdMatchesGithubRepo(conv.cwd, link.owner, link.repo)) {
-                continue;
-            }
-            const head = ctx.readGitBranch(conv.cwd);
-            if (head && head !== link.branch) {
-                continue;
-            }
-            const next: QaapAgentConversation = {
-                ...conv,
-                linkedPullRequest: link,
-                updatedAt: Date.now(),
-            };
-            ctx.conversations.set(conversationId, next);
-            ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
-            linked++;
-        }
-        if (linked > 0) {
-            void ctx.persist();
-        }
-        return linked;
+        ctx.conversations.set(conversationId, next);
+        ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+        linked++;
+    }
+    if (linked > 0) {
+        void ctx.persist();
+    }
+    return linked;
 }
 
 export function retryExtracted(ctx: any, id: string): QaapAgentConversation {
-        const conv = ctx.conversations.get(id);
-        if (!conv) {
-            throw new Error('Conversation not found.');
-        }
-        if (conv.status === 'streaming') {
-            throw new Error('A turn is already in progress for this conversation.');
-        }
-        // Prefer the last user message explicitly marked as failed. Older persisted conversations
-        // can have status `failed` without the per-message error annotation, so fall back to the
-        // last user turn when the conversation itself is failed.
-        let failedIndex = conv.messages.reduce<number>((last, m, i) => m.role === 'user' && m.error ? i : last, -1);
-        if (failedIndex < 0 && conv.status === 'failed') {
-            failedIndex = conv.messages.reduce<number>((last, m, i) => m.role === 'user' ? i : last, -1);
-        }
-        if (failedIndex < 0) {
-            throw new Error('No failed message to retry.');
-        }
-        const failedMessage = conv.messages[failedIndex];
-        // Trim back to just before the failed turn (also removes any partial agent reply that followed)
-        const trimmed: QaapAgentConversation = {
-            ...conv,
-            status: 'idle',
-            messages: conv.messages.slice(0, failedIndex),
-            updatedAt: Date.now(),
-        };
-        ctx.conversations.set(id, trimmed);
-        ctx.fire({ type: 'updated', conversation: toConversationSummary(trimmed) });
-        return ctx.postUserMessage(id, failedMessage.content);
+    const conv = ctx.conversations.get(id);
+    if (!conv) {
+        throw new Error('Conversation not found.');
+    }
+    if (conv.status === 'streaming') {
+        throw new Error('A turn is already in progress for this conversation.');
+    }
+    // Prefer the last user message explicitly marked as failed. Older persisted conversations
+    // can have status `failed` without the per-message error annotation, so fall back to the
+    // last user turn when the conversation itself is failed.
+    let failedIndex = conv.messages.reduce<number>((last, m, i) => m.role === 'user' && m.error ? i : last, -1);
+    if (failedIndex < 0 && conv.status === 'failed') {
+        failedIndex = conv.messages.reduce<number>((last, m, i) => m.role === 'user' ? i : last, -1);
+    }
+    if (failedIndex < 0) {
+        throw new Error('No failed message to retry.');
+    }
+    const failedMessage = conv.messages[failedIndex];
+    // Trim back to just before the failed turn (also removes any partial agent reply that followed)
+    const trimmed: QaapAgentConversation = {
+        ...conv,
+        status: 'idle',
+        messages: conv.messages.slice(0, failedIndex),
+        updatedAt: Date.now(),
+    };
+    ctx.conversations.set(id, trimmed);
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(trimmed) });
+    return ctx.postUserMessage(id, failedMessage.content);
 }
 
 export function cancelExtracted(ctx: any, id: string): QaapAgentConversation | undefined {
-        const conv = ctx.conversations.get(id);
-        if (!conv) {
-            return undefined;
-        }
-        // Stop is session-wide: with in-session multitasking there can be several runs streaming
-        // at once, and cancelling only the newest would leave the others working behind a UI that
-        // says the session is idle. Every live run is cancelled and every open agent message
-        // finalized; the last-user-message fallback keeps pre-multitasking conversations working.
-        const activeRefs = ctx.getActiveTaskIdsForConversation(id)
-            .map(taskId => ({ taskId, ref: ctx.taskToConversation.get(taskId) }));
-        const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
-        const cancelTaskIds = activeRefs.length > 0
-            ? activeRefs.map(entry => entry.taskId)
-            : (lastUser?.taskId ? [lastUser.taskId] : []);
-        for (const taskId of cancelTaskIds) {
-            ctx.taskRunner.cancel(taskId);
-            for (const subtask of collectSubtasksForLeader(taskId, ctx.taskRunner.list())) {
-                // Queued children must die with Stop All too — otherwise they start
-                // after the leader was cancelled and the Working pill comes back.
-                if (subtask.state === 'running' || subtask.state === 'queued') {
-                    ctx.taskRunner.cancel(subtask.id);
-                }
+    const conv = ctx.conversations.get(id);
+    if (!conv) {
+        return undefined;
+    }
+    // Stop is session-wide: with in-session multitasking there can be several runs streaming
+    // at once, and cancelling only the newest would leave the others working behind a UI that
+    // says the session is idle. Every live run is cancelled and every open agent message
+    // finalized; the last-user-message fallback keeps pre-multitasking conversations working.
+    const activeRefs = ctx.getActiveTaskIdsForConversation(id)
+        .map(taskId => ({ taskId, ref: ctx.taskToConversation.get(taskId) }));
+    const lastUser = [...conv.messages].reverse().find(m => m.role === 'user' && m.taskId);
+    const cancelTaskIds = activeRefs.length > 0
+        ? activeRefs.map(entry => entry.taskId)
+        : (lastUser?.taskId ? [lastUser.taskId] : []);
+    for (const taskId of cancelTaskIds) {
+        ctx.taskRunner.cancel(taskId);
+        for (const subtask of collectSubtasksForLeader(taskId, ctx.taskRunner.list())) {
+            // Queued children must die with Stop All too — otherwise they start
+            // after the leader was cancelled and the Working pill comes back.
+            if (subtask.state === 'running' || subtask.state === 'queued') {
+                ctx.taskRunner.cancel(subtask.id);
             }
         }
-        const fallbackAgentMessageId = conv.messages[conv.messages.length - 1]?.role === 'agent'
-            ? conv.messages[conv.messages.length - 1].id
-            : undefined;
-        const agentMessageIds = activeRefs.length > 0
-            ? activeRefs.map(entry => entry.ref?.agentMessageId).filter((value): value is string => !!value)
-            : [];
-        if (agentMessageIds.length === 0 && fallbackAgentMessageId) {
-            agentMessageIds.push(fallbackAgentMessageId);
-        }
-        let next = conv;
-        for (const messageId of agentMessageIds) {
-            next = ctx.appendRunCancelledTrace(next, messageId, 'Turn cancelled.');
-            next = ctx.finalizeStreamingAgentMessage(next, messageId, 'Turn cancelled.');
-        }
-        next = { ...next, status: 'idle', updatedAt: Date.now() };
-        ctx.conversations.set(id, next);
-        for (const messageId of agentMessageIds) {
-            ctx.publishFinalizedAgentMessage(id, next, messageId);
-        }
-        ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
-        void ctx.persist();
-        return next;
+    }
+    const fallbackAgentMessageId = conv.messages[conv.messages.length - 1]?.role === 'agent'
+        ? conv.messages[conv.messages.length - 1].id
+        : undefined;
+    const agentMessageIds = activeRefs.length > 0
+        ? activeRefs.map(entry => entry.ref?.agentMessageId).filter((value): value is string => !!value)
+        : [];
+    if (agentMessageIds.length === 0 && fallbackAgentMessageId) {
+        agentMessageIds.push(fallbackAgentMessageId);
+    }
+    let next = conv;
+    for (const messageId of agentMessageIds) {
+        next = ctx.appendRunCancelledTrace(next, messageId, 'Turn cancelled.');
+        next = ctx.finalizeStreamingAgentMessage(next, messageId, 'Turn cancelled.');
+    }
+    next = { ...next, status: 'idle', updatedAt: Date.now() };
+    ctx.conversations.set(id, next);
+    for (const messageId of agentMessageIds) {
+        ctx.publishFinalizedAgentMessage(id, next, messageId);
+    }
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    void ctx.persist();
+    return next;
 }
 

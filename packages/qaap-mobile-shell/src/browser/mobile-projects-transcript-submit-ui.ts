@@ -11,6 +11,7 @@ import {
     postConversationMessage,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
+    type QaapMessageDeliveryMode,
 } from '../common/qaap-agent-conversation-client';
 import {
     resolveAgentModelForSubmit,
@@ -196,6 +197,12 @@ export class MobileProjectsTranscriptSubmitUi {
              * agent, so the open turn must not be cancelled on the way in.
              */
             parallel?: boolean;
+            /**
+             * Delivery mode when an agent is already running. Maps to the backend
+             * `QaapMessageDeliveryMode`: 'queue' (default), 'parallel', or 'interrupt'.
+             * When `parallel` is true, this is set to 'parallel' for backward compatibility.
+             */
+            deliveryMode?: QaapMessageDeliveryMode;
         } = {},
     ): Promise<boolean> {
         // Reports whether the message was actually submitted. A concurrent send that lands while
@@ -242,6 +249,8 @@ export class MobileProjectsTranscriptSubmitUi {
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /** See {@link submitTranscriptViaBackendConversation}. */
             parallel?: boolean;
+            /** Delivery mode: 'queue', 'parallel', or 'interrupt'. */
+            deliveryMode?: QaapMessageDeliveryMode;
         } = {},
         submitAt = Date.now(),
     ): Promise<void> {
@@ -376,6 +385,7 @@ export class MobileProjectsTranscriptSubmitUi {
                     this.host.transcriptComposerToolApprovalRules,
                 ),
                 latencyMarks: this.host.conversations?.getSubmitLatencyMarks(summary.id),
+                deliveryMode: options.deliveryMode ?? (options.parallel ? 'parallel' : undefined),
             });
             this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_end');
             const nextSummary = conversationToSummary(updated);

@@ -23,6 +23,43 @@ import type { QaapParallelRunVariantStats } from './qaap-parallel-run';
 /** HTTP base path for the persistent agent-conversation endpoints. */
 export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
 
+// ─── Delivery modes ──────────────────────────────────────────────────────────
+
+/**
+ * How a user message is delivered when the conversation already has an agent running.
+ *
+ * Inspired by the patterns used by Cursor ("Send after current message" / "Stop & send" /
+ * Multitask), Claude Code (`pendingMessages` drained at tool-round boundaries), and Codex
+ * (`delivery: "queued"` vs `steer`). See `PLAN_MULTITASK_DELIVERY_MODES.md` for the full
+ * design rationale.
+ *
+ * - `'queue'` (default): the message is enqueued in `pendingUserMessages` and processed
+ *   when the running agent finishes its turn. Multiple queued messages may be batched into
+ *   a single agent turn (optimization B).
+ * - `'parallel'`: the message spawns a peer run in an isolated git worktree (Parallel
+ *   Runs). No write conflicts because each variant has its own working tree.
+ * - `'interrupt'`: the running agent is cancelled and the new message is processed
+ *   immediately. Equivalent to Cursor "Stop & send" / Codex "Steer".
+ */
+export type QaapMessageDeliveryMode = 'queue' | 'parallel' | 'interrupt';
+
+/** Default delivery mode when the client does not specify one. */
+export const QAAP_DEFAULT_DELIVERY_MODE: QaapMessageDeliveryMode = 'queue';
+
+/**
+ * A user message enqueued while an agent was already running. Drained when the agent
+ * finishes its turn (mode `'queue'`). Multiple pending messages may be batched into a
+ * single agent turn.
+ */
+export interface QaapPendingUserMessage {
+    readonly id: string;
+    readonly content: string;
+    readonly createdAt: number;
+    readonly turnAgentId?: string;
+    readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
+    readonly clientMessageId?: string;
+}
+
 /** Optional auto-approve scopes under the {@code approve-for-me} preset. File edits are always included. */
 export interface QaapAgentToolApprovalRules {
     readonly shell?: boolean;
@@ -118,6 +155,13 @@ export interface QaapAgentMessage {
      * anything else that must address one run) keys off this instead.
      */
     readonly runActive?: boolean;
+    /**
+     * When this user message was produced by batching multiple queued messages into a single
+     * agent turn (delivery mode `'queue'` + optimization B), this holds the IDs of the original
+     * pending messages that were merged. Enables the UI to show "3 messages combined" and
+     * preserves traceability.
+     */
+    readonly batchedFromMessageIds?: ReadonlyArray<string>;
 }
 
 export interface QaapContextCompaction {
@@ -208,6 +252,12 @@ export interface QaapAgentConversation {
     readonly contextCompaction?: QaapContextCompaction;
     /** Login of the user who owns this conversation — used for multi-tenant isolation. */
     readonly ownerLogin?: string;
+    /**
+     * User messages enqueued while an agent was running (delivery mode `'queue'`). Drained
+     * when the running agent finishes its turn. Multiple pending messages may be batched into
+     * a single agent turn to save tokens. See {@link QaapPendingUserMessage}.
+     */
+    readonly pendingUserMessages?: ReadonlyArray<QaapPendingUserMessage>;
 }
 
 /** Summary row used by list endpoints — omits messages to keep payloads small. */
@@ -271,6 +321,8 @@ export interface QaapAgentConversationSummary {
      * note carrying the marker lands on the last agent message.
      */
     readonly visualVerificationPending?: boolean;
+    /** Number of user messages queued for the next agent turn (delivery mode `'queue'`). */
+    readonly pendingUserMessageCount?: number;
 }
 
 /** Conversations bucketed by project working directory. */
@@ -337,6 +389,12 @@ export interface QaapPostAgentMessageRequest {
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
     /** Optional submit diagnostics forwarded by the browser for end-to-end latency logs. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
+    /**
+     * How to deliver this message if the conversation already has an agent running.
+     * Default: `'queue'` (enqueue and process when the agent finishes).
+     * See {@link QaapMessageDeliveryMode}.
+     */
+    readonly deliveryMode?: QaapMessageDeliveryMode;
 }
 
 export interface QaapRenameAgentConversationRequest {
@@ -394,7 +452,9 @@ export type QaapAgentConversationEvent =
         readonly delta: QaapAgentMessageWireDelta;
     }
     | { readonly type: 'deleted'; readonly conversationId: string; readonly cwd: string }
-    | { readonly type: 'parallel-run'; readonly runId: string; readonly cwd: string; readonly variants: readonly QaapParallelRunVariantStats[] };
+    | { readonly type: 'parallel-run'; readonly runId: string; readonly cwd: string; readonly variants: readonly QaapParallelRunVariantStats[] }
+    | { readonly type: 'pending-queued'; readonly conversationId: string; readonly cwd: string; readonly message: QaapPendingUserMessage }
+    | { readonly type: 'pending-drained'; readonly conversationId: string; readonly cwd: string; readonly drainedCount: number };
 
 /** Status exposed to list rows — keeps `failed` when a user turn still carries an error. */
 export function resolveEffectiveConversationStatus(conv: QaapAgentConversation): QaapAgentConversationStatus {
@@ -453,6 +513,7 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         worktreeBranch: conv.worktreeBranch,
         linkedPullRequest: conv.linkedPullRequest,
         contextCompaction: conv.contextCompaction,
+        pendingUserMessageCount: conv.pendingUserMessages?.length || undefined,
     };
     const metrics = buildConversationListMetrics({ status, messages: conv.messages });
     const hasGitOperation = metrics.hasGitOperation || conv.linkedPullRequest

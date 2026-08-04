@@ -260,6 +260,7 @@ import {
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
+import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
 import {
     type TranscriptWorkspaceSurfaceKey,
 } from './qaap-transcript-workspace-surfaces-cache';
@@ -275,7 +276,7 @@ import {
     isCopyConversationEnabled as isCopyConversationEnabledHelper,
     resolveActiveConversationForCopy as resolveActiveConversationForCopyHelper,
 } from './mobile-projects-panel-helpers';
-import { activateAgentsHubProjectExtracted, appendSessionsSidebarConversationItemsExtracted, bindAgentFinishedToastCallbacksExtracted, collectSessionsSidebarPinnedGroupsExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, createSessionsSidebarShowMoreControlExtracted, disposeExtracted, ensureAgentsHubExecutionShellRenderedExtracted, getFilteredTeamHubStateExtracted, getSessionsSidebarConversationDisplayLimitExtracted, hideExtracted, installAgentsHubEmptySurfaceGuardExtracted, maybeInstallWorkHubPerfProbeExtracted, onHeaderProjectClickExtracted, openDesktopIdeFromAgentsHubExtracted, resolveSessionsSidebarVisibleConversationsExtracted, selectHubLandingViewExtracted, syncCurrentProjectsScrollHostExtracted, syncHeaderIdeViewPickerExtracted, syncWorkHubProjectSkillRootsExtracted, touchProjectActivityByConversationIdExtracted, tryPatchHubListBeforeRebuildExtracted } from './mobile-projects-panel-render2';
+import { activateAgentsHubProjectExtracted, appendSessionsSidebarConversationItemsExtracted, bindAgentFinishedToastCallbacksExtracted, collectSessionsSidebarPinnedGroupsExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, createSessionsSidebarShowMoreControlExtracted, disposeExtracted, ensureAgentsHubExecutionShellRenderedExtracted, getFilteredTeamHubStateExtracted, getSessionsSidebarConversationDisplayLimitExtracted, hideExtracted, installAgentsHubEmptySurfaceGuardExtracted, maybeInstallWorkHubPerfProbeExtracted, onHeaderProjectClickExtracted, onNavigateToConversationHandler, openDesktopIdeFromAgentsHubExtracted, resolveSessionsSidebarVisibleConversationsExtracted, selectHubLandingViewExtracted, syncCurrentProjectsScrollHostExtracted, syncHeaderIdeViewPickerExtracted, syncWorkHubProjectSkillRootsExtracted, touchProjectActivityByConversationIdExtracted, tryPatchHubListBeforeRebuildExtracted } from './mobile-projects-panel-render2';
 import { activateMessagesSurfaceForExternalSubmitExtracted, attachExternalComposerContextExtracted, attachExternalFeedbackImageEntriesExtracted, closeHeaderIdeViewPickerMenuExtracted, closeHeaderOverflowMenuExtracted, copyActiveConversationToClipboardExtracted, ensureExternalSubmitConversationRenderedExtracted, ensureHeaderIdeViewPickerMenuExtracted, ensureHeaderOverflowMenuExtracted, isHeaderOverflowMenuItemEnabledExtracted, isHeaderOverflowMenuItemVisibleExtracted, onHeaderIdeViewPickerClickExtracted, onHeaderOverflowMenuClickExtracted, openConversationSummaryExtracted, openHeaderIdeViewPickerMenuExtracted, openHeaderOverflowMenuExtracted, renderHeaderOverflowMenuItemsExtracted, resolveAnnotationComposerSessionExtracted, resolveExternalComposerUploadDirExtracted, sendExternalComposerContextExtracted, shouldEmbedSessionsSidebarInPanelExtracted, submitBackgroundAgentTaskExtracted } from './mobile-projects-panel-streaming2';
 import { cancelOpenTranscriptStreamExtracted, collectAgentsHubRecentItemsExtracted, collectChatHubGroupsExtracted, collectReviewGroupsExtracted, collectTasksInboxGroupsExtracted, createInboxProjectGroupExtracted, createProjectChatSessionExtracted, forkTheiaConversationExtracted, getOrRestoreProjectChatSessionExtracted, mountTranscriptChatInputExtracted, notifyAgentUsesSettingsApiKeyExtracted, onArchiveConversationExtracted, onCancelConversationExtracted, onDeleteConversationExtracted, onForkConversationExtracted, onRenameConversationExtracted, onRetryConversationExtracted, onSetConversationAutoApproveExtracted, onSetConversationPausedExtracted, onSetConversationPriorityExtracted, openAgentSignInTerminalExtracted, openExternalParallelRunsSheetExtracted, openInlineTranscriptExtracted, patchWorkHubConversationRowInPlaceExtracted, pickAgentAndSubmitExternalPromptExtracted, refreshHubChromeExtracted, refreshInboxPullRequestsExtracted, removeExternalPreviewFeedbackChipExtracted, renderIdleSubmitOptimisticExtracted, resolveExternalComposerProjectExtracted, retryOpenFailedConversationTaskExtracted, retryOpenTranscriptConversationExtracted, retryOpenTranscriptStreamExtracted, seedTranscriptOptimisticSubmitExtracted, selectBackendConversationAgentExtracted, shouldUseTheiaCoderExtracted, submitExternalComposerPromptExtracted, submitTranscriptViaBackendConversationExtracted } from './mobile-projects-panel-timeline2';
 import { attachTranscriptChatViewWidgetExtracted, beginTranscriptDevPreviewRequestExtracted, createComposerEditorContextPanelDelegateExtracted, ensureOverlayUiExtracted, handleTranscriptStatusForAutoVerifyExtracted, openAgentsHubInlineTranscriptExtracted, refreshOpenTranscriptConversationExtracted, refreshTranscriptChecksViewsExtracted, releasePreviewForConversationExtracted, renderAgentsHubIdleSubmitOptimisticExtracted, renderChecksSectionExtracted, resolveActiveComposerContextTargetExtracted, stageTranscriptPreviewReadyUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-panel-activity2';
@@ -652,6 +653,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.panelChromeUi.wirePanelInteractions(grabber, this.onAuthSessionChanged);
         this.installAgentsHubEmptySurfaceGuard();
         window.addEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, this.onBootstrapPreviewOpened);
+        window.addEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, this.onNavigateToConversation);
         this.bindAgentFinishedToastCallbacks();
     }
 
@@ -661,6 +663,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected readonly onBootstrapPreviewOpened = (event: Event): void => {
         onBootstrapPreviewOpenedHandler(this, event);
+    };
+
+    protected readonly onNavigateToConversation = (event: Event): void => {
+        onNavigateToConversationHandler(this, event);
     };
 
     /** True when `project`'s clone directory is the workspace the bootstrap service operates on. */

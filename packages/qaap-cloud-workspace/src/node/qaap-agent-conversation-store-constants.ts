@@ -25,23 +25,56 @@ export const VISUAL_EVIDENCE_MAX_VIDEO_BYTES = 25 * 1024 * 1024;
 // ─── Concurrency ─────────────────────────────────────────────────────────────
 
 /**
- * How many agent runs may stream at once inside a single conversation (in-session multitasking).
- * They share one working tree, so this is deliberately small: it is a guard against fan-out, not
- * a capacity target.
+ * How many parallel-run variants may stream at once inside a single conversation when the user
+ * explicitly chooses delivery mode `'parallel'`. They run in isolated git worktrees, so this is
+ * a capacity target, not just a fan-out guard. Override with `QAAP_MAX_PARALLEL_VARIANTS`.
  */
-export const MAX_CONCURRENT_CONVERSATION_RUNS = 3;
+export const QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION = (() => {
+    const parsed = Number.parseInt(process.env.QAAP_MAX_PARALLEL_VARIANTS?.trim() ?? '', 10);
+    return Number.isFinite(parsed) && parsed >= 1 ? parsed : 3;
+})();
+
+/**
+ * Legacy cap kept for backward compatibility — still used as the hard limit for parallel-run
+ * variants. Renamed from `MAX_CONCURRENT_CONVERSATION_RUNS` to clarify it applies to explicit
+ * parallel variants, not to queued messages (which are unbounded).
+ * @deprecated Use {@link QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION}.
+ */
+export const MAX_CONCURRENT_CONVERSATION_RUNS = QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION;
 
 /** Wire code for {@link QaapMaxConcurrentRunsError} — the client falls back to queueing on it. */
 export const QAAP_MAX_CONCURRENT_RUNS_CODE = 'max-concurrent-runs';
 
 /**
- * Raised when a conversation already holds {@link MAX_CONCURRENT_CONVERSATION_RUNS} live runs.
- * Typed (not a bare Error) so the endpoint can answer 429 + code and the composer can queue the
- * message instead of surfacing it as a failed send.
+ * Raised when a conversation already holds {@link QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION}
+ * live parallel-run variants. Typed (not a bare Error) so the endpoint can answer 429 + code and
+ * the composer can queue the message instead of surfacing it as a failed send.
  */
 export class QaapMaxConcurrentRunsError extends Error {
     readonly code = QAAP_MAX_CONCURRENT_RUNS_CODE;
 }
+
+// ─── Queue / batching ─────────────────────────────────────────────────────────
+
+/**
+ * Maximum number of queued user messages to batch into a single agent turn when draining the
+ * pending queue. Batching saves tokens (one LLM call instead of N) but too many messages in one
+ * turn can overwhelm the context window. Override with `QAAP_MAX_BATCH_SIZE`.
+ */
+export const QAAP_MAX_BATCH_SIZE = (() => {
+    const parsed = Number.parseInt(process.env.QAAP_MAX_BATCH_SIZE?.trim() ?? '', 10);
+    return Number.isFinite(parsed) && parsed >= 1 ? parsed : 5;
+})();
+
+/**
+ * Coalescing window in milliseconds: after an agent finishes its turn, wait this long before
+ * draining the pending queue, in case more messages arrive. Override with
+ * `QAAP_COALESCE_WINDOW_MS`.
+ */
+export const QAAP_COALESCE_WINDOW_MS = (() => {
+    const parsed = Number.parseInt(process.env.QAAP_COALESCE_WINDOW_MS?.trim() ?? '', 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2000;
+})();
 
 // ─── Watchdog ────────────────────────────────────────────────────────────────
 
@@ -98,6 +131,12 @@ export interface PostUserMessageInternalOptions {
         readonly attempt: number;
         readonly sourceAgentMessageId: string;
     };
+    /**
+     * IDs of original pending messages that were batched into this single user message when
+     * draining the queue. Preserved on the persisted {@link QaapAgentMessage.batchedFromMessageIds}
+     * for traceability.
+     */
+    readonly batchedFromMessageIds?: ReadonlyArray<string>;
 }
 
 /** Immutable routing/provenance for one task-backed turn inside a multi-run conversation. */

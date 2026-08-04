@@ -53,13 +53,12 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
     };
 
     protected notifyAgentCompleted(agentName?: string): void {
+        // Keep the window blink (title flash) so a backgrounded user still sees a completion signal,
+        // but skip the raw OS notification: `QaapTurnSettleNotifyContribution` already fires the
+        // completion Web Notification and routes its activation to the originating Work Hub
+        // conversation. Showing a second notification here would duplicate it and its click would
+        // only focus the window without navigating to the session.
         void this.blink.blinkWindow(agentName);
-        this.showSystemNotification(
-            nls.localize('qaap/push/agentDone', 'Agent finished'),
-            agentName
-                ? nls.localize('qaap/push/agentDoneBody', '{0} completed its task.', agentName)
-                : nls.localize('qaap/push/agentDoneBodyGeneric', 'Your agent completed its task.'),
-        );
     }
 
     protected notifyAgentNeedsConfirmation(agentName?: string): void {

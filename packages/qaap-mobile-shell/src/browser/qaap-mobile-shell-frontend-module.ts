@@ -31,6 +31,7 @@ import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
 
+import { AgentNotificationService } from '@theia/ai-core/lib/browser/agent-notification-service';
 import { bindToolProvider } from '@theia/ai-core/lib/common';
 import { AIVariableContribution } from '@theia/ai-core/lib/common/variable-service';
 import { ContainerModule } from '@theia/core/shared/inversify';
@@ -120,6 +121,7 @@ import { QaapDiffReviewContribution } from './qaap-diff-review-contribution';
 import { QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
 import { QaapPushNotificationContribution } from './qaap-push-notification-contribution';
 import { QaapAgentCompletionContribution } from './qaap-agent-completion-contribution';
+import { QaapMobileAgentNotificationService } from './qaap-mobile-agent-notification-service';
 import { QaapAgentDevPreviewAutopilotContribution } from './qaap-agent-dev-preview-autopilot-contribution';
 import { QaapTranscriptImageLightboxContribution } from './qaap-transcript-image-lightbox';
 import { QaapTurnSettleNotifyContribution } from './qaap-turn-settle-notify-contribution';
@@ -326,6 +328,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapPushNotificationContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapPushNotificationContribution);
+
+    // Suppress the upstream AgentNotificationService on mobile: its onActivate opens the classic-IDE
+    // chat panel. The Qaap notification pipeline (turn-settle + push) owns mobile notifications and
+    // routes activation to the Work Hub conversation instead. Desktop behavior is preserved.
+    rebind(AgentNotificationService).to(QaapMobileAgentNotificationService).inSingletonScope();
 
     bind(QaapAgentCompletionContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAgentCompletionContribution);

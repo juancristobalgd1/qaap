@@ -26,6 +26,21 @@ import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-actio
  * Keep {@link QAAP_AGENT_CONVERSATION_API_PATH} in sync with `@theia/qaap-cloud-workspace`.
  */
 export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
+
+// ─── Delivery modes ──────────────────────────────────────────────────────────
+
+/**
+ * How a user message is delivered when the conversation already has an agent running.
+ * Mirrors `QaapMessageDeliveryMode` from `@theia/qaap-cloud-workspace`.
+ *
+ * - `'queue'` (default): enqueue and process when the agent finishes.
+ * - `'parallel'`: spawn in an isolated worktree (Parallel Runs).
+ * - `'interrupt'`: cancel the running agent and process immediately.
+ */
+export type QaapMessageDeliveryMode = 'queue' | 'parallel' | 'interrupt';
+
+/** Default delivery mode when the client does not specify one. */
+export const QAAP_DEFAULT_DELIVERY_MODE: QaapMessageDeliveryMode = 'queue';
 /** Keep in sync with `@theia/qaap-cloud-workspace` {@link QAAP_AGENT_CONVERSATION_WS_PATH}. */
 export const QAAP_AGENT_CONVERSATION_WS_PATH = `${QAAP_AGENT_CONVERSATION_API_PATH}/ws`;
 
@@ -95,6 +110,8 @@ export interface QaapAgentConversationSummaryDTO {
     readonly contextCompaction?: QaapContextCompactionDTO;
     /** Server-authoritative: the last settled turn still needs visual evidence (see autopilot). */
     readonly visualVerificationPending?: boolean;
+    /** Number of user messages queued for the next agent turn (delivery mode 'queue'). */
+    readonly pendingUserMessageCount?: number;
 }
 
 export type QaapAgentMessageSegmentDTO =
@@ -497,6 +514,12 @@ export interface QaapPostConversationMessageOptions {
     readonly approvalPolicyId?: string;
     readonly toolApprovalRules?: import('./qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
+    /**
+     * How to deliver this message if the conversation already has an agent running.
+     * Default: `'queue'` (enqueue and process when the agent finishes).
+     * See {@link QaapMessageDeliveryMode}.
+     */
+    readonly deliveryMode?: QaapMessageDeliveryMode;
 }
 
 export async function postConversationMessage(
@@ -521,6 +544,7 @@ export async function postConversationMessage(
             approvalPolicyId: options.approvalPolicyId,
             toolApprovalRules: options.toolApprovalRules,
             latencyMarks: options.latencyMarks,
+            deliveryMode: options.deliveryMode ?? QAAP_DEFAULT_DELIVERY_MODE,
             ...(autoApprove === false ? { autoApprove: false } : autoApprove === true ? { autoApprove: true } : {}),
         }),
     });

@@ -30,6 +30,7 @@ import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
 import { MobileProjectsTeamHubUi, type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import {
     type WorkHubTeamMember,
@@ -333,6 +334,33 @@ export function bindAgentFinishedToastCallbacksExtracted(ctx: any): void {
     });
 }
 
+/**
+ * Activation handler for the agent turn-settle notification: opens the originating conversation's
+ * transcript sheet in the Work Hub. Dispatched by `QaapTurnSettleNotifyContribution` via
+ * `QAAP_NAVIGATE_TO_CONVERSATION_EVENT` so the summary-layer notifier (which has no panel reference)
+ * can still route the user to the exact session the agent was working on instead of the classic-IDE
+ * chat panel.
+ */
+export function onNavigateToConversationHandler(ctx: any, event: Event): void {
+    const detail = (event as CustomEvent<{ conversationId?: string }>).detail;
+    const conversationId = detail?.conversationId;
+    if (!conversationId) {
+        return;
+    }
+    for (const project of ctx.projects) {
+        const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
+        if (!cwd) {
+            continue;
+        }
+        const summary = ctx.conversations?.threadStore.getSummariesForCwd(cwd)
+            .find((s: any) => s.id === conversationId);
+        if (summary) {
+            void ctx.openConversationSummary(project, summary);
+            return;
+        }
+    }
+}
+
 export function ensureAgentsHubExecutionShellRenderedExtracted(ctx: any): void {
     ctx.syncCurrentProjectsScrollHost();
     if (ctx.isAgentsHubExecutionSurfaceReady()) {
@@ -414,6 +442,7 @@ export function selectHubLandingViewExtracted(ctx: any, view: MobileProjectsHubV
 
 export function disposeExtracted(ctx: any): void {
     window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, ctx.onBootstrapPreviewOpened);
+    window.removeEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, ctx.onNavigateToConversation);
     ctx.closeHeaderOverflowMenu();
     ctx.closeHeaderIdeViewPickerMenu();
     ctx.headerOverflowMenu?.remove();

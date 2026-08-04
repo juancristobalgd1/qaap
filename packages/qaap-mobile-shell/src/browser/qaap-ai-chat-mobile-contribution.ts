@@ -145,6 +145,14 @@ export class QaapAiChatMobileContribution extends AIChatContribution implements 
     }
 
     override async openView(args: Partial<OpenViewArguments> = {}): Promise<ChatViewWidget> {
+        if (isQaapNarrowMobileWorkbench()) {
+            // The IDE-shell chat panel ("task view") is eliminated on mobile: the Work Hub landing
+            // (MobileProjectsPanel) is the only surface. Return the widget without adding/revealing
+            // it in the shell so callers that depend on the widget instance still work, but the
+            // panel itself never opens. This blocks every entry point — notification activation,
+            // toggle command, setActiveSession({focus:true}) → openView, etc.
+            return this.widget;
+        }
         const result = await super.openView(args);
         this.scheduleMobileAiChatFullWidthUpdate();
         return result;
@@ -168,25 +176,12 @@ export class QaapAiChatMobileContribution extends AIChatContribution implements 
     }
 
     override async toggleView(): Promise<ChatViewWidget> {
-        if (!isQaapNarrowMobileWorkbench()) {
-            const result = await super.toggleView();
-            this.scheduleMobileAiChatFullWidthUpdate();
-            return result;
+        if (isQaapNarrowMobileWorkbench()) {
+            // The IDE-shell chat panel is eliminated on mobile — toggle is a no-op that returns
+            // the widget without revealing it. The Work Hub landing is the only mobile surface.
+            return this.widget;
         }
-        const widget = this.tryGetWidget();
-        let result: ChatViewWidget;
-        if (!widget?.isAttached) {
-            result = await this.openView({ activate: true });
-        } else {
-            const tabBar = this.shell.getTabBarFor(widget);
-            const isChatCurrent = tabBar?.currentTitle?.owner === widget;
-            if (this.shell.isExpanded('right') && isChatCurrent) {
-                const closed = await this.closeView();
-                result = closed ?? await this.openView({ activate: true });
-            } else {
-                result = await this.openView({ activate: true, reveal: true });
-            }
-        }
+        const result = await super.toggleView();
         this.scheduleMobileAiChatFullWidthUpdate();
         return result;
     }

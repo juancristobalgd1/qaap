@@ -11,7 +11,7 @@ import {
 } from '../common/qaap-agent-conversation-client';
 import { canonicalModelStatsKey, recordModelTurnDuration } from '../common/qaap-model-latency-stats';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { QaapTurnSettleNotifier } from './qaap-turn-settle-notifier';
+import { QaapTurnSettleNotifier, QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
 
 /**
  * Watches conversation summaries — the same live feed the Work Hub cards subscribe to — for a
@@ -92,10 +92,18 @@ export class QaapTurnSettleNotifyContribution implements FrontendApplicationCont
         // turn cannot be distinguished from a normal completion at this layer — it is reported
         // as 'completed' rather than over-engineering a fetch of the full document just for this.
         const outcome = isFailedRunSummary(latest) ? 'failed' : 'completed';
-        // Opening the originating conversation isn't cheaply reachable from this summary-layer
-        // contribution (no reference to the panel/navigation UI), so onActivate is omitted —
-        // the notifier still focuses the window unconditionally on click.
-        this.notifier.notifyTurnSettled(latest.id, { title: latest.title, outcome });
+        // Route activation to the Work Hub panel via a window event: this summary-layer
+        // contribution has no reference to the panel/navigation UI, so a direct callback isn't
+        // available. The panel listens for `QAAP_NAVIGATE_TO_CONVERSATION_EVENT` and opens the
+        // originating conversation's transcript sheet. The notifier still focuses the window
+        // unconditionally on click before invoking onActivate.
+        this.notifier.notifyTurnSettled(latest.id, {
+            title: latest.title,
+            outcome,
+            onActivate: () => window.dispatchEvent(new CustomEvent(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, {
+                detail: { conversationId: latest.id },
+            })),
+        });
     }
 
     /**

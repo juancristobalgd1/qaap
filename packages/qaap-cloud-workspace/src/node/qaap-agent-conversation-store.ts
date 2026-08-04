@@ -88,7 +88,7 @@ export {
     QaapMaxConcurrentRunsError,
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
-import { cancelExtracted, createExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, linkConversationsToPullRequestExtracted, listExtracted, mutatingGitSyncExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
+import { cancelExtracted, createExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, mutatingGitSyncExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
@@ -210,8 +210,20 @@ export class QaapAgentConversationStore {
         return createExtracted(this, request, ownerLogin);
     }
 
-    postUserMessage(id: string, content: string, agentOverride?: string, agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'], autoApproveOverride?: boolean, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'], latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], internal?: PostUserMessageInternalOptions,): QaapAgentConversation {
-        return postUserMessageExtracted(this, id, content, agentOverride, agentModelOverride, autoApproveOverride, interactionModeId, approvalPolicyId, toolApprovalRules, latencyMarks, internal);
+    postUserMessage(id: string, content: string, agentOverride?: string, agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'], autoApproveOverride?: boolean, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'], latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], internal?: PostUserMessageInternalOptions, deliveryMode?: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode,): QaapAgentConversation {
+        return postUserMessageExtracted(this, id, content, agentOverride, agentModelOverride, autoApproveOverride, interactionModeId, approvalPolicyId, toolApprovalRules, latencyMarks, internal, deliveryMode);
+    }
+
+    enqueuePendingMessage(conv: import('../common/qaap-agent-conversation').QaapAgentConversation, userMessage: import('../common/qaap-agent-conversation').QaapAgentMessage, turnAgentId?: string, sealedTurnModel?: QaapCreateAgentTaskRequest['agentModel'], clientMessageId?: string): import('../common/qaap-agent-conversation').QaapAgentConversation {
+        return enqueuePendingMessageExtracted(this, conv, userMessage, turnAgentId, sealedTurnModel, clientMessageId);
+    }
+
+    drainPendingMessages(conversationId: string): void {
+        return drainPendingMessagesExtracted(this, conversationId);
+    }
+
+    interruptConversationRuns(conversationId: string): void {
+        return interruptConversationRunsExtracted(this, conversationId);
     }
 
     linkConversationsToPullRequest(input: QaapLinkConversationsByBranchRequest): number {

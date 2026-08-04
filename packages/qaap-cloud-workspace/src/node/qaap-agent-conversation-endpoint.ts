@@ -11,9 +11,11 @@ import * as https from 'https';
 import { WebSocketServer, WebSocket as WsClient } from 'ws';
 import {
     QAAP_AGENT_CONVERSATION_API_PATH,
+    QAAP_DEFAULT_DELIVERY_MODE,
     QaapAgentConversationAllResponse,
     QaapAgentConversationListResponse,
     QaapCreateAgentConversationRequest,
+    QaapMessageDeliveryMode,
     QaapPostAgentMessageRequest,
     QaapPostAgUiTranscriptEventRequest,
     QaapPostPreviewBootstrapFailureRequest,
@@ -494,6 +496,10 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             const interactionModeId = typeof body.interactionModeId === 'string' ? body.interactionModeId.trim() : undefined;
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
             const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
+            const deliveryMode: QaapMessageDeliveryMode =
+                body.deliveryMode === 'queue' || body.deliveryMode === 'parallel' || body.deliveryMode === 'interrupt'
+                    ? body.deliveryMode
+                    : QAAP_DEFAULT_DELIVERY_MODE;
             const conv = this.store.postUserMessage(
                 req.params.id,
                 content,
@@ -505,6 +511,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 toolApprovalRules,
                 sanitizeLatencyMarks(body.latencyMarks),
                 clientMessageId ? { clientMessageId } : undefined,
+                deliveryMode,
             );
             res.status(202).json(conv);
         } catch (error) {

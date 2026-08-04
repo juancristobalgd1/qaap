@@ -5,6 +5,14 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 
+/**
+ * Dispatched (with `detail: { conversationId }`) when a settled-turn notification is activated, so
+ * the Work Hub panel can open the originating conversation. The notifier itself has no reference to
+ * the panel/navigation UI (it is host-instantiated at the summary layer), so activation is routed via
+ * this window event instead of a direct callback.
+ */
+export const QAAP_NAVIGATE_TO_CONVERSATION_EVENT = 'qaap-navigate-to-conversation';
+
 /** Terminal state of a background agent turn, as observable from the conversation summary layer. */
 export type QaapTurnSettleOutcome = 'completed' | 'failed' | 'stopped';
 
