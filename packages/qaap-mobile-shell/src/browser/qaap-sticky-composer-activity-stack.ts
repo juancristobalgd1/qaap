@@ -7,6 +7,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { TranscriptFollowUpEntry } from '../common/qaap-transcript-follow-up-queue';
 import type { QaapGitCommitWorkflowAction } from '../common/qaap-git-review';
+import { createStickyComposerSendIcon } from './mobile-projects-sticky-composer-send-icon';
 
 export interface StickyComposerChangedFileView {
     readonly path: string;
@@ -545,9 +546,12 @@ function renderQueueItem(
         row.append(dragHandle);
     }
 
+    // Order label — shows "1-", "2-", "3-" so the user always sees which message
+    // runs first, second, third, etc. Updates on reorder.
     const marker = document.createElement('span');
     marker.className = 'theia-mobile-sticky-composer-queue-marker';
     marker.setAttribute('aria-hidden', 'true');
+    marker.textContent = `${index + 1}-`;
 
     const text = document.createElement('span');
     text.className = 'theia-mobile-sticky-composer-queue-text';
@@ -565,12 +569,20 @@ function renderQueueItem(
         () => options.onQueueEdit?.(index, entry),
     ));
 
-    // Send now (parallel multitask) button
-    actions.append(createQueueActionButton(
-        'codicon-send',
-        stickyComposerQueueSendNowLabel(options),
-        () => options.onQueueSendNow?.(index),
-    ));
+    // Send now (parallel multitask) button — uses the same paper-plane icon
+    // as the composer's send button for visual consistency.
+    const sendNowBtn = document.createElement('button');
+    sendNowBtn.type = 'button';
+    sendNowBtn.className = 'theia-mobile-sticky-composer-queue-action theia-mobile-sticky-composer-queue-send';
+    sendNowBtn.title = stickyComposerQueueSendNowLabel(options);
+    sendNowBtn.setAttribute('aria-label', stickyComposerQueueSendNowLabel(options));
+    sendNowBtn.replaceChildren(createStickyComposerSendIcon());
+    sendNowBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        options.onQueueSendNow?.(index);
+    });
+    actions.append(sendNowBtn);
 
     // Close (X) button — the only dismiss action
     if (options.onQueueClose) {

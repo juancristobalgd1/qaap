@@ -2902,15 +2902,17 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 0 0 auto;
   cursor: grab;
   font-size: 14px;
-  margin-top: 3px;
-  /* Generous touch target: ~36px wide × ~32px tall hit area */
-  padding: 8px 10px;
-  margin: -4px -6px -4px -2px;
-  min-width: 36px;
-  min-height: 32px;
+  /* Match the action-button height (26px) so the gripper icon sits on the
+     same baseline as the edit/send/close codicons. Horizontal negative
+     margin keeps the generous touch target without visual gap. */
+  padding: 0 10px;
+  margin: 0 -6px 0 -2px;
+  width: 36px;
+  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  line-height: 1;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 50%, transparent);
   opacity: 0.5;
   transition: opacity 0.12s;
@@ -2924,13 +2926,14 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   opacity: 0.85;
 }
 
-/* Touch devices: always show the handle at higher opacity (no hover available) */
+/* Touch devices: always show the handle at higher opacity (no hover available).
+   Keep the visual height at 26px so the icon stays aligned with the action
+   buttons; the horizontal padding still gives a generous touch target. */
 @media (pointer: coarse) {
   .theia-mobile-sticky-composer-queue-drag-handle {
     opacity: 0.75;
-    padding: 10px 12px;
-    min-width: 44px;
-    min-height: 40px;
+    padding: 0 12px;
+    width: 44px;
   }
 }
 
@@ -2977,12 +2980,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-queue-marker {
-  flex: 0 0 7px;
-  width: 7px;
-  height: 7px;
-  margin-top: 5px;
-  border: 1.5px solid color-mix(in srgb, var(--theia-descriptionForeground) 55%, transparent);
-  border-radius: 999px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: color-mix(in srgb, var(--q-accent, #E58E40) 88%, var(--theia-foreground));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
 }
 
 .theia-mobile-sticky-composer-queue-text {
@@ -3029,6 +3033,21 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   font-size: 13px;
 }
 
+/* Send-now button — same paper-plane icon as the composer's send button,
+   but transparent background to match the other queue action buttons. */
+.theia-mobile-sticky-composer-queue-send {
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  opacity: 0.72;
+}
+
+.theia-mobile-sticky-composer-queue-send:hover,
+.theia-mobile-sticky-composer-queue-send:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
+  color: var(--theia-foreground);
+  opacity: 1;
+}
+
 .theia-mobile-sticky-composer-queue-action:hover,
 .theia-mobile-sticky-composer-queue-action:focus-visible {
   background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
@@ -3063,6 +3082,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 /* Expanded: the control becomes the panel surface (same as working-control.theia-mod-expanded) */
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded {
+  display: flex !important;
   flex: 1 1 100% !important;
   align-self: stretch;
   width: 100% !important;
@@ -3130,6 +3150,19 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   align-self: stretch;
   width: 100% !important;
   max-width: 100% !important;
+}
+
+/* Break out of the composer's horizontal padding so the expanded panel spans the
+   full device width (including safe-area insets) on mobile. The negative margins
+   exactly cancel the composer's edge inset on each side. */
+.theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded),
+.theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
+  --qaap-composer-edge-left: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px));
+  --qaap-composer-edge-right: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px));
+  margin-left: calc(-1 * var(--qaap-composer-edge-left));
+  margin-right: calc(-1 * var(--qaap-composer-edge-right));
+  width: calc(100% + var(--qaap-composer-edge-left) + var(--qaap-composer-edge-right));
+  box-sizing: border-box;
 }
 
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control .theia-mobile-sticky-composer-activity-section.theia-mod-queue-control-section {
