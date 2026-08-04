@@ -2895,6 +2895,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   transition: background 0.12s, border-color 0.12s, box-shadow 0.18s;
   border: 1px solid transparent;
   will-change: transform;
+  position: relative;
 }
 
 .theia-mobile-sticky-composer-queue-drag-handle {
@@ -2902,13 +2903,35 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   cursor: grab;
   font-size: 14px;
   margin-top: 3px;
+  /* Generous touch target: ~36px wide × ~32px tall hit area */
+  padding: 8px 10px;
+  margin: -4px -6px -4px -2px;
+  min-width: 36px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 50%, transparent);
   opacity: 0.5;
   transition: opacity 0.12s;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .theia-mobile-sticky-composer-queue-item:hover .theia-mobile-sticky-composer-queue-drag-handle {
   opacity: 0.85;
+}
+
+/* Touch devices: always show the handle at higher opacity (no hover available) */
+@media (pointer: coarse) {
+  .theia-mobile-sticky-composer-queue-drag-handle {
+    opacity: 0.75;
+    padding: 10px 12px;
+    min-width: 44px;
+    min-height: 40px;
+  }
 }
 
 .theia-mobile-sticky-composer-queue-drag-handle:active {
@@ -2919,14 +2942,47 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   opacity: 0.35;
   background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 10%, transparent);
   box-shadow: 0 2px 12px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 25%, transparent);
+  z-index: 2;
 }
 
+/* Drop indicator — line above the target item */
 .theia-mobile-sticky-composer-queue-item.theia-mod-drag-over {
-  border-color: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 50%, transparent);
-  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 8%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 20%, transparent),
-    0 4px 16px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 15%, transparent);
-  transform: scale(1.01);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.theia-mobile-sticky-composer-queue-item.theia-mod-drag-over::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--theia-focusBorder, #007fd4);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 40%, transparent);
+  pointer-events: none;
+  animation: qaap-queue-drop-indicator-in 0.15s ease-out;
+}
+
+/* Drop indicator below (when dragging to the bottom half of the target) */
+.theia-mobile-sticky-composer-queue-item.theia-mod-drag-over-below::before {
+  top: auto;
+  bottom: -2px;
+}
+
+@keyframes qaap-queue-drop-indicator-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0.6);
+  }
+
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 
 .theia-mobile-sticky-composer-queue-marker {
@@ -2986,6 +3042,270 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-sticky-composer-queue-action:focus-visible {
   background: color-mix(in srgb, var(--theia-foreground) 7%, transparent);
   color: var(--theia-foreground);
+}
+
+/* Queue control — expandable pill inside the changes-pill-row (mirrors Working pill) */
+.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control {
+  --qaap-queue-expand-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --qaap-queue-expand-duration: 280ms;
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  flex-direction: column !important;
+  align-items: stretch;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  z-index: auto !important;
+  border-radius: 999px;
+  box-sizing: border-box;
+  transition:
+    border-radius var(--qaap-queue-expand-duration) var(--qaap-queue-expand-ease),
+    background-color 200ms var(--qaap-queue-expand-ease),
+    border-color 200ms var(--qaap-queue-expand-ease),
+    box-shadow 220ms var(--qaap-queue-expand-ease),
+    flex-basis var(--qaap-queue-expand-duration) var(--qaap-queue-expand-ease);
+}
+
+/* Expanded: the control becomes the panel surface (same as working-control.theia-mod-expanded) */
+.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded {
+  flex: 1 1 100% !important;
+  align-self: stretch;
+  width: 100% !important;
+  max-width: none !important;
+  border-radius: 12px !important;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent) !important;
+  background: color-mix(in srgb, var(--theia-editor-background, #1e1e1e) 94%, #000) !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+/* Expanded: the pill button collapses away (same as working pill in expanded state) */
+.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded .theia-mobile-sticky-composer-queue-collapsed-pill {
+  opacity: 0;
+  max-height: 0;
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  margin: 0;
+  border-color: transparent;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition:
+    opacity 160ms var(--qaap-queue-expand-ease),
+    max-height var(--qaap-queue-expand-duration) var(--qaap-queue-expand-ease),
+    min-height var(--qaap-queue-expand-duration) var(--qaap-queue-expand-ease),
+    padding var(--qaap-queue-expand-duration) var(--qaap-queue-expand-ease),
+    border-color 160ms var(--qaap-queue-expand-ease),
+    background-color 160ms var(--qaap-queue-expand-ease);
+}
+
+/* Collapsed: the clip is invisible and takes zero space — only the pill shows. */
+.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-collapsed .qaap-queue-expand-clip {
+  display: none !important;
+}
+
+/* Collapsed: pill stays compact, never grows beyond its content. */
+.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-collapsed .theia-mobile-sticky-composer-queue-collapsed-pill {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+.theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-queue-popover {
+  border: none !important;
+  border-radius: inherit !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control .theia-mobile-sticky-composer-activity-section.theia-mod-queue-control-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+/* Expanded: section stretches to full width so the panel fills the row. */
+.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded .theia-mobile-sticky-composer-activity-section.theia-mod-queue-control-section {
+  align-items: stretch;
+}
+
+/* The pill button — shares the same base style as changes/working/step pills
+   (declared in the shared rule above). Only add queue-specific overrides here. */
+.theia-mobile-sticky-composer-queue-collapsed-pill {
+  padding-left: 8px;
+  color: color-mix(in srgb, var(--theia-foreground) 86%, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-sticky-composer-queue-collapsed-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.theia-mobile-sticky-composer-queue-collapsed-label {
+  white-space: nowrap;
+}
+
+/* When the queue is expanded, it takes the full row width and hides siblings
+   (same pattern as the Working control expand). */
+.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded) {
+  /* Drop the 2px host inset so the expanded panel lines up with the composer card. */
+  padding-left: 0;
+  padding-right: 0;
+  overflow: visible;
+  align-items: stretch;
+}
+
+/* Separate pill-only host (e.g. Step) while the queue expands elsewhere. */
+.theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded)>.theia-mobile-sticky-composer-changes-pill-host:not(:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded)) {
+  display: none;
+}
+
+.theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded) {
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  overflow-y: visible;
+  align-items: stretch;
+}
+
+.theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded)>.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded {
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Queue open: hide the horizontal pill slider (Changes, Working, Step, …). */
+.theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded)> :not(.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded) {
+  display: none;
+}
+
+.theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded)::after {
+  content: none;
+}
+
+/* Expand clip — grid-template-rows: 0fr → 1fr (same animation as Working pill) */
+.qaap-queue-expand-clip {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transform-origin: top center;
+  transition:
+    grid-template-rows var(--qaap-working-expand-duration, 280ms) var(--qaap-working-expand-ease, cubic-bezier(0.32, 0.72, 0, 1)),
+    opacity 200ms var(--qaap-working-expand-ease, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+.qaap-queue-expand-clip.theia-mod-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.qaap-queue-expand-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Panel — mirrors the working-agents-popover-panel */
+.qaap-queue-expand-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: min(520px, 62vh);
+  transform: translateY(-4px) scale(0.985);
+  transform-origin: top center;
+  transition: transform var(--qaap-working-expand-duration, 280ms) var(--qaap-working-expand-ease, cubic-bezier(0.32, 0.72, 0, 1));
+}
+
+.qaap-queue-expand-clip.theia-mod-open .qaap-queue-expand-panel {
+  transform: translateY(0) scale(1);
+}
+
+/* Header — same layout as qaap-working-agents-popover-header */
+.qaap-queue-expand-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 8px 10px 8px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-queue-expand-title {
+  min-width: 0;
+  color: var(--theia-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.qaap-queue-expand-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.qaap-queue-expand-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: color-mix(in srgb, var(--theia-foreground) 82%, var(--theia-descriptionForeground));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.qaap-queue-expand-close:hover,
+.qaap-queue-expand-close:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+/* Body — scrollable queue list inside the panel */
+.qaap-queue-expand-panel .theia-mobile-sticky-composer-activity-body {
+  max-height: min(24vh, 180px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  padding: 4px 8px 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .qaap-queue-expand-clip,
+  .qaap-queue-expand-panel,
+  .theia-mobile-sticky-composer-queue-collapsed-pill {
+    transition: none;
+  }
 }
 
 .theia-mobile-sticky-composer-file-row {
@@ -3693,7 +4013,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-changes-pill,
 .theia-mobile-sticky-composer-working-pill,
-.theia-mobile-sticky-composer-step-pill {
+.theia-mobile-sticky-composer-step-pill,
+.theia-mobile-sticky-composer-queue-collapsed-pill {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -4032,12 +4353,23 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: none;
 }
 
+/* Working open: hide the queue stack too (it has display: inline-flex !important
+   that would otherwise override the generic sibling-hide rule above). */
+.theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control {
+  display: none !important;
+}
+
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)::after {
   content: none;
 }
 
 /* Separate pill-only host (e.g. Step) while Working expands elsewhere. */
 .theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)>.theia-mobile-sticky-composer-changes-pill-host:not(:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)) {
+  display: none;
+}
+
+/* Also hide a pill host that only contains the queue stack while Working expands. */
+.theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)>.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control):not(:has(.theia-mobile-sticky-composer-working-control)) {
   display: none;
 }
 
@@ -4795,7 +5127,9 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 .theia-mobile-sticky-composer-working-pill:hover,
 .theia-mobile-sticky-composer-working-pill:focus-visible,
 .theia-mobile-sticky-composer-step-pill:hover,
-.theia-mobile-sticky-composer-step-pill:focus-visible {
+.theia-mobile-sticky-composer-step-pill:focus-visible,
+.theia-mobile-sticky-composer-queue-collapsed-pill:hover,
+.theia-mobile-sticky-composer-queue-collapsed-pill:focus-visible {
   background: color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background));
   border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
 }
@@ -4805,7 +5139,8 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 
   .theia-mobile-sticky-composer-changes-pill,
   .theia-mobile-sticky-composer-working-pill,
-  .theia-mobile-sticky-composer-step-pill {
+  .theia-mobile-sticky-composer-step-pill,
+  .theia-mobile-sticky-composer-queue-collapsed-pill {
     background: color-mix(in srgb, var(--theia-editor-background) 58%, transparent);
     border-color: color-mix(in srgb, var(--theia-foreground) 16%, transparent);
     -webkit-backdrop-filter: blur(14px) saturate(150%);
@@ -4814,10 +5149,12 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 
   .theia-mobile-sticky-composer-changes-pill:hover,
   .theia-mobile-sticky-composer-changes-pill:focus-visible,
-  .theia-mobile-sticky-composer-working-pill:hover,
+  .the-mobile-sticky-composer-working-pill:hover,
   .theia-mobile-sticky-composer-working-pill:focus-visible,
   .theia-mobile-sticky-composer-step-pill:hover,
-  .theia-mobile-sticky-composer-step-pill:focus-visible {
+  .theia-mobile-sticky-composer-step-pill:focus-visible,
+  .theia-mobile-sticky-composer-queue-collapsed-pill:hover,
+  .theia-mobile-sticky-composer-queue-collapsed-pill:focus-visible {
     background: color-mix(in srgb,
         color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background)) 68%,
         transparent);

@@ -109,6 +109,10 @@ function ensurePillRow(wrap: HTMLElement, card: HTMLElement): HTMLElement | unde
     );
     if (!(host instanceof HTMLElement)) {
         host = createPillsOnlyHost();
+        wrap.append(host);
+    }
+    // The queue control lives inside the changes-pill-row. Just ensure the host is before the card.
+    if (card && host.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_PRECEDING) {
         wrap.insertBefore(host, card);
     }
     const row = host.querySelector('.theia-mobile-sticky-composer-changes-pill-row');

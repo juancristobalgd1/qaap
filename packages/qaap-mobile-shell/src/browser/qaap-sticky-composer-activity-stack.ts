@@ -169,37 +169,39 @@ export function patchStickyComposerActivityStack(
     if (!entries.length) {
         return false;
     }
-    const section = stack.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-queue');
-    if (!(section instanceof HTMLElement)) {
-        return false;
+    // The queue control is a unified DOM (pill + clip). Update the label and
+    // the items inside the clip in-place when the count matches.
+    const label = stack.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-collapsed-label');
+    if (label) {
+        const newText = entries.length === 1
+            ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
+            : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
+        if (label.textContent !== newText) {
+            label.textContent = newText;
+        }
     }
-    const head = section.querySelector<HTMLButtonElement>(':scope > .theia-mobile-sticky-composer-activity-head');
-    const body = section.querySelector<HTMLElement>(':scope > .theia-mobile-sticky-composer-activity-body.theia-mobile-sticky-composer-queue-list');
-    const chevron = head?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-activity-chevron');
-    const title = head?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-activity-title');
-    if (!head || !body || !chevron || !title) {
+    const body = stack.querySelector<HTMLElement>('.theia-mobile-sticky-composer-activity-body.theia-mobile-sticky-composer-queue-list');
+    if (!body) {
+        // No clip body — structural mismatch, force full re-render.
         return false;
     }
     const items = Array.from(body.querySelectorAll<HTMLElement>(':scope > .theia-mobile-sticky-composer-queue-item'));
     if (items.length !== entries.length) {
         return false;
     }
-    // If any item's text doesn't match the new entry at that position, the order or content
-    // has changed — return false to force a full re-render (replaceWith) instead of patching
-    // text in-place (which would leave DOM elements in the old physical order).
+    // Reorders bypass this patch (the reorder handler clears the fingerprint to force a full
+    // re-render via replaceWith), so when the item count matches we can safely update each
+    // item's text in-place — including content edits — without leaving DOM elements in the
+    // old physical order.
     for (let index = 0; index < entries.length; index++) {
         const textEl = items[index]?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-text');
-        if (!textEl || textEl.textContent !== entries[index].draft) {
+        if (!textEl) {
             return false;
         }
+        if (textEl.textContent !== entries[index].draft) {
+            textEl.textContent = entries[index].draft;
+        }
     }
-    const expanded = options.queueExpanded ?? true;
-    head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    chevron.classList.toggle('theia-mod-collapsed', !expanded);
-    body.hidden = !expanded;
-    title.textContent = entries.length === 1
-        ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
-        : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
     const sendLabel = stickyComposerQueueSendNowLabel(options);
     for (let index = 0; index < entries.length; index++) {
         const sendBtn = items[index]?.querySelector('.codicon-send')?.closest<HTMLButtonElement>(
@@ -380,67 +382,135 @@ export function renderStickyComposerChangesPill(options: StickyComposerActivityS
 }
 
 export function renderStickyComposerActivityStack(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
-    const queueSection = options.queueEntries?.length
-        ? renderStickyComposerQueueSection(options)
-        : undefined;
-    if (!queueSection) {
+    const entries = options.queueEntries ?? [];
+    if (!entries.length) {
         return undefined;
     }
-    const stack = document.createElement('div');
-    // Floated above the composer card (not fused into the codex lip).
-    stack.className = 'theia-mobile-sticky-composer-activity-stack theia-mod-queue-popover';
-    stack.append(queueSection);
-    return stack;
+    // The queue is always rendered as an expandable control that lives inside the
+    // changes-pill-row (left of the Working pill), exactly like the Working pill.
+    // When expanded, a clip grows from 0fr → 1fr showing the full queue list.
+    // When collapsed, only the compact "N Queued" pill button is visible.
+    return renderStickyComposerQueueControl(options);
 }
 
-function renderStickyComposerQueueSection(options: StickyComposerActivityStackOptions): HTMLElement {
+/**
+ * Queue control — a compact pill button that expands in-place with a clip
+ * animation (grid-template-rows: 0fr → 1fr), mirroring the Working pill pattern.
+ * Lives inside the changes-pill-row. Clicking the pill toggles expand/collapse.
+ */
+function renderStickyComposerQueueControl(options: StickyComposerActivityStackOptions): HTMLElement {
     const entries = options.queueEntries ?? [];
-    let expanded = options.queueExpanded ?? true;
+    const expanded = options.queueExpanded ?? false;
+
+    const stack = document.createElement('div');
+    stack.className = 'theia-mobile-sticky-composer-activity-stack theia-mod-queue-popover theia-mod-queue-control';
+    stack.classList.toggle('theia-mod-collapsed', !expanded);
+    stack.classList.toggle('theia-mod-expanded', expanded);
 
     const section = document.createElement('div');
-    section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-queue';
+    section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-queue theia-mod-queue-control-section';
 
-    const head = document.createElement('button');
-    head.type = 'button';
-    head.className = 'theia-mobile-sticky-composer-activity-head';
-    head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-
-    const chevron = document.createElement('span');
-    chevron.className = 'theia-mobile-sticky-composer-activity-chevron codicon codicon-chevron-down';
-    chevron.setAttribute('aria-hidden', 'true');
-    chevron.classList.toggle('theia-mod-collapsed', !expanded);
-
-    const title = document.createElement('span');
-    title.className = 'theia-mobile-sticky-composer-activity-title';
-    title.textContent = entries.length === 1
+    // Pill button (always visible — the anchor that toggles the clip)
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'theia-mobile-sticky-composer-queue-collapsed-pill';
+    pill.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-sticky-composer-queue-collapsed-label';
+    label.textContent = entries.length === 1
         ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
         : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
+    pill.append(label);
+    pill.title = nls.localize(
+        'qaap/mobileProjects/queueCollapsedHint',
+        '{0} queued message(s) — click to expand',
+        String(entries.length),
+    );
 
-    head.append(chevron, title);
+    // Clip — grows from 0fr to 1fr when expanded (same pattern as Working pill)
+    const clip = document.createElement('div');
+    clip.className = 'qaap-queue-expand-clip';
+    clip.setAttribute('role', 'dialog');
+    clip.setAttribute('aria-label', label.textContent ?? 'Queued messages');
 
+    const clipInner = document.createElement('div');
+    clipInner.className = 'qaap-queue-expand-inner';
+
+    // Panel — mirrors the Working expand panel structure (header + body)
+    const panel = document.createElement('div');
+    panel.className = 'qaap-queue-expand-panel';
+
+    // Header with title and close button (same layout as working-agents-popover-header)
+    const header = document.createElement('div');
+    header.className = 'qaap-queue-expand-header';
+    const headerTitle = document.createElement('span');
+    headerTitle.className = 'qaap-queue-expand-title';
+    headerTitle.textContent = entries.length === 1
+        ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
+        : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
+    const headerActions = document.createElement('div');
+    headerActions.className = 'qaap-queue-expand-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'qaap-queue-expand-close';
+    closeBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/queueClose', 'Close queue'));
+    const closeIcon = document.createElement('span');
+    closeIcon.className = 'codicon codicon-close';
+    closeIcon.setAttribute('aria-hidden', 'true');
+    closeBtn.append(closeIcon);
+    closeBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        isOpen = false;
+        stack.classList.toggle('theia-mod-collapsed', !isOpen);
+        stack.classList.toggle('theia-mod-expanded', isOpen);
+        pill.setAttribute('aria-expanded', 'false');
+        clip.classList.remove('theia-mod-open');
+        options.onQueueExpandedChange?.(false);
+    });
+    headerActions.append(closeBtn);
+    header.append(headerTitle, headerActions);
+
+    // Queue list body
     const body = document.createElement('div');
     body.className = 'theia-mobile-sticky-composer-activity-body theia-mobile-sticky-composer-queue-list';
-    body.hidden = !expanded;
-
-    const syncExpanded = (): void => {
-        head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-        chevron.classList.toggle('theia-mod-collapsed', !expanded);
-        body.hidden = !expanded;
-        options.onQueueExpandedChange?.(expanded);
-    };
-
-    head.addEventListener('click', ev => {
-        ev.stopPropagation();
-        expanded = !expanded;
-        syncExpanded();
-    });
-
     entries.forEach((entry, index) => {
         body.append(renderQueueItem(entry, index, entries.length, options));
     });
+    panel.append(header, body);
+    clipInner.append(panel);
+    clip.append(clipInner);
 
-    section.append(head, body);
-    return section;
+    // Toggle expand/collapse on pill click
+    let isOpen = expanded;
+    pill.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        isOpen = !isOpen;
+        stack.classList.toggle('theia-mod-collapsed', !isOpen);
+        stack.classList.toggle('theia-mod-expanded', isOpen);
+        pill.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (isOpen) {
+            // Double rAF for the expand animation (same as Working pill)
+            window.requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
+                    clip.classList.add('theia-mod-open');
+                });
+            });
+        } else {
+            clip.classList.remove('theia-mod-open');
+        }
+        options.onQueueExpandedChange?.(isOpen);
+    });
+
+    // If restoring an already-expanded state, paint open immediately (no flash)
+    if (expanded) {
+        clip.classList.add('theia-mod-open');
+    }
+
+    section.append(pill, clip);
+    stack.append(section);
+    return stack;
 }
 
 /**
@@ -462,16 +532,16 @@ function renderQueueItem(
     const row = document.createElement('div');
     row.className = 'theia-mobile-sticky-composer-queue-item';
     row.dataset.queueIndex = String(index);
-    row.draggable = !!options.onQueueReorder;
 
-    // Drag handle (flechita) — only if reorder is enabled
+    // Drag handle (⠿) — only if reorder is enabled. Uses pointer events so it works on
+    // touch devices (HTML5 drag-and-drop API does not fire on touch / pointer:coarse).
     if (options.onQueueReorder) {
         const dragHandle = document.createElement('span');
         dragHandle.className = 'theia-mobile-sticky-composer-queue-drag-handle codicon codicon-gripper';
         dragHandle.setAttribute('aria-hidden', 'true');
         dragHandle.title = nls.localize('qaap/mobileProjects/queueDragHandle', 'Drag to reorder');
-        // Prevent the drag handle from starting a text selection; it should only initiate a drag.
-        dragHandle.addEventListener('mousedown', e => e.stopPropagation());
+        dragHandle.style.touchAction = 'none';
+        bindQueueItemPointerDrag(dragHandle, row, index, options);
         row.append(dragHandle);
     }
 
@@ -487,24 +557,6 @@ function renderQueueItem(
 
     const actions = document.createElement('div');
     actions.className = 'theia-mobile-sticky-composer-queue-actions';
-
-    // Move up button (only if not first)
-    if (options.onQueueReorder && index > 0) {
-        actions.append(createQueueActionButton(
-            'codicon-arrow-up',
-            nls.localize('qaap/mobileProjects/queueMoveUp', 'Move up'),
-            () => options.onQueueReorder?.(index, index - 1),
-        ));
-    }
-
-    // Move down button (only if not last)
-    if (options.onQueueReorder && index < total - 1) {
-        actions.append(createQueueActionButton(
-            'codicon-arrow-down',
-            nls.localize('qaap/mobileProjects/queueMoveDown', 'Move down'),
-            () => options.onQueueReorder?.(index, index + 1),
-        ));
-    }
 
     // Edit button
     actions.append(createQueueActionButton(
@@ -534,42 +586,208 @@ function renderQueueItem(
         ? nls.localize('qaap/mobileProjects/stickyComposerQueueItemHint', 'Queued message {0} of {1}', String(index + 1), String(total))
         : '';
 
-    // Drag-and-drop reorder handlers
-    if (options.onQueueReorder) {
-        row.addEventListener('dragstart', ev => {
-            row.classList.add('theia-mod-dragging');
-            if (ev.dataTransfer) {
-                ev.dataTransfer.setData('text/plain', String(index));
-                ev.dataTransfer.effectAllowed = 'move';
-            }
-        });
-        row.addEventListener('dragend', () => {
-            row.classList.remove('theia-mod-dragging');
-            row.parentElement?.querySelectorAll('.theia-mobile-sticky-composer-queue-item')
-                .forEach(el => el.classList.remove('theia-mod-drag-over'));
-        });
-        row.addEventListener('dragover', ev => {
-            ev.preventDefault();
-            if (ev.dataTransfer) {
-                ev.dataTransfer.dropEffect = 'move';
-            }
-            row.classList.add('theia-mod-drag-over');
-        });
-        row.addEventListener('dragleave', () => {
-            row.classList.remove('theia-mod-drag-over');
-        });
-        row.addEventListener('drop', ev => {
-            ev.preventDefault();
-            row.classList.remove('theia-mod-drag-over');
-            const raw = ev.dataTransfer?.getData('text/plain') ?? '';
-            const fromIndex = parseInt(raw, 10);
-            if (!isNaN(fromIndex) && fromIndex !== index) {
-                options.onQueueReorder?.(fromIndex, index);
-            }
-        });
-    }
-
     return row;
+}
+
+// ─── Pointer-based drag-to-reorder (touch + mouse) ───────────────────────────
+//
+// HTML5 drag-and-drop events (dragstart/dragover/drop) do not fire on touch
+// devices or when pointer:coarse is active. The mobile shell must use pointer
+// events to support dragging queue items by the gripper handle.
+
+interface QueueDragSession {
+    readonly handle: HTMLElement;
+    readonly item: HTMLElement;
+    readonly fromIndex: number;
+    readonly options: StickyComposerActivityStackOptions;
+    started: boolean;
+    activePointerId: number;
+    /** Y coordinate of the initial pointerdown — used for the drag threshold. */
+    startY: number;
+    /** Offset between the pointer Y and the item's top edge (for visual follow). */
+    itemOffsetY: number;
+    /** Current drop target info (item + whether to insert above or below). */
+    dropTarget?: { item: HTMLElement; below: boolean };
+}
+
+let activeQueueDrag: QueueDragSession | undefined;
+
+/** Minimum pixel distance before a drag is recognized (avoids scroll conflicts). */
+const QUEUE_DRAG_THRESHOLD_PX = 8;
+
+/** Pixels from the top/bottom edge of the scrollable list that trigger auto-scroll. */
+const QUEUE_DRAG_AUTOSCROLL_EDGE_PX = 40;
+
+/** Maximum auto-scroll speed (px per frame). */
+const QUEUE_DRAG_AUTOSCROLL_SPEED = 6;
+
+function clearAllDragOverStates(list: HTMLElement): void {
+    list.querySelectorAll('.theia-mobile-sticky-composer-queue-item')
+        .forEach(el => el.classList.remove('theia-mod-drag-over', 'theia-mod-drag-over-below', 'theia-mod-dragging'));
+}
+
+function findDropTargetAtPoint(
+    list: HTMLElement,
+    y: number,
+    excludeItem: HTMLElement,
+): { item: HTMLElement; below: boolean } | undefined {
+    const items = Array.from(
+        list.querySelectorAll<HTMLElement>(':scope > .theia-mobile-sticky-composer-queue-item'),
+    );
+    for (const candidate of items) {
+        if (candidate === excludeItem) {
+            continue;
+        }
+        const rect = candidate.getBoundingClientRect();
+        if (y >= rect.top && y <= rect.bottom) {
+            const midY = rect.top + rect.height / 2;
+            return { item: candidate, below: y >= midY };
+        }
+    }
+    // If below all items, target the last item with "below" so the dragged item goes after it.
+    if (items.length > 0) {
+        const last = items[items.length - 1];
+        if (last !== excludeItem) {
+            const rect = last.getBoundingClientRect();
+            if (y > rect.bottom) {
+                return { item: last, below: true };
+            }
+        }
+        // If above all items, target the first item with "above".
+        const first = items[0];
+        if (first !== excludeItem) {
+            const rect = first.getBoundingClientRect();
+            if (y < rect.top) {
+                return { item: first, below: false };
+            }
+        }
+    }
+    return undefined;
+}
+
+/** Auto-scroll the list when the pointer is near its top/bottom edges during drag. */
+function autoScrollList(list: HTMLElement, pointerY: number): void {
+    const scrollable = list.closest<HTMLElement>('[data-theia-mobile-scroll-y]')
+        ?? (list.scrollHeight > list.clientHeight ? list : undefined);
+    if (!scrollable) {
+        return;
+    }
+    const rect = scrollable.getBoundingClientRect();
+    if (pointerY < rect.top + QUEUE_DRAG_AUTOSCROLL_EDGE_PX) {
+        scrollable.scrollTop -= QUEUE_DRAG_AUTOSCROLL_SPEED;
+    } else if (pointerY > rect.bottom - QUEUE_DRAG_AUTOSCROLL_EDGE_PX) {
+        scrollable.scrollTop += QUEUE_DRAG_AUTOSCROLL_SPEED;
+    }
+}
+
+function bindQueueItemPointerDrag(
+    handle: HTMLElement,
+    item: HTMLElement,
+    index: number,
+    options: StickyComposerActivityStackOptions,
+): void {
+    handle.addEventListener('pointerdown', ev => {
+        if (activeQueueDrag || !options.onQueueReorder) {
+            return;
+        }
+        ev.preventDefault();
+        ev.stopPropagation();
+        const itemRect = item.getBoundingClientRect();
+        activeQueueDrag = {
+            handle,
+            item,
+            fromIndex: index,
+            options,
+            started: false,
+            activePointerId: ev.pointerId,
+            startY: ev.clientY,
+            itemOffsetY: ev.clientY - itemRect.top,
+        };
+        // Capture on the handle so we keep receiving events even if the finger
+        // slides off the small gripper icon. Some mobile browsers (iOS Safari)
+        // drop pointer events without capture, so we also bind window-level
+        // listeners as a fallback below.
+        try {
+            handle.setPointerCapture(ev.pointerId);
+        } catch {
+            // setPointerCapture can throw on some browsers — window listeners cover it.
+        }
+        window.addEventListener('pointermove', onMove, { passive: false });
+        window.addEventListener('pointerup', onEnd);
+        window.addEventListener('pointercancel', onEnd);
+    });
+
+    // Window-level fallback listeners (bound only during an active drag). These
+    // guarantee we keep tracking the finger even if pointer capture is lost or
+    // the finger leaves the handle's hit area — critical for touch devices.
+    const onMove = (ev: PointerEvent): void => {
+        const session = activeQueueDrag;
+        if (!session || session.activePointerId !== ev.pointerId) {
+            return;
+        }
+        ev.preventDefault();
+        const list = item.parentElement;
+        if (!list) {
+            return;
+        }
+
+        // Drag threshold: only start the drag after moving past QUEUE_DRAG_THRESHOLD_PX
+        // so that a tap-and-scroll on the handle doesn't trigger a reorder.
+        if (!session.started) {
+            if (Math.abs(ev.clientY - session.startY) < QUEUE_DRAG_THRESHOLD_PX) {
+                return;
+            }
+            session.started = true;
+            item.classList.add('theia-mod-dragging');
+        }
+
+        // Auto-scroll when near the edges of the scrollable list.
+        autoScrollList(list, ev.clientY);
+
+        clearAllDragOverStates(list);
+        item.classList.add('theia-mod-dragging');
+        const target = findDropTargetAtPoint(list, ev.clientY, item);
+        session.dropTarget = target ?? undefined;
+        if (target) {
+            target.item.classList.add('theia-mod-drag-over');
+            target.item.classList.toggle('theia-mod-drag-over-below', target.below);
+        }
+    };
+
+    const onEnd = (ev: PointerEvent): void => {
+        const session = activeQueueDrag;
+        if (!session || session.activePointerId !== ev.pointerId) {
+            return;
+        }
+        activeQueueDrag = undefined;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        window.removeEventListener('pointercancel', onEnd);
+        try {
+            handle.releasePointerCapture(ev.pointerId);
+        } catch {
+            // Pointer capture may already be released — ignore.
+        }
+        const list = item.parentElement;
+        if (!list) {
+            return;
+        }
+        clearAllDragOverStates(list);
+        if (session.started && session.dropTarget) {
+            const targetIndex = parseInt(session.dropTarget.item.dataset.queueIndex ?? '', 10);
+            if (!isNaN(targetIndex)) {
+                // Adjust for above/below: "below" means insert AFTER the target.
+                let toIndex = session.dropTarget.below ? targetIndex + 1 : targetIndex;
+                // If moving from before to after, the removal shifts indices by 1.
+                if (session.fromIndex < toIndex) {
+                    toIndex--;
+                }
+                if (toIndex !== session.fromIndex && toIndex >= 0) {
+                    session.options.onQueueReorder?.(session.fromIndex, toIndex);
+                }
+            }
+        }
+    };
 }
 
 function appendDiffStatsInline(
