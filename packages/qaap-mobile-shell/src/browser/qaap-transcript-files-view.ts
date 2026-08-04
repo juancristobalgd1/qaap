@@ -433,19 +433,26 @@ export function mountTranscriptFilesView(
     treePane.className = 'theia-mobile-transcript-files-tree';
     const treeToolbar = document.createElement('div');
     treeToolbar.className = 'theia-mobile-transcript-files-tree-toolbar';
+    // Search input with a leading magnifying-glass icon.
+    const filterHost = document.createElement('div');
+    filterHost.className = 'theia-mobile-transcript-files-filter-host';
+    const filterIcon = document.createElement('span');
+    filterIcon.className = 'theia-mobile-transcript-files-filter-icon codicon codicon-search';
+    filterIcon.setAttribute('aria-hidden', 'true');
     const filterInput = document.createElement('input');
     filterInput.type = 'search';
     filterInput.className = 'theia-mobile-transcript-files-filter';
     filterInput.placeholder = services.localize('qaap/mobileProjects/filesFilter', 'Filter files…');
     filterInput.setAttribute('aria-label', filterInput.placeholder);
+    filterHost.append(filterIcon, filterInput);
     const newFileBtn = document.createElement('button');
     newFileBtn.type = 'button';
-    newFileBtn.className = 'theia-mobile-transcript-files-action codicon codicon-add';
+    newFileBtn.className = 'theia-mobile-transcript-files-action theia-mobile-transcript-files-new-btn codicon codicon-add';
     newFileBtn.title = services.localize('qaap/mobileProjects/transcriptNew', 'New…');
     newFileBtn.setAttribute('aria-label', newFileBtn.title);
     newFileBtn.setAttribute('aria-haspopup', 'menu');
     newFileBtn.setAttribute('aria-expanded', 'false');
-    treeToolbar.append(filterInput, newFileBtn);
+    treeToolbar.append(filterHost, newFileBtn);
     const treeScroll = document.createElement('div');
     treeScroll.className = 'theia-mobile-transcript-files-tree-scroll';
     treePane.append(treeToolbar, treeScroll);

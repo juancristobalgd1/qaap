@@ -2579,38 +2579,150 @@ body>.theia-mobile-transcript-files-menu {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin: 10px 10px 8px;
+}
+
+/* Filter input — inline style matching the agent-sheet search field. */
+.theia-mobile-transcript-files-filter-host {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none !important;
+  border-radius: 0;
+  background: transparent !important;
+}
+
+.theia-mobile-transcript-files-filter-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.55));
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter {
+  box-sizing: border-box;
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
+  min-height: 36px;
+  padding: 8px 0;
+  border: none !important;
+  border-radius: 0;
+  background: transparent !important;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-action {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+/* Webkit puts a native background on search inputs — force it off. */
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter::-webkit-search-decoration,
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter::-webkit-search-cancel-button,
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter::-webkit-search-results-button,
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter::-webkit-search-results-decoration {
+  -webkit-appearance: none;
 }
 
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter:focus,
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter:focus-visible {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+}
+
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-filter::placeholder {
+  color: var(--theia-descriptionForeground, var(--theia-input-placeholderForeground));
+}
+
+/* New-file button — borderless, transparent background. */
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-new-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-icon-foreground, var(--theia-descriptionForeground));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-new-btn:hover,
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-new-btn:focus-visible {
+  background: var(--theia-toolbar-hoverBackground, color-mix(in srgb, var(--theia-foreground, #fff) 6%, transparent));
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-new-btn.codicon::before {
+  font-size: 16px;
+}
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-new-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .theia-mobile-transcript-files-tree-toolbar .theia-mobile-transcript-files-new-btn.codicon::before {
+    font-size: 18px;
+  }
+}
+
+/* Standalone filter (outside tree toolbar) — inline style, no boxed chrome. */
 .theia-mobile-transcript-files-filter {
+  box-sizing: border-box;
   flex: 0 0 auto;
   margin: 10px 10px 8px;
   min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
-  border-radius: 12px;
-  background: var(--theia-input-background, rgba(255, 255, 255, 0.04));
-  color: var(--theia-input-foreground, var(--theia-foreground));
-  font-family: var(--theia-ui-font-family, sans-serif);
-  font-size: 13px;
+  padding: 8px 0;
+  border: none !important;
+  border-radius: 0;
+  background: transparent !important;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-transcript-files-filter::-webkit-search-decoration,
+.theia-mobile-transcript-files-filter::-webkit-search-cancel-button,
+.theia-mobile-transcript-files-filter::-webkit-search-results-button,
+.theia-mobile-transcript-files-filter::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+}
+
+.theia-mobile-transcript-files-filter:focus,
+.theia-mobile-transcript-files-filter:focus-visible {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
 }
 
 .theia-mobile-transcript-files-filter::placeholder {
-  color: var(--theia-input-placeholderForeground, var(--theia-descriptionForeground));
+  color: var(--theia-descriptionForeground, var(--theia-input-placeholderForeground));
 }
 
 .theia-mobile-transcript-files-tree-scroll {
