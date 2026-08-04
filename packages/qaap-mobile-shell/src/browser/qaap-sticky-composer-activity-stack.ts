@@ -470,6 +470,8 @@ function renderQueueItem(
         dragHandle.className = 'theia-mobile-sticky-composer-queue-drag-handle codicon codicon-gripper';
         dragHandle.setAttribute('aria-hidden', 'true');
         dragHandle.title = nls.localize('qaap/mobileProjects/queueDragHandle', 'Drag to reorder');
+        // Prevent the drag handle from starting a text selection; it should only initiate a drag.
+        dragHandle.addEventListener('mousedown', e => e.stopPropagation());
         row.append(dragHandle);
     }
 
@@ -485,6 +487,24 @@ function renderQueueItem(
 
     const actions = document.createElement('div');
     actions.className = 'theia-mobile-sticky-composer-queue-actions';
+
+    // Move up button (only if not first)
+    if (options.onQueueReorder && index > 0) {
+        actions.append(createQueueActionButton(
+            'codicon-arrow-up',
+            nls.localize('qaap/mobileProjects/queueMoveUp', 'Move up'),
+            () => options.onQueueReorder?.(index, index - 1),
+        ));
+    }
+
+    // Move down button (only if not last)
+    if (options.onQueueReorder && index < total - 1) {
+        actions.append(createQueueActionButton(
+            'codicon-arrow-down',
+            nls.localize('qaap/mobileProjects/queueMoveDown', 'Move down'),
+            () => options.onQueueReorder?.(index, index + 1),
+        ));
+    }
 
     // Edit button
     actions.append(createQueueActionButton(
@@ -518,8 +538,10 @@ function renderQueueItem(
     if (options.onQueueReorder) {
         row.addEventListener('dragstart', ev => {
             row.classList.add('theia-mod-dragging');
-            ev.dataTransfer?.setData('text/queue-index', String(index));
-            ev.dataTransfer!.effectAllowed = 'move';
+            if (ev.dataTransfer) {
+                ev.dataTransfer.setData('text/plain', String(index));
+                ev.dataTransfer.effectAllowed = 'move';
+            }
         });
         row.addEventListener('dragend', () => {
             row.classList.remove('theia-mod-dragging');
@@ -539,7 +561,8 @@ function renderQueueItem(
         row.addEventListener('drop', ev => {
             ev.preventDefault();
             row.classList.remove('theia-mod-drag-over');
-            const fromIndex = parseInt(ev.dataTransfer?.getData('text/queue-index') ?? '', 10);
+            const raw = ev.dataTransfer?.getData('text/plain') ?? '';
+            const fromIndex = parseInt(raw, 10);
             if (!isNaN(fromIndex) && fromIndex !== index) {
                 options.onQueueReorder?.(fromIndex, index);
             }

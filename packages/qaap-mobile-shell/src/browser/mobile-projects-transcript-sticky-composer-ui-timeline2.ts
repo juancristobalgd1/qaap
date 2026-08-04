@@ -340,14 +340,22 @@ export function refreshComposerActivityStackExtracted(ctx: any): void {
     } else if (pillsOnlyHost instanceof HTMLElement && changesPill instanceof HTMLElement) {
         transferWorkingControlToHost(pillsOnlyHost, changesPill);
         transferStepPillToHost(pillsOnlyHost, changesPill);
-        // Insert the pill BEFORE the queue stack (if it exists) so the pill stays on top.
+        // Insert the pill AFTER the queue stack (if it exists) — queue goes on top, pill below it.
         const existingStack = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
-        wrap.insertBefore(changesPill, existingStack ?? card);
+        if (existingStack) {
+            wrap.insertBefore(changesPill, existingStack.nextSibling ?? card);
+        } else {
+            wrap.insertBefore(changesPill, card);
+        }
         pillsOnlyHost.remove();
         ctx.lastComposerChangesPillFingerprint = pillFingerprint;
     } else {
         const existingStack = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
-        wrap.insertBefore(changesPill, existingStack ?? card);
+        if (existingStack) {
+            wrap.insertBefore(changesPill, existingStack.nextSibling ?? card);
+        } else {
+            wrap.insertBefore(changesPill, card);
+        }
         ctx.lastComposerChangesPillFingerprint = pillFingerprint;
     }
     const stackFingerprint = buildStickyComposerActivityStackFingerprint(activityOptions);
@@ -369,25 +377,24 @@ export function refreshComposerActivityStackExtracted(ctx: any): void {
             ctx.lastComposerActivityStackFingerprint = stackFingerprint;
         }
     } else {
-        // Insert the stack AFTER the changes pill (if present) and before the card.
+        // Insert the stack at the very top (before the pill, if any) — queue always goes first.
         const pill = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
-        wrap.insertBefore(stack, pill ? pill.nextSibling : card);
+        wrap.insertBefore(stack, pill ?? card);
         ctx.lastComposerActivityStackFingerprint = stackFingerprint;
     }
-    // Normalize DOM order: pill-host → activity-stack → card.
-    // This guarantees the working/changes pill is always above the queue stack,
-    // regardless of which insertion path ran above.
+    // Normalize DOM order: activity-stack (queue) → pill-host → card.
+    // The queue container must ALWAYS be above the pill buttons.
     const pillEl = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
     const stackEl = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
     if (pillEl && stackEl && card) {
-        // Expected order: pill, stack, card
-        if (pillEl.compareDocumentPosition(stackEl) & Node.DOCUMENT_POSITION_PRECEDING) {
-            // stack is before pill — swap them
-            wrap.insertBefore(pillEl, stackEl);
+        // Expected order: stack, pill, card
+        // If pill is before stack, move stack before pill
+        if (pillEl.compareDocumentPosition(stackEl) & Node.DOCUMENT_POSITION_FOLLOWING) {
+            wrap.insertBefore(stackEl, pillEl);
         }
-        if (stackEl.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_PRECEDING) {
-            // card is before stack — move stack before card
-            wrap.insertBefore(stackEl, card);
+        // If card is before pill, move pill before card
+        if (card.compareDocumentPosition(pillEl) & Node.DOCUMENT_POSITION_PRECEDING) {
+            wrap.insertBefore(pillEl, card);
         }
     }
     ctx.syncComposerActivityFingerprint(summary, project, activityOptions);
