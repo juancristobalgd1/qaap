@@ -3058,19 +3058,19 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control {
   --qaap-queue-expand-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --qaap-queue-expand-duration: 280ms;
-  display: inline-flex !important;
-  flex: 0 0 auto !important;
-  flex-direction: column !important;
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
   align-items: stretch;
-  width: auto !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  z-index: auto !important;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  z-index: auto;
   border-radius: 999px;
   box-sizing: border-box;
   transition:
@@ -3080,18 +3080,19 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
     box-shadow 220ms var(--qaap-queue-expand-ease);
 }
 
-/* Expanded: the control becomes the panel surface (same as working-control.theia-mod-expanded) */
+/* Expanded: the control becomes the panel surface — full width of the composer
+   column. display: flex (not inline-flex) so width: 100% is honored. */
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded {
-  display: flex !important;
-  flex: 1 1 100% !important;
+  flex: 1 1 100%;
   align-self: stretch;
-  width: 100% !important;
-  max-width: none !important;
-  border-radius: 12px !important;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent) !important;
-  background: color-mix(in srgb, var(--theia-editor-background, #1e1e1e) 94%, #000) !important;
-  box-shadow: none !important;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--theia-editor-background, #1e1e1e) 94%, #000);
+  box-shadow: none;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* Expanded: the pill button collapses away (same as working pill in expanded state) */
@@ -3142,27 +3143,20 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   -webkit-backdrop-filter: none !important;
 }
 
-/* Expanded queue/working controls always hold the full composer (screen) width,
-   even when mounted directly under composer-inner — never shrink to content. */
-.theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded,
-.theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  flex: 1 1 100% !important;
-  align-self: stretch;
-  width: 100% !important;
-  max-width: 100% !important;
+/* When a queue/working control is expanded, zero out the composer's horizontal
+   padding so the panel spans the full device width. The composer card keeps its
+   own inset via a separate rule below. */
+.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded),
+.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
+  padding-left: 0;
+  padding-right: 0;
 }
 
-/* Break out of the composer's horizontal padding so the expanded panel spans the
-   full device width (including safe-area insets) on mobile. The negative margins
-   exactly cancel the composer's edge inset on each side. */
-.theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded),
-.theia-mobile-projects-sticky-composer-inner:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
-  --qaap-composer-edge-left: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px));
-  --qaap-composer-edge-right: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px));
-  margin-left: calc(-1 * var(--qaap-composer-edge-left));
-  margin-right: calc(-1 * var(--qaap-composer-edge-right));
-  width: calc(100% + var(--qaap-composer-edge-left) + var(--qaap-composer-edge-right));
-  box-sizing: border-box;
+/* Restore horizontal inset on the composer card so it doesn't touch the edges. */
+.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded) > * .theia-mobile-projects-sticky-composer-card,
+.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) > * .theia-mobile-projects-sticky-composer-card {
+  margin-left: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px));
+  margin-right: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px));
 }
 
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control .theia-mobile-sticky-composer-activity-section.theia-mod-queue-control-section {
@@ -4349,16 +4343,16 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  /* Match sticky composer card width (full column), not a narrower popover max. */
   flex: 1 1 100%;
   align-self: stretch;
   width: 100%;
-  max-width: none;
+  max-width: 100%;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
   background: color-mix(in srgb, var(--theia-editor-background, #1e1e1e) 94%, #000);
   box-shadow: none;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {

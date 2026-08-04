@@ -205,8 +205,10 @@ export function patchStickyComposerActivityStack(
     }
     const sendLabel = stickyComposerQueueSendNowLabel(options);
     for (let index = 0; index < entries.length; index++) {
-        const sendBtn = items[index]?.querySelector('.codicon-send')?.closest<HTMLButtonElement>(
-            'button.theia-mobile-sticky-composer-queue-action',
+        // The send button uses the composer's paper-plane SVG icon (not codicon-send),
+        // so look it up by its dedicated class.
+        const sendBtn = items[index]?.querySelector<HTMLButtonElement>(
+            'button.theia-mobile-sticky-composer-queue-action.theia-mobile-sticky-composer-queue-send',
         );
         if (sendBtn && sendBtn.title !== sendLabel) {
             sendBtn.title = sendLabel;
@@ -462,11 +464,29 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
     closeBtn.addEventListener('click', ev => {
         ev.preventDefault();
         ev.stopPropagation();
+        if (!isOpen) {
+            return;
+        }
         isOpen = false;
-        stack.classList.toggle('theia-mod-collapsed', !isOpen);
-        stack.classList.toggle('theia-mod-expanded', isOpen);
         pill.setAttribute('aria-expanded', 'false');
+        // Start the clip collapse animation (grid-template-rows: 1fr → 0fr).
         clip.classList.remove('theia-mod-open');
+        // Keep theia-mod-expanded until the clip finishes collapsing so the
+        // panel width stays full during the animation — removing it early
+        // would snap the width back to auto instantly (no transition).
+        const finishClose = (): void => {
+            stack.classList.remove('theia-mod-expanded');
+            stack.classList.add('theia-mod-collapsed');
+        };
+        clip.addEventListener('transitionend', function onEnd(e: TransitionEvent): void {
+            if (e.target !== clip || (e.propertyName !== 'grid-template-rows' && e.propertyName !== 'opacity')) {
+                return;
+            }
+            clip.removeEventListener('transitionend', onEnd);
+            finishClose();
+        });
+        // Fallback in case transitionend doesn't fire.
+        window.setTimeout(finishClose, 360);
         options.onQueueExpandedChange?.(false);
     });
     headerActions.append(closeBtn);
@@ -488,10 +508,10 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
         ev.preventDefault();
         ev.stopPropagation();
         isOpen = !isOpen;
-        stack.classList.toggle('theia-mod-collapsed', !isOpen);
-        stack.classList.toggle('theia-mod-expanded', isOpen);
         pill.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         if (isOpen) {
+            stack.classList.remove('theia-mod-collapsed');
+            stack.classList.add('theia-mod-expanded');
             // Double rAF for the expand animation (same as Working pill)
             window.requestAnimationFrame(() => {
                 window.requestAnimationFrame(() => {
@@ -499,7 +519,22 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
                 });
             });
         } else {
+            // Start the clip collapse animation. Keep theia-mod-expanded until
+            // the clip finishes collapsing so the panel width stays full during
+            // the animation (same pattern as the close button).
             clip.classList.remove('theia-mod-open');
+            const finishClose = (): void => {
+                stack.classList.remove('theia-mod-expanded');
+                stack.classList.add('theia-mod-collapsed');
+            };
+            clip.addEventListener('transitionend', function onEnd(e: TransitionEvent): void {
+                if (e.target !== clip || (e.propertyName !== 'grid-template-rows' && e.propertyName !== 'opacity')) {
+                    return;
+                }
+                clip.removeEventListener('transitionend', onEnd);
+                finishClose();
+            });
+            window.setTimeout(finishClose, 360);
         }
         options.onQueueExpandedChange?.(isOpen);
     });
