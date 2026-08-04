@@ -351,9 +351,21 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.scroll.style.maxWidth = '100%';
         this.host.scroll.style.alignSelf = 'stretch';
         this.host.scroll.style.alignItems = 'stretch';
-        executionRoot.style.width = '100%';
-        executionRoot.style.maxWidth = '100%';
-        executionRoot.style.alignSelf = 'stretch';
+        // When the sessions sidebar is open, the CSS centering rules in
+        // qaap-work-hub-sessions-sidebar.css constrain the execution root to
+        // min(100%, 980px) with auto margins. Inline width/maxWidth would
+        // override those rules (no !important on the CSS side for the chat
+        // surface), so clear them and let the stylesheet drive the layout.
+        const sessionsSidebarOpen = document.body.classList.contains('theia-mobile-mod-sessions-sidebar-open');
+        if (sessionsSidebarOpen) {
+            executionRoot.style.width = '';
+            executionRoot.style.maxWidth = '';
+            executionRoot.style.alignSelf = '';
+        } else {
+            executionRoot.style.width = '100%';
+            executionRoot.style.maxWidth = '100%';
+            executionRoot.style.alignSelf = 'stretch';
+        }
     }
 
     protected createAgentsHubNoProjectOnboarding(): HTMLElement {

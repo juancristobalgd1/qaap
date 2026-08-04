@@ -822,12 +822,14 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   opacity: 0.45;
 }
 
-.theia-mobile-work-hub-sessions-sidebar-project-dot {
-  flex: 0 0 6px;
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  opacity: 0.65;
+.theia-mobile-work-hub-sessions-sidebar-project-folder {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--theia-descriptionForeground, var(--qaap-muted, #85816f));
+  opacity: 0.85;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-project-name {
