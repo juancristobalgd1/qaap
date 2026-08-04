@@ -6,6 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import URI from '@theia/core/lib/common/uri';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatModel, ChatService } from '@theia/ai-chat';
 import {
@@ -76,68 +77,68 @@ import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-m
 import { parkWorkingControlFromAncestor } from './qaap-sticky-composer-working-agents-popover';
 
 export interface MobileProjectsStickyComposerRenderHost {
-root: HTMLElement;
-stickyComposerHost: HTMLElement;
-stickyComposerContextUsageDispose: Disposable;
-stickyComposerContextUsageSheet: HTMLElement | undefined;
-projects: MobileProjectEntry[];
-filter: MobileProjectFilter;
-homeMode: boolean;
-hubView: import('./mobile-projects-types').MobileProjectsHubView;
-agentsHubShellActive: boolean;
-agentsHubInlineActive: boolean;
-agentsHubInlineChatHost: HTMLElement | undefined;
-transcriptChatHost: HTMLElement | undefined;
-transcriptOpenProject: MobileProjectEntry | undefined;
-transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
-transcriptComposerDraft: string;
-openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
-closeAgentsHubSession(): void;
-onForkConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
-transcriptComposerMountKey: string | undefined;
-transcriptComposerHost: HTMLElement | undefined;
-transcriptComposerProject: MobileProjectEntry | undefined;
-transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
-stickyComposerContext: StickyComposerContextEntry[];
-stickyComposerFilesExpanded: boolean;
-stickyComposerDraft: string;
-stickyComposerSurface: QaapComposerSurface;
-stickyComposerModeId: string | undefined;
-stickyComposerCapabilityLevel: ModelCapabilityLevelValue | undefined;
-stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
-stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
-            stickyComposerBackendAgents: import('../common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
-            transcriptComposerBackendAgents: import('../common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
-stickyComposerPinnedAgentId: string | undefined;
-preparedCwdByProjectId: Map<string, string>;
-chatService?: ChatService;
-chatServiceSessionSummariesByProjectId: Map<string, QaapAgentConversationSummaryDTO[]>;
-chatAgentService?: ChatAgentService;
-conversations?: MobileProjectsConversations;
-            readPreference?: (key: string) => unknown;
-            preferenceService?: PreferenceService;
-getComposerVariables?: unknown;
-getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
-hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
-resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
-resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
-updateNewFabVisibility(): void;
-submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<void>;
-executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
-transcriptComposerUi: MobileProjectsTranscriptComposerUi;
-transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
-composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
-stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
-stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
-stickyComposerContextUi: import('./mobile-projects-sticky-composer-context-ui').MobileProjectsStickyComposerContextUi;
-stickyComposerColumnUi: import('./mobile-projects-sticky-composer-column-ui').MobileProjectsStickyComposerColumnUi;
-stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
-isProjectDetailView(): boolean;
-projectsService: MobileProjectsService;
-transcriptComposerSendRefresh: (() => void) | undefined;
-composerPromptImprover?: QaapComposerPromptImprover;
-handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
-updateWorkingPillChrome(): void;
+    root: HTMLElement;
+    stickyComposerHost: HTMLElement;
+    stickyComposerContextUsageDispose: Disposable;
+    stickyComposerContextUsageSheet: HTMLElement | undefined;
+    projects: MobileProjectEntry[];
+    filter: MobileProjectFilter;
+    homeMode: boolean;
+    hubView: import('./mobile-projects-types').MobileProjectsHubView;
+    agentsHubShellActive: boolean;
+    agentsHubInlineActive: boolean;
+    agentsHubInlineChatHost: HTMLElement | undefined;
+    transcriptChatHost: HTMLElement | undefined;
+    transcriptOpenProject: MobileProjectEntry | undefined;
+    transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
+    transcriptComposerDraft: string;
+    openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
+    closeAgentsHubSession(): void;
+    onForkConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void>;
+    transcriptComposerMountKey: string | undefined;
+    transcriptComposerHost: HTMLElement | undefined;
+    transcriptComposerProject: MobileProjectEntry | undefined;
+    transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
+    stickyComposerContext: StickyComposerContextEntry[];
+    stickyComposerFilesExpanded: boolean;
+    stickyComposerDraft: string;
+    stickyComposerSurface: QaapComposerSurface;
+    stickyComposerModeId: string | undefined;
+    stickyComposerCapabilityLevel: ModelCapabilityLevelValue | undefined;
+    stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
+    stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
+    stickyComposerBackendAgents: import('../common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
+    transcriptComposerBackendAgents: import('../common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
+    stickyComposerPinnedAgentId: string | undefined;
+    preparedCwdByProjectId: Map<string, string>;
+    chatService?: ChatService;
+    chatServiceSessionSummariesByProjectId: Map<string, QaapAgentConversationSummaryDTO[]>;
+    chatAgentService?: ChatAgentService;
+    conversations?: MobileProjectsConversations;
+    readPreference?: (key: string) => unknown;
+    preferenceService?: PreferenceService;
+    getComposerVariables?: unknown;
+    getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
+    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
+    resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
+    updateNewFabVisibility(): void;
+    submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<void>;
+    executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
+    transcriptComposerUi: MobileProjectsTranscriptComposerUi;
+    transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
+    composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
+    stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
+    stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
+    stickyComposerContextUi: import('./mobile-projects-sticky-composer-context-ui').MobileProjectsStickyComposerContextUi;
+    stickyComposerColumnUi: import('./mobile-projects-sticky-composer-column-ui').MobileProjectsStickyComposerColumnUi;
+    stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
+    isProjectDetailView(): boolean;
+    projectsService: MobileProjectsService;
+    transcriptComposerSendRefresh: (() => void) | undefined;
+    composerPromptImprover?: QaapComposerPromptImprover;
+    handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
+    updateWorkingPillChrome(): void;
 }
 
 export class MobileProjectsStickyComposerRenderUi {
@@ -443,6 +444,12 @@ export class MobileProjectsStickyComposerRenderUi {
                 () => this.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
             ),
             onAttach: anchor => { void this.host.stickyComposerContextUi.onStickyComposerAttach(project, anchor); },
+            onDropFiles: (files, uploadTargetDir) => {
+                const targetDir = uploadTargetDir ?? project.uri
+                    ?? (cwd ? new URI().withScheme('file').withPath(cwd) : undefined);
+                console.log('[qaap-drop] onDropFiles called', { fileCount: files.length, targetDir: targetDir?.toString(), projectUri: project.uri?.toString(), cwd });
+                this.host.stickyComposerContextUi.dropStickyComposerFiles(project, files, targetDir);
+            },
             onOpenAgentSheet: isChatSurface
                 ? () => { /* Chat is Coder-only */ }
                 : anchor => { this.host.stickyComposerSheetsUi.openStickyComposerAgentSheet(project, anchor); },
@@ -567,7 +574,7 @@ export class MobileProjectsStickyComposerRenderUi {
                         return resolveVpsContextUsageBreakdown(undefined);
                     },
                     document.body.classList.contains('theia-mobile-mod-workhub-composer-header')
-                        || document.body.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome'),
+                    || document.body.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome'),
                     anchor,
                 );
             },

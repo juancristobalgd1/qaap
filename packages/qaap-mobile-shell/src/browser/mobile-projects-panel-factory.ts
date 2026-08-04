@@ -50,6 +50,7 @@ import { resolveAgentVerifyChecksForCwd } from './qaap-agent-verify-checks-resol
 import { openTranscriptWorkspaceFile, createTranscriptFilesViewServices } from './qaap-transcript-file-open';
 import { createTranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
 import { pickMobileContextVariable } from './qaap-mobile-context-attach-menu';
+import { attachDeviceFilesOptimistic } from './qaap-mobile-composer-device-attach';
 import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from '../common/mobile-work-hub-catalog';
 import { resolveStickyComposerAttachmentPreview } from './qaap-sticky-composer-attachment-preview';
 import { resolveStickyComposerContextChip } from './qaap-sticky-composer-context-ui';
@@ -212,6 +213,15 @@ export class MobileProjectsPanelFactory {
                         ),
                     },
                     deps.composerEditorContextService.shouldOfferManualEditorContextAttach(),
+                ),
+                dropComposerFiles: (files, handlers) => attachDeviceFilesOptimistic(
+                    files,
+                    {
+                        fileUploadService: deps.fileUploadService,
+                        fileService: deps.fileService,
+                        workspaceService: deps.workspaceService,
+                    },
+                    handlers,
                 ),
                 formatContextChip: item => resolveStickyComposerContextChip(item, deps.labelProvider),
                 resolveAttachmentPreview: item => resolveStickyComposerAttachmentPreview(

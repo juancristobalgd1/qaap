@@ -288,21 +288,33 @@ export function attachDeviceFilesOptimistic(
     handlers: MobileComposerAttachHandlers,
 ): void {
     // On the mobile chat surface there is usually no open Theia workspace root, so upload into the
-    // project directory the composer is bound to. Only bail when neither is available.
+    // project directory the composer is bound to. When neither is available, images still work
+    // via inline base64 fallback; non-image files fail per-chip with a visible error.
     const root = services.workspaceService.tryGetRoots()[0]?.resource ?? handlers.uploadTargetDir;
-    if (!root) {
-        throw new Error(nls.localize(
-            'qaap/mobileProjects/stickyComposerAttachNoWorkspace',
-            'Open a workspace before attaching files from this device.',
-        ));
-    }
 
     for (const file of files) {
         const entry = createPendingFileEntry(file);
+        // Append the optimistic chip FIRST so the user sees the file land immediately,
+        // before any upload / fallback logic runs.
         handlers.appendOptimistic(entry);
 
         if (isImageAttachmentFileName(file.name)) {
-            void attachImageWithInlineFallback(file, root, services, handlers, entry.id);
+            if (root) {
+                void attachImageWithInlineFallback(file, root, services, handlers, entry.id);
+            } else {
+                // No workspace root — go straight to inline base64 (works without backend FS).
+                void createImageContextFromDeviceFile(file)
+                    .then(request => handlers.finalizeOptimistic(entry.id, request))
+                    .catch(error => handlers.removeOptimistic(entry.id, error));
+            }
+            continue;
+        }
+
+        if (!root) {
+            handlers.removeOptimistic(entry.id, new Error(nls.localize(
+                'qaap/mobileProjects/stickyComposerAttachNoWorkspace',
+                'Open a workspace before attaching files from this device.',
+            )));
             continue;
         }
 

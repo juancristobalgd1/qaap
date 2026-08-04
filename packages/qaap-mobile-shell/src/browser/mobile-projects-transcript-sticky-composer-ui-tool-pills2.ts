@@ -293,6 +293,13 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
         },
         onSendControlMounted: refresh => { ctx.host.transcriptComposerSendRefresh = refresh; },
         onAttach: anchor => { void ctx.onTranscriptComposerAttach(project, anchor); },
+        onDropFiles: files => {
+            ctx.host.stickyComposerContextUi.dropTranscriptComposerFiles(
+                project,
+                files,
+                ctx.resolveComposerUploadTargetDir(project),
+            );
+        },
         onOpenAgentSheet: isLegacyTheiaChat
             ? () => { /* Legacy Theia chat is not agent-switchable */ }
             : anchor => { ctx.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary, anchor); },

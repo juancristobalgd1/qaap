@@ -26196,6 +26196,7 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   border-bottom-left-radius: var(--qaap-codex-shell-radius) !important;
   border-bottom-right-radius: var(--qaap-codex-shell-radius) !important;
   overflow: hidden;
+  position: relative;
 }
 
 /* Extended composer — upper lip: input keeps the same 26px bottom curve as the empty pill. */
@@ -32429,5 +32430,87 @@ body.theia-dark .theia-mobile-agent-web-search,
   .theia-mobile-workbench-top-bar:not([data-qaap-work-hub-top-bar]),
   .theia-mobile-bottom-split-panel {
     display: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Composer drag-and-drop — the composer itself morphs (no external overlay)
+   ------------------------------------------------------------------------- */
+
+/* Drag-over: the input panel gets a dashed accent border, glow, and tint */
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drag-over {
+  border-color: color-mix(in srgb, var(--theia-focus-border, #007fd4) 65%, transparent) !important;
+  border-style: dashed !important;
+  border-width: 2px !important;
+  background: color-mix(in srgb, var(--theia-focus-border, #007fd4) 10%, var(--theia-editor-background)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--theia-focus-border, #007fd4) 18%, transparent),
+    0 8px 28px color-mix(in srgb, var(--theia-focus-border, #007fd4) 20%, transparent) !important;
+  transform: scale(1.015);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease, transform 140ms ease;
+  animation: qaap-composer-drop-breathe 1.8s ease-in-out infinite;
+}
+
+@keyframes qaap-composer-drop-breathe {
+
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--theia-focus-border, #007fd4) 14%, transparent),
+      0 8px 28px color-mix(in srgb, var(--theia-focus-border, #007fd4) 16%, transparent);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--theia-focus-border, #007fd4) 22%, transparent),
+      0 8px 36px color-mix(in srgb, var(--theia-focus-border, #007fd4) 28%, transparent);
+  }
+}
+
+/* Dim the textarea + controls while dragging files over */
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input,
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input-editor,
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drag-over .theia-mobile-projects-sticky-composer-controls-row,
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input-actions {
+  opacity: 0.3;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+/* Placeholder text gets the accent color during drag-over */
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input::placeholder {
+  color: color-mix(in srgb, var(--theia-focus-border, #007fd4) 90%, var(--theia-foreground));
+  font-weight: 600;
+  transition: color 140ms ease;
+}
+
+/* Loading shimmer after drop — the composer "absorbs" the file */
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drop-loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.theia-mobile-projects-sticky-composer-input-wrap.theia-mod-drop-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+  background: linear-gradient(100deg,
+      transparent 20%,
+      color-mix(in srgb, var(--theia-focus-border, #007fd4) 22%, transparent) 50%,
+      transparent 80%);
+  background-size: 200% 100%;
+  animation: qaap-composer-drop-shimmer 900ms ease-out;
+  border-radius: inherit;
+}
+
+@keyframes qaap-composer-drop-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
   }
 }

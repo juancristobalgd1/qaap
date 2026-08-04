@@ -547,6 +547,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly createChatViewWidget: MobileProjectsPanelOptions['createChatViewWidget'];
     protected readonly createDiffReviewWidget: MobileProjectsPanelOptions['createDiffReviewWidget'];
     protected readonly pickContextVariable: MobileProjectsPanelOptions['pickContextVariable'];
+    protected readonly dropComposerFiles: MobileProjectsPanelOptions['dropComposerFiles'];
     protected readonly formatContextChip: MobileProjectsPanelOptions['formatContextChip'];
     protected readonly resolveAttachmentPreview: MobileProjectsPanelOptions['resolveAttachmentPreview'];
     protected readonly getComposerVariables: MobileProjectsPanelOptions['getComposerVariables'];

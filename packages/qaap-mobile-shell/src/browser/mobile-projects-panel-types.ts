@@ -75,6 +75,14 @@ export interface MobileProjectsPanelOptions {
         anchor: HTMLElement,
         handlers: MobileComposerAttachHandlers,
     ) => Promise<AIVariableResolutionRequest[]>;
+    /**
+     * Attaches device files dragged onto the composer (drag-and-drop). Receives the optimistic
+     * attach handlers so chips appear instantly with the same lifecycle as picker-attached files.
+     */
+    dropComposerFiles?: (
+        files: File[],
+        handlers: MobileComposerAttachHandlers,
+    ) => void;
     /** Labels/icons for attached context chips (Agent chat label provider). */
     formatContextChip?: (item: AIVariableResolutionRequest) => StickyComposerContextChipView;
     /** Loads image attachment previews (inline base64 or workspace files). */

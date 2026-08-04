@@ -24,6 +24,7 @@ export function applyPanelOptions(self: any, options: MobileProjectsPanelOptions
     self.createChatViewWidget = options.createChatViewWidget;
     self.createDiffReviewWidget = options.createDiffReviewWidget;
     self.pickContextVariable = options.pickContextVariable;
+    self.dropComposerFiles = options.dropComposerFiles;
     self.formatContextChip = options.formatContextChip;
     self.resolveAttachmentPreview = options.resolveAttachmentPreview;
     self.getComposerVariables = options.getComposerVariables;

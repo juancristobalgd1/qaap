@@ -83,6 +83,8 @@ export class MobileProjectsStickyComposerColumnUi {
         onStop?: () => void;
         stopLabel?: string;
         onAttach: (anchor: HTMLElement) => void;
+        /** Drag-and-drop files onto the composer — attaches them with optimistic chips. */
+        onDropFiles?: (files: File[], uploadTargetDir?: import('@theia/core').URI) => void;
         onOpenAgentSheet: (anchor: HTMLButtonElement) => void;
         onSubmit: (draft: string) => void;
         /** Shift+Enter submit — bypasses the queue and dispatches as a parallel run. */
@@ -559,6 +561,9 @@ export class MobileProjectsStickyComposerColumnUi {
         toolbar.classList.add('qaap-codex-context-tray');
         card.append(stage);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
+        if (options.onDropFiles) {
+            this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
+        }
         // Queue popover mounts above the card — never fused into the codex lip.
         if (options.activityStack) {
             options.activityStack.classList.add('theia-mod-queue-popover');
@@ -607,6 +612,107 @@ export class MobileProjectsStickyComposerColumnUi {
                 input.focus();
             }
             expandFromTextarea();
+        });
+    }
+
+    /**
+     * Premium drag-and-drop on the composer itself. When files are dragged over the input panel,
+     * the panel morphs: dashed accent border, soft glow, background tint, and the textarea
+     * placeholder switches to "Drop files to attach". On drop, a loading shimmer plays on the
+     * panel while the files are attached as optimistic chips — the composer "absorbs" the file.
+     *
+     * Listeners are installed on `inputPanel` (not the outer card) because the textarea child
+     * has its own default drag-and-drop behavior that swallows `dragover` in real browsers —
+     * preventing the event from bubbling to the card and blocking the drop entirely.
+     */
+    protected installComposerDropZone(
+        card: HTMLElement,
+        inputPanel: HTMLElement,
+        input: HTMLTextAreaElement,
+        onDropFiles: (files: File[], uploadTargetDir?: import('@theia/core').URI) => void,
+    ): void {
+        let dragCounter = 0;
+        const originalPlaceholder = input.placeholder;
+        const dropPlaceholder = nls.localize(
+            'qaap/mobileProjects/stickyComposerDropFiles',
+            'Drop files to attach',
+        );
+
+        const hasFiles = (ev: DragEvent): boolean => {
+            const types = ev.dataTransfer?.types;
+            return !!types && Array.from(types).includes('Files');
+        };
+
+        const onDragEnter = (ev: DragEvent): void => {
+            if (!hasFiles(ev)) {
+                return;
+            }
+            ev.preventDefault();
+            ev.stopPropagation();
+            dragCounter++;
+            inputPanel.classList.add('theia-mod-drag-over');
+            input.placeholder = dropPlaceholder;
+        };
+
+        // preventDefault on dragover is mandatory — without it the browser will NOT
+        // fire the drop event and will instead navigate to the dropped file.
+        const onDragOver = (ev: DragEvent): void => {
+            if (ev.dataTransfer) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                ev.dataTransfer.dropEffect = 'copy';
+            }
+        };
+
+        const onDragLeave = (ev: DragEvent): void => {
+            ev.preventDefault();
+            dragCounter = Math.max(0, dragCounter - 1);
+            if (dragCounter === 0) {
+                inputPanel.classList.remove('theia-mod-drag-over');
+                input.placeholder = originalPlaceholder;
+            }
+        };
+
+        const onDrop = (ev: DragEvent): void => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            dragCounter = 0;
+            inputPanel.classList.remove('theia-mod-drag-over');
+            input.placeholder = originalPlaceholder;
+            const files = ev.dataTransfer?.files ? Array.from(ev.dataTransfer.files) : [];
+            if (files.length === 0) {
+                return;
+            }
+            inputPanel.classList.add('theia-mod-drop-loading');
+            onDropFiles(files);
+            window.setTimeout(() => inputPanel.classList.remove('theia-mod-drop-loading'), 900);
+        };
+
+        // Install on inputPanel — the actual visual drop target.
+        inputPanel.addEventListener('dragenter', onDragEnter);
+        inputPanel.addEventListener('dragover', onDragOver);
+        inputPanel.addEventListener('dragleave', onDragLeave);
+        inputPanel.addEventListener('drop', onDrop);
+
+        // Also install on the textarea itself: its default drag-and-drop behavior
+        // (inserting text / opening files) swallows the events in real browsers.
+        // stopPropagation ensures the textarea doesn't hijack the drop.
+        input.addEventListener('dragenter', ev => {
+            if (hasFiles(ev)) {
+                ev.preventDefault();
+                ev.stopPropagation();
+            }
+        });
+        input.addEventListener('dragover', ev => {
+            if (ev.dataTransfer) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                ev.dataTransfer.dropEffect = 'copy';
+            }
+        });
+        input.addEventListener('drop', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
         });
     }
 }

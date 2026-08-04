@@ -58,20 +58,21 @@ function showDeviceAttachFailed(error?: unknown): void {
 }
 
 export interface MobileProjectsStickyComposerContextHost {
-stickyComposerContext: StickyComposerContextEntry[];
-transcriptComposerContext: StickyComposerContextEntry[];
-stickyComposerDraft: string;
-transcriptComposerDraft: string;
-pickContextVariable?: (anchor: HTMLElement, handlers: MobileComposerAttachHandlers) => Promise<AIVariableResolutionRequest[]>;
-formatContextChip?: (item: AIVariableResolutionRequest) => StickyComposerContextChipView | undefined;
-            getComposerVariables?: () => readonly import('@theia/ai-core').AIVariable[];
-            getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
-            openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
-            transcriptOpenSummary?: QaapAgentConversationSummaryDTO;
-            transcriptComposerSummary?: QaapAgentConversationSummaryDTO;
-transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
-stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
+    stickyComposerContext: StickyComposerContextEntry[];
+    transcriptComposerContext: StickyComposerContextEntry[];
+    stickyComposerDraft: string;
+    transcriptComposerDraft: string;
+    pickContextVariable?: (anchor: HTMLElement, handlers: MobileComposerAttachHandlers) => Promise<AIVariableResolutionRequest[]>;
+    dropComposerFiles?: (files: File[], handlers: MobileComposerAttachHandlers) => void;
+    formatContextChip?: (item: AIVariableResolutionRequest) => StickyComposerContextChipView | undefined;
+    getComposerVariables?: () => readonly import('@theia/ai-core').AIVariable[];
+    getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
+    openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
+    transcriptOpenSummary?: QaapAgentConversationSummaryDTO;
+    transcriptComposerSummary?: QaapAgentConversationSummaryDTO;
+    transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
+    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
 }
 
 export class MobileProjectsStickyComposerContextUi {
@@ -174,6 +175,45 @@ export class MobileProjectsStickyComposerContextUi {
     hasPendingComposerAttachments(): boolean {
         return hasPendingComposerContextEntries(this.host.stickyComposerContext)
             || hasPendingComposerContextEntries(this.host.transcriptComposerContext);
+    }
+    /**
+     * Attaches files dragged onto the home/repos sticky composer. Creates the same optimistic
+     * handlers as the attach picker so chips appear instantly and finalize/fail identically.
+     */
+    dropStickyComposerFiles(project: MobileProjectEntry, files: readonly File[], uploadTargetDir?: URI): void {
+        console.log('[qaap-drop] dropStickyComposerFiles', {
+            hasDropFn: !!this.host.dropComposerFiles,
+            fileCount: files.length,
+            uploadTargetDir: uploadTargetDir?.toString(),
+            projectUri: project.uri?.toString(),
+        });
+        if (!this.host.dropComposerFiles || files.length === 0) {
+            console.log('[qaap-drop] dropStickyComposerFiles BAILING', { hasDropFn: !!this.host.dropComposerFiles, fileCount: files.length });
+            return;
+        }
+        try {
+            this.host.dropComposerFiles(
+                Array.from(files),
+                this.createStickyComposerAttachHandlers(uploadTargetDir ?? project.uri),
+            );
+        } catch (error) {
+            console.error('[qaap-drop] dropStickyComposerFiles ERROR', error);
+            showDeviceAttachFailed(error);
+        }
+    }
+    /** Attaches files dragged onto the transcript overlay composer. */
+    dropTranscriptComposerFiles(project: MobileProjectEntry, files: readonly File[], uploadTargetDir?: URI): void {
+        if (!this.host.dropComposerFiles || files.length === 0) {
+            return;
+        }
+        try {
+            this.host.dropComposerFiles(
+                Array.from(files),
+                this.createTranscriptComposerAttachHandlers(uploadTargetDir),
+            );
+        } catch (error) {
+            showDeviceAttachFailed(error);
+        }
     }
     notifyPendingComposerAttachments(): void {
         MobileSnackbar.show(
