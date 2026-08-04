@@ -142,23 +142,6 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     if (ctx.host.agentsHubShellActive && tab !== 'messages') {
         ctx.host.ensureAgentsHubExecutionShellRendered();
     }
-    // Re-sync inline sizing on the execution root whenever the tab changes.
-    // applyAgentsHubExecutionPanelSizing only runs during shell creation/reuse,
-    // so if the shell already existed (sidebar opened after creation), stale
-    // inline width:100% styles would override the sessions-sidebar centering CSS.
-    const executionRoot = ctx.host.agentsHubInlineExecutionRoot;
-    if (executionRoot?.isConnected) {
-        const sessionsSidebarOpen = document.body.classList.contains('theia-mobile-mod-sessions-sidebar-open');
-        if (sessionsSidebarOpen) {
-            executionRoot.style.width = '';
-            executionRoot.style.maxWidth = '';
-            executionRoot.style.alignSelf = '';
-        } else {
-            executionRoot.style.width = '100%';
-            executionRoot.style.maxWidth = '100%';
-            executionRoot.style.alignSelf = 'stretch';
-        }
-    }
     ctx.showOnlyExecutionSurfaceTab(tab);
     ctx.mountExecutionSurfaceTabContent(project, summary, tab);
     ctx.host.root.classList.toggle('theia-mod-project-surface-chat', tab === 'messages');

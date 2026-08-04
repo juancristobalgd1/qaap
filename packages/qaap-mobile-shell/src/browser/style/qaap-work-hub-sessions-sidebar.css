@@ -1170,20 +1170,16 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     padding-right: 40px !important;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-inline-execution,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agents-hub-landing,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agent-transcript-real-chat {
-    width: min(100%, 980px);
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  /* Tools surface (files/terminal/preview) must stay centered when the sessions
-     sidebar is open — otherwise the `width: 100% !important` rule in
-     mobile-workbench.css expands the execution root full-width and the content
-     shifts left behind the sidebar overlay. */
-  body.theia-mobile-mod-sessions-sidebar-open.theia-mobile-mod-desktop-ide .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution,
-  body.theia-mobile-mod-sessions-sidebar-open.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution {
+  /* When the sessions sidebar is open, constrain the execution content to a
+     centered column. The `!important` + high-specificity selector overrides
+     both inline styles (set by applyAgentsHubExecutionPanelSizing) and the
+     `width: 100% !important` tools-surface rule in mobile-workbench.css
+     (4-class specificity). This prevents the content from shifting left on
+     every tab switch — chat OR tools surface. */
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution,
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution,
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agents-hub-landing,
+  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agent-transcript-real-chat {
     width: min(100%, 980px) !important;
     max-width: min(100%, 980px) !important;
     margin-left: auto !important;
