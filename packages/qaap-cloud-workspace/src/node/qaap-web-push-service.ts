@@ -54,6 +54,8 @@ export class QaapWebPushService {
             body: request.body,
             tag: request.tag,
             route: request.route,
+            conversationId: request.conversationId,
+            cwd: request.cwd,
         });
         for (const row of targets) {
             try {

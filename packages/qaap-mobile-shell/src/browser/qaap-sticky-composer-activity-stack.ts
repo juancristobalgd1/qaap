@@ -595,6 +595,12 @@ function renderQueueItem(
 // devices or when pointer:coarse is active. The mobile shell must use pointer
 // events to support dragging queue items by the gripper handle.
 
+interface QueueDragSibling {
+    readonly el: HTMLElement;
+    /** Original vertical midpoint (viewport coords) measured when the drag started. */
+    readonly midY: number;
+}
+
 interface QueueDragSession {
     readonly handle: HTMLElement;
     readonly item: HTMLElement;
@@ -606,8 +612,14 @@ interface QueueDragSession {
     startY: number;
     /** Offset between the pointer Y and the item's top edge (for visual follow). */
     itemOffsetY: number;
-    /** Current drop target info (item + whether to insert above or below). */
-    dropTarget?: { item: HTMLElement; below: boolean };
+    /** Viewport top edge of the dragged item before any transform was applied. */
+    itemTop: number;
+    /** Outer height of the dragged item — the distance siblings shift by. */
+    itemHeight: number;
+    /** Sibling rows (DOM order) with their original midpoints. */
+    siblings: QueueDragSibling[];
+    /** Index the item would occupy in the list if dropped right now. */
+    insertionIndex: number;
 }
 
 let activeQueueDrag: QueueDragSession | undefined;
@@ -621,48 +633,32 @@ const QUEUE_DRAG_AUTOSCROLL_EDGE_PX = 40;
 /** Maximum auto-scroll speed (px per frame). */
 const QUEUE_DRAG_AUTOSCROLL_SPEED = 6;
 
-function clearAllDragOverStates(list: HTMLElement): void {
-    list.querySelectorAll('.theia-mobile-sticky-composer-queue-item')
-        .forEach(el => el.classList.remove('theia-mod-drag-over', 'theia-mod-drag-over-below', 'theia-mod-dragging'));
+/** Settle animation before the reorder commit re-renders the list. */
+const QUEUE_DRAG_SETTLE_MS = 140;
+
+function clearQueueDragTransforms(list: HTMLElement): void {
+    list.classList.remove('theia-mod-queue-reordering');
+    list.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item')
+        .forEach(el => {
+            el.classList.remove('theia-mod-dragging', 'theia-mod-drag-settling');
+            el.style.transform = '';
+        });
 }
 
-function findDropTargetAtPoint(
-    list: HTMLElement,
-    y: number,
-    excludeItem: HTMLElement,
-): { item: HTMLElement; below: boolean } | undefined {
-    const items = Array.from(
-        list.querySelectorAll<HTMLElement>(':scope > .theia-mobile-sticky-composer-queue-item'),
-    );
-    for (const candidate of items) {
-        if (candidate === excludeItem) {
-            continue;
-        }
-        const rect = candidate.getBoundingClientRect();
-        if (y >= rect.top && y <= rect.bottom) {
-            const midY = rect.top + rect.height / 2;
-            return { item: candidate, below: y >= midY };
-        }
-    }
-    // If below all items, target the last item with "below" so the dragged item goes after it.
-    if (items.length > 0) {
-        const last = items[items.length - 1];
-        if (last !== excludeItem) {
-            const rect = last.getBoundingClientRect();
-            if (y > rect.bottom) {
-                return { item: last, below: true };
-            }
-        }
-        // If above all items, target the first item with "above".
-        const first = items[0];
-        if (first !== excludeItem) {
-            const rect = first.getBoundingClientRect();
-            if (y < rect.top) {
-                return { item: first, below: false };
-            }
-        }
-    }
-    return undefined;
+/**
+ * Shift siblings out of the dragged item's way so the landing slot opens up live.
+ * A sibling moves up one slot to close the dragged item's original position, and
+ * moves down one slot when the insertion point sits before it — both cancel out
+ * for rows that should stay put.
+ */
+function shiftSiblingsForInsertion(session: QueueDragSession, insertion: number): void {
+    session.siblings.forEach((sibling, order) => {
+        const originalIndex = order < session.fromIndex ? order : order + 1;
+        const closeOldSlot = originalIndex > session.fromIndex ? -1 : 0;
+        const openNewSlot = order >= insertion ? 1 : 0;
+        const offset = (closeOldSlot + openNewSlot) * session.itemHeight;
+        sibling.el.style.transform = offset === 0 ? '' : `translateY(${offset}px)`;
+    });
 }
 
 /** Auto-scroll the list when the pointer is near its top/bottom edges during drag. */
@@ -702,6 +698,10 @@ function bindQueueItemPointerDrag(
             activePointerId: ev.pointerId,
             startY: ev.clientY,
             itemOffsetY: ev.clientY - itemRect.top,
+            itemTop: itemRect.top,
+            itemHeight: itemRect.height,
+            siblings: [],
+            insertionIndex: index,
         };
         // Capture on the handle so we keep receiving events even if the finger
         // slides off the small gripper icon. Some mobile browsers (iOS Safari)
@@ -738,20 +738,45 @@ function bindQueueItemPointerDrag(
                 return;
             }
             session.started = true;
+            // Measure once at drag start (before any transform) — the lifted item
+            // follows the finger while siblings slide around the opening slot.
+            const rect = item.getBoundingClientRect();
+            session.itemTop = rect.top;
+            session.itemHeight = rect.height;
+            session.siblings = Array.from(
+                list.querySelectorAll<HTMLElement>(':scope > .theia-mobile-sticky-composer-queue-item'),
+            )
+                .filter(el => el !== item)
+                .map(el => {
+                    const siblingRect = el.getBoundingClientRect();
+                    return { el, midY: siblingRect.top + siblingRect.height / 2 };
+                });
+            session.insertionIndex = session.fromIndex;
+            list.classList.add('theia-mod-queue-reordering');
             item.classList.add('theia-mod-dragging');
+            handle.classList.add('theia-mod-grabbing');
         }
 
         // Auto-scroll when near the edges of the scrollable list.
         autoScrollList(list, ev.clientY);
 
-        clearAllDragOverStates(list);
-        item.classList.add('theia-mod-dragging');
-        const target = findDropTargetAtPoint(list, ev.clientY, item);
-        session.dropTarget = target ?? undefined;
-        if (target) {
-            target.item.classList.add('theia-mod-drag-over');
-            target.item.classList.toggle('theia-mod-drag-over-below', target.below);
+        // The lifted item tracks the finger, clamped inside the list viewport.
+        const listRect = list.getBoundingClientRect();
+        const dy = Math.min(
+            Math.max(ev.clientY - session.startY, listRect.top - session.itemTop),
+            listRect.bottom - (session.itemTop + session.itemHeight),
+        );
+        item.style.transform = `translateY(${dy}px)`;
+
+        // Insertion index = how many sibling midpoints sit above the pointer.
+        const insertion = session.siblings.reduce(
+            (count, sibling) => count + (ev.clientY > sibling.midY ? 1 : 0),
+            0,
+        );
+        if (insertion !== session.insertionIndex) {
+            session.insertionIndex = insertion;
         }
+        shiftSiblingsForInsertion(session, insertion);
     };
 
     const onEnd = (ev: PointerEvent): void => {
@@ -768,25 +793,30 @@ function bindQueueItemPointerDrag(
         } catch {
             // Pointer capture may already be released — ignore.
         }
+        handle.classList.remove('theia-mod-grabbing');
         const list = item.parentElement;
         if (!list) {
             return;
         }
-        clearAllDragOverStates(list);
-        if (session.started && session.dropTarget) {
-            const targetIndex = parseInt(session.dropTarget.item.dataset.queueIndex ?? '', 10);
-            if (!isNaN(targetIndex)) {
-                // Adjust for above/below: "below" means insert AFTER the target.
-                let toIndex = session.dropTarget.below ? targetIndex + 1 : targetIndex;
-                // If moving from before to after, the removal shifts indices by 1.
-                if (session.fromIndex < toIndex) {
-                    toIndex--;
-                }
-                if (toIndex !== session.fromIndex && toIndex >= 0) {
-                    session.options.onQueueReorder?.(session.fromIndex, toIndex);
-                }
-            }
+        const toIndex = session.insertionIndex;
+        if (session.started && toIndex !== session.fromIndex) {
+            // Settle: glide the lifted item into its new slot, then commit the
+            // reorder — the re-render replaces the row already in place.
+            item.classList.remove('theia-mod-dragging');
+            item.classList.add('theia-mod-drag-settling');
+            item.style.transform = `translateY(${(toIndex - session.fromIndex) * session.itemHeight}px)`;
+            window.setTimeout(() => {
+                clearQueueDragTransforms(list);
+                session.options.onQueueReorder?.(session.fromIndex, toIndex);
+            }, QUEUE_DRAG_SETTLE_MS);
+            return;
         }
+        // Cancel / no-op drop: let every row glide back before dropping the
+        // reordering class that keeps the transform transition alive.
+        item.classList.remove('theia-mod-dragging');
+        list.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-queue-item')
+            .forEach(el => { el.style.transform = ''; });
+        window.setTimeout(() => clearQueueDragTransforms(list), QUEUE_DRAG_SETTLE_MS + 60);
     };
 }
 

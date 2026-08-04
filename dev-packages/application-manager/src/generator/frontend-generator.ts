@@ -553,19 +553,32 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
     event.notification.close();
-    const route = event.notification.data && event.notification.data.route;
+    const data = event.notification.data || {};
+    const route = data.route;
     event.waitUntil((async () => {
         const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
         if (clients.length > 0) {
             await clients[0].focus();
             // Tell the live app where to navigate (it may have been backgrounded, not closed).
             if (route) {
-                clients[0].postMessage({ type: 'qaap-notification-route', route });
+                clients[0].postMessage({
+                    type: 'qaap-notification-route',
+                    route: route,
+                    conversationId: data.conversationId,
+                    cwd: data.cwd,
+                });
             }
             return;
         }
-        // No window open — carry the route as a query param for the fresh page to read.
-        await self.clients.openWindow(route ? './?qaap_route=' + encodeURIComponent(route) : './');
+        // No window open — carry the route as query params for the fresh page to read.
+        if (!route) {
+            await self.clients.openWindow('./');
+            return;
+        }
+        const params = new URLSearchParams({ qaap_route: route });
+        if (data.conversationId) params.set('qaap_conversation', data.conversationId);
+        if (data.cwd) params.set('qaap_cwd', data.cwd);
+        await self.clients.openWindow('./?' + params.toString());
     })());
 });
 `;

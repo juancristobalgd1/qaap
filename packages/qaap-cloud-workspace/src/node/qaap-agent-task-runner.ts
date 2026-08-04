@@ -814,6 +814,12 @@ export class QaapAgentTaskRunner {
         return finishTaskExtracted(this, id, state, exitCode);
     }
 
+    /**
+     * Optional resolver wired by the conversation store: maps a finished task back to the
+     * conversation turn that spawned it, so completion pushes can deep-link into that session.
+     */
+    conversationIdForTask?: (taskId: string) => string | undefined;
+
     protected async notifyCompletion(task: QaapAgentTask): Promise<void> {
         return notifyCompletionExtracted(this, task);
     }

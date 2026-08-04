@@ -415,6 +415,41 @@ export async function mountSideSheetWidgetExtracted(ctx: any, side: 'left' | 'ri
     }
 }
 
+/**
+ * Push-notification deep-link: open the Work Hub on the agent session that raised the
+ * notification. Always lands on the home-mode (Work Hub) panel — the IDE-style
+ * (non-home) projects panel must never appear from a notification tap on mobile.
+ */
+export async function openConversationInWorkHubExtracted(ctx: any, conversationId: string, cwd?: string): Promise<void> {
+    try {
+        const { getConversation, conversationToSummary } = await import('../common/qaap-agent-conversation-client');
+        const dto = await getConversation(conversationId);
+        const summary = conversationToSummary(dto);
+        const normalize = (value: string | undefined): string => (value ?? '').replace(/\/+$/, '');
+        // The task cwd (worktree runs included) and the conversation cwd can differ — accept either.
+        const candidateCwds = new Set([normalize(cwd), normalize(summary.cwd)].filter(value => value !== ''));
+        const projects = await ctx.projectsService.loadProjects();
+        const project = projects.find(candidate => candidateCwds.has(normalize(ctx.projectsService.getProjectCwd(candidate))))
+            ?? projects.find(candidate => candidate.isCurrent)
+            ?? projects[0];
+        if (!project) {
+            return;
+        }
+        // Mount the Work Hub agents surface (disposes any IDE-style non-home panel).
+        await ctx.showMobileProjectsHome('tasks');
+        const panel = ctx.projectsPanel;
+        if (!panel) {
+            return;
+        }
+        await panel.openConversationSummary(project, summary);
+        ctx.refreshBottomBar();
+        ctx.refreshWorkbenchTopBar();
+    } catch (error) {
+        console.error('[qaap-mobile-shell] failed to open conversation from notification', error);
+        await ctx.openDiffInWorkHub();
+    }
+}
+
 export async function openDiffInWorkHubExtracted(ctx: any, projectId?: string): Promise<void> {
     await ensurePrReviewCss();
     if (!ctx.mobileActive) {
@@ -435,7 +470,14 @@ export async function openDiffInWorkHubExtracted(ctx: any, projectId?: string): 
         ctx.refreshBottomBar();
         return;
     }
-    await ctx.openProjectScopedDiffView(projectId);
+    // Mobile outside the landing: mount the Work Hub home panel and show the diff inside
+    // it — the legacy IDE-style (non-home) projects panel must never appear on mobile.
+    await ctx.showMobileProjectsHome('diff');
+    const panel = ctx.projectsPanel;
+    if (panel) {
+        await panel.openDiffView(projectId);
+    }
+    ctx.refreshBottomBar();
 }
 
 export async function openProjectScopedDiffViewExtracted(ctx: any, projectId?: string): Promise<void> {

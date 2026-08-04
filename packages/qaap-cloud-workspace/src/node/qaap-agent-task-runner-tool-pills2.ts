@@ -431,13 +431,17 @@ export function finishTaskExtracted(ctx: any, id: string, state: QaapAgentTaskSt
 }
 
 export async function notifyCompletionExtracted(ctx: any, task: QaapAgentTask): Promise<void> {
+        // Deep-link target: the Work Hub session that spawned this task (when known),
+        // so tapping the notification lands on the agent conversation, not a generic surface.
+        const conversationId = ctx.conversationIdForTask?.(task.id);
+        const link = { route: 'diff-review', conversationId, cwd: task.cwd, userLogin: task.ownerLogin };
         if (task.state === 'completed_with_warnings') {
             try {
                 await ctx.webPush.notify({
                     title: 'Task finished — checks failing',
                     body: `${task.title} completed, but verification checks are still failing.`,
                     tag: `qaap-agent-task-${task.id}`,
-                    route: 'diff-review',
+                    ...link,
                 });
             } catch {
                 /* push failure must not crash the runner */
@@ -450,7 +454,7 @@ export async function notifyCompletionExtracted(ctx: any, task: QaapAgentTask): 
                 title: ok ? 'Task finished' : 'Task failed',
                 body: `${task.title}${ok ? ' completed.' : ` exited with code ${task.exitCode ?? 'unknown'}.`}`,
                 tag: `qaap-agent-task-${task.id}`,
-                route: 'diff-review',
+                ...link,
             });
         } catch {
             /* push failure must not crash the runner */

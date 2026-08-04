@@ -2938,51 +2938,42 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   cursor: grabbing;
 }
 
+/* Reordering — siblings glide aside while the lifted row follows the finger. */
+.theia-mod-queue-reordering .theia-mobile-sticky-composer-queue-item {
+  transition:
+    transform 190ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 0.12s,
+    border-color 0.12s,
+    box-shadow 0.18s;
+}
+
+/* The dragged row must track the pointer 1:1 — no transform transition on it. */
+.theia-mod-queue-reordering .theia-mobile-sticky-composer-queue-item.theia-mod-dragging {
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.18s;
+}
+
+/* Lifted row: full opacity, accent ring, strong elevation so it reads as "held". */
 .theia-mobile-sticky-composer-queue-item.theia-mod-dragging {
-  opacity: 0.35;
-  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 10%, transparent);
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 25%, transparent);
-  z-index: 2;
+  opacity: 1;
+  z-index: 5;
+  cursor: grabbing;
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 55%, transparent);
+  background: color-mix(in srgb, var(--theia-editor-background, #1e1e1e) 90%, var(--theia-focusBorder, #007fd4) 10%);
+  box-shadow:
+    0 10px 26px color-mix(in srgb, #000 42%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 32%, transparent);
 }
 
-/* Drop indicator — line above the target item */
-.theia-mobile-sticky-composer-queue-item.theia-mod-drag-over {
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  transform: none;
+/* Glide into the landing slot right before the reorder commit re-renders. */
+.theia-mobile-sticky-composer-queue-item.theia-mod-drag-settling {
+  z-index: 5;
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1) !important;
 }
 
-.theia-mobile-sticky-composer-queue-item.theia-mod-drag-over::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--theia-focusBorder, #007fd4);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 40%, transparent);
-  pointer-events: none;
-  animation: qaap-queue-drop-indicator-in 0.15s ease-out;
-}
-
-/* Drop indicator below (when dragging to the bottom half of the target) */
-.theia-mobile-sticky-composer-queue-item.theia-mod-drag-over-below::before {
-  top: auto;
-  bottom: -2px;
-}
-
-@keyframes qaap-queue-drop-indicator-in {
-  from {
-    opacity: 0;
-    transform: scaleX(0.6);
-  }
-
-  to {
-    opacity: 1;
-    transform: scaleX(1);
-  }
+.theia-mobile-sticky-composer-queue-drag-handle.theia-mod-grabbing {
+  cursor: grabbing;
+  opacity: 1;
+  color: var(--theia-focusBorder, #007fd4);
 }
 
 .theia-mobile-sticky-composer-queue-marker {
@@ -3067,8 +3058,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
     border-radius var(--qaap-queue-expand-duration) var(--qaap-queue-expand-ease),
     background-color 200ms var(--qaap-queue-expand-ease),
     border-color 200ms var(--qaap-queue-expand-ease),
-    box-shadow 220ms var(--qaap-queue-expand-ease),
-    flex-basis var(--qaap-queue-expand-duration) var(--qaap-queue-expand-ease);
+    box-shadow 220ms var(--qaap-queue-expand-ease);
 }
 
 /* Expanded: the control becomes the panel surface (same as working-control.theia-mod-expanded) */
@@ -3119,7 +3109,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   max-width: none !important;
 }
 
-.theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-queue-popover {
+.theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-queue-popover:not(.theia-mod-expanded) {
   border: none !important;
   border-radius: inherit !important;
   background: transparent !important;
@@ -3130,6 +3120,16 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   max-width: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Expanded queue/working controls always hold the full composer (screen) width,
+   even when mounted directly under composer-inner — never shrink to content. */
+.theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded,
+.theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-working-control.theia-mod-expanded {
+  flex: 1 1 100% !important;
+  align-self: stretch;
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control .theia-mobile-sticky-composer-activity-section.theia-mod-queue-control-section {
@@ -3303,7 +3303,9 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
   .qaap-queue-expand-clip,
   .qaap-queue-expand-panel,
-  .theia-mobile-sticky-composer-queue-collapsed-pill {
+  .theia-mobile-sticky-composer-queue-collapsed-pill,
+  .theia-mod-queue-reordering .theia-mobile-sticky-composer-queue-item,
+  .theia-mobile-sticky-composer-queue-item.theia-mod-drag-settling {
     transition: none;
   }
 }
@@ -4310,8 +4312,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
     border-radius var(--qaap-working-expand-duration) var(--qaap-working-expand-ease),
     background-color 200ms var(--qaap-working-expand-ease),
     border-color 200ms var(--qaap-working-expand-ease),
-    box-shadow 220ms var(--qaap-working-expand-ease),
-    flex-basis var(--qaap-working-expand-duration) var(--qaap-working-expand-ease);
+    box-shadow 220ms var(--qaap-working-expand-ease);
 }
 
 .theia-mobile-sticky-composer-working-control.theia-mod-expanded {

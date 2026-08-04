@@ -226,6 +226,8 @@ export function initExtracted(ctx: any): void {
     });
     ctx.restoreReady = ctx.restoreFromDisk();
     ctx.taskRunner.onDidChangeTask(event => ctx.onTaskChanged(event));
+    // Let completion pushes deep-link into the conversation session that spawned the task.
+    ctx.taskRunner.conversationIdForTask = (taskId: string) => ctx.taskToConversation.get(taskId)?.conversationId;
     ctx.startTurnWatchdog();
 }
 
