@@ -567,6 +567,7 @@ export class MobileProjectsStickyComposerColumnUi {
         cardBeamBloom.setAttribute('aria-hidden', 'true');
         card.append(cardBeamBloom);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
+        this.installTextareaAutoGrow(input);
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
             this.installComposerPasteHandler(inputPanel, input, options.onDropFiles);
@@ -620,6 +621,37 @@ export class MobileProjectsStickyComposerColumnUi {
             }
             expandFromTextarea();
         });
+    }
+
+    /**
+     * Auto-grow fallback for browsers that don't support `field-sizing: content`
+     * (Safari, Firefox, older Chrome). The textarea grows with its content up to
+     * `max-height` (120px via CSS), then scrolls internally. In browsers that DO
+     * support `field-sizing: content` (Chrome 123+), the CSS handles auto-grow
+     * natively and this JS fallback is a no-op — the height set here is immediately
+     * overridden by the CSS `field-sizing` calculation on the next layout pass.
+     */
+    protected installTextareaAutoGrow(input: HTMLTextAreaElement): void {
+        const MIN_HEIGHT = 44;
+        const MAX_HEIGHT = 120;
+
+        const resize = (): void => {
+            // Reset to a small height so scrollHeight measures the actual content
+            // height (not the previously expanded height).
+            input.style.height = 'auto';
+            const next = Math.min(Math.max(input.scrollHeight, MIN_HEIGHT), MAX_HEIGHT);
+            input.style.height = `${next}px`;
+            input.style.overflowY = input.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+        };
+
+        input.addEventListener('input', resize);
+        // Handle programmatic value changes (prompt history, slash commands, etc.)
+        new MutationObserver(resize).observe(input, {
+            attributes: true,
+            attributeFilter: ['value'],
+        });
+        // Initial sizing for any pre-existing draft content.
+        resize();
     }
 
     /**
