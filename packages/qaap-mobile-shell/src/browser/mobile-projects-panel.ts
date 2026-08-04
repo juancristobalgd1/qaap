@@ -720,6 +720,18 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         ensureAgentsHubExecutionShellRenderedExtracted(this);
     }
 
+    /**
+     * Re-evaluate sticky composer visibility after the panel's host widget is attached to the DOM.
+     * The panel creates its execution shell in @postConstruct init(), before the widget is attached —
+     * at that point chatHost?.isConnected is false, so renderStickyComposer() hides the composer.
+     * This call corrects the visibility once the elements are live in the DOM.
+     */
+    refreshStickyComposerAfterAttach(): void {
+        if (this.visible) {
+            this.stickyComposerRenderUi.renderStickyComposer();
+        }
+    }
+
     protected currentProjectsScrollHost(): HTMLElement {
         return this.root.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? this.scroll;
     }

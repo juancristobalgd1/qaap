@@ -274,6 +274,14 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
         this.focusWorkHubChatView();
     }
 
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        // The panel creates its execution shell in @postConstruct init(), before the widget is
+        // attached to the DOM. At that point chatHost?.isConnected is false, so renderStickyComposer()
+        // hides the composer. Re-render after attach to show it now that elements are live.
+        this.workHubPanel?.refreshStickyComposerAfterAttach();
+    }
+
     protected focusWorkHubChatView(): void {
         const host = this.node.querySelector<HTMLElement>('.qaap-work-hub-chat-view-host');
         if (host) {

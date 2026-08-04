@@ -88,6 +88,7 @@ export interface MobileProjectsStickyComposerRenderHost {
     agentsHubShellActive: boolean;
     agentsHubInlineActive: boolean;
     agentsHubInlineChatHost: HTMLElement | undefined;
+    agentsHubInlineExecutionRoot: HTMLElement | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
@@ -301,7 +302,20 @@ export class MobileProjectsStickyComposerRenderUi {
             this.reposComposerMounted = false;
             const shellProject = this.host.resolveAgentsHubShellProject();
             const shellSummary = shellProject ? this.host.resolveAgentsHubShellSummary(shellProject) : undefined;
-            const chatHost = this.host.agentsHubInlineChatHost ?? this.host.transcriptChatHost;
+            let chatHost = this.host.agentsHubInlineChatHost ?? this.host.transcriptChatHost;
+            // Recovery: if agentsHubInlineChatHost is stale (detached), try to re-sync from the
+            // live DOM before giving up and hiding the composer. This happens when scroll.replaceChildren()
+            // removes the execution root without clearing agentsHubInlineChatHost (e.g. between the
+            // initial empty-projects render and the post-load re-render).
+            if (!chatHost?.isConnected && this.host.agentsHubInlineExecutionRoot?.isConnected) {
+                const liveChatHost = this.host.agentsHubInlineExecutionRoot
+                    .querySelector<HTMLElement>('.theia-mobile-agent-transcript-real-chat');
+                if (liveChatHost?.isConnected) {
+                    this.host.agentsHubInlineChatHost = liveChatHost;
+                    this.host.transcriptChatHost = liveChatHost;
+                    chatHost = liveChatHost;
+                }
+            }
             const showMessagesComposer = shellProject
                 ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(shellProject) === 'messages'
                 : false;
