@@ -71,9 +71,9 @@ import { appendTranscriptChangedFileDiffStatsExtracted, createTranscriptChangedF
  *  of which side added the marker. */
 
 export interface TranscriptActivityTimelineOptions {
-    /** Last N steps in chat; omit or ≤0 to show the full trace (Plan tab). */
+    /** Last N steps in chat; omit or ≤0 to show the full trace. */
     readonly maxVisibleItems?: number;
-    readonly variant?: 'inline' | 'plan';
+    readonly variant?: 'inline';
     readonly streaming?: boolean;
     readonly stalled?: boolean;
     readonly timedOut?: boolean;

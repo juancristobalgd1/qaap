@@ -27,7 +27,6 @@ export interface MobileProjectsProjectNavigationHost {
     projectDetailTabStrip: HTMLElement | undefined;
     projectDetailSurfaceTargets: {
         readonly chatHost: HTMLElement;
-        readonly planHost: HTMLElement;
         readonly reviewHost: HTMLElement;
         readonly previewHost: HTMLElement;
         readonly filesHost: HTMLElement;

@@ -63,7 +63,6 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptLastStreamProgressAt: number | undefined;
     transcriptLastSemanticProgressKey: string | undefined;
     transcriptChatHost: HTMLElement | undefined;
-    transcriptPlanHost: HTMLElement | undefined;
     transcriptReviewHost: HTMLElement | undefined;
     transcriptPreviewHost: HTMLElement | undefined;
     transcriptFilesHost: HTMLElement | undefined;
@@ -307,16 +306,14 @@ export class MobileProjectsAgentsHubInlineUi {
         this.applyAgentsHubExecutionPanelSizing(executionRoot);
         this.host.agentsHubInlineExecutionRoot = executionRoot;
 
-        if (!this.host.transcriptPlanHost) {
+        if (!this.host.transcriptReviewHost) {
             const surfaces = this.host.transcriptSheetUi.createTranscriptSheetSurfaceHosts();
-            this.host.transcriptPlanHost = surfaces.planHost;
             this.host.transcriptReviewHost = surfaces.reviewHost;
             this.host.transcriptPreviewHost = surfaces.previewHost;
             this.host.transcriptFilesHost = surfaces.filesHost;
             this.host.transcriptTerminalHost = surfaces.terminalHost;
         }
         executionRoot.append(
-            this.host.transcriptPlanHost!,
             this.host.transcriptReviewHost!,
             this.host.transcriptPreviewHost!,
             this.host.transcriptFilesHost!,
@@ -587,8 +584,6 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.agentsHubInlineChatHost = undefined;
         this.host.agentsHubInlineTranscriptRoot = undefined;
         this.host.transcriptChatHost = undefined;
-        this.host.transcriptPlanHost?.remove();
-        this.host.transcriptPlanHost = undefined;
         this.host.detachTranscriptReviewWidget();
         this.host.transcriptReviewHost = undefined;
         this.host.transcriptPreviewHost = undefined;
@@ -612,14 +607,12 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.headerPreviewRunHost.replaceChildren();
         this.host.transcriptSurfacesUi.hideHeaderFilesMoreButton();
         this.host.headerFilesMoreHost.replaceChildren();
-        if (this.host.transcriptPlanHost) {
-            this.host.transcriptPlanHost.remove();
-            this.host.transcriptReviewHost?.remove();
+        if (this.host.transcriptReviewHost) {
+            this.host.transcriptReviewHost.remove();
             this.host.transcriptPreviewHost?.remove();
             this.host.transcriptFilesHost?.remove();
             this.host.transcriptTerminalHost?.remove();
         }
-        this.host.transcriptPlanHost = undefined;
         this.host.transcriptReviewHost = undefined;
         this.host.transcriptPreviewHost = undefined;
         this.host.transcriptFilesHost = undefined;

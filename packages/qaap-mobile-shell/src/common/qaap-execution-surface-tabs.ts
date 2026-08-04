@@ -3,11 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-export type ExecutionSurfaceTabId = 'messages' | 'plan' | 'review' | 'preview' | 'files' | 'terminal';
+export type ExecutionSurfaceTabId = 'messages' | 'review' | 'preview' | 'files' | 'terminal';
 
 export const EXECUTION_SURFACE_TAB_IDS: readonly ExecutionSurfaceTabId[] = [
     'messages',
-    'plan',
     'review',
     'preview',
     'files',
@@ -85,7 +84,7 @@ export function rankExecutionSurfaceTabs(
         return EXECUTION_SURFACE_TAB_IDS.indexOf(left) - EXECUTION_SURFACE_TAB_IDS.indexOf(right);
     });
 
-    let secondSlot = sortedRotatable[0] ?? 'plan';
+    let secondSlot = sortedRotatable[0] ?? 'review';
     if (activeTab && activeTab !== PINNED_EXECUTION_SURFACE_TAB) {
         secondSlot = activeTab;
     }

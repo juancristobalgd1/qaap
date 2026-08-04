@@ -15,7 +15,6 @@ type TranscriptTab = ExecutionSurfaceTabId;
 
 export interface ProjectDetailSurfaceTargets {
     chatHost: HTMLElement;
-    planHost: HTMLElement;
     reviewHost: HTMLElement;
     previewHost: HTMLElement;
     filesHost: HTMLElement;
@@ -69,10 +68,6 @@ export class MobileProjectsProjectDetailUi {
         chatHost.append(this.host.projectRowsUi.createTaskBlock(project, activeInfo));
         chatHost.hidden = activeTab !== 'messages';
 
-        const planHost = document.createElement('div');
-        planHost.className = 'theia-mobile-project-detail-panel theia-mobile-transcript-plan';
-        planHost.hidden = activeTab !== 'plan';
-
         const reviewHost = document.createElement('div');
         reviewHost.className = 'theia-mobile-project-detail-panel theia-mobile-transcript-review';
         reviewHost.hidden = activeTab !== 'review';
@@ -89,12 +84,11 @@ export class MobileProjectsProjectDetailUi {
         terminalHost.className = 'theia-mobile-project-detail-panel theia-mobile-transcript-terminal-host';
         terminalHost.hidden = activeTab !== 'terminal';
 
-        body.append(chatHost, planHost, reviewHost, previewHost, filesHost, terminalHost);
+        body.append(chatHost, reviewHost, previewHost, filesHost, terminalHost);
         detail.append(body);
 
         this.host.projectDetailSurfaceTargets = {
             chatHost,
-            planHost,
             reviewHost,
             previewHost,
             filesHost,

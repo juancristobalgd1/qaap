@@ -36,7 +36,6 @@ export interface MobileProjectsTranscriptSheetHost {
     transcriptChatInputHost: HTMLElement | undefined;
     transcriptComposerSizeDispose: Disposable;
     transcriptTabStrip: HTMLElement | undefined;
-    transcriptPlanHost: HTMLElement | undefined;
     transcriptReviewHost: HTMLElement | undefined;
     transcriptPreviewHost: HTMLElement | undefined;
     transcriptFilesHost: HTMLElement | undefined;
@@ -116,15 +115,11 @@ export class MobileProjectsTranscriptSheetUi {
     ) { }
 
     createTranscriptSheetSurfaceHosts(): {
-        planHost: HTMLElement;
         reviewHost: HTMLElement;
         previewHost: HTMLElement;
         filesHost: HTMLElement;
         terminalHost: HTMLElement;
     } {
-        const planHost = document.createElement('div');
-        planHost.className = 'theia-mobile-transcript-plan';
-        planHost.hidden = true;
         const reviewHost = document.createElement('div');
         reviewHost.className = 'theia-mobile-transcript-review';
         reviewHost.hidden = true;
@@ -137,7 +132,7 @@ export class MobileProjectsTranscriptSheetUi {
         const terminalHost = document.createElement('div');
         terminalHost.className = 'theia-mobile-transcript-terminal-host';
         terminalHost.hidden = true;
-        return { planHost, reviewHost, previewHost, filesHost, terminalHost };
+        return { reviewHost, previewHost, filesHost, terminalHost };
     }
 
     async openTranscriptSheet(
@@ -187,9 +182,9 @@ export class MobileProjectsTranscriptSheetUi {
         chatInputHost.className = 'theia-mobile-agent-transcript-chat-input';
         chatInputHost.hidden = false;
 
-        const { planHost, reviewHost, previewHost, filesHost, terminalHost } = this.createTranscriptSheetSurfaceHosts();
+        const { reviewHost, previewHost, filesHost, terminalHost } = this.createTranscriptSheetSurfaceHosts();
 
-        sheet.append(header, chatHost, planHost, reviewHost, previewHost, filesHost, terminalHost, chatInputHost);
+        sheet.append(header, chatHost, reviewHost, previewHost, filesHost, terminalHost, chatInputHost);
         root.append(backdrop, sheet);
         document.body.append(root);
         this.host.transcriptSheet = root;
@@ -197,7 +192,6 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptChatInputHost = chatInputHost;
         this.observeTranscriptComposerSize(root, chatInputHost);
         this.host.transcriptTabStrip = tabStrip;
-        this.host.transcriptPlanHost = planHost;
         this.host.transcriptReviewHost = reviewHost;
         this.host.transcriptPreviewHost = previewHost;
         this.host.transcriptFilesHost = filesHost;
@@ -239,7 +233,6 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
         // Mount all tabs so they're available when switching views
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
-        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'plan');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'review');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'preview');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'files');
@@ -303,7 +296,6 @@ export class MobileProjectsTranscriptSheetUi {
         }
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
-        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'plan');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'review');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'preview');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'files');
@@ -370,7 +362,6 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptUserScrollPinDispose = Disposable.NULL;
         this.host.transcriptUi.disposeList();
         this.host.transcriptChatInputHost?.replaceChildren();
-        this.host.transcriptPlanHost?.replaceChildren();
         this.host.transcriptReviewHost?.replaceChildren();
         this.host.transcriptPreviewHost?.replaceChildren();
         this.host.transcriptFilesHost?.replaceChildren();
@@ -479,7 +470,6 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptChatInputHost = undefined;
         this.host.transcriptTabStrip = undefined;
         this.host.transcriptHeaderSubtitle = undefined;
-        this.host.transcriptPlanHost = undefined;
         this.host.detachTranscriptReviewWidget();
         this.host.transcriptReviewHost = undefined;
         this.host.transcriptPreviewHost = undefined;

@@ -31,7 +31,7 @@ import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcr
 import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
 import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, directChildWithClassExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted, syncTranscriptTabStripExtracted } from './mobile-projects-execution-surface-tabs-ui-render2';
 import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabStripExtracted, buildTranscriptTabStripExtracted, createExecutionSurfaceIconSelectExtracted, createTerminalAgentTuiSelectExtracted, executionSurfaceTabSpecsExtracted, executionTabOverflowMenuMinTopExtracted, openExecutionTabOverflowMenuExtracted, resolveExecutionTabOverflowMenuPortalExtracted, resolveTerminalAgentTuiActiveAgentIdExtracted, syncTerminalAgentTuiTriggerExtracted, syncTerminalAgentTuiTriggersInStripExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming2';
-import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted, syncPlanTabDuringStreamingExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline2';
+import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline2';
 
 type TranscriptTab = ExecutionSurfaceTabId;
 
@@ -42,7 +42,6 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     transcriptSheet: HTMLElement | undefined;
     transcriptChatHost: HTMLElement | undefined;
     transcriptChatInputHost: HTMLElement | undefined;
-    transcriptPlanHost: HTMLElement | undefined;
     transcriptReviewHost: HTMLElement | undefined;
     transcriptPreviewHost: HTMLElement | undefined;
     transcriptFilesHost: HTMLElement | undefined;
@@ -54,7 +53,6 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     projectDetailTabStrip: HTMLElement | undefined;
     projectDetailSurfaceTargets: {
         chatHost: HTMLElement;
-        planHost: HTMLElement;
         reviewHost: HTMLElement;
         previewHost: HTMLElement;
         filesHost: HTMLElement;
@@ -269,9 +267,5 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
     mountTranscriptSurfaceTab(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, tab: TranscriptTab,): void {
         mountTranscriptSurfaceTabExtracted(this, project, summary, tab);
-    }
-
-    syncPlanTabDuringStreaming(): void {
-        syncPlanTabDuringStreamingExtracted(this);
     }
 }

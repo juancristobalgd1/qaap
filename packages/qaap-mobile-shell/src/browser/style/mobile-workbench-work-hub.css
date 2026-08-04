@@ -793,12 +793,10 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution .theia-mobile-agent-transcript,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution .theia-mobile-agent-transcript.theia-mod-empty-chat,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution .theia-mobile-agent-transcript.theia-mod-empty-chat,
-.theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-plan,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-review,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-preview,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-files-host,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-terminal-host,
-.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-plan,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-review,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-preview,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-files-host,
@@ -851,7 +849,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: none !important;
 }
 
-.theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-plan,
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-review,
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-preview,
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-files-host,
@@ -862,13 +859,11 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-agents-hub-inline-transcript,
-.theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-plan,
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-review,
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-preview,
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-files-host,
 .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript>.theia-mobile-agent-transcript-real-chat,
-.theia-mobile-agent-log-sheet.theia-mod-transcript>.theia-mobile-transcript-plan,
 .theia-mobile-agent-log-sheet.theia-mod-transcript>.theia-mobile-transcript-review,
 .theia-mobile-agent-log-sheet.theia-mod-transcript>.theia-mobile-transcript-preview,
 .theia-mobile-agent-log-sheet.theia-mod-transcript>.theia-mobile-transcript-files-host,
@@ -890,71 +885,50 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 /* Exactly one execution surface visible — enforced via data-active-surface on the container. */
-.theia-mobile-agents-hub-inline-execution[data-active-surface='messages']>.theia-mobile-transcript-plan,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='messages']>.theia-mobile-transcript-review,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='messages']>.theia-mobile-transcript-preview,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='messages']>.theia-mobile-transcript-files-host,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='messages']>.theia-mobile-transcript-terminal-host,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='plan']>.theia-mobile-agents-hub-inline-transcript,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='plan']>.theia-mobile-transcript-review,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='plan']>.theia-mobile-transcript-preview,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='plan']>.theia-mobile-transcript-files-host,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='plan']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='review']>.theia-mobile-agents-hub-inline-transcript,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='review']>.theia-mobile-transcript-plan,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='review']>.theia-mobile-transcript-preview,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='review']>.theia-mobile-transcript-files-host,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='review']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='preview']>.theia-mobile-agents-hub-inline-transcript,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='preview']>.theia-mobile-transcript-plan,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='preview']>.theia-mobile-transcript-review,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='preview']>.theia-mobile-transcript-files-host,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='preview']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='files']>.theia-mobile-agents-hub-inline-transcript,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='files']>.theia-mobile-transcript-plan,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='files']>.theia-mobile-transcript-review,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='files']>.theia-mobile-transcript-preview,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='files']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='terminal']>.theia-mobile-agents-hub-inline-transcript,
-.theia-mobile-agents-hub-inline-execution[data-active-surface='terminal']>.theia-mobile-transcript-plan,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='terminal']>.theia-mobile-transcript-review,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='terminal']>.theia-mobile-transcript-preview,
 .theia-mobile-agents-hub-inline-execution[data-active-surface='terminal']>.theia-mobile-transcript-files-host {
   display: none !important;
 }
 
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='messages']>.theia-mobile-transcript-plan,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='messages']>.theia-mobile-transcript-review,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='messages']>.theia-mobile-transcript-preview,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='messages']>.theia-mobile-transcript-files-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='messages']>.theia-mobile-transcript-terminal-host,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='plan']>.theia-mobile-agent-transcript-real-chat,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='plan']>.theia-mobile-agent-transcript-chat-input,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='plan']>.theia-mobile-transcript-review,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='plan']>.theia-mobile-transcript-preview,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='plan']>.theia-mobile-transcript-files-host,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='plan']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='review']>.theia-mobile-agent-transcript-real-chat,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='review']>.theia-mobile-agent-transcript-chat-input,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='review']>.theia-mobile-transcript-plan,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='review']>.theia-mobile-transcript-preview,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='review']>.theia-mobile-transcript-files-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='review']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='preview']>.theia-mobile-agent-transcript-real-chat,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='preview']>.theia-mobile-agent-transcript-chat-input,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='preview']>.theia-mobile-transcript-plan,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='preview']>.theia-mobile-transcript-review,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='preview']>.theia-mobile-transcript-files-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='preview']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='files']>.theia-mobile-agent-transcript-real-chat,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='files']>.theia-mobile-agent-transcript-chat-input,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='files']>.theia-mobile-transcript-plan,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='files']>.theia-mobile-transcript-review,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='files']>.theia-mobile-transcript-preview,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='files']>.theia-mobile-transcript-terminal-host,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='terminal']>.theia-mobile-agent-transcript-real-chat,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='terminal']>.theia-mobile-agent-transcript-chat-input,
-.theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='terminal']>.theia-mobile-transcript-plan,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='terminal']>.theia-mobile-transcript-review,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='terminal']>.theia-mobile-transcript-preview,
 .theia-mobile-agent-log-sheet.theia-mod-transcript[data-active-surface='terminal']>.theia-mobile-transcript-files-host {
@@ -962,7 +936,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-projects-detail-surfaces-body[data-active-surface='messages']>.theia-mobile-project-detail-panel:not(.theia-mobile-project-detail-chat),
-.theia-mobile-projects-detail-surfaces-body[data-active-surface='plan']>.theia-mobile-project-detail-panel:not(.theia-mobile-transcript-plan),
 .theia-mobile-projects-detail-surfaces-body[data-active-surface='review']>.theia-mobile-project-detail-panel:not(.theia-mobile-transcript-review),
 .theia-mobile-projects-detail-surfaces-body[data-active-surface='preview']>.theia-mobile-project-detail-panel:not(.theia-mobile-transcript-preview),
 .theia-mobile-projects-detail-surfaces-body[data-active-surface='files']>.theia-mobile-project-detail-panel:not(.theia-mobile-transcript-files-host),
@@ -970,7 +943,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: none !important;
 }
 
-.theia-mobile-projects-detail-surfaces-body[data-active-surface='plan']>.theia-mobile-project-detail-chat,
 .theia-mobile-projects-detail-surfaces-body[data-active-surface='review']>.theia-mobile-project-detail-chat,
 .theia-mobile-projects-detail-surfaces-body[data-active-surface='preview']>.theia-mobile-project-detail-chat,
 .theia-mobile-projects-detail-surfaces-body[data-active-surface='files']>.theia-mobile-project-detail-chat,
@@ -9123,8 +9095,6 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 
 .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-preview,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-preview,
-.theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-plan,
-.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-plan,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-review,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-review,
 .theia-mobile-projects.theia-mod-agents-hub-shell-active.theia-mod-project-surface-tools .theia-mobile-agents-hub-inline-execution>.theia-mobile-transcript-files-host,

@@ -89,7 +89,6 @@ export const TRANSCRIPT_OVERLAY_STATE_KEYS = [
     'transcriptChatInputHost',
     'transcriptComposerSizeDispose',
     'transcriptTabStrip',
-    'transcriptPlanHost',
     'transcriptReviewHost',
     'transcriptReviewDiffHost',
     'transcriptReviewChecksHost',
@@ -196,7 +195,6 @@ export class TranscriptOverlayState {
     transcriptChatInputHost: HTMLElement | undefined;
     transcriptComposerSizeDispose: Disposable = Disposable.NULL;
     transcriptTabStrip: HTMLElement | undefined;
-    transcriptPlanHost: HTMLElement | undefined;
     transcriptReviewHost: HTMLElement | undefined;
     transcriptReviewDiffHost: HTMLElement | undefined;
     transcriptReviewChecksHost: HTMLElement | undefined;
@@ -228,7 +226,6 @@ export class TranscriptOverlayState {
     diffReviewWidget: Widget | undefined;
     projectDetailSurfaceTargets: {
         readonly chatHost: HTMLElement;
-        readonly planHost: HTMLElement;
         readonly reviewHost: HTMLElement;
         readonly previewHost: HTMLElement;
         readonly filesHost: HTMLElement;

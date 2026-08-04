@@ -88,7 +88,7 @@ import {
 import { applyTranscriptPreviewRunButtonStateExtracted, createTranscriptPreviewRunButtonExtracted, findTranscriptPreviewRunButtonExtracted, hideHeaderFilesMoreButtonExtracted, isTranscriptPreviewStoppableExtracted, isTranscriptPreviewWaitingExtracted, refreshTranscriptPreviewTabProbeExtracted, scheduleTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewExtracted, stopTranscriptPreviewTabProbeExtracted, switchTranscriptPreviewAppExtracted, syncHeaderFilesMoreButtonExtracted, syncHeaderPreviewAppSwitchButtonExtracted, syncHeaderPreviewRunButtonExtracted, updateTranscriptPreviewReadyOverlayExtracted } from './mobile-projects-transcript-surfaces-ui-activity2';
 import { adoptReadyTranscriptPreviewExtracted, requestTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-diff2';
 import { closeTranscriptTerminalTabExtracted, createTranscriptTerminalSlideExtracted, detachTranscriptFilesFromHostExtracted, detachTranscriptTerminalFromHostExtracted, ensureTranscriptTerminalChromeExtracted, ensureTranscriptTerminalTabExtracted, launchAgentTuiInTranscriptTerminalExtracted, mountFreshTranscriptTerminalSlideExtracted, persistTranscriptTerminalWorkspaceExtracted, renderTranscriptTerminalDotsExtracted, renderTranscriptTerminalSlidesExtracted, restoreTranscriptTerminalSlidesExtracted, showTranscriptTerminalErrorExtracted, syncTranscriptTerminalResizeObserverExtracted, toPersistedTerminalWorkspaceExtracted } from './mobile-projects-transcript-surfaces-ui-live-status2';
-import { bootstrapAppliesToProjectExtracted, bootstrapPreviewUrlForProjectExtracted, closeTranscriptPreviewAppPickerExtracted, ensurePreviewProjectContextExtracted, executionFilesHostExtracted, executionPreviewHostExtracted, executionSurfaceHostExtracted, executionTerminalHostExtracted, latestAgentSegmentsExtracted, matchesActivePreviewSummaryExtracted, mountProjectDetailReviewWidgetExtracted, mountProjectDetailSurfaceTabExtracted, pickTranscriptPreviewAppExtracted, previewRuntimeForExtracted, renderPlanTabExtracted, setLastSyncedPreviewUrlExtracted, setMountedPreviewUrlExtracted, setProbeReadyPreviewUrlExtracted, transcriptConversationMetaExtracted, updateTranscriptHeaderExtracted } from './mobile-projects-transcript-surfaces-ui-render2';
+import { bootstrapAppliesToProjectExtracted, bootstrapPreviewUrlForProjectExtracted, closeTranscriptPreviewAppPickerExtracted, ensurePreviewProjectContextExtracted, executionFilesHostExtracted, executionPreviewHostExtracted, executionSurfaceHostExtracted, executionTerminalHostExtracted, latestAgentSegmentsExtracted, matchesActivePreviewSummaryExtracted, mountProjectDetailReviewWidgetExtracted, mountProjectDetailSurfaceTabExtracted, pickTranscriptPreviewAppExtracted, previewRuntimeForExtracted, setLastSyncedPreviewUrlExtracted, setMountedPreviewUrlExtracted, setProbeReadyPreviewUrlExtracted, transcriptConversationMetaExtracted, updateTranscriptHeaderExtracted } from './mobile-projects-transcript-surfaces-ui-render2';
 import { claimTranscriptPreviewExecutionExtracted, clearTranscriptEmptyPreviewChromeExtracted, detachTranscriptReviewWidgetExtracted, disposePreviewForConversationExtracted, disposeTranscriptEmbeddedPreviewExtracted, disposeTranscriptTerminalSlidesForConversationExtracted, getOrCreateOffscreenPreviewHostExtracted, getTranscriptEmbeddedPreviewUrlExtracted, mountTranscriptEmbeddedPreviewExtracted, mountTranscriptReviewWidgetExtracted, resolvePreviewAnnotationScopeExtracted, resolveTranscriptPreviewIdentityExtracted, submitTranscriptReviewFeedbackExtracted, suspendTranscriptPreviewIframeExtracted, wireTranscriptPreviewAnnotationScopeExtracted } from './mobile-projects-transcript-surfaces-ui-streaming2';
 import { beginTranscriptDevPreviewRequestExtracted, createTranscriptPreviewLoadingExtracted, discoverProjectDevPreviewUrlExtracted, disposeTranscriptTerminalSlidesExtracted, prepareTranscriptTerminalsForPageUnloadExtracted, previewUrlMatchesProjectExtracted, refreshTranscriptPreviewProjectExtracted, resolveTranscriptPreviewUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-transcript-surfaces-ui-thought-brief2';
 import { adoptReconciledProjectPreviewUrlExtracted, clearMismatchedProjectPreviewUrlExtracted, discoverAndMountTranscriptPreviewIfReadyExtracted, fetchCurrentProjectClaimUrlExtracted, reconcileSupersededProjectPreviewUrlExtracted, renderPreviewTabExtracted, scheduleTranscriptPreviewIdentityWatchExtracted, shouldKeepTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewIdentityWatchExtracted, tryMountProjectScopedPreviewExtracted, tryMountVerifiedTranscriptPreviewExtracted, verifyMountedTranscriptPreviewIdentityExtracted } from './mobile-projects-transcript-surfaces-ui-timeline2';
@@ -152,7 +152,6 @@ export interface MobileProjectsTranscriptSurfacesHost {
     transcriptScheduleRefresh: (() => void) | undefined;
     projectDetailSurfaceTargets: {
         chatHost: HTMLElement;
-        planHost: HTMLElement;
         reviewHost: HTMLElement;
         previewHost: HTMLElement;
         filesHost: HTMLElement;
@@ -323,10 +322,6 @@ export class MobileProjectsTranscriptSurfacesUi {
 
     executionTerminalHost(): HTMLElement | undefined {
         return executionTerminalHostExtracted(this);
-    }
-
-    renderPlanTab(host: HTMLElement | undefined, conv: QaapAgentConversationDTO | undefined): void {
-        renderPlanTabExtracted(this, host, conv);
     }
 
     latestAgentSegments(conv: QaapAgentConversationDTO | undefined): QaapAgentMessageSegmentDTO[] | undefined {

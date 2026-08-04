@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 /** Header execution tabs (overflow select) — shared by transcript sheet and project task detail. */
-export type ExecutionSurfaceHeaderTabId = 'messages' | 'plan' | 'review' | 'preview' | 'files' | 'terminal';
+export type ExecutionSurfaceHeaderTabId = 'messages' | 'review' | 'preview' | 'files' | 'terminal';
 
 /**
  * View switcher trigger only — excludes the Terminal agent-TUI control that shares the same
