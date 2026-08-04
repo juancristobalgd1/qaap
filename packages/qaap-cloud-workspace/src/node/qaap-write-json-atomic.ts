@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
+import * as path from 'path';
 
 /**
  * Atomic JSON persistence for the multi-tenant state stores.
@@ -52,6 +53,81 @@ export async function writeJsonAtomic(filePath: string, value: unknown, options?
     } catch (error) {
         await fsp.rm(tmp, { force: true }).catch(() => undefined);
         throw error;
+    }
+}
+
+/**
+ * Best-effort sweep of orphaned temp files left by previous (now-dead) processes.
+ *
+ * `writeJsonAtomic` writes to `{filePath}.{pid}.{counter}.tmp` then `rename()`s over the
+ * destination. If the process is killed (SIGKILL, OOM, crash) between `writeFile` and `rename`,
+ * the temp file is never cleaned up — the `catch` block never runs. Over many backend restarts
+ * these orphans accumulate unboundedly (observed: 90 GB across 1600+ files in ~/.qaap).
+ *
+ * This function scans the destination's directory for temp files belonging to *other* PIDs and
+ * deletes them. Temp files from the current PID are left alone (a concurrent write may be in
+ * flight). Safe to call on startup before the first read.
+ */
+export async function sweepOrphanedTempFiles(filePath: string): Promise<void> {
+    const dir = path.dirname(filePath);
+    const base = path.basename(filePath);
+    const prefix = `${base}.`;
+    const suffix = '.tmp';
+    let entries: string[];
+    try {
+        entries = await fsp.readdir(dir);
+    } catch {
+        return; // directory doesn't exist yet — nothing to sweep
+    }
+    const myPid = `${process.pid}`;
+    await Promise.all(entries.map(async entry => {
+        if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) {
+            return;
+        }
+        // entry pattern: {base}.{pid}.{counter}.tmp
+        const middle = entry.slice(prefix.length, -suffix.length);
+        const pid = middle.split('.')[0];
+        if (pid === myPid) {
+            return; // could be an in-flight write from this process
+        }
+        try {
+            await fsp.unlink(path.join(dir, entry));
+        } catch {
+            // best-effort — race with another sweeper or a concurrent writer
+        }
+    }));
+}
+
+/**
+ * Synchronous variant of {@link sweepOrphanedTempFiles} for use in `@postConstruct` init paths
+ * that run before the first async tick.
+ */
+export function sweepOrphanedTempFilesSync(filePath: string): void {
+    const dir = path.dirname(filePath);
+    const base = path.basename(filePath);
+    const prefix = `${base}.`;
+    const suffix = '.tmp';
+    let entries: string[];
+    try {
+        entries = fs.readdirSync(dir);
+    } catch {
+        return;
+    }
+    const myPid = `${process.pid}`;
+    for (const entry of entries) {
+        if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) {
+            continue;
+        }
+        const middle = entry.slice(prefix.length, -suffix.length);
+        const pid = middle.split('.')[0];
+        if (pid === myPid) {
+            continue;
+        }
+        try {
+            fs.unlinkSync(path.join(dir, entry));
+        } catch {
+            // best-effort
+        }
     }
 }
 

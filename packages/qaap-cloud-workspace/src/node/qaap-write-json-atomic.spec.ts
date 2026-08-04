@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
+import { sweepOrphanedTempFiles, sweepOrphanedTempFilesSync, writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
 
 describe('qaap-write-json-atomic', () => {
 
@@ -72,5 +72,38 @@ describe('qaap-write-json-atomic', () => {
         await writeJsonAtomic(file, { v: 2 });
         expect(JSON.parse(fs.readFileSync(file, 'utf8'))).to.deep.equal({ v: 2 });
         expect(leftoverTemps()).to.have.length(0);
+    });
+
+    it('sweepOrphanedTempFiles deletes temp files from other PIDs but keeps current PID temps', async () => {
+        const file = path.join(dir, 'state.json');
+        // Simulate orphaned temps from dead processes (different PIDs)
+        fs.writeFileSync(`${file}.99999.1.tmp`, 'orphan-1');
+        fs.writeFileSync(`${file}.88888.2.tmp`, 'orphan-2');
+        fs.writeFileSync(`${file}.77777.999.tmp`, 'orphan-3');
+        // Simulate an in-flight temp from the current process
+        fs.writeFileSync(`${file}.${process.pid}.1.tmp`, 'in-flight');
+
+        await sweepOrphanedTempFiles(file);
+
+        const remaining = leftoverTemps();
+        expect(remaining).to.have.length(1);
+        expect(remaining[0]).to.equal(`state.json.${process.pid}.1.tmp`);
+    });
+
+    it('sweepOrphanedTempFilesSync deletes temp files from other PIDs', () => {
+        const file = path.join(dir, 'state.json');
+        fs.writeFileSync(`${file}.99999.1.tmp`, 'orphan-1');
+        fs.writeFileSync(`${file}.${process.pid}.1.tmp`, 'in-flight');
+
+        sweepOrphanedTempFilesSync(file);
+
+        const remaining = leftoverTemps();
+        expect(remaining).to.have.length(1);
+        expect(remaining[0]).to.equal(`state.json.${process.pid}.1.tmp`);
+    });
+
+    it('sweepOrphanedTempFiles is a no-op when the directory does not exist', async () => {
+        const file = path.join(dir, 'nonexistent', 'state.json');
+        await sweepOrphanedTempFiles(file); // should not throw
     });
 });

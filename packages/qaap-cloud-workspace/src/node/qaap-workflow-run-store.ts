@@ -21,7 +21,7 @@ import {
     startQaapWorkflowRun,
 } from '../common/qaap-workflow-run';
 import { appendQaapWorkflowTrace, QaapWorkflowTraceEntry } from '../common/qaap-workflow-trace';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
+import { sweepOrphanedTempFilesSync, writeJsonAtomic } from './qaap-write-json-atomic';
 
 const STORE_MODE = 0o700;
 const INDEX_MODE = 0o600;
@@ -687,6 +687,7 @@ export class QaapWorkflowRunStore {
     }
 
     protected restoreFromDisk(): void {
+        sweepOrphanedTempFilesSync(this.indexPath());
         let raw: string;
         try {
             raw = fs.readFileSync(this.indexPath(), 'utf8');
