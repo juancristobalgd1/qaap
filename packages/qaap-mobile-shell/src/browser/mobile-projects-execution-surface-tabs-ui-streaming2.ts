@@ -19,7 +19,7 @@ import {
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '../common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from './qaap-execution-surface-header-chrome';
-import { appendAgentBrandIcon, createAgentBrandIcon } from '../common/qaap-agent-branding';
+import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -136,34 +136,6 @@ export function createTerminalAgentTuiSelectExtracted(ctx: any): HTMLElement {
             const launchable = agents.filter(agent => resolveInteractiveAgentCliBin(agent.id));
             const activeAgentId = ctx.resolveTerminalAgentTuiActiveAgentId(project);
 
-            // Always offer a plain terminal as the first option.
-            const terminalItem = document.createElement('button');
-            terminalItem.type = 'button';
-            terminalItem.className = 'theia-mobile-transcript-tab-icon-select-option';
-            terminalItem.dataset.agentId = 'terminal';
-            terminalItem.setAttribute('role', 'menuitem');
-            const terminalLabel = nls.localize('qaap/mobileProjects/terminalPlain', 'Terminal');
-            terminalItem.title = terminalLabel;
-            terminalItem.setAttribute('aria-label', terminalLabel);
-            terminalItem.classList.toggle('theia-mod-active',
-                activeAgentId === 'terminal' || !activeAgentId);
-            const terminalIcon = document.createElement('span');
-            terminalIcon.className = 'theia-mobile-transcript-tab-icon-select-symbol codicon codicon-terminal';
-            terminalIcon.setAttribute('aria-hidden', 'true');
-            terminalItem.append(terminalIcon);
-            const terminalLabelSpan = document.createElement('span');
-            terminalLabelSpan.className = 'theia-mobile-transcript-tab-icon-select-option-label';
-            terminalLabelSpan.textContent = terminalLabel;
-            terminalItem.append(terminalLabelSpan);
-            terminalItem.addEventListener('click', event => {
-                event.stopPropagation();
-                ctx.host.transcriptTerminalPinnedMode = 'terminal';
-                ctx.syncTerminalAgentTuiTrigger(trigger, 'terminal');
-                ctx.closeExecutionTabOverflowMenu();
-                void ctx.host.transcriptSurfacesUi.createTranscriptTerminalSlideForProject(project);
-            });
-            menu.append(terminalItem);
-
             if (launchable.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'theia-mobile-transcript-terminal-agent-tui-status';
@@ -266,39 +238,11 @@ export function syncTerminalAgentTuiTriggerExtracted(ctx: any, trigger: HTMLButt
         : resolvedId
             ? resolveAgentDisplayLabel(resolvedId)
             : nls.localize('qaap/mobileProjects/terminalAgentTui', 'Open agent TUI');
+    // Only keep the chevron — no agent/terminal symbol icon.
     const chevron = trigger.querySelector('.theia-mobile-transcript-tab-icon-select-chevron');
     for (const child of Array.from(trigger.children)) {
         if (child !== chevron) {
             child.remove();
-        }
-    }
-    if (isPlainTerminal) {
-        const symbol = document.createElement('span');
-        symbol.className = 'theia-mobile-transcript-tab-icon-select-symbol codicon codicon-terminal';
-        symbol.setAttribute('aria-hidden', 'true');
-        if (chevron) {
-            trigger.insertBefore(symbol, chevron);
-        } else {
-            trigger.append(symbol);
-        }
-    } else {
-        const brand = createAgentBrandIcon(resolvedId, 'sm');
-        if (brand) {
-            brand.classList.add('theia-mobile-transcript-tab-icon-select-symbol');
-            if (chevron) {
-                trigger.insertBefore(brand, chevron);
-            } else {
-                trigger.append(brand);
-            }
-        } else {
-            const symbol = document.createElement('span');
-            symbol.className = 'theia-mobile-transcript-tab-icon-select-symbol codicon codicon-robot';
-            symbol.setAttribute('aria-hidden', 'true');
-            if (chevron) {
-                trigger.insertBefore(symbol, chevron);
-            } else {
-                trigger.append(symbol);
-            }
         }
     }
     if (resolvedId) {
