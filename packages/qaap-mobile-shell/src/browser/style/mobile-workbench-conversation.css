@@ -490,6 +490,39 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   cursor: not-allowed;
 }
 
+/* Terminal agent TUI selector — move to its own line below the title row, right-aligned.
+   The host is absolutely positioned relative to the execution header (the nearest positioned
+   ancestor once intermediate containers are reset to static), so it always sits at the
+   bottom-right edge of the header regardless of the tab strip's width constraints.
+   The dropdown menu is portaled with position:fixed so it is not clipped by overflow. */
+
+/* 1. Expand every header variant that can host the terminal TUI button. */
+.theia-mobile-agent-transcript-root .theia-mobile-agent-log-header.theia-mod-execution-tabs:has(.theia-mobile-transcript-terminal-agent-tui-host),
+.theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-header:has(.theia-mobile-transcript-terminal-agent-tui-host),
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header:has(.theia-mobile-transcript-terminal-agent-tui-host) {
+  height: calc(var(--theia-mobile-execution-header-block) + var(--theia-mobile-execution-header-title-row) + env(safe-area-inset-top, 0px));
+  max-height: calc(var(--theia-mobile-execution-header-block) + var(--theia-mobile-execution-header-title-row) + env(safe-area-inset-top, 0px));
+}
+
+/* 2. Reset intermediate positioned containers to static so the TUI host anchors to the header. */
+.theia-mobile-agent-transcript-root .theia-mobile-agent-log-header.theia-mod-execution-tabs .theia-mobile-transcript-tabs.theia-mod-header-inline:has(.theia-mobile-transcript-terminal-agent-tui-host),
+.theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-header .theia-mobile-transcript-tabs.theia-mod-header-inline:has(.theia-mobile-transcript-terminal-agent-tui-host),
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header .theia-mobile-transcript-tabs.theia-mod-header-inline:has(.theia-mobile-transcript-terminal-agent-tui-host),
+.theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-header .theia-mobile-projects-header-execution-cluster:has(.theia-mobile-transcript-terminal-agent-tui-host),
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header .theia-mobile-projects-header-execution-cluster:has(.theia-mobile-transcript-terminal-agent-tui-host) {
+  position: static;
+}
+
+/* 3. Position the TUI host at the bottom-right of the header. */
+.theia-mobile-agent-transcript-root .theia-mobile-agent-log-header.theia-mod-execution-tabs .theia-mobile-transcript-terminal-agent-tui-host,
+.theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-header .theia-mobile-transcript-terminal-agent-tui-host,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header .theia-mobile-transcript-terminal-agent-tui-host {
+  position: absolute;
+  bottom: var(--theia-mobile-execution-header-pad-bottom);
+  right: max(var(--theia-mobile-execution-chrome-pad-x), env(safe-area-inset-right, 0px));
+  z-index: 5;
+}
+
 .theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-tab-icon-select.theia-mod-selected,
 .theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-tab-icon-select[data-surface-active='true'],
 .theia-mobile-transcript-tabs.theia-mod-header-inline .theia-mobile-transcript-tab-icon-select[aria-expanded='true'] {

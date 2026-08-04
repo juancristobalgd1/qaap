@@ -874,31 +874,6 @@
     -webkit-tap-highlight-color: transparent;
 }
 
-/* Standalone Create PR — keep secondary to the primary Commit & Push. */
-.qaap-agent-changes-create-pr-btn {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    min-height: 28px;
-    padding: 3px 10px;
-    margin-right: 6px;
-    border: 1px solid color-mix(in srgb, var(--theia-foreground) 18%, transparent);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--theia-foreground);
-    font-family: var(--theia-ui-font-family, sans-serif);
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-
-.qaap-agent-changes-create-pr-btn:not(:disabled):active {
-    background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-}
-
 .qaap-agent-changes-commit-menu {
     flex: none;
     display: inline-flex;

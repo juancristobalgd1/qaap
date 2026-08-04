@@ -28,6 +28,7 @@ import {
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
+import { createQuotedTextRequest } from '../common/qaap-quoted-text-context';
 import { type QaapAgentTaskAgentOption } from '../common/qaap-agent-task-client';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -92,6 +93,21 @@ export class MobileProjectsStickyComposerContextUi {
         for (const request of variables) {
             this.host.stickyComposerContext.push(createComposerContextEntry(request));
         }
+        this.host.stickyComposerRenderUi.renderStickyComposer();
+    }
+
+    /**
+     * Add dragged/pasted plain text as a quoted-text context chip. The text is
+     * stored as a resolved context variable so the agent sees it as context
+     * (not as part of the prompt draft).
+     */
+    dropQuotedText(text: string): void {
+        const request = createQuotedTextRequest(text);
+        const entry = createComposerContextEntry(request);
+        // Store the full text on the entry so the agent receives the untruncated
+        // version when the context is resolved at submit time.
+        entry.displayName = nls.localizeByDefault('Quoted text');
+        this.host.stickyComposerContext.push(entry);
         this.host.stickyComposerRenderUi.renderStickyComposer();
     }
     createStickyComposerAttachHandlers(uploadTargetDir?: URI): MobileComposerAttachHandlers {

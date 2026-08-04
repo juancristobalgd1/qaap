@@ -19,6 +19,11 @@ import {
     parsePreviewFeedbackArg,
     QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
 } from '../common/qaap-preview-feedback-context';
+import {
+    isQuotedTextRequest,
+    QAAP_QUOTED_TEXT_VARIABLE_NAME,
+    truncateQuotedTextForSubtitle,
+} from '../common/qaap-quoted-text-context';
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 
@@ -134,6 +139,15 @@ export function resolveStickyComposerContextChip(
                 || nls.localize('qaap/preview/feedbackChipFallback', 'Preview feedback'),
             iconClasses: 'codicon codicon-comment',
             kind: QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
+            attachmentKind: 'context',
+        };
+    }
+    if (isQuotedTextRequest(request)) {
+        return {
+            title: nls.localizeByDefault('Quoted text'),
+            subtitle: truncateQuotedTextForSubtitle(request.arg ?? ''),
+            iconClasses: 'codicon codicon-quote',
+            kind: QAAP_QUOTED_TEXT_VARIABLE_NAME,
             attachmentKind: 'context',
         };
     }

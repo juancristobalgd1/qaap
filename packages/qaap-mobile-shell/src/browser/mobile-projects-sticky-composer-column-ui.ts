@@ -655,18 +655,18 @@ export class MobileProjectsStickyComposerColumnUi {
     }
 
     /**
-     * Premium drag-and-drop on the entire composer card. When files are dragged over any
-     * part of the card (context strip, input panel, toolbar), the card morphs: dashed
-     * accent border, soft glow, background tint, and the textarea placeholder switches to
-     * "Drop files to attach". On drop, a loading shimmer plays on the input panel while
-     * the files are attached as optimistic chips — the composer "absorbs" the file.
+     * Unified drag-and-drop on the entire composer card. Handles BOTH file drops
+     * and text drops in a single set of listeners.
      *
-     * `dragenter`/`dragover`/`dragleave` are installed on `card` so the visual drag state
-     * activates across the whole composer. The `drop` handler is installed on BOTH `card`
-     * and `inputPanel` with a shared guard — the textarea's default drag-and-drop behavior
-     * can swallow the drop event in real browsers, so the inputPanel handler is a fallback
-     * for drops over the textarea area; the card handler covers drops over the context
-     * strip, toolbar, and other non-input regions.
+     * - Files: optimistic chips + shimmer + absorption animation.
+     * - Text (no files): inserted directly into the textarea at the cursor position
+     *   (or appended to the end if the textarea isn't focused). The text is NOT
+     *   added as a context chip — it becomes part of the draft prompt.
+     *
+     * Listeners are installed on `card` AND `inputPanel` so drops work anywhere
+     * on the composer (context strip, toolbar, input area). The textarea is
+     * neutralized with preventDefault (no stopPropagation on drop) so events
+     * bubble to the unified handler.
      */
     protected installComposerDropZone(
         card: HTMLElement,
@@ -677,9 +677,13 @@ export class MobileProjectsStickyComposerColumnUi {
         let dragCounter = 0;
         let dropHandled = false;
         const originalPlaceholder = input.placeholder;
-        const dropPlaceholder = nls.localize(
+        const dropFilesPlaceholder = nls.localize(
             'qaap/mobileProjects/stickyComposerDropFiles',
             'Drop files to attach',
+        );
+        const dropTextPlaceholder = nls.localize(
+            'qaap/mobileProjects/stickyComposerDropText',
+            'Drop to add to message',
         );
 
         const hasFiles = (ev: DragEvent): boolean => {
@@ -687,31 +691,37 @@ export class MobileProjectsStickyComposerColumnUi {
             return !!types && Array.from(types).includes('Files');
         };
 
+        const hasText = (ev: DragEvent): boolean => {
+            const types = ev.dataTransfer?.types;
+            return !!types && Array.from(types).includes('text/plain');
+        };
+
+        const isRelevantDrag = (ev: DragEvent): boolean => hasFiles(ev) || hasText(ev);
+
         const onDragEnter = (ev: DragEvent): void => {
-            if (!hasFiles(ev)) {
+            if (!isRelevantDrag(ev)) {
                 return;
             }
             ev.preventDefault();
             ev.stopPropagation();
             dragCounter++;
             card.classList.add('theia-mod-drag-over');
-            input.placeholder = dropPlaceholder;
+            input.placeholder = hasFiles(ev) ? dropFilesPlaceholder : dropTextPlaceholder;
         };
 
-        // preventDefault on dragover is mandatory — without it the browser will NOT
-        // fire the drop event and will instead navigate to the dropped file.
-        // stopPropagation is also mandatory: frontend-application.ts installs a
-        // document-level dragover handler that sets dropEffect='none', which would
-        // override our dropEffect='copy' and prevent the drop from firing.
         const onDragOver = (ev: DragEvent): void => {
-            if (ev.dataTransfer) {
-                ev.preventDefault();
-                ev.stopPropagation();
-                ev.dataTransfer.dropEffect = 'copy';
+            if (!isRelevantDrag(ev) || !ev.dataTransfer) {
+                return;
             }
+            ev.preventDefault();
+            ev.stopPropagation();
+            ev.dataTransfer.dropEffect = 'copy';
         };
 
         const onDragLeave = (ev: DragEvent): void => {
+            if (!isRelevantDrag(ev)) {
+                return;
+            }
             ev.preventDefault();
             ev.stopPropagation();
             dragCounter = Math.max(0, dragCounter - 1);
@@ -722,59 +732,92 @@ export class MobileProjectsStickyComposerColumnUi {
         };
 
         const onDrop = (ev: DragEvent): void => {
+            if (!isRelevantDrag(ev)) {
+                return;
+            }
             ev.preventDefault();
             ev.stopPropagation();
             if (dropHandled) {
                 return;
             }
-            dropHandled = true;
-            dragCounter = 0;
-            card.classList.remove('theia-mod-drag-over');
-            input.placeholder = originalPlaceholder;
-            const files = ev.dataTransfer?.files ? Array.from(ev.dataTransfer.files) : [];
-            if (files.length === 0) {
-                dropHandled = false;
+
+            // Files take priority over text.
+            if (ev.dataTransfer?.files && ev.dataTransfer.files.length > 0) {
+                dropHandled = true;
+                dragCounter = 0;
+                card.classList.remove('theia-mod-drag-over');
+                input.placeholder = originalPlaceholder;
+                const files = Array.from(ev.dataTransfer.files);
+                inputPanel.classList.add('theia-mod-drop-loading');
+                onDropFiles(files);
+                this.playFileAbsorptionAnimation(card, ev.clientX, ev.clientY, files.length);
+                window.setTimeout(() => {
+                    inputPanel.classList.remove('theia-mod-drop-loading');
+                    dropHandled = false;
+                }, 950);
                 return;
             }
-            inputPanel.classList.add('theia-mod-drop-loading');
-            onDropFiles(files);
-            window.setTimeout(() => {
-                inputPanel.classList.remove('theia-mod-drop-loading');
-                dropHandled = false;
-            }, 950);
+
+            // Text drop — insert into the textarea as draft text (optimistic, instant).
+            const text = ev.dataTransfer?.getData('text/plain')?.trim();
+            if (text) {
+                dragCounter = 0;
+                card.classList.remove('theia-mod-drag-over');
+                input.placeholder = originalPlaceholder;
+                // Insert at cursor position if focused, otherwise append.
+                const start = input.selectionStart;
+                const end = input.selectionEnd;
+                const focused = document.activeElement === input;
+                if (focused && start !== null && end !== null) {
+                    input.value = input.value.slice(0, start) + text + input.value.slice(end);
+                    const newPos = start + text.length;
+                    input.setSelectionRange(newPos, newPos);
+                } else {
+                    const prefix = input.value && !input.value.endsWith(' ') ? ' ' : '';
+                    input.value = input.value + prefix + text;
+                    const newPos = input.value.length;
+                    input.setSelectionRange(newPos, newPos);
+                    input.focus();
+                }
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         };
 
-        // Card handles the visual drag-over state for the entire composer.
+        // Install on card — the entire composer is the drop target.
         card.addEventListener('dragenter', onDragEnter);
         card.addEventListener('dragover', onDragOver);
         card.addEventListener('dragleave', onDragLeave);
         card.addEventListener('drop', onDrop);
 
-        // inputPanel also handles dragover + drop — the textarea's default behavior can
-        // swallow dragover in real browsers, so we need preventDefault on the inputPanel
-        // (an ancestor of the textarea) to ensure the browser allows the drop.
+        // inputPanel also handles dragover + drop — the textarea's default behavior
+        // can swallow dragover in real browsers.
         inputPanel.addEventListener('dragover', onDragOver);
         inputPanel.addEventListener('drop', onDrop);
 
         // Neutralize the textarea's default drag-and-drop behavior (inserting text /
-        // opening files). preventDefault + stopPropagation so the textarea doesn't
-        // hijack the event; the inputPanel/card handlers process the drop.
+        // opening files). preventDefault on dragenter/dragover + stopPropagation is
+        // needed to prevent the document-level handler from overriding dropEffect.
+        // On drop, ONLY preventDefault — NO stopPropagation — so the event bubbles
+        // to inputPanel/card where the unified onDrop handler processes it.
         input.addEventListener('dragenter', ev => {
-            if (hasFiles(ev)) {
+            if (isRelevantDrag(ev)) {
                 ev.preventDefault();
                 ev.stopPropagation();
             }
         });
         input.addEventListener('dragover', ev => {
-            if (ev.dataTransfer) {
+            if (isRelevantDrag(ev) && ev.dataTransfer) {
                 ev.preventDefault();
                 ev.stopPropagation();
                 ev.dataTransfer.dropEffect = 'copy';
             }
         });
         input.addEventListener('drop', ev => {
-            ev.preventDefault();
-            ev.stopPropagation();
+            if (isRelevantDrag(ev)) {
+                ev.preventDefault();
+                // NO stopPropagation — let the event bubble to inputPanel/card
+                // where onDrop processes files and text.
+            }
         });
     }
 
@@ -817,8 +860,85 @@ export class MobileProjectsStickyComposerColumnUi {
             ev.preventDefault();
             inputPanel.classList.add('theia-mod-drop-loading');
             onDropFiles(files);
+            // Animate from the center of the textarea (paste has no cursor position).
+            const rect = input.getBoundingClientRect();
+            this.playFileAbsorptionAnimation(inputPanel, rect.left + rect.width / 2, rect.top + rect.height / 2, files.length);
             window.setTimeout(() => inputPanel.classList.remove('theia-mod-drop-loading'), 900);
         });
+    }
+
+    /**
+     * "Absorption" animation: a ghost pill flies from the drop/paste origin to
+     * the attachment carousel (or the input panel if no carousel exists yet),
+     * then the target bounces to signal the file was absorbed.
+     *
+     * The ghost is a small rounded element with a file icon and a count badge.
+     * It uses the Web Animations API (`element.animate()`) so no CSS keyframes
+     * are needed — the animation is self-contained and cleaned up automatically.
+     */
+    protected playFileAbsorptionAnimation(
+        card: HTMLElement,
+        originX: number,
+        originY: number,
+        fileCount: number,
+    ): void {
+        // Find the attachment carousel or fall back to the input panel.
+        const target = card.querySelector<HTMLElement>(
+            '.theia-mobile-projects-sticky-composer-context-images'
+        ) ?? card.querySelector<HTMLElement>(
+            '.theia-mobile-projects-sticky-composer-input-wrap'
+        );
+        if (!target) {
+            return;
+        }
+        const targetRect = target.getBoundingClientRect();
+        const destX = targetRect.left + targetRect.width / 2;
+        const destY = targetRect.top + targetRect.height / 2;
+
+        // Build the ghost element.
+        const ghost = document.createElement('div');
+        ghost.className = 'qaap-composer-absorption-ghost';
+        ghost.setAttribute('aria-hidden', 'true');
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-file-add';
+        icon.setAttribute('aria-hidden', 'true');
+        ghost.append(icon);
+        if (fileCount > 1) {
+            const badge = document.createElement('span');
+            badge.className = 'qaap-composer-absorption-ghost-badge';
+            badge.textContent = String(fileCount);
+            ghost.append(badge);
+        }
+        document.body.append(ghost);
+
+        // Position the ghost at the origin (fixed positioning, viewport coords).
+        const ghostSize = 36;
+        ghost.style.position = 'fixed';
+        ghost.style.left = `${originX - ghostSize / 2}px`;
+        ghost.style.top = `${originY - ghostSize / 2}px`;
+        ghost.style.width = `${ghostSize}px`;
+        ghost.style.height = `${ghostSize}px`;
+        ghost.style.zIndex = '9999';
+        ghost.style.pointerEvents = 'none';
+
+        const dx = destX - originX;
+        const dy = destY - originY;
+
+        // Fly the ghost to the target with a slight arc.
+        const flyAnim = ghost.animate(
+            [
+                { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+                { transform: `translate(${dx * 0.5}px, ${dy * 0.5 - 40}px) scale(0.9)`, opacity: 0.9, offset: 0.5 },
+                { transform: `translate(${dx}px, ${dy}px) scale(0.4)`, opacity: 0 },
+            ],
+            { duration: 600, easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)' },
+        );
+        flyAnim.onfinish = () => {
+            ghost.remove();
+            // Bounce the target to signal absorption.
+            target.classList.add('theia-mod-absorb-bounce');
+            window.setTimeout(() => target.classList.remove('theia-mod-absorb-bounce'), 500);
+        };
     }
 }
 
