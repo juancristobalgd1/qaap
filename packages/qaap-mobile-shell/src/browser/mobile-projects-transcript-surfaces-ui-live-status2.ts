@@ -169,6 +169,11 @@ export function ensureTranscriptTerminalChromeExtracted(ctx: any, host: HTMLElem
     });
     toolbar.append(addBtn, switcher);
 
+    // Agent TUI selector — lives in the terminal toolbar, right-aligned after the switcher.
+    const tuiSelect = ctx.host.executionSurfaceTabsUi.createTerminalAgentTuiSelect();
+    tuiSelect.classList.add('theia-mobile-transcript-terminal-agent-tui-toolbar-host');
+    toolbar.append(tuiSelect);
+
     const slider = document.createElement('div');
     slider.className = 'theia-mobile-transcript-terminal-slider';
     host.append(toolbar, slider);

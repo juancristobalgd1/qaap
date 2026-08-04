@@ -76,9 +76,6 @@ export function buildExecutionViewTabStripExtracted(ctx: any, activeTab: Transcr
         onSelect(tab);
     };
     const displayTabId = ctx.resolveExecutionSurfaceIconSelectDisplayTab(activeTab);
-    if (activeTab === 'terminal') {
-        strip.append(ctx.createTerminalAgentTuiSelect());
-    }
     strip.append(ctx.createExecutionSurfaceIconSelect(
         displayTabId,
         activeTab,
@@ -251,6 +248,13 @@ export function resolveTerminalAgentTuiActiveAgentIdExtracted(ctx: any, project?
 export function syncTerminalAgentTuiTriggersInStripExtracted(ctx: any, strip: HTMLElement): void {
     for (const trigger of Array.from(strip.querySelectorAll<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui'))) {
         ctx.syncTerminalAgentTuiTrigger(trigger);
+    }
+    // Also sync the TUI trigger that lives in the terminal toolbar (moved out of the header strip).
+    const toolbar = ctx.host.transcriptTerminalToolbar;
+    if (toolbar instanceof HTMLElement) {
+        for (const trigger of Array.from(toolbar.querySelectorAll<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui'))) {
+            ctx.syncTerminalAgentTuiTrigger(trigger);
+        }
     }
 }
 
