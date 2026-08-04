@@ -54,9 +54,10 @@ import {
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { CommandContribution } from '@theia/core/lib/common/command';
-import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
+import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
+import { QaapKeybindingRegistry } from './qaap-keybinding-registry';
 import { QaapBuildFreshnessContribution } from './qaap-build-freshness-contribution';
 import { QaapAgentCliUpdateContribution } from './qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
@@ -146,6 +147,11 @@ import { QaapNavigatorTabBarDecorator } from './qaap-navigator-tab-bar-decorator
 import { createQaapFileNavigatorWidget } from './qaap-navigator-widget-factory';
 import { QaapVsxExtensionsMobileContribution } from './qaap-vsx-extensions-mobile-contribution';
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
+    // In Work Hub mode, let native browser editing shortcuts (Cmd+V, Cmd+C,
+    // Cmd+X, etc.) pass through to the focused element instead of being
+    // intercepted by the Theia keybinding system. In the classic IDE
+    // (preferDesktopIde), the upstream KeybindingRegistry runs unchanged.
+    rebind(KeybindingRegistry).to(QaapKeybindingRegistry);
     rebind(ChatViewTreeWidget).toDynamicValue(ctx =>
         createQaapChatViewTreeWidget(ctx.container)
     );

@@ -569,6 +569,7 @@ export class MobileProjectsStickyComposerColumnUi {
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
+            this.installComposerPasteHandler(inputPanel, input, options.onDropFiles);
         }
         // Queue popover mounts above the card — never fused into the codex lip.
         if (options.activityStack) {
@@ -742,6 +743,49 @@ export class MobileProjectsStickyComposerColumnUi {
         input.addEventListener('drop', ev => {
             ev.preventDefault();
             ev.stopPropagation();
+        });
+    }
+
+    /**
+     * Paste handler for the composer textarea. When the user pastes image or file
+     * content from the clipboard (e.g. screenshot via Cmd+V, or a copied file),
+     * the files are extracted from `clipboardData.items` and forwarded to the same
+     * `onDropFiles` callback used by drag-and-drop — reusing the optimistic chip
+     * + shimmer UX. Text-only pastes fall through to the textarea's default behavior.
+     *
+     * Native keyboard shortcuts (Cmd+V / Ctrl+V) work because `QaapKeybindingRegistry`
+     * bypasses the Theia keybinding system for native editing shortcuts in Work Hub
+     * mode, so `preventDefault()` is never called on the keydown event and the
+     * browser fires the `paste` event normally.
+     */
+    protected installComposerPasteHandler(
+        inputPanel: HTMLElement,
+        input: HTMLTextAreaElement,
+        onDropFiles: (files: File[], uploadTargetDir?: import('@theia/core').URI) => void,
+    ): void {
+        input.addEventListener('paste', ev => {
+            const clipboard = ev.clipboardData;
+            if (!clipboard || clipboard.items.length === 0) {
+                return;
+            }
+            const files: File[] = [];
+            for (let i = 0; i < clipboard.items.length; i++) {
+                const item = clipboard.items[i];
+                if (item.kind === 'file') {
+                    const file = item.getAsFile();
+                    if (file) {
+                        files.push(file);
+                    }
+                }
+            }
+            if (files.length === 0) {
+                return;
+            }
+            // Prevent the textarea from inserting the file name or image as text.
+            ev.preventDefault();
+            inputPanel.classList.add('theia-mod-drop-loading');
+            onDropFiles(files);
+            window.setTimeout(() => inputPanel.classList.remove('theia-mod-drop-loading'), 900);
         });
     }
 }
