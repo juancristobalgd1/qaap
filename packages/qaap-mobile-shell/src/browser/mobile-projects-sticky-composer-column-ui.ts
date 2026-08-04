@@ -560,6 +560,12 @@ export class MobileProjectsStickyComposerColumnUi {
         }
         toolbar.classList.add('qaap-codex-context-tray');
         card.append(stage);
+        // Bloom layer for the card-level border beam. CSS shows it via :has() when the card has
+        // context and the input-panel inside it is in agent-working state.
+        const cardBeamBloom = document.createElement('div');
+        cardBeamBloom.className = 'qaap-border-beam-bloom qaap-card-beam-bloom';
+        cardBeamBloom.setAttribute('aria-hidden', 'true');
+        card.append(cardBeamBloom);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
@@ -616,14 +622,18 @@ export class MobileProjectsStickyComposerColumnUi {
     }
 
     /**
-     * Premium drag-and-drop on the composer itself. When files are dragged over the input panel,
-     * the panel morphs: dashed accent border, soft glow, background tint, and the textarea
-     * placeholder switches to "Drop files to attach". On drop, a loading shimmer plays on the
-     * panel while the files are attached as optimistic chips — the composer "absorbs" the file.
+     * Premium drag-and-drop on the entire composer card. When files are dragged over any
+     * part of the card (context strip, input panel, toolbar), the card morphs: dashed
+     * accent border, soft glow, background tint, and the textarea placeholder switches to
+     * "Drop files to attach". On drop, a loading shimmer plays on the input panel while
+     * the files are attached as optimistic chips — the composer "absorbs" the file.
      *
-     * Listeners are installed on `inputPanel` (not the outer card) because the textarea child
-     * has its own default drag-and-drop behavior that swallows `dragover` in real browsers —
-     * preventing the event from bubbling to the card and blocking the drop entirely.
+     * `dragenter`/`dragover`/`dragleave` are installed on `card` so the visual drag state
+     * activates across the whole composer. The `drop` handler is installed on BOTH `card`
+     * and `inputPanel` with a shared guard — the textarea's default drag-and-drop behavior
+     * can swallow the drop event in real browsers, so the inputPanel handler is a fallback
+     * for drops over the textarea area; the card handler covers drops over the context
+     * strip, toolbar, and other non-input regions.
      */
     protected installComposerDropZone(
         card: HTMLElement,
@@ -632,6 +642,7 @@ export class MobileProjectsStickyComposerColumnUi {
         onDropFiles: (files: File[], uploadTargetDir?: import('@theia/core').URI) => void,
     ): void {
         let dragCounter = 0;
+        let dropHandled = false;
         const originalPlaceholder = input.placeholder;
         const dropPlaceholder = nls.localize(
             'qaap/mobileProjects/stickyComposerDropFiles',
@@ -650,12 +661,15 @@ export class MobileProjectsStickyComposerColumnUi {
             ev.preventDefault();
             ev.stopPropagation();
             dragCounter++;
-            inputPanel.classList.add('theia-mod-drag-over');
+            card.classList.add('theia-mod-drag-over');
             input.placeholder = dropPlaceholder;
         };
 
         // preventDefault on dragover is mandatory — without it the browser will NOT
         // fire the drop event and will instead navigate to the dropped file.
+        // stopPropagation is also mandatory: frontend-application.ts installs a
+        // document-level dragover handler that sets dropEffect='none', which would
+        // override our dropEffect='copy' and prevent the drop from firing.
         const onDragOver = (ev: DragEvent): void => {
             if (ev.dataTransfer) {
                 ev.preventDefault();
@@ -666,9 +680,10 @@ export class MobileProjectsStickyComposerColumnUi {
 
         const onDragLeave = (ev: DragEvent): void => {
             ev.preventDefault();
+            ev.stopPropagation();
             dragCounter = Math.max(0, dragCounter - 1);
             if (dragCounter === 0) {
-                inputPanel.classList.remove('theia-mod-drag-over');
+                card.classList.remove('theia-mod-drag-over');
                 input.placeholder = originalPlaceholder;
             }
         };
@@ -676,27 +691,41 @@ export class MobileProjectsStickyComposerColumnUi {
         const onDrop = (ev: DragEvent): void => {
             ev.preventDefault();
             ev.stopPropagation();
+            if (dropHandled) {
+                return;
+            }
+            dropHandled = true;
             dragCounter = 0;
-            inputPanel.classList.remove('theia-mod-drag-over');
+            card.classList.remove('theia-mod-drag-over');
             input.placeholder = originalPlaceholder;
             const files = ev.dataTransfer?.files ? Array.from(ev.dataTransfer.files) : [];
             if (files.length === 0) {
+                dropHandled = false;
                 return;
             }
             inputPanel.classList.add('theia-mod-drop-loading');
             onDropFiles(files);
-            window.setTimeout(() => inputPanel.classList.remove('theia-mod-drop-loading'), 900);
+            window.setTimeout(() => {
+                inputPanel.classList.remove('theia-mod-drop-loading');
+                dropHandled = false;
+            }, 950);
         };
 
-        // Install on inputPanel — the actual visual drop target.
-        inputPanel.addEventListener('dragenter', onDragEnter);
+        // Card handles the visual drag-over state for the entire composer.
+        card.addEventListener('dragenter', onDragEnter);
+        card.addEventListener('dragover', onDragOver);
+        card.addEventListener('dragleave', onDragLeave);
+        card.addEventListener('drop', onDrop);
+
+        // inputPanel also handles dragover + drop — the textarea's default behavior can
+        // swallow dragover in real browsers, so we need preventDefault on the inputPanel
+        // (an ancestor of the textarea) to ensure the browser allows the drop.
         inputPanel.addEventListener('dragover', onDragOver);
-        inputPanel.addEventListener('dragleave', onDragLeave);
         inputPanel.addEventListener('drop', onDrop);
 
-        // Also install on the textarea itself: its default drag-and-drop behavior
-        // (inserting text / opening files) swallows the events in real browsers.
-        // stopPropagation ensures the textarea doesn't hijack the drop.
+        // Neutralize the textarea's default drag-and-drop behavior (inserting text /
+        // opening files). preventDefault + stopPropagation so the textarea doesn't
+        // hijack the event; the inputPanel/card handlers process the drop.
         input.addEventListener('dragenter', ev => {
             if (hasFiles(ev)) {
                 ev.preventDefault();

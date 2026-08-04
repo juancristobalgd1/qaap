@@ -405,16 +405,18 @@ function appendImageCaption(preview: HTMLElement, title: string): void {
     preview.append(caption);
 }
 
-function renderImageAttachmentRow(
-    entries: readonly ContextStripEntry[],
+/** Unified carousel: images and files share a single horizontal scrollable row. */
+function renderAttachmentCarousel(
+    imageEntries: readonly ContextStripEntry[],
+    fileEntries: readonly ContextStripEntry[],
     onRemoveItem: (index: number) => void,
     resolvePreview?: (item: AIVariableResolutionRequest) => Promise<string | undefined>,
 ): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'theia-mobile-projects-sticky-composer-context-images';
+    row.className = 'theia-mobile-projects-sticky-composer-context-images theia-mod-attachments';
     row.setAttribute('role', 'list');
 
-    for (const entry of entries) {
+    for (const entry of imageEntries) {
         const card = document.createElement('div');
         card.className = 'theia-mobile-projects-sticky-composer-context-image';
         card.setAttribute('role', 'listitem');
@@ -430,58 +432,42 @@ function renderImageAttachmentRow(
         row.append(card);
     }
 
-    installMobileHorizontalTouchScroll(row);
-    return row;
-}
-
-function renderFileAttachmentList(
-    entries: readonly ContextStripEntry[],
-    onRemoveItem: (index: number) => void,
-): HTMLElement {
-    const files = document.createElement('div');
-    files.className = 'theia-mobile-projects-sticky-composer-context-files theia-mod-attachments';
-    files.setAttribute('role', 'list');
-
-    for (const entry of entries) {
-        const fileRow = document.createElement('div');
-        fileRow.className = 'theia-mobile-projects-sticky-composer-context-file theia-mod-document';
+    for (const entry of fileEntries) {
+        const fileCard = document.createElement('div');
+        fileCard.className = 'theia-mobile-projects-sticky-composer-context-file theia-mod-document theia-mod-card';
         if (entry.view.pending) {
-            fileRow.classList.add('theia-mod-pending');
+            fileCard.classList.add('theia-mod-pending');
         }
-        fileRow.setAttribute('role', 'listitem');
+        fileCard.setAttribute('role', 'listitem');
+        fileCard.title = entry.view.subtitle
+            ? `${entry.view.title} — ${entry.view.subtitle}`
+            : entry.view.title;
+
+        const preview = document.createElement('div');
+        preview.className = 'theia-mobile-projects-sticky-composer-context-file-preview';
 
         const icon = document.createElement('span');
         icon.className = `theia-mobile-projects-sticky-composer-context-file-icon ${entry.view.iconClasses}`;
         icon.setAttribute('aria-hidden', 'true');
+        preview.append(icon);
 
-        const body = document.createElement('div');
-        body.className = 'theia-mobile-projects-sticky-composer-context-file-body';
-
-        const title = document.createElement('span');
-        title.className = 'theia-mobile-projects-sticky-composer-context-file-title';
-        title.textContent = entry.view.title;
-        body.append(title);
-
-        if (entry.view.subtitle) {
-            const subtitle = document.createElement('span');
-            subtitle.className = 'theia-mobile-projects-sticky-composer-context-file-subtitle';
-            subtitle.textContent = entry.view.subtitle;
-            body.append(subtitle);
-            fileRow.title = `${entry.view.title} — ${entry.view.subtitle}`;
-        } else {
-            fileRow.title = entry.view.title;
-        }
-
-        fileRow.append(icon, body, createContextRemoveButton(() => onRemoveItem(entry.index)));
         if (entry.view.pending) {
             const pending = document.createElement('span');
             pending.className = 'theia-mobile-projects-sticky-composer-context-file-pending codicon codicon-loading';
             pending.setAttribute('aria-hidden', 'true');
-            fileRow.append(pending);
+            preview.append(pending);
         }
-        files.append(fileRow);
+
+        const caption = document.createElement('span');
+        caption.className = 'theia-mobile-projects-sticky-composer-context-file-caption';
+        caption.textContent = entry.view.title;
+
+        fileCard.append(preview, caption, createContextRemoveButton(() => onRemoveItem(entry.index)));
+        row.append(fileCard);
     }
-    return files;
+
+    installMobileHorizontalTouchScroll(row);
+    return row;
 }
 
 function renderContextChipRow(
@@ -635,11 +621,13 @@ export function renderStickyComposerContextStrip(options: {
         body.className = 'theia-mobile-projects-sticky-composer-context-body';
         attachmentBodyHost = body;
 
-        if (imageEntries.length > 0) {
-            body.append(renderImageAttachmentRow(imageEntries, options.onRemoveItem, options.resolveAttachmentPreview));
-        }
-        if (fileEntries.length > 0) {
-            body.append(renderFileAttachmentList(fileEntries, options.onRemoveItem));
+        if (imageEntries.length > 0 || fileEntries.length > 0) {
+            body.append(renderAttachmentCarousel(
+                imageEntries,
+                fileEntries,
+                options.onRemoveItem,
+                options.resolveAttachmentPreview,
+            ));
         }
         if (otherEntries.length > 0) {
             body.append(renderContextChipRow(otherEntries, options.onRemoveItem));

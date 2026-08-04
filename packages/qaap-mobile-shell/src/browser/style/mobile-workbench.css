@@ -28567,24 +28567,33 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
   inherits: true;
 }
 
-.theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working-idle {
+.theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working-idle,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working-idle {
   position: relative;
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 42%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 12%, transparent);
 }
 
-.theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working-idle .qaap-border-beam-bloom {
+.theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working-idle .qaap-border-beam-bloom,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working-idle .qaap-card-beam-bloom {
   display: none;
 }
 
-body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working-idle {
+/* Suppress the input-panel idle ring when the card carries it (context strip present). */
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working-idle .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working-idle {
+  box-shadow: none;
+}
+
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working-idle,
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working-idle {
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 28%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 8%, transparent);
 }
 
 .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working,
 .theia-mobile-sticky-composer-commit-group.theia-mod-busy,
 .qaap-composer-improve-btn.theia-mod-busy {
   /* Defaults = tema oscuro (md.dark del paquete), strength 70% como el playground */
@@ -28634,6 +28643,7 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-panel.theia-m
 }
 
 body.qaap-theme-light .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working,
+body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working,
 body.qaap-theme-light .theia-mobile-sticky-composer-commit-group.theia-mod-busy,
 body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   --qaap-beam-stroke-opacity: 0.12;
@@ -28668,6 +28678,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 /* Capa 1 — stroke ring: blobs de color + highlight, recortado al anillo de 1px y a la ventana cónica */
 .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::after,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working::after,
 .theia-mobile-sticky-composer-commit-group.theia-mod-busy::after,
 .qaap-composer-improve-btn.theia-mod-busy::after {
   content: '';
@@ -28704,6 +28715,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 /* Capa 2 — lavado interior: mismos blobs al 45% / 0.9x, desvanecidos hacia el centro (franja de 28px) */
 .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::before,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working::before,
 .theia-mobile-sticky-composer-commit-group.theia-mod-busy::before,
 .qaap-composer-improve-btn.theia-mod-busy::before {
   content: '';
@@ -28739,6 +28751,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 /* Capa 3 — bloom: el pico del haz desenfocado, recortado al anillo */
 .theia-mobile-projects-sticky-composer-input-panel .qaap-border-beam-bloom,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context .qaap-card-beam-bloom,
 .theia-mobile-sticky-composer-commit-group .qaap-border-beam-bloom,
 .qaap-composer-improve-btn .qaap-border-beam-bloom {
   display: none;
@@ -28758,10 +28771,29 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working .qaap-border-beam-bloom,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .qaap-card-beam-bloom,
 .theia-mobile-sticky-composer-commit-group.theia-mod-busy .qaap-border-beam-bloom,
 .qaap-composer-improve-btn.theia-mod-busy .qaap-border-beam-bloom {
   display: block;
   opacity: calc(var(--qaap-border-beam-opacity) * var(--qaap-beam-bloom-opacity) * var(--qaap-beam-strength));
+}
+
+/* When the card carries the beam (context strip present), suppress the input-panel's own beam
+   layers so the cloud effect wraps the whole card without doubling. The card-level beam above
+   handles the full perimeter (context strip + input panel). */
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::before,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::after {
+  animation: none;
+}
+
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::before,
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::after {
+  content: none;
+}
+
+.theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working .qaap-border-beam-bloom {
+  display: none;
 }
 
 @keyframes qaap-border-beam-spin {
@@ -28796,6 +28828,9 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working,
   .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::before,
   .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working::after,
+  .theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working,
+  .theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working::before,
+  .theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working::after,
   .theia-mobile-sticky-composer-commit-group.theia-mod-busy,
   .theia-mobile-sticky-composer-commit-group.theia-mod-busy::before,
   .theia-mobile-sticky-composer-commit-group.theia-mod-busy::after,
@@ -28806,6 +28841,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   }
 
   .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working,
+  .theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working,
   .theia-mobile-sticky-composer-commit-group.theia-mod-busy,
   .qaap-composer-improve-btn.theia-mod-busy {
     /* Sin animación de fade-in: encender el anillo de forma estática */
@@ -28813,6 +28849,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   }
 
   .theia-mobile-projects-sticky-composer-input-panel.theia-mod-agent-working .qaap-border-beam-bloom,
+  .theia-mobile-projects-sticky-composer-card.theia-mod-has-context.theia-mod-agent-working .qaap-card-beam-bloom,
   .theia-mobile-sticky-composer-commit-group.theia-mod-busy .qaap-border-beam-bloom,
   .qaap-composer-improve-btn.theia-mod-busy .qaap-border-beam-bloom {
     display: none;
@@ -32513,4 +32550,37 @@ body.theia-dark .theia-mobile-agent-web-search,
   100% {
     background-position: -200% 0;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Card-level drag-over — the entire composer card is the drop target
+   ------------------------------------------------------------------------- */
+
+/* Drag-over on the whole card: dashed accent border, glow, and tint */
+.theia-mobile-projects-sticky-composer-card.theia-mod-drag-over {
+  border-color: color-mix(in srgb, var(--theia-focus-border, #007fd4) 65%, transparent) !important;
+  border-style: dashed !important;
+  border-width: 2px !important;
+  background: color-mix(in srgb, var(--theia-focus-border, #007fd4) 8%, var(--theia-editor-background)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--theia-focus-border, #007fd4) 18%, transparent),
+    0 8px 28px color-mix(in srgb, var(--theia-focus-border, #007fd4) 20%, transparent) !important;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+  animation: qaap-composer-drop-breathe 1.8s ease-in-out infinite;
+}
+
+/* Dim the inner input panel content while dragging files over the card */
+.theia-mobile-projects-sticky-composer-card.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input,
+.theia-mobile-projects-sticky-composer-card.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input-editor,
+.theia-mobile-projects-sticky-composer-card.theia-mod-drag-over .theia-mobile-projects-sticky-composer-controls-row,
+.theia-mobile-projects-sticky-composer-card.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input-actions {
+  opacity: 0.3;
+  transition: opacity 140ms ease;
+}
+
+/* Placeholder text gets the accent color during card-level drag-over */
+.theia-mobile-projects-sticky-composer-card.theia-mod-drag-over .theia-mobile-projects-sticky-composer-input::placeholder {
+  color: color-mix(in srgb, var(--theia-focus-border, #007fd4) 90%, var(--theia-foreground));
+  font-weight: 600;
+  transition: color 140ms ease;
 }
