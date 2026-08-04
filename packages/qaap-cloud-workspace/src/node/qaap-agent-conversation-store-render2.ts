@@ -401,7 +401,13 @@ export function enqueuePendingMessageExtracted(
  * to save tokens: one LLM call with the merged content instead of N calls with the full
  * conversation history each.
  *
- * Called from `applyTaskOutcome` after the conversation status settles to `'idle'`.
+ * Called from `applyTaskOutcome` after the conversation status settles to `'idle'`, and
+ * from `maybeDrainAtToolRoundBoundary` between tool calls (optimization A).
+ *
+ * If {@link QAAP_COALESCE_WINDOW_MS} > 0, the drain is deferred by that many milliseconds
+ * so that messages arriving in quick succession are batched together (optimization C).
+ * The timer is per-conversation and cancelable — a new drain request cancels the previous
+ * pending one and resets the window.
  */
 export function drainPendingMessagesExtracted(ctx: any, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
@@ -410,6 +416,35 @@ export function drainPendingMessagesExtracted(ctx: any, conversationId: string):
     }
     // Only drain when the conversation can accept a new turn — 'idle' or 'failed'. If another
     // peer run is still streaming, the queue waits for that run to finish too.
+    if (conv.status !== 'idle' && conv.status !== 'failed') {
+        return;
+    }
+    // Optimization C: coalesce window. Defer the drain so messages arriving in quick
+    // succession are batched together. The timer is per-conversation and cancelable.
+    if (QAAP_COALESCE_WINDOW_MS > 0) {
+        // Cancel any pending drain timer for this conversation.
+        const existingTimer = ctx.drainTimers?.get(conversationId);
+        if (existingTimer !== undefined) {
+            clearTimeout(existingTimer);
+        }
+        if (!ctx.drainTimers) {
+            ctx.drainTimers = new Map();
+        }
+        ctx.drainTimers.set(conversationId, setTimeout(() => {
+            ctx.drainTimers?.delete(conversationId);
+            drainPendingMessagesNow(ctx, conversationId);
+        }, QAAP_COALESCE_WINDOW_MS));
+        return;
+    }
+    drainPendingMessagesNow(ctx, conversationId);
+}
+
+/** Immediate drain — bypasses the coalesce window. Used after the timer fires. */
+function drainPendingMessagesNow(ctx: any, conversationId: string): void {
+    const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
+    if (!conv?.pendingUserMessages?.length) {
+        return;
+    }
     if (conv.status !== 'idle' && conv.status !== 'failed') {
         return;
     }
@@ -534,6 +569,46 @@ export function cancelQueuedMessageExtracted(ctx: any, conversationId: string, q
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
     void ctx.persist();
     return next;
+}
+
+/**
+ * Optimization A: drain queued messages at tool-round boundaries (between tool calls),
+ * not just at end of turn. Inspired by Claude Code's `drainPendingMessages()` which
+ * checks the pending queue after each tool call completes.
+ *
+ * Called from `applyAgUiTranscriptEventExtracted` when a `TOOL_CALL_END` or
+ * `TOOL_CALL_RESULT` event arrives. If the conversation has pending messages and the
+ * current run is the only active one (no peer runs), the queue is drained immediately
+ * — the agent picks up the queued messages as part of its next tool round instead of
+ * waiting for the entire turn to finish.
+ *
+ * This is safe because:
+ * - The agent process is still running (status is 'streaming'), so we don't need to
+ *   spawn a new task — we just make the pending messages visible to the next LLM call.
+ * - The coalesce window (optimization C) still applies, so rapid tool completions
+ *   don't trigger N separate drains.
+ * - If there are peer runs (parallel variants), we skip — draining mid-turn with
+ *   concurrent writers would race.
+ */
+export function maybeDrainAtToolRoundBoundaryExtracted(ctx: any, conversationId: string): void {
+    const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
+    if (!conv?.pendingUserMessages?.length) {
+        return;
+    }
+    // Only drain at tool-round boundaries when the agent is actively streaming.
+    // If the turn already settled to 'idle'/'failed', the normal end-of-turn drain
+    // will handle it.
+    if (conv.status !== 'streaming') {
+        return;
+    }
+    // Don't drain mid-turn if there are peer runs (parallel variants) — concurrent
+    // writers on the same conversation would race. The end-of-turn drain handles
+    // those when all runs finish.
+    if (ctx.hasOtherActiveTaskForConversation(conversationId)) {
+        return;
+    }
+    // Drain with coalesce window — rapid tool completions batch together.
+    ctx.drainPendingMessages(conversationId);
 }
 
 /**

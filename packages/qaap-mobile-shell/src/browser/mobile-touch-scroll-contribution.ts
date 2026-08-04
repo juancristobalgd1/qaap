@@ -84,14 +84,41 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
             }
         });
         this.observer.observe(document.body, { childList: true, subtree: true });
+        // Clear stuck :focus / :hover on touch devices: after a tap, mobile browsers
+        // keep the element in :focus and fire a synthetic :hover that persists until
+        // the next touch elsewhere. Blurring non-input elements on touchend removes
+        // both states, preventing the "stuck selected" visual.
+        document.addEventListener('touchend', this.handleTouchEnd, { passive: true });
     }
 
     protected deactivate(): void {
         this.active = false;
         this.observer?.disconnect();
         this.observer = undefined;
+        document.removeEventListener('touchend', this.handleTouchEnd);
         this.scrollPatches.dispose();
     }
+
+    protected readonly handleTouchEnd = (e: TouchEvent): void => {
+        const active = document.activeElement;
+        if (!active || active === document.body) {
+            return;
+        }
+        // Never blur inputs, textareas, or contenteditable elements — the user
+        // needs focus to keep typing.
+        const tag = active.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (active as HTMLElement).isContentEditable) {
+            return;
+        }
+        // Only blur if the touch did not land on the active element itself (or a
+        // descendant) — tapping a focused button again should not steal its focus
+        // before the click handler fires.
+        const target = e.target as Node | null;
+        if (target && active.contains(target)) {
+            return;
+        }
+        (active as HTMLElement).blur();
+    };
 
     protected patchExisting(root: ParentNode): void {
         // Only patch known scroll hosts. Do not call patchElement on every inserted node — otherwise

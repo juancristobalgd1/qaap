@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { nls } from '@theia/core/lib/common/nls';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import {
     isFailedRunSummary,
@@ -28,6 +29,8 @@ export class QaapTurnSettleNotifyContribution implements FrontendApplicationCont
 
     protected readonly notifier = new QaapTurnSettleNotifier();
     protected readonly priorStatus = new Map<string, QaapAgentConversationSummaryDTO['status']>();
+    /** Parallel-run IDs already notified as "all variants complete" — dedupe per run. */
+    protected readonly notifiedParallelRuns = new Set<string>();
     /** Wall-clock start of each conversation's current streaming phase (see recordModelTurnLatency). */
     protected readonly streamingSince = new Map<string, number>();
     /** Pending settle confirmations — a conversation's status can flicker to idle between messages. */
@@ -92,17 +95,67 @@ export class QaapTurnSettleNotifyContribution implements FrontendApplicationCont
         // turn cannot be distinguished from a normal completion at this layer — it is reported
         // as 'completed' rather than over-engineering a fetch of the full document just for this.
         const outcome = isFailedRunSummary(latest) ? 'failed' : 'completed';
+        // Optimization D: parallel-run-aware notifications. A parallel-run variant
+        // (identified by `parallelRunId`) that settles while the user is on a different
+        // conversation should notify without interrupting the foreground task. The
+        // notification body distinguishes "parallel variant completed" from a regular
+        // turn completion so the user knows it's a background result, not the task
+        // they're currently looking at.
+        const isParallelVariant = !!latest.parallelRunId;
+        const title = isParallelVariant
+            ? nls.localize('qaap/turnSettle/parallelVariantTitle', 'Parallel variant: {0}', latest.title)
+            : latest.title;
         // Route activation to the Work Hub panel via a window event: this summary-layer
         // contribution has no reference to the panel/navigation UI, so a direct callback isn't
         // available. The panel listens for `QAAP_NAVIGATE_TO_CONVERSATION_EVENT` and opens the
         // originating conversation's transcript sheet. The notifier still focuses the window
         // unconditionally on click before invoking onActivate.
         this.notifier.notifyTurnSettled(latest.id, {
-            title: latest.title,
+            title,
             outcome,
             onActivate: () => window.dispatchEvent(new CustomEvent(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, {
                 detail: { conversationId: latest.id },
             })),
+        });
+        // When a parallel variant settles, also check if ALL variants in the run have
+        // completed — if so, fire an additional "all variants done" notification.
+        if (isParallelVariant) {
+            this.maybeNotifyParallelRunComplete(latest.parallelRunId!);
+        }
+    }
+
+    /**
+     * Check if all parallel-run variants for the given run have settled (not streaming).
+     * If so, fire a single "all variants completed" notification so the user knows the
+     * entire parallel experiment is done and can compare results.
+     */
+    protected maybeNotifyParallelRunComplete(parallelRunId: string): void {
+        const variants = this.conversations.listAllSummaries()
+            .filter(s => s.parallelRunId === parallelRunId);
+        if (variants.length === 0) {
+            return;
+        }
+        // Only notify when ALL variants have settled.
+        const allSettled = variants.every(v => v.status !== 'streaming');
+        if (!allSettled) {
+            return;
+        }
+        // Dedupe per run — only notify once.
+        if (this.notifiedParallelRuns.has(parallelRunId)) {
+            return;
+        }
+        this.notifiedParallelRuns.add(parallelRunId);
+        const completed = variants.filter(v => !isFailedRunSummary(v)).length;
+        const failed = variants.length - completed;
+        const runTitle = nls.localize(
+            'qaap/turnSettle/parallelRunComplete',
+            'Parallel run complete ({0}/{1} succeeded)',
+            String(completed),
+            String(variants.length),
+        );
+        this.notifier.notifyTurnSettled(`parallel-run-${parallelRunId}`, {
+            title: runTitle,
+            outcome: failed > 0 ? 'failed' : 'completed',
         });
     }
 

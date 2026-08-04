@@ -141,6 +141,8 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         readonly resolvedPinnedId: string;
         readonly showApprovalPolicy: boolean;
         readonly isLegacyTheiaChat: boolean;
+        /** When set, bypass the queue and dispatch directly with this delivery mode. */
+        readonly forceDeliveryMode?: 'parallel' | 'interrupt';
     },): Promise<void> {
     const contextSnapshot = [...ctx.host.transcriptComposerContext];
     const selectedAgentId = resolveExplicitAgentForSubmit(draft, {
@@ -192,10 +194,37 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         ctx.host.transcriptComposerDraft = '';
     };
     if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
-        // An agent is still working — queue the message directly. The message appears as
+        // An agent is still working. By default the message is queued — it appears as
         // a draggable list item above the composer with per-item actions (send now as
         // parallel, interrupt, edit, remove, close). The composer draft is cleared so
         // the user can write the next queued message.
+        //
+        // Shift+Enter bypasses the queue: when forceDeliveryMode is set, the message
+        // is dispatched immediately as a parallel run (or interrupt) instead of being
+        // queued. This lets the user send a follow-up alongside the running task
+        // without an extra round-trip through the queue UI.
+        if (options.forceDeliveryMode) {
+            const entry: TranscriptFollowUpEntry = {
+                draft,
+                selectedAgentId,
+                modeId,
+                autoApprove,
+                approvalPolicyId: reconcileAgentApprovalPolicyId(
+                    ctx.host.transcriptComposerApprovalPolicyId,
+                    summary.cwd,
+                ),
+                variables,
+                imagePreviews,
+                deliveryMode: options.forceDeliveryMode,
+            };
+            clearComposerDraft();
+            const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
+            input?.dispatchEvent(new Event('input', { bubbles: true }));
+            ctx.host.transcriptComposerSendRefresh?.();
+            void ctx.startPeerRunOrQueue(project, summary, entry);
+            ctx.remountTranscriptStickyComposer();
+            return;
+        }
         const entry: TranscriptFollowUpEntry = {
             draft,
             selectedAgentId,

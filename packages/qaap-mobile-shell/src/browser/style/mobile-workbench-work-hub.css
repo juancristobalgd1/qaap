@@ -18,6 +18,20 @@
    preserves the original cascade. Do not reorder. */
 
 /*-----------------------------------------------------------------------------
+| Touch-device cleanup: prevent stuck :hover / :focus highlight after tap.
+| On mobile browsers (especially iOS Safari) :hover and :focus states persist
+| after a tap, leaving elements visually "selected" until the user taps
+| elsewhere. The JS side (MobileTouchScrollContribution) blurs non-input
+| elements on touchend; CSS here only removes the focus outline ring.
+|-----------------------------------------------------------------------------*/
+@media (hover: none),
+(pointer: coarse) {
+  *:focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+/*-----------------------------------------------------------------------------
 | Work Hub landing — full-screen, decoupled from bottom nav until the user opts in.
 |-----------------------------------------------------------------------------*/
 

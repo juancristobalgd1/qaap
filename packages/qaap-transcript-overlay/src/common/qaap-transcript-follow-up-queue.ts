@@ -21,6 +21,8 @@ export interface TranscriptFollowUpEntry {
     readonly variables?: readonly AIVariableResolutionRequest[];
     /** Optimistic transcript previews paired with {@link variables}. */
     readonly imagePreviews?: readonly TranscriptFollowUpImagePreview[];
+    /** Delivery mode for this entry — set when bypassing the queue (e.g. Shift+Enter). */
+    readonly deliveryMode?: 'queue' | 'parallel' | 'interrupt';
 }
 
 export const MAX_TRANSCRIPT_FOLLOW_UP_QUEUE = 5;

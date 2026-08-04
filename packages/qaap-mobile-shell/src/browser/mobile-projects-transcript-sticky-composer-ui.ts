@@ -643,7 +643,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return mountTranscriptStickyComposerAsyncExtracted(this, host, project, summary, chatHost);
     }
 
-    protected async submitTranscriptComposerDraft(draft: string, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement, options: { readonly resolvedPinnedId: string; readonly showApprovalPolicy: boolean; readonly isLegacyTheiaChat: boolean; },): Promise<void> {
+    protected async submitTranscriptComposerDraft(draft: string, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement, options: { readonly resolvedPinnedId: string; readonly showApprovalPolicy: boolean; readonly isLegacyTheiaChat: boolean; readonly forceDeliveryMode?: 'parallel' | 'interrupt'; },): Promise<void> {
         return submitTranscriptComposerDraftExtracted(this, draft, project, summary, chatHost, options);
     }
 

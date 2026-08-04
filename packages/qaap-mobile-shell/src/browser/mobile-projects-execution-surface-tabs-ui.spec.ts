@@ -284,7 +284,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(tuiHost).to.exist;
         expect(viewSelect).to.exist;
         expect(children[0]).to.equal(tuiHost);
-        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui .theia-qaap-agent-brand-icon')).to.exist;
+        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui .codicon-terminal')).to.exist;
         expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.classList.contains('theia-mod-selected')).to.equal(false);
         expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.getAttribute('data-tab')).to.equal(null);
     });
@@ -299,7 +299,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(tui?.classList.contains('theia-mod-selected')).to.equal(false);
         expect(view?.dataset.tab).to.equal('terminal');
         expect(view?.classList.contains('theia-mod-selected')).to.equal(true);
-        expect(tui?.dataset.agentId).to.equal('qaiq');
+        expect(tui?.dataset.agentId).to.equal('terminal');
     });
 
     it('lists CLI agents in the TUI menu via Agents Hub shell project', async () => {

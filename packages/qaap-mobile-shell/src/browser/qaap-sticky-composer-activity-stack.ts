@@ -190,17 +190,16 @@ export function patchStickyComposerActivityStack(
     if (items.length !== entries.length) {
         return false;
     }
-    // Reorders bypass this patch (the reorder handler clears the fingerprint to force a full
-    // re-render via replaceWith), so when the item count matches we can safely update each
-    // item's text in-place — including content edits — without leaving DOM elements in the
-    // old physical order.
+    // If any item's text doesn't match the entry at that position, the order or
+    // content has changed. Return false to force a full re-render (replaceWith)
+    // instead of patching text in-place — which would leave DOM elements in the
+    // old physical order on reorder, or break per-item event bindings on edit.
+    // This makes the patch self-contained: it doesn't rely on callers clearing
+    // the fingerprint after a reorder.
     for (let index = 0; index < entries.length; index++) {
         const textEl = items[index]?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-text');
-        if (!textEl) {
+        if (!textEl || textEl.textContent !== entries[index].draft) {
             return false;
-        }
-        if (textEl.textContent !== entries[index].draft) {
-            textEl.textContent = entries[index].draft;
         }
     }
     const sendLabel = stickyComposerQueueSendNowLabel(options);

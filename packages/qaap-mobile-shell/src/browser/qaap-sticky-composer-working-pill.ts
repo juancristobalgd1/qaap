@@ -11,6 +11,7 @@ import {
     reclaimParkedWorkingControlIntoRow,
 } from './qaap-sticky-composer-working-agents-popover';
 import { transferStepPillToHost } from './qaap-sticky-composer-step-pill';
+import { ensureQueueControlInPillRow } from './qaap-sticky-composer-queue-position';
 import {
     createThinkingOrbIndicator,
     destroyThinkingOrbIndicator,
@@ -86,7 +87,7 @@ export function syncStickyComposerWorkingPill(
         const row = changesHost.querySelector(':scope .theia-mobile-sticky-composer-changes-pill-row');
         if (row instanceof HTMLElement) {
             upsertWorkingPillInRow(row, options);
-            moveQueueStackIntoRow(wrap, row);
+            ensureQueueControlInPillRow(wrap);
             if (workingOnlyHost instanceof HTMLElement) {
                 // Move Step plan pill before dropping the pills-only strip.
                 transferStepPillToHost(workingOnlyHost, changesHost);
@@ -109,23 +110,7 @@ export function syncStickyComposerWorkingPill(
     const row = host.querySelector('.theia-mobile-sticky-composer-changes-pill-row');
     if (row instanceof HTMLElement) {
         upsertWorkingPillInRow(row, options);
-        moveQueueStackIntoRow(wrap, row);
-    }
-}
-
-/**
- * Move the queue-control stack into the same pill-row so the "N Queued" pill
- * sits on the SAME horizontal line as the Working pill (not stacked above it).
- */
-function moveQueueStackIntoRow(wrap: HTMLElement, row: HTMLElement): void {
-    const stack = wrap.querySelector<HTMLElement>(
-        '.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control',
-    );
-    if (!stack) {
-        return;
-    }
-    if (stack.parentElement !== row || row.firstElementChild !== stack) {
-        row.insertBefore(stack, row.firstChild);
+        ensureQueueControlInPillRow(wrap);
     }
 }
 

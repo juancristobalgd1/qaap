@@ -45,9 +45,9 @@ import {
 } from './mobile-projects-sticky-composer-send-icon';
 
 export interface MobileProjectsStickyComposerColumnHost {
-stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
-stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
-resolveAttachmentPreview?: (item: AIVariableResolutionRequest) => Promise<string | undefined>;
+    stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
+    stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
+    resolveAttachmentPreview?: (item: AIVariableResolutionRequest) => Promise<string | undefined>;
 }
 
 export class MobileProjectsStickyComposerColumnUi {
@@ -85,6 +85,8 @@ export class MobileProjectsStickyComposerColumnUi {
         onAttach: (anchor: HTMLElement) => void;
         onOpenAgentSheet: (anchor: HTMLButtonElement) => void;
         onSubmit: (draft: string) => void;
+        /** Shift+Enter submit — bypasses the queue and dispatches as a parallel run. */
+        onSubmitParallel?: (draft: string) => void;
         onSubmitBlocked?: () => void;
         afterInputChange?: () => void;
         sendLabel?: string;
@@ -441,6 +443,40 @@ export class MobileProjectsStickyComposerColumnUi {
                 afterInputChange: options.afterInputChange,
             })) {
                 updateSend();
+                return;
+            }
+            // Shift+Enter: bypass the queue and dispatch as a parallel run.
+            if (ev.key === 'Enter' && ev.shiftKey && !ev.defaultPrevented && options.onSubmitParallel) {
+                ev.preventDefault();
+                const draft = input.value.trim();
+                if (!draft || !options.canSubmit) {
+                    if (!submitInFlight) {
+                        options.onSubmitBlocked?.();
+                    }
+                    return;
+                }
+                if (submitInFlight || (draft === lastSubmitDraft && Date.now() - lastSubmitAt < submitCooldownMs)) {
+                    return;
+                }
+                submitInFlight = true;
+                lastSubmitAt = Date.now();
+                lastSubmitDraft = draft;
+                playStickyComposerSendFly(sendBtn);
+                recordStickyComposerPromptSubmission(input, draft);
+                if (syntaxHighlight) {
+                    syntaxHighlight.syncInputValue('');
+                } else {
+                    input.value = '';
+                }
+                options.setDraft('');
+                updateSend();
+                try {
+                    options.onSubmitParallel(draft);
+                } finally {
+                    window.setTimeout(() => {
+                        submitInFlight = false;
+                    }, submitCooldownMs);
+                }
                 return;
             }
             if (ev.key === 'Enter' && !ev.shiftKey && !ev.defaultPrevented) {

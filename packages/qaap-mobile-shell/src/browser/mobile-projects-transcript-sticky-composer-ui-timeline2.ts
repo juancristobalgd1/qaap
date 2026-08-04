@@ -107,6 +107,10 @@ import {
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
+import {
+    ensureQueueControlInPillRow,
+    ensureQueueControlPositionObserver,
+} from './qaap-sticky-composer-queue-position';
 import { syncTranscriptQueuedBubbles } from './qaap-transcript-queued-bubbles';
 import {
     mergeFailedComposerDraft,
@@ -388,8 +392,11 @@ export function refreshComposerActivityStackExtracted(ctx: any): void {
         }
         ctx.lastComposerActivityStackFingerprint = stackFingerprint;
     }
-    // Normalize: ensure the queue control is inside the first changes-pill-row as first child.
-    moveQueueControlIntoPillRow(wrap);
+    // Single normalization point: ensure the queue control is inside the best
+    // available changes-pill-row as first child. The MutationObserver installed
+    // below catches pill hosts created asynchronously by other contributions,
+    // so we don't need a rAF pass or duplicate calls here.
+    ensureQueueControlInPillRow(wrap);
     const orderedPillHosts = Array.from(
         wrap.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-changes-pill-host'),
     );
@@ -402,81 +409,13 @@ export function refreshComposerActivityStackExtracted(ctx: any): void {
     ctx.syncComposerActivityFingerprint(summary, project, activityOptions);
     ctx.syncTranscriptQueuedFollowUpBubbles(summary);
     ctx.host.updateWorkingPillChrome();
-    // Re-normalize the queue control AFTER updateWorkingPillChrome may have
-    // created a working-only pill host with a row. The queue pill must live
-    // inside that row (left of the Working pill), not as a loose sibling.
-    moveQueueControlIntoPillRow(wrap);
-    // Final pass via rAF: some pill hosts are created asynchronously by other
-    // contributions. This guarantees the queue pill ends up inside the row.
-    window.requestAnimationFrame(() => moveQueueControlIntoPillRow(wrap));
+    // updateWorkingPillChrome may have created a working-only pill host with a
+    // row — re-normalize once more so the queue pill lands inside it.
+    ensureQueueControlInPillRow(wrap);
+    // Install the MutationObserver once per wrap to catch async pill-host
+    // creation by other contributions (Working pill, Step pill, …).
     ensureQueueControlPositionObserver(wrap);
     ctx.host.composerHeaderUi.updateStickyComposerFabLift();
-}
-
-/** WeakMap of MutationObservers watching for pill-host creation per wrap. */
-const queueControlObservers = new WeakMap<HTMLElement, MutationObserver>();
-
-/**
- * Install a MutationObserver that re-normalizes the queue control position
- * whenever the DOM changes inside the wrap. This catches pill hosts created
- * asynchronously by other contributions (Working pill, Step pill, …) that
- * would otherwise leave the queue stack as a loose sibling above the row.
- */
-function ensureQueueControlPositionObserver(wrap: HTMLElement): void {
-    if (queueControlObservers.has(wrap)) {
-        return;
-    }
-    const observer = new MutationObserver(() => moveQueueControlIntoPillRow(wrap));
-    observer.observe(wrap, { childList: true, subtree: true });
-    queueControlObservers.set(wrap, observer);
-}
-
-/**
- * Move the queue control inside the changes-pill-row that contains the Working
- * pill (or the first available row). The queue pill must sit in the SAME
- * horizontal line as the Working pill and other pill buttons (Changes, Commit,
- * Step, …), not above or below them.
- */
-function moveQueueControlIntoPillRow(wrap: HTMLElement): void {
-    // Only match the queue-control stack — there may be other activity stacks
-    // (streaming, transcript, etc.) that must NOT be moved into the pill row.
-    const stack = wrap.querySelector<HTMLElement>(
-        '.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control',
-    );
-    if (!stack) {
-        return;
-    }
-
-    // Prefer the row that already contains the Working control so both pills
-    // share the same horizontal line in the slider.
-    const workingControl = wrap.querySelector('.theia-mobile-sticky-composer-working-control');
-    const workingRow = workingControl?.closest('.theia-mobile-sticky-composer-changes-pill-row');
-    if (workingRow instanceof HTMLElement) {
-        if (stack.parentElement !== workingRow || workingRow.firstElementChild !== stack) {
-            workingRow.insertBefore(stack, workingRow.firstChild);
-        }
-        return;
-    }
-
-    // Fallback: first pill host that has a row.
-    const pillHosts = Array.from(
-        wrap.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-changes-pill-host'),
-    );
-    for (const pillHost of pillHosts) {
-        const row = pillHost.querySelector<HTMLElement>('.theia-mobile-sticky-composer-changes-pill-row');
-        if (row) {
-            if (stack.parentElement !== row || row.firstElementChild !== stack) {
-                row.insertBefore(stack, row.firstChild);
-            }
-            return;
-        }
-    }
-
-    // Last resort: before the card.
-    const card = wrap.querySelector(':scope > .theia-mobile-projects-sticky-composer-card');
-    if (card && stack.parentElement !== wrap) {
-        wrap.insertBefore(stack, card);
-    }
 }
 
 export function refreshTranscriptComposerActivityIfNeededExtracted(ctx: any, conv: QaapAgentConversationDTO): void {

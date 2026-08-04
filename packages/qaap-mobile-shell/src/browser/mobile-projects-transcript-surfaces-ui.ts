@@ -145,6 +145,7 @@ export interface MobileProjectsTranscriptSurfacesHost {
     transcriptTerminalToolbar: HTMLElement | undefined;
     transcriptTerminalSlider: HTMLElement | undefined;
     transcriptTerminalDots: HTMLElement | undefined;
+    transcriptTerminalPinnedMode: string | undefined;
     transcriptTerminalResizeObserver: ResizeObserver | undefined;
     transcriptComposerModeId: string | undefined;
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
@@ -602,6 +603,23 @@ export class MobileProjectsTranscriptSurfacesUi {
 
     async launchAgentTuiInTranscriptTerminal(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, agentId: string, options?: { readonly login?: boolean },): Promise<void> {
         return launchAgentTuiInTranscriptTerminalExtracted(this, project, summary, agentId, options);
+    }
+
+    /** Create a plain terminal slide for a project (no agent TUI command). */
+    async createTranscriptTerminalSlideForProject(project: MobileProjectEntry): Promise<void> {
+        const summary = this.host.transcriptOpenSummary;
+        if (!summary) {
+            return;
+        }
+        this.host.executionSurfaceTabsUi.selectTranscriptTab('terminal', project, summary);
+        await this.ensureTranscriptTerminalTab(project, summary);
+        const workspaceKey = this.resolveTranscriptWorkspaceKey(project, summary);
+        const cwd = this.resolveTranscriptProjectCwd(project, summary);
+        const services = this.host.createTranscriptTerminalViewServices?.();
+        if (!workspaceKey || !cwd || !services) {
+            return;
+        }
+        await this.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary, true);
     }
 
     renderTranscriptTerminalSlides(workspaceKey: TranscriptWorkspaceSurfaceKey): void {

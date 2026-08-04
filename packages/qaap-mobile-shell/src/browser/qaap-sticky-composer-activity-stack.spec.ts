@@ -534,7 +534,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(stack!.querySelector('.theia-mobile-sticky-composer-changes-pill')).to.equal(null);
         });
 
-        it('patchStickyComposerActivityStack updates queue text without replacing the stack node', () => {
+        it('patchStickyComposerActivityStack returns false when text changes to force a safe re-render', () => {
             const stack = renderStickyComposerActivityStack({
                 queueEntries: [{ draft: 'first follow up' }],
                 queueExpanded: true,
@@ -550,11 +550,27 @@ describe('qaap-sticky-composer-activity-stack', () => {
             });
             expect(beforeFingerprint).to.not.equal(afterFingerprint);
 
+            // When any item's text differs from the entry at that position, the
+            // patch returns false so the caller does a full replaceWith — this
+            // prevents DOM elements from staying in the old physical order on
+            // reorder, or breaking per-item event bindings on edit.
             expect(patchStickyComposerActivityStack(stack!, {
                 queueEntries: [{ draft: 'second follow up' }],
                 queueExpanded: true,
+            })).to.equal(false);
+        });
+
+        it('patchStickyComposerActivityStack returns true when nothing changed (same text, same order)', () => {
+            const stack = renderStickyComposerActivityStack({
+                queueEntries: [{ draft: 'first' }, { draft: 'second' }],
+                queueExpanded: true,
+            });
+            document.body.append(stack!);
+
+            expect(patchStickyComposerActivityStack(stack!, {
+                queueEntries: [{ draft: 'first' }, { draft: 'second' }],
+                queueExpanded: true,
             })).to.equal(true);
-            expect(stack!.querySelector('.theia-mobile-sticky-composer-queue-text')?.textContent).to.equal('second follow up');
         });
 
         it('exposes Send now on every queued message', () => {

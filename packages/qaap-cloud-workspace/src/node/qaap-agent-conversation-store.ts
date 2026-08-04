@@ -88,7 +88,7 @@ export {
     QaapMaxConcurrentRunsError,
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
-import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, mutatingGitSyncExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
+import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, maybeDrainAtToolRoundBoundaryExtracted, mutatingGitSyncExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
@@ -220,6 +220,13 @@ export class QaapAgentConversationStore {
 
     drainPendingMessages(conversationId: string): void {
         return drainPendingMessagesExtracted(this, conversationId);
+    }
+
+    /** Per-conversation coalesce timers for the drain (optimization C). */
+    protected drainTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    maybeDrainAtToolRoundBoundary(conversationId: string): void {
+        return maybeDrainAtToolRoundBoundaryExtracted(this, conversationId);
     }
 
     interruptConversationRuns(conversationId: string): void {
