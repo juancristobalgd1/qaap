@@ -36,6 +36,7 @@ export interface MobileProjectsProjectNavigationHost {
     headerExecutionTabsHost: HTMLElement;
     headerPreviewRunHost: HTMLElement;
     headerFilesMoreHost: HTMLElement;
+    headerViewModeSwitchHost: HTMLElement;
     projects: MobileProjectEntry[];
     projectsService: MobileProjectsService;
     commands: CommandRegistry;
@@ -145,6 +146,8 @@ export class MobileProjectsProjectNavigationUi {
         this.host.headerPreviewRunHost.replaceChildren();
         this.host.transcriptSurfacesUi.hideHeaderFilesMoreButton();
         this.host.headerFilesMoreHost.replaceChildren();
+        this.host.transcriptSurfacesUi.hideHeaderViewModeSwitch();
+        this.host.headerViewModeSwitchHost.replaceChildren();
     }
 
     resolveSelectedProject(

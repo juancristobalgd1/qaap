@@ -313,7 +313,6 @@ export function syncTerminalAgentTuiTriggerExtracted(ctx: any, trigger: HTMLButt
 
 export function executionSurfaceTabSpecsExtracted(ctx: any): Array<{ id: TranscriptTab; label: string; icon: string }> {
     return [
-        { id: 'review', label: nls.localize('qaap/mobileProjects/tabChanges', 'Changes'), icon: QAAP_SCM_CHANGES_ICON_CLASS },
         { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Preview'), icon: 'codicon-globe' },
         { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-folder-opened' },
         { id: 'terminal', label: nls.localize('qaap/mobileProjects/tabTerminal', 'Terminal'), icon: 'codicon-terminal' },

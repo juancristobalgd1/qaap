@@ -85,7 +85,7 @@ import {
     resolveTranscriptTerminalTabTitle as resolveTranscriptTerminalTabTitleHelper,
     toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
 } from './mobile-projects-transcript-surfaces-helpers';
-import { applyTranscriptPreviewRunButtonStateExtracted, createTranscriptPreviewRunButtonExtracted, findTranscriptPreviewRunButtonExtracted, hideHeaderFilesMoreButtonExtracted, isTranscriptPreviewStoppableExtracted, isTranscriptPreviewWaitingExtracted, refreshTranscriptPreviewTabProbeExtracted, scheduleTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewExtracted, stopTranscriptPreviewTabProbeExtracted, switchTranscriptPreviewAppExtracted, syncHeaderFilesMoreButtonExtracted, syncHeaderPreviewAppSwitchButtonExtracted, syncHeaderPreviewRunButtonExtracted, updateTranscriptPreviewReadyOverlayExtracted } from './mobile-projects-transcript-surfaces-ui-activity2';
+import { applyTranscriptPreviewRunButtonStateExtracted, createTranscriptPreviewRunButtonExtracted, findTranscriptPreviewRunButtonExtracted, hideHeaderFilesMoreButtonExtracted, hideHeaderViewModeSwitchExtracted, isTranscriptPreviewStoppableExtracted, isTranscriptPreviewWaitingExtracted, refreshTranscriptPreviewTabProbeExtracted, scheduleTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewExtracted, stopTranscriptPreviewTabProbeExtracted, switchTranscriptPreviewAppExtracted, syncHeaderFilesMoreButtonExtracted, syncHeaderPreviewAppSwitchButtonExtracted, syncHeaderPreviewRunButtonExtracted, syncHeaderViewModeSwitchExtracted, updateTranscriptPreviewReadyOverlayExtracted } from './mobile-projects-transcript-surfaces-ui-activity2';
 import { adoptReadyTranscriptPreviewExtracted, requestTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-diff2';
 import { closeTranscriptTerminalTabExtracted, createTranscriptTerminalSlideExtracted, detachTranscriptFilesFromHostExtracted, detachTranscriptTerminalFromHostExtracted, ensureTranscriptTerminalChromeExtracted, ensureTranscriptTerminalTabExtracted, launchAgentTuiInTranscriptTerminalExtracted, mountFreshTranscriptTerminalSlideExtracted, persistTranscriptTerminalWorkspaceExtracted, renderTranscriptTerminalDotsExtracted, renderTranscriptTerminalSlidesExtracted, restoreTranscriptTerminalSlidesExtracted, showTranscriptTerminalErrorExtracted, syncTranscriptTerminalResizeObserverExtracted, toPersistedTerminalWorkspaceExtracted } from './mobile-projects-transcript-surfaces-ui-live-status2';
 import { bootstrapAppliesToProjectExtracted, bootstrapPreviewUrlForProjectExtracted, closeTranscriptPreviewAppPickerExtracted, ensurePreviewProjectContextExtracted, executionFilesHostExtracted, executionPreviewHostExtracted, executionSurfaceHostExtracted, executionTerminalHostExtracted, latestAgentSegmentsExtracted, matchesActivePreviewSummaryExtracted, mountProjectDetailReviewWidgetExtracted, mountProjectDetailSurfaceTabExtracted, pickTranscriptPreviewAppExtracted, previewRuntimeForExtracted, setLastSyncedPreviewUrlExtracted, setMountedPreviewUrlExtracted, setProbeReadyPreviewUrlExtracted, transcriptConversationMetaExtracted, updateTranscriptHeaderExtracted } from './mobile-projects-transcript-surfaces-ui-render2';
@@ -174,6 +174,7 @@ export interface MobileProjectsTranscriptSurfacesHost {
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     headerPreviewRunHost: HTMLElement;
     headerFilesMoreHost: HTMLElement;
+    headerViewModeSwitchHost: HTMLElement;
     root: HTMLElement;
 
     renderChecksSection(
@@ -492,6 +493,14 @@ export class MobileProjectsTranscriptSurfacesUi {
 
     hideHeaderFilesMoreButton(): void {
         hideHeaderFilesMoreButtonExtracted(this);
+    }
+
+    syncHeaderViewModeSwitch(project: MobileProjectEntry | undefined = this.host.transcriptOpenProject, summary: QaapAgentConversationSummaryDTO | undefined = this.host.transcriptOpenSummary,): void {
+        syncHeaderViewModeSwitchExtracted(this, project, summary);
+    }
+
+    hideHeaderViewModeSwitch(): void {
+        hideHeaderViewModeSwitchExtracted(this);
     }
 
     protected createTranscriptPreviewRunButton(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): HTMLButtonElement {

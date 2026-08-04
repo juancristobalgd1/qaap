@@ -156,8 +156,16 @@ export function isTranscriptAgentTailStreaming(conv: QaapAgentConversationDTO): 
  * Stay visible for the whole backend turn (streaming + settled/finalizing).
  * Hide only when the task ends (idle/failed) — never on "visually settled"
  * mid-stream, or the chrome flickers between tools / while preparing the answer.
+ *
+ * A conversation with no user message yet (empty chat) never shows the live-status,
+ * even if the backend reports a stale `streaming`/`settled` status — there is no
+ * in-flight turn to depict, so the orb + "Planning next moves…" chrome would be
+ * misleading (e.g. "19m 59s · ~0 tokens" pinned on a blank transcript).
  */
 export function shouldShowTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
+    if (!conversationHasUserMessage(conv)) {
+        return false;
+    }
     return conv.status === 'streaming' || conv.status === 'settled';
 }
 

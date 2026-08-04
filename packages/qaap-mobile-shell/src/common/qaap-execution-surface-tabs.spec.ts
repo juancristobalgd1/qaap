@@ -32,8 +32,8 @@ describe('qaap-execution-surface-tabs', () => {
 
     it('pins Chat first and defaults the rotating slot to Plan', () => {
         const layout = rankExecutionSurfaceTabs({});
-        expect(layout.visible).to.deep.equal(['messages', 'plan']);
-        expect(layout.overflow).to.deep.equal(['review', 'preview', 'files', 'terminal']);
+        expect(layout.visible).to.deep.equal(['messages', 'review']);
+        expect(layout.overflow).to.deep.equal(['preview', 'files', 'terminal']);
     });
 
     it('keeps Chat fixed and rotates only the second slot by usage', () => {
@@ -44,7 +44,7 @@ describe('qaap-execution-surface-tabs', () => {
             messages: 1,
         });
         expect(layout.visible).to.deep.equal(['messages', 'terminal']);
-        expect(layout.overflow).to.include('plan');
+        expect(layout.overflow).to.include('files');
         expect(layout.overflow).to.not.include('messages');
         expect(layout.overflow).to.include('review');
         expect(layout.overflow).to.include('preview');
@@ -73,11 +73,11 @@ describe('qaap-execution-surface-tabs', () => {
     it('persists usage increments', () => {
         recordExecutionSurfaceTabUse('terminal');
         recordExecutionSurfaceTabUse('terminal');
-        recordExecutionSurfaceTabUse('plan');
+        recordExecutionSurfaceTabUse('files');
         const layout = layoutExecutionSurfaceTabs('messages');
         expect(layout.visible).to.deep.equal(['messages', 'terminal']);
-        expect(layout.overflow).to.include('plan');
+        expect(layout.overflow).to.include('files');
         expect(layout.overflow).to.include('review');
-        expect(EXECUTION_SURFACE_TAB_IDS).to.have.length(6);
+        expect(EXECUTION_SURFACE_TAB_IDS).to.have.length(5);
     });
 });

@@ -279,6 +279,21 @@ describe('qaap-transcript-turn-status', () => {
         expect(shouldShowTranscriptLiveStatus(betweenTools)).to.equal(true);
     });
 
+    it('shouldShowTranscriptLiveStatus is false on an empty chat even with stale streaming/settled status', () => {
+        // An empty chat (no user message yet) must never pin the live-status orb, even if the
+        // backend reports a residual `streaming`/`settled` status — there is no in-flight turn.
+        const emptyStreaming = conv({ status: 'streaming', messages: [] });
+        expect(shouldShowTranscriptLiveStatus(emptyStreaming)).to.equal(false);
+        const emptySettled = conv({ status: 'settled', messages: [] });
+        expect(shouldShowTranscriptLiveStatus(emptySettled)).to.equal(false);
+        // Once the user sends their first message, the live-status may appear for the turn.
+        const started = conv({
+            status: 'streaming',
+            messages: [{ id: 'u1', role: 'user', content: 'go', createdAt: 2 }],
+        });
+        expect(shouldShowTranscriptLiveStatus(started)).to.equal(true);
+    });
+
     it('execution chrome is idle once the backend is idle, even with an unfinished-looking tool', () => {
         // A flaky model can leave a tool_call without its result so the trace looks "running" forever.
         // The backend status is authoritative for execution chrome: an idle turn must NOT keep Stop /

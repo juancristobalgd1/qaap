@@ -56,7 +56,6 @@ describe('MobileProjectsTranscriptSheetUi', () => {
             transcriptChatInputHost: undefined,
             transcriptComposerSizeDispose: Disposable.NULL,
             transcriptTabStrip: undefined,
-            transcriptPlanHost: undefined,
             transcriptReviewHost: undefined,
             transcriptPreviewHost: undefined,
             transcriptFilesHost: undefined,
@@ -206,7 +205,6 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         header.className = 'theia-mobile-agent-log-header';
         const chatHost = document.createElement('div');
         const chatInputHost = document.createElement('div');
-        const planHost = document.createElement('div');
         const reviewHost = document.createElement('div');
         const previewHost = document.createElement('div');
         const filesHost = document.createElement('div');
@@ -216,7 +214,6 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         host.transcriptSheet = sheet;
         host.transcriptChatHost = chatHost;
         host.transcriptChatInputHost = chatInputHost;
-        host.transcriptPlanHost = planHost;
         host.transcriptReviewHost = reviewHost;
         host.transcriptPreviewHost = previewHost;
         host.transcriptFilesHost = filesHost;

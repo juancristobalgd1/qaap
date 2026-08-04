@@ -22,6 +22,7 @@ import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } fr
 import { appendAgentBrandIcon, createAgentBrandIcon } from '../common/qaap-agent-branding';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
+import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -78,7 +79,10 @@ export function mountTranscriptSurfaceTabExtracted(ctx: any, project: MobileProj
     summary: QaapAgentConversationSummaryDTO,
     tab: TranscriptTab,): void {
     if (tab === 'review') {
-        void ctx.host.transcriptSurfacesUi.mountTranscriptReviewWidget(project, summary);
+        // 'review' (Changes) is merged into the 'files' tab — set pending
+        // view-mode flag and mount the files tab instead.
+        writePendingTranscriptFilesViewMode('changes');
+        ctx.host.transcriptSurfacesUi.ensureTranscriptFilesTab(project, summary);
     } else if (tab === 'preview') {
         ctx.host.transcriptSurfacesUi.renderPreviewTab(project, summary);
     } else if (tab === 'files') {

@@ -202,7 +202,8 @@ export class MobileProjectsExecutionSurfaceTabsUi {
     }
 
     resolveExecutionSurfaceIconSelectDisplayTab(activeTab: TranscriptTab): TranscriptTab {
-        return activeTab;
+        // 'review' (Changes) is now merged into the 'files' tab — display as 'files'.
+        return activeTab === 'review' ? 'files' : activeTab;
     }
 
     navigateExecutionSurfaceBack(project: MobileProjectEntry): boolean {

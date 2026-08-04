@@ -18625,6 +18625,48 @@ button.theia-mobile-transcript-team-row:focus-visible {
   }
 }
 
+.theia-mobile-transcript-files-file-breadcrumb {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+.theia-mobile-transcript-files-file-breadcrumb[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-transcript-files-file-breadcrumb-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-icon-foreground, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-transcript-files-file-breadcrumb-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--theia-foreground);
+}
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-transcript-files-file-breadcrumb-icon {
+    font-size: 16px;
+  }
+
+  .theia-mobile-transcript-files-file-breadcrumb-label {
+    font-size: 13px;
+  }
+}
+
 .theia-mobile-transcript-files-preview-header {
   position: sticky;
   top: 0;
@@ -18641,14 +18683,127 @@ button.theia-mobile-transcript-team-row:focus-visible {
   background: var(--theia-editor-background);
 }
 
+/* View-mode switch (Files ↔ Changes) — segmented control at the left of the preview header. */
+.theia-mobile-transcript-files-view-mode-switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  margin-right: auto;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--theia-toolbar-hoverBackground, color-mix(in srgb, var(--theia-foreground, #fff) 4%, transparent));
+}
+
+.theia-mobile-transcript-files-view-mode-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.theia-mobile-transcript-files-view-mode-btn-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.theia-mobile-transcript-files-view-mode-btn-icon.codicon::before {
+  font-size: 14px;
+}
+
+.theia-mobile-transcript-files-view-mode-btn-icon.qaap-icon-scm-changes svg {
+  width: 14px;
+  height: 14px;
+}
+
+.theia-mobile-transcript-files-view-mode-btn-label {
+  flex: 0 0 auto;
+}
+
+.theia-mobile-transcript-files-view-mode-btn:hover,
+.theia-mobile-transcript-files-view-mode-btn:focus-visible {
+  background: var(--theia-toolbar-hoverBackground, color-mix(in srgb, var(--theia-foreground, #fff) 8%, transparent));
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-transcript-files-view-mode-btn[aria-selected='true'] {
+  background: var(--theia-editor-background, var(--theia-workbench-background));
+  color: var(--theia-foreground);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-transcript-files-view-mode-btn {
+    height: 32px;
+    min-height: 32px;
+    padding: 0 8px;
+    gap: 0;
+    font-size: 13px;
+  }
+
+  .theia-mobile-transcript-files-view-mode-btn-label {
+    display: none;
+  }
+
+  .theia-mobile-transcript-files-view-mode-btn-icon.codicon::before {
+    font-size: 18px;
+  }
+
+  .theia-mobile-transcript-files-view-mode-btn-icon.qaap-icon-scm-changes svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.theia-mobile-transcript-files-changes-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.theia-mobile-transcript-files-changes-host:empty {
+  display: none;
+}
+
+.theia-mobile-transcript-files.theia-mod-files-view-changes>.theia-mobile-transcript-files-layout {
+  display: none;
+}
+
+.theia-mobile-transcript-files.theia-mod-files-view-changes>.theia-mobile-transcript-files-changes-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .theia-mobile-transcript-files-preview-actions {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
   gap: 0;
-  margin-left: 0;
-  margin-right: auto;
+  margin-left: auto;
+  margin-right: 0;
 }
 
 .theia-mobile-transcript-files-action {

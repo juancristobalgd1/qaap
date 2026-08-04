@@ -22,6 +22,7 @@ import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } fr
 import { appendAgentBrandIcon, createAgentBrandIcon } from '../common/qaap-agent-branding';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
+import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -115,6 +116,12 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
+    // 'review' (Changes) is merged into the 'files' tab — redirect with a
+    // pending view-mode flag so the file view activates changes mode on mount.
+    if (tab === 'review') {
+        writePendingTranscriptFilesViewMode('changes');
+        tab = 'files';
+    }
     const sameTab = ctx.executionSurfaceTabForProject(project) === tab;
     if (sameTab) {
         ctx.syncExecutionSurfaceChrome(project);
@@ -149,14 +156,18 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     }
     if (tab === 'files') {
         ctx.host.transcriptSurfacesUi.syncHeaderFilesMoreButton(project, summary);
+        ctx.host.transcriptSurfacesUi.syncHeaderViewModeSwitch(project, summary);
     } else {
         ctx.host.transcriptSurfacesUi.hideHeaderFilesMoreButton();
+        ctx.host.transcriptSurfacesUi.hideHeaderViewModeSwitch();
     }
 }
 
 export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTab): void {
     ctx.syncConnectedTranscriptSurfaceHosts();
     const showMessages = tab === 'messages';
+    // 'review' is merged into 'files' — show the files host for both.
+    const showFiles = tab === 'files' || tab === 'review';
     if (ctx.host.agentsHubInlineTranscriptRoot) {
         ctx.host.agentsHubInlineTranscriptRoot.hidden = !showMessages;
     }
@@ -167,13 +178,13 @@ export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
         ctx.host.transcriptChatInputHost.hidden = !showMessages;
     }
     if (ctx.host.transcriptReviewHost) {
-        ctx.host.transcriptReviewHost.hidden = tab !== 'review';
+        ctx.host.transcriptReviewHost.hidden = true;
     }
     if (ctx.host.transcriptPreviewHost) {
         ctx.host.transcriptPreviewHost.hidden = tab !== 'preview';
     }
     if (ctx.host.transcriptFilesHost) {
-        ctx.host.transcriptFilesHost.hidden = tab !== 'files';
+        ctx.host.transcriptFilesHost.hidden = !showFiles;
     }
     if (ctx.host.transcriptTerminalHost) {
         ctx.host.transcriptTerminalHost.hidden = tab !== 'terminal';
@@ -181,9 +192,9 @@ export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     const targets = ctx.host.projectDetailSurfaceTargets;
     if (targets) {
         targets.chatHost.hidden = !showMessages;
-        targets.reviewHost.hidden = tab !== 'review';
+        targets.reviewHost.hidden = true;
         targets.previewHost.hidden = tab !== 'preview';
-        targets.filesHost.hidden = tab !== 'files';
+        targets.filesHost.hidden = !showFiles;
         targets.terminalHost.hidden = tab !== 'terminal';
     }
     if (ctx.host.agentsHubShellActive) {

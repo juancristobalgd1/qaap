@@ -348,6 +348,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerExecutionCluster: HTMLElement;
     protected readonly headerPreviewRunHost: HTMLElement;
     protected readonly headerFilesMoreHost: HTMLElement;
+    protected readonly headerViewModeSwitchHost: HTMLElement;
     protected readonly headerExecutionTabsHost: HTMLElement;
     protected headerSurfacePicker?: QaapSegmentedFieldController<MobileBottomButtonId>;
     protected headerIdeViewPickerBtn: HTMLButtonElement | undefined;

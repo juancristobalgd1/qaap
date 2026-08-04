@@ -85,7 +85,6 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             transcriptLastStreamProgressAt: undefined,
             transcriptLastSemanticProgressKey: undefined,
             transcriptChatHost: undefined,
-            transcriptPlanHost: undefined,
             transcriptReviewHost: undefined,
             transcriptPreviewHost: undefined,
             transcriptFilesHost: undefined,
@@ -110,6 +109,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
             headerExecutionTabsHost: document.createElement('div'),
             headerPreviewRunHost: document.createElement('div'),
             headerFilesMoreHost: document.createElement('div'),
+            headerViewModeSwitchHost: document.createElement('div'),
             preparedCwdByProjectId: new Map(),
             projectsService: {
                 resolveCurrentWorkspaceProject: () => undefined,
@@ -125,6 +125,8 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 hideHeaderPreviewRunButton: () => undefined,
                 syncHeaderFilesMoreButton: () => undefined,
                 hideHeaderFilesMoreButton: () => undefined,
+                syncHeaderViewModeSwitch: () => undefined,
+                hideHeaderViewModeSwitch: () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['transcriptSurfacesUi'],
             transcriptLiveUi: {
                 clearTranscriptSemanticProgressClock: () => undefined,
@@ -350,7 +352,6 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                     messages: [],
                 }),
                 createTranscriptSheetSurfaceHosts: () => ({
-                    planHost: document.createElement('div'),
                     reviewHost: document.createElement('div'),
                     previewHost: document.createElement('div'),
                     filesHost: document.createElement('div'),
@@ -434,7 +435,6 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                     messages: [],
                 }),
                 createTranscriptSheetSurfaceHosts: () => ({
-                    planHost: document.createElement('div'),
                     reviewHost: document.createElement('div'),
                     previewHost: document.createElement('div'),
                     filesHost: document.createElement('div'),
@@ -626,7 +626,6 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                     }],
                 }),
                 createTranscriptSheetSurfaceHosts: () => ({
-                    planHost: document.createElement('div'),
                     reviewHost: document.createElement('div'),
                     previewHost: document.createElement('div'),
                     filesHost: document.createElement('div'),

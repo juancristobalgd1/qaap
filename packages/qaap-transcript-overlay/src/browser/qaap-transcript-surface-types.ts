@@ -6,6 +6,9 @@
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 
+/** View mode for the unified Files & Changes surface. */
+export type TranscriptFilesViewMode = 'files' | 'changes';
+
 export interface TranscriptFilesMount {
     readonly root: HTMLElement;
     readonly dispose: Disposable;
@@ -17,6 +20,16 @@ export interface TranscriptFilesMount {
      * pass `undefined` to restore it inside the preview header.
      */
     readonly attachMoreActionsHost?: (host: HTMLElement | undefined) => void;
+    /**
+     * Relocates the Files ↔ Changes view-mode switch.
+     * Pass a Work Hub header host to mount it in the execution cluster;
+     * pass `undefined` to restore it inside the preview header.
+     */
+    readonly attachViewModeSwitchHost?: (host: HTMLElement | undefined) => void;
+    /** Switches between the file tree/preview and the SCM changes (diff) view. */
+    readonly setViewMode?: (mode: TranscriptFilesViewMode) => void;
+    /** Current view mode ('files' or 'changes'). */
+    readonly viewMode?: () => TranscriptFilesViewMode;
 }
 
 export interface TranscriptTerminalSurface {

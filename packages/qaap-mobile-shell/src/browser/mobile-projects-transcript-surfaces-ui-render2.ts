@@ -53,6 +53,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import {
     mountTranscriptFilesView,
+    writePendingTranscriptFilesViewMode,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
 import {
@@ -251,7 +252,10 @@ export function mountProjectDetailSurfaceTabExtracted(ctx: any, project: MobileP
     tab: TranscriptTab,): void {
     switch (tab) {
         case 'review':
-            void ctx.mountProjectDetailReviewWidget(project);
+            // 'review' (Changes) is merged into the 'files' tab — set pending
+            // view-mode flag and mount the files tab instead.
+            writePendingTranscriptFilesViewMode('changes');
+            ctx.ensureTranscriptFilesTab(project, summary);
             break;
         case 'preview':
             ctx.renderPreviewTab(project, summary);

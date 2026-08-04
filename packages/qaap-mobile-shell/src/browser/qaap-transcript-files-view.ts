@@ -15,6 +15,7 @@ import {
 } from './qaap-transcript-monaco-editor';
 import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
+import { QAAP_SCM_CHANGES_SVG_MARKUP } from '../common/qaap-scm-changes-icon';
 
 export interface TranscriptFileTreeEntry {
     readonly name: string;
@@ -52,12 +53,20 @@ export interface TranscriptFilesViewServices {
     /** Re-render tree when Explorer-style decorations change. */
     watchFileDecorations?(onChange: () => void): Disposable;
     localize(key: string, defaultValue: string, ...args: string[]): string;
+    /** Whether the SCM changes (diff) view is available for this workspace. */
+    canShowChanges?: boolean;
+    /** Mounts the diff/changes review widget into the provided host element. */
+    mountChangesView?(host: HTMLElement): Promise<void>;
+    /** Detaches the diff/changes review widget (called when switching back to files). */
+    unmountChangesView?(): void;
 }
 
 const FILES_TREE_MIN_PX = 120;
 const FILES_TREE_MAX_RATIO = 0.78;
 const TRANSCRIPT_FILES_TREE_POSITION_STORAGE_KEY = 'qaap.transcriptFiles.treePosition';
 const TRANSCRIPT_FILES_TREE_VISIBLE_STORAGE_KEY = 'qaap.transcriptFiles.treeVisible';
+const TRANSCRIPT_FILES_VIEW_MODE_STORAGE_KEY = 'qaap.transcriptFiles.viewMode';
+const TRANSCRIPT_FILES_PENDING_VIEW_MODE_KEY = 'qaap.transcriptFiles.pendingViewMode';
 
 export type TranscriptFilesTreePosition = 'side' | 'bottom';
 
@@ -128,6 +137,77 @@ export function writeStoredTranscriptFilesTreeVisible(visible: boolean): void {
 
 export function resolveTranscriptFilesTreeVisible(): boolean {
     return readStoredTranscriptFilesTreeVisible() ?? true;
+}
+
+/** Reads the persisted view mode (files vs changes) from sessionStorage. */
+export function readStoredTranscriptFilesViewMode(): TranscriptFilesViewMode | undefined {
+    try {
+        if (typeof window === 'undefined') {
+            return undefined;
+        }
+        const value = window.sessionStorage.getItem(TRANSCRIPT_FILES_VIEW_MODE_STORAGE_KEY);
+        if (value === 'files' || value === 'changes') {
+            return value;
+        }
+    } catch {
+        /* session-only */
+    }
+    return undefined;
+}
+
+/** Persists the view mode to sessionStorage (same-tab only, per work-hub-reload rule). */
+export function writeStoredTranscriptFilesViewMode(mode: TranscriptFilesViewMode): void {
+    try {
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem(TRANSCRIPT_FILES_VIEW_MODE_STORAGE_KEY, mode);
+        }
+    } catch {
+        /* session-only */
+    }
+}
+
+/**
+ * One-shot flag set when the 'review' (Changes) tab is redirected to the
+ * unified 'files' tab. Consumed by the file view on mount/re-attach to
+ * activate changes mode without persisting it.
+ */
+export function readPendingTranscriptFilesViewMode(): TranscriptFilesViewMode | undefined {
+    try {
+        if (typeof window === 'undefined') {
+            return undefined;
+        }
+        const value = window.sessionStorage.getItem(TRANSCRIPT_FILES_PENDING_VIEW_MODE_KEY);
+        if (value === 'files' || value === 'changes') {
+            return value;
+        }
+    } catch {
+        /* session-only */
+    }
+    return undefined;
+}
+
+export function writePendingTranscriptFilesViewMode(mode: TranscriptFilesViewMode): void {
+    try {
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem(TRANSCRIPT_FILES_PENDING_VIEW_MODE_KEY, mode);
+        }
+    } catch {
+        /* session-only */
+    }
+}
+
+export function clearPendingTranscriptFilesViewMode(): void {
+    try {
+        if (typeof window !== 'undefined') {
+            window.sessionStorage.removeItem(TRANSCRIPT_FILES_PENDING_VIEW_MODE_KEY);
+        }
+    } catch {
+        /* session-only */
+    }
+}
+
+export function resolveTranscriptFilesViewMode(): TranscriptFilesViewMode {
+    return readPendingTranscriptFilesViewMode() ?? readStoredTranscriptFilesViewMode() ?? 'files';
 }
 
 export const TRANSCRIPT_FILES_SKIP_DIRS = new Set([
@@ -208,9 +288,9 @@ export function findTranscriptReadmeEntry(
         ?? files.find(entry => entry.name.toLowerCase().startsWith('readme'));
 }
 
-import type { TranscriptFilesMount } from './qaap-transcript-surface-types';
+import type { TranscriptFilesMount, TranscriptFilesViewMode } from './qaap-transcript-surface-types';
 
-export type { TranscriptFilesMount } from './qaap-transcript-surface-types';
+export type { TranscriptFilesMount, TranscriptFilesViewMode } from './qaap-transcript-surface-types';
 
 export function mountTranscriptFilesView(
     host: HTMLElement,
@@ -254,6 +334,8 @@ export function mountTranscriptFilesView(
         previewSaveTimer: undefined as number | undefined,
         previewMonacoEditor: undefined as TranscriptPreviewMonacoEditor | undefined,
         previewEditorRequestId: 0,
+        viewMode: resolveTranscriptFilesViewMode(),
+        changesMounted: false,
     };
 
     const layout = document.createElement('div');
@@ -263,8 +345,59 @@ export function mountTranscriptFilesView(
     previewPane.className = 'theia-mobile-transcript-files-preview';
     const previewHeader = document.createElement('div');
     previewHeader.className = 'theia-mobile-transcript-files-preview-header';
+
+    // View-mode switch (Files ↔ Changes) — only rendered when the changes
+    // view is available for this workspace.
+    const canShowChanges = services.canShowChanges !== false && Boolean(services.mountChangesView);
+    const viewModeSwitch = document.createElement('div');
+    viewModeSwitch.className = 'theia-mobile-transcript-files-view-mode-switch';
+    viewModeSwitch.setAttribute('role', 'tablist');
+    viewModeSwitch.hidden = !canShowChanges;
+    const filesModeBtn = document.createElement('button');
+    filesModeBtn.type = 'button';
+    filesModeBtn.className = 'theia-mobile-transcript-files-view-mode-btn';
+    filesModeBtn.setAttribute('role', 'tab');
+    const filesModeIcon = document.createElement('span');
+    filesModeIcon.className = 'theia-mobile-transcript-files-view-mode-btn-icon codicon codicon-folder-opened';
+    filesModeIcon.setAttribute('aria-hidden', 'true');
+    const filesModeLabel = document.createElement('span');
+    filesModeLabel.className = 'theia-mobile-transcript-files-view-mode-btn-label';
+    filesModeLabel.textContent = services.localize('qaap/mobileProjects/tabFiles', 'Files');
+    filesModeBtn.append(filesModeIcon, filesModeLabel);
+    filesModeBtn.title = filesModeLabel.textContent;
+    filesModeBtn.setAttribute('aria-selected', state.viewMode === 'files' ? 'true' : 'false');
+    const changesModeBtn = document.createElement('button');
+    changesModeBtn.type = 'button';
+    changesModeBtn.className = 'theia-mobile-transcript-files-view-mode-btn';
+    changesModeBtn.setAttribute('role', 'tab');
+    const changesModeIcon = document.createElement('span');
+    changesModeIcon.className = 'theia-mobile-transcript-files-view-mode-btn-icon qaap-icon-scm-changes';
+    changesModeIcon.setAttribute('aria-hidden', 'true');
+    changesModeIcon.innerHTML = QAAP_SCM_CHANGES_SVG_MARKUP;
+    const changesModeLabel = document.createElement('span');
+    changesModeLabel.className = 'theia-mobile-transcript-files-view-mode-btn-label';
+    changesModeLabel.textContent = services.localize('qaap/mobileProjects/tabChanges', 'Changes');
+    changesModeBtn.append(changesModeIcon, changesModeLabel);
+    changesModeBtn.title = changesModeLabel.textContent;
+    changesModeBtn.setAttribute('aria-selected', state.viewMode === 'changes' ? 'true' : 'false');
+    viewModeSwitch.append(filesModeBtn, changesModeBtn);
+
     const previewActions = document.createElement('div');
     previewActions.className = 'theia-mobile-transcript-files-preview-actions';
+
+    // File breadcrumb — icon + name of the currently open file, shown to the
+    // left of the preview actions in the preview header.
+    const fileBreadcrumb = document.createElement('div');
+    fileBreadcrumb.className = 'theia-mobile-transcript-files-file-breadcrumb';
+    fileBreadcrumb.setAttribute('aria-live', 'polite');
+    const fileBreadcrumbIcon = document.createElement('span');
+    fileBreadcrumbIcon.className = 'theia-mobile-transcript-files-file-breadcrumb-icon codicon codicon-file';
+    fileBreadcrumbIcon.setAttribute('aria-hidden', 'true');
+    const fileBreadcrumbLabel = document.createElement('span');
+    fileBreadcrumbLabel.className = 'theia-mobile-transcript-files-file-breadcrumb-label';
+    fileBreadcrumbLabel.textContent = '';
+    fileBreadcrumb.append(fileBreadcrumbIcon, fileBreadcrumbLabel);
+
     const editToggleBtn = document.createElement('button');
     editToggleBtn.type = 'button';
     editToggleBtn.className = 'theia-mobile-transcript-files-action theia-mobile-transcript-files-edit-toggle codicon codicon-lock';
@@ -287,7 +420,11 @@ export function mountTranscriptFilesView(
     moreBtn.setAttribute('aria-expanded', 'false');
     // Lock + tree stay in the preview header; ⋮ starts here and may relocate to the Work Hub header.
     previewActions.append(editToggleBtn, treeToggleBtn, moreBtn);
-    previewHeader.append(previewActions);
+    if (canShowChanges) {
+        previewHeader.append(viewModeSwitch, fileBreadcrumb, previewActions);
+    } else {
+        previewHeader.append(fileBreadcrumb, previewActions);
+    }
     const previewBody = document.createElement('div');
     previewBody.className = 'theia-mobile-transcript-files-preview-body';
     previewPane.append(previewHeader, previewBody);
@@ -319,7 +456,19 @@ export function mountTranscriptFilesView(
     splitHandle.setAttribute('tabindex', '0');
 
     layout.append(previewPane, splitHandle, treePane);
-    root.append(layout);
+
+    // Changes host — holds the diff review widget when view mode is 'changes'.
+    const changesHost = document.createElement('div');
+    changesHost.className = 'theia-mobile-transcript-files-changes-host';
+    changesHost.hidden = state.viewMode !== 'changes';
+
+    root.append(layout, changesHost);
+    root.classList.toggle('theia-mod-files-view-changes', state.viewMode === 'changes');
+    // The view-mode switch lives in the Work Hub header (relocated via
+    // attachViewModeSwitchHost), so the entire file layout — including the
+    // preview header with lock/tree-toggle buttons — can be hidden in
+    // changes mode. The changes host fills the full space.
+    layout.hidden = state.viewMode === 'changes';
 
     const moreMenu = document.createElement('div');
     moreMenu.className = 'theia-mobile-transcript-files-menu';
@@ -431,6 +580,24 @@ export function mountTranscriptFilesView(
             ? services.localize('qaap/mobileProjects/transcriptEditingFile', 'Editing file')
             : services.localize('qaap/mobileProjects/transcriptEditFile', 'Edit file');
         editToggleBtn.setAttribute('aria-label', editToggleBtn.title);
+        syncFileBreadcrumb();
+    };
+
+    const syncFileBreadcrumb = (): void => {
+        const entry = state.selected;
+        if (!entry) {
+            fileBreadcrumbIcon.className = 'theia-mobile-transcript-files-file-breadcrumb-icon codicon codicon-file';
+            fileBreadcrumbLabel.textContent = '';
+            fileBreadcrumb.hidden = true;
+            return;
+        }
+        fileBreadcrumb.hidden = false;
+        const iconClass = entry.isDirectory
+            ? 'codicon codicon-folder'
+            : `codicon ${transcriptFileIconClass(entry.name)}`;
+        fileBreadcrumbIcon.className = `theia-mobile-transcript-files-file-breadcrumb-icon ${iconClass}`;
+        fileBreadcrumbLabel.textContent = entry.name;
+        fileBreadcrumb.title = entry.relativePath;
     };
 
     const syncTreeLayout = (): void => {
@@ -1372,6 +1539,22 @@ export function mountTranscriptFilesView(
         }
     };
 
+    const attachViewModeSwitchHost = (host: HTMLElement | undefined): void => {
+        viewModeSwitch.classList.toggle('theia-mobile-transcript-files-view-mode-switch--header', Boolean(host));
+        if (host) {
+            if (viewModeSwitch.parentElement !== host) {
+                host.replaceChildren(viewModeSwitch);
+            }
+            return;
+        }
+        // Restore into the preview header (before the actions).
+        if (viewModeSwitch.parentElement !== previewHeader) {
+            if (canShowChanges) {
+                previewHeader.insertBefore(viewModeSwitch, previewActions);
+            }
+        }
+    };
+
     disposables.push(Disposable.create(() => {
         clearPreviewSaveTimer();
         void savePreviewText();
@@ -1379,6 +1562,10 @@ export function mountTranscriptFilesView(
         state.previewRequestId++;
         if (moreBtn.parentElement && moreBtn.parentElement !== previewActions) {
             moreBtn.remove();
+        }
+        services.unmountChangesView?.();
+        if (viewModeSwitch.parentElement && viewModeSwitch.parentElement !== previewHeader) {
+            viewModeSwitch.remove();
         }
         root.remove();
     }));
@@ -1425,5 +1612,76 @@ export function mountTranscriptFilesView(
         });
     };
 
-    return { root, dispose: disposables, revealFilePath, attachMoreActionsHost };
+    const applyViewMode = (mode: TranscriptFilesViewMode): void => {
+        if (state.viewMode === mode) {
+            return;
+        }
+        state.viewMode = mode;
+        writeStoredTranscriptFilesViewMode(mode);
+        clearPendingTranscriptFilesViewMode();
+        filesModeBtn.setAttribute('aria-selected', mode === 'files' ? 'true' : 'false');
+        changesModeBtn.setAttribute('aria-selected', mode === 'changes' ? 'true' : 'false');
+        root.classList.toggle('theia-mod-files-view-changes', mode === 'changes');
+        // The switch is in the Work Hub header — hide the entire file layout
+        // in changes mode and let the changes host fill the space.
+        layout.hidden = mode === 'changes';
+        changesHost.hidden = mode !== 'changes';
+        if (mode === 'changes') {
+            if (!state.changesMounted) {
+                state.changesMounted = true;
+                void services.mountChangesView?.(changesHost);
+            }
+            closeAllMenus();
+        } else {
+            services.unmountChangesView?.();
+            state.changesMounted = false;
+            // Re-trigger preview layout after returning from changes view.
+            state.previewMonacoEditor?.layout();
+            window.dispatchEvent(new Event('resize'));
+        }
+    };
+
+    filesModeBtn.addEventListener('click', () => applyViewMode('files'));
+    changesModeBtn.addEventListener('click', () => applyViewMode('changes'));
+
+    // Consume a pending view-mode flag (set when 'review' tab is redirected to 'files').
+    const pendingMode = readPendingTranscriptFilesViewMode();
+    if (pendingMode) {
+        clearPendingTranscriptFilesViewMode();
+        if (pendingMode === 'changes' && canShowChanges) {
+            state.viewMode = 'changes';
+            writeStoredTranscriptFilesViewMode('changes');
+            filesModeBtn.setAttribute('aria-selected', 'false');
+            changesModeBtn.setAttribute('aria-selected', 'true');
+            root.classList.add('theia-mod-files-view-changes');
+            layout.hidden = true;
+            changesHost.hidden = false;
+            state.changesMounted = true;
+            void services.mountChangesView?.(changesHost);
+        }
+    } else if (state.viewMode === 'changes' && canShowChanges) {
+        // Restored from sessionStorage — mount changes view on initial render.
+        state.changesMounted = true;
+        void services.mountChangesView?.(changesHost);
+    } else if (state.viewMode === 'changes' && !canShowChanges) {
+        // Changes not available for this workspace — fall back to files.
+        state.viewMode = 'files';
+        writeStoredTranscriptFilesViewMode('files');
+        filesModeBtn.setAttribute('aria-selected', 'true');
+        changesModeBtn.setAttribute('aria-selected', 'false');
+        root.classList.remove('theia-mod-files-view-changes');
+        layout.hidden = false;
+        changesHost.hidden = true;
+    }
+
+    const setViewMode = (mode: TranscriptFilesViewMode): void => {
+        if (!canShowChanges && mode === 'changes') {
+            return;
+        }
+        applyViewMode(mode);
+    };
+
+    const viewMode = (): TranscriptFilesViewMode => state.viewMode;
+
+    return { root, dispose: disposables, revealFilePath, attachMoreActionsHost, attachViewModeSwitchHost, setViewMode, viewMode };
 }

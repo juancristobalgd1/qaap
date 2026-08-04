@@ -100,6 +100,7 @@ function buildSyncHeaderPreviewHost(options: {
     const host = {
         headerPreviewRunHost,
         headerFilesMoreHost: document.createElement('div'),
+        headerViewModeSwitchHost: document.createElement('div'),
         root: document.createElement('div'),
         transcriptPreviewRequestPending: options.transcriptPreviewRequestPending ?? false,
         transcriptPreviewRequestRunning: options.transcriptPreviewRequestRunning ?? false,

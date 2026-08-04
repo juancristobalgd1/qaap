@@ -138,9 +138,12 @@ describe('qaap-transcript-files-view', () => {
             expect(host.querySelector('.theia-mobile-transcript-files-breadcrumb')).to.be.null;
             const header = host.querySelector('.theia-mobile-transcript-files-preview-header');
             const actions = host.querySelector('.theia-mobile-transcript-files-preview-actions');
+            const fileBreadcrumb = host.querySelector('.theia-mobile-transcript-files-file-breadcrumb');
             expect(header).to.exist;
             expect(actions).to.exist;
-            expect(header?.firstElementChild).to.equal(actions);
+            // File breadcrumb (icon + name) sits left of the actions in the header.
+            expect(fileBreadcrumb).to.exist;
+            expect(header?.firstElementChild).to.equal(fileBreadcrumb);
             expect(host.querySelector('.theia-mobile-transcript-files-edit-toggle.codicon-lock')).to.exist;
             expect(host.querySelector('.theia-mobile-transcript-files-tree-toggle')).to.exist;
             // ⋯ defaults to preview actions until Work Hub relocates it via attachMoreActionsHost.

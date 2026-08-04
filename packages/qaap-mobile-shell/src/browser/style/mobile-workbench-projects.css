@@ -226,6 +226,19 @@
   display: none !important;
 }
 
+/* View-mode switch host (Files ↔ Changes) relocated from the file view header. */
+.theia-mobile-projects-header-view-mode-switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 4px;
+}
+
+.theia-mobile-projects-header-view-mode-switch[hidden] {
+  display: none !important;
+}
+
 /* Match agent-preview / mini-browser toolbar icon buttons (28 desktop / 32 coarse). */
 .theia-mobile-projects-header-files-more .theia-mobile-transcript-files-more--header {
   width: 28px;
@@ -1105,4 +1118,3 @@ body.theia-mobile-mod-workhub-composer-header .theia-workbench-right-controls .t
   justify-content: center;
   gap: 8px;
 }
-

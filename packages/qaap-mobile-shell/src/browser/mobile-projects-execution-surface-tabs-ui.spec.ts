@@ -32,7 +32,6 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             transcriptSheet: undefined,
             transcriptChatHost: undefined,
             transcriptChatInputHost: undefined,
-            transcriptPlanHost: undefined,
             transcriptReviewHost: undefined,
             transcriptPreviewHost: undefined,
             transcriptFilesHost: undefined,
@@ -75,6 +74,8 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 hideHeaderPreviewRunButton: () => undefined,
                 syncHeaderFilesMoreButton: () => undefined,
                 hideHeaderFilesMoreButton: () => undefined,
+                syncHeaderViewModeSwitch: () => undefined,
+                hideHeaderViewModeSwitch: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptSurfacesUi'],
             projectDetailUi: {} as MobileProjectsExecutionSurfaceTabsHost['projectDetailUi'],
             ensureAgentsHubExecutionShellRendered: () => undefined,
@@ -198,11 +199,11 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }));
 
         expect(ui.executionSurfaceTabSpecs().map(spec => spec.id)).to.deep.equal([
-            'plan', 'review', 'preview', 'files', 'terminal',
+            'preview', 'files', 'terminal',
         ]);
     });
 
-    it('allows opening Changes while the agent is still streaming', () => {
+    it('redirects Changes (review) to the Files tab with changes view mode', () => {
         const project: MobileProjectEntry = {
             id: 'p1',
             name: 'Demo',
@@ -228,10 +229,12 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             updatedAt: 2,
             messageCount: 2,
         };
+        const filesHost = document.createElement('div');
         const reviewHost = document.createElement('div');
         const host = createHost({
             transcriptOpenProject: project,
             transcriptOpenSummary: summary,
+            transcriptFilesHost: filesHost,
             transcriptReviewHost: reviewHost,
             transcriptLastConv: {
                 id: 'conv-1',
@@ -254,18 +257,22 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
         ui.selectTranscriptTab('review', project, summary);
 
-        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('review');
-        expect(reviewHost.hidden).to.equal(false);
+        // 'review' is redirected to 'files' — the tab is stored as 'files'
+        // and the files host is shown (not the review host).
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+        expect(filesHost.hidden).to.equal(false);
+        expect(reviewHost.hidden).to.equal(true);
     });
 
-    it('shows Chat first and excludes Editor from the execution view overflow menu', () => {
+    it('shows Chat first and excludes Editor and Changes from the execution view overflow menu', () => {
         const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
         const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
 
         const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(label => label.textContent);
-        expect(labels).to.include.members(['Chat', 'Plan', 'Changes', 'Preview', 'Files', 'Terminal']);
+        expect(labels).to.include.members(['Chat', 'Preview', 'Files', 'Terminal']);
         expect(labels).to.not.include('Editor');
+        expect(labels).to.not.include('Changes');
         expect(labels[0]).to.equal('Chat');
 
         const chatOption = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-option[data-tab="messages"]');
@@ -365,7 +372,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         });
         const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
 
-        ui.showOnlyExecutionSurfaceTab('plan');
+        ui.showOnlyExecutionSurfaceTab('review');
         expect(flushed).to.deep.equal(['conv-42']);
         expect(host.stickyComposerHost.childElementCount).to.equal(0);
 
