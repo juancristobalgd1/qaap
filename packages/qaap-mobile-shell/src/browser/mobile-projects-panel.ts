@@ -1118,7 +1118,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected createSessionsSidebarPinnedSection(groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>, onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
-        return createSessionsSidebarPinnedSectionExtracted(this, groups, onActivate);
+        return createSessionsSidebarPinnedSectionExtracted(this, groups, onActivate, bypassConversationLimit);
     }
 
     protected getSessionsSidebarConversationDisplayLimit(project: MobileProjectEntry, totalCount: number, bypassLimit: boolean,): number {
@@ -1142,7 +1142,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected createSessionsSidebarPinnedProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
-        return createSessionsSidebarPinnedProjectGroupExtracted(this, project, conversations, onActivate);
+        return createSessionsSidebarPinnedProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);
     }
 
     /** Expand current workspace (+ running) by default; user toggles persist for the session. */
@@ -1151,7 +1151,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected createSessionsSidebarProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
-        return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate);
+        return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);
     }
 
     protected createSessionsSidebarProjectRowHead(project: MobileProjectEntry, expanded: boolean, onToggleExpand: () => void,): HTMLElement {
@@ -1469,7 +1469,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected async refreshInboxPullRequests(projects: MobileProjectEntry[] | undefined = undefined, force = false,): Promise<void> {
-        return refreshInboxPullRequestsExtracted(this, projects, force = false);
+        return refreshInboxPullRequestsExtracted(this, projects, force);
     }
 
     protected collectTeamMembersForHub(): WorkHubTeamMember[] {

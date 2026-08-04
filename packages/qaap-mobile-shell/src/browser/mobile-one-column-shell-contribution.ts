@@ -643,7 +643,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     protected teardownMobileUi(preserveProjectsLanding = false): void {
-        teardownMobileUiExtracted(this, preserveProjectsLanding = false);
+        teardownMobileUiExtracted(this, preserveProjectsLanding);
     }
 
     protected ensureOverlayElements(): void {

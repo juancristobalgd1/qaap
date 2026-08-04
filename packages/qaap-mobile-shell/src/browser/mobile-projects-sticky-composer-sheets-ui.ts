@@ -289,7 +289,7 @@ export class MobileProjectsStickyComposerSheetsUi {
         return createAgentPickerNoResultsHintExtracted(this);
     }
     appendAgentModelPickerList(list: HTMLElement, agentId: string, models: readonly QaapQaiqModelOption[], storedModel: ReturnType<typeof readStoredAgentModel>, onSelect: (model: QaapQaiqModelOption) => void, loadFailed = false, onRetry?: () => void,): void {
-        appendAgentModelPickerListExtracted(this, list, agentId, models, storedModel, onSelect, loadFailed = false, onRetry);
+        appendAgentModelPickerListExtracted(this, list, agentId, models, storedModel, onSelect, loadFailed, onRetry);
     }
 }
 

@@ -483,7 +483,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         conv: QaapAgentConversationDTO,
         stalled: boolean,
         timedOut = false,): void {
-        syncTranscriptStreamingActivityLineExtracted(this, line, conv, stalled, timedOut = false);
+        syncTranscriptStreamingActivityLineExtracted(this, line, conv, stalled, timedOut);
     }
 
     syncTranscriptStreamingActivityRow(row: HTMLElement, conv: QaapAgentConversationDTO): boolean {
@@ -748,7 +748,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     protected resolveTranscriptActivityTimelineSummary(segments: readonly QaapAgentMessageSegmentDTO[],
         hiddenCount = 0,
         options?: { readonly streaming?: boolean; readonly row?: HTMLElement },): string {
-        return resolveTranscriptActivityTimelineSummaryExtracted(this, segments, hiddenCount = 0, options);
+        return resolveTranscriptActivityTimelineSummaryExtracted(this, segments, hiddenCount, options);
     }
 
     protected resolveTranscriptTurnDurationMs(segments: readonly QaapAgentMessageSegmentDTO[],
@@ -767,7 +767,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         options?: TranscriptActivityTimelineOptions,
         tier: ReturnType<typeof resolveTranscriptTimelineItemTier> = isActive ? 'current' : 'recent',
         subagentCardChild = false,): void {
-        syncTranscriptActivityItemElementExtracted(this, li, item, isActive, options, tier, subagentCardChild = false);
+        syncTranscriptActivityItemElementExtracted(this, li, item, isActive, options, tier, subagentCardChild);
     }
 
     protected syncTranscriptExecutionNarrativeItemElement(li: HTMLElement,
@@ -808,7 +808,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         tierClass: string,
         shimmerActive: boolean,
         subagentCardChild = false,): void {
-        applyTranscriptActivityItemChromeExtracted(this, li, item, isActive, options, tierClass, shimmerActive, subagentCardChild = false);
+        applyTranscriptActivityItemChromeExtracted(this, li, item, isActive, options, tierClass, shimmerActive, subagentCardChild);
     }
 
     protected applyTranscriptActivityStepShimmer(copy: HTMLElement,
@@ -943,7 +943,7 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     createTranscriptActivityLabel(text: string, active = false): HTMLElement {
-        return createTranscriptActivityLabelExtracted(this, text, active = false);
+        return createTranscriptActivityLabelExtracted(this, text, active);
     }
 
     createTranscriptPremiumHead(iconClass: string,

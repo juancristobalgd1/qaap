@@ -216,7 +216,7 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     refreshWorkHubSessionsSidebarList(force = false): void {
-        refreshWorkHubSessionsSidebarListExtracted(this, force = false);
+        refreshWorkHubSessionsSidebarListExtracted(this, force);
     }
     resolveWorkHubSessionsSidebarProject(): MobileProjectEntry | undefined {
         return resolveWorkHubSessionsSidebarProjectExtracted(this);
@@ -243,7 +243,7 @@ export class MobileProjectsSessionsSidebarUi {
         return collectSessionsSidebarPinnedGroupsExtracted(this, projects, query);
     }
     createSessionsSidebarPinnedSection(groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>, onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
-        return createSessionsSidebarPinnedSectionExtracted(this, groups, onActivate, bypassConversationLimit = false);
+        return createSessionsSidebarPinnedSectionExtracted(this, groups, onActivate, bypassConversationLimit);
     }
     protected resolveSessionsSidebarCollapsedLimit(totalConversations: number): number {
         return resolveSessionsSidebarCollapsedLimitExtracted(this, totalConversations);
@@ -264,7 +264,7 @@ export class MobileProjectsSessionsSidebarUi {
         return createSessionsSidebarShowLessControlExtracted(this, project);
     }
     createSessionsSidebarPinnedProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
-        return createSessionsSidebarPinnedProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit = false);
+        return createSessionsSidebarPinnedProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);
     }
     seedSessionsSidebarAccordionDefaults(projects: MobileProjectEntry[]): void {
         seedSessionsSidebarAccordionDefaultsExtracted(this, projects);
@@ -278,7 +278,7 @@ export class MobileProjectsSessionsSidebarUi {
         return compareSessionsSidebarProjectOrderExtracted(this, a, b);
     }
     createSessionsSidebarProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
-        return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit = false);
+        return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);
     }
     createSessionsSidebarProjectRowHead(project: MobileProjectEntry, expanded: boolean, onToggleExpand: () => void,): HTMLElement {
         return createSessionsSidebarProjectRowHeadExtracted(this, project, expanded, onToggleExpand);

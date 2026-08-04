@@ -590,7 +590,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     async createTranscriptTerminalSlide(workspaceKey: TranscriptWorkspaceSurfaceKey, cwd: string, services: TranscriptTerminalViewServices, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, activateNewest = false,): Promise<void> {
-        return createTranscriptTerminalSlideExtracted(this, workspaceKey, cwd, services, project, summary, activateNewest = false);
+        return createTranscriptTerminalSlideExtracted(this, workspaceKey, cwd, services, project, summary, activateNewest);
     }
 
     protected async mountFreshTranscriptTerminalSlide(workspaceKey: TranscriptWorkspaceSurfaceKey, cwd: string, services: TranscriptTerminalViewServices, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, activateNewest: boolean,): Promise<void> {

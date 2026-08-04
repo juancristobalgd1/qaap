@@ -146,7 +146,7 @@ export class MobileProjectsService {
     }
 
     protected async openGithubProject(project: MobileProjectEntry, newWindow = false): Promise<void> {
-        return openGithubProjectExtracted(this, project, newWindow = false);
+        return openGithubProjectExtracted(this, project, newWindow);
     }
 
     async createGithubProject(): Promise<MobileProjectEntry[] | undefined> {

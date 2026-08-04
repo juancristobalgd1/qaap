@@ -408,7 +408,7 @@ export class MobilePullRequestPanel {
     }
 
     protected applyDragStyles(host: Element | null, animate = false): void {
-        applyDragStylesExtracted(this, host, animate = false);
+        applyDragStylesExtracted(this, host, animate);
     }
 
     protected createTestsPill(tests: QaapGithubPullRequestSummary['tests']): HTMLElement {
