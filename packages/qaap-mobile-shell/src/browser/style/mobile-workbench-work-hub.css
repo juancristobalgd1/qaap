@@ -2900,19 +2900,18 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-queue-drag-handle {
   flex: 0 0 auto;
-  cursor: grab;
-  font-size: 14px;
-  /* Match the action-button height (26px) so the gripper icon sits on the
-     same baseline as the edit/send/close codicons. Horizontal negative
-     margin keeps the generous touch target without visual gap. */
-  padding: 0 10px;
-  margin: 0 -6px 0 -2px;
-  width: 36px;
-  height: 26px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 26px;
+  height: 26px;
+  cursor: grab;
+  font-size: 13px;
   line-height: 1;
+  /* Match the action-button box (26×26 inline-flex centered) so the gripper
+     icon sits on the same baseline as the edit/send/close codicons. */
+  padding: 0;
+  margin: 0;
   color: color-mix(in srgb, var(--theia-descriptionForeground) 50%, transparent);
   opacity: 0.5;
   transition: opacity 0.12s;
@@ -2932,8 +2931,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 @media (pointer: coarse) {
   .theia-mobile-sticky-composer-queue-drag-handle {
     opacity: 0.75;
-    padding: 0 12px;
-    width: 44px;
   }
 }
 
@@ -3143,20 +3140,18 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   -webkit-backdrop-filter: none !important;
 }
 
-/* When a queue/working control is expanded, zero out the composer's horizontal
-   padding so the panel spans the full device width. The composer card keeps its
-   own inset via a separate rule below. */
-.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded),
-.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
+/* When a queue/working control is expanded, the panel breaks out of the
+   composer's horizontal padding via negative margins — the composer itself
+   keeps its normal width (card + insets unchanged). */
+.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded) {
+  /* Drop the 2px host inset and break out of the composer padding so the
+     expanded panel spans the full device width. */
   padding-left: 0;
   padding-right: 0;
-}
-
-/* Restore horizontal inset on the composer card so it doesn't touch the edges. */
-.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded) > * .theia-mobile-projects-sticky-composer-card,
-.theia-mobile-projects-sticky-composer:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) > * .theia-mobile-projects-sticky-composer-card {
-  margin-left: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px));
-  margin-right: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px));
+  overflow: visible;
+  align-items: stretch;
+  margin-left: calc(-1 * max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px)));
+  margin-right: calc(-1 * max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px)));
 }
 
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control .theia-mobile-sticky-composer-activity-section.theia-mod-queue-control-section {
@@ -3186,16 +3181,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-queue-collapsed-label {
   white-space: nowrap;
-}
-
-/* When the queue is expanded, it takes the full row width and hides siblings
-   (same pattern as the Working control expand). */
-.theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded) {
-  /* Drop the 2px host inset so the expanded panel lines up with the composer card. */
-  padding-left: 0;
-  padding-right: 0;
-  overflow: visible;
-  align-items: stretch;
 }
 
 /* Separate pill-only host (e.g. Step) while the queue expands elsewhere. */
@@ -3303,7 +3288,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   background: transparent;
   color: color-mix(in srgb, var(--theia-foreground) 82%, var(--theia-descriptionForeground));
   font: inherit;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 500;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -4356,11 +4341,14 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
-  /* Drop the 2px host inset so the expanded panel lines up with the composer card. */
+  /* Drop the 2px host inset and break out of the composer padding so the
+     expanded panel spans the full device width. */
   padding-left: 0;
   padding-right: 0;
   overflow: visible;
   align-items: stretch;
+  margin-left: calc(-1 * max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px)));
+  margin-right: calc(-1 * max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px)));
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
@@ -7630,6 +7618,29 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   border-bottom: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.2));
 }
 
+/* Agent picker + mode picker + approval policy picker: drop the header's
+   bottom border — the content below already carries its own divider, so a
+   second line looks redundant. */
+.theia-mobile-sticky-composer-sheet.theia-mod-agent .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker .theia-mobile-sticky-composer-sheet-header,
+.theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-header,
+.theia-mobile-sticky-composer-sheet.theia-mod-approval-policy .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-approval-policy-picker .theia-mobile-sticky-composer-sheet-header,
+.theia-mobile-sticky-composer-sheet.theia-mod-context-usage .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-context-usage .theia-mobile-sticky-composer-sheet-header {
+  border-bottom: none;
+}
+
+/* Mode picker + context usage: drop the panel's top border — the popover root
+   already frames the top, so a second line looks redundant. */
+.theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-panel,
+.theia-mobile-sticky-composer-sheet.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel {
+  border-top: none;
+}
+
 .theia-mobile-sticky-composer-sheet-header.theia-mod-drilldown {
   display: grid;
   grid-template-columns: 36px 1fr 36px;
@@ -7929,8 +7940,19 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet.theia-mo
 
 .theia-qaap-agent-sheet-search {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 2px 16px 10px;
-  border-bottom: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
+  border-bottom: none;
+}
+
+.theia-qaap-agent-sheet-search-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.55));
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 /* Inline field — no boxed chrome; matches Work Hub search / sticky composer inputs. */

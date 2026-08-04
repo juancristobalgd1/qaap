@@ -456,9 +456,9 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'qaap-queue-expand-close';
-    closeBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/queueClose', 'Close queue'));
+    closeBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/queueMinimize', 'Minimize queue'));
     const closeIcon = document.createElement('span');
-    closeIcon.className = 'codicon codicon-close';
+    closeIcon.className = 'codicon codicon-chevron-down';
     closeIcon.setAttribute('aria-hidden', 'true');
     closeBtn.append(closeIcon);
     closeBtn.addEventListener('click', ev => {

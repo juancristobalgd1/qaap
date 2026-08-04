@@ -306,9 +306,8 @@ describe('qaap-agent-turn-completion', () => {
         expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent' })).to.equal(true);
         expect(autoContinueAllowedForInteraction({})).to.equal(true);
         expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent', approvalPolicyId: 'approve-for-me' })).to.equal(true);
-        // plan / ask are deliberate non-executing stops → never auto-continue
+        // plan is a deliberate non-executing stop → never auto-continue
         expect(autoContinueAllowedForInteraction({ interactionModeId: 'plan' })).to.equal(false);
-        expect(autoContinueAllowedForInteraction({ interactionModeId: 'ask' })).to.equal(false);
         // user opted to stay in the loop → do not auto-continue
         expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent', approvalPolicyId: 'request-approval' })).to.equal(false);
         expect(autoContinueAllowedForInteraction({ interactionModeId: 'agent', autoApprove: false })).to.equal(false);

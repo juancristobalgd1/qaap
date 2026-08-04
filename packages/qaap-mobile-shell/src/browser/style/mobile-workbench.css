@@ -27533,6 +27533,13 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-sticky-com
   max-height: min(480px, 56vh);
 }
 
+/* Agent picker: drop the header's bottom border — the search field below already
+   carries its own divider, so a second line looks redundant. */
+.theia-mobile-sticky-composer-sheet.theia-mod-agent .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-agent-picker .theia-mobile-sticky-composer-sheet-header {
+  border-bottom: none;
+}
+
 /* Annotation popover agent chip: stay above the comment card (~340px) and flip in-viewport. */
 .qaap-sticky-composer-sheet-popover.theia-mod-annotation-anchor {
   z-index: 2147483027 !important;
@@ -27800,7 +27807,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
 
 .qaap-chat-context-usage-panel-row {
   box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 9%, transparent);
+  border: none;
   background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
   color: var(--theia-foreground);
 }
@@ -28162,7 +28169,7 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
 }
 
 .theia-qaap-tool-approval-rules-list {
-  border-top: 1px solid var(--theia-widget-border, rgba(128, 128, 128, 0.35));
+  border-top: none;
   padding-top: 8px;
 }
 

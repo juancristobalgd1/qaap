@@ -22,7 +22,7 @@
   gap: 10px;
   width: 100%;
   margin-top: 0;
-  padding: 10px 8px 8px;
+  padding: 4px 8px 4px;
   border: none;
   min-height: 36px;
   cursor: pointer;
@@ -35,7 +35,7 @@
 .theia-mobile-agent-transcript>.theia-mobile-agent-live-status {
   display: flex !important;
   flex: 0 0 auto;
-  margin-top: 4px;
+  margin-top: -6px;
   background: var(--q-bg, var(--qaap-bg, var(--theia-editor-background, #0a0a0a)));
 }
 

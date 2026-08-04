@@ -370,7 +370,11 @@ export function createPickerSheetOptionButton(options: {
 }
 
 const STICKY_COMPOSER_MODE_ICON_PATHS: Readonly<Record<QaapComposerInteractionModeId, readonly string[]>> = {
-    agent: ['M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8'],
+    agent: [
+        'm15 12-8.373 8.373a1 1 0 1 1-3-3L12 9',
+        'm18 15 4-4',
+        'm21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5',
+    ],
     plan: [
         'M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4',
         'M2 6h4',
@@ -379,14 +383,10 @@ const STICKY_COMPOSER_MODE_ICON_PATHS: Readonly<Record<QaapComposerInteractionMo
         'M2 18h4',
         'M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z',
     ],
-    ask: [
-        'M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
-        'M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1',
-    ],
 };
 
 function isQaapComposerInteractionModeId(modeId: string): modeId is QaapComposerInteractionModeId {
-    return modeId === 'agent' || modeId === 'plan' || modeId === 'ask';
+    return modeId === 'agent' || modeId === 'plan';
 }
 
 function appendStickyComposerModeIconSvg(host: HTMLElement, paths: readonly string[]): void {
@@ -408,7 +408,7 @@ function appendStickyComposerModeIconSvg(host: HTMLElement, paths: readonly stri
     host.append(svg);
 }
 
-/** Lucide mode glyphs for Agent / Plan / Ask (`currentColor`, 16×16). */
+/** Lucide mode glyphs for Build / Plan (`currentColor`, 16×16). */
 export function createStickyComposerModeIcon(modeId: string): HTMLElement | undefined {
     if (!isQaapComposerInteractionModeId(modeId)) {
         return undefined;

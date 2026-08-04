@@ -8,12 +8,9 @@ import { formatQaiqInteractionFlags, normalizeInteractionModeId } from './qaap-q
 
 describe('qaap-qaiq-interaction-flags', () => {
 
-    it('formatQaiqInteractionFlags maps plan and ask modes', () => {
+    it('formatQaiqInteractionFlags maps plan mode', () => {
         expect(formatQaiqInteractionFlags({ interactionModeId: 'plan' }))
             .to.equal('--permission-mode plan');
-        expect(formatQaiqInteractionFlags({ interactionModeId: 'ask' }))
-            .to.include('--permission-mode default')
-            .and.to.include('--disallowed-tools');
     });
 
     it('formatQaiqInteractionFlags maps approval presets in agent mode', () => {

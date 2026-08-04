@@ -44,8 +44,8 @@ const EXECUTION_TASK_RE = new RegExp(
     + '|añad|agrega|actualiza|refactoriza|inicia|arranca|haz\\b)', 'i');
 
 /**
- * Auto-continue only applies to the fully-autonomous `agent` contract. In `plan`/`ask` modes the
- * agent deliberately stops after planning/answering (the QAIQ CLI even blocks Edit/Write/Bash), and
+ * Auto-continue only applies to the fully-autonomous `agent` contract. In `plan` mode the
+ * agent deliberately stops after planning (the QAIQ CLI blocks Edit/Write/Bash), and
  * when the user opted into approving each step (`request-approval` / `autoApprove === false`) they
  * chose to stay in the loop — re-posting "Continue… use Bash" contradicts all of these. Missing
  * mode normalizes to `agent`, so legacy conversations keep auto-continuing.

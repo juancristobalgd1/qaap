@@ -10,24 +10,20 @@ import { hashString } from './qaap-agent-task-client';
 
 const SELECTED_MODE_STORAGE_KEY = 'qaap.mobile.projects.selectedMode';
 
-/** QAIQ interaction modes — Agent executes; Plan drafts only; Ask is read-only. */
+/** QAIQ interaction modes — Build executes; Plan drafts only. */
 export const QAAP_BACKEND_INTERACTION_MODES: readonly ChatMode[] = [
     {
         id: 'agent',
-        name: nls.localize('qaap/mobileProjects/modeAgent', 'Agent'),
+        name: nls.localize('qaap/mobileProjects/modeAgent', 'Build'),
         isDefault: true,
     },
     {
         id: 'plan',
         name: nls.localize('qaap/mobileProjects/modePlan', 'Plan'),
     },
-    {
-        id: 'ask',
-        name: nls.localize('qaap/mobileProjects/modeAsk', 'Ask'),
-    },
 ];
 
-export type QaapComposerInteractionModeId = 'agent' | 'plan' | 'ask';
+export type QaapComposerInteractionModeId = 'agent' | 'plan';
 
 export function scopedModeStorageKey(cwd: string): string {
     return `${SELECTED_MODE_STORAGE_KEY}.${hashString(cwd)}`;
@@ -95,13 +91,7 @@ export function describeComposerInteractionMode(modeId: string | undefined): str
     if (modeId === 'plan') {
         return nls.localize(
             'qaap/mobileProjects/modePlanActive',
-            'Plan mode — QAIQ will draft a plan only. No edits or commands until you switch to Agent.',
-        );
-    }
-    if (modeId === 'ask') {
-        return nls.localize(
-            'qaap/mobileProjects/modeAskActive',
-            'Ask mode — read-only answers about the codebase. No file edits or shell commands.',
+            'Plan mode — QAIQ will draft a plan only. No edits or commands until you switch to Build.',
         );
     }
     return undefined;
@@ -110,14 +100,8 @@ export function describeComposerInteractionMode(modeId: string | undefined): str
 const PLAN_MODE_PREFIX = nls.localize(
     'qaap/mobileProjects/planModePrefix',
     '[QAIQ Plan mode] Respond with a concise markdown plan only: goals, steps, risks, and open questions. '
-        + 'Do not edit files, run shell commands, or invoke tools until the user explicitly approves the plan '
-        + 'and switches to Agent mode.',
-);
-
-const ASK_MODE_PREFIX = nls.localize(
-    'qaap/mobileProjects/askModePrefix',
-    '[QAIQ Ask mode] Read-only: answer questions about the codebase using search/read tools only when needed. '
-        + 'Do not modify files, run destructive shell commands, or propose edits.',
+    + 'Do not edit files, run shell commands, or invoke tools until the user explicitly approves the plan '
+    + 'and switches to Build mode.',
 );
 
 export function applyBackendInteractionModeToPrompt(prompt: string, modeId: string | undefined): string {
@@ -127,9 +111,6 @@ export function applyBackendInteractionModeToPrompt(prompt: string, modeId: stri
     }
     if (modeId === 'plan') {
         return [PLAN_MODE_PREFIX, '', trimmed].join('\n');
-    }
-    if (modeId === 'ask') {
-        return [ASK_MODE_PREFIX, '', trimmed].join('\n');
     }
     return prompt;
 }

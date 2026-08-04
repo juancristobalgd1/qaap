@@ -41,7 +41,7 @@ describe('qaap-agent-ui', () => {
     });
 
     it('createModeSheetOptionButton prepends Lucide icon by mode id', () => {
-        for (const modeId of ['agent', 'plan', 'ask'] as const) {
+        for (const modeId of ['agent', 'plan'] as const) {
             const button = createModeSheetOptionButton({
                 modeId,
                 label: modeId,
@@ -54,7 +54,7 @@ describe('qaap-agent-ui', () => {
     });
 
     it('populateModeToolbarButton shows Lucide icon, label, and chevron', () => {
-        for (const modeId of ['agent', 'plan', 'ask'] as const) {
+        for (const modeId of ['agent', 'plan'] as const) {
             const button = document.createElement('button');
             populateModeToolbarButton(button, { modeId, label: modeId });
             expect(button.querySelector('.theia-qaap-mode-sheet-icon svg')).to.exist;

@@ -514,9 +514,9 @@ export function renderWorkingAgentsPopoverPanel(options: {
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'qaap-working-agents-popover-close';
-    closeBtn.title = nls.localizeByDefault('Close');
+    closeBtn.title = nls.localizeByDefault('Minimize');
     closeBtn.setAttribute('aria-label', closeBtn.title);
-    closeBtn.innerHTML = '<span class="codicon codicon-close" aria-hidden="true"></span>';
+    closeBtn.innerHTML = '<span class="codicon codicon-chevron-down" aria-hidden="true"></span>';
     closeBtn.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();
@@ -630,9 +630,9 @@ export function renderWorkingAgentsDetailPanel(options: {
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'qaap-working-agents-popover-close';
-    closeBtn.title = nls.localizeByDefault('Close');
+    closeBtn.title = nls.localizeByDefault('Minimize');
     closeBtn.setAttribute('aria-label', closeBtn.title);
-    closeBtn.innerHTML = '<span class="codicon codicon-close" aria-hidden="true"></span>';
+    closeBtn.innerHTML = '<span class="codicon codicon-chevron-down" aria-hidden="true"></span>';
     closeBtn.addEventListener('click', event => {
         event.preventDefault();
         event.stopPropagation();

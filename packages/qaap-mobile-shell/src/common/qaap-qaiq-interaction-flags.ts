@@ -5,7 +5,7 @@
 
 import type { QaapAgentApprovalPolicyId } from './qaap-sticky-composer-approval-policy';
 
-export type QaapComposerInteractionModeId = 'agent' | 'plan' | 'ask';
+export type QaapComposerInteractionModeId = 'agent' | 'plan';
 
 export interface QaapQaiqInteractionFlagOptions {
     readonly interactionModeId?: string;
@@ -23,9 +23,6 @@ export function formatQaiqInteractionFlags(options: QaapQaiqInteractionFlagOptio
     if (mode === 'plan') {
         return '--permission-mode plan';
     }
-    if (mode === 'ask') {
-        return '--permission-mode default --disallowed-tools Edit Write NotebookEdit Bash';
-    }
     if (options.autoApprove === false || options.approvalPolicyId === 'request-approval') {
         return '--permission-mode default';
     }
@@ -36,7 +33,7 @@ export function formatQaiqInteractionFlags(options: QaapQaiqInteractionFlagOptio
 }
 
 export function normalizeInteractionModeId(modeId: string | undefined): QaapComposerInteractionModeId {
-    if (modeId === 'plan' || modeId === 'ask') {
+    if (modeId === 'plan') {
         return modeId;
     }
     return 'agent';
