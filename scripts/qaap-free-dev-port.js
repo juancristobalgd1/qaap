@@ -69,7 +69,63 @@ function isStaleDevListener(command) {
     return base === 'node' || base === 'electron';
 }
 
+/**
+ * Kills orphaned Theia plugin-hosts and their LSP children left by previous backend runs.
+ *
+ * When the Theia backend is killed (SIGKILL, OOM, Ctrl-C without graceful shutdown), its
+ * plugin-host processes and their LSP children (eslint, json-language-features, tsserver)
+ * are reparented to PID 1 (launchd) and never cleaned up. Over many restarts they accumulate
+ * unboundedly (observed: 65 plugin-hosts, ~195 processes, 16 GB swap). This function finds
+ * node processes whose PPID is 1 and whose command line matches a Theia plugin pattern, and
+ * terminates them before starting a fresh backend.
+ */
+function killOrphanedPluginHosts() {
+    const patterns = [
+        'plugin-host',
+        'eslintServer.js',
+        'jsonServerMain',
+        'tsserver.js',
+        'typingsInstaller.js',
+    ];
+    // List node processes with PPID=1 (orphaned) and full command line
+    const probe = spawnSync('ps', ['-eo', 'pid,ppid,args'], { encoding: 'utf8' });
+    if (probe.status !== 0 || !probe.stdout.trim()) {
+        return 0;
+    }
+    const lines = probe.stdout.trim().split('\n').slice(1); // skip header
+    let killed = 0;
+    for (const line of lines) {
+        const trimmed = line.trim();
+        const pidMatch = trimmed.match(/^(\d+)\s+1\s+/); // pid, ppid=1
+        if (!pidMatch) {
+            continue;
+        }
+        const pid = Number(pidMatch[1]);
+        if (!Number.isFinite(pid) || pid <= 1) {
+            continue;
+        }
+        const matchesPattern = patterns.some(pattern => trimmed.includes(pattern));
+        if (!matchesPattern) {
+            continue;
+        }
+        try {
+            process.kill(pid, 'SIGTERM');
+            killed += 1;
+        } catch (error) {
+            if (error && typeof error === 'object' && 'code' in error && error.code === 'ESRCH') {
+                continue; // already gone
+            }
+            // best-effort — don't let a single failure block startup
+        }
+    }
+    return killed;
+}
+
 function main() {
+    const orphans = killOrphanedPluginHosts();
+    if (orphans > 0) {
+        console.warn(`[qaap] Limpiando ${orphans} proceso(s) plugin-host/LSP huérfanos de backends anteriores`);
+    }
     const pids = listListenerPids();
     if (pids.length === 0) {
         return;
