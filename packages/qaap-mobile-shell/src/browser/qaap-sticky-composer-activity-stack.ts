@@ -74,9 +74,16 @@ export interface StickyComposerActivityStackOptions {
     queueExpanded?: boolean;
     onQueueExpandedChange?: (expanded: boolean) => void;
     onQueueEdit?: (index: number, entry: TranscriptFollowUpEntry) => void;
-    /** Send a queued follow-up immediately (every queue row exposes this action). */
+    /** Send a queued follow-up immediately as a parallel peer run (multitask). */
     onQueueSendNow?: (index: number) => void;
+    /** Interrupt the running agent and process this queued message immediately. */
+    onQueueInterrupt?: (index: number) => void;
+    /** Remove a queued follow-up from the list. */
     onQueueRemove?: (index: number) => void;
+    /** Close/dismiss a queued follow-up (same as remove but with a different UI affordance). */
+    onQueueClose?: (index: number) => void;
+    /** Reorder queue entries (drag-to-reorder). */
+    onQueueReorder?: (fromIndex: number, toIndex: number) => void;
     changedFiles?: readonly StickyComposerChangedFileView[];
     /** Display count for the Changes pill when transcript evidence has more files than the git snapshot. */
     changedFileCount?: number;
@@ -144,6 +151,9 @@ export function buildStickyComposerActivityStackFingerprint(options: StickyCompo
         // Drives the send action label ("Run in parallel" vs "Send now").
         options.agentWorking ? 1 : 0,
         drafts,
+        // Reorder support changes the drag handle visibility.
+        options.onQueueReorder ? 1 : 0,
+        options.onQueueInterrupt ? 1 : 0,
     ].join('|');
 }
 
@@ -174,6 +184,15 @@ export function patchStickyComposerActivityStack(
     if (items.length !== entries.length) {
         return false;
     }
+    // If any item's text doesn't match the new entry at that position, the order or content
+    // has changed — return false to force a full re-render (replaceWith) instead of patching
+    // text in-place (which would leave DOM elements in the old physical order).
+    for (let index = 0; index < entries.length; index++) {
+        const textEl = items[index]?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-text');
+        if (!textEl || textEl.textContent !== entries[index].draft) {
+            return false;
+        }
+    }
     const expanded = options.queueExpanded ?? true;
     head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     chevron.classList.toggle('theia-mod-collapsed', !expanded);
@@ -181,23 +200,12 @@ export function patchStickyComposerActivityStack(
     title.textContent = entries.length === 1
         ? nls.localize('qaap/mobileProjects/stickyComposerQueueOne', '1 Queued')
         : nls.localize('qaap/mobileProjects/stickyComposerQueueMany', '{0} Queued', String(entries.length));
+    const sendLabel = stickyComposerQueueSendNowLabel(options);
     for (let index = 0; index < entries.length; index++) {
-        const item = items[index];
-        const textEl = item?.querySelector<HTMLElement>('.theia-mobile-sticky-composer-queue-text');
-        if (!textEl) {
-            return false;
-        }
-        if (textEl.textContent !== entries[index].draft) {
-            textEl.textContent = entries[index].draft;
-        }
-        const sendBtn = item?.querySelector('.codicon-send')?.closest<HTMLButtonElement>(
+        const sendBtn = items[index]?.querySelector('.codicon-send')?.closest<HTMLButtonElement>(
             'button.theia-mobile-sticky-composer-queue-action',
         );
-        if (!sendBtn) {
-            return false;
-        }
-        const sendLabel = stickyComposerQueueSendNowLabel(options);
-        if (sendBtn.title !== sendLabel) {
+        if (sendBtn && sendBtn.title !== sendLabel) {
             sendBtn.title = sendLabel;
             sendBtn.setAttribute('aria-label', sendLabel);
         }
@@ -453,6 +461,17 @@ function renderQueueItem(
 ): HTMLElement {
     const row = document.createElement('div');
     row.className = 'theia-mobile-sticky-composer-queue-item';
+    row.dataset.queueIndex = String(index);
+    row.draggable = !!options.onQueueReorder;
+
+    // Drag handle (flechita) — only if reorder is enabled
+    if (options.onQueueReorder) {
+        const dragHandle = document.createElement('span');
+        dragHandle.className = 'theia-mobile-sticky-composer-queue-drag-handle codicon codicon-gripper';
+        dragHandle.setAttribute('aria-hidden', 'true');
+        dragHandle.title = nls.localize('qaap/mobileProjects/queueDragHandle', 'Drag to reorder');
+        row.append(dragHandle);
+    }
 
     const marker = document.createElement('span');
     marker.className = 'theia-mobile-sticky-composer-queue-marker';
@@ -462,32 +481,71 @@ function renderQueueItem(
     text.className = 'theia-mobile-sticky-composer-queue-text';
     text.textContent = entry.draft;
 
+    row.append(marker, text);
+
     const actions = document.createElement('div');
     actions.className = 'theia-mobile-sticky-composer-queue-actions';
 
-    const editBtn = createQueueActionButton(
+    // Edit button
+    actions.append(createQueueActionButton(
         'codicon-edit',
         nls.localize('qaap/mobileProjects/stickyComposerQueueEdit', 'Edit queued message'),
         () => options.onQueueEdit?.(index, entry),
-    );
-    actions.append(editBtn);
+    ));
 
+    // Send now (parallel multitask) button
     actions.append(createQueueActionButton(
         'codicon-send',
         stickyComposerQueueSendNowLabel(options),
         () => options.onQueueSendNow?.(index),
     ));
 
-    actions.append(createQueueActionButton(
-        'codicon-trash',
-        nls.localize('qaap/mobileProjects/stickyComposerQueueRemove', 'Remove from queue'),
-        () => options.onQueueRemove?.(index),
-    ));
+    // Close (X) button — the only dismiss action
+    if (options.onQueueClose) {
+        actions.append(createQueueActionButton(
+            'codicon-close',
+            nls.localize('qaap/mobileProjects/queueClose', 'Close'),
+            () => options.onQueueClose?.(index),
+        ));
+    }
 
-    row.append(marker, text, actions);
+    row.append(actions);
     row.title = total > 1
         ? nls.localize('qaap/mobileProjects/stickyComposerQueueItemHint', 'Queued message {0} of {1}', String(index + 1), String(total))
         : '';
+
+    // Drag-and-drop reorder handlers
+    if (options.onQueueReorder) {
+        row.addEventListener('dragstart', ev => {
+            row.classList.add('theia-mod-dragging');
+            ev.dataTransfer?.setData('text/queue-index', String(index));
+            ev.dataTransfer!.effectAllowed = 'move';
+        });
+        row.addEventListener('dragend', () => {
+            row.classList.remove('theia-mod-dragging');
+            row.parentElement?.querySelectorAll('.theia-mobile-sticky-composer-queue-item')
+                .forEach(el => el.classList.remove('theia-mod-drag-over'));
+        });
+        row.addEventListener('dragover', ev => {
+            ev.preventDefault();
+            if (ev.dataTransfer) {
+                ev.dataTransfer.dropEffect = 'move';
+            }
+            row.classList.add('theia-mod-drag-over');
+        });
+        row.addEventListener('dragleave', () => {
+            row.classList.remove('theia-mod-drag-over');
+        });
+        row.addEventListener('drop', ev => {
+            ev.preventDefault();
+            row.classList.remove('theia-mod-drag-over');
+            const fromIndex = parseInt(ev.dataTransfer?.getData('text/queue-index') ?? '', 10);
+            if (!isNaN(fromIndex) && fromIndex !== index) {
+                options.onQueueReorder?.(fromIndex, index);
+            }
+        });
+    }
+
     return row;
 }
 

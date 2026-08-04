@@ -9,7 +9,6 @@ import {
     type QaapCdpStatusResponse,
     type QaapCloudWorkspaceEnsureRequest,
     type QaapCloudWorkspaceSummary,
-    type QaapCloudWorkspacesResponse,
     type QaapDeployEnvResponse,
     type QaapDeployEnvVar,
     type QaapPreviewShareCreateRequest,
@@ -22,15 +21,6 @@ import {
     type QaapPushVapidResponse,
     type QaapTerminalSessionsUpsertRequest,
 } from '../common/qaap-cloud-api-types';
-
-export async function fetchQaapCloudWorkspaces(): Promise<QaapCloudWorkspacesResponse> {
-    const response = await fetch(`${QAAP_CLOUD_API_PATH}/workspaces`, qaapAuthenticatedFetchInit());
-    if (!response.ok) {
-        return { workspaces: [] };
-    }
-    const body = await response.json() as Partial<QaapCloudWorkspacesResponse>;
-    return { workspaces: Array.isArray(body.workspaces) ? body.workspaces : [] };
-}
 
 export async function ensureQaapCloudWorkspace(
     request: QaapCloudWorkspaceEnsureRequest,

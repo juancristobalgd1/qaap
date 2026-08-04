@@ -513,6 +513,68 @@ export function interruptConversationRunsExtracted(ctx: any, conversationId: str
     void ctx.persist();
 }
 
+/**
+ * Remove a single queued message from the conversation's pending queue. Called when the user
+ * clicks "Cancel" on a queued message row in the transcript.
+ */
+export function cancelQueuedMessageExtracted(ctx: any, conversationId: string, queuedMessageId: string): QaapAgentConversation | undefined {
+    const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
+    if (!conv?.pendingUserMessages?.length) {
+        return conv;
+    }
+    const filtered = conv.pendingUserMessages.filter(m => m.id !== queuedMessageId);
+    const next: QaapAgentConversation = {
+        ...conv,
+        pendingUserMessages: filtered.length > 0 ? filtered : undefined,
+        updatedAt: Date.now(),
+    };
+    ctx.conversations.set(conversationId, next);
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    void ctx.persist();
+    return next;
+}
+
+/**
+ * Dispatch a queued message immediately instead of waiting for the agent to finish. The message
+ * is removed from the queue and re-posted with the specified delivery mode (typically 'parallel'
+ * to spawn a peer run, or 'interrupt' to stop the current agent). Called when the user clicks
+ * "Send now" on a queued message row in the transcript.
+ */
+export function dispatchQueuedMessageExtracted(ctx: any, conversationId: string, queuedMessageId: string, deliveryMode: QaapMessageDeliveryMode): QaapAgentConversation | undefined {
+    const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
+    if (!conv?.pendingUserMessages?.length) {
+        return conv;
+    }
+    const pending = conv.pendingUserMessages.find(m => m.id === queuedMessageId);
+    if (!pending) {
+        return conv;
+    }
+    // Remove from queue first so drainPendingMessages doesn't re-process it.
+    const filtered = conv.pendingUserMessages.filter(m => m.id !== queuedMessageId);
+    const cleared: QaapAgentConversation = {
+        ...conv,
+        pendingUserMessages: filtered.length > 0 ? filtered : undefined,
+        updatedAt: Date.now(),
+    };
+    ctx.conversations.set(conversationId, cleared);
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(cleared) });
+    void ctx.persist();
+    // Re-post the message with the requested delivery mode.
+    return ctx.postUserMessage(
+        conversationId,
+        pending.content,
+        pending.turnAgentId,
+        pending.turnAgentModel,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        pending.clientMessageId ? { clientMessageId: pending.clientMessageId } : undefined,
+        deliveryMode,
+    );
+}
+
 export function postUserMessageExtracted(ctx: any, id: string,
     content: string,
     agentOverride?: string,

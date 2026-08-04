@@ -88,7 +88,7 @@ export {
     QaapMaxConcurrentRunsError,
     parseGitNumstat,
 } from './qaap-agent-conversation-store-constants';
-import { cancelExtracted, createExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, mutatingGitSyncExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
+import { cancelExtracted, cancelQueuedMessageExtracted, createExtracted, dispatchQueuedMessageExtracted, drainPendingMessagesExtracted, enqueuePendingMessageExtracted, getActiveTaskIdForConversationExtracted, getActiveTaskIdsForConversationExtracted, getExtracted, hasActiveTaskForUserMessageExtracted, hasOtherActiveTaskForConversationExtracted, initExtracted, interruptConversationRunsExtracted, linkConversationsToPullRequestExtracted, listExtracted, mutatingGitSyncExtracted, postUserMessageExtracted, retryExtracted, settleStatusForRunExtracted } from './qaap-agent-conversation-store-render2';
 import { attachVisualVerificationBlockExtracted, cancelRunExtracted, continueVisualRepairLoopExtracted, deleteExtracted, failVisualRepairLoopExtracted, forkExtracted, recordVisualVerificationExtracted, recordVisualVerificationVideoExtracted, resolveVisualEvidenceTargetExtracted, resolveVisualRepairSourceUserMessageExtracted, updateExtracted } from './qaap-agent-conversation-store-streaming2';
 import { applyAgUiTaskOutputExtracted, applyTaskOutputExtracted, deliverSubtaskMailboxExtracted, findConversationIdForLeaderTaskExtracted, finishLeaderTurnAndMaybeSynthesizeExtracted, maybeTriggerTeamSynthesisExtracted, onTaskChangedExtracted, parseStructuredLogExtracted, readVisualVerificationExtracted, recordGitActionExtracted, recordSubmitLatencyMarksExtracted, recordTaskLatencyMarksExtracted, recordVisualVerificationFailureExtracted, recordVisualVerificationFlowExtracted, resolveLeaderTaskIdExtracted } from './qaap-agent-conversation-store-timeline2';
 import { applyAccumulatorStructuredOutputExtracted, applyTaskOutcomeExtracted, backfillAgentMessageFromStructuredLogExtracted, maybeRetryTurnWithFallbackExtracted, resolveStructuredParsedTraceEventsExtracted } from './qaap-agent-conversation-store-activity2';
@@ -224,6 +224,14 @@ export class QaapAgentConversationStore {
 
     interruptConversationRuns(conversationId: string): void {
         return interruptConversationRunsExtracted(this, conversationId);
+    }
+
+    cancelQueuedMessage(conversationId: string, queuedMessageId: string): import('../common/qaap-agent-conversation').QaapAgentConversation | undefined {
+        return cancelQueuedMessageExtracted(this, conversationId, queuedMessageId);
+    }
+
+    dispatchQueuedMessage(conversationId: string, queuedMessageId: string, deliveryMode: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode): import('../common/qaap-agent-conversation').QaapAgentConversation | undefined {
+        return dispatchQueuedMessageExtracted(this, conversationId, queuedMessageId, deliveryMode);
     }
 
     linkConversationsToPullRequest(input: QaapLinkConversationsByBranchRequest): number {

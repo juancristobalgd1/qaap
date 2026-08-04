@@ -222,6 +222,18 @@ export interface QaapAgentConversationDTO {
     readonly contextWindowSize?: number;
     readonly contextUsageEstimated?: boolean;
     readonly contextCompaction?: QaapContextCompactionDTO;
+    /** User messages queued for the next agent turn (delivery mode 'queue'). */
+    readonly pendingUserMessages?: QaapPendingUserMessageDTO[];
+}
+
+/** A user message waiting in the queue (delivery mode 'queue'), not yet in the transcript. */
+export interface QaapPendingUserMessageDTO {
+    readonly id: string;
+    readonly content: string;
+    readonly createdAt: number;
+    readonly turnAgentId?: string;
+    readonly turnAgentModel?: QaapCreateAgentTaskQaiqModel;
+    readonly clientMessageId?: string;
 }
 
 function resolveEffectiveConversationStatus(conv: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO['status'] {
@@ -550,6 +562,48 @@ export async function postConversationMessage(
     });
     if (!response.ok) {
         throw await buildPostMessageError(response);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+/**
+ * Cancel (remove) a queued user message from the conversation's pending queue.
+ * The message is discarded and will not be processed.
+ */
+export async function cancelQueuedConversationMessage(
+    id: string,
+    queuedMessageId: string,
+): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/queued-messages/${encodeURIComponent(queuedMessageId)}`,
+        { method: 'DELETE', credentials: 'include' },
+    );
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentConversationDTO>;
+}
+
+/**
+ * Dispatch a queued user message immediately instead of waiting for the agent to finish.
+ * The message is removed from the queue and re-posted with the specified delivery mode.
+ */
+export async function dispatchQueuedConversationMessage(
+    id: string,
+    queuedMessageId: string,
+    deliveryMode: QaapMessageDeliveryMode = 'parallel',
+): Promise<QaapAgentConversationDTO> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(id)}/queued-messages/${encodeURIComponent(queuedMessageId)}/dispatch`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deliveryMode }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
     }
     return response.json() as Promise<QaapAgentConversationDTO>;
 }

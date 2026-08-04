@@ -20,7 +20,9 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
+    type QaapMessageDeliveryMode,
 } from '../common/qaap-agent-conversation-client';
+
 import { createComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
@@ -139,12 +141,10 @@ export async function startPeerRunOrQueueExtracted(ctx: any, project: MobileProj
     if (await ctx.startIsolatedRunIfRequested(project, entry)) {
         return true;
     }
-    // Default delivery mode is 'queue': the message is enqueued on the backend and processed
-    // when the running agent finishes its turn. This matches the pattern used by Cursor
-    // ("Send after current message"), Claude Code (`pendingMessages`), and Codex
-    // (`delivery: "queued"`). The user can explicitly choose 'parallel' (worktree isolated
-    // peer run) or 'interrupt' (stop & send) via the composer delivery mode selector.
-    const deliveryMode = (entry as TranscriptFollowUpEntry & { deliveryMode?: 'queue' | 'parallel' | 'interrupt' }).deliveryMode ?? 'queue';
+    // The delivery mode is chosen via the inline strip above the composer (see
+    // pendingDeliveryChoice on the host). This function is called once the user
+    // has picked a mode from that strip.
+    const deliveryMode = (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode ?? 'queue';
     try {
         const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
             selectedAgentId: entry.selectedAgentId,
@@ -170,7 +170,7 @@ export async function startPeerRunOrQueueExtracted(ctx: any, project: MobileProj
                 ),
                 { duration: 2600 },
             );
-        } else {
+        } else if (deliveryMode === 'queue') {
             MobileSnackbar.show(
                 nls.localize(
                     'qaap/mobileProjects/messageQueued',
@@ -218,7 +218,7 @@ export function queuePeerRunMessageExtracted(ctx: any, summary: QaapAgentConvers
 export async function submitQueuedFollowUpEntryExtracted(ctx: any, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     entry: TranscriptFollowUpEntry,
-    options: { readonly parallel?: boolean } = {},): Promise<void> {
+    options: { readonly parallel?: boolean; readonly deliveryMode?: QaapMessageDeliveryMode } = {},): Promise<void> {
     ctx.host.transcriptFollowUpFlushInFlight = true;
     try {
         await ctx.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
@@ -230,6 +230,7 @@ export async function submitQueuedFollowUpEntryExtracted(ctx: any, project: Mobi
             variables: entry.variables,
             imagePreviews: entry.imagePreviews,
             ...(options.parallel ? { parallel: true } : {}),
+            ...(options.deliveryMode ? { deliveryMode: options.deliveryMode } : {}),
         });
     } catch (error) {
         ctx.host.transcriptFollowUpQueue.unshift(summary.id, entry);
@@ -479,3 +480,171 @@ export function mountTranscriptStickyComposerExtracted(ctx: any, host: HTMLEleme
     void ctx.mountTranscriptStickyComposerAsync(host, project, summary, chatHost);
 }
 
+
+// ─── Inline delivery mode strip (above composer, non-blocking) ──────────────
+
+/**
+ * Process a delivery mode choice from the inline strip above the composer.
+ * Called when the user clicks one of the three pill buttons (queue / parallel / interrupt).
+ * Clears the pending delivery choice, clears the composer draft, and dispatches the message.
+ */
+export async function resolveDeliveryChoiceExtracted(
+    ctx: any,
+    mode: QaapMessageDeliveryMode,
+): Promise<void> {
+    const pending = ctx.host.pendingDeliveryChoice;
+    if (!pending) {
+        return;
+    }
+    ctx.host.pendingDeliveryChoice = undefined;
+    const { summary, entry, project } = pending;
+    (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode = mode;
+
+    // Now clear the composer draft — the user has committed to sending.
+    if (isAgentsHubIdleConversationSummary(summary)) {
+        writeProjectComposerDraft(project.id, '');
+    } else {
+        clearConversationComposerDraft(summary.id);
+    }
+    ctx.host.transcriptComposerDraft = '';
+    const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
+    input?.dispatchEvent(new Event('input', { bubbles: true }));
+    ctx.host.transcriptComposerSendRefresh?.();
+
+    try {
+        const ok = await ctx.startPeerRunOrQueue(project, summary, entry);
+        if (!ok) {
+            ctx.remountTranscriptStickyComposer();
+        }
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        ctx.host.messageService?.error(nls.localize(
+            'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,
+        ));
+        ctx.remountTranscriptStickyComposer();
+    }
+}
+
+/**
+ * Dismiss the inline delivery mode strip without sending. The draft stays in the composer
+ * so the user can keep editing.
+ */
+export function dismissDeliveryChoiceExtracted(ctx: any): void {
+    ctx.host.pendingDeliveryChoice = undefined;
+    ctx.refreshComposerActivityStack();
+}
+
+/**
+ * Render the inline delivery mode strip that appears above the composer card when
+ * the user has pressed send while an agent is working. The strip is non-blocking:
+ * the composer input stays fully interactive below it.
+ *
+ * Layout (like Cursor's inline queue prompt):
+ * +-----------------------------------------------+
+ * |  ~  "your draft text..."           [x]        |
+ * |  [Queue]  [Send alongside]  [Interrupt]       |
+ * +-----------------------------------------------+
+ */
+export function renderDeliveryModeStripExtracted(ctx: any): HTMLElement | undefined {
+    const pending = ctx.host.pendingDeliveryChoice;
+    if (!pending) {
+        return undefined;
+    }
+    const { entry } = pending;
+
+    const strip = document.createElement('div');
+    strip.className = 'qaap-delivery-mode-strip';
+    strip.setAttribute('role', 'region');
+    strip.setAttribute('aria-label', nls.localize(
+        'qaap/mobileProjects/deliveryModeStripLabel',
+        'Choose how to send your message while the agent is working',
+    ));
+
+    // Top row: status icon + draft preview + dismiss button
+    const topRow = document.createElement('div');
+    topRow.className = 'qaap-delivery-mode-strip-top';
+
+    const statusIcon = document.createElement('span');
+    statusIcon.className = 'qaap-delivery-mode-strip-icon codicon codicon-sync~spin';
+    statusIcon.setAttribute('aria-hidden', 'true');
+
+    const draftPreview = document.createElement('span');
+    draftPreview.className = 'qaap-delivery-mode-strip-draft';
+    const previewText = entry.draft.length > 80
+        ? entry.draft.slice(0, 80) + '\u2026'
+        : entry.draft;
+    draftPreview.textContent = previewText;
+    draftPreview.title = entry.draft;
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.type = 'button';
+    dismissBtn.className = 'qaap-delivery-mode-strip-dismiss';
+    dismissBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/dismissDelivery', 'Dismiss'));
+    const dismissIcon = document.createElement('span');
+    dismissIcon.className = 'codicon codicon-close';
+    dismissBtn.append(dismissIcon);
+    dismissBtn.addEventListener('click', () => ctx.dismissDeliveryChoice());
+
+    topRow.append(statusIcon, draftPreview, dismissBtn);
+    strip.append(topRow);
+
+    // Bottom row: 3 pill buttons
+    const pills = document.createElement('div');
+    pills.className = 'qaap-delivery-mode-strip-pills';
+
+    const options: Array<{
+        mode: QaapMessageDeliveryMode;
+        iconClass: string;
+        label: string;
+        title: string;
+    }> = [
+            {
+                mode: 'queue',
+                iconClass: 'codicon codicon-clock',
+                label: nls.localize('qaap/mobileProjects/deliveryQueue', 'Queue'),
+                title: nls.localize(
+                    'qaap/mobileProjects/deliveryQueueTitle',
+                    'Wait for the current agent to finish, then process this message',
+                ),
+            },
+            {
+                mode: 'parallel',
+                iconClass: 'codicon codicon-split-horizontal',
+                label: nls.localize('qaap/mobileProjects/deliveryParallel', 'Send alongside'),
+                title: nls.localize(
+                    'qaap/mobileProjects/deliveryParallelTitle',
+                    'Start a new agent alongside the current one — both work at the same time',
+                ),
+            },
+            {
+                mode: 'interrupt',
+                iconClass: 'codicon codicon-stop-circle',
+                label: nls.localize('qaap/mobileProjects/deliveryInterrupt', 'Interrupt'),
+                title: nls.localize(
+                    'qaap/mobileProjects/deliveryInterruptTitle',
+                    'Cancel the current agent and process this message immediately',
+                ),
+            },
+        ];
+
+    for (const opt of options) {
+        const pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'qaap-delivery-mode-pill theia-mod-' + opt.mode;
+        pill.title = opt.title;
+        const icon = document.createElement('span');
+        icon.className = 'qaap-delivery-mode-pill-icon ' + opt.iconClass;
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'qaap-delivery-mode-pill-label';
+        label.textContent = opt.label;
+        pill.append(icon, label);
+        pill.addEventListener('click', () => {
+            void ctx.resolveDeliveryChoice(opt.mode);
+        });
+        pills.append(pill);
+    }
+
+    strip.append(pills);
+    return strip;
+}

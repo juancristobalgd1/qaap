@@ -134,104 +134,86 @@ import {
 } from './qaap-composer-preview-action';
 
 export function appendRunningGitActionToTranscriptExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
-        action: QaapGitCommitWorkflowAction,): string | undefined {
-        const messageId = `pending-git-action-${Date.now()}`;
-        const metadata = ctx.buildGitActionMetadata(action, 'running');
-        const message: QaapAgentMessageDTO = {
-            id: messageId,
-            role: 'user',
-            content: createComposerGitActionDisplayMarker(metadata),
-            createdAt: Date.now(),
-        };
-        ctx.pendingGitActionMessageId = messageId;
-        const base = ctx.host.transcriptLastConv?.id === summary.id
-            ? ctx.host.transcriptLastConv
-            : undefined;
-        if (!base) {
-            return messageId;
-        }
-        const next: QaapAgentConversationDTO = {
-            ...base,
-            updatedAt: Date.now(),
-            messages: [...base.messages, message],
-        };
-        ctx.applyGitActionTranscriptConversation(summary, next);
+    action: QaapGitCommitWorkflowAction,): string | undefined {
+    const messageId = `pending-git-action-${Date.now()}`;
+    const metadata = ctx.buildGitActionMetadata(action, 'running');
+    const message: QaapAgentMessageDTO = {
+        id: messageId,
+        role: 'user',
+        content: createComposerGitActionDisplayMarker(metadata),
+        createdAt: Date.now(),
+    };
+    ctx.pendingGitActionMessageId = messageId;
+    const base = ctx.host.transcriptLastConv?.id === summary.id
+        ? ctx.host.transcriptLastConv
+        : undefined;
+    if (!base) {
         return messageId;
+    }
+    const next: QaapAgentConversationDTO = {
+        ...base,
+        updatedAt: Date.now(),
+        messages: [...base.messages, message],
+    };
+    ctx.applyGitActionTranscriptConversation(summary, next);
+    return messageId;
 }
 
 export function markPendingGitActionFailedExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
-        action: QaapGitCommitWorkflowAction,): void {
-        const pendingId = ctx.pendingGitActionMessageId;
-        const base = ctx.host.transcriptLastConv?.id === summary.id
-            ? ctx.host.transcriptLastConv
-            : undefined;
-        if (!pendingId || !base) {
-            return;
-        }
-        const metadata = ctx.buildGitActionMetadata(action, 'failed');
-        const next: QaapAgentConversationDTO = {
-            ...base,
-            updatedAt: Date.now(),
-            messages: base.messages.map(message => message.id === pendingId
-                ? { ...message, content: createComposerGitActionDisplayMarker(metadata) }
-                : message),
-        };
-        ctx.applyGitActionTranscriptConversation(summary, next);
+    action: QaapGitCommitWorkflowAction,): void {
+    const pendingId = ctx.pendingGitActionMessageId;
+    const base = ctx.host.transcriptLastConv?.id === summary.id
+        ? ctx.host.transcriptLastConv
+        : undefined;
+    if (!pendingId || !base) {
+        return;
+    }
+    const metadata = ctx.buildGitActionMetadata(action, 'failed');
+    const next: QaapAgentConversationDTO = {
+        ...base,
+        updatedAt: Date.now(),
+        messages: base.messages.map(message => message.id === pendingId
+            ? { ...message, content: createComposerGitActionDisplayMarker(metadata) }
+            : message),
+    };
+    ctx.applyGitActionTranscriptConversation(summary, next);
 }
 
 export function applyGitActionTranscriptConversationExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
-        conv: QaapAgentConversationDTO,): void {
-        if (ctx.host.transcriptOpenSummary?.id !== summary.id) {
-            return;
-        }
-        ctx.host.transcriptLastConv = conv;
-        ctx.host.conversations?.cacheDocument(conv);
-        const updatedSummary = conversationToSummary(conv);
-        ctx.host.transcriptOpenSummary = updatedSummary;
-        if (ctx.host.transcriptComposerSummary?.id === summary.id) {
-            ctx.host.transcriptComposerSummary = updatedSummary;
-        }
-        ctx.host.conversations?.recordSnapshot(updatedSummary);
-        const chatHost = ctx.host.resolveActiveTranscriptChatHost() ?? ctx.host.transcriptChatHost;
-        if (chatHost) {
-            ctx.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
-        }
+    conv: QaapAgentConversationDTO,): void {
+    if (ctx.host.transcriptOpenSummary?.id !== summary.id) {
+        return;
+    }
+    ctx.host.transcriptLastConv = conv;
+    ctx.host.conversations?.cacheDocument(conv);
+    const updatedSummary = conversationToSummary(conv);
+    ctx.host.transcriptOpenSummary = updatedSummary;
+    if (ctx.host.transcriptComposerSummary?.id === summary.id) {
+        ctx.host.transcriptComposerSummary = updatedSummary;
+    }
+    ctx.host.conversations?.recordSnapshot(updatedSummary);
+    const chatHost = ctx.host.resolveActiveTranscriptChatHost() ?? ctx.host.transcriptChatHost;
+    if (chatHost) {
+        ctx.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, conv);
+    }
 }
 
 export async function recordComposerGitActionInTranscriptExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
-        action: QaapGitCommitWorkflowAction,
-        options: {
-            readonly branch?: string;
-            readonly stat?: { files: number; insertions: number; deletions: number };
-            readonly status: 'completed' | 'failed';
-            readonly replaceMessageId?: string;
-        },): Promise<void> {
-        try {
-            const updated = await recordConversationGitAction(summary.id, ctx.buildGitActionMetadata(action, options.status, {
-                branch: options.branch,
-                stat: options.stat,
-            }), {
-                replaceMessageId: options.replaceMessageId,
-            });
-            if (!updated || ctx.host.transcriptOpenSummary?.id !== summary.id) {
-                if (options.status === 'completed' && ctx.host.transcriptLastConv?.id === summary.id && options.replaceMessageId) {
-                    const metadata = ctx.buildGitActionMetadata(action, 'completed', {
-                        branch: options.branch,
-                        stat: options.stat,
-                    });
-                    const next: QaapAgentConversationDTO = {
-                        ...ctx.host.transcriptLastConv,
-                        updatedAt: Date.now(),
-                        messages: ctx.host.transcriptLastConv.messages.map(message => message.id === options.replaceMessageId
-                            ? { ...message, content: createComposerGitActionDisplayMarker(metadata) }
-                            : message),
-                    };
-                    ctx.applyGitActionTranscriptConversation(summary, next);
-                }
-                return;
-            }
-            ctx.applyGitActionTranscriptConversation(summary, updated);
-        } catch {
+    action: QaapGitCommitWorkflowAction,
+    options: {
+        readonly branch?: string;
+        readonly stat?: { files: number; insertions: number; deletions: number };
+        readonly status: 'completed' | 'failed';
+        readonly replaceMessageId?: string;
+    },): Promise<void> {
+    try {
+        const updated = await recordConversationGitAction(summary.id, ctx.buildGitActionMetadata(action, options.status, {
+            branch: options.branch,
+            stat: options.stat,
+        }), {
+            replaceMessageId: options.replaceMessageId,
+        });
+        if (!updated || ctx.host.transcriptOpenSummary?.id !== summary.id) {
             if (options.status === 'completed' && ctx.host.transcriptLastConv?.id === summary.id && options.replaceMessageId) {
                 const metadata = ctx.buildGitActionMetadata(action, 'completed', {
                     branch: options.branch,
@@ -246,241 +228,303 @@ export async function recordComposerGitActionInTranscriptExtracted(ctx: any, sum
                 };
                 ctx.applyGitActionTranscriptConversation(summary, next);
             }
+            return;
         }
+        ctx.applyGitActionTranscriptConversation(summary, updated);
+    } catch {
+        if (options.status === 'completed' && ctx.host.transcriptLastConv?.id === summary.id && options.replaceMessageId) {
+            const metadata = ctx.buildGitActionMetadata(action, 'completed', {
+                branch: options.branch,
+                stat: options.stat,
+            });
+            const next: QaapAgentConversationDTO = {
+                ...ctx.host.transcriptLastConv,
+                updatedAt: Date.now(),
+                messages: ctx.host.transcriptLastConv.messages.map(message => message.id === options.replaceMessageId
+                    ? { ...message, content: createComposerGitActionDisplayMarker(metadata) }
+                    : message),
+            };
+            ctx.applyGitActionTranscriptConversation(summary, next);
+        }
+    }
 }
 
 export function buildTranscriptComposerActivityStackExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): HTMLElement | undefined {
-        return renderStickyComposerActivityStack(ctx.buildTranscriptComposerActivityOptions(project, summary));
+    summary: QaapAgentConversationSummaryDTO,): HTMLElement | undefined {
+    return renderStickyComposerActivityStack(ctx.buildTranscriptComposerActivityOptions(project, summary));
 }
 
 export function buildTranscriptComposerChangesPillExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): HTMLElement | undefined {
-        return renderStickyComposerChangesPill(ctx.buildTranscriptComposerActivityOptions(project, summary));
+    summary: QaapAgentConversationSummaryDTO,): HTMLElement | undefined {
+    return renderStickyComposerChangesPill(ctx.buildTranscriptComposerActivityOptions(project, summary));
 }
 
 export function buildComposerActivityFingerprintExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
-        activityOptions: StickyComposerActivityStackOptions,
-        activityFiles: {
-            readonly files: readonly StickyComposerChangedFileView[];
-            readonly stats?: { readonly added: number; readonly removed: number };
-        },): string {
-        const pathsKey = activityFiles.files.map(file => file.path).sort().join('\n');
-        return [
-            ctx.host.transcriptFollowUpQueue.size(summary.id),
-            pathsKey,
-            activityFiles.stats?.added ?? 0,
-            activityFiles.stats?.removed ?? 0,
-            activityOptions.agentWorking ? 1 : 0,
-        ].join('|');
+    activityOptions: StickyComposerActivityStackOptions,
+    activityFiles: {
+        readonly files: readonly StickyComposerChangedFileView[];
+        readonly stats?: { readonly added: number; readonly removed: number };
+    },): string {
+    const pathsKey = activityFiles.files.map(file => file.path).sort().join('\n');
+    return [
+        ctx.host.transcriptFollowUpQueue.size(summary.id),
+        pathsKey,
+        activityFiles.stats?.added ?? 0,
+        activityFiles.stats?.removed ?? 0,
+        activityOptions.agentWorking ? 1 : 0,
+    ].join('|');
 }
 
 export function syncComposerActivityFingerprintExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
-        project?: MobileProjectEntry,
-        activityOptions?: StickyComposerActivityStackOptions,): void {
-        const conv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
-        const resolvedProject = project ?? ctx.host.transcriptComposerProject;
-        const activityFiles = resolvedProject
-            ? ctx.resolveComposerActivityFilesForStack(resolvedProject, summary, conv)
-            : ctx.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        const options = activityOptions
-            ?? ctx.buildTranscriptComposerActivityOptions(resolvedProject ?? ctx.host.transcriptComposerProject!, summary);
-        ctx.lastComposerActivityFingerprint = ctx.buildComposerActivityFingerprint(summary, options, activityFiles);
-        ctx.lastComposerChangesPillFingerprint = buildStickyComposerChangesPillFingerprint(options);
-        ctx.lastComposerActivityStackFingerprint = buildStickyComposerActivityStackFingerprint(options);
+    project?: MobileProjectEntry,
+    activityOptions?: StickyComposerActivityStackOptions,): void {
+    const conv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
+    const resolvedProject = project ?? ctx.host.transcriptComposerProject;
+    const activityFiles = resolvedProject
+        ? ctx.resolveComposerActivityFilesForStack(resolvedProject, summary, conv)
+        : ctx.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
+    const options = activityOptions
+        ?? ctx.buildTranscriptComposerActivityOptions(resolvedProject ?? ctx.host.transcriptComposerProject!, summary);
+    ctx.lastComposerActivityFingerprint = ctx.buildComposerActivityFingerprint(summary, options, activityFiles);
+    ctx.lastComposerChangesPillFingerprint = buildStickyComposerChangesPillFingerprint(options);
+    ctx.lastComposerActivityStackFingerprint = buildStickyComposerActivityStackFingerprint(options);
 }
 
 export function refreshComposerActivityStackExtracted(ctx: any): void {
-        const host = ctx.host.transcriptComposerHost;
-        const project = ctx.host.transcriptComposerProject;
-        const summary = ctx.host.transcriptComposerSummary;
-        if (!host?.isConnected || !project || !summary) {
-            return;
+    const host = ctx.host.transcriptComposerHost;
+    const project = ctx.host.transcriptComposerProject;
+    const summary = ctx.host.transcriptComposerSummary;
+    if (!host?.isConnected || !project || !summary) {
+        return;
+    }
+    const wrap = host.querySelector('.theia-mobile-projects-sticky-composer-inner');
+    const card = wrap?.querySelector('.theia-mobile-projects-sticky-composer-card.theia-mod-codex');
+    if (!wrap || !card) {
+        ctx.remountTranscriptStickyComposer();
+        return;
+    }
+    const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
+    const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
+    const changesPill = renderStickyComposerChangesPill(activityOptions);
+    // Activity row vs Working/Step-only strip share the same host class — never tear down
+    // `theia-mod-working-only` during streaming ticks or Step/Working flicker every SSE.
+    const pillHosts = Array.from(
+        wrap.querySelectorAll(':scope > .theia-mobile-sticky-composer-changes-pill-host'),
+    );
+    const existingActivityPill = pillHosts.find(
+        host => !host.classList.contains('theia-mod-working-only'),
+    );
+    const pillsOnlyHost = pillHosts.find(
+        host => host.classList.contains('theia-mod-working-only'),
+    );
+    if (!changesPill) {
+        if (existingActivityPill instanceof HTMLElement) {
+            parkWorkingControlFromAncestor(existingActivityPill);
+            existingActivityPill.remove();
         }
-        const wrap = host.querySelector('.theia-mobile-projects-sticky-composer-inner');
-        const card = wrap?.querySelector('.theia-mobile-projects-sticky-composer-card.theia-mod-codex');
-        if (!wrap || !card) {
-            ctx.remountTranscriptStickyComposer();
-            return;
-        }
-        const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
-        const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
-        const changesPill = renderStickyComposerChangesPill(activityOptions);
-        // Activity row vs Working/Step-only strip share the same host class — never tear down
-        // `theia-mod-working-only` during streaming ticks or Step/Working flicker every SSE.
-        const pillHosts = Array.from(
-            wrap.querySelectorAll(':scope > .theia-mobile-sticky-composer-changes-pill-host'),
-        );
-        const existingActivityPill = pillHosts.find(
-            host => !host.classList.contains('theia-mod-working-only'),
-        );
-        const pillsOnlyHost = pillHosts.find(
-            host => host.classList.contains('theia-mod-working-only'),
-        );
-        if (!changesPill) {
-            if (existingActivityPill instanceof HTMLElement) {
+        ctx.lastComposerChangesPillFingerprint = '';
+    } else if (existingActivityPill instanceof HTMLElement) {
+        if (pillFingerprint === ctx.lastComposerChangesPillFingerprint
+            || patchStickyComposerChangesPillHost(existingActivityPill, activityOptions)) {
+            ctx.lastComposerChangesPillFingerprint = pillFingerprint;
+        } else {
+            if (changesPill instanceof HTMLElement) {
+                transferWorkingControlToHost(existingActivityPill, changesPill);
+                transferStepPillToHost(existingActivityPill, changesPill);
+            } else {
                 parkWorkingControlFromAncestor(existingActivityPill);
-                existingActivityPill.remove();
             }
-            ctx.lastComposerChangesPillFingerprint = '';
-        } else if (existingActivityPill instanceof HTMLElement) {
-            if (pillFingerprint === ctx.lastComposerChangesPillFingerprint
-                || patchStickyComposerChangesPillHost(existingActivityPill, activityOptions)) {
-                ctx.lastComposerChangesPillFingerprint = pillFingerprint;
-            } else {
-                if (changesPill instanceof HTMLElement) {
-                    transferWorkingControlToHost(existingActivityPill, changesPill);
-                    transferStepPillToHost(existingActivityPill, changesPill);
-                } else {
-                    parkWorkingControlFromAncestor(existingActivityPill);
-                }
-                existingActivityPill.replaceWith(changesPill);
-                ctx.lastComposerChangesPillFingerprint = pillFingerprint;
-            }
-        } else if (pillsOnlyHost instanceof HTMLElement && changesPill instanceof HTMLElement) {
-            transferWorkingControlToHost(pillsOnlyHost, changesPill);
-            transferStepPillToHost(pillsOnlyHost, changesPill);
-            wrap.insertBefore(changesPill, card);
-            pillsOnlyHost.remove();
-            ctx.lastComposerChangesPillFingerprint = pillFingerprint;
-        } else {
-            wrap.insertBefore(changesPill, card);
+            existingActivityPill.replaceWith(changesPill);
             ctx.lastComposerChangesPillFingerprint = pillFingerprint;
         }
-        const stackFingerprint = buildStickyComposerActivityStackFingerprint(activityOptions);
-        const stack = renderStickyComposerActivityStack(activityOptions);
-        // Queue lives outside the card (sibling above it), not as theia-mod-has-activity lip.
-        const existing = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
-        card.classList.remove('theia-mod-has-activity');
-        card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack')?.remove();
-        card.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-streaming')?.remove();
-        if (!stack) {
-            existing?.remove();
-            ctx.lastComposerActivityStackFingerprint = '';
-        } else if (existing instanceof HTMLElement) {
-            if (stackFingerprint === ctx.lastComposerActivityStackFingerprint
-                || patchStickyComposerActivityStack(existing, activityOptions)) {
-                ctx.lastComposerActivityStackFingerprint = stackFingerprint;
-            } else {
-                existing.replaceWith(stack);
-                ctx.lastComposerActivityStackFingerprint = stackFingerprint;
-            }
+    } else if (pillsOnlyHost instanceof HTMLElement && changesPill instanceof HTMLElement) {
+        transferWorkingControlToHost(pillsOnlyHost, changesPill);
+        transferStepPillToHost(pillsOnlyHost, changesPill);
+        // Insert the pill BEFORE the queue stack (if it exists) so the pill stays on top.
+        const existingStack = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
+        wrap.insertBefore(changesPill, existingStack ?? card);
+        pillsOnlyHost.remove();
+        ctx.lastComposerChangesPillFingerprint = pillFingerprint;
+    } else {
+        const existingStack = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
+        wrap.insertBefore(changesPill, existingStack ?? card);
+        ctx.lastComposerChangesPillFingerprint = pillFingerprint;
+    }
+    const stackFingerprint = buildStickyComposerActivityStackFingerprint(activityOptions);
+    const stack = renderStickyComposerActivityStack(activityOptions);
+    // Queue lives outside the card (sibling above it), not as theia-mod-has-activity lip.
+    const existing = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
+    card.classList.remove('theia-mod-has-activity');
+    card.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack')?.remove();
+    card.querySelector(':scope > .theia-mobile-sticky-composer-activity-section.theia-mod-streaming')?.remove();
+    if (!stack) {
+        existing?.remove();
+        ctx.lastComposerActivityStackFingerprint = '';
+    } else if (existing instanceof HTMLElement) {
+        if (stackFingerprint === ctx.lastComposerActivityStackFingerprint
+            || patchStickyComposerActivityStack(existing, activityOptions)) {
+            ctx.lastComposerActivityStackFingerprint = stackFingerprint;
         } else {
-            wrap.insertBefore(stack, card);
+            existing.replaceWith(stack);
             ctx.lastComposerActivityStackFingerprint = stackFingerprint;
         }
-        ctx.syncComposerActivityFingerprint(summary, project, activityOptions);
-        ctx.syncTranscriptQueuedFollowUpBubbles(summary);
-        ctx.host.updateWorkingPillChrome();
-        ctx.host.composerHeaderUi.updateStickyComposerFabLift();
+    } else {
+        // Insert the stack AFTER the changes pill (if present) and before the card.
+        const pill = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+        wrap.insertBefore(stack, pill ? pill.nextSibling : card);
+        ctx.lastComposerActivityStackFingerprint = stackFingerprint;
+    }
+    // Normalize DOM order: pill-host → activity-stack → card.
+    // This guarantees the working/changes pill is always above the queue stack,
+    // regardless of which insertion path ran above.
+    const pillEl = wrap.querySelector(':scope > .theia-mobile-sticky-composer-changes-pill-host');
+    const stackEl = wrap.querySelector(':scope > .theia-mobile-sticky-composer-activity-stack');
+    if (pillEl && stackEl && card) {
+        // Expected order: pill, stack, card
+        if (pillEl.compareDocumentPosition(stackEl) & Node.DOCUMENT_POSITION_PRECEDING) {
+            // stack is before pill — swap them
+            wrap.insertBefore(pillEl, stackEl);
+        }
+        if (stackEl.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_PRECEDING) {
+            // card is before stack — move stack before card
+            wrap.insertBefore(stackEl, card);
+        }
+    }
+    ctx.syncComposerActivityFingerprint(summary, project, activityOptions);
+    ctx.syncTranscriptQueuedFollowUpBubbles(summary);
+    ctx.host.updateWorkingPillChrome();
+    ctx.host.composerHeaderUi.updateStickyComposerFabLift();
 }
 
 export function refreshTranscriptComposerActivityIfNeededExtracted(ctx: any, conv: QaapAgentConversationDTO): void {
-        if (!ctx.isComposerBackgroundWorkAllowed()) {
-            return;
+    if (!ctx.isComposerBackgroundWorkAllowed()) {
+        return;
+    }
+    const summary = ctx.host.transcriptComposerSummary;
+    const project = ctx.host.transcriptComposerProject;
+    if (!summary || summary.id !== conv.id || !project || !ctx.host.transcriptComposerHost?.isConnected) {
+        return;
+    }
+    const turnSettled = conv.status !== 'streaming';
+    if (turnSettled && ctx.hasComposerFileActivity(conv)) {
+        if (ctx.shouldRefetchComposerGitSnapshot(conv.id, conv)) {
+            void ctx.syncComposerGitSnapshot(project, summary)
+                .then(() => ctx.refreshComposerActivityStack())
+                .catch(() => undefined);
         }
-        const summary = ctx.host.transcriptComposerSummary;
-        const project = ctx.host.transcriptComposerProject;
-        if (!summary || summary.id !== conv.id || !project || !ctx.host.transcriptComposerHost?.isConnected) {
-            return;
-        }
-        const turnSettled = conv.status !== 'streaming';
-        if (turnSettled && ctx.hasComposerFileActivity(conv)) {
-            if (ctx.shouldRefetchComposerGitSnapshot(conv.id, conv)) {
-                void ctx.syncComposerGitSnapshot(project, summary)
-                    .then(() => ctx.refreshComposerActivityStack())
-                    .catch(() => undefined);
-            }
-        }
-        const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
-        const activityFiles = project
-            ? ctx.resolveComposerActivityFilesForStack(project, summary, conv)
-            : ctx.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
-        const fingerprint = ctx.buildComposerActivityFingerprint(summary, activityOptions, activityFiles);
-        const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
-        if (fingerprint === ctx.lastComposerActivityFingerprint
-            && pillFingerprint === ctx.lastComposerChangesPillFingerprint) {
-            ctx.host.transcriptComposerSendRefresh?.();
-            return;
-        }
-        const previousFingerprint = ctx.lastComposerActivityFingerprint;
-        ctx.lastComposerActivityFingerprint = fingerprint;
-        ctx.lastComposerChangesPillFingerprint = pillFingerprint;
-        const previousPaths = previousFingerprint.split('|')[1] ?? '';
-        const nextPaths = fingerprint.split('|')[1] ?? '';
-        if (nextPaths !== previousPaths) {
-            // New file paths only — invalidate git snapshot so counts stay accurate.
-            ctx.composerActivityGitFilesByConversationId.delete(conv.id);
-            ctx.clearStaleComposerGitLatches(conv.id);
-        }
-        ctx.refreshComposerActivityStack();
+    }
+    const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
+    const activityFiles = project
+        ? ctx.resolveComposerActivityFilesForStack(project, summary, conv)
+        : ctx.host.transcriptMessagesUi.resolveComposerActivityFiles(conv, summary);
+    const fingerprint = ctx.buildComposerActivityFingerprint(summary, activityOptions, activityFiles);
+    const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
+    if (fingerprint === ctx.lastComposerActivityFingerprint
+        && pillFingerprint === ctx.lastComposerChangesPillFingerprint) {
         ctx.host.transcriptComposerSendRefresh?.();
+        return;
+    }
+    const previousFingerprint = ctx.lastComposerActivityFingerprint;
+    ctx.lastComposerActivityFingerprint = fingerprint;
+    ctx.lastComposerChangesPillFingerprint = pillFingerprint;
+    const previousPaths = previousFingerprint.split('|')[1] ?? '';
+    const nextPaths = fingerprint.split('|')[1] ?? '';
+    if (nextPaths !== previousPaths) {
+        // New file paths only — invalidate git snapshot so counts stay accurate.
+        ctx.composerActivityGitFilesByConversationId.delete(conv.id);
+        ctx.clearStaleComposerGitLatches(conv.id);
+    }
+    ctx.refreshComposerActivityStack();
+    ctx.host.transcriptComposerSendRefresh?.();
 }
 
 export function isTranscriptFollowUpReadyExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO): boolean {
-        if (ctx.host.transcriptFollowUpFlushInFlight) {
-            return false;
-        }
-        if (ctx.host.transcriptLastConv?.id === summary.id) {
-            return !isTranscriptAgentExecutionBusy(summary, ctx.host.transcriptLastConv);
-        }
-        return !isTranscriptAgentExecutionBusy(summary, undefined);
+    if (ctx.host.transcriptFollowUpFlushInFlight) {
+        return false;
+    }
+    if (ctx.host.transcriptLastConv?.id === summary.id) {
+        return !isTranscriptAgentExecutionBusy(summary, ctx.host.transcriptLastConv);
+    }
+    return !isTranscriptAgentExecutionBusy(summary, undefined);
 }
 
 export async function flushTranscriptFollowUpQueueExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): Promise<void> {
-        if (!ctx.isTranscriptFollowUpReady(summary)) {
-            return;
-        }
-        const next = ctx.host.transcriptFollowUpQueue.shift(summary.id);
-        if (!next) {
-            return;
-        }
-        await ctx.submitQueuedFollowUpEntry(project, summary, next);
+    summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    if (!ctx.isTranscriptFollowUpReady(summary)) {
+        return;
+    }
+    const next = ctx.host.transcriptFollowUpQueue.shift(summary.id);
+    if (!next) {
+        return;
+    }
+    await ctx.submitQueuedFollowUpEntry(project, summary, next);
 }
 
 export async function sendQueuedFollowUpNowExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        index: number,): Promise<void> {
-        const entry = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
-        if (!entry) {
-            return;
-        }
-        if (ctx.isTranscriptStickyComposerAgentWorking()) {
-            await ctx.dispatchQueuedFollowUpInParallel(project, summary, entry);
-            return;
-        }
-        await ctx.submitQueuedFollowUpEntry(project, summary, entry);
+    summary: QaapAgentConversationSummaryDTO,
+    index: number,): Promise<void> {
+    const entry = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
+    if (!entry) {
+        return;
+    }
+    if (ctx.isTranscriptStickyComposerAgentWorking()) {
+        await ctx.dispatchQueuedFollowUpInParallel(project, summary, entry);
+        return;
+    }
+    await ctx.submitQueuedFollowUpEntry(project, summary, entry);
+}
+
+/**
+ * Interrupt the running agent and process a queued message immediately.
+ * Cancels the current agent turn, then submits the queued entry with deliveryMode 'interrupt'.
+ */
+export async function interruptQueuedFollowUpExtracted(ctx: any, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    index: number,): Promise<void> {
+    const entry = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
+    if (!entry) {
+        return;
+    }
+    ctx.refreshComposerActivityStack();
+    try {
+        await ctx.stopOpenComposerAgentLikeComposerStop();
+        await ctx.submitQueuedFollowUpEntry(project, summary, entry, { deliveryMode: 'interrupt' });
+    } catch (error) {
+        // Put it back in the queue if the interrupt failed.
+        ctx.host.transcriptFollowUpQueue.unshift(summary.id, entry);
+        ctx.refreshComposerActivityStack();
+        throw error;
+    }
 }
 
 export async function dispatchQueuedFollowUpInParallelExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        entry: TranscriptFollowUpEntry,): Promise<void> {
-        // The row already left the queue — repaint before the round-trip so the tap feels instant.
-        ctx.refreshComposerActivityStack();
-        if (await ctx.startIsolatedRunIfRequested(project, entry)) {
-            return;
-        }
-        await ctx.submitQueuedFollowUpEntry(project, summary, entry, { parallel: true });
+    summary: QaapAgentConversationSummaryDTO,
+    entry: TranscriptFollowUpEntry,): Promise<void> {
+    // The row already left the queue — repaint before the round-trip so the tap feels instant.
+    ctx.refreshComposerActivityStack();
+    if (await ctx.startIsolatedRunIfRequested(project, entry)) {
+        return;
+    }
+    await ctx.submitQueuedFollowUpEntry(project, summary, entry, { parallel: true });
 }
 
 export async function startIsolatedRunIfRequestedExtracted(ctx: any, project: MobileProjectEntry,
-        entry: TranscriptFollowUpEntry,): Promise<boolean> {
-        if (ctx.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) !== 'worktree') {
-            return false;
-        }
-        await ctx.host.submitBackgroundAgentTask(project, entry.draft, {
-            openConversation: true,
-            forceVps: true,
-            worktree: true,
-            selectedAgentId: entry.selectedAgentId,
-            modeId: entry.modeId,
-            autoApprove: entry.autoApprove,
-            approvalPolicyId: entry.approvalPolicyId,
-            agentModel: ctx.host.transcriptComposerAgentModel,
-            variables: entry.variables,
-            imagePreviews: entry.imagePreviews,
-        });
-        return true;
+    entry: TranscriptFollowUpEntry,): Promise<boolean> {
+    if (ctx.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) !== 'worktree') {
+        return false;
+    }
+    await ctx.host.submitBackgroundAgentTask(project, entry.draft, {
+        openConversation: true,
+        forceVps: true,
+        worktree: true,
+        selectedAgentId: entry.selectedAgentId,
+        modeId: entry.modeId,
+        autoApprove: entry.autoApprove,
+        approvalPolicyId: entry.approvalPolicyId,
+        agentModel: ctx.host.transcriptComposerAgentModel,
+        variables: entry.variables,
+        imagePreviews: entry.imagePreviews,
+    });
+    return true;
 }
 

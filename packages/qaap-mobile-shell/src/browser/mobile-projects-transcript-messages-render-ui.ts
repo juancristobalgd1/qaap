@@ -68,7 +68,7 @@ import {
     attachTranscriptRowDeferObserver,
     shouldDeferTranscriptRowHeavyContent,
 } from './qaap-transcript-row-defer';
-import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO, cancelQueuedConversationMessage, dispatchQueuedConversationMessage, conversationToSummary } from '../common/qaap-agent-conversation-client';
 import {
     extractLastFailedToolFromMessage,
     resolveAgentTurnFailureTechnicalContent,
@@ -172,6 +172,46 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     buildTranscriptVirtualFooter(conv: QaapAgentConversationDTO, options?: { readonly existingActivityRow?: HTMLElement | null },): HTMLElement[] {
         return buildTranscriptVirtualFooterExtracted(this, conv, options);
+    }
+
+    /** Cancel a queued message — removes it from the server-side pending queue. */
+    async cancelQueuedMessage(conversationId: string, queuedMessageId: string): Promise<void> {
+        try {
+            const updated = await cancelQueuedConversationMessage(conversationId, queuedMessageId);
+            this.host.conversations?.recordSnapshot(conversationToSummary(updated));
+            this.host.transcriptLastConv = updated;
+            const chatHost = this.host.transcriptChatHost;
+            if (chatHost) {
+                this.renderTranscriptMessages(chatHost, updated);
+            }
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            this.host.messageService?.error(
+                nls.localize('qaap/mobileProjects/cancelQueuedFailed', 'Could not cancel queued message: {0}', detail),
+            );
+        }
+    }
+
+    /** Dispatch a queued message immediately with the given delivery mode. */
+    async dispatchQueuedMessage(
+        conversationId: string,
+        pending: QaapPendingUserMessageDTO,
+        deliveryMode: 'queue' | 'parallel' | 'interrupt',
+    ): Promise<void> {
+        try {
+            const updated = await dispatchQueuedConversationMessage(conversationId, pending.id, deliveryMode);
+            this.host.conversations?.recordSnapshot(conversationToSummary(updated));
+            this.host.transcriptLastConv = updated;
+            const chatHost = this.host.transcriptChatHost;
+            if (chatHost) {
+                this.renderTranscriptMessages(chatHost, updated);
+            }
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            this.host.messageService?.error(
+                nls.localize('qaap/mobileProjects/dispatchQueuedFailed', 'Could not send queued message: {0}', detail),
+            );
+        }
     }
 
     /** Activity row currently mounted in the transcript host or virtual footer. */

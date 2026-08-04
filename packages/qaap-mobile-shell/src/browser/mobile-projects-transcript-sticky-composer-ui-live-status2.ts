@@ -134,210 +134,197 @@ import {
 } from './qaap-composer-preview-action';
 
 export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: string,
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        chatHost: HTMLElement,
-        options: {
-            readonly resolvedPinnedId: string;
-            readonly showApprovalPolicy: boolean;
-            readonly isLegacyTheiaChat: boolean;
-        },): Promise<void> {
-        const contextSnapshot = [...ctx.host.transcriptComposerContext];
-        const selectedAgentId = resolveExplicitAgentForSubmit(draft, {
-            pinnedChatAgentId: options.resolvedPinnedId,
-        }) ?? options.resolvedPinnedId;
-        const requests = composerContextRequests(contextSnapshot);
-        const variables = requests.length > 0 ? requests : undefined;
-        const imagePreviews = await collectComposerImagePreviews(
-            contextSnapshot,
-            ctx.host.resolveAttachmentPreview,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    chatHost: HTMLElement,
+    options: {
+        readonly resolvedPinnedId: string;
+        readonly showApprovalPolicy: boolean;
+        readonly isLegacyTheiaChat: boolean;
+    },): Promise<void> {
+    const contextSnapshot = [...ctx.host.transcriptComposerContext];
+    const selectedAgentId = resolveExplicitAgentForSubmit(draft, {
+        pinnedChatAgentId: options.resolvedPinnedId,
+    }) ?? options.resolvedPinnedId;
+    const requests = composerContextRequests(contextSnapshot);
+    const variables = requests.length > 0 ? requests : undefined;
+    const imagePreviews = await collectComposerImagePreviews(
+        contextSnapshot,
+        ctx.host.resolveAttachmentPreview,
+    );
+    const modeId = ctx.host.transcriptComposerModeId;
+    const autoApprove = resolveComposerAutoApprove(
+        options.showApprovalPolicy,
+        ctx.host.transcriptComposerApprovalPolicyId,
+        summary.cwd,
+    );
+    ctx.host.transcriptComposerContext = [];
+    const commitComposerSubmission = (): void => {
+        disposeComposerContextEntries(contextSnapshot);
+    };
+    const restoreComposerSubmission = (): void => {
+        const existingIds = new Set(ctx.host.transcriptComposerContext.map(entry => entry.id));
+        ctx.host.transcriptComposerContext = [
+            ...contextSnapshot.filter(entry => !existingIds.has(entry.id)),
+            ...ctx.host.transcriptComposerContext,
+        ];
+        ctx.host.transcriptComposerDraft = mergeFailedComposerDraft(
+            draft,
+            ctx.host.transcriptComposerDraft,
         );
-        const modeId = ctx.host.transcriptComposerModeId;
-        const autoApprove = resolveComposerAutoApprove(
-            options.showApprovalPolicy,
-            ctx.host.transcriptComposerApprovalPolicyId,
-            summary.cwd,
-        );
-        ctx.host.transcriptComposerContext = [];
-        const commitComposerSubmission = (): void => {
-            disposeComposerContextEntries(contextSnapshot);
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            writeProjectComposerDraft(project.id, ctx.host.transcriptComposerDraft);
+        } else {
+            writeConversationComposerDraft(summary.id, ctx.host.transcriptComposerDraft);
+        }
+    };
+    const clearComposerDraft = (): void => {
+        if (ctx.host.transcriptComposerDraftPersistTimer !== undefined) {
+            window.clearTimeout(ctx.host.transcriptComposerDraftPersistTimer);
+            ctx.host.transcriptComposerDraftPersistTimer = undefined;
+        }
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            // Shared idle summary id — clear the project-scoped draft instead of the (unrelated) per-conversation one.
+            writeProjectComposerDraft(project.id, '');
+        } else {
+            clearConversationComposerDraft(summary.id);
+        }
+        ctx.host.transcriptComposerDraft = '';
+    };
+    if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
+        // An agent is still working — queue the message directly. The message appears as
+        // a draggable list item above the composer with per-item actions (send now as
+        // parallel, interrupt, edit, remove, close). The composer draft is cleared so
+        // the user can write the next queued message.
+        const entry: TranscriptFollowUpEntry = {
+            draft,
+            selectedAgentId,
+            modeId,
+            autoApprove,
+            approvalPolicyId: reconcileAgentApprovalPolicyId(
+                ctx.host.transcriptComposerApprovalPolicyId,
+                summary.cwd,
+            ),
+            variables,
+            imagePreviews,
         };
-        const restoreComposerSubmission = (): void => {
-            const existingIds = new Set(ctx.host.transcriptComposerContext.map(entry => entry.id));
-            ctx.host.transcriptComposerContext = [
-                ...contextSnapshot.filter(entry => !existingIds.has(entry.id)),
-                ...ctx.host.transcriptComposerContext,
-            ];
-            ctx.host.transcriptComposerDraft = mergeFailedComposerDraft(
-                draft,
-                ctx.host.transcriptComposerDraft,
-            );
-            if (isAgentsHubIdleConversationSummary(summary)) {
-                writeProjectComposerDraft(project.id, ctx.host.transcriptComposerDraft);
-            } else {
-                writeConversationComposerDraft(summary.id, ctx.host.transcriptComposerDraft);
-            }
-        };
-        const clearComposerDraft = (): void => {
-            if (ctx.host.transcriptComposerDraftPersistTimer !== undefined) {
-                window.clearTimeout(ctx.host.transcriptComposerDraftPersistTimer);
-                ctx.host.transcriptComposerDraftPersistTimer = undefined;
-            }
-            if (isAgentsHubIdleConversationSummary(summary)) {
-                // Shared idle summary id — clear the project-scoped draft instead of the (unrelated) per-conversation one.
-                writeProjectComposerDraft(project.id, '');
-            } else {
-                clearConversationComposerDraft(summary.id);
-            }
-            ctx.host.transcriptComposerDraft = '';
-        };
-        if (ctx.isTranscriptStickyComposerAgentWorking() && !isAgentsHubIdleConversationSummary(summary)) {
-            // Sending while an agent works starts ANOTHER agent beside it (in-session
-            // multitasking) rather than waiting in line. The queue is now the overflow path:
-            // it only catches the message once the session holds the backend's run limit.
-            const entry: TranscriptFollowUpEntry = {
-                draft,
+        clearComposerDraft();
+        const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
+        input?.dispatchEvent(new Event('input', { bubbles: true }));
+        ctx.host.transcriptComposerSendRefresh?.();
+        ctx.queuePeerRunMessage(summary, entry);
+        ctx.remountTranscriptStickyComposer();
+        return;
+    }
+    clearComposerDraft();
+    if (isAgentsHubIdleConversationSummary(summary)) {
+        const activeChatHost = ctx.resolveComposerTranscriptChatHost(chatHost);
+        if (activeChatHost) {
+            ctx.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
+        }
+        ctx.host.transcriptComposerSendRefresh?.();
+        try {
+            await ctx.host.submitBackgroundAgentTask(project, draft, {
+                openConversation: true,
+                forceVps: true,
                 selectedAgentId,
                 modeId,
+                variables,
+                autoApprove,
+                worktree: ctx.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree',
+                approvalPolicyId: reconcileAgentApprovalPolicyId(
+                    ctx.host.transcriptComposerApprovalPolicyId,
+                    summary.cwd,
+                ),
+                agentModel: ctx.host.transcriptComposerAgentModel,
+                imagePreviews,
+            });
+            commitComposerSubmission();
+        } catch {
+            restoreComposerSubmission();
+            /* submitBackgroundAgentTask surfaces errors */
+        } finally {
+            if (ctx.host.transcriptComposerHost?.isConnected) {
+                ctx.remountTranscriptStickyComposer();
+            } else {
+                ctx.host.stickyComposerRenderUi.renderStickyComposer();
+            }
+        }
+        return;
+    }
+    const activeChatHost = ctx.resolveComposerTranscriptChatHost(chatHost);
+    if (activeChatHost && !options.isLegacyTheiaChat) {
+        ctx.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
+    }
+    try {
+        if (options.isLegacyTheiaChat) {
+            await ctx.host.submitBackgroundAgentTask(project, draft, {
+                openConversation: true,
+                forceVps: true,
+                selectedAgentId: QAAP_PRIMARY_AGENT_ID,
+                modeId,
+                variables,
                 autoApprove,
                 approvalPolicyId: reconcileAgentApprovalPolicyId(
                     ctx.host.transcriptComposerApprovalPolicyId,
                     summary.cwd,
                 ),
-                variables,
                 imagePreviews,
-            };
-            clearComposerDraft();
-            const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
-            // Column submit clears the textarea; re-dispatch input so the syntax mirror refreshes too.
-            input?.dispatchEvent(new Event('input', { bubbles: true }));
-            ctx.host.transcriptComposerSendRefresh?.();
-            try {
-                if (await ctx.startPeerRunOrQueue(project, summary, entry)) {
-                    commitComposerSubmission();
-                } else {
-                    restoreComposerSubmission();
-                    ctx.remountTranscriptStickyComposer();
-                }
-            } catch (error) {
+            });
+            commitComposerSubmission();
+        } else {
+            const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, draft, {
+                selectedAgentId,
+                modeId,
+                variables,
+                autoApprove,
+                approvalPolicyId: reconcileAgentApprovalPolicyId(
+                    ctx.host.transcriptComposerApprovalPolicyId,
+                    summary.cwd,
+                ),
+                agentModel: ctx.host.transcriptComposerAgentModel,
+                imagePreviews,
+            });
+            if (!submitted) {
                 restoreComposerSubmission();
-                const detail = error instanceof Error ? error.message : String(error);
-                ctx.host.messageService?.error(nls.localize(
-                    'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,
-                ));
-                ctx.remountTranscriptStickyComposer();
-            }
-            return;
-        }
-        clearComposerDraft();
-        if (isAgentsHubIdleConversationSummary(summary)) {
-            const activeChatHost = ctx.resolveComposerTranscriptChatHost(chatHost);
-            if (activeChatHost) {
-                ctx.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
-            }
-            ctx.host.transcriptComposerSendRefresh?.();
-            try {
-                await ctx.host.submitBackgroundAgentTask(project, draft, {
-                    openConversation: true,
-                    forceVps: true,
-                    selectedAgentId,
-                    modeId,
-                    variables,
-                    autoApprove,
-                    worktree: ctx.host.stickyComposerWorkspaceUi.resolveComposerWorkspaceDestination(project) === 'worktree',
-                    approvalPolicyId: reconcileAgentApprovalPolicyId(
-                        ctx.host.transcriptComposerApprovalPolicyId,
-                        summary.cwd,
-                    ),
-                    agentModel: ctx.host.transcriptComposerAgentModel,
-                    imagePreviews,
-                });
-                commitComposerSubmission();
-            } catch {
-                restoreComposerSubmission();
-                /* submitBackgroundAgentTask surfaces errors */
-            } finally {
-                if (ctx.host.transcriptComposerHost?.isConnected) {
-                    ctx.remountTranscriptStickyComposer();
-                } else {
-                    ctx.host.stickyComposerRenderUi.renderStickyComposer();
-                }
-            }
-            return;
-        }
-        const activeChatHost = ctx.resolveComposerTranscriptChatHost(chatHost);
-        if (activeChatHost && !options.isLegacyTheiaChat) {
-            ctx.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
-        }
-        try {
-            if (options.isLegacyTheiaChat) {
-                await ctx.host.submitBackgroundAgentTask(project, draft, {
-                    openConversation: true,
-                    forceVps: true,
-                    selectedAgentId: QAAP_PRIMARY_AGENT_ID,
-                    modeId,
-                    variables,
-                    autoApprove,
-                    approvalPolicyId: reconcileAgentApprovalPolicyId(
-                        ctx.host.transcriptComposerApprovalPolicyId,
-                        summary.cwd,
-                    ),
-                    imagePreviews,
-                });
-                commitComposerSubmission();
-            } else {
-                const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, draft, {
-                    selectedAgentId,
-                    modeId,
-                    variables,
-                    autoApprove,
-                    approvalPolicyId: reconcileAgentApprovalPolicyId(
-                        ctx.host.transcriptComposerApprovalPolicyId,
-                        summary.cwd,
-                    ),
-                    agentModel: ctx.host.transcriptComposerAgentModel,
-                    imagePreviews,
-                });
-                if (!submitted) {
-                    restoreComposerSubmission();
-                    ctx.host.messageService?.warn(nls.localize(
-                        'qaap/mobileProjects/transcriptSendInFlight',
-                        'Another message is still being sent. Your draft and attachments were restored.',
-                    ));
-                    return;
-                }
-                commitComposerSubmission();
-            }
-        } catch (error) {
-            restoreComposerSubmission();
-            if (isMaxConcurrentRunsError(error)) {
-                // The conversation already has the maximum number of concurrent agent runs.
-                // Show a friendly message instead of a generic error — the user can wait for
-                // one of the running tasks to finish and then resend.
                 ctx.host.messageService?.warn(nls.localize(
-                    'qaap/mobileProjects/maxConcurrentRuns',
-                    'This task already has the maximum number of agents running. Wait for one to finish, then resend.',
+                    'qaap/mobileProjects/transcriptSendInFlight',
+                    'Another message is still being sent. Your draft and attachments were restored.',
                 ));
-            } else {
-                const detail = error instanceof Error ? error.message : String(error);
-                ctx.host.messageService?.error(nls.localize(
-                    'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail
-                ));
+                return;
             }
-        } finally {
-            ctx.remountTranscriptStickyComposer();
+            commitComposerSubmission();
         }
+    } catch (error) {
+        restoreComposerSubmission();
+        if (isMaxConcurrentRunsError(error)) {
+            // The conversation already has the maximum number of concurrent agent runs.
+            // Show a friendly message instead of a generic error — the user can wait for
+            // one of the running tasks to finish and then resend.
+            ctx.host.messageService?.warn(nls.localize(
+                'qaap/mobileProjects/maxConcurrentRuns',
+                'This task already has the maximum number of agents running. Wait for one to finish, then resend.',
+            ));
+        } else {
+            const detail = error instanceof Error ? error.message : String(error);
+            ctx.host.messageService?.error(nls.localize(
+                'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail
+            ));
+        }
+    } finally {
+        ctx.remountTranscriptStickyComposer();
+    }
 }
 
 export function remountTranscriptStickyComposerExtracted(ctx: any): void {
-        const host = ctx.host.transcriptComposerHost;
-        const project = ctx.host.transcriptComposerProject;
-        const summary = ctx.host.transcriptComposerSummary;
-        const chatHost = ctx.resolveComposerTranscriptChatHost(ctx.host.transcriptChatHost);
-        if (!host?.isConnected || !project || !summary) {
-            return;
-        }
-        ctx.host.transcriptComposerMountKey = undefined;
-        ctx.mountTranscriptStickyComposer(host, project, summary, chatHost ?? host);
+    const host = ctx.host.transcriptComposerHost;
+    const project = ctx.host.transcriptComposerProject;
+    const summary = ctx.host.transcriptComposerSummary;
+    const chatHost = ctx.resolveComposerTranscriptChatHost(ctx.host.transcriptChatHost);
+    if (!host?.isConnected || !project || !summary) {
+        return;
+    }
+    ctx.host.transcriptComposerMountKey = undefined;
+    ctx.mountTranscriptStickyComposer(host, project, summary, chatHost ?? host);
 }
 

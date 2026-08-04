@@ -271,8 +271,6 @@ body.qaap-theme-light .q-topbar {
   border-bottom: 1px solid var(--q-line);
 }
 
-body.qaap-theme-dark .q-row,
-body.qaap-theme-light .q-row,
 body.qaap-theme-dark .theia-TreeNodeContent,
 body.qaap-theme-light .theia-TreeNodeContent,
 body.qaap-theme-dark .monaco-list-row,
@@ -295,8 +293,6 @@ body.qaap-theme-light .theia-mobile-pr-card {
   color: var(--q-text);
 }
 
-body.qaap-theme-dark .q-input-wrap,
-body.qaap-theme-light .q-input-wrap,
 body.qaap-theme-dark .theia-input,
 body.qaap-theme-light .theia-input,
 body.qaap-theme-dark input:not(.theia-mobile-projects-sticky-composer-input):not(.theia-mobile-projects-search-input):not(.theia-qaap-agent-sheet-search-input):not(.theia-mobile-skills-attach-search):not(.theia-mobile-mcp-attach-search),
@@ -313,8 +309,6 @@ body.qaap-theme-light .monaco-inputbox {
   font-family: var(--q-font-sans);
 }
 
-body.qaap-theme-dark .q-pill,
-body.qaap-theme-light .q-pill,
 body.qaap-theme-dark .qaap-pill,
 body.qaap-theme-light .qaap-pill,
 body.qaap-theme-dark .theia-mobile-projects-filter-chip,
@@ -379,23 +373,6 @@ body.qaap-theme-light .q-dot.q-muted {
   background: var(--q-muted);
 }
 
-body.qaap-theme-dark .q-badge,
-body.qaap-theme-light .q-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 18px;
-  padding: 0 6px;
-  border: 1px solid currentColor;
-  border-radius: var(--q-radius-pill);
-  color: var(--q-muted);
-  font-family: var(--q-font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  line-height: 1;
-  text-transform: uppercase;
-}
-
 body.qaap-theme-dark .theia-mobile-projects-status-dot,
 body.qaap-theme-light .theia-mobile-projects-status-dot {
   width: 6px;
@@ -419,8 +396,6 @@ body.qaap-theme-light .theia-mobile-pr-stat-chip {
   text-transform: uppercase;
 }
 
-body.qaap-theme-dark .q-sheet,
-body.qaap-theme-light .q-sheet,
 body.qaap-theme-dark .lm-Menu,
 body.qaap-theme-light .lm-Menu,
 body.qaap-theme-dark .quick-input-widget,
@@ -437,15 +412,11 @@ body.qaap-theme-light .theia-mobile-bottom-actionsheet {
   box-shadow: var(--q-shadow-lg);
 }
 
-body.qaap-theme-dark .q-sheet,
-body.qaap-theme-light .q-sheet,
 body.qaap-theme-dark .theia-mobile-bottom-actionsheet,
 body.qaap-theme-light .theia-mobile-bottom-actionsheet {
   border-radius: 24px 24px 0 0;
 }
 
-body.qaap-theme-dark .q-icon-button,
-body.qaap-theme-light .q-icon-button,
 body.qaap-theme-dark .theia-workbench-nav-btn,
 body.qaap-theme-light .theia-workbench-nav-btn,
 body.qaap-theme-dark .theia-mobile-pr-icon-btn,
@@ -459,8 +430,6 @@ body.qaap-theme-light .theia-mobile-open-repo-close {
   border-radius: var(--q-radius-icon);
 }
 
-body.qaap-theme-dark .q-button-primary,
-body.qaap-theme-light .q-button-primary,
 body.qaap-theme-dark .theia-button.main,
 body.qaap-theme-light .theia-button.main,
 body.qaap-theme-dark .theia-mobile-pr-action.theia-mod-primary,
@@ -484,8 +453,6 @@ body.qaap-theme-light .theia-mobile-projects .theia-mobile-projects-fab {
   font-family: var(--q-font-sans);
 }
 
-body.qaap-theme-dark .q-button-secondary,
-body.qaap-theme-light .q-button-secondary,
 body.qaap-theme-dark .theia-button.secondary,
 body.qaap-theme-light .theia-button.secondary,
 body.qaap-theme-dark .theia-mobile-pr-action.theia-mod-secondary,
@@ -498,8 +465,6 @@ body.qaap-theme-light .theia-mobile-pr-action.theia-mod-secondary {
   font-family: var(--q-font-sans);
 }
 
-body.qaap-theme-dark .q-button-secondary:hover,
-body.qaap-theme-light .q-button-secondary:hover,
 body.qaap-theme-dark .theia-button.secondary:hover,
 body.qaap-theme-light .theia-button.secondary:hover,
 body.qaap-theme-dark .theia-mobile-pr-action.theia-mod-secondary:hover,

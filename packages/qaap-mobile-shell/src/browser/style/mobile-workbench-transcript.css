@@ -3913,6 +3913,106 @@ body.theia-dark .theia-mobile-agent-web-search,
   white-space: nowrap;
 }
 
+/* ─── Queued message footer rows (delivery mode 'queue') ──────────────────── */
+
+.theia-mobile-agent-transcript-queued-message {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(82%, 620px);
+  margin-left: auto;
+  margin-right: 0;
+  padding: 8px 0;
+}
+
+.theia-mobile-agent-transcript-queued-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.theia-mobile-agent-transcript-queued-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 18%, transparent);
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  white-space: nowrap;
+}
+
+.theia-mobile-agent-transcript-queued-badge-icon {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.theia-mobile-agent-transcript-queued-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.theia-mobile-agent-transcript-queued-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 15%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.theia-mobile-agent-transcript-queued-action:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  border-color: color-mix(in srgb, var(--theia-foreground) 25%, transparent);
+}
+
+.theia-mobile-agent-transcript-queued-action.theia-mod-send-now {
+  color: var(--theia-focusBorder, #007fd4);
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 30%, transparent);
+}
+
+.theia-mobile-agent-transcript-queued-action.theia-mod-send-now:hover {
+  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 12%, transparent);
+}
+
+.theia-mobile-agent-transcript-queued-action.theia-mod-cancel {
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  opacity: 0.7;
+}
+
+.theia-mobile-agent-transcript-queued-action.theia-mod-cancel:hover {
+  opacity: 1;
+  color: var(--theia-errorForeground, #f48771);
+  border-color: color-mix(in srgb, var(--theia-errorForeground, #f48771) 30%, transparent);
+}
+
+.theia-mobile-agent-transcript-queued-action-icon {
+  font-size: 13px;
+}
+
+/* Narrow viewport adjustments */
+@media (max-width: 767px) {
+  .theia-mobile-agent-transcript-queued-message {
+    max-width: min(88%, 420px);
+  }
+
+  .theia-mobile-agent-transcript-queued-action {
+    padding: 6px 8px;
+  }
+}
+
 /*
  * Per-run stop in the process accordion header (see qaap-execution-event-timeline.ts).
  * A session can run several agents at once, so each working turn stops on its own; the
@@ -3952,4 +4052,3 @@ body.theia-dark .theia-mobile-agent-web-search,
 .theia-mobile-process-accordion-run-stop+.theia-mobile-process-accordion-chevron {
   margin-left: 8px;
 }
-

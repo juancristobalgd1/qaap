@@ -20,12 +20,6 @@ export interface QaapPreviewRestartRequest {
     readonly processId?: string;
 }
 
-export interface QaapPreviewRestartResponse {
-    readonly status: QaapPreviewProcessStatus;
-    readonly port: number;
-    readonly previewId?: string;
-}
-
 export interface QaapPreviewProcessIdentity {
     readonly previewId: string;
     readonly projectId: string;
@@ -65,7 +59,7 @@ export class QaapStderrRing {
     protected readonly lines: string[] = [];
     protected partial = '';
 
-    constructor(protected readonly maxLines: number = 40) {}
+    constructor(protected readonly maxLines: number = 40) { }
 
     /** Appends a raw stream chunk, retaining only the last {@link maxLines} complete lines. */
     push(chunk: string): void {

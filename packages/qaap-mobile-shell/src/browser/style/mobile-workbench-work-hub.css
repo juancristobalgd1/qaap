@@ -2674,19 +2674,19 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   background: transparent;
 }
 
-/* Queue popover — floats above the composer card, visually detached. */
+/* Queue popover — sits just above the composer card, tight spacing. */
 .theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-popover {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
-  margin: 0 0 8px;
-  padding: 4px 8px 6px;
+  margin: 0 0 2px;
+  padding: 2px 8px 4px;
   border: var(--qaap-codex-shell-border, 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent));
   border-radius: var(--qaap-codex-shell-radius, 16px);
   background: var(--qaap-codex-shell-bg, color-mix(in srgb, var(--theia-editorWidget-background, #1e1e1e) 88%, transparent));
   backdrop-filter: blur(22px) saturate(150%);
   -webkit-backdrop-filter: blur(22px) saturate(150%);
-  box-shadow: 0 8px 24px color-mix(in srgb, #000 28%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, #000 20%, transparent);
   z-index: 4;
 }
 
@@ -2887,10 +2887,46 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-queue-item {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  padding: 5px 2px;
+  padding: 3px 2px;
+  border-radius: 6px;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.18s;
+  border: 1px solid transparent;
+  will-change: transform;
+}
+
+.theia-mobile-sticky-composer-queue-drag-handle {
+  flex: 0 0 auto;
+  cursor: grab;
+  font-size: 14px;
+  margin-top: 3px;
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 50%, transparent);
+  opacity: 0.5;
+  transition: opacity 0.12s;
+}
+
+.theia-mobile-sticky-composer-queue-item:hover .theia-mobile-sticky-composer-queue-drag-handle {
+  opacity: 0.85;
+}
+
+.theia-mobile-sticky-composer-queue-drag-handle:active {
+  cursor: grabbing;
+}
+
+.theia-mobile-sticky-composer-queue-item.theia-mod-dragging {
+  opacity: 0.35;
+  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 10%, transparent);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 25%, transparent);
+}
+
+.theia-mobile-sticky-composer-queue-item.theia-mod-drag-over {
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 50%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 8%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 20%, transparent),
+    0 4px 16px color-mix(in srgb, var(--theia-focusBorder, #007fd4) 15%, transparent);
+  transform: scale(1.01);
 }
 
 .theia-mobile-sticky-composer-queue-marker {
@@ -11084,6 +11120,174 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
    that maintains visual consistency without the GPU cost. */
 @media (max-width: 767px) {
   .theia-mobile-projects-sticky-composer-inner>.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-popover {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--theia-editorWidget-background, #1e1e1e);
+  }
+}
+
+
+/* ─── Inline delivery mode strip (above composer, non-blocking) ───────────── */
+
+.qaap-delivery-mode-strip {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 0 6px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-focusBorder, #007fd4) 25%, transparent);
+  background: color-mix(in srgb, var(--theia-editorWidget-background, #1e1e1e) 92%, var(--theia-focusBorder, #007fd4) 8%);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: qaap-delivery-strip-in 0.18s ease-out;
+}
+
+@keyframes qaap-delivery-strip-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.qaap-delivery-mode-strip-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.qaap-delivery-mode-strip-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-focusBorder, #007fd4);
+  animation: qaap-delivery-spin 1.4s linear infinite;
+}
+
+@keyframes qaap-delivery-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.qaap-delivery-mode-strip-draft {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--theia-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qaap-delivery-mode-strip-dismiss {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 6px;
+  opacity: 0.6;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.qaap-delivery-mode-strip-dismiss:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.qaap-delivery-mode-strip-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.qaap-delivery-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 15%, transparent);
+  border-radius: 20px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.qaap-delivery-mode-pill:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  border-color: color-mix(in srgb, var(--theia-foreground) 25%, transparent);
+}
+
+.qaap-delivery-mode-pill-icon {
+  font-size: 14px;
+}
+
+.qaap-delivery-mode-pill-label {
+  line-height: 1;
+}
+
+/* Queue pill — neutral/secondary */
+.qaap-delivery-mode-pill.theia-mod-queue {
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+}
+
+/* Parallel pill — accent/blue */
+.qaap-delivery-mode-pill.theia-mod-parallel {
+  color: var(--theia-focusBorder, #007fd4);
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 30%, transparent);
+}
+
+.qaap-delivery-mode-pill.theia-mod-parallel:hover {
+  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 12%, transparent);
+}
+
+/* Interrupt pill — danger/red */
+.qaap-delivery-mode-pill.theia-mod-interrupt {
+  color: var(--theia-errorForeground, #f48771);
+  border-color: color-mix(in srgb, var(--theia-errorForeground, #f48771) 30%, transparent);
+}
+
+.qaap-delivery-mode-pill.theia-mod-interrupt:hover {
+  background: color-mix(in srgb, var(--theia-errorForeground, #f48771) 12%, transparent);
+}
+
+/* Narrow viewport */
+@media (max-width: 767px) {
+  .qaap-delivery-mode-strip {
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+
+  .qaap-delivery-mode-strip-draft {
+    font-size: 13px;
+  }
+
+  .qaap-delivery-mode-pill {
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+  .qaap-delivery-mode-strip {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: var(--theia-editorWidget-background, #1e1e1e);

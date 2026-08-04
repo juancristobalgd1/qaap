@@ -155,6 +155,18 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             this.handlePostMessage(req, res);
         });
+        app.delete(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/queued-messages/:queuedMessageId`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handleCancelQueuedMessage(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/queued-messages/:queuedMessageId/dispatch`, (req, res) => {
+            if (!this.getConversationIfOwned(req, res, req.params.id)) {
+                return;
+            }
+            this.handleDispatchQueuedMessage(req, res);
+        });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/ag-ui/events`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
@@ -522,6 +534,43 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 res.status(429).json({ error: message, code: error.code });
                 return;
             }
+            res.status(message === 'Conversation not found.' ? 404 : 400).json({ error: message });
+        }
+    }
+
+    protected handleCancelQueuedMessage(req: Request, res: Response): void {
+        const queuedMessageId = req.params.queuedMessageId;
+        if (!queuedMessageId) {
+            res.status(400).json({ error: '"queuedMessageId" is required.' });
+            return;
+        }
+        const conv = this.store.cancelQueuedMessage(req.params.id, queuedMessageId);
+        if (!conv) {
+            res.status(404).json({ error: 'Conversation not found.' });
+            return;
+        }
+        res.status(200).json(conv);
+    }
+
+    protected handleDispatchQueuedMessage(req: Request, res: Response): void {
+        const body = (req.body ?? {}) as Partial<{ deliveryMode?: string }>;
+        const queuedMessageId = req.params.queuedMessageId;
+        if (!queuedMessageId) {
+            res.status(400).json({ error: '"queuedMessageId" is required.' });
+            return;
+        }
+        const deliveryMode = body.deliveryMode === 'queue' || body.deliveryMode === 'parallel' || body.deliveryMode === 'interrupt'
+            ? body.deliveryMode
+            : QAAP_DEFAULT_DELIVERY_MODE;
+        try {
+            const conv = this.store.dispatchQueuedMessage(req.params.id, queuedMessageId, deliveryMode);
+            if (!conv) {
+                res.status(404).json({ error: 'Conversation not found.' });
+                return;
+            }
+            res.status(202).json(conv);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             res.status(message === 'Conversation not found.' ? 404 : 400).json({ error: message });
         }
     }

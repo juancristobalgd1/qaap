@@ -115,9 +115,6 @@ import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mob
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
 import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';
 import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
-import { MobileProjectsHubRoutinesUi, type MobileProjectsHubRoutinesHost } from './mobile-projects-hub-routines-ui';
-import { MobileProjectsHubResearchUi, type MobileProjectsHubResearchHost } from './mobile-projects-hub-research-ui';
-import { MobileProjectsHubResearchEditorUi, type MobileProjectsHubResearchEditorHost } from './mobile-projects-hub-research-editor-ui';
 import { MobileProjectsHubRoutineEditorUi, type MobileProjectsHubRoutineEditorHost } from './mobile-projects-hub-routine-editor-ui';
 import { MobileProjectsReposHubUi, type MobileProjectsReposHubHost } from './mobile-projects-repos-hub-ui';
 import { MobileProjectsProjectActionsUi, type MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
@@ -313,121 +310,121 @@ import {
 } from './mobile-projects-panel-helpers';
 
 export function renderAgentsHubIdleSubmitOptimisticExtracted(ctx: any, chatHost: HTMLElement,
-        summary: QaapAgentConversationSummaryDTO,
-        draft: string,
-        agentId: string,
-        imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
-        contentOverride?: string,): void {
-        ctx.agentsHubInlineUi.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, agentId, imagePreviews, contentOverride);
+    summary: QaapAgentConversationSummaryDTO,
+    draft: string,
+    agentId: string,
+    imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
+    contentOverride?: string,): void {
+    ctx.agentsHubInlineUi.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, agentId, imagePreviews, contentOverride);
 }
 
 export async function openAgentsHubInlineTranscriptExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): Promise<void> {
-        await ctx.agentsHubInlineUi.openAgentsHubInlineTranscript(project, summary);
+    summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    await ctx.agentsHubInlineUi.openAgentsHubInlineTranscript(project, summary);
 }
 
 export async function refreshOpenTranscriptConversationExtracted(ctx: any, options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
-        await ctx.transcriptLiveUi.refreshOpenTranscriptConversation(options);
+    await ctx.transcriptLiveUi.refreshOpenTranscriptConversation(options);
 }
 
 export function refreshTranscriptChecksViewsExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): void {
-        ctx.transcriptVerifyUi.refreshTranscriptChecksViews(project, summary);
+    summary: QaapAgentConversationSummaryDTO,): void {
+    ctx.transcriptVerifyUi.refreshTranscriptChecksViews(project, summary);
 }
 
 export function renderChecksSectionExtracted(ctx: any, host: HTMLElement | undefined,
-        project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        options: { readonly embedded?: boolean } = {},): void {
-        ctx.transcriptVerifyUi.renderChecksSection(host, project, summary, options);
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    options: { readonly embedded?: boolean } = {},): void {
+    ctx.transcriptVerifyUi.renderChecksSection(host, project, summary, options);
 }
 
 export function handleTranscriptStatusForAutoVerifyExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        status: QaapAgentConversationSummaryDTO['status'],): void {
-        ctx.transcriptVerifyUi.handleTranscriptStatusForAutoVerify(project, summary, status);
+    summary: QaapAgentConversationSummaryDTO,
+    status: QaapAgentConversationSummaryDTO['status'],): void {
+    ctx.transcriptVerifyUi.handleTranscriptStatusForAutoVerify(project, summary, status);
 }
 
 export async function syncTranscriptPreviewFromConversationExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,
-        conv: QaapAgentConversationDTO,): Promise<void> {
-        await ctx.transcriptSurfacesUi.syncTranscriptPreviewFromConversation(project, summary, conv);
+    summary: QaapAgentConversationSummaryDTO,
+    conv: QaapAgentConversationDTO,): Promise<void> {
+    await ctx.transcriptSurfacesUi.syncTranscriptPreviewFromConversation(project, summary, conv);
 }
 
 export function beginTranscriptDevPreviewRequestExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): void {
-        ctx.transcriptSurfacesUi.beginTranscriptDevPreviewRequest(project, summary);
+    summary: QaapAgentConversationSummaryDTO,): void {
+    ctx.transcriptSurfacesUi.beginTranscriptDevPreviewRequest(project, summary);
 }
 
 export function stageTranscriptPreviewReadyUrlExtracted(ctx: any, readyUrl: string): void {
-        const conversationScopeId = normalizeQaapPreviewConversationId(
-            ctx.transcriptController.state.transcriptOpenSummaryId,
-        );
-        ctx.transcriptSurfacesUi.stageTranscriptPreviewReadyUrl(conversationScopeId, readyUrl);
+    const conversationScopeId = normalizeQaapPreviewConversationId(
+        ctx.transcriptController.state.transcriptOpenSummaryId,
+    );
+    ctx.transcriptSurfacesUi.stageTranscriptPreviewReadyUrl(conversationScopeId, readyUrl);
 }
 
 export function ensureOverlayUiExtracted(ctx: any): {
-        parallel: MobileProjectsParallelUi;
-        team: MobileProjectsTeamUi;
-        teamHub: MobileProjectsTeamHubUi;
-        home: MobileProjectsHomeUi;
-    } {
-        return ctx.overlayFactoryUi.ensureOverlayUi();
+    parallel: MobileProjectsParallelUi;
+    team: MobileProjectsTeamUi;
+    teamHub: MobileProjectsTeamHubUi;
+    home: MobileProjectsHomeUi;
+} {
+    return ctx.overlayFactoryUi.ensureOverlayUi();
 }
 
 export function releasePreviewForConversationExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): void {
-        ctx.transcriptSurfacesUi.disposePreviewForConversation(summary);
-        ctx.transcriptSurfacesUi.disposeTranscriptTerminalSlidesForConversation(project, summary);
-        ctx.projectBootstrap?.releasePreviewForConversation(summary.id);
+    summary: QaapAgentConversationSummaryDTO,): void {
+    ctx.transcriptSurfacesUi.disposePreviewForConversation(summary);
+    ctx.transcriptSurfacesUi.disposeTranscriptTerminalSlidesForConversation(project, summary);
+    ctx.projectBootstrap?.releasePreviewForConversation(summary.id);
 }
 
 export function attachTranscriptChatViewWidgetExtracted(ctx: any, widget: MobileProjectChatViewWidget,
-        chatHost: HTMLElement,
-        session: ChatSession,): boolean {
-        return ctx.theiaChatSessionUi.attachTranscriptChatViewWidget(widget, chatHost, session);
+    chatHost: HTMLElement,
+    session: ChatSession,): boolean {
+    return ctx.theiaChatSessionUi.attachTranscriptChatViewWidget(widget, chatHost, session);
 }
 
 export function createComposerEditorContextPanelDelegateExtracted(ctx: any): import('./qaap-composer-editor-context-service').QaapComposerEditorContextPanelDelegate {
-        return {
-            resolveActiveComposerContextTarget: () => ctx.resolveActiveComposerContextTarget(),
-            getComposerContextEntries: target => target === 'transcript'
+    return {
+        resolveActiveComposerContextTarget: () => ctx.resolveActiveComposerContextTarget(),
+        getComposerContextEntries: target => target === 'transcript'
+            ? ctx.transcriptController.state.transcriptComposerContext
+            : ctx.stickyComposerContext,
+        upsertEditorContextEntry: (target, entry) => {
+            const entries = target === 'transcript'
                 ? ctx.transcriptController.state.transcriptComposerContext
-                : ctx.stickyComposerContext,
-            upsertEditorContextEntry: (target, entry) => {
-                const entries = target === 'transcript'
-                    ? ctx.transcriptController.state.transcriptComposerContext
-                    : ctx.stickyComposerContext;
-                const existingIndex = entries.findIndex((item: StickyComposerContextEntry) => item.request.variable.name === entry.request.variable.name);
-                if (existingIndex >= 0) {
-                    revokeComposerContextPreview(entries[existingIndex]);
-                    entries.splice(existingIndex, 1, entry);
-                    return;
-                }
-                entries.push(entry);
-            },
-            notifyEditorContextRemoved: entry => {
-                ctx.handleComposerContextItemRemoved(entry);
-            },
-            refreshComposerAfterContextPin: target => {
-                if (target === 'transcript') {
-                    ctx.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-                    return;
-                }
-                ctx.stickyComposerRenderUi.renderStickyComposer();
-            },
-            focusComposerInput: () => {
-                const input = ctx.root.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input-editor');
-                input?.focus();
-            },
-        };
+                : ctx.stickyComposerContext;
+            const existingIndex = entries.findIndex((item: StickyComposerContextEntry) => item.request.variable.name === entry.request.variable.name);
+            if (existingIndex >= 0) {
+                revokeComposerContextPreview(entries[existingIndex]);
+                entries.splice(existingIndex, 1, entry);
+                return;
+            }
+            entries.push(entry);
+        },
+        notifyEditorContextRemoved: entry => {
+            ctx.handleComposerContextItemRemoved(entry);
+        },
+        refreshComposerAfterContextPin: target => {
+            if (target === 'transcript') {
+                ctx.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                return;
+            }
+            ctx.stickyComposerRenderUi.renderStickyComposer();
+        },
+        focusComposerInput: () => {
+            const input = ctx.root.querySelector<HTMLTextAreaElement>('.theia-mobile-projects-sticky-composer-input-editor');
+            input?.focus();
+        },
+    };
 }
 
 export function resolveActiveComposerContextTargetExtracted(ctx: any): import('./qaap-composer-editor-context-service').ComposerEditorContextTarget {
-        const state = ctx.transcriptController.state;
-        if (state.transcriptOpenSummary || state.transcriptComposerSummary) {
-            return 'transcript';
-        }
-        return 'sticky';
+    const state = ctx.transcriptController.state;
+    if (state.transcriptOpenSummary || state.transcriptComposerSummary) {
+        return 'transcript';
+    }
+    return 'sticky';
 }
 

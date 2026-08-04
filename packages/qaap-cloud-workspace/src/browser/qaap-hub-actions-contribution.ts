@@ -15,7 +15,6 @@ import { probeQaapDevPreviewPort } from '@theia/qaap-mobile-shell/lib/browser/qa
 import { QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-composer-prompt';
 
 export const QAAP_HUB_RESUME_PREVIEW_COMMAND_ID = 'qaap.hub.resumePreview';
-export const QAAP_HUB_OPEN_AGENT_ON_TASK_COMMAND_ID = 'qaap.hub.openAgentOnTask';
 
 const QAAP_HUB_PENDING_ACTION_KEY = 'qaap.hub.pendingAction';
 
@@ -32,10 +31,6 @@ export namespace QaapHubCommands {
     export const RESUME_PREVIEW: Command = {
         id: QAAP_HUB_RESUME_PREVIEW_COMMAND_ID,
         label: nls.localize('qaap/hub/resumePreview', 'Resume preview'),
-    };
-    export const OPEN_AGENT_ON_TASK: Command = {
-        id: QAAP_HUB_OPEN_AGENT_ON_TASK_COMMAND_ID,
-        label: nls.localize('qaap/hub/openAgent', 'Open agent on task'),
     };
 }
 
@@ -54,10 +49,6 @@ export class QaapHubActionsContribution implements CommandContribution, Frontend
     registerCommands(registry: CommandRegistry): void {
         registry.registerCommand(QaapHubCommands.RESUME_PREVIEW, {
             execute: (project?: MobileProjectEntry) => this.resumePreview(project),
-            isEnabled: () => true,
-        });
-        registry.registerCommand(QaapHubCommands.OPEN_AGENT_ON_TASK, {
-            execute: (project?: MobileProjectEntry) => this.openAgentOnTask(project),
             isEnabled: () => true,
         });
     }
@@ -96,13 +87,6 @@ export class QaapHubActionsContribution implements CommandContribution, Frontend
             }
         }
         await this.bootstrap.focusPreview();
-    }
-
-    protected async openAgentOnTask(project?: MobileProjectEntry): Promise<void> {
-        if (!this.ensureProjectReady('openAgentOnTask', project)) {
-            return;
-        }
-        await this.doOpenAgentOnTask(project?.task?.trim());
     }
 
     protected ensureProjectReady(kind: QaapHubPendingActionKind, project?: MobileProjectEntry): boolean {

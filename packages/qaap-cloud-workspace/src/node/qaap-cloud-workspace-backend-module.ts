@@ -53,15 +53,6 @@ import { QaapWebsocketAuthListener } from './qaap-websocket-auth-listener';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { QaapMessagingAuthContribution } from './qaap-messaging-auth-contribution';
 import { QaapJobEndpoint } from './qaap-job-endpoint';
-import { QaapJobLoopEndpoint } from './qaap-job-loop-endpoint';
-import { QaapJobLoopEngine } from './qaap-job-loop-engine';
-import { QaapJobLoopManagementLock } from './qaap-job-loop-management-lock';
-import { QaapJobLoopTemplateEndpoint } from './qaap-job-loop-template-endpoint';
-import { QaapJobLoopTemplateStore } from './qaap-job-loop-template-store';
-import { QaapJobLoopTriggerEndpoint } from './qaap-job-loop-trigger-endpoint';
-import { QaapJobLoopTriggerLeaseManager } from './qaap-job-loop-trigger-lease';
-import { QaapJobLoopTriggerService } from './qaap-job-loop-trigger-service';
-import { QaapJobLoopTriggerStore } from './qaap-job-loop-trigger-store';
 import { QaapJobRuntime } from './qaap-job-runtime';
 import {
     QaapBuiltinJobFunctions,
@@ -116,18 +107,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapJobRuntime).toSelf().inSingletonScope();
     bind(QaapJobEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapJobEndpoint);
-    bind(QaapJobLoopEngine).toSelf().inSingletonScope();
-    bind(QaapJobLoopEndpoint).toSelf().inSingletonScope();
-    bind(BackendApplicationContribution).toService(QaapJobLoopEndpoint);
-    bind(QaapJobLoopManagementLock).toSelf().inSingletonScope();
-    bind(QaapJobLoopTemplateStore).toSelf().inSingletonScope();
-    bind(QaapJobLoopTemplateEndpoint).toSelf().inSingletonScope();
-    bind(BackendApplicationContribution).toService(QaapJobLoopTemplateEndpoint);
-    bind(QaapJobLoopTriggerStore).toSelf().inSingletonScope();
-    bind(QaapJobLoopTriggerLeaseManager).toSelf().inSingletonScope();
-    bind(QaapJobLoopTriggerService).toSelf().inSingletonScope();
-    bind(QaapJobLoopTriggerEndpoint).toSelf().inSingletonScope();
-    bind(BackendApplicationContribution).toService(QaapJobLoopTriggerEndpoint);
 
     // Dynamic Workflows (ADR-001). Inert until a run is started: the service only reacts to
     // terminal events for tasks and jobs that belong to a workflow run.

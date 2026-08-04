@@ -57,41 +57,6 @@ export function createWorkHubMoreActionsIcon(): SVGSVGElement {
     return svg;
 }
 
-/**
- * Cursor-style agents cluster (pyramid of dots) for the Work Hub "N Working" pill.
- * Not decorative: dots are a sequenced skill/loader while agents are working.
- */
-export function createWorkHubWorkingAgentsIcon(): SVGSVGElement {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 16 16');
-    svg.setAttribute('width', '14');
-    svg.setAttribute('height', '14');
-    svg.setAttribute('fill', 'currentColor');
-    svg.setAttribute('focusable', 'false');
-    svg.setAttribute('aria-hidden', 'true');
-    svg.classList.add(
-        'icon',
-        'theia-mobile-projects-working-pill-icon',
-        'theia-mod-working-loader',
-    );
-    // Tip → mid → base: cascade reads as an active loading skill.
-    const dots: Array<[number, number]> = [
-        [8, 3.25],
-        [5.75, 7],
-        [10.25, 7],
-        [3.5, 10.75],
-        [8, 10.75],
-        [12.5, 10.75],
-    ];
-    dots.forEach(([cx, cy], index) => {
-        const circle = svgEl('circle', { cx: String(cx), cy: String(cy), r: '1.35' });
-        circle.classList.add('qaap-working-loader-dot');
-        circle.style.setProperty('--qaap-working-loader-i', String(index));
-        svg.append(circle);
-    });
-    return svg;
-}
-
 /** 2×2 four-dot grid for a top-level working agent row in the Working expand panel. */
 export function createWorkHubWorkingParentIcon(): SVGSVGElement {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');

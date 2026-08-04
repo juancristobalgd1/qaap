@@ -114,4 +114,16 @@ export class TranscriptFollowUpQueue {
         queue[index] = entry;
         return true;
     }
+
+    /** Move an entry from one position to another (drag-to-reorder). */
+    moveTo(conversationId: string, fromIndex: number, toIndex: number): boolean {
+        const queue = this.byConversation.get(conversationId);
+        if (!queue || fromIndex < 0 || fromIndex >= queue.length
+            || toIndex < 0 || toIndex >= queue.length || fromIndex === toIndex) {
+            return false;
+        }
+        const [entry] = queue.splice(fromIndex, 1);
+        queue.splice(toIndex, 0, entry);
+        return true;
+    }
 }

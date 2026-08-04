@@ -10,17 +10,9 @@ import { PreferenceContribution, PreferenceSchema } from '@theia/core/lib/common
 /** Stub schemas for VS Code extension prefs referenced in linked docs or configurationDefaults. */
 export const qaapPluginCompatibilityPreferenceSchema: PreferenceSchema = {
     properties: {
-        'workbench.editor.restoreViewState': {
-            type: 'boolean',
-            default: true,
-        },
         'problems.visibility': {
             type: 'boolean',
             default: true,
-        },
-        'debug.node.autoAttach': {
-            type: 'string',
-            default: 'disabled',
         },
         'workbench.colorCustomizations': {
             type: 'object',
