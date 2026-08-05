@@ -93,7 +93,9 @@ ARG CACHE_BUST=unpinned
 RUN git clone --depth 1 --branch "${QAIQ_REF}" "${QAIQ_REPO}" /opt/qaiq \
     && cd /opt/qaiq && bun install && bun run build \
     && ln -sf /opt/qaiq/bin/qaiq /usr/local/bin/qaiq \
-    && qaiq --version
+    && ln -sf /opt/qaiq/bin/openclaude /usr/local/bin/openclaude \
+    && qaiq --version \
+    && openclaude --version
 
 ENV PATH="/root/.grok/bin:/root/.local/bin:${PATH}" \
     QAAP_DEFAULT_AGENT=qaiq

@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "repetitions": 1,
   "suite": {
-    "id": "qaap-cursor-claude-live-smoke",
-    "name": "Qaap vs Cursor vs Claude Code — live smoke only",
+    "id": "qaap-cursor-claude-openclaude-live-smoke",
+    "name": "Qaap vs Cursor vs Claude Code vs OpenClaude — live smoke only",
     "completionThreshold": 1,
     "tasks": [
       {
@@ -65,6 +65,16 @@
       "configuration": "headless+accept-edits",
       "model": "default",
       "adapter": "claude-code",
+      "permissionMode": "acceptEdits",
+      "maxTurns": 30
+    },
+    {
+      "id": "openclaude",
+      "name": "OpenClaude",
+      "track": "product-native",
+      "configuration": "headless+accept-edits",
+      "model": "default",
+      "adapter": "openclaude",
       "permissionMode": "acceptEdits",
       "maxTurns": 30
     }

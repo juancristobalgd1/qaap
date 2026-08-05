@@ -108,7 +108,7 @@ function validateSuite(suite, suiteDir) {
         assert(typeof system.id === 'string' && system.id.trim(), 'every system needs an id');
         assert(!systemIds.has(system.id), `duplicate system id "${system.id}"`);
         systemIds.add(system.id);
-        assert(['command', 'cursor-cli', 'claude-code', 'qaap-workflow'].includes(system.adapter),
+        assert(['command', 'cursor-cli', 'claude-code', 'openclaude', 'qaap-workflow'].includes(system.adapter),
             `system "${system.id}" has an unsupported adapter`);
         if (system.adapter === 'command') {
             assert(typeof system.executable === 'string' && system.executable.trim(),
@@ -533,7 +533,37 @@ function usageFromLog(log) {
     return usageFromObject(terminal);
 }
 
-function commandForSystem(system, task, context) {
+function commandForClaudeCompatibleSystem(system, task, context) {
+    const args = ['-p', '--output-format', 'json', '--no-session-persistence'];
+    if (system.adapter === 'openclaude' && system.bare === true) {
+        args.push('--bare');
+    }
+    if (system.dangerouslySkipPermissions === true) {
+        args.push('--dangerously-skip-permissions');
+    } else {
+        args.push('--permission-mode', system.permissionMode ?? 'acceptEdits');
+    }
+    if (system.model) {
+        args.push('--model', system.model);
+    }
+    if (Number.isInteger(system.maxTurns) && system.maxTurns > 0) {
+        args.push('--max-turns', String(system.maxTurns));
+    }
+    if (system.enforceCostBudget !== false && isFiniteNumber(task.budgets?.costUsd)) {
+        args.push('--max-budget-usd', String(task.budgets.costUsd));
+    }
+    if (Array.isArray(system.allowedTools) && system.allowedTools.length) {
+        args.push('--allowedTools', system.allowedTools.join(','));
+    }
+    args.push(context.prompt);
+    return {
+        executable: system.executable ?? (system.adapter === 'openclaude' ? 'openclaude' : 'claude'),
+        args,
+        env: system.env ?? {},
+    };
+}
+
+export function commandForSystem(system, task, context) {
     if (system.adapter === 'command') {
         return {
             executable: expand(system.executable, context),
@@ -557,27 +587,8 @@ function commandForSystem(system, task, context) {
         args.push(context.prompt);
         return { executable: system.executable ?? 'cursor-agent', args, env: system.env ?? {} };
     }
-    if (system.adapter === 'claude-code') {
-        const args = ['-p', '--output-format', 'json', '--no-session-persistence'];
-        if (system.dangerouslySkipPermissions === true) {
-            args.push('--dangerously-skip-permissions');
-        } else {
-            args.push('--permission-mode', system.permissionMode ?? 'acceptEdits');
-        }
-        if (system.model) {
-            args.push('--model', system.model);
-        }
-        if (Number.isInteger(system.maxTurns) && system.maxTurns > 0) {
-            args.push('--max-turns', String(system.maxTurns));
-        }
-        if (system.enforceCostBudget !== false && isFiniteNumber(task.budgets?.costUsd)) {
-            args.push('--max-budget-usd', String(task.budgets.costUsd));
-        }
-        if (Array.isArray(system.allowedTools) && system.allowedTools.length) {
-            args.push('--allowedTools', system.allowedTools.join(','));
-        }
-        args.push(context.prompt);
-        return { executable: system.executable ?? 'claude', args, env: system.env ?? {} };
+    if (system.adapter === 'claude-code' || system.adapter === 'openclaude') {
+        return commandForClaudeCompatibleSystem(system, task, context);
     }
     throw new Error(`System "${system.id}" is not a command adapter`);
 }
@@ -909,6 +920,8 @@ async function preflightSystems(systems, allowHostAgentExecution) {
             ? system.executable ?? 'cursor-agent'
             : system.adapter === 'claude-code'
                 ? system.executable ?? 'claude'
+                : system.adapter === 'openclaude'
+                    ? system.executable ?? 'openclaude'
                 : system.executable;
         if (!findExecutable(executable, { ...process.env, ...(system.env ?? {}) })) {
             throw new Error(`Executable for system "${system.id}" was not found: ${executable}`);

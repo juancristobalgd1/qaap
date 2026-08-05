@@ -3,7 +3,7 @@
   "repetitions": 5,
   "suite": {
     "id": "qaap-cursor-claude-seeded-security-calibration",
-    "name": "Qaap vs Cursor vs Claude Code — seeded security calibration",
+    "name": "Qaap vs Cursor vs Claude Code vs OpenClaude — seeded security calibration",
     "completionThreshold": 0.8,
     "tasks": [
       {
@@ -92,6 +92,21 @@
       "configuration": "headless+read-only-tools",
       "model": "default",
       "adapter": "claude-code",
+      "permissionMode": "acceptEdits",
+      "allowedTools": [
+        "Read",
+        "Grep",
+        "Glob"
+      ],
+      "maxTurns": 20
+    },
+    {
+      "id": "openclaude",
+      "name": "OpenClaude",
+      "track": "product-native",
+      "configuration": "headless+read-only-tools",
+      "model": "default",
+      "adapter": "openclaude",
       "permissionMode": "acceptEdits",
       "allowedTools": [
         "Read",

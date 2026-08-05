@@ -8,7 +8,7 @@ not compensate for a failing hidden test.
 
 Never mix these tracks in one ranking:
 
-1. **Harness-controlled** — Qaap, Cursor, and Claude Code use the same model, repository snapshot,
+1. **Harness-controlled** — Qaap, Cursor, Claude Code, and OpenClaude use the same model, repository snapshot,
    prompt, network policy, machine class, time limit, and cost accounting. This isolates the agent
    harness.
 2. **Product-native** — each product uses its strongest supported/default configuration. This
@@ -77,8 +77,8 @@ run's `qaapWorkflow` field. The scorer derives:
 - independent-review routing when writer and judge identities are observable;
 - budget exhaustion and non-terminal traces.
 
-These metrics explain *why* Qaap won or lost, but they are not leaderboard points. Cursor and Claude
-Code may not expose an equivalent graph, so cross-product comparison must use observable outcomes,
+These metrics explain *why* Qaap won or lost, but they are not leaderboard points. Cursor, Claude
+Code, and OpenClaude may not expose an equivalent graph, so cross-product comparison must use observable outcomes,
 time, cost, tool actions, and human interventions.
 
 Run four Qaap ablations on the same tasks:
@@ -120,13 +120,13 @@ run containing the disposable workspace, prompt, agent logs, oracle logs, and no
 Workspaces are retained by default. Add `--discard-workspaces` only when the logs and final reports
 are enough.
 
-The live smoke manifest contains native adapters for Qaap, Cursor Agent, and Claude Code:
+The live smoke manifest contains native adapters for Qaap, Cursor Agent, Claude Code, and OpenClaude:
 
 ```sh
 # Terminal 1: local Qaap workflow API with development auth bypass.
 QAAP_SKIP_AUTH=1 npm run start:browser
 
-# Terminal 2: validate first, then deliberately launch the three real systems.
+# Terminal 2: validate first, then deliberately launch the real systems.
 npm run qaap:agent-benchmark:run -- \
     --suite scripts/qaap-agent-benchmark-live.example.json \
     --dry-run
@@ -157,7 +157,7 @@ the safety oracle.
 Qaap uses the `qaap.evidence-audit` graph: three disjoint read-only investigations run in parallel,
 then a bounded synthesis is challenged by an independent judge. A rejection loops through revision
 and judgment again, bounded by the node and run clocks. Each Qaap node is capped at two minutes and
-the whole task at five minutes. Cursor and Claude Code receive the same task, copied workspace,
+the whole task at five minutes. Cursor, Claude Code, and OpenClaude receive the same task, copied workspace,
 safety oracle, and total wall-clock budget.
 
 After rebuilding and restarting Qaap so the new workflow template is registered:
@@ -177,8 +177,9 @@ The manifest deliberately requests five repetitions. Publish the generated confi
 all normalized final reports, and all oracle logs. For the event, replace the public fixture with a
 rotating private set containing different vulnerability classes and benign decoys.
 
-Only define a cost budget when every selected adapter reports comparable cost. Claude Code exposes
-structured cost, while a Cursor subscription run may not expose a dollar amount in its result.
+Only define a cost budget when every selected adapter reports comparable cost. Claude Code and
+OpenClaude expose structured cost when their provider reports it, while a Cursor subscription run
+may not expose a dollar amount in its result.
 Missing cost fails closed whenever the task declares `budgets.costUsd`.
 
 ### Score an existing results manifest

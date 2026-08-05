@@ -6,8 +6,13 @@
 
 import { CommandRegistry, Disposable, DisposableCollection, nls } from '@theia/core/lib/common';
 import { ApplicationShell, CommonCommands, Widget } from '@theia/core/lib/browser';
+import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import { Message } from '@theia/core/lib/browser/widgets/widget';
+import { BrowserMainMenuFactory } from '@theia/core/lib/browser/menu/browser-menu-plugin';
+import { CompoundMenuNode, MAIN_MENU_BAR } from '@theia/core/lib/common/menu/menu-types';
+import { MenuModelRegistry } from '@theia/core/lib/common/menu/menu-model-registry';
 import { collapseLeftPanelIfMobileOneColumn, matchesMobileOneColumnLayout, MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
+import { Menu as LuminoMenu } from '@lumino/widgets';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -207,6 +212,185 @@ export class QaapWorkbenchHistoryNavWidget extends Widget {
     }
 }
 
+/** Compact replacement for the horizontal IDE menubar. */
+export class QaapWorkbenchMenuButtonWidget extends Widget {
+    protected readonly toDispose = new DisposableCollection();
+    protected readonly menuBtn: HTMLButtonElement;
+    protected activeMenu: LuminoMenu | undefined;
+
+    constructor(
+        protected readonly commands: CommandRegistry,
+        protected readonly menuFactory: BrowserMainMenuFactory,
+        protected readonly menuProvider: MenuModelRegistry,
+        protected readonly contextKeyService: ContextKeyService,
+    ) {
+        const node = document.createElement('motion.div');
+        node.classList.add('theia-workbench-menu-button');
+        super({ node });
+        this.id = 'theia:workbench-menu-button';
+        this.menuBtn = createWorkbenchNavBtn(
+            'codicon codicon-menu',
+            nls.localize('qaap/workbench/menuButton', 'Open menu')
+        );
+        this.menuBtn.classList.add('theia-workbench-menu-toggle');
+        this.menuBtn.setAttribute('aria-haspopup', 'menu');
+        this.menuBtn.setAttribute('aria-expanded', 'false');
+        node.append(this.menuBtn);
+        this.menuBtn.addEventListener('click', this.onMenuClick);
+        const refresh = (): void => this.syncVisibility();
+        this.toDispose.push(this.commands.onDidExecuteCommand(refresh));
+        this.toDispose.push(this.commands.onCommandsChanged(refresh));
+        if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+            const mq = window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
+            const onMqChange = (): void => refresh();
+            mq.addEventListener('change', onMqChange);
+            this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));
+        }
+        this.syncVisibility();
+    }
+
+    protected readonly onMenuClick = (): void => {
+        if (this.activeMenu) {
+            this.activeMenu.close();
+            return;
+        }
+        const menuModel = this.menuProvider.getMenuNode(MAIN_MENU_BAR);
+        if (!CompoundMenuNode.is(menuModel)) {
+            return;
+        }
+        const menu = this.menuFactory.createContextMenu(
+            MAIN_MENU_BAR,
+            menuModel,
+            this.contextKeyService,
+            undefined,
+            this.menuBtn,
+        );
+        this.activeMenu = menu;
+        menu.aboutToClose.connect(() => {
+            if (this.activeMenu === menu) {
+                this.activeMenu = undefined;
+                this.menuBtn.setAttribute('aria-expanded', 'false');
+            }
+        });
+        const rect = this.menuBtn.getBoundingClientRect();
+        this.menuBtn.setAttribute('aria-expanded', 'true');
+        menu.open(rect.left, rect.bottom, { host: document.body });
+    };
+
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        this.syncVisibility();
+    }
+
+    override dispose(): void {
+        if (this.isDisposed) {
+            return;
+        }
+        this.toDispose.dispose();
+        this.activeMenu?.close();
+        this.activeMenu = undefined;
+        this.menuBtn.removeEventListener('click', this.onMenuClick);
+        super.dispose();
+    }
+
+    protected syncVisibility(): void {
+        const visible = document.body.classList.contains('theia-mobile-mod-desktop-ide')
+            && !matchesMobileOneColumnLayout();
+        this.node.hidden = !visible;
+        this.node.style.display = visible ? '' : 'none';
+        this.menuBtn.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        if (!visible) {
+            this.activeMenu?.close();
+        }
+    }
+}
+
+/** Centered IDE/Agents switch for the classic IDE top bar. */
+export class QaapWorkbenchViewModeCenterWidget extends Widget {
+    protected readonly toDispose = new DisposableCollection();
+    protected readonly viewModeSwitchHost: HTMLElement;
+    protected readonly viewModeSwitch: QaapSegmentedFieldController<MobileViewToggleId>;
+
+    constructor(
+        protected readonly commands: CommandRegistry,
+        protected readonly workspaceService: WorkspaceService,
+    ) {
+        const node = document.createElement('motion.div');
+        node.classList.add('theia-workbench-view-mode-center');
+        super({ node });
+        this.id = 'theia:workbench-view-mode-center';
+        this.viewModeSwitchHost = document.createElement('span');
+        this.viewModeSwitchHost.className = 'theia-workbench-view-mode-switch';
+        this.viewModeSwitchHost.hidden = true;
+        this.viewModeSwitchHost.setAttribute('aria-hidden', 'true');
+        this.viewModeSwitch = createQaapViewModeSwitch({
+            activeId: 'editor',
+            onSelect: this.onViewModeSwitchSelect,
+        });
+        this.viewModeSwitchHost.append(this.viewModeSwitch.root);
+        node.append(this.viewModeSwitchHost);
+        const refresh = (): void => this.syncViewModeSwitch();
+        this.toDispose.push(this.commands.onDidExecuteCommand(refresh));
+        this.toDispose.push(this.commands.onCommandsChanged(refresh));
+        this.toDispose.push(this.workspaceService.onWorkspaceChanged(refresh));
+        this.toDispose.push(this.workspaceService.onWorkspaceLocationChanged(refresh));
+        if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+            const mq = window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY);
+            const onMqChange = (): void => refresh();
+            mq.addEventListener('change', onMqChange);
+            this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));
+        }
+        this.syncViewModeSwitch();
+    }
+
+    protected readonly onViewModeSwitchSelect = (id: MobileViewToggleId): void => {
+        if (id === 'editor') {
+            if (this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+                && this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+                void this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+                    .catch(error => console.warn('[qaap-mobile-shell] failed to open the desktop IDE', error));
+                return;
+            }
+        } else if (this.commands.getCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id)
+            && this.commands.isEnabled(QaapMobileProjectsDashboardCommands.TOGGLE.id)) {
+            void this.commands.executeCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id)
+                .catch(error => console.warn('[qaap-mobile-shell] failed to return to Agents', error));
+            return;
+        }
+        if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
+            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+            void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id)
+                .catch(error => console.warn('[qaap-mobile-shell] failed to activate the IDE header view', error));
+        }
+    };
+
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        this.syncViewModeSwitch();
+    }
+
+    override dispose(): void {
+        if (this.isDisposed) {
+            return;
+        }
+        this.toDispose.dispose();
+        super.dispose();
+    }
+
+    protected syncViewModeSwitch(): void {
+        const visible = document.body.classList.contains('theia-mobile-mod-desktop-ide')
+            && !matchesMobileOneColumnLayout();
+        this.node.hidden = !visible;
+        this.node.style.display = visible ? '' : 'none';
+        this.viewModeSwitchHost.hidden = !visible;
+        this.viewModeSwitchHost.style.display = visible ? '' : 'none';
+        this.viewModeSwitchHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        if (visible) {
+            this.viewModeSwitch.setValue('editor');
+        }
+    }
+}
+
 export class QaapWorkbenchRightControlsWidget extends Widget {
     protected readonly toDispose = new DisposableCollection();
     protected readonly terminalBtn: HTMLButtonElement;
@@ -214,8 +398,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected readonly mobileChatTabBtn: HTMLButtonElement;
     protected readonly mobileViewPickerBtn: HTMLButtonElement;
     protected readonly mobileViewPickerSlot: HTMLElement;
-    protected readonly viewModeSwitchHost: HTMLElement;
-    protected readonly viewModeSwitch: QaapSegmentedFieldController<MobileViewToggleId>;
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected mobileViewPickerMenu: HTMLElement | undefined;
@@ -273,15 +455,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.mobileViewPickerSlot = document.createElement('span');
         this.mobileViewPickerSlot.className = 'theia-workbench-mobile-view-picker-slot';
         this.mobileViewPickerSlot.hidden = true;
-        this.viewModeSwitchHost = document.createElement('span');
-        this.viewModeSwitchHost.className = 'theia-workbench-view-mode-switch';
-        this.viewModeSwitchHost.hidden = true;
-        this.viewModeSwitchHost.setAttribute('aria-hidden', 'true');
-        this.viewModeSwitch = createQaapViewModeSwitch({
-            activeId: 'editor',
-            onSelect: this.onViewModeSwitchSelect,
-        });
-        this.viewModeSwitchHost.append(this.viewModeSwitch.root);
         this.accountBtn = document.createElement('button');
         this.accountBtn.type = 'button';
         this.accountBtn.className = 'theia-workbench-nav-btn theia-workbench-account-btn';
@@ -292,7 +465,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.accountAvatar.setAttribute('aria-hidden', 'true');
         this.accountBtn.appendChild(this.accountAvatar);
         this.mobileViewPickerSlot.append(this.mobileViewPickerBtn);
-        node.append(this.terminalBtn, this.aiChatBtn, this.mobileViewPickerSlot, this.viewModeSwitchHost, this.accountBtn);
+        node.append(this.terminalBtn, this.aiChatBtn, this.mobileViewPickerSlot, this.accountBtn);
         this.terminalBtn.addEventListener('click', this.onTerminalClick);
         this.aiChatBtn.addEventListener('click', this.onAiChatClick);
         this.mobileChatTabBtn.addEventListener('click', this.onAiChatClick);
@@ -340,32 +513,11 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         const signedIn = readQaapSignedIn();
         toggleQaapAccountMenu(this.accountBtn, this.commands, this.buildAccountMenuEntries(signedIn));
     };
-    protected readonly onViewModeSwitchSelect = (id: MobileViewToggleId): void => {
-        if (id === 'editor') {
-            if (this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
-                && this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
-                void this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
-                    .catch(error => console.warn('[qaap-mobile-shell] failed to open the desktop IDE', error));
-                return;
-            }
-        } else if (this.commands.getCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id)
-            && this.commands.isEnabled(QaapMobileProjectsDashboardCommands.TOGGLE.id)) {
-            void this.commands.executeCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id)
-                .catch(error => console.warn('[qaap-mobile-shell] failed to return to Agents', error));
-            return;
-        }
-        if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
-            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-            void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id)
-                .catch(error => console.warn('[qaap-mobile-shell] failed to activate the IDE header view', error));
-        }
-    };
-
     protected buildAccountMenuEntries(signedIn: boolean): QaapAccountMenuEntry[] {
         // The IDE views (Preview / Terminal / Explorer / PR) live in the dedicated view
         // picker (the ▷ dropdown in the tab-bar row), not in the account menu. Keep the
         // avatar menu as the standard account menu; IDE/Agents switching lives in the
-        // Work Hub sidebar header and the always-available IDE top bar.
+        // Work Hub sidebar header and the centered IDE top bar.
         return buildQaapAccountMenuEntries(signedIn);
     }
 
@@ -510,20 +662,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.aiChatBtn.disabled = !this.commands.isEnabled(WORKBENCH_AI_CHAT_TOGGLE);
         this.updateTerminalSwitchVisual();
         this.updateAiChatSwitchVisual();
-        this.syncViewModeSwitch();
         this.scheduleMobileViewPickerUpdate();
         this.updateAccountVisual();
-    }
-
-    protected syncViewModeSwitch(): void {
-        const visible = document.body.classList.contains('theia-mobile-mod-desktop-ide')
-            && !matchesMobileOneColumnLayout();
-        this.viewModeSwitchHost.hidden = !visible;
-        this.viewModeSwitchHost.style.display = visible ? '' : 'none';
-        this.viewModeSwitchHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
-        if (visible) {
-            this.viewModeSwitch.setValue('editor');
-        }
     }
 
     /** Refresh toggled state after mobile shell surfaces open or close outside this widget. */

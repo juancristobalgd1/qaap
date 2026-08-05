@@ -12,6 +12,7 @@
   align-items: stretch;
   display: flex;
   flex-direction: row;
+  position: relative;
 }
 
 /* Leading cluster: sidebar toggle, then editor history (DOM order is toggle, menu, history, trailing). */
@@ -32,8 +33,41 @@
   min-width: 0;
 }
 
-#theia-top-panel>#theia\:workbench-right-controls {
+body.theia-mobile-mod-desktop-ide #theia-top-panel>.lm-MenuBar,
+body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
+  display: none !important;
+}
+
+#theia-top-panel>#theia\:workbench-menu-button {
+  order: 3;
+  flex: 0 0 auto;
+}
+
+#theia-top-panel>#theia\:workbench-view-mode-center {
   order: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 124px;
+  min-width: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  height: 100%;
+}
+
+#theia-top-panel>#theia\:workbench-view-mode-center[hidden] {
+  display: none !important;
+}
+
+#theia-top-panel>#theia\:workbench-view-mode-center .theia-workbench-view-mode-switch {
+  pointer-events: auto;
+}
+
+#theia-top-panel>#theia\:workbench-right-controls {
+  order: 5;
 }
 
 .theia-workbench-nav-controls {
@@ -95,6 +129,31 @@
 .theia-workbench-nav-btn:disabled {
   opacity: var(--theia-mod-disabled-opacity);
   cursor: default;
+}
+
+.theia-workbench-menu-button {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 100%;
+}
+
+.theia-workbench-menu-button[hidden] {
+  display: none !important;
+}
+
+.theia-workbench-menu-toggle {
+  width: 28px;
+  height: 28px;
+  margin: 0 4px;
+  border-radius: 6px;
+  color: var(--theia-titleBar-activeForeground, var(--theia-foreground));
+}
+
+.theia-workbench-menu-toggle:hover:not(:disabled),
+.theia-workbench-menu-toggle:focus-visible {
+  background: var(--theia-toolbar-hoverBackground);
+  outline: none;
 }
 
 .theia-workbench-nav-btn.theia-mod-toggled:not(:disabled) {

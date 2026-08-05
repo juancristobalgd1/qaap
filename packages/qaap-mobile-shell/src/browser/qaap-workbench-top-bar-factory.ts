@@ -5,8 +5,10 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { CommandRegistry } from '@theia/core/lib/common';
+import { CommandRegistry, MenuModelRegistry } from '@theia/core/lib/common';
 import { ApplicationShell, Widget } from '@theia/core/lib/browser';
+import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
+import { BrowserMainMenuFactory } from '@theia/core/lib/browser/menu/browser-menu-plugin';
 import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-top-bar-factory';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -16,8 +18,10 @@ import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     QaapWorkbenchHistoryNavWidget,
+    QaapWorkbenchMenuButtonWidget,
     QaapWorkbenchNavControlsWidget,
     QaapWorkbenchRightControlsWidget,
+    QaapWorkbenchViewModeCenterWidget,
 } from './qaap-workbench-top-bar-widgets';
 
 @injectable()
@@ -41,6 +45,15 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     @inject(QaapProjectBootstrapService)
     protected readonly projectBootstrap: QaapProjectBootstrapService;
 
+    @inject(BrowserMainMenuFactory)
+    protected readonly menuFactory: BrowserMainMenuFactory;
+
+    @inject(MenuModelRegistry)
+    protected readonly menuProvider: MenuModelRegistry;
+
+    @inject(ContextKeyService)
+    protected readonly contextKeyService: ContextKeyService;
+
     createLeadingTopBarWidget(commands: CommandRegistry, shell: ApplicationShell): Widget {
         return new QaapWorkbenchNavControlsWidget(this.projectsService, this.workspaceService, this.projectSwitcher, shell);
     }
@@ -48,6 +61,8 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     createTrailingTopBarWidgets(commands: CommandRegistry, shell: ApplicationShell): Widget[] {
         return [
             new QaapWorkbenchHistoryNavWidget(commands, this.workspaceService),
+            new QaapWorkbenchMenuButtonWidget(commands, this.menuFactory, this.menuProvider, this.contextKeyService),
+            new QaapWorkbenchViewModeCenterWidget(commands, this.workspaceService),
             new QaapWorkbenchRightControlsWidget(commands, shell, this.terminalService, this.miniBrowserOpenHandler, this.projectBootstrap, this.workspaceService),
         ];
     }

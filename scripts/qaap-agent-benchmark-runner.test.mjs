@@ -5,6 +5,7 @@ import * as path from 'path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+    commandForSystem,
     describeRunnerPlan,
     loadRunnerSuite,
     runBenchmarkSuite,
@@ -14,6 +15,34 @@ import {
 const root = path.dirname(fileURLToPath(import.meta.url));
 const suitePath = path.join(root, 'qaap-agent-benchmark-runner.example.json');
 const securitySuitePath = path.join(root, 'qaap-agent-benchmark-security-self-test.json');
+
+test('OpenClaude uses the Claude-compatible headless harness contract', () => {
+    const command = commandForSystem(
+        {
+            id: 'openclaude',
+            adapter: 'openclaude',
+            bare: true,
+            model: 'test-model',
+            maxTurns: 7,
+            allowedTools: ['Read', 'Grep'],
+        },
+        { budgets: { costUsd: 2 } },
+        { prompt: 'repair the fixture' },
+    );
+    assert.equal(command.executable, 'openclaude');
+    assert.deepEqual(command.args, [
+        '-p',
+        '--output-format', 'json',
+        '--no-session-persistence',
+        '--bare',
+        '--permission-mode', 'acceptEdits',
+        '--model', 'test-model',
+        '--max-turns', '7',
+        '--max-budget-usd', '2',
+        '--allowedTools', 'Read,Grep',
+        'repair the fixture',
+    ]);
+});
 
 test('runner builds a counterbalanced plan', async () => {
     const { suite } = await loadRunnerSuite(suitePath);
