@@ -31,11 +31,9 @@ import {
     faviconUrlForPreview,
     groupPreviewBrowsingHistory,
     previewHistoryEntryLabel,
-    readPreviewBookmarkBarVisible,
     readPreviewBrowsingHistory,
     readPreviewHistoryPanelWidth,
     recordPreviewBrowsingVisit,
-    writePreviewBookmarkBarVisible,
     writePreviewHistoryPanelWidth,
     clampPreviewHistoryPanelWidth,
     type QaapPreviewHistoryEntry,
@@ -75,8 +73,6 @@ export interface QaapAgentPreviewChromeOptions {
 export class QaapAgentPreviewChromeController implements Disposable {
     protected readonly toDispose = new DisposableCollection();
     protected historyOpen = false;
-    protected bookmarkBarVisible = readPreviewBookmarkBarVisible();
-    protected bookmarkBar: HTMLElement | undefined;
     protected historyRoot: HTMLElement | undefined;
     protected historyList: HTMLElement | undefined;
     protected historySearchInput: HTMLInputElement | undefined;
@@ -97,12 +93,10 @@ export class QaapAgentPreviewChromeController implements Disposable {
         } else {
             root.classList.add(Style.MOD_MINI_BROWSER);
         }
-        this.ensureBookmarkBar(root);
         this.ensureHistoryDrawer(root);
         this.toDispose.push(Disposable.create(() => {
             root.classList.remove(Style.ROOT, Style.MOD_EMBEDDED, Style.MOD_MINI_BROWSER, Style.HISTORY_OPEN);
             this.historyRoot?.remove();
-            this.bookmarkBar?.remove();
             this.overflowMenu?.remove();
         }));
     }
@@ -147,7 +141,6 @@ export class QaapAgentPreviewChromeController implements Disposable {
             return;
         }
         recordPreviewBrowsingVisit(trimmed, this.host.getPageTitle());
-        this.refreshBookmarkBar();
         if (this.historyOpen) {
             this.renderHistoryList();
         }
@@ -177,50 +170,6 @@ export class QaapAgentPreviewChromeController implements Disposable {
         }
     }
 
-    protected ensureBookmarkBar(root: HTMLElement): void {
-        const bar = document.createElement('div');
-        bar.className = Style.BOOKMARK_BAR;
-        bar.hidden = !this.bookmarkBarVisible;
-        const toolbar = root.querySelector('.theia-mini-browser-toolbar, .theia-mini-browser-toolbar-read-only, .qaap-agent-preview-embedded-toolbar');
-        if (toolbar?.parentElement) {
-            toolbar.parentElement.insertBefore(bar, toolbar.nextSibling);
-        } else {
-            root.prepend(bar);
-        }
-        this.bookmarkBar = bar;
-        this.refreshBookmarkBar();
-    }
-
-    protected refreshBookmarkBar(): void {
-        if (!this.bookmarkBar) {
-            return;
-        }
-        this.bookmarkBar.replaceChildren();
-        if (!this.bookmarkBarVisible) {
-            return;
-        }
-        const seen = new Set<string>();
-        for (const entry of readPreviewBrowsingHistory()) {
-            if (seen.has(entry.url)) {
-                continue;
-            }
-            seen.add(entry.url);
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = Style.BOOKMARK_ITEM;
-            btn.title = entry.url;
-            btn.textContent = previewHistoryEntryLabel(entry);
-            this.toDispose.push(addEventListener(btn, 'click', () => {
-                void this.host.navigate(entry.url);
-                this.toggleHistory(false);
-            }));
-            this.bookmarkBar.appendChild(btn);
-            if (seen.size >= 8) {
-                break;
-            }
-        }
-    }
-
     protected ensureHistoryDrawer(root: HTMLElement): void {
         const historyRoot = document.createElement('div');
         historyRoot.className = Style.HISTORY;
@@ -241,19 +190,28 @@ export class QaapAgentPreviewChromeController implements Disposable {
         const panelBody = document.createElement('div');
         panelBody.className = Style.HISTORY_PANEL_BODY;
 
+        const searchWrapper = document.createElement('div');
+        searchWrapper.className = Style.HISTORY_SEARCH_WRAPPER;
+
+        const searchIcon = document.createElement('span');
+        searchIcon.className = `${Style.HISTORY_SEARCH_ICON} codicon codicon-search`;
+        searchIcon.setAttribute('aria-hidden', 'true');
+
         const search = document.createElement('input');
         search.type = 'search';
-        search.className = `${Style.HISTORY_SEARCH} theia-input`;
+        search.className = Style.HISTORY_SEARCH;
         search.placeholder = nls.localize('qaap/preview/historySearch', 'Search');
         search.spellcheck = false;
         this.historySearchInput = search;
         this.toDispose.push(addEventListener(search, 'input', () => this.renderHistoryList()));
 
+        searchWrapper.append(searchIcon, search);
+
         const list = document.createElement('div');
         list.className = 'qaap-agent-preview-history-list';
         this.historyList = list;
 
-        panelBody.append(search, list);
+        panelBody.append(searchWrapper, list);
 
         const resizeHandle = document.createElement('div');
         resizeHandle.className = Style.HISTORY_RESIZE_HANDLE;
@@ -434,7 +392,6 @@ export class QaapAgentPreviewChromeController implements Disposable {
         }
         const mounted = mountPreviewOverflowMenu({
             anchor,
-            bookmarkBarVisible: () => this.bookmarkBarVisible,
             getContext: () => this.createOverflowActionContext(),
             onClose: () => this.closeOverflowMenu(),
         });
@@ -453,8 +410,6 @@ export class QaapAgentPreviewChromeController implements Disposable {
             clipboard: this.options.clipboard,
             messageService: this.options.messageService,
             notify: this.options.notify,
-            bookmarkBarVisible: () => this.bookmarkBarVisible,
-            toggleBookmarkBar: () => this.toggleBookmarkBar(),
             clearHistory: () => this.clearHistory(),
         };
     }
@@ -465,25 +420,9 @@ export class QaapAgentPreviewChromeController implements Disposable {
         this.overflowMenu = undefined;
     }
 
-    protected toggleBookmarkBar(): void {
-        this.bookmarkBarVisible = !this.bookmarkBarVisible;
-        writePreviewBookmarkBarVisible(this.bookmarkBarVisible);
-        if (this.bookmarkBar) {
-            this.bookmarkBar.hidden = !this.bookmarkBarVisible;
-        }
-        this.refreshBookmarkBar();
-        previewNotify(
-            { messageService: this.options.messageService, notify: this.options.notify },
-            this.bookmarkBarVisible
-                ? nls.localize('qaap/preview/bookmarkBarOn', 'Bookmark bar shown')
-                : nls.localize('qaap/preview/bookmarkBarOff', 'Bookmark bar hidden'),
-        );
-    }
-
     protected clearHistory(): void {
         clearPreviewBrowsingHistory();
         this.renderHistoryList();
-        this.refreshBookmarkBar();
         previewNotify(
             { messageService: this.options.messageService, notify: this.options.notify },
             nls.localize('qaap/preview/historyCleared', 'Browsing history cleared'),

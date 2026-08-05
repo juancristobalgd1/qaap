@@ -12,7 +12,6 @@ export type QaapPreviewOverflowActionId =
     | 'reload'
     | 'hard-reload'
     | 'copy-url'
-    | 'bookmark-bar'
     | 'clear-history'
     | 'clear-cookies'
     | 'clear-cache'
@@ -31,8 +30,6 @@ export interface QaapPreviewOverflowActionContext {
     readonly messageService?: MessageService;
     /** Optional toast (e.g. mobile snackbar) in addition to MessageService. */
     readonly notify?: (message: string, kind?: 'info' | 'warn') => void;
-    readonly bookmarkBarVisible: () => boolean;
-    readonly toggleBookmarkBar: () => void;
     readonly clearHistory: () => void;
 }
 
@@ -126,8 +123,7 @@ function normalizePreviewCaptureSize(value: number): number {
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
 }
 
-export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActionContext, 'bookmarkBarVisible'>): QaapPreviewOverflowMenuItem[] {
-    const bookmarkVisible = ctx.bookmarkBarVisible();
+export function buildPreviewOverflowMenuItems(): QaapPreviewOverflowMenuItem[] {
     return [
         {
             id: 'take-screenshot',
@@ -140,14 +136,6 @@ export function buildPreviewOverflowMenuItems(ctx: Pick<QaapPreviewOverflowActio
         {
             id: 'copy-url',
             label: nls.localize('qaap/preview/copyUrl', 'Copy Current URL'),
-        },
-        {
-            id: 'bookmark-bar',
-            label: bookmarkVisible
-                ? nls.localize('qaap/preview/hideBookmarkBar', 'Hide Bookmark Bar')
-                : nls.localize('qaap/preview/showBookmarkBar', 'Show Bookmark Bar'),
-            toggle: true,
-            checked: bookmarkVisible,
         },
         {
             id: 'clear-history',
@@ -186,9 +174,6 @@ export async function runPreviewOverflowAction(
         case 'open-external':
             ctx.openExternal();
             return;
-        case 'bookmark-bar':
-            ctx.toggleBookmarkBar();
-            return;
         case 'clear-history':
             ctx.clearHistory();
             return;
@@ -203,7 +188,6 @@ export async function runPreviewOverflowAction(
 
 export interface MountPreviewOverflowMenuOptions {
     readonly anchor: HTMLElement;
-    readonly bookmarkBarVisible: () => boolean;
     readonly getContext: () => QaapPreviewOverflowActionContext;
     readonly onClose: () => void;
 }
@@ -214,7 +198,7 @@ export function mountPreviewOverflowMenu(options: MountPreviewOverflowMenuOption
     menu.className = 'qaap-agent-preview-overflow-menu';
     menu.setAttribute('role', 'menu');
 
-    const items = buildPreviewOverflowMenuItems({ bookmarkBarVisible: options.bookmarkBarVisible });
+    const items = buildPreviewOverflowMenuItems();
     for (const item of items) {
         menu.append(createPreviewOverflowMenuRow(item));
     }

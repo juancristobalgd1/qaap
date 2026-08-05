@@ -106,11 +106,54 @@ body.qaap-mod-history-resizing * {
   user-select: none !important;
 }
 
-.qaap-agent-preview-history-search {
+.qaap-agent-preview-history-search-wrapper {
   flex: 0 0 auto;
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 10px;
+  border-bottom: none;
+}
+
+.qaap-agent-preview-history-search-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.55));
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Inline field — no boxed chrome; matches Work Hub / sticky composer search inputs. */
+.qaap-agent-preview-history-search {
   box-sizing: border-box;
-  border-radius: 8px;
+  width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px 0;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 15px;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-agent-preview-history-search:focus,
+.qaap-agent-preview-history-search:focus-visible {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.qaap-agent-preview-history-search::placeholder {
+  color: var(--theia-descriptionForeground, var(--theia-input-placeholderForeground));
 }
 
 .qaap-agent-preview-history-list {
@@ -167,59 +210,6 @@ body.qaap-mod-history-resizing * {
   padding: 16px 10px;
   color: var(--theia-descriptionForeground);
   font-size: 13px;
-}
-
-.qaap-agent-preview-bookmark-bar {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--theia-widget-border, rgba(255, 255, 255, 0.08));
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    #000 14px,
-    #000 calc(100% - 14px),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent 0,
-    #000 14px,
-    #000 calc(100% - 14px),
-    transparent 100%
-  );
-}
-
-.qaap-agent-preview-bookmark-bar::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-.qaap-agent-preview-bookmark-bar[hidden] {
-  display: none !important;
-}
-
-.qaap-agent-preview-bookmark-item {
-  flex: 0 0 auto;
-  max-width: 160px;
-  padding: 4px 10px;
-  border: none;
-  border-radius: 999px;
-  background: var(--theia-toolbar-hoverBackground);
-  color: var(--theia-foreground);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
 .theia-mini-browser-toolbar .theia-mini-browser-workbench-button,

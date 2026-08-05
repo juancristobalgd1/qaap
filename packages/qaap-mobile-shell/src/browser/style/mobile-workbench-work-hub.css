@@ -636,7 +636,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-agent-transcript-empty.theia-mod-no-project {
   flex: 1 1 auto;
-  min-height: min(40vh, 320px);
+  min-height: 100%;
+  align-items: center;
   justify-content: center;
   padding: 12px 20px 24px;
 }
@@ -649,6 +650,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   max-width: 320px;
   margin: 0 auto;
   text-align: center;
+}
+
+/* Desktop / wide viewports: give the onboarding block more breathing room. */
+@media (min-width: 768px) {
+  .theia-mobile-agents-hub-onboarding {
+    max-width: 480px;
+  }
 }
 
 .theia-mobile-agents-hub-onboarding-mark {
@@ -738,27 +746,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-agents-hub-onboarding-btn.theia-mod-ghost:active {
   background: var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent));
-}
-
-.theia-mobile-agents-hub-onboarding-local-link {
-  margin-top: 14px;
-  padding: 6px 8px;
-  border: none;
-  background: none;
-  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-underline-color: color-mix(in srgb, currentColor 42%, transparent);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.theia-mobile-agents-hub-onboarding-local-link:active {
-  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
 }
 
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-scroll,
@@ -954,6 +941,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
+}
+
+/* Empty the header on the Agents Hub landing when there is no workspace yet
+   (the "No workspaces yet" onboarding state). The header reappears once a
+   project is opened (.theia-mod-agents-hub-shell-active) or pinned. */
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing:has(.theia-mobile-agent-transcript-empty.theia-mod-no-project) .theia-mobile-projects-header-main {
+  display: none !important;
 }
 
 .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-execution-cluster .theia-mobile-projects-new-chat-btn {

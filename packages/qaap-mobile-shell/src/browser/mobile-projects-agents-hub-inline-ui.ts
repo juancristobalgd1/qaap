@@ -404,16 +404,7 @@ export class MobileProjectsAgentsHubInlineUi {
 
         actions.append(newProject, addRepo);
 
-        const openLocal = document.createElement('button');
-        openLocal.type = 'button';
-        openLocal.className = 'theia-mobile-agents-hub-onboarding-local-link';
-        openLocal.textContent = nls.localize(
-            'qaap/mobileProjects/openLocalFolder',
-            'Open folder on this device',
-        );
-        openLocal.addEventListener('click', () => { void this.host.onOpenLocalWorkspaceFolder(); });
-
-        root.append(mark, title, hint, actions, openLocal);
+        root.append(mark, title, hint, actions);
         return root;
     }
 

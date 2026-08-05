@@ -17,26 +17,15 @@ import {
 describe('qaap-preview-overflow-actions', () => {
 
     it('buildPreviewOverflowMenuItems includes all Cursor-style preview actions', () => {
-        const ids = buildPreviewOverflowMenuItems({ bookmarkBarVisible: () => false }).map(item => item.id);
+        const ids = buildPreviewOverflowMenuItems().map(item => item.id);
         expect(ids).to.deep.equal([
             'take-screenshot',
             'hard-reload',
             'copy-url',
-            'bookmark-bar',
             'clear-history',
             'clear-cookies',
             'clear-cache',
         ]);
-    });
-
-    it('bookmark bar label reflects visibility', () => {
-        const hidden = buildPreviewOverflowMenuItems({ bookmarkBarVisible: () => false })
-            .find(item => item.id === 'bookmark-bar');
-        const shown = buildPreviewOverflowMenuItems({ bookmarkBarVisible: () => true })
-            .find(item => item.id === 'bookmark-bar');
-        expect(hidden?.label).to.contain('Show');
-        expect(shown?.label).to.contain('Hide');
-        expect(shown?.checked).to.equal(true);
     });
 
     it('freezes cascaded layout and colors into the screenshot clone', () => {
