@@ -295,6 +295,31 @@ describe('MobileProjectsTranscriptMessagesRenderUi', () => {
         }
     });
 
+    it('keeps only one live activity row when duplicate rows are mounted', () => {
+        const { renderUi, host } = createRenderUi();
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        document.body.append(chatHost);
+
+        const streaming = streamingIdleConv();
+        host.transcriptLastConv = streaming;
+        renderUi.renderTranscriptMessages(chatHost, streaming);
+        const messageHost = renderUi.resolveTranscriptMessageHost(chatHost);
+        const activityRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        expect(activityRow).to.not.equal(null);
+
+        messageHost.append(activityRow!.cloneNode(true));
+        expect(messageHost.querySelectorAll(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)).to.have.length(2);
+
+        renderUi.renderTranscriptMessages(chatHost, {
+            ...streaming,
+            updatedAt: streaming.updatedAt + 1,
+        });
+
+        expect(messageHost.querySelectorAll(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)).to.have.length(1);
+        expect(messageHost.querySelector(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)).to.equal(activityRow);
+    });
+
     it('streaming turn distribution — incremental patch tiers dominate over full rebuilds', () => {
         const { renderUi, host } = createRenderUi();
         const chatHost = document.createElement('div');

@@ -114,6 +114,22 @@ describe('qaap-transcript-live-status', () => {
         expect([...scroller.children]).to.deep.equal([msg, live]);
     });
 
+    it('removes duplicate direct live-status nodes while retaining the canonical node', () => {
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        const scroller = document.createElement('div');
+        scroller.className = 'theia-mobile-agent-transcript';
+        chatHost.append(scroller);
+        const canonical = createTranscriptLiveStatusElement();
+        const duplicate = createTranscriptLiveStatusElement();
+        scroller.append(canonical, duplicate);
+
+        ensureTranscriptLiveStatusAtScrollerTail(chatHost, duplicate);
+
+        expect(scroller.querySelectorAll(`:scope > .${TRANSCRIPT_LIVE_STATUS_CLASS}`)).to.have.length(1);
+        expect(scroller.lastElementChild).to.equal(canonical);
+    });
+
     it('ensureTranscriptStreamFooterHost stays a sibling under the chat host', () => {
         const chatHost = document.createElement('div');
         chatHost.className = 'theia-mobile-agent-transcript-real-chat';

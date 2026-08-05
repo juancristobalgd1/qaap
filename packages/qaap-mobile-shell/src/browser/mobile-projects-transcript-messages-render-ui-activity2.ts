@@ -187,7 +187,7 @@ export function clearTranscriptEmptyQuickActionsExtracted(ctx: any, messageHost:
 
 export function syncTranscriptActivityRowExtracted(ctx: any, messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         ctx.clearTranscriptEmptyQuickActions(messageHost, conv);
-        const existingActivityRow = messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`);
+        const existingActivityRow = ctx.findTranscriptStreamingActivityRow(messageHost);
         messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
             if (element === existingActivityRow) {
                 return;
@@ -332,4 +332,3 @@ export function createTranscriptMessageRowExtracted(ctx: any, role: 'user' | 'ag
         row.append(contentEl);
         return row;
 }
-

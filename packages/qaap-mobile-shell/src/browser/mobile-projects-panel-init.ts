@@ -6,7 +6,6 @@ import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcrip
 import type { MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-controller';
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './mobile-projects-types';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 
 /**
  * Copies options fields onto the panel instance. Extracted from the constructor
@@ -136,25 +135,10 @@ export function onBootstrapPreviewOpenedHandler(self: any, event: Event): void {
     self.selectTranscriptTab('preview', project, summary);
 }
 
-/**
- * Account button click handler — opens the account menu with view-toggle wiring.
- */
+/** Account button click handler — opens the account menu without surface switching. */
 export function onAccountClickHandler(self: any): void {
-    const viewToggle = {
-        activeId: self.composerHeaderUi.resolveActiveViewToggleId(),
-        onSelect: (id: any) => {
-            if (id === 'editor') {
-                if (matchesMobileNarrowViewport()) {
-                    return;
-                }
-                void self.commands.executeCommand('qaap.mobile.openDesktopIde');
-                return;
-            }
-            void self.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
-        },
-    };
     // toggleQaapAccountMenu is imported in the main file; delegate via self
-    self._toggleAccountMenu(self.accountBtn, viewToggle);
+    self._toggleAccountMenu(self.accountBtn);
 }
 
 /**

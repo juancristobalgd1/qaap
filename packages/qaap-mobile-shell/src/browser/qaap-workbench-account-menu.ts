@@ -5,11 +5,10 @@
 
 import { CommandRegistry, nls } from '@theia/core/lib/common';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '../common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
 import { QAAP_MESSAGE_CIRCLE_ICON_CLASS } from '../common/qaap-scm-changes-icon';
-import { createSegmentedField } from './qaap-mobile-form-ui';
+import { createSegmentedField, type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 
 export const QAAP_AUTH_SIGN_IN_GITHUB_COMMAND = 'qaap.auth.signInGithub';
 export const QAAP_AUTH_SIGN_OUT_COMMAND = 'qaap.auth.signOut';
@@ -33,6 +32,31 @@ export interface QaapAccountMenuEntry {
 export interface QaapAccountMenuViewToggleOptions {
     readonly activeId: MobileViewToggleId;
     readonly onSelect: (id: MobileViewToggleId) => void;
+}
+
+/** Shared IDE/Agents selector used by desktop navigation surfaces. */
+export function createQaapViewModeSwitch(
+    options: QaapAccountMenuViewToggleOptions,
+): QaapSegmentedFieldController<MobileViewToggleId> {
+    const field = createSegmentedField<MobileViewToggleId>({
+        segments: [
+            {
+                id: 'editor',
+                label: nls.localize('qaap/mobileBottomBar/ide', 'IDE'),
+                iconClass: 'codicon-code',
+            },
+            {
+                id: 'agent',
+                label: nls.localize('qaap/mobileBottomBar/agents', 'Agents'),
+                iconClass: QAAP_MESSAGE_CIRCLE_ICON_CLASS,
+            },
+        ],
+        value: options.activeId,
+        iconOnly: false,
+        onChange: options.onSelect,
+    });
+    field.root.classList.add('theia-mod-header-surface');
+    return field;
 }
 
 export interface QaapAccountMenuGettingStartedOptions {
@@ -167,13 +191,12 @@ export function toggleQaapAccountMenu(
     entries: QaapAccountMenuEntry[],
     gettingStarted?: QaapAccountMenuGettingStartedOptions,
     openOptions?: QaapAccountMenuOpenOptions,
-    viewToggle?: QaapAccountMenuViewToggleOptions,
 ): void {
     if (isQaapAccountMenuOpen(anchor)) {
         dismissQaapAccountMenu();
         return;
     }
-    openQaapAccountMenu(anchor, commands, entries, gettingStarted, openOptions, viewToggle);
+    openQaapAccountMenu(anchor, commands, entries, gettingStarted, openOptions);
 }
 
 export function openQaapAccountMenu(
@@ -182,7 +205,6 @@ export function openQaapAccountMenu(
     entries: QaapAccountMenuEntry[],
     gettingStarted?: QaapAccountMenuGettingStartedOptions,
     openOptions?: QaapAccountMenuOpenOptions,
-    viewToggle?: QaapAccountMenuViewToggleOptions,
 ): void {
     if (activeAnchor !== anchor) {
         dismissQaapAccountMenu();
@@ -192,41 +214,6 @@ export function openQaapAccountMenu(
     panel.className = 'theia-qaap-account-menu';
     panel.setAttribute('role', 'menu');
     panel.tabIndex = -1;
-
-    // The classic IDE is intentionally desktop-only. Keep the switch out of the narrow
-    // Work Hub menu instead of showing an action that cannot be executed there.
-    if (viewToggle && !matchesMobileNarrowViewport()) {
-        const switchHost = document.createElement('div');
-        switchHost.className = 'theia-qaap-account-menu-view-switch';
-        const field = createSegmentedField<MobileViewToggleId>({
-            segments: [
-                {
-                    id: 'editor',
-                    label: nls.localize('qaap/mobileBottomBar/ide', 'IDE'),
-                    iconClass: 'codicon-code',
-                },
-                {
-                    id: 'agent',
-                    label: nls.localize('qaap/mobileBottomBar/agents', 'Agents'),
-                    iconClass: QAAP_MESSAGE_CIRCLE_ICON_CLASS,
-                },
-            ],
-            value: viewToggle.activeId,
-            iconOnly: false,
-            onChange: id => {
-                openOptions?.onMenuAction?.();
-                dismissQaapAccountMenu();
-                viewToggle.onSelect(id);
-            },
-        });
-        field.root.classList.add('theia-mod-header-surface');
-        switchHost.append(field.root);
-        panel.appendChild(switchHost);
-        const sep = document.createElement('div');
-        sep.className = 'theia-qaap-account-menu-separator';
-        sep.setAttribute('role', 'separator');
-        panel.appendChild(sep);
-    }
 
     if (gettingStarted && gettingStarted.section.items.length > 0) {
         panel.classList.add('theia-mod-with-getting-started');

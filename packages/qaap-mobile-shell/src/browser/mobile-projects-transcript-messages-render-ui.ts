@@ -216,7 +216,12 @@ export class MobileProjectsTranscriptMessagesRenderUi {
 
     /** Activity row currently mounted in the transcript host or virtual footer. */
     protected findTranscriptStreamingActivityRow(messageHost: HTMLElement): HTMLElement | undefined {
-        return messageHost.querySelector<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`) ?? undefined;
+        const rows = [...messageHost.querySelectorAll<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)];
+        const first = rows.shift();
+        for (const duplicate of rows) {
+            duplicate.remove();
+        }
+        return first;
     }
 
     protected createTranscriptContextCompactionRow(conv: QaapAgentConversationDTO): HTMLElement | undefined {
@@ -335,7 +340,7 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     removeTranscriptActivityRow(messageHost: HTMLElement): void {
-        messageHost.querySelector(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)?.remove();
+        messageHost.querySelectorAll(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`).forEach(row => row.remove());
     }
 
     protected clearTranscriptEmptyQuickActions(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {

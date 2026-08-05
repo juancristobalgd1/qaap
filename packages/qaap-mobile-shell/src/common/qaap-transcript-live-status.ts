@@ -123,16 +123,19 @@ export function resolveTranscriptScroller(chatHost: HTMLElement): HTMLElement | 
 }
 
 /**
- * Strip live-status copies nested inside message rows/segments. Keeps the canonical
- * direct child of the scroller (always-last transcript tail).
+ * Strip live-status copies nested inside message rows/segments and remove any
+ * additional direct copies. Keeps one canonical direct child of the scroller
+ * (always-last transcript tail).
  */
 export function removeNestedTranscriptLiveStatusCopies(chatHost: HTMLElement): void {
     const scroller = resolveTranscriptScroller(chatHost);
     if (!scroller) {
         return;
     }
+    const directStatuses = [...scroller.querySelectorAll<HTMLElement>(`:scope > .${TRANSCRIPT_LIVE_STATUS_CLASS}`)];
+    const canonical = directStatuses[0];
     for (const element of scroller.querySelectorAll<HTMLElement>(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`)) {
-        if (element.parentElement !== scroller) {
+        if (element.parentElement !== scroller || (canonical && element !== canonical)) {
             element.remove();
         }
     }
@@ -180,8 +183,16 @@ export function ensureTranscriptLiveStatusAtScrollerTail(
     if (!scroller) {
         return undefined;
     }
-    if (element.parentElement !== scroller || scroller.lastElementChild !== element) {
-        scroller.append(element);
+    const directStatuses = [...scroller.querySelectorAll<HTMLElement>(`:scope > .${TRANSCRIPT_LIVE_STATUS_CLASS}`)];
+    const canonical = directStatuses[0] ?? element;
+    for (const duplicate of directStatuses.slice(1)) {
+        duplicate.remove();
+    }
+    if (element !== canonical) {
+        element.remove();
+    }
+    if (canonical.parentElement !== scroller || scroller.lastElementChild !== canonical) {
+        scroller.append(canonical);
     }
     return scroller;
 }

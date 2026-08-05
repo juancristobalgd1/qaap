@@ -73,9 +73,7 @@ import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import {
     buildQaapAccountMenuEntries,
-    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
     toggleQaapAccountMenu,
-    type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -611,16 +609,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     };
 
     protected readonly onAccountClick = (): void => {
-        const viewToggle = {
-            activeId: this.composerHeaderUi.resolveActiveViewToggleId(),
-            onSelect: (id: MobileViewToggleId) => {
-                if (id === 'editor') {
-                    void this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
-                    return;
-                }
-                void this.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
-            },
-        };
         toggleQaapAccountMenu(
             this.accountBtn,
             this.commands,
@@ -629,8 +617,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 section: QAAP_WORK_HUB_GETTING_STARTED,
                 onCatalogAction: action => { void this.runCatalogAction(action); },
             },
-            undefined,
-            viewToggle,
         );
     };
 

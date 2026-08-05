@@ -158,6 +158,28 @@ export function createSessionsSidebarNewAgentControlExtracted(ctx: any, project:
     return btn;
 }
 
+export function onSessionsSidebarViewModeChangeExtracted(ctx: any, id: MobileViewToggleId): void {
+    if (id === 'editor') {
+        if (!ctx.host.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+            || !ctx.host.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+            return;
+        }
+        void ctx.host.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+            .catch((error: unknown) => {
+                console.warn('[qaap-mobile-shell] failed to open the desktop IDE', error);
+            });
+        return;
+    }
+    if (!ctx.host.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
+        || !ctx.host.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+        return;
+    }
+    void ctx.host.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id)
+        .catch((error: unknown) => {
+            console.warn('[qaap-mobile-shell] failed to activate the IDE header view', error);
+        });
+}
+
 export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: any): Promise<void> {
     const project = ctx.resolveWorkHubSessionsSidebarProject();
     if (!project) {
@@ -209,32 +231,6 @@ export async function openEmptyMobileChatSheetExtracted(ctx: any, project: Mobil
 }
 
 export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLButtonElement): void {
-    const viewToggle = {
-        activeId: 'agent' as MobileViewToggleId,
-        onSelect: (id: MobileViewToggleId) => {
-            // From the Work Hub, selecting "IDE" must open the classic IDE surface
-            // (openDesktopIde), not switch an in-IDE header view.
-            if (id === 'editor') {
-                if (!ctx.host.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
-                    || !ctx.host.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
-                    return;
-                }
-                void ctx.host.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
-                    .catch((error: unknown) => {
-                        console.warn('[qaap-mobile-shell] failed to open the desktop IDE', error);
-                    });
-            } else {
-                if (!ctx.host.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
-                    || !ctx.host.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-                    return;
-                }
-                void ctx.host.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id)
-                    .catch((error: unknown) => {
-                        console.warn('[qaap-mobile-shell] failed to activate the IDE header view', error);
-                    });
-            }
-        },
-    };
     toggleQaapAccountMenu(
         anchor,
         ctx.host.commands,
@@ -248,7 +244,6 @@ export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLBut
             anchorGap: 2,
             onMenuAction: () => { ctx.host.sessionsSidebar?.hide(); },
         },
-        viewToggle,
     );
 }
 

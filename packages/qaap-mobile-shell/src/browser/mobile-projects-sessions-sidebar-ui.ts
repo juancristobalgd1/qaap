@@ -33,7 +33,7 @@ import {
 } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { beginSessionsSidebarConversationActivationExtracted, bindSessionsSidebarInteractionGuardExtracted, buildSessionsSidebarFingerprintInputExtracted, buildSessionsSidebarStructureFingerprintExtracted, buildSidebarRowFingerprintExtracted, collectParentIdsExtracted, collectSessionsSidebarConversationEntriesExtracted, ensureWorkHubSessionsSidebarExtracted, mergeSessionsSidebarProjectsExtracted, openWorkHubSessionsSidebarExtracted, prepareSessionsSidebarDataExtracted, refreshWorkHubSessionsSidebarListExtracted, rememberSessionsSidebarListFingerprintExtracted, resolveWorkHubSessionsSidebarProjectExtracted, seedSessionsSidebarProjectsForPaintExtracted, shouldDeferSessionsSidebarListRefreshExtracted, shouldSkipSessionsSidebarListRenderExtracted, stampSessionsSidebarRowFingerprintsExtracted, toggleWorkHubSessionsSidebarExtracted, tryPatchSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
 import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming2';
-import { createSessionsSidebarIdeOpenControlExtracted, createSessionsSidebarNewAgentControlExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, onSessionsSidebarAccountClickExtracted, onWorkHubSessionsSidebarNewChatExtracted, openEmptyMobileChatSheetExtracted, openSessionsSidebarSearchExtracted } from './mobile-projects-sessions-sidebar-ui-timeline2';
+import { createSessionsSidebarIdeOpenControlExtracted, createSessionsSidebarNewAgentControlExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, onSessionsSidebarAccountClickExtracted, onSessionsSidebarViewModeChangeExtracted, onWorkHubSessionsSidebarNewChatExtracted, openEmptyMobileChatSheetExtracted, openSessionsSidebarSearchExtracted } from './mobile-projects-sessions-sidebar-ui-timeline2';
 
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE;
@@ -388,6 +388,10 @@ export class MobileProjectsSessionsSidebarUi {
     }
     onSessionsSidebarAccountClick(anchor: HTMLButtonElement): void {
         onSessionsSidebarAccountClickExtracted(this, anchor);
+    }
+
+    onSessionsSidebarViewModeChange(id: MobileViewToggleId): void {
+        onSessionsSidebarViewModeChangeExtracted(this, id);
     }
     async openSessionsSidebarSearch(): Promise<void> {
         return openSessionsSidebarSearchExtracted(this);

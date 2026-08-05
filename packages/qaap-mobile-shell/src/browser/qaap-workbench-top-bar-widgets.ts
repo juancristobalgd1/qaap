@@ -13,9 +13,17 @@ import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaa
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
-import { buildQaapAccountMenuEntries, dismissQaapAccountMenu, toggleQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, type MobileViewToggleId, type QaapAccountMenuEntry } from './qaap-workbench-account-menu';
+import {
+    buildQaapAccountMenuEntries,
+    createQaapViewModeSwitch,
+    dismissQaapAccountMenu,
+    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
+    toggleQaapAccountMenu,
+    type MobileViewToggleId,
+    type QaapAccountMenuEntry,
+} from './qaap-workbench-account-menu';
+import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
-import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
 import { MobileProjectsService } from './mobile-projects-service';
 import { EXPLORER_VIEW_CONTAINER_ID, type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -206,6 +214,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected readonly mobileChatTabBtn: HTMLButtonElement;
     protected readonly mobileViewPickerBtn: HTMLButtonElement;
     protected readonly mobileViewPickerSlot: HTMLElement;
+    protected readonly viewModeSwitchHost: HTMLElement;
+    protected readonly viewModeSwitch: QaapSegmentedFieldController<MobileViewToggleId>;
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected mobileViewPickerMenu: HTMLElement | undefined;
@@ -263,6 +273,15 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.mobileViewPickerSlot = document.createElement('span');
         this.mobileViewPickerSlot.className = 'theia-workbench-mobile-view-picker-slot';
         this.mobileViewPickerSlot.hidden = true;
+        this.viewModeSwitchHost = document.createElement('span');
+        this.viewModeSwitchHost.className = 'theia-workbench-view-mode-switch';
+        this.viewModeSwitchHost.hidden = true;
+        this.viewModeSwitchHost.setAttribute('aria-hidden', 'true');
+        this.viewModeSwitch = createQaapViewModeSwitch({
+            activeId: 'editor',
+            onSelect: this.onViewModeSwitchSelect,
+        });
+        this.viewModeSwitchHost.append(this.viewModeSwitch.root);
         this.accountBtn = document.createElement('button');
         this.accountBtn.type = 'button';
         this.accountBtn.className = 'theia-workbench-nav-btn theia-workbench-account-btn';
@@ -273,7 +292,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.accountAvatar.setAttribute('aria-hidden', 'true');
         this.accountBtn.appendChild(this.accountAvatar);
         this.mobileViewPickerSlot.append(this.mobileViewPickerBtn);
-        node.append(this.terminalBtn, this.aiChatBtn, this.mobileViewPickerSlot, this.accountBtn);
+        node.append(this.terminalBtn, this.aiChatBtn, this.mobileViewPickerSlot, this.viewModeSwitchHost, this.accountBtn);
         this.terminalBtn.addEventListener('click', this.onTerminalClick);
         this.aiChatBtn.addEventListener('click', this.onAiChatClick);
         this.mobileChatTabBtn.addEventListener('click', this.onAiChatClick);
@@ -319,40 +338,34 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     };
     protected readonly onAccountClick = (): void => {
         const signedIn = readQaapSignedIn();
-        // In the classic desktop IDE (preferDesktopIde), the switch shows "IDE" as active.
-        // In Work Hub / mobile one-column, it shows "Agents" when the agent surface is visible.
-        const inDesktopIde = peekPreferDesktopIde();
-        const activeId: MobileViewToggleId = inDesktopIde ? 'editor' : (this.isMobileBottomAgentActive() ? 'agent' : 'editor');
-        const viewToggle = {
-            activeId,
-            onSelect: (id: MobileViewToggleId) => {
-                if (id === 'editor') {
-                    // From Work Hub: open the classic IDE.
-                    // From mobile one-column: switch the in-IDE header view to the editor.
-                    if (this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
-                        void this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
-                    } else {
-                        void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
-                    }
-                } else {
-                    // From the classic IDE: return to Work Hub.
-                    // From mobile one-column: switch the in-IDE header view to the agent.
-                    if (peekPreferDesktopIde() && this.commands.isEnabled(QaapMobileProjectsDashboardCommands.TOGGLE.id)) {
-                        void this.commands.executeCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id);
-                    } else {
-                        void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id);
-                    }
-                }
-            },
-        };
-        toggleQaapAccountMenu(this.accountBtn, this.commands, this.buildAccountMenuEntries(signedIn), undefined, undefined, viewToggle);
+        toggleQaapAccountMenu(this.accountBtn, this.commands, this.buildAccountMenuEntries(signedIn));
+    };
+    protected readonly onViewModeSwitchSelect = (id: MobileViewToggleId): void => {
+        if (id === 'editor') {
+            if (this.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+                && this.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+                void this.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+                    .catch(error => console.warn('[qaap-mobile-shell] failed to open the desktop IDE', error));
+                return;
+            }
+        } else if (this.commands.getCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id)
+            && this.commands.isEnabled(QaapMobileProjectsDashboardCommands.TOGGLE.id)) {
+            void this.commands.executeCommand(QaapMobileProjectsDashboardCommands.TOGGLE.id)
+                .catch(error => console.warn('[qaap-mobile-shell] failed to return to Agents', error));
+            return;
+        }
+        if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
+            && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+            void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id)
+                .catch(error => console.warn('[qaap-mobile-shell] failed to activate the IDE header view', error));
+        }
     };
 
     protected buildAccountMenuEntries(signedIn: boolean): QaapAccountMenuEntry[] {
         // The IDE views (Preview / Terminal / Explorer / PR) live in the dedicated view
         // picker (the ▷ dropdown in the tab-bar row), not in the account menu. Keep the
-        // avatar menu as the standard account menu (IDE/Agents switch is added separately
-        // by the caller via the viewToggle option).
+        // avatar menu as the standard account menu; IDE/Agents switching lives in the
+        // Work Hub sidebar header and the always-available IDE top bar.
         return buildQaapAccountMenuEntries(signedIn);
     }
 
@@ -497,8 +510,20 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.aiChatBtn.disabled = !this.commands.isEnabled(WORKBENCH_AI_CHAT_TOGGLE);
         this.updateTerminalSwitchVisual();
         this.updateAiChatSwitchVisual();
+        this.syncViewModeSwitch();
         this.scheduleMobileViewPickerUpdate();
         this.updateAccountVisual();
+    }
+
+    protected syncViewModeSwitch(): void {
+        const visible = document.body.classList.contains('theia-mobile-mod-desktop-ide')
+            && !matchesMobileOneColumnLayout();
+        this.viewModeSwitchHost.hidden = !visible;
+        this.viewModeSwitchHost.style.display = visible ? '' : 'none';
+        this.viewModeSwitchHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        if (visible) {
+            this.viewModeSwitch.setValue('editor');
+        }
     }
 
     /** Refresh toggled state after mobile shell surfaces open or close outside this widget. */
@@ -543,14 +568,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         this.mobileChatTabBtn.setAttribute('aria-checked', on ? 'true' : 'false');
         this.mobileChatTabBtn.title = this.aiChatBtn.title;
         this.mobileChatTabBtn.setAttribute('aria-label', this.aiChatBtn.title);
-    }
-
-    protected isMobileBottomAgentActive(): boolean {
-        if (document.querySelector('.theia-mobile-projects.theia-mod-visible') || document.querySelector('.theia-mobile-agent-transcript-root.theia-mod-visible')) {
-            return true;
-        }
-        const title = this.shell.rightPanelHandler.tabBar.currentTitle;
-        return this.shell.isExpanded('right') && title?.owner?.id === WORKBENCH_CHAT_VIEW_WIDGET_ID;
     }
 
     protected scheduleMobileViewPickerUpdate(): void {
