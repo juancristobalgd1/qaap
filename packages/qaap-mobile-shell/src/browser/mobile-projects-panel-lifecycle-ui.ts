@@ -164,7 +164,7 @@ export class MobileProjectsPanelLifecycleUi {
         } else if (!this.host.visible) {
             const storedHubView = this.host.projectsService.getHubView();
             if (this.host.homeMode && !hasMobileProjectsLeftLanding()) {
-                this.host.hubView = storedHubView === 'home' ? 'tasks' : this.host.hubQueryUi.redirectHubView(storedHubView);
+                this.host.hubView = this.host.hubQueryUi.redirectHubView(storedHubView);
                 this.host.projectsService.setHubView(this.host.hubView);
             } else {
                 this.host.hubView = this.host.hubQueryUi.redirectHubView(storedHubView);

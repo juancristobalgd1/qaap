@@ -9,6 +9,7 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { WindowBlinkService } from '@theia/ai-core/lib/browser/window-blink-service';
 import { QaapBootstrapStateChange, QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
 
 export const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
 export const QAAP_AGENT_COMPLETED_EVENT = 'qaap-agent-completed';
@@ -48,8 +49,8 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
     };
 
     protected readonly onConfirmationNeeded = (event: Event): void => {
-        const detail = (event as CustomEvent<{ agentName?: string }>).detail;
-        this.notifyAgentNeedsConfirmation(detail?.agentName);
+        const detail = (event as CustomEvent<{ agentName?: string; conversationId?: string }>).detail;
+        this.notifyAgentNeedsConfirmation(detail?.agentName, detail?.conversationId);
     };
 
     protected notifyAgentCompleted(agentName?: string): void {
@@ -61,13 +62,14 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
         void this.blink.blinkWindow(agentName);
     }
 
-    protected notifyAgentNeedsConfirmation(agentName?: string): void {
+    protected notifyAgentNeedsConfirmation(agentName?: string, conversationId?: string): void {
         void this.blink.blinkWindow(agentName);
         this.showSystemNotification(
             nls.localize('qaap/push/agentNeedsConfirmation', 'Agent needs your confirmation'),
             agentName
                 ? nls.localize('qaap/push/agentNeedsConfirmationBody', '{0} is waiting for you to approve a tool call.', agentName)
                 : nls.localize('qaap/push/agentNeedsConfirmationBodyGeneric', 'Your agent is waiting for you to approve a tool call.'),
+            conversationId,
         );
     }
 
@@ -82,12 +84,21 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
         );
     }
 
-    protected showSystemNotification(title: string, body: string): void {
+    protected showSystemNotification(title: string, body: string, conversationId?: string): void {
         if (typeof Notification === 'undefined' || Notification.permission !== 'granted') {
             return;
         }
         try {
-            new Notification(title, { body, tag: 'qaap-product' });
+            const notification = new Notification(title, { body, tag: 'qaap-product' });
+            if (conversationId) {
+                notification.onclick = () => {
+                    window.focus();
+                    window.dispatchEvent(new CustomEvent(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, {
+                        detail: { conversationId },
+                    }));
+                    notification.close();
+                };
+            }
         } catch {
             /* iOS / restricted contexts */
         }

@@ -12,7 +12,13 @@ import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conve
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
+import {
+    buildQaapAccountMenuEntries,
+    QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
+    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
+    toggleQaapAccountMenu,
+    type MobileViewToggleId,
+} from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import {
@@ -209,9 +215,23 @@ export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLBut
             // From the Work Hub, selecting "IDE" must open the classic IDE surface
             // (openDesktopIde), not switch an in-IDE header view.
             if (id === 'editor') {
-                void ctx.host.commands.executeCommand('qaap.mobile.openDesktopIde');
+                if (!ctx.host.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+                    || !ctx.host.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
+                    return;
+                }
+                void ctx.host.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
+                    .catch((error: unknown) => {
+                        console.warn('[qaap-mobile-shell] failed to open the desktop IDE', error);
+                    });
             } else {
-                void ctx.host.commands.executeCommand('qaap.mobile.ideHeaderView.activate', id);
+                if (!ctx.host.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
+                    || !ctx.host.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
+                    return;
+                }
+                void ctx.host.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id)
+                    .catch((error: unknown) => {
+                        console.warn('[qaap-mobile-shell] failed to activate the IDE header view', error);
+                    });
             }
         },
     };
@@ -260,4 +280,3 @@ export async function openSessionsSidebarSearchExtracted(ctx: any): Promise<void
     });
     quickPick.show();
 }
-

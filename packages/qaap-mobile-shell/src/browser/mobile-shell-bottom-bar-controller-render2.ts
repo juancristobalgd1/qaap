@@ -321,8 +321,8 @@ export function syncMobileHubPrimaryBottomChromeExtracted(ctx: any): void {
 export function getWorkHubLandingBottomButtonsExtracted(ctx: any): MobileBottomButton[] {
     return [
         {
-            id: 'hub-tasks',
-            label: nls.localize('qaap/mobileBottomBar/hubAgents', 'Agents'),
+            id: 'hub-projects',
+            label: nls.localize('qaap/mobileBottomBar/workHub', 'Work Hub'),
             icon: 'codicon-sparkle',
         },
     ];
@@ -362,9 +362,7 @@ export function isMobileBottomButtonActiveExtracted(ctx: any, id: MobileBottomBu
             case 'hub-home':
             case 'hub-inbox':
             case 'hub-projects':
-            case 'hub-tasks':
             case 'hub-review':
-            case 'hub-team':
             case 'hub-automations':
                 return false;
             default:
@@ -373,26 +371,17 @@ export function isMobileBottomButtonActiveExtracted(ctx: any, id: MobileBottomBu
     }
     switch (id) {
         case 'hub-home':
-            return ctx.host.isMobileWorkHubLandingVisible()
-                && ctx.host.getProjectsPanel()?.getHubView() === 'home';
+            return false;
         case 'hub-inbox':
             return ctx.host.isMobileWorkHubLandingVisible()
                 && ctx.host.getProjectsPanel()?.getHubView() === 'review';
         case 'hub-projects':
             return ctx.host.isMobileWorkHubLandingVisible()
-                && ctx.host.getProjectsPanel()?.getHubView() === 'repos'
+                && ctx.host.getProjectsPanel()?.getHubView() === 'tasks'
                 && !ctx.host.getProjectsPanel()?.isProjectDetailView();
-        case 'hub-tasks':
-            if (ctx.host.isMobileWorkHubLandingVisible()) {
-                return ctx.host.getProjectsPanel()?.getHubView() === 'tasks';
-            }
-            return ctx.isMobileWorkspaceHubPrimaryBottomBar() && ctx.isMainAgentSurfaceEmpty();
         case 'hub-review':
             return ctx.host.isMobileWorkHubLandingVisible()
                 && ctx.host.getProjectsPanel()?.getHubView() === 'review';
-        case 'hub-team':
-            return ctx.host.isMobileWorkHubLandingVisible()
-                && ctx.host.getProjectsPanel()?.getHubView() === 'tasks';
         case 'hub-automations':
             return ctx.host.isMobileWorkHubLandingVisible()
                 && false;
@@ -446,4 +435,3 @@ export async function activateMobileIdeHeaderViewExtracted(ctx: any, id: MobileB
     const anchor = document.createElement('button');
     await ctx.onMobileBottomButtonClick(def, anchor);
 }
-

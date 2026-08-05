@@ -51,10 +51,8 @@ export type MobileBottomButtonId =
     | 'terminal'
     | 'hub-home'
     | 'hub-projects'
-    | 'hub-tasks'
     | 'hub-review'
     | 'hub-inbox'
-    | 'hub-team'
     | 'hub-automations';
 
 export interface MobileBottomButton {

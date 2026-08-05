@@ -6,16 +6,13 @@
 import { injectable } from '@theia/core/shared/inversify';
 
 export interface QaapWorkHubDiffDelegate {
-    openDiffInWorkHub(projectId?: string): Promise<void>;
     /** Opens the Work Hub with the agent session that raised a push notification. */
-    openConversationInWorkHub?(conversationId: string, cwd?: string): Promise<void>;
+    openConversationInWorkHub(conversationId: string, cwd?: string): Promise<void>;
 }
 
-type QaapWorkHubOpenRequest =
-    | { readonly kind: 'diff'; readonly projectId?: string }
-    | { readonly kind: 'conversation'; readonly conversationId: string; readonly cwd?: string };
+type QaapWorkHubOpenRequest = { readonly kind: 'conversation'; readonly conversationId: string; readonly cwd?: string };
 
-/** Bridges diff-review open requests (commands, push routes) to the mobile Work Hub panel. */
+/** Bridges notification deep-links to the mobile Work Hub panel. */
 @injectable()
 export class QaapWorkHubDiffService {
 
@@ -36,18 +33,7 @@ export class QaapWorkHubDiffService {
         }
     }
 
-    async openDiffInWorkHub(projectId?: string): Promise<void> {
-        if (!this.delegate) {
-            this.pending = { kind: 'diff', projectId };
-            return;
-        }
-        await this.delegate.openDiffInWorkHub(projectId);
-    }
-
-    /**
-     * Notification deep-link: open the originating agent session in the Work Hub.
-     * Falls back to the diff-review surface when the host cannot resolve conversations.
-     */
+    /** Notification deep-link: open the originating agent session in the Work Hub. */
     async openConversationInWorkHub(conversationId: string, cwd?: string): Promise<void> {
         if (!this.delegate) {
             this.pending = { kind: 'conversation', conversationId, cwd };
@@ -57,10 +43,6 @@ export class QaapWorkHubDiffService {
     }
 
     protected async dispatch(delegate: QaapWorkHubDiffDelegate, request: QaapWorkHubOpenRequest): Promise<void> {
-        if (request.kind === 'conversation' && delegate.openConversationInWorkHub) {
-            await delegate.openConversationInWorkHub(request.conversationId, request.cwd);
-            return;
-        }
-        await delegate.openDiffInWorkHub(request.kind === 'diff' ? request.projectId : undefined);
+        await delegate.openConversationInWorkHub(request.conversationId, request.cwd);
     }
 }

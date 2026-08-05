@@ -91,7 +91,6 @@ import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mob
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
 import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';
 import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
-import { MobileProjectsReposHubUi, type MobileProjectsReposHubHost } from './mobile-projects-repos-hub-ui';
 import { MobileProjectsProjectActionsUi, type MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
 import { MobileProjectsInboxPrUi, type MobileProjectsInboxPrHost } from './mobile-projects-inbox-pr-ui';
 import { MobileProjectsCardMenuUi, type MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
@@ -483,7 +482,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly executionSurfaceTabsUi = new MobileProjectsExecutionSurfaceTabsUi(this as unknown as MobileProjectsExecutionSurfaceTabsHost);
     protected readonly tasksHubUi = new MobileProjectsTasksHubUi(this as unknown as MobileProjectsTasksHubHost);
     protected readonly hubCatalogUi = new MobileProjectsHubCatalogUi(this as unknown as MobileProjectsHubCatalogHost);
-    protected readonly reposHubUi = new MobileProjectsReposHubUi(this as unknown as MobileProjectsReposHubHost);
     protected readonly inboxPrUi = new MobileProjectsInboxPrUi(this as unknown as MobileProjectsInboxPrHost);
     protected readonly cardMenuUi = new MobileProjectsCardMenuUi(this as unknown as MobileProjectsCardMenuHost);
     protected readonly projectRowsUi = new MobileProjectsProjectRowsUi(this as unknown as MobileProjectsProjectRowsHost);
@@ -785,10 +783,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     navigateHubTab(view: MobileProjectsHubView): void {
         this.hubLandingUi.navigateHubTab(view);
-    }
-
-    async openDiffView(preferredProjectId?: string): Promise<void> {
-        await this.hubLandingUi.openDiffView(preferredProjectId);
     }
 
     async openProjectDiffView(preferredProjectId?: string): Promise<void> {
@@ -1464,14 +1458,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected async runCatalogAction(action: WorkHubCatalogAction): Promise<void> {
         return this.hubCatalogUi.runCatalogAction(action);
-    }
-
-    protected createEmptyState(): HTMLElement {
-        return this.reposHubUi.createEmptyState();
-    }
-
-    protected createSectionLabel(text: string, withDot: boolean): HTMLElement {
-        return this.reposHubUi.createSectionLabel(text, withDot);
     }
 
     protected resetInboxPullRequestState(): void {

@@ -73,7 +73,10 @@ export class QaapAgentCompletionContribution implements FrontendApplicationContr
         const requests = session.model.getRequests();
         const latest = requests[requests.length - 1];
         window.dispatchEvent(new CustomEvent(QAAP_AGENT_CONFIRMATION_NEEDED_EVENT, {
-            detail: { agentName: latest?.agentId },
+            detail: {
+                agentName: latest?.agentId,
+                conversationId: this.conversationIdForSession(session),
+            },
         }));
     }
 
@@ -91,8 +94,15 @@ export class QaapAgentCompletionContribution implements FrontendApplicationContr
         if (response.isComplete && !response.isCanceled && !response.isError) {
             this.notifiedResponses.add(response.id);
             window.dispatchEvent(new CustomEvent(QAAP_AGENT_COMPLETED_EVENT, {
-                detail: { agentName: latest.agentId },
+                detail: {
+                    agentName: latest.agentId,
+                    conversationId: this.conversationIdForSession(session),
+                },
             }));
         }
+    }
+
+    protected conversationIdForSession(session: ChatSession): string {
+        return `theia-chat-service:${encodeURIComponent(session.id)}`;
     }
 }

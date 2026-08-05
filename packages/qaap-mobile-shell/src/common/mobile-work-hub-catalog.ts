@@ -12,7 +12,7 @@ export const QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB = 'ai-agent-configuration
 /** MCP servers tab — used by composer slash Tools (add-plugin / remove-plugin). */
 export const QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB = 'ai-mcp-configuration-container-widget';
 
-export type WorkHubCatalogHubTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review' | 'diff';
+export type WorkHubCatalogHubTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review';
 
 export type WorkHubCatalogAction =
     | { readonly type: 'command'; readonly commandId: string }
@@ -80,26 +80,6 @@ export const QAAP_WORK_HUB_WORKFLOWS: readonly WorkHubCatalogSection[] = [
         title: 'Agent workflows',
         items: [
             {
-                id: 'workflow-inbox',
-                sectionId: 'agentic',
-                title: 'Triage agent handoffs',
-                subtitle: 'See running threads, blockers, and open PRs across every project.',
-                meta: 'Inbox tab',
-                iconClass: 'codicon-inbox',
-                action: { type: 'hub-view', view: 'tasks' },
-                searchText: 'inbox chats pull requests agents handoffs blockers',
-            },
-            {
-                id: 'workflow-diff',
-                sectionId: 'agentic',
-                title: 'Review working changes',
-                subtitle: 'Accept or reject edits per file from the Work Hub diff surface.',
-                meta: 'Diff view',
-                iconClass: 'codicon-diff',
-                action: { type: 'hub-view', view: 'diff' },
-                searchText: 'diff review changes accept reject',
-            },
-            {
                 id: 'workflow-review-prs',
                 sectionId: 'agentic',
                 title: 'Finish the PR',
@@ -108,16 +88,6 @@ export const QAAP_WORK_HUB_WORKFLOWS: readonly WorkHubCatalogSection[] = [
                 iconClass: 'codicon-git-pull-request',
                 action: { type: 'hub-view', view: 'review' },
                 searchText: 'pull request pr review github merge checks files',
-            },
-            {
-                id: 'workflow-team',
-                sectionId: 'agentic',
-                title: 'Team dashboard',
-                subtitle: 'See leaders and subtasks spawned via qaap-task across every project.',
-                meta: 'Team tab',
-                iconClass: 'codicon-organization',
-                action: { type: 'hub-view', view: 'tasks' },
-                searchText: 'team agents dashboard subtasks qaap-task leader',
             },
             {
                 id: 'workflow-agents',

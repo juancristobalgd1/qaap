@@ -303,7 +303,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
         createWidget: () => container.get(QaapDiffReviewWidget),
     })).inSingletonScope();
     bind(QaapDiffReviewContribution).toSelf().inSingletonScope();
-    bind(CommandContribution).toService(QaapDiffReviewContribution);
     bind(FrontendApplicationContribution).toService(QaapDiffReviewContribution);
 
     bind(QaapAiChatMobileContribution).toSelf().inSingletonScope();

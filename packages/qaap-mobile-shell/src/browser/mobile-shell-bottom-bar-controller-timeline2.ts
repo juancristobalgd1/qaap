@@ -120,8 +120,10 @@ export function shouldDismissSheetsForButtonExtracted(ctx: any, id: MobileBottom
 
 export async function onMobileBottomButtonClickExtracted(ctx: any, def: MobileBottomButton, btn: HTMLButtonElement): Promise<void> {
     MobileHaptics.fire(MobileHaptics.LIGHT);
-    if (def.id === 'hub-tasks') {
-        btn.blur();
+    if (def.id === 'hub-home') {
+        dismissQaapAccountMenu();
+        await ctx.host.openMobileWorkHubLanding('home');
+        return;
     }
     if (def.id === 'hub-inbox') {
         dismissQaapAccountMenu();
@@ -134,19 +136,11 @@ export async function onMobileBottomButtonClickExtracted(ctx: any, def: MobileBo
         await ctx.host.openMobileWorkHubLanding('repos');
         return;
     }
-    if (def.id === 'hub-tasks') {
-        await ctx.host.openMobileWorkHubLanding('tasks');
-        return;
-    }
     if (def.id === 'hub-review') {
         dismissQaapAccountMenu();
         await ctx.host.openMobileWorkHubLanding('review');
         ctx.host.conversationsStart();
         ctx.host.inboxStreamStart();
-        return;
-    }
-    if (def.id === 'hub-team') {
-        await ctx.host.openMobileWorkHubLanding('tasks');
         return;
     }
     if (def.id === 'projects') {
@@ -230,4 +224,3 @@ export async function onMobileBottomButtonClickExtracted(ctx: any, def: MobileBo
         ctx.host.scheduleSnapAndUiRefresh();
     }
 }
-

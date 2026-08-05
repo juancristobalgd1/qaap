@@ -55,14 +55,18 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         if (document.visibilityState === 'visible') {
             return;
         }
-        const detail = (event as CustomEvent<{ agentName?: string }>).detail;
+        const detail = (event as CustomEvent<{ agentName?: string; conversationId?: string }>).detail;
+        if (!detail?.conversationId) {
+            return;
+        }
         void sendQaapPushNotify({
             title: 'Agent finished',
             body: detail?.agentName
                 ? `${detail.agentName} completed its task.`
                 : 'Your agent completed its task.',
             tag: 'qaap-agent-done',
-            route: 'diff-review',
+            route: 'conversation',
+            conversationId: detail.conversationId,
         });
     };
 
@@ -70,7 +74,10 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         // The agent is blocked waiting on the user — always push, even if the tab is foregrounded
         // but the OS has hidden it (split-screen, screen off). Same `tag` collapses repeats from
         // chained confirmations into a single visible notification.
-        const detail = (event as CustomEvent<{ agentName?: string }>).detail;
+        const detail = (event as CustomEvent<{ agentName?: string; conversationId?: string }>).detail;
+        if (!detail?.conversationId) {
+            return;
+        }
         if (document.visibilityState === 'visible' && !document.hidden) {
             return;
         }
@@ -80,7 +87,8 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
                 ? `${detail.agentName} is waiting for you to approve a tool call.`
                 : 'Your agent is waiting for you to approve a tool call.',
             tag: 'qaap-agent-confirm',
-            route: 'chat',
+            route: 'conversation',
+            conversationId: detail.conversationId,
         });
     };
 

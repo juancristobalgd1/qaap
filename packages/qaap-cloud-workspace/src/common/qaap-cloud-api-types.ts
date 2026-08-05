@@ -66,8 +66,8 @@ export interface QaapPushNotifyRequest {
     readonly body: string;
     readonly tag?: string;
     readonly userLogin?: string;
-    /** In-app destination to open when the notification is clicked (e.g. 'diff-review'). */
-    readonly route?: string;
+    /** In-app destination to open when the notification is clicked. */
+    readonly route?: 'conversation';
     /** Agent conversation the notification refers to — the app opens its Work Hub session on click. */
     readonly conversationId?: string;
     /** Working directory of the task/conversation — helps the app resolve the owning project. */

@@ -39,13 +39,12 @@ describe('qaap-work-hub-surfaces', () => {
         expect(filterVpsTaskSummaries([local, vps])).to.deep.equal([vps]);
     });
 
-    it('maps legacy hub ids to tasks', () => {
+    it('maps removed landing hub ids to the unified Agents Work Hub', () => {
         expect(normalizeWorkHubViewId('chats')).to.equal('tasks');
         expect(normalizeWorkHubViewId('team')).to.equal('tasks');
         expect(normalizeWorkHubViewId('work')).to.equal('tasks');
         expect(normalizeWorkHubViewId('repos')).to.equal('tasks');
-        expect(normalizeWorkHubViewId('tasks')).to.equal('tasks');
-        expect(normalizeWorkHubViewId('home')).to.equal('home');
+        expect(normalizeWorkHubViewId('home')).to.equal('tasks');
     });
 
 });

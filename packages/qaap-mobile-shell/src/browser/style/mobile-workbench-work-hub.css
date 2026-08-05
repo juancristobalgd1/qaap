@@ -3060,9 +3060,12 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 /* Expanded: the control becomes the panel surface — full width of the composer
    column. display: flex (not inline-flex) so width: 100% is honored. */
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded {
-  flex: 1 1 100%;
+  /* Do not let the flex item shrink back to its min-content width when the
+     queue is expanded inside the horizontally scrollable pill row. */
+  flex: 1 0 100%;
   align-self: stretch;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
@@ -3132,6 +3135,27 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   align-items: stretch;
   margin-left: calc(-1 * max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px)));
   margin-right: calc(-1 * max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px)));
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+}
+
+/* On narrow devices the host is pulled out of the composer's insets above.
+   Give it those insets back as width so the expanded queue reaches both
+   viewport edges instead of stopping at the intrinsic composer width. */
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control.theia-mod-expanded) {
+    --qaap-queue-device-width: calc(
+      100% + max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px))
+      + max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px))
+    );
+    flex: 0 0 var(--qaap-queue-device-width);
+    width: var(--qaap-queue-device-width);
+    min-width: var(--qaap-queue-device-width);
+    max-width: none;
+  }
 }
 
 .theia-mobile-sticky-composer-activity-stack.theia-mod-queue-control .theia-mobile-sticky-composer-activity-section.theia-mod-queue-control-section {
@@ -3170,14 +3194,16 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded) {
   flex-wrap: wrap;
+  min-width: 100%;
   overflow-x: hidden;
   overflow-y: visible;
   align-items: stretch;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded)>.theia-mobile-sticky-composer-activity-stack.theia-mod-expanded {
-  flex: 1 1 100%;
+  flex: 1 0 100%;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
 }
 
@@ -3209,6 +3235,8 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .qaap-queue-expand-inner {
+  width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -3217,6 +3245,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .qaap-queue-expand-panel {
   display: flex;
   flex-direction: column;
+  width: 100%;
   min-width: 0;
   max-height: min(520px, 62vh);
   transform: translateY(-4px) scale(0.985);

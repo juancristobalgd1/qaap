@@ -33,7 +33,6 @@ export interface MobileProjectsRenderListHost {
     renderTasksHubView(projects: MobileProjectEntry[]): void;
     renderReviewHubView(projects: MobileProjectEntry[]): void;
     renderCatalogHubView(): void;
-    createEmptyState(): HTMLElement;
     createProjectDetailView(project: MobileProjectEntry): HTMLElement;
     createRow(project: MobileProjectEntry): HTMLElement;
     updateNewFabVisibility(): void;
@@ -82,12 +81,6 @@ export class MobileProjectsRenderListUi {
             this.host.diffProjectTabsHost.hidden = true;
             this.host.diffWidgetHost.hidden = true;
 
-            // The repos list surface was removed from the hub: 'repos' only renders the
-            // project-detail view. Without an expanded project, land on the Work view.
-            if (this.host.homeMode && this.host.hubView === 'repos' && this.host.expandedId === undefined) {
-                this.host.hubView = 'tasks';
-            }
-
             const filtered = this.host.hubQueryUi.projectsForCurrentHubList();
 
             if (this.host.hubView === 'home') {
@@ -112,7 +105,10 @@ export class MobileProjectsRenderListUi {
             }
 
             if (filtered.length === 0) {
-                this.host.scroll.append(this.host.createEmptyState());
+                // The retired Projects empty state must never be rendered. Recover into the
+                // unified Agents Work Hub so a project-free launch shows its onboarding instead.
+                this.host.hubView = 'tasks';
+                this.host.renderTasksHubView(this.host.projects);
                 return;
             }
 

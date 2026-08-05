@@ -366,13 +366,13 @@ export class MobileProjectsAgentsHubInlineUi {
 
         const title = document.createElement('p');
         title.className = 'theia-mobile-agents-hub-onboarding-title';
-        title.textContent = nls.localize('qaap/workHubHome/noProjectsTitle', 'No workspaces yet');
+        title.textContent = nls.localize('qaap/agentsHub/noProjectsTitle', 'Add your first project');
 
         const hint = document.createElement('p');
         hint.className = 'theia-mobile-agents-hub-onboarding-hint';
         hint.textContent = nls.localize(
-            'qaap/workHubHome/noProjects',
-            'Add a GitHub repository to delegate agent work and review the resulting PR.',
+            'qaap/agentsHub/noProjects',
+            'Connect a GitHub repository to start working with an agent.',
         );
 
         const actions = document.createElement('div');

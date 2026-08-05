@@ -434,7 +434,7 @@ export async function notifyCompletionExtracted(ctx: any, task: QaapAgentTask): 
         // Deep-link target: the Work Hub session that spawned this task (when known),
         // so tapping the notification lands on the agent conversation, not a generic surface.
         const conversationId = ctx.conversationIdForTask?.(task.id);
-        const link = { route: 'diff-review', conversationId, cwd: task.cwd, userLogin: task.ownerLogin };
+        const link = { route: 'conversation', conversationId, cwd: task.cwd, userLogin: task.ownerLogin };
         if (task.state === 'completed_with_warnings') {
             try {
                 await ctx.webPush.notify({
@@ -558,4 +558,3 @@ export async function improveComposerPromptExtracted(ctx: any, options: {
         };
         return ctx.runOneShotCommand(command, cwd, ctx.buildChildEnv(task), agentId);
 }
-

@@ -416,4 +416,3 @@ export function resolveWorkHubSessionsSidebarProjectExtracted(ctx: any): MobileP
     return ctx.host.projects.find(p => p.isCurrent)
         ?? ctx.host.resolveHomePinnedProject();
 }
-

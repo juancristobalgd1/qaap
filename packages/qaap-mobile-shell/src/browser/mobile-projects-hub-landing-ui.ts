@@ -163,15 +163,6 @@ export class MobileProjectsHubLandingUi {
         this.selectHubLandingView(view, undefined, { force: true });
     }
 
-    async openDiffView(preferredProjectId?: string): Promise<void> {
-        if (!this.host.visible) {
-            await this.host.show();
-        }
-        this.host.diffScopedToProject = false;
-        this.host.diffReturnProjectId = undefined;
-        this.selectHubLandingView('diff', preferredProjectId);
-    }
-
     async openProjectDiffView(preferredProjectId?: string): Promise<void> {
         if (!this.host.visible) {
             await this.host.show();
@@ -188,13 +179,13 @@ export class MobileProjectsHubLandingUi {
             return;
         }
         this.host.diffScopedToProject = false;
-        // The repos list is gone: return to the scoped project's detail view, or to the Work view.
+        // Return to the scoped project's detail view, or to the unified Agents Work Hub.
         if (this.host.diffReturnProjectId) {
-            this.host.hubView = 'repos';
+            this.host.hubView = 'tasks';
             this.host.expandedId = this.host.diffReturnProjectId;
             this.host.soloExpanded = true;
         } else {
-            this.host.hubView = 'tasks';
+            this.host.hubView = 'repos';
         }
         this.host.projectsService.setHubView(this.host.hubView);
         this.host.diffPendingPreferredProjectId = undefined;

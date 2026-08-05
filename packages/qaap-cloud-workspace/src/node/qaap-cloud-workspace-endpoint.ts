@@ -236,6 +236,9 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             body: body.body,
             tag: body.tag,
             userLogin: targetLogin,
+            route: body.route,
+            conversationId: body.conversationId,
+            cwd: body.cwd,
         });
         res.json(stats);
     }

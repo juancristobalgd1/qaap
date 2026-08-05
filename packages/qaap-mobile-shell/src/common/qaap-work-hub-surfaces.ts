@@ -31,9 +31,9 @@ export function filterVpsTaskSummaries<T extends QaapAgentConversationSummaryDTO
     return summaries.filter(isVpsTaskSummary);
 }
 
-/** Legacy hub tab ids — map to current Tasks surface. 'repos' (the removed projects list) only survives as the project-detail state set internally. */
+/** Legacy hub tab ids — removed landing surfaces now resolve to the unified Agents Work Hub. */
 export function normalizeWorkHubViewId(view: string): string {
-    if (view === 'chats' || view === 'team' || view === 'work' || view === 'repos') {
+    if (view === 'home' || view === 'chats' || view === 'team' || view === 'work' || view === 'repos') {
         return 'tasks';
     }
     return view;

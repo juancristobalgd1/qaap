@@ -33,7 +33,6 @@ import {
 import { hasQaapLeftRightSplitPanel } from '@theia/qaap-shell/lib/browser/qaap-shell-layout';
 import { QaapSidePanelHandler } from '@theia/qaap-shell/lib/browser/qaap-side-panel-handler';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
-import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
@@ -187,18 +186,25 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
         isEnabled: () => ctx.mobileActive,
         isVisible: () => matchesMobileOneColumnLayout(),
     });
-    // IDE-only commands — skip registration on narrow/touch viewport (IDE is desktop-only).
+    // Register the surface-switch command unconditionally. Command contributions are registered
+    // once, while the viewport can change later; registering it only during a non-narrow boot
+    // made the Work Hub avatar switch silently disappear from the command registry after a
+    // responsive transition. The runtime guard still keeps the classic IDE desktop-only.
+    registry.registerCommand({
+        id: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
+        label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
+    }, {
+        execute: () => { void ctx.openDesktopIde(); },
+        isEnabled: () => ctx.workspaceService.opened
+            && !matchesMobileNarrowViewport()
+            && ctx.shouldActivateMobileLayout()
+            && !peekPreferDesktopIde(),
+        isVisible: () => ctx.workspaceService.opened
+            && !matchesMobileNarrowViewport()
+            && ctx.shouldActivateWorkHubLayout(),
+    });
+    // The in-IDE header-view commands remain desktop/one-column IDE commands.
     if (!matchesMobileNarrowViewport()) {
-        registry.registerCommand({
-            id: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-            label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
-        }, {
-            execute: () => { void ctx.openDesktopIde(); },
-            isEnabled: () => ctx.workspaceService.opened
-                && ctx.shouldActivateMobileLayout()
-                && !peekPreferDesktopIde(),
-            isVisible: () => ctx.workspaceService.opened && ctx.shouldActivateWorkHubLayout(),
-        });
         registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.options' }, {
             execute: () => ctx.bottomBarController.getMobileIdeHeaderViewButtons(),
             isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
@@ -218,11 +224,22 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
 }
 
 export async function openDesktopIdeExtracted(ctx: any): Promise<void> {
-    const prepared = await ctx.prepareDesktopIdeWorkspaceFromHub();
-    if (!prepared) {
+    if (matchesMobileNarrowViewport() || !ctx.ideFallback) {
         return;
     }
-    ctx.ideFallback?.openDesktopIde();
+
+    // Switch the visible shell synchronously. Workspace/project discovery may involve the
+    // network, and waiting for it made the avatar switch look like a lost click. The existing
+    // workspace is already enough to show the classic IDE; preparation can continue in the
+    // background and may still reload/open the correct project when the hub has one selected.
+    ctx.ideFallback.openDesktopIde();
+    try {
+        await ctx.prepareDesktopIdeWorkspaceFromHub();
+    } catch (error) {
+        // The surface switch has already succeeded. Do not turn a project-list refresh failure
+        // into an unhandled rejection that makes the control appear intermittent.
+        console.warn('[qaap-mobile-shell] desktop IDE workspace preparation failed', error);
+    }
 }
 
 export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: any): Promise<boolean> {
@@ -435,7 +452,7 @@ export async function openConversationInWorkHubExtracted(ctx: any, conversationI
         if (!project) {
             return;
         }
-        // Mount the Work Hub agents surface (disposes any IDE-style non-home panel).
+        // Mount the unified Agents Work Hub (disposes any IDE-style non-home panel).
         await ctx.showMobileProjectsHome('tasks');
         const panel = ctx.projectsPanel;
         if (!panel) {
@@ -446,38 +463,7 @@ export async function openConversationInWorkHubExtracted(ctx: any, conversationI
         ctx.refreshWorkbenchTopBar();
     } catch (error) {
         console.error('[qaap-mobile-shell] failed to open conversation from notification', error);
-        await ctx.openDiffInWorkHub();
     }
-}
-
-export async function openDiffInWorkHubExtracted(ctx: any, projectId?: string): Promise<void> {
-    await ensurePrReviewCss();
-    if (!ctx.mobileActive) {
-        const widget = await ctx.widgetManager.getOrCreateWidget(QaapDiffReviewWidget.ID);
-        if (!widget.isAttached) {
-            ctx.shell.addWidget(widget, { area: 'main' });
-        }
-        await ctx.shell.activateWidget(widget.id);
-        return;
-    }
-    const onHubLanding = ctx.projectsPanel?.isHomeMode() === true
-        && ctx.projectsPanel.isVisible()
-        && document.body.classList.contains('theia-mobile-mod-landing')
-        && !ctx.landingLeftThisSession;
-    if (onHubLanding) {
-        ctx.landing.applyLandingChrome();
-        await ctx.projectsPanel?.openDiffView(projectId);
-        ctx.refreshBottomBar();
-        return;
-    }
-    // Mobile outside the landing: mount the Work Hub home panel and show the diff inside
-    // it — the legacy IDE-style (non-home) projects panel must never appear on mobile.
-    await ctx.showMobileProjectsHome('diff');
-    const panel = ctx.projectsPanel;
-    if (panel) {
-        await panel.openDiffView(projectId);
-    }
-    ctx.refreshBottomBar();
 }
 
 export async function openProjectScopedDiffViewExtracted(ctx: any, projectId?: string): Promise<void> {
@@ -622,14 +608,4 @@ export async function closeStaleMainPreviewWidgetExtracted(ctx: any): Promise<vo
         return;
     }
     await ctx.shell.closeWidget(preview.id, { save: false });
-}
-
-
-let prReviewCssLoaded = false;
-async function ensurePrReviewCss(): Promise<void> {
-    if (prReviewCssLoaded) {
-        return;
-    }
-    prReviewCssLoaded = true;
-    await import('../../src/browser/style/mobile-workbench-pr-review.css');
 }

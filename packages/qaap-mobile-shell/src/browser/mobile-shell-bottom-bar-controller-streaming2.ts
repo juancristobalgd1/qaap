@@ -121,7 +121,7 @@ export function createMobileBottomButtonExtracted(ctx: any, def: MobileBottomBut
         } else {
             btn.setAttribute('aria-pressed', 'false');
         }
-        const isHubLandingTab = def.id === 'hub-tasks';
+        const isHubLandingTab = def.id === 'hub-home' || def.id === 'hub-projects';
         let hubTabNavAt = 0;
         const onHubTabActivate = (): void => {
             const now = Date.now();
@@ -287,7 +287,7 @@ export function removeBottomBarSecondaryMenuExtracted(ctx: any): void {
 }
 
 export async function getBottomBarSecondaryItemsExtracted(ctx: any, def: MobileBottomButton): Promise<BottomBarSecondaryItem[]> {
-        if (def.id === 'hub-home' || def.id === 'hub-projects' || def.id === 'hub-tasks' || def.id === 'hub-review' || def.id === 'hub-team' || def.id === 'hub-automations') {
+        if (def.id === 'hub-home' || def.id === 'hub-projects' || def.id === 'hub-review' || def.id === 'hub-automations') {
             return [];
         }
         switch (def.id) {
@@ -405,4 +405,3 @@ export function getPullRequestSecondaryItemsExtracted(ctx: any): BottomBarSecond
             },
         }];
 }
-
