@@ -248,6 +248,23 @@
   pointer-events: none;
 }
 
+/* Desktop has enough pointer precision for a tighter appearance control. */
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .theia-qaap-appearance-mode-switch {
+    padding: 2px;
+  }
+
+  .theia-qaap-appearance-mode-switch-option {
+    width: 26px;
+    height: 26px;
+  }
+
+  .theia-qaap-appearance-mode-switch-icon {
+    width: 14px;
+    height: 14px;
+  }
+}
+
 /* Deployed-build SHA sits next to the account name: `Juan Cristobal (abc123…)`. */
 .theia-mobile-work-hub-sessions-sidebar-build {
   flex: 0 1 auto;
@@ -479,24 +496,22 @@
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current {
-  background: color-mix(in srgb,
-      var(--q-accent, var(--qaap-accent, #e58e40)) 14%,
-      var(--theia-list-activeSelectionBackground, rgba(127, 127, 127, 0.16)));
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 30%, transparent),
-    0 1px 4px color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  /* Keep the row width intact and inset only the visual selection surface. */
+  isolation: isolate;
+  background: transparent;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 7px;
-  bottom: 7px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--q-accent, var(--qaap-accent, #e58e40));
+  inset: 0 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb,
+      var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e)) 93%,
+      var(--theia-foreground) 7%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--theia-foreground) 9%, transparent);
   pointer-events: none;
+  z-index: 0;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-item {
@@ -565,13 +580,13 @@
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-title {
-  font-weight: 650;
-  color: var(--theia-list-activeSelectionForeground, var(--theia-foreground));
+  font-weight: 550;
+  color: var(--theia-foreground);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-dot:not(.theia-mod-complete):not(.theia-mod-verified):not(.theia-mod-git-pr):not(.theia-mod-failed):not(.theia-mod-running):not(.theia-mod-needs-input) {
   opacity: 0.95;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 18%, transparent);
+  box-shadow: none;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mod-sidebar-compact .theia-mobile-projects-task-progress-count {
@@ -1060,6 +1075,25 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   display: block;
 }
 
+/* Project actions are secondary on desktop; reveal them when the row is
+   being used, while keeping keyboard focus discoverable. */
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-work-hub-sessions-sidebar-project-new-agent,
+  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-projects-row-menu {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 140ms ease-out;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap:hover .theia-mobile-work-hub-sessions-sidebar-project-new-agent,
+  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap:focus-within .theia-mobile-work-hub-sessions-sidebar-project-new-agent,
+  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap:hover .theia-mobile-projects-row-menu,
+  .theia-mobile-work-hub-sessions-sidebar-project-row-wrap:focus-within .theia-mobile-projects-row-menu {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open:hover,
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open:active,
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open:focus-visible,
@@ -1085,22 +1119,42 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open {
+    background: transparent;
+    isolation: isolate;
+    z-index: 4;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open::before {
+    content: "";
+    position: absolute;
+    inset: 0 8px;
+    border-radius: 8px;
     background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+    pointer-events: none;
+    z-index: 0;
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current:hover,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current:focus-within,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current.theia-mod-menu-open {
+    background: transparent;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current:hover::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current:focus-within::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current.theia-mod-menu-open::before {
     background: color-mix(in srgb,
-        var(--q-accent, var(--qaap-accent, #e58e40)) 18%,
-        var(--theia-list-activeSelectionBackground, rgba(127, 127, 127, 0.18)));
+        var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e)) 91%,
+        var(--theia-foreground) 9%);
   }
 
   /* Desktop: lift the time/age out of the meta row and pin it to the right edge
      so the row content uses the full sidebar width. On hover the action buttons
      fade in at the same spot and the time fades out — t3code sidebar pattern. */
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-body {
-    padding-right: 56px;
+    padding-right: 84px;
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-since {
@@ -1143,7 +1197,7 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     opacity: 0.85;
   }
 
-  /* Background fade so buttons read clearly over the row content. */
+  /* Keep the conversation surface continuous beneath the action buttons. */
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover::after,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within::after,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open::after {
@@ -1152,11 +1206,144 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     top: 0;
     right: 0;
     bottom: 0;
-    width: 72px;
+    width: 92px;
     border-radius: 0 8px 8px 0;
-    background: linear-gradient(to right, transparent, var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e)) 60%);
+    border-left: 0;
+    background: transparent;
     pointer-events: none;
     z-index: 1;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    min-width: 30px;
+    height: 30px;
+    min-height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--theia-descriptionForeground);
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn {
+    right: 48px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
+    right: 12px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:hover,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:focus-visible,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:hover,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:focus-visible {
+    opacity: 1;
+    border-color: color-mix(in srgb, var(--theia-focusBorder, var(--theia-foreground)) 45%, transparent);
+    background: var(--theia-toolbar-hoverBackground, var(--theia-list-hoverBackground));
+    color: var(--theia-foreground);
+    outline: none;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:focus-visible,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:focus-visible {
+    outline: 2px solid var(--theia-focusBorder, var(--theia-foreground));
+    outline-offset: 1px;
+  }
+}
+
+/* Touch/mobile: hover is unavailable, so keep a compact action bar permanently
+   available at the edge of every conversation row without breaking its surface. */
+@media (max-width: 767px), (pointer: coarse), (hover: none) {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {
+    isolation: isolate;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-body {
+    padding-right: 100px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-since {
+    position: absolute;
+    right: 52px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    display: block;
+    max-width: 42px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.62;
+    font-size: 10px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(.theia-mobile-projects-conversation-archive-btn) .theia-mobile-projects-task-since {
+    right: 100px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100px;
+    border-radius: 0 8px 8px 0;
+    border-left: 0;
+    background: transparent;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--theia-descriptionForeground);
+    opacity: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn {
+    right: 52px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
+    right: 8px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:active,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:focus-visible,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:active,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:focus-visible {
+    border-color: color-mix(in srgb, var(--theia-focusBorder, var(--theia-foreground)) 45%, transparent);
+    background: var(--theia-toolbar-hoverBackground, var(--theia-list-hoverBackground));
+    color: var(--theia-foreground);
+    outline: none;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:focus-visible,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:focus-visible {
+    outline: 2px solid var(--theia-focusBorder, var(--theia-foreground));
+    outline-offset: 1px;
   }
 }
 

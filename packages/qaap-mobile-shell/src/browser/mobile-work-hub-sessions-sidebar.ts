@@ -420,7 +420,9 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     protected dispatchShellResize(): void {
-        if (typeof window.dispatchEvent !== 'function' || typeof window.Event !== 'function') {
+        if (typeof window === 'undefined'
+            || typeof window.dispatchEvent !== 'function'
+            || typeof window.Event !== 'function') {
             return;
         }
         window.dispatchEvent(new window.Event('resize'));
