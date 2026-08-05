@@ -11,7 +11,7 @@ import {
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
+import { createLucideArrowUpRightIcon, createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
@@ -28,7 +28,7 @@ import {
     QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
     resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
-import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE } from './mobile-projects-sessions-sidebar-ui';
+import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE, SESSIONS_SIDEBAR_PROJECT_SORT_MODES } from './mobile-projects-sessions-sidebar-ui';
 
 export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLElement): void {
         const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
@@ -58,6 +58,36 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
         sectionLabel.className = 'theia-mobile-tasks-inbox-section-label';
         sectionLabel.textContent = nls.localize('qaap/sessionsSidebar/projectsSection', 'Projects');
         sectionHead.append(sectionLabel);
+        const sectionActions = document.createElement('div');
+        sectionActions.className = 'theia-mobile-work-hub-sessions-sidebar-projects-head-actions';
+        const sortBtn = document.createElement('button');
+        sortBtn.type = 'button';
+        sortBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-sort';
+        const sortIcon = createLucideSortIcon();
+        sortBtn.append(sortIcon);
+        sortBtn.title = nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects');
+        sortBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects'));
+        sortBtn.setAttribute('aria-haspopup', 'menu');
+        sortBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            ctx.toggleSessionsSidebarProjectSortPopover(sortBtn);
+        });
+        const addProjectBtn = document.createElement('button');
+        addProjectBtn.type = 'button';
+        addProjectBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-add-project';
+        const addProjectIcon = document.createElement('span');
+        addProjectIcon.className = 'codicon codicon-new-folder';
+        addProjectIcon.setAttribute('aria-hidden', 'true');
+        addProjectBtn.append(addProjectIcon);
+        addProjectBtn.title = nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project');
+        addProjectBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project'));
+        addProjectBtn.setAttribute('aria-haspopup', 'menu');
+        addProjectBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            ctx.toggleSessionsSidebarAddProjectPopover(addProjectBtn);
+        });
+        sectionActions.append(sortBtn, addProjectBtn);
+        sectionHead.append(sectionActions);
         const list = document.createElement('div');
         list.className = 'theia-mobile-work-hub-sessions-sidebar-projects-list';
         let visibleCount = 0;
@@ -381,6 +411,27 @@ export function ensureSessionsSidebarActiveProjectExpandedExtracted(ctx: any, pr
 }
 
 export function compareSessionsSidebarProjectOrderExtracted(ctx: any, a: MobileProjectEntry, b: MobileProjectEntry): number {
+        const mode = ctx.getSessionsSidebarProjectSortMode?.() ?? 'default';
+        if (mode === 'alphabetical') {
+            return a.name.localeCompare(b.name);
+        }
+        if (mode === 'createdAt') {
+            const aCreated = ctx.resolveSessionsSidebarProjectCreatedAt(a);
+            const bCreated = ctx.resolveSessionsSidebarProjectCreatedAt(b);
+            if (aCreated !== bCreated) {
+                return bCreated - aCreated; // newest project first
+            }
+            return a.name.localeCompare(b.name);
+        }
+        if (mode === 'lastMessage') {
+            const aLast = ctx.resolveSessionsSidebarProjectLastMessageAt(a);
+            const bLast = ctx.resolveSessionsSidebarProjectLastMessageAt(b);
+            if (aLast !== bLast) {
+                return bLast - aLast; // most recent user message first
+            }
+            return a.name.localeCompare(b.name);
+        }
+        // 'default': running tasks first, then current, then selected, then recent activity, then name.
         const aRunning = ctx.host.conversationIndexUi.countRunningTasks(a) > 0 ? 1 : 0;
         const bRunning = ctx.host.conversationIndexUi.countRunningTasks(b) > 0 ? 1 : 0;
         if (aRunning !== bRunning) {
@@ -403,5 +454,164 @@ export function compareSessionsSidebarProjectOrderExtracted(ctx: any, a: MobileP
             return bValid - aValid;
         }
         return a.name.localeCompare(b.name);
+}
+
+function positionSessionsSidebarHeadPopover(popover: HTMLElement, anchor: HTMLElement): void {
+        const margin = 8;
+        const gap = 6;
+        const anchorRect = anchor.getBoundingClientRect();
+        const popoverWidth = popover.offsetWidth;
+        const popoverHeight = popover.offsetHeight;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        let top = anchorRect.bottom + gap;
+        if (top + popoverHeight > viewportHeight - margin) {
+            const aboveTop = anchorRect.top - gap - popoverHeight;
+            top = aboveTop >= margin ? aboveTop : Math.max(margin, viewportHeight - margin - popoverHeight);
+        }
+        let left = anchorRect.right - popoverWidth;
+        left = Math.max(margin, Math.min(left, viewportWidth - popoverWidth - margin));
+        popover.style.top = `${top}px`;
+        popover.style.left = `${left}px`;
+}
+
+function dismissSessionsSidebarHeadPopoverOnOutside(
+        popover: HTMLElement,
+        anchor: HTMLElement,
+        onDismiss: () => void,
+): () => void {
+        const isInside = (target: EventTarget | null): boolean => {
+            if (!(target instanceof Node)) {
+                return false;
+            }
+            return popover.contains(target) || anchor.contains(target);
+        };
+        const handlePointerDown = (event: PointerEvent): void => {
+            if (isInside(event.target)) {
+                return;
+            }
+            onDismiss();
+        };
+        const handleClick = (event: MouseEvent): void => {
+            if (isInside(event.target)) {
+                return;
+            }
+            onDismiss();
+        };
+        const handleKeydown = (event: KeyboardEvent): void => {
+            if (event.key === 'Escape') {
+                onDismiss();
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown, true);
+        document.addEventListener('click', handleClick, true);
+        document.addEventListener('keydown', handleKeydown, true);
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown, true);
+            document.removeEventListener('click', handleClick, true);
+            document.removeEventListener('keydown', handleKeydown, true);
+        };
+}
+
+export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: any, anchor: HTMLButtonElement): void {
+        if (ctx.sessionsSidebarSortPopover) {
+            ctx.closeSessionsSidebarHeadPopovers();
+            return;
+        }
+        ctx.closeSessionsSidebarHeadPopovers();
+        const popover = document.createElement('div');
+        popover.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover theia-mod-sort';
+        popover.setAttribute('role', 'menu');
+        popover.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects'));
+        const currentMode = ctx.getSessionsSidebarProjectSortMode();
+        for (const entry of SESSIONS_SIDEBAR_PROJECT_SORT_MODES) {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
+            item.setAttribute('role', 'menuitemradio');
+            item.setAttribute('aria-checked', entry.id === currentMode ? 'true' : 'false');
+            const label = document.createElement('span');
+            label.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
+            label.textContent = nls.localize(entry.labelKey, entry.defaultLabel);
+            const check = document.createElement('span');
+            check.className = 'codicon codicon-check theia-mobile-work-hub-sessions-sidebar-head-popover-item-check';
+            check.setAttribute('aria-hidden', 'true');
+            check.style.visibility = entry.id === currentMode ? 'visible' : 'hidden';
+            item.append(label, check);
+            item.addEventListener('click', () => {
+                ctx.setSessionsSidebarProjectSortMode(entry.id);
+                ctx.closeSessionsSidebarHeadPopovers();
+            });
+            popover.append(item);
+        }
+        document.body.append(popover);
+        ctx.sessionsSidebarSortPopover = popover;
+        window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
+        const dismissCleanup = dismissSessionsSidebarHeadPopoverOnOutside(popover, anchor, () => {
+            ctx.closeSessionsSidebarHeadPopovers();
+        });
+        const originalClose = ctx.closeSessionsSidebarHeadPopovers.bind(ctx);
+        ctx.closeSessionsSidebarHeadPopovers = (): void => {
+            dismissCleanup();
+            popover.remove();
+            ctx.sessionsSidebarSortPopover = undefined;
+            ctx.closeSessionsSidebarHeadPopovers = originalClose;
+        };
+}
+
+export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: any, anchor: HTMLButtonElement): void {
+        if (ctx.sessionsSidebarAddProjectPopover) {
+            ctx.closeSessionsSidebarHeadPopovers();
+            return;
+        }
+        ctx.closeSessionsSidebarHeadPopovers();
+        const popover = document.createElement('div');
+        popover.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover theia-mod-add-project';
+        popover.setAttribute('role', 'menu');
+        popover.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project'));
+        const startNew = document.createElement('button');
+        startNew.type = 'button';
+        startNew.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
+        startNew.setAttribute('role', 'menuitem');
+        const startNewIcon = document.createElement('span');
+        startNewIcon.className = 'codicon codicon-add theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
+        startNewIcon.setAttribute('aria-hidden', 'true');
+        const startNewLabel = document.createElement('span');
+        startNewLabel.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
+        startNewLabel.textContent = nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
+        startNew.append(startNewIcon, startNewLabel);
+        startNew.addEventListener('click', () => {
+            ctx.closeSessionsSidebarHeadPopovers();
+            void ctx.host.onStartNewProject();
+        });
+        const addRepo = document.createElement('button');
+        addRepo.type = 'button';
+        addRepo.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
+        addRepo.setAttribute('role', 'menuitem');
+        const addRepoIcon = document.createElement('span');
+        addRepoIcon.className = 'codicon codicon-repo-clone theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
+        addRepoIcon.setAttribute('aria-hidden', 'true');
+        const addRepoLabel = document.createElement('span');
+        addRepoLabel.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
+        addRepoLabel.textContent = nls.localize('qaap/mobileProjects/newRepository', 'Add repository');
+        addRepo.append(addRepoIcon, addRepoLabel);
+        addRepo.addEventListener('click', () => {
+            ctx.closeSessionsSidebarHeadPopovers();
+            void ctx.host.onNewClick();
+        });
+        popover.append(startNew, addRepo);
+        document.body.append(popover);
+        ctx.sessionsSidebarAddProjectPopover = popover;
+        window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
+        const dismissCleanup = dismissSessionsSidebarHeadPopoverOnOutside(popover, anchor, () => {
+            ctx.closeSessionsSidebarHeadPopovers();
+        });
+        const originalClose = ctx.closeSessionsSidebarHeadPopovers.bind(ctx);
+        ctx.closeSessionsSidebarHeadPopovers = (): void => {
+            dismissCleanup();
+            popover.remove();
+            ctx.sessionsSidebarAddProjectPopover = undefined;
+            ctx.closeSessionsSidebarHeadPopovers = originalClose;
+        };
 }
 

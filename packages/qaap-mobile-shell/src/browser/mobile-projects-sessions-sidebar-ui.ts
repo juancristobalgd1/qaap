@@ -32,7 +32,7 @@ import {
     resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { beginSessionsSidebarConversationActivationExtracted, bindSessionsSidebarInteractionGuardExtracted, buildSessionsSidebarFingerprintInputExtracted, buildSessionsSidebarStructureFingerprintExtracted, buildSidebarRowFingerprintExtracted, collectParentIdsExtracted, collectSessionsSidebarConversationEntriesExtracted, ensureWorkHubSessionsSidebarExtracted, mergeSessionsSidebarProjectsExtracted, openWorkHubSessionsSidebarExtracted, prepareSessionsSidebarDataExtracted, refreshWorkHubSessionsSidebarListExtracted, rememberSessionsSidebarListFingerprintExtracted, resolveWorkHubSessionsSidebarProjectExtracted, seedSessionsSidebarProjectsForPaintExtracted, shouldDeferSessionsSidebarListRefreshExtracted, shouldSkipSessionsSidebarListRenderExtracted, stampSessionsSidebarRowFingerprintsExtracted, toggleWorkHubSessionsSidebarExtracted, tryPatchSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
-import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted } from './mobile-projects-sessions-sidebar-ui-streaming2';
+import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming2';
 import { createSessionsSidebarIdeOpenControlExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, onSessionsSidebarAccountClickExtracted, onWorkHubSessionsSidebarNewChatExtracted, openEmptyMobileChatSheetExtracted, openSessionsSidebarSearchExtracted } from './mobile-projects-sessions-sidebar-ui-timeline2';
 
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
@@ -120,6 +120,17 @@ function cssEscapeAttribute(value: string): string {
     return value.replace(/["\\]/g, '\\$&');
 }
 
+export type SessionsSidebarProjectSortMode = 'default' | 'lastMessage' | 'createdAt' | 'alphabetical';
+
+export const SESSIONS_SIDEBAR_PROJECT_SORT_MODE_STORAGE_KEY = 'qaap.sessionsSidebar.projectSortMode';
+
+export const SESSIONS_SIDEBAR_PROJECT_SORT_MODES: ReadonlyArray<{ id: SessionsSidebarProjectSortMode; labelKey: string; defaultLabel: string }> = [
+    { id: 'default', labelKey: 'qaap/sessionsSidebar/sort/default', defaultLabel: 'Default' },
+    { id: 'lastMessage', labelKey: 'qaap/sessionsSidebar/sort/lastMessage', defaultLabel: 'Last user message' },
+    { id: 'createdAt', labelKey: 'qaap/sessionsSidebar/sort/createdAt', defaultLabel: 'Created' },
+    { id: 'alphabetical', labelKey: 'qaap/sessionsSidebar/sort/alphabetical', defaultLabel: 'Alphabetical' },
+];
+
 export class MobileProjectsSessionsSidebarUi {
     constructor(protected readonly host: MobileProjectsSessionsSidebarHost) { }
 
@@ -130,6 +141,9 @@ export class MobileProjectsSessionsSidebarUi {
     protected sessionsSidebarLastStreamRefreshAt = 0;
     protected sessionsSidebarInteractionBound = false;
     protected sessionsSidebarThreadStoreDispose: Disposable = Disposable.NULL;
+    protected sessionsSidebarProjectSortModeValue: SessionsSidebarProjectSortMode = this.readPersistedProjectSortMode();
+    protected sessionsSidebarSortPopover: HTMLElement | undefined;
+    protected sessionsSidebarAddProjectPopover: HTMLElement | undefined;
 
     openWorkHubSessionsSidebar(): void {
         openWorkHubSessionsSidebarExtracted(this);
@@ -276,6 +290,73 @@ export class MobileProjectsSessionsSidebarUi {
 
     compareSessionsSidebarProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number {
         return compareSessionsSidebarProjectOrderExtracted(this, a, b);
+    }
+    getSessionsSidebarProjectSortMode(): SessionsSidebarProjectSortMode {
+        return this.sessionsSidebarProjectSortModeValue;
+    }
+    setSessionsSidebarProjectSortMode(mode: SessionsSidebarProjectSortMode): void {
+        if (this.sessionsSidebarProjectSortModeValue === mode) {
+            return;
+        }
+        this.sessionsSidebarProjectSortModeValue = mode;
+        try {
+            window.localStorage.setItem(SESSIONS_SIDEBAR_PROJECT_SORT_MODE_STORAGE_KEY, mode);
+        } catch {
+            /* ignore quota / privacy-mode failures */
+        }
+        this.resetSessionsSidebarListFingerprint();
+        this.refreshWorkHubSessionsSidebarList(true);
+    }
+    protected readPersistedProjectSortMode(): SessionsSidebarProjectSortMode {
+        try {
+            const raw = window.localStorage.getItem(SESSIONS_SIDEBAR_PROJECT_SORT_MODE_STORAGE_KEY);
+            if (raw && SESSIONS_SIDEBAR_PROJECT_SORT_MODES.some(entry => entry.id === raw)) {
+                return raw as SessionsSidebarProjectSortMode;
+            }
+        } catch {
+            /* ignore */
+        }
+        return 'default';
+    }
+    /** Earliest conversation createdAt for a project (falls back to lastActiveAt / 0). */
+    resolveSessionsSidebarProjectCreatedAt(project: MobileProjectEntry): number {
+        const conversations = this.host.conversationIndexUi.conversationsForProject(project);
+        let earliest = Number.POSITIVE_INFINITY;
+        for (const summary of conversations) {
+            if (Number.isFinite(summary.createdAt) && summary.createdAt < earliest) {
+                earliest = summary.createdAt;
+            }
+        }
+        if (Number.isFinite(earliest)) {
+            return earliest;
+        }
+        return project.lastActiveAt ? Date.parse(project.lastActiveAt) || 0 : 0;
+    }
+    /** Most recent conversation updatedAt for a project (falls back to lastActiveAt / 0). */
+    resolveSessionsSidebarProjectLastMessageAt(project: MobileProjectEntry): number {
+        const conversations = this.host.conversationIndexUi.conversationsForProject(project);
+        let latest = 0;
+        for (const summary of conversations) {
+            if (Number.isFinite(summary.updatedAt) && summary.updatedAt > latest) {
+                latest = summary.updatedAt;
+            }
+        }
+        if (latest > 0) {
+            return latest;
+        }
+        return project.lastActiveAt ? Date.parse(project.lastActiveAt) || 0 : 0;
+    }
+    toggleSessionsSidebarProjectSortPopover(anchor: HTMLButtonElement): void {
+        toggleSessionsSidebarProjectSortPopoverExtracted(this, anchor);
+    }
+    toggleSessionsSidebarAddProjectPopover(anchor: HTMLButtonElement): void {
+        toggleSessionsSidebarAddProjectPopoverExtracted(this, anchor);
+    }
+    closeSessionsSidebarHeadPopovers(): void {
+        this.sessionsSidebarSortPopover?.remove();
+        this.sessionsSidebarSortPopover = undefined;
+        this.sessionsSidebarAddProjectPopover?.remove();
+        this.sessionsSidebarAddProjectPopover = undefined;
     }
     createSessionsSidebarProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
         return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);

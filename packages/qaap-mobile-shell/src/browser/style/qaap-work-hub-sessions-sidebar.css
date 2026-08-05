@@ -707,9 +707,119 @@
   position: sticky;
   top: 0;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 -6px 0 -8px;
   padding: 12px 16px 8px;
   background: var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e));
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mod-sessions-sidebar-projects-head .theia-mobile-tasks-inbox-section-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-projects-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-right: -4px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-descriptionForeground, var(--qaap-muted, #8a847c));
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-action:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-action:active {
+  background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-action:focus,
+.theia-mobile-work-hub-sessions-sidebar-head-action:focus-visible {
+  outline: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-action svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+/* Sort / add-project popover menus anchored to the Projects section head. */
+.theia-mobile-work-hub-sessions-sidebar-head-popover {
+  position: fixed;
+  z-index: 100000;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--theia-menu-background, var(--theia-editorHoverWidget-background, #252526));
+  border: 1px solid var(--theia-menu-border, var(--theia-editorHoverWidget-border, #454545));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover-item:active {
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-descriptionForeground, var(--qaap-muted, #8a847c));
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover-item-check {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--theia-foreground);
 }
 
 /* Accordion project groups (Projects → project → sessions). */

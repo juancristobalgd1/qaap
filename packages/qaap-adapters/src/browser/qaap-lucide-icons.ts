@@ -37,6 +37,16 @@ export function createLucideArrowUpRightIcon(): SVGSVGElement {
     ]);
 }
 
+/** lucide-arrow-up-down — sort / reorder indicator. */
+export function createLucideSortIcon(): SVGSVGElement {
+    return createLucideSvg([
+        'm21 16-4 4-4-4',
+        'M17 20V4',
+        'm3 8 4-4 4 4',
+        'M7 4v16',
+    ]);
+}
+
 /**
  * Filled vertical ellipsis for Work Hub overflow menus.
  * Target: Cursor web sprite `sprites-core-c728a27e.svg#644ce5` (20×20, fill=currentColor).
