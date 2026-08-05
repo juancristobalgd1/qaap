@@ -61,6 +61,7 @@ import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-m
 import { isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';
 import { buildTranscriptApprovalCard, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
+import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { buildTranscriptDiffCardFromExtracted, buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
 import { resolveTranscriptToolUiPayloadFromSegment } from '../common/qaap-transcript-tool-ui-payloads';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
@@ -291,6 +292,12 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: any, segments: Qa
             ));
         }
         row.append(body);
+        // Child Markdown blocks may have rendered synchronously before the row was
+        // assembled. Reconcile once the complete row is attached so settled visual
+        // evidence can remove a chip created during that detached render.
+        for (const content of row.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-content')) {
+            enhanceTranscriptCaptureDirectives(content);
+        }
         if (streaming && conv && !hasToolSegments) {
             ctx.ensureAndSyncTranscriptLiveStatusFooter(body, segments, conv, { streaming: true });
         }
@@ -551,4 +558,3 @@ export function isClosingNarrativeSegmentSkippedExtracted(ctx: any, segment: Qaa
             text, seenClosingNarrativeTexts, normalizedFailureReason, isErrorLikely,
         ).kind === 'skip';
 }
-

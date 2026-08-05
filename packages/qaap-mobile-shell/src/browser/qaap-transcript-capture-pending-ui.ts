@@ -33,16 +33,12 @@ function transcriptRowHasResolvedVisualEvidence(row: HTMLElement | null): boolea
     if (!row) {
         return false;
     }
-    for (const block of row.querySelectorAll('.theia-mobile-agent-transcript-content')) {
-        const text = block.textContent ?? '';
-        if (agentMessageHasVisualVerificationMarker({ content: text })) {
-            return true;
-        }
-        if (block.querySelector(VISUAL_EVIDENCE_SELECTOR)) {
-            return true;
-        }
-    }
-    return false;
+    // A settled visual block is rendered beside the directive block. Do not scope this
+    // check to `.theia-mobile-agent-transcript-content`: execution-timeline/deferred
+    // renderers can temporarily place the marker or the media node in another child of
+    // the same message row. The row is the ownership boundary for the pending chip.
+    return agentMessageHasVisualVerificationMarker({ content: row.textContent ?? '' })
+        || row.querySelector(VISUAL_EVIDENCE_SELECTOR) !== null;
 }
 
 function removeCapturePendingChips(root: ParentNode): void {
@@ -67,7 +63,15 @@ function resolveCaptureDirectiveAnchor(host: HTMLElement): HTMLElement | null {
 function insertCapturePendingChip(host: HTMLElement, chip: HTMLElement): void {
     const anchor = resolveCaptureDirectiveAnchor(host);
     if (anchor && anchor !== host) {
-        anchor.insertAdjacentElement('afterend', chip);
+        try {
+            anchor.insertAdjacentElement('afterend', chip);
+        } catch {
+            // Some embedded DOM implementations expose insertAdjacentElement but cannot
+            // move nodes between their document realms. Appending is the safe fallback: the
+            // directive is normally the final streamed paragraph, and the browser path keeps
+            // the precise after-directive placement above.
+            host.append(chip);
+        }
         return;
     }
     host.append(chip);
@@ -76,27 +80,28 @@ function insertCapturePendingChip(host: HTMLElement, chip: HTMLElement): void {
 export function buildTranscriptCapturePendingChip(
     mode: 'image' | 'video',
     routes: readonly string[],
+    ownerDocument: Document = document,
 ): HTMLElement {
-    const chip = document.createElement('div');
+    const chip = ownerDocument.createElement('div');
     chip.className = `${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS} theia-mod-${mode}`;
     chip.setAttribute('role', 'status');
     chip.setAttribute('aria-live', 'polite');
     chip.dataset.qaapCaptureMode = mode;
 
-    const preview = document.createElement('div');
+    const preview = ownerDocument.createElement('div');
     preview.className = 'theia-mobile-agent-transcript-capture-pending-preview';
     preview.setAttribute('aria-hidden', 'true');
 
-    const meta = document.createElement('div');
+    const meta = ownerDocument.createElement('div');
     meta.className = 'theia-mobile-agent-transcript-capture-pending-meta';
 
-    const icon = document.createElement('span');
+    const icon = ownerDocument.createElement('span');
     icon.className = `theia-mobile-agent-transcript-capture-pending-icon codicon ${
         mode === 'video' ? 'codicon-device-camera-video' : 'codicon-device-camera'
     }`;
     icon.setAttribute('aria-hidden', 'true');
 
-    const label = document.createElement('span');
+    const label = ownerDocument.createElement('span');
     label.className = 'theia-mobile-agent-transcript-capture-pending-label';
     label.textContent = mode === 'video'
         ? nls.localize('qaap/mobileProjects/transcriptCaptureProcessingVideo', 'Processing video…')
@@ -105,7 +110,7 @@ export function buildTranscriptCapturePendingChip(
     meta.append(icon, label);
 
     if (routes.length > 0) {
-        const routesEl = document.createElement('span');
+        const routesEl = ownerDocument.createElement('span');
         routesEl.className = 'theia-mobile-agent-transcript-capture-pending-routes';
         routesEl.textContent = routes.join(' ');
         meta.append(routesEl);
@@ -135,7 +140,7 @@ function syncExistingCapturePendingChip(
         return;
     }
     const target = routesEl ?? (() => {
-        const created = document.createElement('span');
+        const created = chip.ownerDocument.createElement('span');
         created.className = 'theia-mobile-agent-transcript-capture-pending-routes';
         chip.querySelector('.theia-mobile-agent-transcript-capture-pending-meta')?.append(created);
         return created;
@@ -175,6 +180,9 @@ export function enhanceTranscriptCaptureDirectives(host: HTMLElement): number {
         return 1;
     }
 
-    insertCapturePendingChip(host, buildTranscriptCapturePendingChip(pending.mode, pending.routes));
+    insertCapturePendingChip(
+        host,
+        buildTranscriptCapturePendingChip(pending.mode, pending.routes, host.ownerDocument ?? document),
+    );
     return 1;
 }

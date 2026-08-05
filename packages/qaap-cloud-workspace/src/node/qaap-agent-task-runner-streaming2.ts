@@ -39,7 +39,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
     resolveQaapCodexTemplate,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import { LEGACY_OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import {
     formatQaiqInteractionFlags,
     type QaapQaiqInteractionFlagOptions,
@@ -447,19 +447,19 @@ export function buildTemplateVarsExtracted(ctx: any, agentId: string,
         agentModel?: QaapCreateAgentTaskQaiqModel,
         interaction?: QaapQaiqInteractionFlagOptions,): Record<string, string> {
         const empty = { qaiq_flags: '', model_flags: '' };
-        const qaiqInteractionFlags = agentId === QAIQ_AGENT_ID
+        const qaiqInteractionFlags = isQaiqAgent(agentId)
             ? formatQaiqInteractionFlags(interaction ?? {})
             : '';
         const joinQaiqFlags = (...parts: string[]): string => parts.map(part => part.trim()).filter(Boolean).join(' ');
         if (agentModel?.provider && agentModel.modelId?.trim()) {
             const binding = ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(agentModel));
             const flags = formatModelFlagsForAgent(agentId, binding);
-            if (agentId === QAIQ_AGENT_ID) {
+            if (isQaiqAgent(agentId)) {
                 return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, flags), model_flags: '' };
             }
             return { qaiq_flags: '', model_flags: flags };
         }
-        if (agentId === QAIQ_AGENT_ID) {
+        if (isQaiqAgent(agentId)) {
             return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags()), model_flags: '' };
         }
         return empty;
@@ -506,7 +506,7 @@ export function previewProviderEnvExtracted(ctx: any): NodeJS.ProcessEnv {
 }
 
 export function assertQaiqConfiguredExtracted(ctx: any, agentId: string): void {
-        if (agentId !== QAIQ_AGENT_ID) {
+        if (!isQaiqAgent(agentId)) {
             return;
         }
         const env = ctx.previewProviderEnv();
@@ -517,7 +517,7 @@ export function assertQaiqConfiguredExtracted(ctx: any, agentId: string): void {
             return;
         }
         throw new Error(
-            'QAIQ needs an API key from QAAP Settings (Gemini, OpenRouter, NVIDIA, Ollama, OpenAI, or Anthropic) '
+            'QAIQ/OpenClaude needs an API key from QAAP Settings (Gemini, OpenRouter, NVIDIA, Ollama, OpenAI, or Anthropic) '
             + 'or from server env (e.g. OPENROUTER_API_KEY / GEMINI_API_KEY in .env on Docker). '
             + 'Add one, restart the server, then retry.'
         );
@@ -540,4 +540,3 @@ export function cancelExtracted(ctx: any, id: string): QaapAgentTask | undefined
         }
         return task;
 }
-

@@ -34,6 +34,7 @@ export const QAAP_AGENT_TASK_API_PATH = '/qaap/api/agent-tasks';
 export const SHELL_AGENT_ID = 'shell';
 export const THEIA_CODER_AGENT_ID = 'Coder';
 export const QAIQ_AGENT_ID = 'qaiq';
+export const OPENCLAUDE_AGENT_ID = 'openclaude';
 export const OPENCODE_AGENT_ID = 'opencode';
 
 /** Legacy product default — still used for QAIQ-specific parsing and explicit QAIQ pins. */
@@ -42,8 +43,8 @@ export const QAAP_PRIMARY_AGENT_ID = QAIQ_AGENT_ID;
 /** Composer / Work Hub default when no per-project agent is stored. */
 export const QAAP_COMPOSER_DEFAULT_AGENT_ID = QAIQ_AGENT_ID;
 
-/** UI/storage id before the QAIQ rename; still accepted when resolving selection. */
-export const LEGACY_OPENCLAUDE_AGENT_ID = 'openclaude';
+/** @deprecated Kept for QAIQ-family protocol and transcript compatibility. */
+export const LEGACY_OPENCLAUDE_AGENT_ID = OPENCLAUDE_AGENT_ID;
 
 const QAAP_RETIRED_DEFAULT_AGENT_IDS = new Set([
     THEIA_CODER_AGENT_ID.toLowerCase(),
@@ -135,7 +136,7 @@ export function migrateLegacyBackendAgentId(agentId: string | undefined): string
     if (!agentId) {
         return undefined;
     }
-    return agentId === LEGACY_OPENCLAUDE_AGENT_ID ? QAIQ_AGENT_ID : agentId;
+    return agentId;
 }
 
 /**
@@ -410,7 +411,7 @@ export function stripNonCoderAgentMention(content: string): string {
 
 export function isQaiqAgent(agentId: string | undefined): boolean {
     const normalized = agentId?.trim().toLowerCase();
-    return normalized === QAIQ_AGENT_ID || normalized === LEGACY_OPENCLAUDE_AGENT_ID;
+    return normalized === QAIQ_AGENT_ID || normalized === OPENCLAUDE_AGENT_ID;
 }
 
 /** OpenCode conversations use {@code --format json} NDJSON parsed into transcript segments. */

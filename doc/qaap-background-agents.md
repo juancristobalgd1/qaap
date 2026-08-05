@@ -9,6 +9,8 @@ browser tab is closed. The server auto-detects these CLIs on `PATH`:
 - `qaiq` -> `qaiq --bare --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}`
   (stream-json is parsed live in chat/transcript UIs: thinking blocks, tool calls, and assistant text)
   (`{qaiq_flags}` is filled from your Settings API keys: Gemini, OpenRouter, Ollama, …)
+- `openclaude` -> `openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}`
+  (a separate picker identity using the same QAIQ-family Settings/model and transcript protocol)
 - `grok` -> `grok --always-approve {model_flags} -p {prompt}`
   (Grok Build CLI from https://x.ai/cli; auth via `grok login` or `XAI_API_KEY`)
 - `opencode` -> `opencode run --format json --dangerously-skip-permissions {prompt}`
@@ -42,7 +44,9 @@ For **Hetzner / VPS Docker** deployment (firewall, `.env` API keys, volumes), se
 
 ## Installing QAIQ locally
 
-QAAP only detects the **`qaiq`** agent id in the UI. The server looks for a `qaiq` binary on `PATH`, or falls back to a legacy `openclaude` binary (same fork) while installs catch up.
+The UI exposes **QAIQ** and **OpenClaude** as separate agents when their respective binaries are on `PATH`.
+They share the QAIQ-family Settings/model and transcript protocol, but selecting OpenClaude executes
+the `openclaude` harness directly.
 
 ```bash
 git clone https://github.com/juancristobalgd1/qaiq.git

@@ -9,7 +9,7 @@ import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } fr
 describe('resolveInteractiveAgentCliBin', () => {
     it('maps composer agents to interactive TUI binaries', () => {
         expect(resolveInteractiveAgentCliBin('qaiq')).to.equal('qaiq');
-        expect(resolveInteractiveAgentCliBin('openclaude')).to.equal('qaiq');
+        expect(resolveInteractiveAgentCliBin('openclaude')).to.equal('openclaude');
         expect(resolveInteractiveAgentCliBin('codex')).to.equal('codex');
         expect(resolveInteractiveAgentCliBin('claude')).to.equal('claude');
         expect(resolveInteractiveAgentCliBin('grok')).to.equal('grok');

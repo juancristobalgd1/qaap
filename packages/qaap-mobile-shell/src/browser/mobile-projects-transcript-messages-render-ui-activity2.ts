@@ -11,6 +11,7 @@ import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-
 import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
+import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
@@ -330,5 +331,9 @@ export function createTranscriptMessageRowExtracted(ctx: any, role: 'user' | 'ag
             { defer: options?.deferHeavyContent, streaming: options?.streaming },
         );
         row.append(contentEl);
+        // Synchronous Markdown fallback rendering can create the pending chip while
+        // the content host is detached. Reconcile after attaching it to its row so a
+        // resolved capture/video rendered in a sibling block can remove that chip.
+        enhanceTranscriptCaptureDirectives(contentEl);
         return row;
 }

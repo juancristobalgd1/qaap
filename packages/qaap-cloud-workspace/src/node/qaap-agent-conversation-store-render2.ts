@@ -668,8 +668,12 @@ export function postUserMessageExtracted(ctx: any, id: string,
         throw new Error('Conversation not found.');
     }
     if (internal?.clientMessageId) {
+        // A queued submission is accepted before it becomes a transcript message. Include the
+        // pending queue in the idempotency check so a retry cannot enqueue the same follow-up twice.
         const alreadyAccepted = conv.messages.some(message =>
             message.role === 'user' && message.clientMessageId === internal.clientMessageId
+        ) || (conv.pendingUserMessages ?? []).some(message =>
+            message.clientMessageId === internal.clientMessageId
         );
         if (alreadyAccepted) {
             return conv;
@@ -992,4 +996,3 @@ export function cancelExtracted(ctx: any, id: string): QaapAgentConversation | u
     void ctx.persist();
     return next;
 }
-

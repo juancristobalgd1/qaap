@@ -16,6 +16,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     // The composer module pulls @lumino/widgets, which reads `document` at load time — it can
     // only be required once JSDOM is up, so it is loaded here instead of at module scope.
     let composerModule: typeof import('./mobile-projects-transcript-sticky-composer-ui');
+    let liveStatusModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-live-status2');
 
     before(() => {
         // Deliberately not torn down: sibling suites in this package enable JSDOM at module
@@ -28,6 +29,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             globals.DragEvent = class DragEvent {};
         }
         composerModule = require('./mobile-projects-transcript-sticky-composer-ui');
+        liveStatusModule = require('./mobile-projects-transcript-sticky-composer-ui-live-status2');
     });
 
     it('merges a failed send with text entered while the request was in flight', () => {
@@ -223,6 +225,57 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(probe.conversationSubmits[0].draft).to.equal('run me');
         expect(probe.conversationSubmits[0].options.parallel).to.equal(undefined);
         expect(probe.queue.peek(summary.id)).to.have.length(0);
+    });
+
+    it('lets the backend-conversation submit own the optimistic transcript row', async () => {
+        const optimisticRenders: string[] = [];
+        const submittedDrafts: string[] = [];
+        const host = {
+            transcriptComposerContext: [],
+            transcriptComposerDraft: 'follow-up',
+            transcriptComposerDraftPersistTimer: undefined,
+            transcriptComposerModeId: undefined,
+            transcriptComposerApprovalPolicyId: undefined,
+            transcriptComposerAgentModel: undefined,
+            transcriptComposerHost: undefined,
+            transcriptComposerSendRefresh: undefined,
+            resolveAttachmentPreview: () => undefined,
+            messageService: { warn: () => undefined, error: () => undefined },
+            submitTranscriptViaBackendConversation: async (
+                _project: MobileProjectEntry,
+                _summary: QaapAgentConversationSummaryDTO,
+                draft: string,
+            ) => {
+                submittedDrafts.push(draft);
+                return true;
+            },
+        };
+        const ui = Object.create(
+            composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+        ) as MobileProjectsTranscriptStickyComposerUi;
+        const seam = ui as unknown as Record<string, any>;
+        seam.host = host;
+        seam.isTranscriptStickyComposerAgentWorking = () => false;
+        seam.workHub = {
+            renderIdleSubmitOptimistic: () => optimisticRenders.push('work-hub'),
+        };
+        seam.remountTranscriptStickyComposer = () => undefined;
+
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            seam,
+            'follow-up',
+            project,
+            { ...summary, status: 'idle' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+            },
+        );
+
+        expect(submittedDrafts).to.deep.equal(['follow-up']);
+        expect(optimisticRenders).to.deep.equal([]);
     });
 
     it('restores draft and composer context when an active-conversation send fails', async () => {

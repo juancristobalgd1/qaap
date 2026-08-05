@@ -79,7 +79,7 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
     if (id === 'codex') {
         return injectAfterExecutable(command, 'codex', '--full-auto');
     }
-    if (id === QAAP_QAIQ_AGENT_ID) {
+    if (id === QAAP_QAIQ_AGENT_ID || id === 'openclaude') {
         return injectAfterPattern(command, /\b(qaiq|openclaude)\b/, '--dangerously-skip-permissions');
     }
     if (id === 'grok') {

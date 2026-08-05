@@ -98,6 +98,45 @@ describe('qaap-transcript-capture-pending-ui', () => {
         expect(evidenceHost.textContent).to.contain(QAAP_VISUAL_VERIFICATION_MARKER);
     });
 
+    it('removes the skeleton for resolved image or video media in any row child', () => {
+        const { row, host } = createMessageRow('<p>[QAAP record: /]</p>');
+        enhanceTranscriptCaptureDirectives(host);
+        expect(row.querySelector(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)).to.not.equal(null);
+
+        const mediaHost = document.createElement('div');
+        const image = document.createElement('img');
+        image.src = '/qaap/api/agent-conversations/c1/visual-verifications/image-1';
+        const video = document.createElement('video');
+        video.className = 'qaap-transcript-video-evidence';
+        mediaHost.append(image, video);
+        row.append(mediaHost);
+
+        expect(enhanceTranscriptCaptureDirectives(mediaHost)).to.equal(0);
+        expect(row.querySelector(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)).to.equal(null);
+    });
+
+    it('reconciles a detached row after its evidence block is assembled', () => {
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-agent-transcript-msg theia-mod-agent';
+        const directiveHost = document.createElement('div');
+        directiveHost.className = 'theia-mobile-agent-transcript-content theia-mod-markdown';
+        directiveHost.innerHTML = '<p>[QAAP capture: /]</p>';
+
+        // Simulate synchronous fallback rendering while the content host is detached.
+        expect(enhanceTranscriptCaptureDirectives(directiveHost)).to.equal(1);
+
+        const evidenceHost = document.createElement('div');
+        evidenceHost.className = 'theia-mobile-agent-transcript-content theia-mod-markdown';
+        const image = document.createElement('img');
+        image.src = '/qaap/api/agent-conversations/c1/visual-verifications/image-2';
+        evidenceHost.append(image);
+        row.append(directiveHost, evidenceHost);
+
+        // This is the row-builder reconciliation after all detached blocks are mounted.
+        expect(enhanceTranscriptCaptureDirectives(directiveHost)).to.equal(0);
+        expect(row.querySelector(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)).to.equal(null);
+    });
+
     it('hooks into markdown rich-content enhancement for rendered closing narrative', () => {
         const { row, host } = createMessageRow('<p>Done.</p><p>[QAAP capture: /]</p>');
         enhanceTranscriptMarkdownRichContent(host);

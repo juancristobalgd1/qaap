@@ -10,7 +10,7 @@ import {
 import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 
 /** Keep in sync with {@link SETTINGS_MODEL_CATALOG_AGENT_IDS} in qaap-agent-model-selection. */
-export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq']);
+export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq', 'openclaude']);
 
 export function agentUsesSettingsModelCatalog(agentId: string | undefined): boolean {
     const normalized = agentId?.trim().toLowerCase();

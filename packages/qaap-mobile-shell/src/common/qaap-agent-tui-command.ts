@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
-import { LEGACY_OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
+import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
 import { resolveAgentLoginCliCommand } from './qaap-agent-auth-login';
 
 /**
@@ -19,8 +19,8 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
     if (!normalized) {
         return undefined;
     }
-    if (normalized === QAIQ_AGENT_ID || normalized === LEGACY_OPENCLAUDE_AGENT_ID) {
-        return 'qaiq';
+    if (normalized === QAIQ_AGENT_ID || normalized === OPENCLAUDE_AGENT_ID) {
+        return normalized;
     }
     if (normalized === 'antigravity' || normalized === 'gemini') {
         return 'agy';

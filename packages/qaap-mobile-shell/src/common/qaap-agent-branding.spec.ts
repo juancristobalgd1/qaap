@@ -8,13 +8,13 @@ import {
     normalizeAgentBrandId,
     resolveAgentBrand,
 } from './qaap-agent-branding';
-import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
+import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 
 describe('qaap-agent-branding', () => {
 
-    it('normalizeAgentBrandId maps aliases and legacy ids', () => {
+    it('normalizeAgentBrandId maps aliases and distinct agent ids', () => {
         expect(normalizeAgentBrandId('cursor-agent')).to.equal('cursor');
-        expect(normalizeAgentBrandId('openclaude')).to.equal(QAIQ_AGENT_ID);
+        expect(normalizeAgentBrandId('openclaude')).to.equal(OPENCLAUDE_AGENT_ID);
         expect(normalizeAgentBrandId(THEIA_CODER_AGENT_ID)).to.equal('coder');
         expect(normalizeAgentBrandId('  Antigravity  ')).to.equal('antigravity');
         expect(normalizeAgentBrandId('  Gemini  ')).to.equal('antigravity');
@@ -27,6 +27,7 @@ describe('qaap-agent-branding', () => {
         expect(resolveAgentBrand('antigravity')?.tone).to.equal('light');
         expect(resolveAgentBrand('codex')?.tone).to.equal('dark');
         expect(resolveAgentBrand('qwen')?.label).to.equal('Qwen Code');
+        expect(resolveAgentBrand(OPENCLAUDE_AGENT_ID)?.label).to.equal('OpenClaude');
     });
 
     it('resolveAgentBrand uses light/dark Grok Build mark variants', () => {
@@ -99,7 +100,7 @@ describe('qaap-agent-branding', () => {
 
     it('every built-in brand mark uses a distinct svg', () => {
         const ids = [
-            QAIQ_AGENT_ID, 'codex', 'claude', 'grok', 'opencode', 'goose', 'hermes',
+            QAIQ_AGENT_ID, OPENCLAUDE_AGENT_ID, 'codex', 'claude', 'grok', 'opencode', 'goose', 'hermes',
             'openclaw', 'cursor', 'antigravity', 'copilot', 'qwen', 'kimi', 'coder',
         ];
         const seen = new Map<string, string>();

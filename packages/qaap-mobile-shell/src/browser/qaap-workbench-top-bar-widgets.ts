@@ -29,6 +29,7 @@ import {
 } from './qaap-workbench-account-menu';
 import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
+import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
 import { MobileProjectsService } from './mobile-projects-service';
 import { EXPLORER_VIEW_CONTAINER_ID, type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -43,6 +44,11 @@ const QAAP_MOBILE_IDE_HEADER_VIEW_OPTIONS = 'qaap.mobile.ideHeaderView.options';
 const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVE = 'qaap.mobile.ideHeaderView.active';
 const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
 const QAAP_IDE_AVATAR_VIEW_COMMAND_PREFIX = 'qaap.ide.avatarView.';
+
+/** The legacy mobile view picker belongs to Work Hub's one-column surface, never to the classic IDE. */
+export function shouldShowMobileIdeHeaderViews(): boolean {
+    return matchesMobileOneColumnLayout() && !peekPreferDesktopIde();
+}
 
 function createWorkbenchNavBtn(iconClasses: string, title: string): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -500,7 +506,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         void this.activateTerminalFromAvatar();
     };
     protected readonly onAiChatClick = (): void => {
-        if (matchesMobileOneColumnLayout()) {
+        if (shouldShowMobileIdeHeaderViews()) {
             collapseLeftPanelIfMobileOneColumn(this.shell);
             if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE) && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
                 void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'agent');
@@ -731,7 +737,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
 
     protected async doUpdateMobileViewPicker(): Promise<void> {
         this.mobileViewPickerUpdating = true;
-        const visible = matchesMobileOneColumnLayout()
+        const visible = shouldShowMobileIdeHeaderViews()
             && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_OPTIONS)
             && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVE)
             && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE);
@@ -789,7 +795,10 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected syncMobileViewPickerSlot(): void {
         const tabBarRow = this.resolveMobileViewPickerTabBarRow();
         const historyNav = document.getElementById('theia:workbench-history-nav');
-        if (matchesMobileOneColumnLayout() && tabBarRow && !this.mobileViewPickerBtn.hidden) {
+        const showMobileIdeHeaderViews = shouldShowMobileIdeHeaderViews() && !this.mobileViewPickerBtn.hidden;
+        if (showMobileIdeHeaderViews && tabBarRow) {
+            this.mobileChatTabBtn.hidden = false;
+            this.mobileChatTabBtn.style.display = '';
             this.hideDashboardReturnButton(historyNav);
             // Chat tab button: always first in the tab bar row, before the view picker.
             if (this.mobileChatTabBtn.parentElement !== tabBarRow) {
@@ -802,7 +811,9 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
             }
             return;
         }
-        if (matchesMobileOneColumnLayout() && historyNav && !this.mobileViewPickerBtn.hidden) {
+        if (showMobileIdeHeaderViews && historyNav) {
+            this.mobileChatTabBtn.hidden = false;
+            this.mobileChatTabBtn.style.display = '';
             this.hideDashboardReturnButton(historyNav);
             if (this.mobileChatTabBtn.parentElement !== historyNav) {
                 historyNav.insertBefore(this.mobileChatTabBtn, historyNav.firstChild);
@@ -811,6 +822,11 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
                 historyNav.insertBefore(this.mobileViewPickerBtn, this.mobileChatTabBtn.nextSibling);
             }
             return;
+        }
+        this.mobileChatTabBtn.hidden = true;
+        this.mobileChatTabBtn.style.display = 'none';
+        if (this.mobileChatTabBtn.parentElement !== this.node) {
+            this.node.insertBefore(this.mobileChatTabBtn, this.mobileViewPickerSlot);
         }
         if (this.mobileViewPickerBtn.parentElement !== this.mobileViewPickerSlot) {
             this.mobileViewPickerSlot.append(this.mobileViewPickerBtn);
@@ -885,6 +901,9 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     }
 
     protected openMobileViewPickerMenu(): void {
+        if (!shouldShowMobileIdeHeaderViews()) {
+            return;
+        }
         if (!this.mobileViewPickerOptions.length) {
             this.mobileViewPickerOptions = this.getFallbackMobileViewPickerOptions();
             this.renderMobileViewPickerButton();

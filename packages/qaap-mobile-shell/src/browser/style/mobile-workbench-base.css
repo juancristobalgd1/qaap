@@ -735,6 +735,15 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     opacity: 0.9;
   }
 
+  /* The classic IDE keeps the normal responsive workbench. Never expose the legacy mobile
+     view picker or its chat tab after the viewport crosses into the narrow range. */
+  body.theia-mobile-mod-desktop-ide .theia-workbench-mobile-view-picker-btn,
+  body.theia-mobile-mod-desktop-ide .theia-workbench-mobile-view-picker-slot,
+  body.theia-mobile-mod-desktop-ide .theia-workbench-mobile-view-picker-menu,
+  body.theia-mobile-mod-desktop-ide .theia-workbench-mobile-chat-tab-btn {
+    display: none !important;
+  }
+
   #theia-statusBar {
     overflow-x: auto;
     overflow-y: hidden;

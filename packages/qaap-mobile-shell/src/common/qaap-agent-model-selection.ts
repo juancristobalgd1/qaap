@@ -7,9 +7,9 @@ import { isExcludedOpenRouterModelSlug } from '@theia/qaap-ai-openrouter/lib/com
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS, NATIVE_MODEL_PICKER_AGENT_IDS } from './qaap-builtin-agents';
 import {
     hashString,
-    isQaiqAgent,
     isTheiaCoderAgent,
     migrateLegacyBackendAgentId,
+    QAIQ_AGENT_ID,
     SELECTED_QAIQ_MODEL_STORAGE_KEY,
     SHELL_AGENT_ID,
     type QaapCreateAgentTaskQaiqModel,
@@ -21,8 +21,10 @@ export type QaapAgentModelSelection = QaapCreateAgentTaskQaiqModel;
 
 const AGENT_MODEL_STORAGE_PREFIX = 'qaap.agentTasks.selectedAgentModel';
 
-/** Only QAIQ uses the OpenRouter/NVIDIA/etc. lists from Settings → AI Features. */
-export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq']);
+/** QAIQ-family agents use the OpenRouter/NVIDIA/etc. lists from Settings → AI Features. */
+// Keep these literals here: qaap-agent-task-client re-exports this module, so reading its
+// constants during CommonJS module initialization would otherwise produce undefined entries.
+export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq', 'openclaude']);
 
 export function agentUsesSettingsModelCatalog(agentId: string | undefined): boolean {
     const normalized = migrateLegacyBackendAgentId(agentId)?.toLowerCase();
@@ -105,7 +107,7 @@ export function readStoredAgentModel(cwd: string | undefined, agentId: string | 
         if (scopedRaw) {
             window.localStorage.removeItem(scopedKey);
         }
-        if (isQaiqAgent(agent)) {
+        if (agent === QAIQ_AGENT_ID) {
             return readLegacyQaiqModel(cwd);
         }
         return undefined;
@@ -148,7 +150,7 @@ export function writeStoredAgentModel(
     try {
         const serialized = JSON.stringify(payload);
         window.localStorage.setItem(scopedAgentModelStorageKey(cwd, agent), serialized);
-        if (isQaiqAgent(agent)) {
+        if (agent === QAIQ_AGENT_ID) {
             window.localStorage.setItem(`${SELECTED_QAIQ_MODEL_STORAGE_KEY}.${hashString(cwd)}`, serialized);
             window.localStorage.setItem(SELECTED_QAIQ_MODEL_STORAGE_KEY, serialized);
         }

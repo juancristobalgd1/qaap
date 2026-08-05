@@ -14,8 +14,9 @@ import {
 } from './qaap-agent-native-model-catalog';
 
 describe('qaap-agent-native-model-catalog', () => {
-    it('only QAIQ uses the Settings model catalog', () => {
+    it('QAIQ and OpenClaude use the Settings model catalog', () => {
         expect(agentUsesSettingsModelCatalog('qaiq')).to.equal(true);
+        expect(agentUsesSettingsModelCatalog('openclaude')).to.equal(true);
         expect(agentUsesSettingsModelCatalog('qwen')).to.equal(false);
         expect(agentUsesSettingsModelCatalog('opencode')).to.equal(false);
         expect(agentUsesSettingsModelCatalog('codex')).to.equal(false);
@@ -25,6 +26,7 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(agentUsesNativeModelCatalog('opencode')).to.equal(true);
         expect(agentUsesNativeModelCatalog('qwen')).to.equal(true);
         expect(agentUsesNativeModelCatalog('qaiq')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('openclaude')).to.equal(false);
         expect(agentUsesNativeModelCatalog('shell')).to.equal(false);
         expect(agentUsesNativeModelCatalog('cursor')).to.equal(false);
         expect(agentUsesNativeModelCatalog('goose')).to.equal(false);

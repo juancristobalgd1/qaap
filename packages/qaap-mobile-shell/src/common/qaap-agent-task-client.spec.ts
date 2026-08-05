@@ -59,7 +59,7 @@ describe('qaap-agent-task-client', () => {
         expect(normalizeBackendAgentId('copilot')).to.equal('copilot');
         expect(normalizeBackendAgentId('qwen')).to.equal('qwen');
         expect(normalizeBackendAgentId('kimi')).to.equal('kimi');
-        expect(normalizeBackendAgentId('openclaude')).to.equal(undefined);
+        expect(normalizeBackendAgentId('openclaude')).to.equal('openclaude');
         expect(normalizeBackendAgentId('claude')).to.equal('claude');
     });
 
@@ -69,8 +69,8 @@ describe('qaap-agent-task-client', () => {
         expect(extractBackendAgentMention('@cursor-agent fix tests')).to.equal('cursor');
     });
 
-    it('migrateLegacyBackendAgentId maps openclaude storage to qaiq', () => {
-        expect(migrateLegacyBackendAgentId('openclaude')).to.equal('qaiq');
+    it('migrateLegacyBackendAgentId preserves the OpenClaude agent id', () => {
+        expect(migrateLegacyBackendAgentId('openclaude')).to.equal('openclaude');
         expect(migrateLegacyBackendAgentId('codex')).to.equal('codex');
     });
 
@@ -84,7 +84,7 @@ describe('qaap-agent-task-client', () => {
         const available = new Set(['qaiq', 'opencode']);
         expect(migrateStoredComposerAgentId('opencode', available)).to.equal('qaiq');
         expect(migrateStoredComposerAgentId('codex', available)).to.equal('codex');
-        expect(migrateStoredComposerAgentId('openclaude', available)).to.equal('qaiq');
+        expect(migrateStoredComposerAgentId('openclaude', available)).to.equal('openclaude');
     });
 
     it('mergeAgentTaskAgentOptions unions HTTP and WebSocket agent snapshots', () => {
@@ -156,12 +156,13 @@ describe('qaap-agent-task-client', () => {
         expect(storage.get(`qaap.agentTasks.selectedAgent.${hashString('/repo')}`)).to.equal('qaiq');
     });
 
-    it('reconcileSelectedAgent upgrades a stored openclaude pick to qaiq', () => {
+    it('reconcileSelectedAgent preserves a stored openclaude pick', () => {
         const agents = [
             { id: 'qaiq', label: 'QAIQ', available: true },
+            { id: 'openclaude', label: 'OpenClaude', available: true },
             shellAgentFallback(),
         ];
-        expect(reconcileSelectedAgent('openclaude', agents, 'qaiq', undefined)).to.equal('qaiq');
+        expect(reconcileSelectedAgent('openclaude', agents, 'qaiq', undefined)).to.equal('openclaude');
     });
 
     it('filterUiSelectableVpsAgents hides shell and Cursor Agent', () => {
@@ -271,7 +272,7 @@ describe('qaap-agent-task-client', () => {
         });
     });
 
-    it('isQaiqAgent recognizes qaiq and legacy openclaude alias', () => {
+    it('isQaiqAgent recognizes the QAIQ-family protocol agents', () => {
         expect(isQaiqAgent('qaiq')).to.be.true;
         expect(isQaiqAgent('openclaude')).to.be.true;
         expect(isQaiqAgent('QAIQ')).to.be.true;

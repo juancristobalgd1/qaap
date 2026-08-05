@@ -39,7 +39,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
     resolveQaapCodexTemplate,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import { LEGACY_OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import {
     formatQaiqInteractionFlags,
     type QaapQaiqInteractionFlagOptions,
@@ -248,7 +248,7 @@ export function detectAgentsExtracted(ctx: any): void {
 
 export function logDetectedAgentsExtracted(ctx: any): void {
         const ids = [...ctx.detectedAgents.keys()];
-        console.log(`[qaap-agent-tasks] detected agents: ${ids.length ? ids.join(', ') : '(none — install qaiq or set QAAP_AGENT_COMMAND)'}`);
+        console.log(`[qaap-agent-tasks] detected agents: ${ids.length ? ids.join(', ') : '(none — install qaiq/openclaude or set QAAP_AGENT_COMMAND)'}`);
         if (!ctx.detectedAgents.has(QAIQ_AGENT_ID)) {
             return;
         }
@@ -296,9 +296,6 @@ export function resolveQaiqBinExtracted(ctx: any): string | undefined {
         if (ctx.isOnPath('qaiq')) {
             return 'qaiq';
         }
-        if (ctx.isOnPath('openclaude')) {
-            return 'openclaude';
-        }
         return undefined;
 }
 
@@ -331,6 +328,9 @@ export function detectCodexAgentExtracted(ctx: any): void {
 export function resolveTaskAgentIdExtracted(ctx: any, task: QaapAgentTask): string {
         if (task.agentId) {
             return task.agentId;
+        }
+        if (/\bopenclaude\b/.test(task.command ?? '')) {
+            return OPENCLAUDE_AGENT_ID;
         }
         return ctx.isQaiqRunner(undefined, task.command) ? QAIQ_AGENT_ID : SHELL_AGENT_ID;
 }
@@ -543,9 +543,6 @@ export function normalizeAgentIdExtracted(ctx: any, token: string | undefined): 
             return undefined;
         }
         const canonical = resolveQaapAgentMentionToken(normalized);
-        if (canonical === LEGACY_OPENCLAUDE_AGENT_ID && ctx.detectedAgents.has(QAIQ_AGENT_ID)) {
-            return QAIQ_AGENT_ID;
-        }
         if (canonical === SHELL_AGENT_ID) {
             return SHELL_AGENT_ID;
         }
@@ -569,4 +566,3 @@ export async function detailExtracted(ctx: any, id: string): Promise<QaapAgentTa
         }
         return { ...task, log: await ctx.readLog(id) };
 }
-

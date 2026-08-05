@@ -9,6 +9,7 @@
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { OPENCLAUDE_AGENT_ID } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import { truncateProjectInfo } from '../common/qaap-agent-task-context';
 import {
@@ -38,7 +39,7 @@ export function readCodexHelp(): string {
 }
 
 export function isQaiqRunner(agentId: string | undefined, command: string): boolean {
-    if (agentId === QAIQ_AGENT_ID) {
+    if (agentId === QAIQ_AGENT_ID || agentId === OPENCLAUDE_AGENT_ID) {
         return true;
     }
     return /\b(qaiq|openclaude)\b/.test(command);

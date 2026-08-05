@@ -311,6 +311,24 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', () => {
             .to.deep.equal(['first']);
     });
 
+    it('does not enqueue a retried follow-up twice while the agent is running', () => {
+        const { store, runner } = createStore();
+        const internal = { clientMessageId: 'pending-user-123' };
+
+        store.postUserMessage('c1', 'first');
+        store.postUserMessage(
+            'c1', 'follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+        const retried = store.postUserMessage(
+            'c1', 'follow-up', undefined, undefined, undefined, undefined, undefined, undefined, undefined, internal,
+        );
+
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(retried.pendingUserMessages).to.have.length(1);
+        expect(retried.pendingUserMessages![0].clientMessageId).to.equal('pending-user-123');
+        expect(retried.pendingUserMessages![0].content).to.equal('follow-up');
+    });
+
     it('drains the pending queue when the agent finishes its turn', async () => {
         const { store, runner } = createStore();
 

@@ -207,18 +207,18 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
     if (!matchesMobileNarrowViewport()) {
         registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.options' }, {
             execute: () => ctx.bottomBarController.getMobileIdeHeaderViewButtons(),
-            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
-            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
+            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
+            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
         });
         registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.active' }, {
             execute: () => ctx.resolveMobileIdeHeaderViewId(),
-            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
-            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
+            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
+            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
         });
         registry.registerCommand({ id: 'qaap.mobile.ideHeaderView.activate' }, {
             execute: (id: MobileBottomButtonId) => ctx.activateMobileIdeHeaderView(id),
-            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
-            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout(),
+            isEnabled: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
+            isVisible: () => ctx.workspaceService.opened && matchesMobileOneColumnLayout() && !peekPreferDesktopIde(),
         });
     }
 }

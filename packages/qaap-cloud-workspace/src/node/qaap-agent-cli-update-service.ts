@@ -48,7 +48,7 @@ interface TrackedAgentCli {
 
 /**
  * CLIs we can version-check for the boot "Update Available" toast.
- * npm-backed agents support in-place update; QAIQ is git-layered in Docker (updateSupported=false).
+ * npm-backed agents support in-place update; QAIQ/OpenClaude are git-layered in Docker (updateSupported=false).
  */
 const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
     {
@@ -91,6 +91,13 @@ const TRACKED_AGENT_CLIS: readonly TrackedAgentCli[] = [
         label: 'QAIQ',
         bins: ['qaiq'],
         // No public npm package — Docker rebuild / QAIQ_REF bump is the real update path.
+        expectedVersionEnv: 'QAAP_QAIQ_MIN_VERSION',
+    },
+    {
+        id: 'openclaude',
+        label: 'OpenClaude',
+        bins: ['openclaude'],
+        // The OpenClaude harness is shipped alongside QAIQ; rebuild the image to update it.
         expectedVersionEnv: 'QAAP_QAIQ_MIN_VERSION',
     },
 ];

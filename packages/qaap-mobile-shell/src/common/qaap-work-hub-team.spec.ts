@@ -71,6 +71,10 @@ describe('collectAgentMembers', () => {
         expect(members[0]?.agentId).to.equal('antigravity');
     });
 
+    it('keeps OpenClaude distinct from QAIQ when branding a running task', () => {
+        expect(inferAgentIdFromCommand('openclaude --print -p \'fix it\'')).to.equal('openclaude');
+    });
+
     it('exposes command + activityLabel for VPS tasks so Working DETAIL is not a bare Working', () => {
         const members = collectAgentMembers({
             conversations: [],

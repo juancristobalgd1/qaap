@@ -13,7 +13,7 @@ import {
     resolveAgentModelForSubmit,
     writeStoredAgentModel,
 } from './qaap-agent-model-selection';
-import { QAIQ_AGENT_ID, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
+import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 
 describe('qaap-agent-model-selection', () => {
     const storage = new Map<string, string>();
@@ -38,8 +38,9 @@ describe('qaap-agent-model-selection', () => {
         expect(agentSupportsModelPicker(THEIA_CODER_AGENT_ID)).to.be.false;
     });
 
-    it('only QAIQ reads models from Settings; Qwen and others use native catalogs', () => {
+    it('QAIQ and OpenClaude read models from Settings; others use native catalogs', () => {
         expect(agentUsesSettingsModelCatalog(QAIQ_AGENT_ID)).to.be.true;
+        expect(agentUsesSettingsModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.true;
         expect(agentUsesSettingsModelCatalog('qwen')).to.be.false;
         expect(agentUsesSettingsModelCatalog('opencode')).to.be.false;
         expect(agentUsesNativeModelCatalog('qwen')).to.be.true;
@@ -47,6 +48,7 @@ describe('qaap-agent-model-selection', () => {
         expect(agentUsesNativeModelCatalog('goose')).to.be.false;
         expect(agentUsesNativeModelCatalog('hermes')).to.be.false;
         expect(agentUsesNativeModelCatalog(QAIQ_AGENT_ID)).to.be.false;
+        expect(agentUsesNativeModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.false;
         expect(agentUsesNativeModelCatalog('cursor')).to.be.false;
         expect(agentSupportsModelPicker('cursor')).to.be.false;
         expect(agentSupportsModelPicker('goose')).to.be.false;
@@ -76,6 +78,16 @@ describe('qaap-agent-model-selection', () => {
         writeStoredAgentModel(cwd, 'grok', grokModel);
         expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)).to.deep.equal(qaiqModel);
         expect(readStoredAgentModel(cwd, 'grok')).to.deep.equal(grokModel);
+    });
+
+    it('keeps OpenClaude model storage separate while using the Settings catalog', () => {
+        const cwd = '/repo/openclaude';
+        const qaiqModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'qaiq/model' };
+        const openclaudeModel = { provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'openclaude/model' };
+        writeStoredAgentModel(cwd, QAIQ_AGENT_ID, qaiqModel);
+        writeStoredAgentModel(cwd, OPENCLAUDE_AGENT_ID, openclaudeModel);
+        expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)).to.deep.equal(qaiqModel);
+        expect(readStoredAgentModel(cwd, OPENCLAUDE_AGENT_ID)).to.deep.equal(openclaudeModel);
     });
 
     it('resolveAgentModelForSubmit prefers explicit runtime model over stored default', () => {

@@ -281,10 +281,9 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         }
         return;
     }
-    const activeChatHost = ctx.resolveComposerTranscriptChatHost(chatHost);
-    if (activeChatHost && !options.isLegacyTheiaChat) {
-        ctx.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
-    }
+    // Existing backend conversations render their optimistic row inside
+    // submitTranscriptViaBackendConversation. Painting it here as well races with that
+    // submission and can leave the follow-up visible twice.
     try {
         if (options.isLegacyTheiaChat) {
             await ctx.host.submitBackgroundAgentTask(project, draft, {
@@ -356,4 +355,3 @@ export function remountTranscriptStickyComposerExtracted(ctx: any): void {
     ctx.host.transcriptComposerMountKey = undefined;
     ctx.mountTranscriptStickyComposer(host, project, summary, chatHost ?? host);
 }
-

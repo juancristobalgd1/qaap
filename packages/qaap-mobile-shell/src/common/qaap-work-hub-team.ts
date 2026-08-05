@@ -285,8 +285,11 @@ function extractLeadingCliBin(command: string): string {
 /** @internal Exported for unit tests. */
 export function inferAgentIdFromCommand(command: string): string {
     const bin = extractLeadingCliBin(command);
-    if (bin === 'qaiq' || bin === 'openclaude') {
+    if (bin === 'qaiq') {
         return 'qaiq';
+    }
+    if (bin === 'openclaude') {
+        return 'openclaude';
     }
     if (bin === 'codex') {
         return 'codex';

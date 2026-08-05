@@ -106,10 +106,8 @@ describe('resolveEffectiveRequestAgentModel', () => {
         }
     });
 
-    it('still routes the legacy agent id that migrates onto the Settings catalog', () => {
-        // `openclaude` is the old id for `qaiq`, and the catalog check normalizes before looking
-        // up. Drop that normalization and the legacy id silently stops routing — the turn keeps
-        // running, on whatever model the CLI defaults to, with nothing to show it changed.
+    it('routes OpenClaude through the Settings catalog', () => {
+        // OpenClaude is a separate picker identity, but it shares QAIQ's provider/model contract.
         const readPref = (key: string): unknown => key === 'ai-features.languageModelAliases'
             ? { 'default/code': { selectedModel: 'anthropic/claude-sonnet-4-20250514' } }
             : undefined;
