@@ -96,6 +96,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     projects: MobileProjectEntry[];
     closeCardMenu(): void;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
+    syncDesktopWorkHubLayout?(): void;
 }
 
 /** Tab strip, overflow picker, and execution-surface visibility for transcript and project detail. */

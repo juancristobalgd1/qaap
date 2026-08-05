@@ -35,6 +35,7 @@ export interface MobileProjectsConversationOpenHost {
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     transcriptSheetUi: MobileProjectsTranscriptSheetUi;
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
+    syncDesktopWorkHubLayout?(): void;
     hide(): void;
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
@@ -86,6 +87,7 @@ export class MobileProjectsConversationOpenUi {
         this.host.conversations?.prefetchDocument(summary.id);
         await this.host.transcriptSheetUi.openTranscriptSheet(project, summary);
         this.host.refreshWorkHubConversationChrome();
+        this.host.syncDesktopWorkHubLayout?.();
     }
 
 }

@@ -252,7 +252,7 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(patchCalls).to.equal(2);
     });
 
-    it('hideForMobileOverlay collapses the sidebar on desktop layout too', () => {
+    it('keeps the sidebar open when navigation happens on desktop layout', () => {
         const matchMedia = (query: string): MediaQueryList => ({
             matches: query.includes('min-width: 768px'),
             media: query,
@@ -282,8 +282,9 @@ describe('mobile-work-hub-sessions-sidebar', () => {
 
         sidebar.hideForMobileOverlay();
 
-        expect(sidebar.isVisible()).to.equal(false);
-        expect(sidebar.node.classList.contains('theia-mod-visible')).to.equal(false);
+        expect(sidebar.isVisible()).to.equal(true);
+        expect(sidebar.node.classList.contains('theia-mod-visible')).to.equal(true);
+        sidebar.hide();
     });
 
     it('hide always clears the sessions-sidebar body class even when embedded mode flips', () => {

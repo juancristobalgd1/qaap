@@ -161,6 +161,7 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
         ctx.host.transcriptSurfacesUi.hideHeaderFilesMoreButton();
         ctx.host.transcriptSurfacesUi.hideHeaderViewModeSwitch();
     }
+    ctx.host.syncDesktopWorkHubLayout?.();
 }
 
 export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTab): void {
@@ -418,4 +419,3 @@ export function navigateExecutionSurfaceBackExtracted(ctx: any, project: MobileP
     }
     return false;
 }
-

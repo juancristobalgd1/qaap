@@ -1744,6 +1744,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.agentsHubInlineUi.refreshWorkHubConversationChrome();
     }
 
+    protected syncDesktopWorkHubLayout(): void {
+        this.sessionsSidebar?.syncDesktopLayout();
+    }
+
     protected patchWorkHubConversationRowInPlace(conversationId: string): void {
         patchWorkHubConversationRowInPlaceExtracted(this, conversationId);
     }

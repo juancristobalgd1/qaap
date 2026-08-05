@@ -462,9 +462,10 @@
 /* ── Minimal session rows (Claude-style single line) ── */
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {
+  position: relative;
   align-items: center;
   gap: 0;
-  padding: 0 4px 0 8px;
+  padding: 0 8px 0 8px;
   border-radius: 8px;
   background: transparent;
 }
@@ -506,6 +507,17 @@
   align-items: center;
   gap: 10px;
   padding: 7px 4px 7px 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* Mobile/touch: absolute archive + kebab buttons are always visible, so reserve
+   space on the right so the title/time doesn't run underneath them. */
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-item {
+    padding-right: 56px;
+  }
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-dot,
@@ -547,6 +559,9 @@
   font-weight: 400;
   color: var(--theia-foreground);
   line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-title {
@@ -567,11 +582,30 @@
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-conversation-retry-btn {
   margin-top: 0;
   align-self: center;
-  flex: 0 0 24px;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
   opacity: 0.45;
   color: var(--theia-descriptionForeground);
+}
+
+/* Archive + kebab float over the row's right edge so the conversation title
+   can use the full sidebar width. On desktop they fade in on hover (t3code pattern);
+   on mobile they stay visible as absolute overlays. */
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn {
+  position: absolute;
+  right: 46px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-conversation-menu-btn,
@@ -958,6 +992,36 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   margin-right: 2px;
 }
 
+.theia-mobile-work-hub-sessions-sidebar-project-new-agent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--theia-descriptionForeground, var(--qaap-muted, #8a847c));
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-project-new-agent:hover,
+.theia-mobile-work-hub-sessions-sidebar-project-new-agent:active {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-project-new-agent:focus,
+.theia-mobile-work-hub-sessions-sidebar-project-new-agent:focus-visible {
+  outline: none;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open,
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-work-hub-sessions-sidebar-project-open {
   margin-left: 0;
@@ -1030,6 +1094,69 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     background: color-mix(in srgb,
         var(--q-accent, var(--qaap-accent, #e58e40)) 18%,
         var(--theia-list-activeSelectionBackground, rgba(127, 127, 127, 0.18)));
+  }
+
+  /* Desktop: lift the time/age out of the meta row and pin it to the right edge
+     so the row content uses the full sidebar width. On hover the action buttons
+     fade in at the same spot and the time fades out — t3code sidebar pattern. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-body {
+    padding-right: 56px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-since {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    opacity: 0.5;
+    font-size: 10px;
+    transition: opacity 150ms ease-out;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-since {
+    opacity: 0.75;
+  }
+
+  /* Archive + kebab: invisible by default, same right-edge slot as the time.
+     pointer-events stay auto so click always reaches the button (no race
+     with :hover evaluation). opacity-0 makes them visually hidden. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
+    opacity: 0;
+    transition: opacity 150ms ease-out;
+  }
+
+  /* On hover: fade time out, fade buttons in. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-since,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-since,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-task-since {
+    opacity: 0;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-conversation-archive-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-conversation-archive-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-conversation-archive-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-conversation-menu-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-conversation-menu-btn,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-conversation-menu-btn {
+    opacity: 0.85;
+  }
+
+  /* Background fade so buttons read clearly over the row content. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover::after,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within::after,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 72px;
+    border-radius: 0 8px 8px 0;
+    background: linear-gradient(to right, transparent, var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e)) 60%);
+    pointer-events: none;
+    z-index: 1;
   }
 }
 
@@ -1129,6 +1256,18 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     max-height: 100% !important;
     overflow: hidden !important;
     padding: 0 !important;
+  }
+
+  /* Theia SplitPanels use position:absolute with fixed pixel widths calculated
+     by the layout engine. In the grid layout the container shrinks when the
+     sidebar opens, but the SplitPanel keeps its old pixel width. Override to
+     100% so it always fills the available grid cell, then the resize event
+     makes Theia recalculate child positions. */
+  body:not(.theia-mobile-mod-desktop-ide) #theia-app-shell #theia-left-right-split-panel,
+  body:not(.theia-mobile-mod-desktop-ide) #theia-app-shell #theia-bottom-split-panel,
+  body:not(.theia-mobile-mod-desktop-ide) #theia-app-shell #theia-main-content-panel,
+  body:not(.theia-mobile-mod-desktop-ide) #theia-app-shell #theia-bottom-content-panel {
+    width: 100% !important;
   }
 
   body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-agent-transcript-root {
@@ -1236,46 +1375,46 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     display: none !important;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header {
     flex: 0 0 auto;
     padding: 14px 28px 10px;
     border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header-main {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header-main {
     align-items: center;
     min-width: 0;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-title {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-title {
     font-size: 18px;
     font-weight: 600;
     line-height: 1.25;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-title-block {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-title-block {
     flex: 1 1 auto;
     min-width: 0;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header-execution-tabs {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header-execution-tabs {
     flex: 0 0 auto;
     width: auto;
     min-width: max-content;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-edgeSwipeZone {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-edgeSwipeZone {
     visibility: hidden !important;
     pointer-events: none !important;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header,
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header {
     padding-left: 28px;
     padding-right: 28px;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-scroll {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-scroll {
     padding-left: 40px !important;
     padding-right: 40px !important;
   }
@@ -1286,28 +1425,36 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
      `width: 100% !important` tools-surface rule in mobile-workbench.css
      (4-class specificity). This prevents the content from shifting left on
      every tab switch — chat OR tools surface. */
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agents-hub-landing,
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agent-transcript-real-chat {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-agents-hub-inline-execution,
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-agents-hub-inline-execution,
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agents-hub-landing,
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects .theia-mobile-agent-transcript-real-chat {
     width: min(100%, 980px) !important;
     max-width: min(100%, 980px) !important;
     margin-left: auto !important;
     margin-right: auto !important;
+    align-self: center !important;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-sticky-composer {
+  /* Override the inline `align-items: stretch` set by applyAgentsHubExecutionPanelSizing
+     on the scroll host — stretch pushes children left instead of centering them. */
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-scroll,
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-scroll {
+    align-items: center !important;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-sticky-composer {
     padding-left: 40px !important;
     padding-right: 40px !important;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-sticky-composer-inner {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-sticky-composer-inner {
     width: min(100%, 980px);
     margin-left: auto;
     margin-right: auto;
   }
 
-  body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-title-row>.theia-mobile-projects-sessions-menu {
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-title-row>.theia-mobile-projects-sessions-menu {
     display: none !important;
   }
 }

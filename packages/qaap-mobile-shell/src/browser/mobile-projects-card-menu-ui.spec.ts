@@ -30,18 +30,13 @@ const project = (overrides: Partial<MobileProjectEntry> = {}): MobileProjectEntr
 });
 
 describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
-    it('puts New agent first and opens an empty chat sheet for the project', () => {
+    it('lists Pin first (New agent is now a standalone row button)', () => {
         const target = project({ id: 'alpha' });
-        const opened: MobileProjectEntry[] = [];
-        let closed = 0;
         const host = {
             projectsService: { canRemove: () => true },
             conversationIndexUi: {
                 conversationsForProject: () => [],
                 countFailedTasks: () => 0,
-            },
-            openEmptyMobileChatSheet: async (entry: MobileProjectEntry) => {
-                opened.push(entry);
             },
             onTogglePin: async () => undefined,
             onRemoveProject: async () => undefined,
@@ -51,24 +46,13 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
         } as unknown as MobileProjectsCardMenuHost;
 
         const ui = new MobileProjectsCardMenuUi(host);
-        const originalClose = ui.closeCardMenu.bind(ui);
-        ui.closeCardMenu = (): void => {
-            closed += 1;
-            originalClose();
-        };
-
         const menu = ui.buildProjectOptionsMenu(target);
         const items = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')];
         expect(items.map(item => item.textContent?.trim())).to.deep.equal([
-            'New agent',
             'Pin',
             'Remove',
             'Clear all tasks',
         ]);
-        expect(items[0]?.querySelector('.codicon-add')).to.not.equal(null);
-
-        (items[0] as HTMLButtonElement).click();
-        expect(closed).to.equal(1);
-        expect(opened.map(entry => entry.id)).to.deep.equal(['alpha']);
+        expect(items[0]?.querySelector('.codicon-add')).to.equal(null);
     });
 });

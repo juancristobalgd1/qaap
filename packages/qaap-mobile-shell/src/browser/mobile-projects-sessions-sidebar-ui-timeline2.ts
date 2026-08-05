@@ -91,7 +91,7 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: 
     });
     const actions = document.createElement('div');
     actions.className = 'theia-mobile-work-hub-sessions-sidebar-project-actions';
-    actions.append(ctx.createSessionsSidebarIdeOpenControl(project));
+    actions.append(ctx.createSessionsSidebarNewAgentControl(project));
     const menu = ctx.host.cardMenuUi.buildProjectOptionsMenu(project);
     const menuBtn = document.createElement('button');
     menuBtn.type = 'button';
@@ -131,6 +131,25 @@ export function createSessionsSidebarIdeOpenControlExtracted(ctx: any, project: 
     });
     openBtn.addEventListener('keydown', ev => ev.stopPropagation());
     return openBtn;
+}
+
+export function createSessionsSidebarNewAgentControlExtracted(ctx: any, project: MobileProjectEntry): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'theia-mobile-work-hub-sessions-sidebar-project-new-agent';
+    const newAgentLabel = nls.localize('qaap/sessionsSidebar/newChat', 'New agent');
+    btn.setAttribute('aria-label', newAgentLabel);
+    btn.title = newAgentLabel;
+    const icon = document.createElement('span');
+    icon.className = 'codicon codicon-add';
+    icon.setAttribute('aria-hidden', 'true');
+    btn.append(icon);
+    btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        void ctx.openEmptyMobileChatSheet(project);
+    });
+    btn.addEventListener('keydown', ev => ev.stopPropagation());
+    return btn;
 }
 
 export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: any): Promise<void> {

@@ -347,13 +347,13 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     protected applyAgentsHubExecutionPanelSizing(executionRoot: HTMLElement): void {
+        // Only set width/maxWidth via inline styles. Alignment (align-items,
+        // align-self, margin) is controlled entirely by CSS so the sessions
+        // sidebar open/closed state can override it without fighting inline styles.
         this.host.scroll.style.width = '100%';
         this.host.scroll.style.maxWidth = '100%';
-        this.host.scroll.style.alignSelf = 'stretch';
-        this.host.scroll.style.alignItems = 'stretch';
         executionRoot.style.width = '100%';
         executionRoot.style.maxWidth = '100%';
-        executionRoot.style.alignSelf = 'stretch';
     }
 
     protected createAgentsHubNoProjectOnboarding(): HTMLElement {

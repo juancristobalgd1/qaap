@@ -34,6 +34,7 @@ export interface MobileProjectsCardMenuHost {
     projectsService: MobileProjectsService;
     delegate: {
         onResumePreview?(project: MobileProjectEntry): void | Promise<void>;
+        onProjectOpenInIde?(project: MobileProjectEntry): void | Promise<void>;
     };
 
     conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
@@ -103,15 +104,19 @@ export class MobileProjectsCardMenuUi {
         menu.setAttribute('role', 'menu');
         menu.hidden = true;
 
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
-            iconClass: 'codicon-add',
-            title: nls.localize('qaap/mobileProjects/newChatTitle', 'New agent'),
-            onSelect: () => {
-                this.closeCardMenu();
-                void this.host.openEmptyMobileChatSheet(project);
-            },
-        });
+        if (typeof window !== 'undefined'
+            && typeof window.matchMedia === 'function'
+            && window.matchMedia('(min-width: 768px)').matches) {
+            this.appendCardMenuItem(menu, {
+                label: nls.localize('qaap/mobileProjects/openInIde', 'Open in IDE'),
+                iconClass: 'codicon-go-to-file',
+                onSelect: () => {
+                    this.closeCardMenu();
+                    this.host.sessionsSidebar?.hide();
+                    void this.host.delegate?.onProjectOpenInIde?.(project);
+                },
+            });
+        }
 
         this.appendCardMenuItem(menu, {
             label: project.pinned

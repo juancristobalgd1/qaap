@@ -84,6 +84,10 @@ export class MobileWorkHubSessionsSidebar {
     protected appearanceModeSwitch: QaapAppearanceModeSwitchController | undefined;
     protected refreshListRaf = 0;
     protected refreshDeferTimer = 0;
+    protected shellResizeRaf = 0;
+    protected shellResizeObserver: ResizeObserver | undefined;
+    protected shellResizeSettleTimer = 0;
+    protected shellResizeFallbackTimer = 0;
 
     constructor(protected readonly delegate: MobileWorkHubSessionsSidebarDelegate) {
         this.root = document.createElement('aside');
@@ -225,6 +229,7 @@ export class MobileWorkHubSessionsSidebar {
         this.updateAccountAvatar();
         this.refreshList();
         this.maybeShowDismissHint();
+        this.notifyShellResize();
     }
 
     updateAccountAvatar(): void {
@@ -328,11 +333,106 @@ export class MobileWorkHubSessionsSidebar {
             }
         }, 280);
         this.delegate.onClose();
+        this.notifyShellResize();
     }
 
-    /** Close the sessions sidebar after navigation (overlay on mobile, collapse on desktop). */
+    /** Close the sessions sidebar after navigation on mobile (overlay only).
+     *  On desktop the sidebar is a persistent panel — keep it open. */
     hideForMobileOverlay(): void {
+        if (isDesktopSessionsSidebarLayout()) {
+            return;
+        }
         this.hide();
+    }
+
+    /**
+     * Re-measure the desktop Work Hub after a conversation or execution surface changes.
+     * The sidebar owns the desktop grid boundary, so keeping this synchronization here avoids
+     * letting individual conversation views guess how Theia's split panels are laid out.
+     */
+    syncDesktopLayout(): void {
+        if (!this.visible || !isDesktopSessionsSidebarLayout()) {
+            return;
+        }
+        this.notifyShellResize();
+    }
+
+    /**
+     * Notify the Theia shell that the available area changed so SplitPanels
+     * (e.g. `#theia-left-right-split-panel`) recalculate their child sizes
+     * after the sidebar opens/collapses and the grid column width shifts.
+     *
+     * Uses a ResizeObserver on `#theia-app-shell` to dispatch `resize` events
+     * deterministically whenever the container's actual dimensions change —
+     * not at guessed timeouts. The observer auto-disconnects after the
+     * transition settles (no changes for 200ms).
+     */
+    protected notifyShellResize(): void {
+        if (!isDesktopSessionsSidebarLayout()) {
+            return;
+        }
+        this.scheduleShellResize();
+        this.disposeShellResizeObserver();
+        if (typeof ResizeObserver === 'undefined') {
+            return;
+        }
+        const shell = document.getElementById('theia-app-shell');
+        if (!shell) {
+            return;
+        }
+        let lastW = shell.offsetWidth;
+        let lastH = shell.offsetHeight;
+        const ro = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const w = entry.contentRect.width;
+                const h = entry.contentRect.height;
+                if (Math.abs(w - lastW) > 0.5 || Math.abs(h - lastH) > 0.5) {
+                    lastW = w;
+                    lastH = h;
+                    this.dispatchShellResize();
+                }
+            }
+            window.clearTimeout(this.shellResizeSettleTimer);
+            this.shellResizeSettleTimer = window.setTimeout(() => {
+                // Final resize after transition fully settles.
+                this.dispatchShellResize();
+                this.disposeShellResizeObserver();
+            }, 200);
+        });
+        this.shellResizeObserver = ro;
+        ro.observe(shell);
+        // Safety: disconnect after the sidebar transition even if the shell dimensions do not
+        // produce a ResizeObserver callback (for example when a browser batches grid updates).
+        this.shellResizeFallbackTimer = window.setTimeout(() => {
+            this.dispatchShellResize();
+            this.disposeShellResizeObserver();
+        }, 700);
+    }
+
+    protected scheduleShellResize(): void {
+        if (this.shellResizeRaf) {
+            return;
+        }
+        this.shellResizeRaf = window.requestAnimationFrame(() => {
+            this.shellResizeRaf = 0;
+            this.dispatchShellResize();
+        });
+    }
+
+    protected dispatchShellResize(): void {
+        if (typeof window.dispatchEvent !== 'function' || typeof window.Event !== 'function') {
+            return;
+        }
+        window.dispatchEvent(new window.Event('resize'));
+    }
+
+    protected disposeShellResizeObserver(): void {
+        this.shellResizeObserver?.disconnect();
+        this.shellResizeObserver = undefined;
+        window.clearTimeout(this.shellResizeSettleTimer);
+        this.shellResizeSettleTimer = 0;
+        window.clearTimeout(this.shellResizeFallbackTimer);
+        this.shellResizeFallbackTimer = 0;
     }
 
     toggle(): void {
