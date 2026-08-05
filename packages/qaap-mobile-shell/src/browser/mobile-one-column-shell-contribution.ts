@@ -523,6 +523,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         } else {
             this.leaveMobileLayout();
         }
+        // The sessions sidebar can stay open while the window crosses the breakpoint. Reconcile
+        // its mount point after the mobile shell transition so it cannot remain over the content.
+        this.projectsPanel?.syncSessionsSidebarLayout();
     };
 
     onStop(_app: FrontendApplication): void {

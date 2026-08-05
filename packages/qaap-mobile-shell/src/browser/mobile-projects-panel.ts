@@ -1748,6 +1748,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.sessionsSidebar?.syncDesktopLayout();
     }
 
+    /** Reconcile the open sessions sidebar when the window crosses the mobile breakpoint. */
+    syncSessionsSidebarLayout(): void {
+        this.sessionsSidebarUi.syncWorkHubSessionsSidebarLayout();
+    }
+
     protected patchWorkHubConversationRowInPlace(conversationId: string): void {
         patchWorkHubConversationRowInPlaceExtracted(this, conversationId);
     }

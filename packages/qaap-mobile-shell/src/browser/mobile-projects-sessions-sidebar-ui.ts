@@ -169,6 +169,16 @@ export class MobileProjectsSessionsSidebarUi {
         return ensureWorkHubSessionsSidebarExtracted(this);
     }
 
+    /** Reconcile the sidebar mount point after a responsive layout transition. */
+    syncWorkHubSessionsSidebarLayout(): void {
+        const sidebar = this.host.sessionsSidebar;
+        if (!sidebar?.isVisible()) {
+            return;
+        }
+        ensureWorkHubSessionsSidebarExtracted(this);
+        sidebar.syncDesktopLayout();
+    }
+
     protected buildSessionsSidebarFingerprintInput(): WorkHubSessionsSidebarFingerprintInput {
         return buildSessionsSidebarFingerprintInputExtracted(this);
     }

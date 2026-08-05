@@ -83,6 +83,35 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(mode).to.equal('light');
     });
 
+    it('syncs the embedded state when the viewport layout changes while open', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+
+        sidebar.show();
+        expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(true);
+
+        sidebar.syncEmbeddedState(true);
+        expect(sidebar.node.classList.contains('theia-mod-embedded')).to.equal(true);
+        expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(false);
+
+        sidebar.syncEmbeddedState(false);
+        expect(sidebar.node.classList.contains('theia-mod-embedded')).to.equal(false);
+        expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(true);
+
+        sidebar.hide();
+    });
+
     it('scheduleRefreshList coalesces multiple refresh requests into one render pass', async () => {
         let renderCalls = 0;
         const sidebar = new MobileWorkHubSessionsSidebar({

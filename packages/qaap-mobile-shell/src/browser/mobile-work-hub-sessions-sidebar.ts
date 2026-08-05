@@ -207,6 +207,19 @@ export class MobileWorkHubSessionsSidebar {
         return this.visible;
     }
 
+    /**
+     * Keep the sidebar's mounting mode in sync when the viewport crosses the responsive breakpoint.
+     * The panel can move from an in-panel mobile overlay to the desktop body grid while it stays
+     * open, so this state cannot be set only once during show().
+     */
+    syncEmbeddedState(embedded: boolean): void {
+        this.root.classList.toggle('theia-mod-embedded', embedded);
+        if (!this.visible) {
+            return;
+        }
+        document.body.classList.toggle(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS, !embedded);
+    }
+
     show(): void {
         if (this.visible) {
             this.refreshList();
@@ -216,12 +229,9 @@ export class MobileWorkHubSessionsSidebar {
         clearDesktopSessionsSidebarCollapsed(this.delegate.storageScope?.());
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
-        this.root.classList.toggle('theia-mod-embedded', this.delegate.isEmbedded?.() === true);
+        this.syncEmbeddedState(this.delegate.isEmbedded?.() === true);
         void this.root.offsetWidth;
         this.root.classList.add('theia-mod-visible');
-        if (this.delegate.isEmbedded?.() !== true) {
-            document.body.classList.add(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
-        }
         document.addEventListener('keydown', this.onKeyDown, true);
         this.guardSidebarCloseButton(this.closeBtn);
         this.installLeftEdgeSwipeDismiss();

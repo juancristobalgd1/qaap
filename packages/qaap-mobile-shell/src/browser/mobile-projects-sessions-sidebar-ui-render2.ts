@@ -128,12 +128,14 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
     }
     const useBodyGrid = isDesktopSessionsSidebarLayout()
         && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
+    const embeddedContainer = ctx.host.sessionsSidebarContainer?.();
     const container = useBodyGrid
         ? document.body
-        : (ctx.host.sessionsSidebarContainer?.() ?? document.body);
+        : (embeddedContainer ?? document.body);
     if (ctx.host.sessionsSidebar.node.parentElement !== container) {
         container.append(ctx.host.sessionsSidebar.node);
     }
+    ctx.host.sessionsSidebar.syncEmbeddedState?.(!useBodyGrid && embeddedContainer !== undefined);
     return ctx.host.sessionsSidebar;
 }
 
