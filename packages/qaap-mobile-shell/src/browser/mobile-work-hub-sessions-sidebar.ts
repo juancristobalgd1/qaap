@@ -377,10 +377,11 @@ export class MobileWorkHubSessionsSidebar {
         this.notifyShellResize();
     }
 
-    /** Close the sessions sidebar after navigation on mobile (overlay only).
-     *  On desktop the sidebar is a persistent panel — keep it open. */
+    /** Close after navigation on mobile and in the IDE's embedded chat sidebar.
+     *  The standalone desktop Work Hub keeps its sessions sidebar persistent. */
     hideForMobileOverlay(): void {
-        if (isDesktopSessionsSidebarLayout()) {
+        if (isDesktopSessionsSidebarLayout()
+            && !document.body.classList.contains('theia-mobile-mod-desktop-ide')) {
             return;
         }
         this.hide();

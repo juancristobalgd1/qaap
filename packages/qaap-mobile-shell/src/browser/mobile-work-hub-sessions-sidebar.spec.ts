@@ -316,6 +316,42 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         sidebar.hide();
     });
 
+    it('closes the embedded chat sidebar after navigation in the classic IDE', () => {
+        const matchMedia = (query: string): MediaQueryList => ({
+            matches: query.includes('min-width: 768px'),
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        });
+        (global as { window?: Window }).window = {
+            ...(global as { window?: Window }).window,
+            matchMedia,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        document.body.classList.add('theia-mobile-mod-desktop-ide');
+
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => { host.append(document.createElement('div')); },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.show();
+
+        sidebar.hideForMobileOverlay();
+
+        expect(sidebar.isVisible()).to.equal(false);
+        expect(sidebar.node.classList.contains('theia-mod-visible')).to.equal(false);
+        sidebar.hide();
+        document.body.classList.remove('theia-mobile-mod-desktop-ide');
+    });
+
     it('hide always clears the sessions-sidebar body class even when embedded mode flips', () => {
         const matchMedia = (query: string): MediaQueryList => ({
             matches: query.includes('min-width: 768px'),
