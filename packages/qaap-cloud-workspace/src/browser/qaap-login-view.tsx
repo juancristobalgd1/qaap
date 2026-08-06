@@ -12,6 +12,7 @@ export interface QaapLoginViewProps {
     appName: string;
     loading: QaapLoginProvider | undefined;
     onSignIn: (provider: QaapLoginProvider) => void;
+    status?: string;
 }
 
 function getApplicationIconUrl(): string {
@@ -33,8 +34,8 @@ const GitLabIcon: React.FC = () => (
     <span className='qaap-login-btn-icon-slot' dangerouslySetInnerHTML={{ __html: QAAP_LOGIN_GITLAB_SVG }} />
 );
 
-export const QaapLoginView: React.FC<QaapLoginViewProps> = ({ appName, loading, onSignIn }) => (
-    <div className='qaap-login-overlay' role='dialog' aria-modal={true} aria-labelledby='qaap-login-title'>
+export const QaapLoginView: React.FC<QaapLoginViewProps> = ({ appName, loading, onSignIn, status }) => (
+    <div className='qaap-login-overlay' role='dialog' aria-modal={true} aria-labelledby='qaap-login-title' aria-describedby='qaap-login-description'>
         <header className='qaap-login-brand'>
             <img
                 className='qaap-login-logo'
@@ -44,7 +45,7 @@ export const QaapLoginView: React.FC<QaapLoginViewProps> = ({ appName, loading, 
                 alt=''
             />
             <h1 id='qaap-login-title' className='qaap-login-title'>{appName}</h1>
-            <p className='qaap-login-tagline'>
+            <p id='qaap-login-description' className='qaap-login-tagline'>
                 A pocket workspace for coding agents.
                 <br />
                 Sign in to connect your repos.
@@ -96,6 +97,8 @@ export const QaapLoginView: React.FC<QaapLoginViewProps> = ({ appName, loading, 
                 </span>
             </button>
         </div>
+
+        <p className='qaap-login-status' role='status' aria-live='polite' aria-atomic={true}>{status ?? ''}</p>
 
         <footer className='qaap-login-footer'>
             By continuing you agree to the <a href='#' onClick={e => e.preventDefault()}>terms</a>

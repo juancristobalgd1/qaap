@@ -107,6 +107,10 @@ const ALLOWED = [
     // .worktrees/ (EnterWorktree), so the upstream spec's absolute-result asserts
     // need an excludePatterns filter or they match spurious files.
     /^packages\/file-search\/src\/node\/file-search-service-impl\.spec\.ts$/,
+    // Bootstrap guard: QaapKeybindingRegistry can be empty while file-search registers its
+    // provider; upstream's truthy empty-array check otherwise resolves undefined and aborts
+    // QuickInput startup. Keep the minimal fix at this upstream seam until it is upstreamed.
+    /^packages\/file-search\/src\/browser\/quick-file-open\.ts$/,
     // Fork extension: RemoteConnection.copy() accepts Buffer/ReadableStream in
     // addition to upstream's string path (used-by-design for container uploads;
     // SSH impl still string-only — tracked follow-up). Not in upstream.

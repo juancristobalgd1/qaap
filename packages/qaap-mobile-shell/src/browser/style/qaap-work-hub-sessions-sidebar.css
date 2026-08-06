@@ -156,6 +156,7 @@
 }
 
 .theia-mobile-work-hub-sessions-sidebar-head {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -193,8 +194,11 @@
   white-space: nowrap;
 }
 
-/* Desktop-only IDE/Agents switch — kept beside the Qaap brand, outside the avatar menu. */
+/* Desktop-only IDE/Agents switch — centered in the sidebar, outside the avatar menu. */
 .theia-mobile-work-hub-sessions-sidebar-view-switch {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   flex: 0 1 124px;

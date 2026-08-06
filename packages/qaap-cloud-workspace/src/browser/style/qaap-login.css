@@ -108,6 +108,7 @@ body.qaap-login-active .theia-preload {
     gap: 10px;
     transition: opacity 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
     -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
 .qaap-login-btn:hover:not(:disabled) {
@@ -157,6 +158,15 @@ body.qaap-login-active .theia-preload {
     height: 18px;
 }
 
+.qaap-login-status {
+    min-height: 1.45em;
+    margin: 10px 0 0;
+    font-size: 12px;
+    line-height: 1.45;
+    text-align: center;
+    color: var(--qaap-login-muted);
+}
+
 .qaap-login-provider-svg {
     display: block;
 }
@@ -201,6 +211,20 @@ body.qaap-login-active .theia-preload {
 @keyframes qaap-login-spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qaap-login-btn {
+        transition: none;
+    }
+
+    .qaap-login-btn:active:not(:disabled) {
+        transform: none;
+    }
+
+    .qaap-login-spinner {
+        animation: none;
     }
 }
 

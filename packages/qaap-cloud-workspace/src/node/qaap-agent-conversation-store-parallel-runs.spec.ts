@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import { MAX_CONCURRENT_CONVERSATION_RUNS, QaapAgentConversationStore } from './qaap-agent-conversation-store';
+import { QAAP_COALESCE_WINDOW_MS } from './qaap-agent-conversation-store-constants';
 import type { QaapAgentTask, QaapAgentTaskDetail } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
@@ -132,6 +133,11 @@ function idleConversation(id: string): QaapAgentConversation {
         updatedAt: now,
         messages: [],
     };
+}
+
+/** The production queue intentionally coalesces follow-ups for a short window before dispatch. */
+async function waitForPendingDrain(): Promise<void> {
+    await new Promise<void>(resolve => setTimeout(resolve, QAAP_COALESCE_WINDOW_MS + 10));
 }
 
 describe('QaapAgentConversationStore in-session parallel runs', () => {
@@ -281,7 +287,8 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
 
 // ─── Delivery mode: queue (default) ──────────────────────────────────────────
 
-describe('QaapAgentConversationStore delivery mode: queue (default)', () => {
+describe('QaapAgentConversationStore delivery mode: queue (default)', function (): void {
+    this.timeout(Math.max(5_000, QAAP_COALESCE_WINDOW_MS + 1_000));
 
     function createStore(): { store: TestConversationStore; runner: TestTaskRunner } {
         const runner = new TestTaskRunner();
@@ -341,6 +348,7 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', () => {
 
         // Settle the first run — this should drain the queue.
         await store.settleRun('c1', firstUserMessageId, 'task-1');
+        await waitForPendingDrain();
 
         // The queued message was drained and a new task was created for it.
         expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
@@ -365,6 +373,7 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', () => {
 
         // Settle the first run — this should drain and batch all three.
         await store.settleRun('c1', firstUserMessageId, 'task-1');
+        await waitForPendingDrain();
 
         // Only one additional task was created (the batch).
         expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
@@ -394,6 +403,7 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', () => {
         (runner as any).detail = async (id: string) => ({ id, state: 'failed', log: 'error' });
 
         await store.settleRun('c1', firstUserMessageId, 'task-1');
+        await waitForPendingDrain();
 
         // Restore detail for the drain-spawned task.
         (runner as any).detail = originalDetail;

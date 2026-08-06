@@ -319,15 +319,18 @@
             '.qaap-login-tagline{margin:0;max-width:280px;font-size:14px;line-height:1.45;text-align:center;color:var(--qaap-muted)}',
             '.qaap-login-spacer{flex:1;min-height:24px}',
             '.qaap-login-actions{display:flex;flex-direction:column;gap:10px}',
-            '.qaap-login-btn{width:100%;height:48px;border-radius:10px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px}',
+            '.qaap-login-btn{width:100%;min-height:44px;height:48px;border-radius:10px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}',
             '.qaap-login-btn--primary{border:none;background:var(--qaap-ink);color:var(--qaap-surface)}',
             '.qaap-login-btn--secondary{height:44px;border:1px solid var(--qaap-border);background:transparent;color:var(--qaap-ink);font-size:14px;font-weight:500}',
             '.qaap-login-btn:disabled{opacity:.85;cursor:wait}',
+            '.qaap-login-btn:focus-visible{outline:2px solid var(--qaap-link);outline-offset:2px}',
             '.qaap-login-btn-icon{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center}',
             '.qaap-login-spinner{width:16px;height:16px;border-radius:50%;border:2px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;animation:qaap-spin .8s linear infinite}',
             '@keyframes qaap-spin{to{transform:rotate(360deg)}}',
+            '.qaap-login-status{min-height:1.45em;margin:10px 0 0;font-size:12px;line-height:1.45;text-align:center;color:var(--qaap-muted)}',
             '.qaap-login-footer{margin-top:20px;font-size:11.5px;line-height:1.5;text-align:center;color:var(--qaap-muted)}',
-            '.qaap-login-footer a{color:var(--qaap-link);text-decoration:none}'
+            '.qaap-login-footer a{color:var(--qaap-link);text-decoration:none}',
+            '@media(prefers-reduced-motion:reduce){.qaap-login-btn{transition:none}.qaap-login-btn:active{transform:none}.qaap-login-spinner{animation:none}}'
         ].join('');
         document.head.appendChild(style);
     }
@@ -340,18 +343,22 @@
         host.id = 'qaap-login-host';
         host.setAttribute('role', 'dialog');
         host.setAttribute('aria-modal', 'true');
+        host.setAttribute('aria-labelledby', 'qaap-login-title');
+        host.setAttribute('aria-describedby', 'qaap-login-description');
+        host.tabIndex = -1;
         host.innerHTML =
             '<div class="qaap-login-overlay">' +
             '<header class="qaap-login-brand">' +
             '<img class="qaap-login-logo" src="' + logoUrl() + '" width="64" height="64" alt=""/>' +
-            '<h1 class="qaap-login-title">' + appName() + '</h1>' +
-            '<p class="qaap-login-tagline">A pocket workspace for coding agents.<br/>Sign in to connect your repos.</p>' +
+            '<h1 id="qaap-login-title" class="qaap-login-title">' + appName() + '</h1>' +
+            '<p id="qaap-login-description" class="qaap-login-tagline">A pocket workspace for coding agents.<br/>Sign in to connect your repos.</p>' +
             '</header>' +
             '<div class="qaap-login-spacer"></div>' +
             '<div class="qaap-login-actions">' +
             '<button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary">' +
-            '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span>Sign in with GitHub</button>' +
+            '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span><span class="qaap-login-btn-label">Sign in with GitHub</span></button>' +
             '</div>' +
+            '<p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>' +
             '<footer class="qaap-login-footer">By continuing you agree to the terms &amp; privacy.</footer>' +
             '</div>';
 
@@ -365,6 +372,16 @@
         function authorize(button) {
             if (button.disabled) {
                 return;
+            }
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            var label = button.querySelector('.qaap-login-btn-label');
+            if (label) {
+                label.textContent = 'Authorizing…';
+            }
+            var status = host.querySelector('#qaap-login-status');
+            if (status) {
+                status.textContent = 'Opening GitHub sign-in…';
             }
             // Full-page redirect to GitHub OAuth; the session lands after the callback.
             try {
@@ -381,6 +398,29 @@
             });
             github.focus();
         }
+
+        host.addEventListener('keydown', function (event) {
+            if (event.key !== 'Tab') {
+                return;
+            }
+            var focusable = Array.prototype.slice.call(host.querySelectorAll(
+                'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+            ));
+            if (!focusable.length) {
+                event.preventDefault();
+                host.focus();
+                return;
+            }
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
 
         // If the server has no GitHub OAuth app configured, a click would land on a raw 503 page.
         // Detect that and disable the button with an explanation instead (ONB-1).
@@ -401,12 +441,15 @@
                 if (button) {
                     button.disabled = true;
                     button.setAttribute('aria-disabled', 'true');
-                    button.innerHTML = '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span>GitHub sign-in unavailable';
+                    var label = button.querySelector('.qaap-login-btn-label');
+                    if (label) {
+                        label.textContent = 'GitHub sign-in unavailable';
+                    }
                 }
-                var tagline = host.querySelector('.qaap-login-tagline');
-                if (tagline) {
-                    tagline.textContent = 'GitHub sign-in isn’t configured on this server yet. '
-                        + 'Ask the administrator to set the GitHub OAuth credentials (or enable QAAP_SKIP_AUTH for local use).';
+                var status = host.querySelector('#qaap-login-status');
+                if (status) {
+                    status.textContent = 'GitHub sign-in isn’t configured on this server yet. '
+                        + 'Ask the administrator to set the GitHub OAuth credentials or enable QAAP_SKIP_AUTH for local use.';
                 }
             })
             .catch(function () { /* config unknown (timeout/error) — leave the button enabled */ });

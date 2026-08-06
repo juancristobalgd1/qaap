@@ -128,7 +128,9 @@ export class QuickFileOpenService implements QuickAccessProvider {
      */
     protected getKeyCommand(): string | undefined {
         const keyCommand = this.keybindingRegistry.getKeybindingsForCommand(quickFileOpen.id);
-        if (keyCommand) {
+        // The keybinding registry may still be empty while frontend contributions are booting
+        // (notably with QaapKeybindingRegistry). Never resolve an absent first binding.
+        if (keyCommand.length > 0) {
             // We only consider the first keybinding.
             const accel = this.keybindingRegistry.acceleratorFor(keyCommand[0], '+');
             return accel.join(' ');
