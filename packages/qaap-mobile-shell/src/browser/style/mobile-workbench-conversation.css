@@ -914,7 +914,14 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-changes-dock {
-  display: none !important;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.2));
+  background: color-mix(in srgb, var(--theia-editor-background) 94%, #000 6%);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.22);
 }
 
 .theia-mobile-transcript-review,
@@ -1007,7 +1014,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-history-resize:hover::after,
-.theia-mobile-transcript-review.theia-mod-resizing-history .theia-mobile-transcript-history-resize::after {
+.theia-mod-resizing-history .theia-mobile-transcript-history-resize::after {
   background: color-mix(in srgb, var(--q-accent, #E58E40) 72%, var(--theia-panel-border));
 }
 

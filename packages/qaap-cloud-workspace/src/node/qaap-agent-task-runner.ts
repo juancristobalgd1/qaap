@@ -98,6 +98,11 @@ export {
     MAX_LOG_BYTES,
     EMPTY_TURN_GATE_COMMAND,
     IDLE_TASK_TIMEOUT_MS,
+    AGENT_STOP_GRACE_TIMEOUT_MS,
+    DEFAULT_AGENT_STOP_GRACE_TIMEOUT_MS,
+    MIN_AGENT_STOP_GRACE_TIMEOUT_MS,
+    MAX_AGENT_STOP_GRACE_TIMEOUT_MS,
+    resolveAgentStopGraceTimeoutMs,
     QUEUED_APPROVAL_GRACE_TIMEOUT_MS,
     TOKEN_PATH,
     TOKENS_PATH,
@@ -145,6 +150,8 @@ export class QaapAgentTaskRunner {
 
     protected readonly tasks = new Map<string, QaapAgentTask>();
     protected readonly processes = new Map<string, ChildProcess>();
+    /** Cancelled process groups still consuming a concurrency slot during graceful shutdown. */
+    protected readonly stoppingTaskIds = new Set<string>();
     /** Tasks spawned with stdin piped for manual approval mode. */
     protected readonly stdinInteractiveTasks = new Set<string>();
     /** Prompts to deliver over stdin for QAIQ stdio-approval runs (`--input-format stream-json`). */
@@ -532,7 +539,8 @@ export class QaapAgentTaskRunner {
         return cancelExtracted(this, id);
     }
 
-    protected killAgentProcessTree(child: ChildProcess, options?: { readonly escalateAfterMs?: number },): NodeJS.Timeout | undefined {
+    protected killAgentProcessTree(child: ChildProcess,
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
         return killAgentProcessTreeExtracted(this, child, options);
     }
 

@@ -100,6 +100,23 @@ export const EMPTY_TURN_GATE_COMMAND = 'qaap empty-turn gate';
 /** Kill agent CLIs that sit silent for too long, usually waiting for auth/quota/input. */
 export const IDLE_TASK_TIMEOUT_MS = 20 * 60 * 1000;
 /**
+ * Let a user-stopped agent and its active tools finish cleanup before forcing SIGKILL.
+ * The UI still transitions to cancelled immediately; this only controls backend cleanup.
+ */
+export const DEFAULT_AGENT_STOP_GRACE_TIMEOUT_MS = 5_000;
+export const MIN_AGENT_STOP_GRACE_TIMEOUT_MS = 1_000;
+export const MAX_AGENT_STOP_GRACE_TIMEOUT_MS = 30_000;
+
+export function resolveAgentStopGraceTimeoutMs(rawValue = process.env.QAAP_AGENT_STOP_GRACE_MS): number {
+    const parsed = Number.parseInt(rawValue?.trim() ?? '', 10);
+    if (!Number.isFinite(parsed)) {
+        return DEFAULT_AGENT_STOP_GRACE_TIMEOUT_MS;
+    }
+    return Math.min(MAX_AGENT_STOP_GRACE_TIMEOUT_MS, Math.max(MIN_AGENT_STOP_GRACE_TIMEOUT_MS, parsed));
+}
+
+export const AGENT_STOP_GRACE_TIMEOUT_MS = resolveAgentStopGraceTimeoutMs();
+/**
  * Auto-approve runs ("approve for me") queue gated shell/network tools to the approvals UI,
  * but must not hang forever if nobody is watching — deny after this grace period so the
  * agent can finish the turn with the tools it has.

@@ -394,7 +394,7 @@ export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void 
 export function countRunningTasksExtracted(ctx: any): number {
         let count = 0;
         for (const task of ctx.tasks.values()) {
-            if (task.state === 'running') {
+            if (task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) {
                 count++;
             }
         }
@@ -404,7 +404,7 @@ export function countRunningTasksExtracted(ctx: any): number {
 export function runningTaskCountForOwnerExtracted(ctx: any, ownerLogin: string): number {
         let count = 0;
         for (const task of ctx.tasks.values()) {
-            if (task.state === 'running' && task.ownerLogin === ownerLogin) {
+            if ((task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) && task.ownerLogin === ownerLogin) {
                 count++;
             }
         }

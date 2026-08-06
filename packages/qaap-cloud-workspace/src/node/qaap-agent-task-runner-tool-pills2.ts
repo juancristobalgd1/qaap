@@ -426,7 +426,11 @@ export function finishTaskExtracted(ctx: any, id: string, state: QaapAgentTaskSt
         if (isQaapAgentTaskFinished(state) && state !== 'cancelled') {
             void ctx.notifyCompletion(finished);
         }
-        ctx.drainQueuedTasks();
+        // A cancelled running process retains its concurrency slot through the graceful-stop
+        // window; cancel() drains after that window. Queued cancellations drain immediately there.
+        if (state !== 'cancelled') {
+            ctx.drainQueuedTasks();
+        }
         return finished;
 }
 

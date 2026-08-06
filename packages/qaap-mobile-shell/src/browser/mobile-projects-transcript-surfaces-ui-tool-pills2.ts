@@ -77,6 +77,7 @@ import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-trans
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
+import { createTranscriptReviewChrome } from './qaap-transcript-review-chrome';
 import {
     pathsEqual as pathsEqualHelper,
     transcriptConversationMeta as transcriptConversationMetaHelper,
@@ -388,18 +389,24 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
         canShowChanges: Boolean(ctx.host.createDiffReviewWidget),
         mountChangesView: ctx.host.createDiffReviewWidget
             ? async (changesHost: HTMLElement): Promise<void> => {
-                if (!changesHost.isConnected) {
+                if (!changesHost.isConnected || changesHost.hidden) {
                     return;
                 }
-                changesHost.replaceChildren();
-                const diffHost = document.createElement('div');
-                diffHost.className = 'theia-mobile-transcript-review-diff-host';
-                changesHost.append(diffHost);
+                const chrome = createTranscriptReviewChrome(
+                    changesHost,
+                    ctx.host.transcriptHistoryPanelOpen,
+                    ctx.host.transcriptHistoryPanelHeightPx,
+                );
+                const { diffHost, checksHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
+                ctx.host.transcriptReviewDiffHost = diffHost;
+                ctx.host.transcriptReviewChecksHost = checksHost;
+                ctx.host.transcriptHistoryRoot = cwd;
+                ctx.host.transcriptHistoryUi.installTranscriptHistoryResize(historyResizeHandle, historyPanel, changesHost);
                 const rootUri = FileUri.create(cwd).toString();
                 if (!ctx.host.diffReviewWidget) {
                     ctx.host.diffReviewWidget = await ctx.host.createDiffReviewWidget!();
                 }
-                if (!changesHost.isConnected) {
+                if (!changesHost.isConnected || changesHost.hidden || ctx.host.transcriptReviewDiffHost !== diffHost) {
                     return;
                 }
                 ctx.host.diffReviewWidget.enableTranscriptEmbed({ externalChrome: true });
@@ -416,11 +423,14 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
                     rootFsPath: cwd,
                     isActiveWorkspace: project.isCurrent,
                 });
+                ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
+                ctx.host.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
+                ctx.host.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);
             }
             : undefined,
         unmountChangesView: ctx.host.createDiffReviewWidget
             ? (): void => {
-                ctx.host.detachDiffReviewWidgetFromHost();
+                ctx.detachTranscriptReviewWidget();
             }
             : undefined,
     };
@@ -492,4 +502,3 @@ export async function revealTranscriptReviewFileExtracted(ctx: any, project: Mob
         console.warn('[qaap-mobile-shell] Review file not found in diff list:', trimmed);
     }
 }
-

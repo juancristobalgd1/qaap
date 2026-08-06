@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { SHELL_AGENT_ID, QAIQ_AGENT_ID, SHELL_AGENT_ID,QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS,REPO_MAP_MAX_CHARS } from './qaap-agent-task-runner';
+import { AGENT_STOP_GRACE_TIMEOUT_MS } from './qaap-agent-task-runner-constants';
 // Extracted from qaap-agent-task-runner.ts
 
 import { Emitter, Event } from '@theia/core/lib/common/event';
@@ -525,18 +526,30 @@ export function assertQaiqConfiguredExtracted(ctx: any, agentId: string): void {
 
 export function cancelExtracted(ctx: any, id: string): QaapAgentTask | undefined {
         const child = ctx.processes.get(id);
-        if (child) {
-            // User Stop must feel immediate: SIGTERM the group, then SIGKILL almost
-            // right away (250ms). The default 5s grace is for watchdog/idle cleanup
-            // where a clean exit is preferred over hard-killing mid-tool.
-            ctx.killAgentProcessTree(child, { escalateAfterMs: 250 });
-        }
         ctx.queuedCreateRequests.delete(id);
         const task = ctx.tasks.get(id);
         if (task && (task.state === 'running' || task.state === 'queued')) {
+            if (child) {
+                ctx.stoppingTaskIds.add(id);
+            }
             const finished = ctx.finishTask(id, 'cancelled', undefined);
-            ctx.drainQueuedTasks();
+            if (child) {
+                // Cancellation is visible immediately, but retain the concurrency slot until the
+                // process group has had time to finish an in-flight workspace write safely.
+                ctx.killAgentProcessTree(child, {
+                    escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS,
+                    onGracePeriodElapsed: () => {
+                        ctx.stoppingTaskIds.delete(id);
+                        ctx.drainQueuedTasks();
+                    },
+                });
+            } else {
+                ctx.drainQueuedTasks();
+            }
             return finished;
+        }
+        if (child) {
+            ctx.killAgentProcessTree(child, { escalateAfterMs: AGENT_STOP_GRACE_TIMEOUT_MS });
         }
         return task;
 }

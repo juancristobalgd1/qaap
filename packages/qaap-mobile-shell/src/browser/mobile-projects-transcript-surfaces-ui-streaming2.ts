@@ -75,6 +75,7 @@ import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-trans
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
+import { createTranscriptReviewChrome } from './qaap-transcript-review-chrome';
 import {
     pathsEqual as pathsEqualHelper,
     transcriptConversationMeta as transcriptConversationMetaHelper,
@@ -101,13 +102,16 @@ export async function mountTranscriptReviewWidgetExtracted(ctx: any, project: Mo
             host.append(note);
             return;
         }
-        host.replaceChildren();
-        const diffHost = document.createElement('div');
-        diffHost.className = 'theia-mobile-transcript-review-diff-host';
-        host.append(diffHost);
+        const chrome = createTranscriptReviewChrome(
+            host,
+            ctx.host.transcriptHistoryPanelOpen,
+            ctx.host.transcriptHistoryPanelHeightPx,
+        );
+        const { diffHost, checksHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
         ctx.host.transcriptReviewDiffHost = diffHost;
-        ctx.host.transcriptReviewChecksHost = undefined;
+        ctx.host.transcriptReviewChecksHost = checksHost;
         ctx.host.transcriptHistoryRoot = cwd;
+        ctx.host.transcriptHistoryUi.installTranscriptHistoryResize(historyResizeHandle, historyPanel, host);
 
         // A VPS task's summary.cwd is authoritative and can point at an isolated worktree.
         const rootUri = FileUri.create(cwd).toString();
@@ -117,7 +121,6 @@ export async function mountTranscriptReviewWidgetExtracted(ctx: any, project: Mo
         if (ctx.host.transcriptReviewHost !== host || !diffHost.isConnected) {
             return;
         }
-        // No bottom changes-dock (Loading / history) — agent changes live in the diff widget.
         ctx.host.diffReviewWidget.enableTranscriptEmbed({ externalChrome: true });
         ctx.host.diffReviewWidget.node.classList.add('theia-mobile-transcript-diff-embed');
         ctx.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(async message => {
@@ -132,6 +135,9 @@ export async function mountTranscriptReviewWidgetExtracted(ctx: any, project: Mo
             rootFsPath: cwd,
             isActiveWorkspace: project.isCurrent,
         });
+        ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
+        ctx.host.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
+        ctx.host.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);
 }
 
 export async function submitTranscriptReviewFeedbackExtracted(ctx: any, project: MobileProjectEntry,
@@ -157,16 +163,14 @@ export async function submitTranscriptReviewFeedbackExtracted(ctx: any, project:
 }
 
 export function detachTranscriptReviewWidgetExtracted(ctx: any): void {
-        if (!ctx.host.diffReviewWidget?.isAttached || !ctx.host.transcriptReviewDiffHost) {
-            return;
-        }
-        if (ctx.host.transcriptReviewDiffHost.contains(ctx.host.diffReviewWidget.node)) {
+        const diffHost = ctx.host.transcriptReviewDiffHost;
+        if (ctx.host.diffReviewWidget?.isAttached && diffHost?.contains(ctx.host.diffReviewWidget.node)) {
             ctx.host.detachDiffReviewWidgetFromHost();
             ctx.host.diffReviewWidget.node.classList.remove('theia-mobile-transcript-diff-embed');
-            ctx.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(undefined);
-            ctx.host.diffReviewWidget.setTranscriptCloseHandler(undefined);
-            ctx.host.diffReviewWidget.setReviewStatsChangeHandler(undefined);
         }
+        ctx.host.diffReviewWidget?.setTranscriptAgentFeedbackHandler(undefined);
+        ctx.host.diffReviewWidget?.setTranscriptCloseHandler(undefined);
+        ctx.host.diffReviewWidget?.setReviewStatsChangeHandler(undefined);
         ctx.host.transcriptReviewDiffHost = undefined;
         ctx.host.transcriptReviewChecksHost = undefined;
         ctx.host.transcriptHistoryRoot = undefined;
@@ -398,4 +402,3 @@ export async function claimTranscriptPreviewExecutionExtracted(ctx: any, _projec
         const claim = await bootstrap.claimPreviewExecution(port, summary.id);
         return claim.kind === 'claimed' ? claim.previewUrl ?? fallbackUrl : undefined;
 }
-

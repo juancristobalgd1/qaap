@@ -163,14 +163,29 @@ export class MobileProjectsTranscriptHistoryUi {
         panel.append(header, searchWrap, filters, list);
     }
 
-    installTranscriptHistoryResize(handle: HTMLElement, panel: HTMLElement): void {
+    installTranscriptHistoryResize(
+        handle: HTMLElement,
+        panel: HTMLElement,
+        surfaceHost = this.host.transcriptReviewHost,
+    ): void {
         const applyHeight = (height: number): void => {
-            const hostHeight = this.host.transcriptReviewHost?.getBoundingClientRect().height ?? window.innerHeight;
+            const hostHeight = surfaceHost?.getBoundingClientRect().height ?? window.innerHeight;
             const max = Math.max(180, Math.min(420, hostHeight * 0.62));
             const next = Math.round(Math.max(150, Math.min(max, height)));
             this.host.transcriptHistoryPanelHeightPx = next;
             panel.style.setProperty('--qaap-transcript-history-height', `${next}px`);
+            handle.setAttribute('aria-valuemax', String(Math.round(max)));
+            handle.setAttribute('aria-valuenow', String(next));
         };
+        handle.addEventListener('keydown', event => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+                return;
+            }
+            event.preventDefault();
+            const measured = panel.getBoundingClientRect().height;
+            const current = this.host.transcriptHistoryPanelHeightPx ?? measured;
+            applyHeight(current + (event.key === 'ArrowUp' ? 20 : -20));
+        });
         let startHeight = 0;
         installMobilePanelResizeDrag({
             handle,
@@ -178,13 +193,13 @@ export class MobileProjectsTranscriptHistoryUi {
             onStart: () => {
                 const measured = panel.getBoundingClientRect().height;
                 startHeight = this.host.transcriptHistoryPanelHeightPx ?? measured;
-                this.host.transcriptReviewHost?.classList.add('theia-mod-resizing-history');
+                surfaceHost?.classList.add('theia-mod-resizing-history');
             },
             onMove: ({ clientY, startClientY }) => {
                 applyHeight(startHeight + (startClientY - clientY));
             },
             onEnd: () => {
-                this.host.transcriptReviewHost?.classList.remove('theia-mod-resizing-history');
+                surfaceHost?.classList.remove('theia-mod-resizing-history');
             },
         });
     }

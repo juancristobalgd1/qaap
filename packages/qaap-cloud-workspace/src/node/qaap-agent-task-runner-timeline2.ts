@@ -155,27 +155,31 @@ import {
 } from './qaap-agent-task-runner-utils3';
 
 export function killAgentProcessTreeExtracted(ctx: any, child: ChildProcess,
-        options?: { readonly escalateAfterMs?: number },): NodeJS.Timeout | undefined {
+        options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
         const pid = child.pid;
         if (!pid) {
+            options?.onGracePeriodElapsed?.();
             return undefined;
         }
-        if (globalThis.process.platform === 'win32') {
-            child.kill('SIGTERM'); // no process groups on Windows; dev-only path
-            return undefined;
-        }
-        try {
-            globalThis.process.kill(-pid, 'SIGTERM');
-        } catch {
+        const sendSignal = (signal: NodeJS.Signals): void => {
+            if (globalThis.process.platform !== 'win32') {
+                try {
+                    globalThis.process.kill(-pid, signal);
+                    return;
+                } catch { /* process group already gone; try the leader below */ }
+            }
             try {
-                child.kill('SIGTERM');
+                child.kill(signal);
             } catch { /* already gone */ }
-        }
+        };
+        sendSignal('SIGTERM');
         const escalateAfterMs = options?.escalateAfterMs ?? 5_000;
         const sendKill = (): void => {
             try {
-                globalThis.process.kill(-pid, 'SIGKILL');
-            } catch { /* already gone */ }
+                sendSignal('SIGKILL');
+            } finally {
+                options?.onGracePeriodElapsed?.();
+            }
         };
         if (escalateAfterMs <= 0) {
             sendKill();
@@ -293,6 +297,11 @@ export function clearQueuedApprovalTimersExtracted(ctx: any, taskId: string): vo
 export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
+        }
+        // Stop can arrive while preference initialization is pending, before a child exists.
+        // Do not resurrect a task that cancel() has already transitioned out of running.
+        if (ctx.tasks.get(task.id)?.state !== 'running') {
+            return;
         }
         const markedTask = ctx.tasks.get(task.id) ?? task;
         const baseline = ctx.captureWorktreeBaseline(task.cwd);
@@ -513,7 +522,10 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
             logStream.write(`\n[qaap] process error: ${error.message}\n`);
         });
         child.once('exit', () => {
-            ctx.reapAgentProcessGroupAfterExit(child);
+            // User cancellation owns a longer grace window so active tools can finish cleanup.
+            if (ctx.tasks.get(task.id)?.state !== 'cancelled') {
+                ctx.reapAgentProcessGroupAfterExit(child);
+            }
         });
         child.on('close', code => {
             clearIdleTimer();
@@ -552,4 +564,3 @@ export function acquireVerificationPassExtracted(ctx: any): Promise<void> {
             ctx.verificationPassWaiters.push(resolve);
         });
 }
-
