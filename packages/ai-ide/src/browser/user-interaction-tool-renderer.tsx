@@ -232,7 +232,7 @@ const UserInteractionComponent: React.FC<UserInteractionComponentProps> = ({
     }
 
     const activeState = stepStates[currentStep];
-    const stepLabel = nls.localizeByDefault('Step {0} of {1}', currentStep + 1, stepCount);
+    const stepLabel = nls.localize('theia/ai/ide/userInteraction/stepOf', 'Step {0} of {1}', currentStep + 1, stepCount);
     const advanceLabel = isLastStep
         ? nls.localize('theia/ai-ide/userInteractionFinishStep', 'Finish')
         : nls.localizeByDefault('Next');
@@ -266,7 +266,7 @@ const UserInteractionComponent: React.FC<UserInteractionComponentProps> = ({
                         return (
                             <span className='user-interaction-tool status canceled'>
                                 <i className={codicon('close')} />
-                                {nls.localizeByDefault('Canceled')}
+                                {nls.localize('theia/ai/ide/userInteraction/canceled', 'Canceled')}
                             </span>
                         );
                     }

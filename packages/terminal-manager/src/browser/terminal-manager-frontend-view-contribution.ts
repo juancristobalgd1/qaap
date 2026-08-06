@@ -224,7 +224,7 @@ export class TerminalManagerFrontendViewContribution extends AbstractViewContrib
     }
 
     protected closeBottomPanel(): void {
-        void this.shell.collapsePanel('bottom');
+        this.shell.collapsePanel('bottom');
     }
 
     protected async createNewTerminalPage(): Promise<void> {

@@ -33,6 +33,21 @@
     "tar": "^7.5.22",
     "uuid": "^11.1.1",
     "yaml": "^2.9.0",
+    "nx": {
+      "brace-expansion": "5.0.9"
+    },
+    "electron-mocha": {
+      "mocha": {
+        "diff": "8.0.3"
+      }
+    },
+    "@typescript-eslint/eslint-plugin-tslint": {
+      "@typescript-eslint/utils": {
+        "@typescript-eslint/typescript-estree": {
+          "minimatch": "9.0.7"
+        }
+      }
+    },
     "scanoss": {
       "adm-zip": "0.6.0",
       "tar": "7.5.22",
@@ -50,10 +65,10 @@
     "@types/sinon": "^10.0.6",
     "@types/temp": "^0.9.1",
     "@types/yargs": "^17",
-    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.66.0",
     "@typescript-eslint/eslint-plugin-tslint": "^7.0.2",
-    "@typescript-eslint/parser": "^7.18.0",
-    "@vscode/vsce": "^2.32.0",
+    "@typescript-eslint/parser": "^8.66.0",
+    "@vscode/vsce": "^3.9.2",
     "archiver": "^5.3.1",
     "chai": "4.3.10",
     "chai-spies": "1.0.0",
@@ -61,7 +76,7 @@
     "chalk": "4.0.0",
     "concurrently": "^3.5.0",
     "debug": "^4.3.2",
-    "electron-mocha": "^12.3.0",
+    "electron-mocha": "^13.1.0",
     "esbuild": "^0.28.1",
     "esbuild-plugins-node-modules-polyfill": "^1.8.2",
     "eslint": "8",
@@ -71,7 +86,6 @@
     "eslint-plugin-no-unsanitized": "4.1.4",
     "eslint-plugin-react": "^7.37.5",
     "glob": "^7.1.7",
-    "if-env": "^1.0.4",
     "ignore-styles": "^5.0.1",
     "jsdom": "^22.1.0",
     "lerna": "^9.0.0",

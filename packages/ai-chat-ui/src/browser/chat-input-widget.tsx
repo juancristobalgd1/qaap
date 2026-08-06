@@ -2075,7 +2075,7 @@ const ChatInput: React.FunctionComponent<ChatInputProperties> = (props: ChatInpu
     }, [props.genericCapabilitiesProps.serverToolSelections]);
 
     // Without user input, if we can default to "Perform this task.", do so
-    const submit = React.useCallback(function submit(value: string): void {
+    const submit = React.useCallback(function submitQuery(value: string): void {
         let effectiveValue = value;
         if ((!value || value.trim().length === 0) && shouldUseTaskPlaceholder) {
             effectiveValue = taskPlaceholder;
@@ -2673,10 +2673,10 @@ interface ReasoningSelectorProps {
 const reasoningLevelLabel = (level: ReasoningLevel): string => {
     switch (level) {
         case 'off': return nls.localizeByDefault('Off');
-        case 'minimal': return nls.localizeByDefault('Minimal');
-        case 'low': return nls.localizeByDefault('Low');
-        case 'medium': return nls.localizeByDefault('Medium');
-        case 'high': return nls.localizeByDefault('High');
+        case 'minimal': return nls.localize('theia/ai/chat-ui/reasoning/minimal', 'Minimal');
+        case 'low': return nls.localize('theia/ai/chat-ui/reasoning/low', 'Low');
+        case 'medium': return nls.localize('theia/ai/chat-ui/reasoning/medium', 'Medium');
+        case 'high': return nls.localize('theia/ai/chat-ui/reasoning/high', 'High');
         case 'auto': return nls.localizeByDefault('Auto');
     }
 };

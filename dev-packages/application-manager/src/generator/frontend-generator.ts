@@ -14,8 +14,6 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-/* eslint-disable @typescript-eslint/indent */
-
 import { EOL } from 'os';
 import { AbstractGenerator, GeneratorOptions } from './abstract-generator';
 import { existsSync, readFileSync } from 'fs';
@@ -697,6 +695,7 @@ self.addEventListener('notificationclick', event => {
      * Rendered immediately in <head> so the splash / login gate paints without
      * waiting for bundle.css (4+ MB) to download and parse.
      */
+    /* eslint-disable max-len -- critical CSS is intentionally serialized for inline boot output. */
     protected compileSplashCriticalCss(): string {
         const css = [
             '.theia-preload{position:absolute;inset:0;z-index:50000;background:var(--theia-editor-background,#f5f5f5);display:flex;justify-content:center;align-items:center;transition:opacity .8s}',
@@ -712,6 +711,7 @@ self.addEventListener('notificationclick', event => {
         ].join('');
         return `\n  <style id="qaap-splash-critical">${css}</style>`;
     }
+    /* eslint-enable max-len */
 
     protected compileIndexJs(frontendModules: Map<string, string>, frontendPreloadModules: Map<string, string>): string {
         return `\

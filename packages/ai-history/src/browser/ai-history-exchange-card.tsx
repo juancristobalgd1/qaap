@@ -196,7 +196,7 @@ const RequestCard: React.FC<RequestCardProps> = ({ request, index, totalRequests
         <div className={`request-card ${isFromDifferentAgent ? 'different-agent-opacity' : ''}`}>
             <div className='request-header'>
                 {totalRequests > 1 && (
-                    <h3>{nls.localizeByDefault('Request')} {index + 1}</h3>
+                    <h3>{nls.localize('theia/ai/history/request-card/request', 'Request')} {index + 1}</h3>
                 )}
                 <div className='request-info'>
                     <span className='request-id'>ID: {request.id}</span>
@@ -224,7 +224,7 @@ const RequestCard: React.FC<RequestCardProps> = ({ request, index, totalRequests
             <div className='request-content-container'>
                 <details>
                     <summary>
-                        {nls.localizeByDefault('Request')}
+                        {nls.localize('theia/ai/history/request-card/request', 'Request')}
                     </summary>
                     <div className='request-content'>
                         {getRequestContent()}

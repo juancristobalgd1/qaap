@@ -248,7 +248,7 @@ export class AIMCPConfigurationWidget extends ReactWidget {
         const startingIcon = 'loading';
         const stopIcon = isRemote ? 'debug-disconnect' : 'debug-stop';
         const startLabel = isRemote
-            ? nls.localizeByDefault('Connect')
+    ? nls.localize('theia/ai/mcpConfiguration/connect', 'Connect')
             : nls.localizeByDefault('Start Server');
         const startingLabel = isRemote
             ? nls.localize('theia/ai/mcpConfiguration/connectingServer', 'Connecting...')

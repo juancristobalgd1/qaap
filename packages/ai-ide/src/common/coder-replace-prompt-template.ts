@@ -35,6 +35,7 @@ import {
     GET_PROPOSED_CHANGES_ID
 } from './file-changeset-function-ids';
 
+/* eslint-disable max-len -- prompt templates are intentionally serialized for model input. */
 export const CODER_SYSTEM_PROMPT_ID = 'coder-system';
 
 export const CODER_EDIT_TEMPLATE_ID = 'coder-system-edit';
@@ -647,6 +648,8 @@ You are an autonomous AI agent. Do not stop until:
 `;
 }
 
+/* eslint-enable max-len */
+
 export function getCoderAgentModePromptTemplate(): BasePromptFragment {
     return {
         id: CODER_AGENT_MODE_TEMPLATE_ID,
@@ -748,4 +751,3 @@ export function getCoderPromptTemplateEditNext(): BasePromptFragment {
         ...({ variantOf: CODER_EDIT_TEMPLATE_ID })
     };
 }
-

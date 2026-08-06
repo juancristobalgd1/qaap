@@ -13,10 +13,9 @@ import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals'
  * Mirrors `qaap-agent-dev-server-guard`: enforced on the QAIQ stdio `can_use_tool` control path,
  * so it is a hard denial whenever the CLI asks before running tools. Qaap's default
  * `approve-for-me` QAIQ policy also uses that control path: safe tools are answered automatically,
- * while these patterns are denied before the shell starts. Explicit `full-access` bypasses it and
- * therefore still receives the same policy in the prompt as defense in depth.
- * TODO(qaiq): enforce these patterns inside the QAIQ CLI itself so headless runs get the hard
- * denial too (deny rules must win over bypassPermissions, Claude-Code-style).
+ * while these patterns are denied before the shell starts. The hosted QAIQ shell is additionally
+ * forced through the versioned shell boundary, so full-access and headless runs receive the same
+ * policy before reaching `/bin/bash`.
  */
 
 /** `git push --force`, `-f`, `--force-with-lease`, or a `+refspec` force push. */
@@ -47,7 +46,7 @@ const RM_COMMAND_RE = /(?:^|&&|\|\||;|\|\s*|\(\s*|\b(?:sudo|nohup|exec)\s+)\s*rm
  * Nested shell payloads (`sh -c '…'`, `bash -lc "…"`) — the quoted command is re-scanned so the
  * guard is not bypassed by one level of indirection. This stays a DENYLIST defense-in-depth layer:
  * a determined adversary can still evade regexes (variables, eval, encoding); the primary controls
- * are the approval queue on the interactive path and, eventually, QAIQ-side enforcement.
+ * are the approval queue on the interactive path and the hosted QAIQ shell boundary.
  */
 const NESTED_SHELL_RE = /\b(?:sh|bash|zsh|dash|ksh)\s+(?:-[a-zA-Z]+\s+)*-[a-zA-Z]*c[a-zA-Z]*\s+(?:'([^']*)'|"([^"]*)")/gi;
 const NESTED_SHELL_MAX_DEPTH = 3;

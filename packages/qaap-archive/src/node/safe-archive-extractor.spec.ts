@@ -79,4 +79,43 @@ describe('safe archive extractor', () => {
         const tar = await createTar([{ name: 'escape', type: 'symlink', linkname: '../outside.txt' }]);
         await expectRefusal(() => extractArchive(tar, path.join(sandbox, 'tar')), /outside the output path/);
     });
+
+    it('enforces entry and aggregate byte limits before retaining archive data', async () => {
+        const zip = new AdmZip();
+        zip.addFile('large.txt', Buffer.from('12345'));
+        await expectRefusal(
+            () => extractArchive(zip.toBuffer(), undefined, { limits: { maxEntryBytes: 4 } }),
+            /larger than 4 bytes/,
+        );
+
+        const tar = await createTar([
+            { name: 'one.txt', data: Buffer.from('123') },
+            { name: 'two.txt', data: Buffer.from('456') },
+        ]);
+        await expectRefusal(
+            () => extractArchive(tar, undefined, { limits: { maxTotalBytes: 5 } }),
+            /larger than 5 uncompressed bytes/,
+        );
+    });
+
+    it('rejects excessive compression ratios while streaming TGZ input', async () => {
+        const tar = await createTar([{ name: 'repetitive.txt', data: Buffer.alloc(4096, 0) }]);
+        await expectRefusal(
+            async () => extractArchive(await gzip(tar), undefined, { limits: { maxCompressionRatio: 2 } }),
+            /compression ratio/,
+        );
+    });
+
+    it('limits archive entry count independently of the filter', async () => {
+        const zip = new AdmZip();
+        zip.addFile('first.txt', Buffer.from('first'));
+        zip.addFile('second.txt', Buffer.from('second'));
+        await expectRefusal(
+            () => extractArchive(zip.toBuffer(), undefined, {
+                filter: entry => entry.path === 'first.txt',
+                limits: { maxEntries: 1 },
+            }),
+            /more than 1 entries/,
+        );
+    });
 });

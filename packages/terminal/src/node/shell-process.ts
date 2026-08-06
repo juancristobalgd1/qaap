@@ -60,7 +60,7 @@ export class ShellProcess extends TerminalProcess {
     protected static defaultCols = 80;
     protected static defaultRows = 24;
 
-    constructor( // eslint-disable-next-line @typescript-eslint/indent
+    constructor(
         @inject(ShellProcessOptions) options: ShellProcessOptions,
         @inject(ProcessManager) processManager: ProcessManager,
         @inject(MultiRingBuffer) ringBuffer: MultiRingBuffer,

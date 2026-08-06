@@ -1152,6 +1152,7 @@ const HoverableLabel = (
         hoverService: HoverService,
         className: string
     }) => {
+    // eslint-disable-next-line no-null/no-null -- React DOM refs are initialized with null.
     const spanRef = React.useRef<HTMLSpanElement>(null);
     return (
         <span

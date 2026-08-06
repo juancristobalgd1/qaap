@@ -2,20 +2,19 @@
   "$schema": "https://json.schemastore.org/eslintrc",
   "rules": {
     "@typescript-eslint/consistent-type-definitions": "error",
-    "@typescript-eslint/indent": "off",
+    "indent": "off",
     "@typescript-eslint/no-explicit-any": "error",
-    "@typescript-eslint/quotes": [
+    "quotes": [
       "error",
       "single",
       {
         "avoidEscape": true
       }
     ],
-    "@typescript-eslint/semi": [
+    "semi": [
       "error",
       "always"
     ],
-    "@typescript-eslint/type-annotation-spacing": "error",
     "arrow-body-style": [
       "error",
       "as-needed"

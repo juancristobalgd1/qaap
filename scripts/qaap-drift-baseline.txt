@@ -3,4 +3,3 @@
 #
 # Empty new-drift set: CI passes while paths are migrated into packages/qaap-* or ALLOWED.
 # Regenerate: node scripts/qaap-drift-check.js --write-baseline
-packages/collaboration/package.json

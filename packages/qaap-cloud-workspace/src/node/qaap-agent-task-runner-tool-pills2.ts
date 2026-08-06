@@ -300,6 +300,14 @@ export function buildChildEnvExtracted(ctx: any, task: QaapAgentTask): NodeJS.Pr
         }
         if (ctx.isQaiqRunner(undefined, task.command)) {
             env.QAAP_HOSTED_AGENT = '1';
+            // QAIQ's full-access mode bypasses its permission callbacks. Force every hosted
+            // QAIQ shell through the versioned Qaap boundary so destructive commands remain
+            // denied even in headless/bypass runs. The boundary loads the compiled guard and
+            // fails closed when the package has not been compiled yet.
+            env.CLAUDE_CODE_SHELL = path.resolve(
+                __dirname,
+                '../../../../scripts/qaap-guarded-bash.mjs',
+            );
             // The hosted backend runs as root inside its container, where qaiq refuses
             // `--dangerously-skip-permissions` unless it detects a sandbox. The container IS the
             // sandbox, so opt in explicitly (qaiq honours IS_SANDBOX=1 as the root-bypass escape

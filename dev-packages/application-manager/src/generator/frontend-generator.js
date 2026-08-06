@@ -67,7 +67,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FrontendGenerator = void 0;
-/* eslint-disable @typescript-eslint/indent */
 var os_1 = require("os");
 var abstract_generator_1 = require("./abstract-generator");
 var fs_1 = require("fs");

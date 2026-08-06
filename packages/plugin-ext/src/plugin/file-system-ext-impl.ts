@@ -24,7 +24,7 @@
  */
 
 /* eslint-disable arrow-body-style */
-/* eslint-disable @typescript-eslint/quotes */
+/* eslint-disable quotes */
 /* eslint-disable @typescript-eslint/tslint/config */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

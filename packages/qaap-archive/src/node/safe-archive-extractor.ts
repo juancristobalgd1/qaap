@@ -7,11 +7,9 @@ import AdmZip = require('adm-zip');
 import * as fs from 'fs/promises';
 import { constants } from 'fs';
 import * as path from 'path';
-import { promisify } from 'util';
-import { gunzip as gunzipCallback } from 'zlib';
+import { Readable } from 'stream';
+import { createGunzip } from 'zlib';
 import * as tarStream from 'tar-stream';
-
-const gunzip = promisify(gunzipCallback);
 
 export type QaapArchiveType = 'tar' | 'tgz' | 'zip';
 export type QaapArchiveEntryType = 'file' | 'directory' | 'link' | 'symlink';
@@ -28,9 +26,114 @@ export interface QaapArchiveEntry {
 export interface QaapArchiveExtractOptions {
     archive?: QaapArchiveType;
     filter?: (entry: QaapArchiveEntry) => boolean;
+    limits?: Partial<QaapArchiveLimits>;
 }
 
+export interface QaapArchiveLimits {
+    /** Maximum number of archive entries, including directories and metadata entries. */
+    maxEntries: number;
+    /** Maximum uncompressed size of one entry. */
+    maxEntryBytes: number;
+    /** Maximum aggregate uncompressed size of archive entries. */
+    maxTotalBytes: number;
+    /** Maximum uncompressed-to-compressed ratio. */
+    maxCompressionRatio: number;
+    /** Maximum size of the compressed archive input. */
+    maxArchiveBytes: number;
+}
+
+const MIB = 1024 * 1024;
+
+/** Conservative defaults for untrusted VSIX, ZIP, TAR, and TGZ input. */
+export const DEFAULT_QAAP_ARCHIVE_LIMITS: QaapArchiveLimits = {
+    maxEntries: 10_000,
+    maxEntryBytes: 256 * MIB,
+    maxTotalBytes: 1024 * MIB,
+    maxCompressionRatio: 200,
+    maxArchiveBytes: 512 * MIB,
+};
+
 type ArchiveInput = string | Buffer;
+
+interface ArchiveLimitState {
+    entries: number;
+    reservedUncompressedBytes: number;
+    observedUncompressedBytes: number;
+}
+
+type ArchiveEntryConsumer = (entry: QaapArchiveEntry) => Promise<void> | void;
+
+function resolveLimits(options: QaapArchiveExtractOptions): QaapArchiveLimits {
+    const limits = { ...DEFAULT_QAAP_ARCHIVE_LIMITS, ...options.limits };
+    for (const [name, value] of Object.entries(limits)) {
+        if (name === 'maxCompressionRatio') {
+            if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+                throw new Error(`Invalid archive limit ${name}: ${value}`);
+            }
+        } else if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+            throw new Error(`Invalid archive limit ${name}: ${value}`);
+        }
+    }
+    return limits;
+}
+
+function checkCompressionRatio(uncompressedBytes: number, compressedBytes: number, limits: QaapArchiveLimits): void {
+    const ratio = uncompressedBytes / Math.max(1, compressedBytes);
+    if (ratio > limits.maxCompressionRatio) {
+        throw new Error(
+            `Refusing an archive with an excessive compression ratio (${ratio.toFixed(1)} > ${limits.maxCompressionRatio}).`,
+        );
+    }
+}
+
+function reserveEntry(
+    state: ArchiveLimitState,
+    limits: QaapArchiveLimits,
+    entryPath: string,
+    uncompressedBytes: number,
+    compressedBytes?: number,
+): void {
+    if (state.entries >= limits.maxEntries) {
+        throw new Error(`Refusing an archive with more than ${limits.maxEntries} entries.`);
+    }
+    state.entries++;
+    if (!Number.isSafeInteger(uncompressedBytes) || uncompressedBytes < 0) {
+        throw new Error(`Refusing archive entry with an invalid size: ${entryPath}`);
+    }
+    if (uncompressedBytes > limits.maxEntryBytes) {
+        throw new Error(`Refusing archive entry larger than ${limits.maxEntryBytes} bytes: ${entryPath}`);
+    }
+    const nextTotal = state.reservedUncompressedBytes + uncompressedBytes;
+    if (!Number.isSafeInteger(nextTotal) || nextTotal > limits.maxTotalBytes) {
+        throw new Error(`Refusing an archive larger than ${limits.maxTotalBytes} uncompressed bytes.`);
+    }
+    state.reservedUncompressedBytes = nextTotal;
+    if (compressedBytes !== undefined) {
+        if (!Number.isSafeInteger(compressedBytes) || compressedBytes < 0) {
+            throw new Error(`Refusing archive entry with an invalid compressed size: ${entryPath}`);
+        }
+        checkCompressionRatio(uncompressedBytes, compressedBytes, limits);
+    }
+}
+
+function observeEntryData(
+    state: ArchiveLimitState,
+    limits: QaapArchiveLimits,
+    entryPath: string,
+    entryBytes: number,
+    chunkBytes: number,
+): number {
+    const nextEntryBytes = entryBytes + chunkBytes;
+    if (!Number.isSafeInteger(nextEntryBytes) || nextEntryBytes > limits.maxEntryBytes) {
+        throw new Error(`Refusing archive entry larger than ${limits.maxEntryBytes} bytes: ${entryPath}`);
+    }
+    const nextTotal = state.observedUncompressedBytes + chunkBytes;
+    if (!Number.isSafeInteger(nextTotal) || nextTotal > limits.maxTotalBytes) {
+        throw new Error(`Refusing an archive larger than ${limits.maxTotalBytes} uncompressed bytes.`);
+    }
+    state.observedUncompressedBytes = nextTotal;
+    return nextEntryBytes;
+}
 
 function isInside(root: string, target: string): boolean {
     const relative = path.relative(root, target);
@@ -73,58 +176,146 @@ function normalizeEntry(entry: QaapArchiveEntry): QaapArchiveEntry {
     };
 }
 
-async function readTar(buffer: Buffer): Promise<QaapArchiveEntry[]> {
+async function readTar(
+    input: Readable,
+    compressedBytes: number,
+    limits: QaapArchiveLimits,
+    consume: ArchiveEntryConsumer,
+): Promise<void> {
     const parser = tarStream.extract();
-    const entries: QaapArchiveEntry[] = [];
+    const state: ArchiveLimitState = {
+        entries: 0,
+        reservedUncompressedBytes: 0,
+        observedUncompressedBytes: 0,
+    };
+    let archiveBytes = 0;
+    let settled = false;
     const parsed = new Promise<void>((resolve, reject) => {
+        const fail = (error: unknown): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            parser.destroy();
+            input.destroy();
+            reject(error instanceof Error ? error : new Error(String(error)));
+        };
         parser.on('entry', (header, stream, next) => {
             const chunks: Buffer[] = [];
-            stream.on('data', chunk => chunks.push(Buffer.from(chunk)));
-            stream.on('error', reject);
+            const type = header.type;
+            const skipData = type === 'pax-header'
+                || type === 'pax-global-header'
+                || type === 'gnu-long-link-path'
+                || type === 'gnu-long-path';
+            let entryBytes = 0;
+            try {
+                reserveEntry(state, limits, header.name, Number(header.size ?? 0));
+            } catch (error) {
+                fail(error);
+                return;
+            }
+            stream.on('data', chunk => {
+                if (settled) {
+                    return;
+                }
+                try {
+                    const value = Buffer.from(chunk);
+                    entryBytes = observeEntryData(state, limits, header.name, entryBytes, value.length);
+                    if (!skipData) {
+                        chunks.push(value);
+                    }
+                } catch (error) {
+                    fail(error);
+                }
+            });
+            stream.on('error', fail);
             stream.on('end', () => {
-                const type = header.type;
-                if (type === 'pax-header' || type === 'pax-global-header' || type === 'gnu-long-link-path' || type === 'gnu-long-path') {
+                if (settled || skipData) {
                     next();
                     return;
                 }
                 if (type !== 'file' && type !== 'directory' && type !== 'link' && type !== 'symlink' && type !== 'contiguous-file') {
-                    reject(new Error(`Refusing unsupported archive entry type: ${type ?? 'unknown'}`));
+                    fail(new Error(`Refusing unsupported archive entry type: ${type ?? 'unknown'}`));
                     return;
                 }
-                entries.push({
-                    data: Buffer.concat(chunks),
-                    mode: header.mode ?? 0,
-                    mtime: header.mtime ?? new Date(0),
-                    path: header.name,
-                    type: type === 'contiguous-file' ? 'file' : type,
-                    linkname: header.linkname ?? undefined,
-                });
-                next();
+                void (async () => {
+                    try {
+                        await consume(normalizeEntry({
+                            data: Buffer.concat(chunks),
+                            mode: header.mode ?? 0,
+                            mtime: header.mtime ?? new Date(0),
+                            path: header.name,
+                            type: type === 'contiguous-file' ? 'file' : type,
+                            linkname: header.linkname ?? undefined,
+                        }));
+                        if (!settled) {
+                            next();
+                        }
+                    } catch (error) {
+                        fail(error);
+                    }
+                })();
             });
         });
-        parser.on('finish', resolve);
-        parser.on('error', reject);
+        parser.on('finish', () => {
+            if (!settled) {
+                settled = true;
+                resolve();
+            }
+        });
+        parser.on('error', fail);
+        input.on('data', chunk => {
+            if (settled) {
+                return;
+            }
+            archiveBytes += Buffer.byteLength(chunk);
+            try {
+                checkCompressionRatio(archiveBytes, compressedBytes, limits);
+            } catch (error) {
+                fail(error);
+            }
+        });
+        input.on('error', fail);
     });
-    parser.end(buffer);
+    input.pipe(parser);
     await parsed;
-    return entries;
 }
 
-function readZip(buffer: Buffer): QaapArchiveEntry[] {
+async function readZip(
+    buffer: Buffer,
+    limits: QaapArchiveLimits,
+    consume: ArchiveEntryConsumer,
+): Promise<void> {
     const zip = new AdmZip(buffer);
-    return zip.getEntries().map(entry => {
+    const state: ArchiveLimitState = {
+        entries: 0,
+        reservedUncompressedBytes: 0,
+        observedUncompressedBytes: 0,
+    };
+    for (const entry of zip.getEntries()) {
         const mode = entry.header.fileAttr;
         const isSymlink = (mode & 0xf000) === 0xa000;
-        const data = entry.getData();
-        return {
+        const declaredSize = Number(entry.header.size ?? 0);
+        const compressedSize = Number(entry.header.compressedSize ?? 0);
+        reserveEntry(state, limits, entry.entryName, declaredSize, compressedSize);
+        checkCompressionRatio(state.reservedUncompressedBytes, buffer.length, limits);
+        const data = entry.isDirectory ? Buffer.alloc(0) : entry.getData();
+        if (data.length > limits.maxEntryBytes) {
+            throw new Error(`Refusing archive entry larger than ${limits.maxEntryBytes} bytes: ${entry.entryName}`);
+        }
+        state.observedUncompressedBytes += data.length;
+        if (state.observedUncompressedBytes > limits.maxTotalBytes) {
+            throw new Error(`Refusing an archive larger than ${limits.maxTotalBytes} uncompressed bytes.`);
+        }
+        await consume(normalizeEntry({
             data,
             mode,
             mtime: entry.header.time,
             path: entry.entryName,
             type: entry.isDirectory ? 'directory' : isSymlink ? 'symlink' : 'file',
             linkname: isSymlink ? data.toString('utf8') : undefined,
-        };
-    });
+        }));
+    }
 }
 
 function detectArchiveType(input: Buffer): QaapArchiveType {
@@ -134,14 +325,32 @@ function detectArchiveType(input: Buffer): QaapArchiveType {
     return input.length >= 2 && input[0] === 0x1f && input[1] === 0x8b ? 'tgz' : 'tar';
 }
 
-async function readEntries(input: ArchiveInput, options: QaapArchiveExtractOptions): Promise<QaapArchiveEntry[]> {
+async function readEntries(
+    input: ArchiveInput,
+    options: QaapArchiveExtractOptions,
+    consume: ArchiveEntryConsumer,
+): Promise<void> {
+    const limits = resolveLimits(options);
+    if (typeof input === 'string') {
+        const stat = await fs.stat(input);
+        if (stat.size > limits.maxArchiveBytes) {
+            throw new Error(`Refusing an archive larger than ${limits.maxArchiveBytes} compressed bytes.`);
+        }
+    }
     const buffer = typeof input === 'string' ? await fs.readFile(input) : input;
+    if (buffer.length > limits.maxArchiveBytes) {
+        throw new Error(`Refusing an archive larger than ${limits.maxArchiveBytes} compressed bytes.`);
+    }
     const archive = options.archive ?? detectArchiveType(buffer);
     if (archive === 'zip') {
-        return readZip(buffer);
+        await readZip(buffer, limits, consume);
+        return;
     }
-    const tarBuffer = archive === 'tgz' || detectArchiveType(buffer) === 'tgz' ? await gunzip(buffer) : buffer;
-    return readTar(tarBuffer);
+    const source = Readable.from(buffer);
+    const tarInput = archive === 'tgz' || detectArchiveType(buffer) === 'tgz'
+        ? source.pipe(createGunzip())
+        : source;
+    await readTar(tarInput, buffer.length, limits, consume);
 }
 
 async function ensureSafeDirectory(root: string, directory: string): Promise<void> {
@@ -228,16 +437,21 @@ export async function extractArchive(
     output?: string,
     options: QaapArchiveExtractOptions = {},
 ): Promise<QaapArchiveEntry[]> {
-    const entries = (await readEntries(input, options)).map(normalizeEntry);
-    const filtered = typeof options.filter === 'function' ? entries.filter(options.filter) : entries;
-    if (!output) {
-        return filtered;
+    const filtered: QaapArchiveEntry[] = [];
+    let realRoot: string | undefined;
+    if (output) {
+        const root = path.resolve(output);
+        await fs.mkdir(root, { recursive: true });
+        realRoot = await fs.realpath(root);
     }
-    const root = path.resolve(output);
-    await fs.mkdir(root, { recursive: true });
-    const realRoot = await fs.realpath(root);
-    for (const entry of filtered) {
-        await writeEntry(realRoot, entry);
-    }
+    await readEntries(input, options, async entry => {
+        if (typeof options.filter === 'function' && !options.filter(entry)) {
+            return;
+        }
+        filtered.push(entry);
+        if (realRoot) {
+            await writeEntry(realRoot, entry);
+        }
+    });
     return filtered;
 }
