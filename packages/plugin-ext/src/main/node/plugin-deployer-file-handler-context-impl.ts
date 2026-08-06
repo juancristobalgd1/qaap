@@ -15,7 +15,7 @@
 // *****************************************************************************
 
 import { PluginDeployerEntry, PluginDeployerFileHandlerContext } from '../../common/plugin-protocol';
-import * as decompress from 'decompress';
+import { extractArchive } from '@theia/qaap-archive/lib/node/safe-archive-extractor';
 
 export class PluginDeployerFileHandlerContextImpl implements PluginDeployerFileHandlerContext {
 
@@ -24,7 +24,7 @@ export class PluginDeployerFileHandlerContextImpl implements PluginDeployerFileH
     }
 
     async unzip(sourcePath: string, destPath: string): Promise<void> {
-        await decompress(sourcePath, destPath);
+        await extractArchive(sourcePath, destPath);
     }
 
     pluginEntry(): PluginDeployerEntry {

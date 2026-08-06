@@ -18,7 +18,7 @@
 
 import { OVSXApiFilterImpl, OVSXClient, VSXTargetPlatform } from '@theia/ovsx-client';
 import * as chalk from 'chalk';
-import * as decompress from 'decompress';
+import { extractArchive } from '@theia/qaap-archive/lib/node/safe-archive-extractor';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as temp from 'temp';
@@ -282,7 +282,7 @@ async function downloadPluginAsync(
         const tempFile = temp.path('theia-plugin-download');
         await fs.writeFile(tempFile, response.buffer);
         // Decompress to inspect archive contents and determine handling strategy.
-        const files = await decompress(tempFile);
+        const files = await extractArchive(tempFile);
         // Check if the archive is a bundle containing only .vsix files.
         const allVsix = files.length > 0 && files.every(file => file.path.endsWith('.vsix'));
 
@@ -314,7 +314,7 @@ async function downloadPluginAsync(
         } else {
             // Handle regular tar.gz: decompress directly to target directory.
             await fs.mkdir(targetPath, { recursive: true });
-            await decompress(tempFile, targetPath);
+            await extractArchive(tempFile, targetPath);
             console.warn(chalk.green(`+ ${plugin}${version ? `@${version}` : ''}: downloaded successfully ${attempts > 1 ? `(after ${attempts} attempts)` : ''}`));
         }
         await fs.unlink(tempFile);
@@ -334,7 +334,7 @@ async function decompressVsix(targetPath: string, buffer: Uint8Array | string): 
     await fs.mkdir(targetPath, { recursive: true });
     const tempFile = temp.path('theia-plugin-download');
     await fs.writeFile(tempFile, buffer);
-    await decompress(tempFile, targetPath);
+    await extractArchive(tempFile, targetPath);
     await fs.unlink(tempFile);
 }
 

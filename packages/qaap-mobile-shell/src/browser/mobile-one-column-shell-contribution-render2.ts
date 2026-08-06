@@ -450,6 +450,7 @@ export function initWorkHubBootstrapControllerExtracted(ctx: any): void {
         refreshBottomBar: () => ctx.bottomBarController.refreshBottomBar(),
         refreshWorkbenchTopBar: () => ctx.refreshWorkbenchTopBar(),
         ensureDesktopWorkHubSessionsSidebarOpen: () => ctx.ensureDesktopWorkHubSessionsSidebarOpen(),
+        syncWorkHubSessionsSidebarLayout: () => ctx.projectsPanel?.syncSessionsSidebarLayout(),
         applyLandingChrome: () => undefined,
         releaseMobileWorkHubBootGuardWhenReady: async () => undefined,
         isProjectsLandingSession: () => false,

@@ -17,15 +17,11 @@
 import { ContributionProvider, THEIA_VERSION } from '@theia/core';
 import { inject, injectable, named } from '@theia/core/shared/inversify';
 import { RequestContext, RequestService, RequestOptions } from '@theia/core/shared/@theia/request';
-import * as decompress from 'decompress';
+import { extractArchive } from '@theia/qaap-archive/lib/node/safe-archive-extractor';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { DependencyDownload, DirectoryDependencyDownload, RemoteNativeDependencyContribution } from './remote-native-dependency-contribution';
 import { RemotePlatform } from '@theia/core/lib/node/remote/remote-cli-contribution';
-
-const decompressTar = require('decompress-tar');
-const decompressTargz = require('decompress-targz');
-const decompressUnzip = require('decompress-unzip');
 
 export const DEFAULT_HTTP_OPTIONS = {
     method: 'GET',
@@ -82,15 +78,7 @@ export class RemoteNativeDependencyService {
     protected async storeDependency(dependency: DependencyDownload, directory: string): Promise<NativeDependencyFile[]> {
         if (DirectoryDependencyDownload.is(dependency)) {
             const archiveBuffer = dependency.buffer;
-            const plugins: unknown[] = [];
-            if (dependency.archive === 'tar') {
-                plugins.push(decompressTar());
-            } else if (dependency.archive === 'tgz') {
-                plugins.push(decompressTargz());
-            } else if (dependency.archive === 'zip') {
-                plugins.push(decompressUnzip());
-            }
-            const files = await decompress(archiveBuffer, directory, { plugins });
+            const files = await extractArchive(archiveBuffer, directory, { archive: dependency.archive });
             const result: NativeDependencyFile[] = await Promise.all(files.map(async file => {
                 const localPath = path.join(directory, file.path);
                 return {

@@ -36,7 +36,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
 
     // Defense-in-depth for GHSA-mp2f-45pm-3cg9: block untrusted local VSIX/archives at the
     // PluginServer RPC choke point + filter drop-in local-file: entries at deployer start.
-    // Extraction itself remains hardened by decompress+4.2.1.patch (see SECURITY.md).
+    // Extraction itself remains hardened by @theia/qaap-archive (see SECURITY.md).
     if (isBound(PluginServer)) {
         bind(QaapPluginServerImpl).toSelf().inSingletonScope();
         rebind(PluginServer).toService(QaapPluginServerImpl);

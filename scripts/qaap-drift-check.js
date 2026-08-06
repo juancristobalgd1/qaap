@@ -111,6 +111,17 @@ const ALLOWED = [
     // provider; upstream's truthy empty-array check otherwise resolves undefined and aborts
     // QuickInput startup. Keep the minimal fix at this upstream seam until it is upstreamed.
     /^packages\/file-search\/src\/browser\/quick-file-open\.ts$/,
+    // Regression coverage for the Qaap keybinding bootstrap seam above.
+    /^packages\/file-search\/src\/browser\/quick-file-open\.spec\.ts$/,
+    // Archive extraction seam: route plugin, VSIX, and remote-native archives through
+    // @theia/qaap-archive so the unmaintained decompress package is removed from runtime.
+    /^packages\/plugin-ext\/package\.json$/,
+    /^packages\/plugin-ext\/src\/main\/node\/plugin-deployer-file-handler-context-impl\.ts$/,
+    /^packages\/plugin-ext-headless\/package\.json$/,
+    /^packages\/plugin-ext-vscode\/package\.json$/,
+    /^packages\/plugin-ext-vscode\/src\/node\/plugin-vscode-utils\.ts$/,
+    /^packages\/remote\/package\.json$/,
+    /^packages\/remote\/src\/electron-node\/setup\/remote-native-dependency-service\.ts$/,
     // Fork extension: RemoteConnection.copy() accepts Buffer/ReadableStream in
     // addition to upstream's string path (used-by-design for container uploads;
     // SSH impl still string-only — tracked follow-up). Not in upstream.

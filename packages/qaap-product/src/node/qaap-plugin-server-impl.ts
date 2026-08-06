@@ -15,8 +15,8 @@ import { isLocalPluginArchiveInstallBlocked } from './qaap-local-plugin-archive-
 /**
  * Blocks runtime `local-file:` installs (drag/drop VSIX, Install from VSIX) when the
  * untrusted-archive policy is on. Defense-in-depth for GHSA-mp2f-45pm-3cg9 alongside
- * the `decompress` patch-package backport — Open-VSX / build-time download-plugins still
- * extract via the patched decompress.
+ * the central @theia/qaap-archive extractor — Open-VSX / build-time download-plugins
+ * validate archive paths and links before writing.
  */
 @injectable()
 export class QaapPluginServerImpl extends PluginServerImpl {

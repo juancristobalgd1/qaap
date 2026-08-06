@@ -93,36 +93,27 @@ Current state of these paths:
 
 ## Dependency audit notes
 
-`npm audit --omit=dev` still reports **one critical for `decompress@4.2.1`**
-(GHSA-mp2f-45pm-3cg9, hardlink/symlink path traversal during archive
-extraction). The package is unmaintained with no fixed release, so we backport
-the complete upstream-fork remediation in place with
-`dev-packages/cli/patches/decompress+4.2.1.patch` (applied by `theia-patch` on
-install). The patch uses `path.relative` containment, resolves and verifies link
-targets, creates hardlinks from the verified absolute target, protects every
-file-like entry from writes through symlinks, and strips setuid/setgid/sticky
-bits. `scripts/qaap-decompress-security-check.js` runs after patching on every
-install and exercises those boundaries. `npm audit` keys off the version string
-and cannot see the backport, so the critical will persist in the report until
-upstream Theia drops `decompress`.
-Do not "fix" it by aliasing to the ESM fork `@xhmikosr/decompress` — Theia
-`require()`s it from CommonJS and the ESM default-export shape breaks every call
-site.
+`npm audit --omit=dev` reports **zero production vulnerabilities**. The
+unmaintained `decompress@4.2.1` package (GHSA-mp2f-45pm-3cg9, hardlink/symlink
+path traversal during archive extraction) has been removed from runtime
+dependencies. Plugin, VSIX, CLI, and remote-native extraction now use
+`@theia/qaap-archive`, which parses ZIP/TAR/TGZ data and validates every entry
+path, link target, parent realpath, and file write (`O_NOFOLLOW`) before writing.
+`packages/qaap-archive/src/node/safe-archive-extractor.spec.ts` covers traversal,
+TGZ filtering, and escaping symlinks; `scripts/qaap-archive-security-check.js`
+also checks the security seam during installation.
 
 **Defense-in-depth (untrusted archives):** runtime `local-file:` installs
 (drag/drop VSIX, Install from VSIX, drop-in `~/.theia/.../extensions/*.vsix`)
 are blocked by default via `QaapPluginServerImpl` +
 `QaapPluginDeployerSecurityParticipant` in `@theia/qaap-product`. Marketplace
-(`vscode-extension:`) and build-time `download-plugins` still extract through
-the patched `decompress`. Set `QAAP_ALLOW_LOCAL_VSIX=1` only when sideloading
-is intentionally required (local desktop/dev).
+(`vscode-extension:`) and build-time `download-plugins` now use the same
+validated extractor. Set `QAAP_ALLOW_LOCAL_VSIX=1` only when sideloading is
+intentionally required (local desktop/dev).
 
-Two HIGH advisories remain, both `tar` inside `scanoss` (pinned to `^6.2.1`):
-`tar@7` is ESM with no default export and `scanoss` does `import tar from
-'tar'`, which breaks `build:browser`. These paths only run when a SCANOSS scan
-is invoked, so they are deferred until upstream `scanoss` adopts tar 7. Every
-other production HIGH (multer, axios, form-data, tmp, ws, serialize-javascript,
-dompurify, …) is resolved via lockfile bumps and the root `overrides` block.
+The unfiltered audit still reports development-tool advisories; they are not
+included in the production dependency graph. Re-run both audit modes after
+dependency changes.
 
 If you find a gap in this model, report it privately as above.
 

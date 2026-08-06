@@ -14,7 +14,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as decompress from 'decompress';
+import { extractArchive } from '@theia/qaap-archive/lib/node/safe-archive-extractor';
 import * as path from 'path';
 import * as filenamify from 'filenamify';
 import { FileUri } from '@theia/core/lib/node';
@@ -34,7 +34,7 @@ import { PluginIdentifiers, PluginPackage } from '@theia/plugin-ext/lib/common/p
 export async function extractExtensionIdentityFromVsix(vsixPath: string): Promise<PluginIdentifiers.Components | undefined> {
     try {
         // Extract only the package.json file from the VSIX
-        const files = await decompress(vsixPath, {
+        const files = await extractArchive(vsixPath, undefined, {
             filter: file => file.path === 'extension/package.json'
         });
 
@@ -67,13 +67,13 @@ export async function extractExtensionIdentityFromVsix(vsixPath: string): Promis
 
 export async function decompressExtension(sourcePath: string, destPath: string): Promise<boolean> {
     try {
-        await decompress(sourcePath, destPath);
+        await extractArchive(sourcePath, destPath);
         if (sourcePath.endsWith('.tgz')) {
             // unzip node_modules from built-in extensions, see https://github.com/eclipse-theia/theia/issues/5756
             const extensionPath = path.join(destPath, 'package');
             const vscodeNodeModulesPath = path.join(extensionPath, 'vscode_node_modules.zip');
             if (await fs.pathExists(vscodeNodeModulesPath)) {
-                await decompress(vscodeNodeModulesPath, path.join(extensionPath, 'node_modules'));
+                await extractArchive(vscodeNodeModulesPath, path.join(extensionPath, 'node_modules'));
             }
         }
         return true;

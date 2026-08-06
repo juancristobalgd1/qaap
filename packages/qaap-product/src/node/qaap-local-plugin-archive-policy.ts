@@ -6,7 +6,7 @@
 /**
  * Policy for blocking untrusted local plugin archives (VSIX / `.theia` via `local-file:`).
  *
- * GHSA-mp2f-45pm-3cg9 is mitigated by `dev-packages/cli/patches/decompress+4.2.1.patch`.
+ * GHSA-mp2f-45pm-3cg9 is mitigated by the central `@theia/qaap-archive` extractor.
  * This policy is defense-in-depth: deny tenant-uploaded / drag-drop archives unless the
  * operator explicitly opts in. Marketplace (`vscode-extension:`) and build-time
  * `download-plugins` are unaffected.
