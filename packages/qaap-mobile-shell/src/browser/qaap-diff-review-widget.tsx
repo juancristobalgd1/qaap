@@ -23,8 +23,9 @@ import {
 } from '../common/qaap-git-review';
 import { leadingTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
 import { isCurrentAgentDiffRequest } from './qaap-diff-review-request-state';
-import { selectFileAfterRefresh } from './qaap-diff-review-select';
+import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-diff-review-select';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapAsyncConcurrencyLimiter } from './qaap-async-concurrency-limiter';
 import {
     highlightTranscriptCodeInto,
     resolveTranscriptCodeLanguage,
@@ -64,6 +65,8 @@ const GIT_COMMIT_MENU_OPTIONS: QaapGitCommitMenuOption[] = [
 
 /** Context lines above this count collapse into an expandable bar (Cursor agent diff style). */
 const CONTEXT_COLLAPSE_THRESHOLD = 4;
+/** Keep browser/network pressure bounded when several review sections are expanded. */
+const AGENT_DIFF_CONCURRENCY = 3;
 
 export interface QaapDiffReviewRepositoryContext {
     rootUri: string;
@@ -137,6 +140,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
     /** Per-file /diff failure detail (server error body or transport error), keyed by path. */
     protected readonly agentFileDiffErrors = new Map<string, string>();
     protected readonly loadingAgentDiffPaths = new Set<string>();
+    protected readonly agentDiffLoadLimiter = new QaapAsyncConcurrencyLimiter(AGENT_DIFF_CONCURRENCY);
     protected agentDiffGeneration = 0;
     protected agentDiffRequestSerial = 0;
     protected readonly latestAgentDiffRequest = new Map<string, number>();
@@ -331,7 +335,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 this.invalidateAgentDiffs();
                 this.seedAgentFileAccordionDefaults();
                 this.update();
-                await Promise.all([...this.expandedAgentFiles].map(path => this.loadAgentFileDiff(path)));
+                await this.loadAgentFileDiffs([...this.expandedAgentFiles]);
                 return;
             }
             const next = selectFileAfterRefresh(this.files, this.selectedPath);
@@ -385,7 +389,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
     /** Fetch one file's diff for the agent accordion, recording the failure detail on error. */
     protected async loadAgentFileDiff(path: string): Promise<void> {
         const root = this.rootFsPath;
-        if (!root || !this.files.some(file => file.path === path)) {
+        if (!root || !this.files.some(file => file.path === path) || this.loadingAgentDiffPaths.has(path)) {
             return;
         }
         const generation = this.agentDiffGeneration;
@@ -395,11 +399,16 @@ export class QaapDiffReviewWidget extends ReactWidget {
         this.agentFileDiffErrors.delete(path);
         this.update();
         try {
-            const diff = await this.fetchFileDiff(path);
-            if (diff && this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
-                this.agentFileDiffs.set(path, diff);
-                this.agentFileDiffErrors.delete(path);
-            }
+            await this.agentDiffLoadLimiter.run(async () => {
+                if (!this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
+                    return;
+                }
+                const diff = await this.fetchFileDiff(path);
+                if (diff && this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
+                    this.agentFileDiffs.set(path, diff);
+                    this.agentFileDiffErrors.delete(path);
+                }
+            });
         } catch (error) {
             if (this.isCurrentAgentDiffRequest(path, root, generation, serial)) {
                 this.agentFileDiffErrors.set(path, error instanceof Error ? error.message : String(error));
@@ -410,6 +419,17 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 this.update();
             }
         }
+    }
+
+    protected async loadAgentFileDiffs(paths: readonly string[]): Promise<void> {
+        const pending = [...paths];
+        const workerCount = Math.min(AGENT_DIFF_CONCURRENCY, pending.length);
+        await Promise.all(Array.from({ length: workerCount }, async () => {
+            let path: string | undefined;
+            while ((path = pending.shift()) !== undefined) {
+                await this.loadAgentFileDiff(path);
+            }
+        }));
     }
 
     protected isCurrentAgentDiffRequest(path: string, root: string, generation: number, serial: number): boolean {
@@ -432,17 +452,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
     }
 
     protected seedAgentFileAccordionDefaults(): void {
-        for (const path of [...this.expandedAgentFiles]) {
-            if (!this.files.some(file => file.path === path)) {
-                this.expandedAgentFiles.delete(path);
-            }
-        }
-        // File diffs start expanded so the user can read changes immediately.
-        if (this.expandedAgentFiles.size === 0) {
-            for (const file of this.files) {
-                this.expandedAgentFiles.add(file.path);
-            }
-        }
+        reconcileExpandedReviewFiles(this.expandedAgentFiles, this.files);
     }
 
     protected isAgentFileExpanded(path: string): boolean {

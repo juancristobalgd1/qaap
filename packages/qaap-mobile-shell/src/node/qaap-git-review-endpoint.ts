@@ -31,6 +31,19 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 /** Keep one expanded file from monopolizing the review response/browser. */
 const FILE_DIFF_RESPONSE_LIMIT = 2 * 1024 * 1024;
+/** Reuse the authoritative `/changes` status for the immediately-following lazy diff requests. */
+const CHANGED_FILES_SNAPSHOT_TTL_MS = 5_000;
+const CHANGED_FILES_SNAPSHOT_LIMIT = 32;
+
+interface QaapGitFileDiffState {
+    readonly untracked: boolean;
+    readonly oldPath?: string;
+}
+
+interface QaapGitChangedFilesSnapshot {
+    readonly expiresAt: number;
+    readonly files: ReadonlyMap<string, QaapGitFileDiffState>;
+}
 
 /**
  * Flags for every git invocation whose stdout is parsed as a unified patch. A host-level
@@ -60,6 +73,8 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    protected readonly changedFilesSnapshots = new Map<string, QaapGitChangedFilesSnapshot>();
 
     configure(app: Application): void {
         app.get(`${QAAP_GIT_REVIEW_API_PATH}/changes`, (req, res) => {
@@ -149,6 +164,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 this.readCurrentBranch(root),
                 this.readPrReadiness(root),
             ]);
+            this.rememberChangedFilesSnapshot(root, files);
             res.json({ root, branch, files, prReadiness } satisfies QaapGitChangesResponse);
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
@@ -379,10 +395,11 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
-            const patch = await this.computeFileDiff(root, file);
+            const state = await this.resolveFileDiffState(root, file);
+            const patch = await this.computeFileDiff(root, file, state);
             const hunks = parseUnifiedDiff(patch);
             const binary = isBinaryGitPatch(patch);
-            const metadataOnlyUntracked = !patch.trim() && await this.isMetadataOnlyUntrackedFile(root, file);
+            const metadataOnlyUntracked = !patch.trim() && await this.isMetadataOnlyUntrackedFile(root, file, state);
             if (!binary && hunks.length === 0 && !patch.trim() && !metadataOnlyUntracked) {
                 res.status(409).json({ error: 'Git reports this file as changed, but returned no diff data. Refresh and retry.' });
                 return;
@@ -545,10 +562,10 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     }
 
     /** Diff the final working-tree state against HEAD, including staged and unstaged edits together. */
-    protected async computeFileDiff(root: string, file: string): Promise<string> {
-        const status = await this.readFileStatus(root, file);
+    protected async computeFileDiff(root: string, file: string, knownState?: QaapGitFileDiffState): Promise<string> {
+        const state = knownState ?? await this.readFileDiffState(root, file);
         // Include both sides so Git's rename detection is not suppressed by a one-sided pathspec.
-        const pathspec = status?.oldPath ? [status.oldPath, file] : [file];
+        const pathspec = state?.oldPath ? [state.oldPath, file] : [file];
         let trackedPatch = '';
         try {
             trackedPatch = await this.git(root, ['diff', ...PATCH_SAFETY_FLAGS, 'HEAD', '--', ...pathspec]);
@@ -563,7 +580,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         if (trackedPatch.trim()) {
             return this.enforceFileDiffLimit(trackedPatch);
         }
-        if (status?.indexStatus !== '?') {
+        if (!state?.untracked) {
             return trackedPatch;
         }
         // Untracked file — diff against /dev/null so the whole file shows as added.
@@ -577,7 +594,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             }
             // Git treats a symlink-to-directory as a directory in --no-index mode and emits no
             // patch. It is still a legitimate metadata-only untracked entry, like an empty file.
-            if (await this.isMetadataOnlyUntrackedFile(root, file)) {
+            if (await this.isMetadataOnlyUntrackedFile(root, file, state)) {
                 return '';
             }
             throw error;
@@ -613,11 +630,31 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     }
 
     protected async readFileStatus(root: string, file: string): Promise<{
-        indexStatus: string;
-        worktreeStatus: string;
-        oldPath?: string;
+        readonly indexStatus: string;
+        readonly worktreeStatus: string;
+        readonly oldPath?: string;
     } | undefined> {
-        const entries = (await this.git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).split('\0');
+        const scoped = this.parseFileStatus((await this.git(root, [
+            'status', '--porcelain=v1', '-z', '--untracked-files=all', '--', file,
+        ])), file);
+        if (!scoped || (scoped.indexStatus !== 'A' && scoped.worktreeStatus !== 'A')) {
+            return scoped;
+        }
+        // A one-path status can suppress rename detection and report the destination as `A`.
+        // This fallback is skipped for the normal `/changes` snapshot path and only runs when a
+        // caller requests an uncached apparent addition.
+        const complete = this.parseFileStatus(await this.git(root, [
+            'status', '--porcelain=v1', '-z', '--untracked-files=all',
+        ]), file);
+        return complete ?? scoped;
+    }
+
+    protected parseFileStatus(output: string, file: string): {
+        readonly indexStatus: string;
+        readonly worktreeStatus: string;
+        readonly oldPath?: string;
+    } | undefined {
+        const entries = output.split('\0');
         for (let index = 0; index < entries.length; index++) {
             const entry = entries[index];
             if (entry.length < 4) {
@@ -634,9 +671,14 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         return undefined;
     }
 
-    protected async isMetadataOnlyUntrackedFile(root: string, file: string): Promise<boolean> {
+    protected async readFileDiffState(root: string, file: string): Promise<QaapGitFileDiffState | undefined> {
         const status = await this.readFileStatus(root, file);
-        if (status?.indexStatus !== '?') {
+        return status ? { untracked: status.indexStatus === '?', ...(status.oldPath ? { oldPath: status.oldPath } : {}) } : undefined;
+    }
+
+    protected async isMetadataOnlyUntrackedFile(root: string, file: string, knownState?: QaapGitFileDiffState): Promise<boolean> {
+        const state = knownState ?? await this.readFileDiffState(root, file);
+        if (!state?.untracked) {
             return false;
         }
         try {
@@ -645,6 +687,41 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
         } catch {
             return false;
         }
+    }
+
+    protected rememberChangedFilesSnapshot(root: string, files: readonly QaapGitChangedFile[]): void {
+        const states = new Map<string, QaapGitFileDiffState>();
+        for (const file of files) {
+            states.set(file.path, {
+                untracked: file.status === 'U',
+                ...(file.oldPath ? { oldPath: file.oldPath } : {}),
+            });
+        }
+        this.changedFilesSnapshots.delete(root);
+        this.changedFilesSnapshots.set(root, {
+            expiresAt: Date.now() + CHANGED_FILES_SNAPSHOT_TTL_MS,
+            files: states,
+        });
+        while (this.changedFilesSnapshots.size > CHANGED_FILES_SNAPSHOT_LIMIT) {
+            const oldest = this.changedFilesSnapshots.keys().next().value as string | undefined;
+            if (!oldest) {
+                break;
+            }
+            this.changedFilesSnapshots.delete(oldest);
+        }
+    }
+
+    protected async resolveFileDiffState(root: string, file: string): Promise<QaapGitFileDiffState | undefined> {
+        const snapshot = this.changedFilesSnapshots.get(root);
+        if (snapshot && snapshot.expiresAt >= Date.now()) {
+            const state = snapshot.files.get(file);
+            if (state) {
+                return state;
+            }
+        } else if (snapshot) {
+            this.changedFilesSnapshots.delete(root);
+        }
+        return this.readFileDiffState(root, file);
     }
 
     protected async collectHistory(root: string): Promise<QaapGitHistoryCommit[]> {

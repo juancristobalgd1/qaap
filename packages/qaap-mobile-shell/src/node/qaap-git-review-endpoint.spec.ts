@@ -13,12 +13,32 @@ import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
 
 /** Test seam: expose the protected git helpers without spinning up express or DI. */
 class TestableGitReviewEndpoint extends QaapGitReviewEndpoint {
+    statusCalls = 0;
+    lastStatusArgs: string[] | undefined;
+
+    protected override git(root: string, args: string[]): Promise<string> {
+        if (args[0] === 'status') {
+            this.statusCalls++;
+            this.lastStatusArgs = args;
+        }
+        return super.git(root, args);
+    }
+
     computeFileDiffForTest(root: string, file: string): Promise<string> {
         return this.computeFileDiff(root, file);
     }
 
     collectChangedFilesForTest(root: string): Promise<QaapGitChangedFile[]> {
         return this.collectChangedFiles(root);
+    }
+
+    rememberChangedFilesSnapshotForTest(root: string, files: readonly QaapGitChangedFile[]): void {
+        this.rememberChangedFilesSnapshot(root, files);
+    }
+
+    async computeFileDiffFromSnapshotForTest(root: string, file: string): Promise<string> {
+        const state = await this.resolveFileDiffState(root, file);
+        return this.computeFileDiff(root, file, state);
     }
 
     discardFileForTest(root: string, file: string): Promise<void> {
@@ -161,6 +181,21 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         expect(renamed?.status).to.equal('R');
         expect(renamed?.oldPath).to.equal('rename-old.ts');
         expect(files.some(file => file.path === 'rename-old.ts')).to.equal(false);
+    });
+
+    it('reuses the recent changes snapshot instead of running git status per diff', async () => {
+        const files = await endpoint.collectChangedFilesForTest(repo);
+        endpoint.rememberChangedFilesSnapshotForTest(repo, files);
+        endpoint.statusCalls = 0;
+        const patch = await endpoint.computeFileDiffFromSnapshotForTest(repo, 'package-lock.json');
+        expect(patch).to.contain('/dev/null');
+        expect(endpoint.statusCalls).to.equal(0);
+    });
+
+    it('limits the status fallback to the requested path', async () => {
+        const uncachedEndpoint = new TestableGitReviewEndpoint();
+        await uncachedEndpoint.computeFileDiffForTest(repo, 'index.html');
+        expect(uncachedEndpoint.lastStatusArgs?.slice(-2)).to.deep.equal(['--', 'index.html']);
     });
 
     it('discards both sides of a staged rename and refreshes to a clean state', async () => {

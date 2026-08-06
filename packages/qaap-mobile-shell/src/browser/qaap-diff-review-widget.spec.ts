@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapGitChangedFile } from '../common/qaap-git-review';
-import { selectFileAfterRefresh } from './qaap-diff-review-select';
+import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-diff-review-select';
 
 function file(path: string, adds = 1, dels = 0): QaapGitChangedFile {
     return { path, status: 'M', adds, dels, staged: false };
@@ -39,5 +39,19 @@ describe('qaap-diff-review-widget — selectFileAfterRefresh', () => {
         const files = [file('src/a.ts'), file('src/b.ts')];
         const next = selectFileAfterRefresh(files, undefined);
         expect(next).to.equal('src/a.ts');
+    });
+});
+
+describe('qaap-diff-review-widget — reconcileExpandedReviewFiles', () => {
+    it('expands only the first file on initial load', () => {
+        const expanded = new Set<string>();
+        reconcileExpandedReviewFiles(expanded, [file('src/a.ts'), file('src/b.ts'), file('src/c.ts')]);
+        expect([...expanded]).to.deep.equal(['src/a.ts']);
+    });
+
+    it('preserves explicit expansions while pruning files that disappeared', () => {
+        const expanded = new Set(['removed.ts', 'src/b.ts', 'src/c.ts']);
+        reconcileExpandedReviewFiles(expanded, [file('src/a.ts'), file('src/b.ts'), file('src/c.ts')]);
+        expect([...expanded]).to.deep.equal(['src/b.ts', 'src/c.ts']);
     });
 });

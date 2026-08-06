@@ -17,3 +17,19 @@ export function selectFileAfterRefresh(
     const stillThere = files.some(file => file.path === selectedPath);
     return stillThere ? selectedPath : files[0]?.path;
 }
+
+/** Preserve explicit accordion choices, prune vanished files, and expand only the first by default. */
+export function reconcileExpandedReviewFiles(
+    expandedPaths: Set<string>,
+    files: readonly QaapGitChangedFile[],
+): void {
+    const currentPaths = new Set(files.map(file => file.path));
+    for (const path of expandedPaths) {
+        if (!currentPaths.has(path)) {
+            expandedPaths.delete(path);
+        }
+    }
+    if (expandedPaths.size === 0 && files[0]) {
+        expandedPaths.add(files[0].path);
+    }
+}
