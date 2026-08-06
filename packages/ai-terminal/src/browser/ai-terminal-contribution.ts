@@ -252,7 +252,10 @@ class TerminalAskAiDialog {
 
     protected readonly dialog: HTMLDivElement;
     protected readonly input: HTMLTextAreaElement;
+    protected readonly micButton: HTMLButtonElement;
     protected readonly sendButton: HTMLButtonElement;
+    protected recognition: TerminalAskAiRecognition | undefined;
+    protected dictating = false;
     protected submitting = false;
 
     constructor(
@@ -288,7 +291,7 @@ class TerminalAskAiDialog {
             'theia/ai/terminal/askAiDialogPlaceholder',
             'What would you like to ask about this terminal?',
         );
-        this.input.rows = 3;
+        this.input.rows = 1;
         this.input.onkeydown = event => {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -298,17 +301,31 @@ class TerminalAskAiDialog {
                 this.dispose();
             }
         };
-        this.dialog.appendChild(this.input);
+        const composer = document.createElement('div');
+        composer.className = 'qaap-terminal-ask-ai-dialog-composer';
+        composer.appendChild(this.input);
 
         const footer = document.createElement('div');
         footer.className = 'qaap-terminal-ask-ai-dialog-footer';
+
+        this.micButton = document.createElement('button');
+        this.micButton.type = 'button';
+        this.micButton.className = 'qaap-terminal-ask-ai-dialog-mic';
+        this.micButton.appendChild(this.createIcon('codicon-mic'));
+        this.micButton.onclick = () => this.toggleDictation();
+        this.updateMicButton();
+        footer.appendChild(this.micButton);
+
         this.sendButton = document.createElement('button');
         this.sendButton.type = 'button';
-        this.sendButton.className = 'theia-button primary qaap-terminal-ask-ai-dialog-send';
-        this.sendButton.textContent = nls.localizeByDefault('Send');
+        this.sendButton.className = 'qaap-terminal-ask-ai-dialog-send';
+        this.sendButton.appendChild(this.createIcon('codicon-send'));
+        this.sendButton.title = nls.localizeByDefault('Send');
+        this.sendButton.setAttribute('aria-label', nls.localizeByDefault('Send'));
         this.sendButton.onclick = () => { void this.submit(); };
         footer.appendChild(this.sendButton);
-        this.dialog.appendChild(footer);
+        composer.appendChild(footer);
+        this.dialog.appendChild(composer);
 
         terminalWidget.node.appendChild(this.dialog);
         this.input.focus({ preventScroll: true });
@@ -321,7 +338,9 @@ class TerminalAskAiDialog {
         }
 
         this.submitting = true;
+        this.stopDictation();
         this.input.disabled = true;
+        this.micButton.disabled = true;
         this.sendButton.disabled = true;
         try {
             await this.onSubmit(question);
@@ -329,12 +348,138 @@ class TerminalAskAiDialog {
         } catch (error) {
             this.submitting = false;
             this.input.disabled = false;
+            this.updateMicButton();
             this.sendButton.disabled = false;
             console.error('[ai-terminal] failed to submit terminal question', error);
         }
     }
 
+    protected createIcon(iconClass: string): HTMLSpanElement {
+        const icon = document.createElement('span');
+        icon.className = `codicon ${iconClass}`;
+        icon.setAttribute('aria-hidden', 'true');
+        return icon;
+    }
+
+    protected toggleDictation(): void {
+        if (this.dictating) {
+            this.stopDictation();
+        } else {
+            this.startDictation();
+        }
+    }
+
+    protected startDictation(): void {
+        const Constructor = this.getSpeechRecognitionCtor();
+        if (!Constructor || this.input.disabled) {
+            return;
+        }
+
+        const baseline = this.input.value;
+        const separator = baseline.length > 0 && !/\s$/.test(baseline) ? ' ' : '';
+        try {
+            const recognition = new Constructor();
+            this.recognition = recognition;
+            this.dictating = true;
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = typeof navigator !== 'undefined' && navigator.language
+                ? navigator.language
+                : 'en-US';
+            recognition.onresult = event => {
+                let transcript = '';
+                for (let index = 0; index < event.results.length; index++) {
+                    transcript += event.results[index]?.[0]?.transcript ?? '';
+                }
+                this.input.value = `${baseline}${separator}${transcript}`;
+                this.input.dispatchEvent(new Event('input', { bubbles: true }));
+            };
+            recognition.onerror = event => {
+                if (event.error === 'not-allowed'
+                    || event.error === 'service-not-allowed'
+                    || event.error === 'audio-capture'
+                    || event.error === 'network') {
+                    this.stopDictation();
+                }
+            };
+            recognition.onend = () => {
+                this.recognition = undefined;
+                this.dictating = false;
+                this.updateMicButton();
+            };
+            recognition.start();
+            this.updateMicButton();
+        } catch {
+            this.recognition = undefined;
+            this.dictating = false;
+            this.updateMicButton();
+        }
+    }
+
+    protected stopDictation(): void {
+        this.dictating = false;
+        const recognition = this.recognition;
+        this.recognition = undefined;
+        if (recognition) {
+            recognition.onend = null;
+            try {
+                recognition.stop();
+            } catch {
+                // The recognition session may already have ended.
+            }
+        }
+        this.updateMicButton();
+    }
+
+    protected updateMicButton(): void {
+        const supported = !!this.getSpeechRecognitionCtor();
+        this.micButton.disabled = this.submitting || !supported;
+        this.micButton.classList.toggle('qaap-terminal-ask-ai-dialog-mic-recording', this.dictating);
+        const label = this.dictating
+            ? nls.localize('theia/ai/terminal/micStop', 'Stop dictation')
+            : supported
+                ? nls.localize('theia/ai/terminal/micStart', 'Dictate with microphone')
+                : nls.localize('theia/ai/terminal/micUnsupported', 'Dictation is not supported in this browser');
+        this.micButton.title = label;
+        this.micButton.setAttribute('aria-label', label);
+        this.micButton.setAttribute('aria-pressed', String(this.dictating));
+        const icon = this.micButton.querySelector('.codicon');
+        icon?.classList.toggle('codicon-mic', !this.dictating);
+        icon?.classList.toggle('codicon-stop-circle', this.dictating);
+    }
+
+    protected getSpeechRecognitionCtor(): { new(): TerminalAskAiRecognition } | undefined {
+        if (typeof window === 'undefined') {
+            return undefined;
+        }
+        const runtime = window as unknown as {
+            SpeechRecognition?: { new(): TerminalAskAiRecognition };
+            webkitSpeechRecognition?: { new(): TerminalAskAiRecognition };
+        };
+        return runtime.SpeechRecognition ?? runtime.webkitSpeechRecognition;
+    }
+
     protected dispose(): void {
+        this.stopDictation();
         this.dialog.remove();
     }
+}
+
+interface TerminalAskAiRecognition extends EventTarget {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    onresult: ((event: TerminalAskAiRecognitionEvent) => void) | null;
+    onerror: ((event: TerminalAskAiRecognitionErrorEvent) => void) | null;
+    onend: (() => void) | null;
+    start(): void;
+    stop(): void;
+}
+
+interface TerminalAskAiRecognitionEvent {
+    results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+interface TerminalAskAiRecognitionErrorEvent {
+    error: string;
 }

@@ -103,18 +103,18 @@
 
 .qaap-terminal-ask-ai-dialog {
   position: absolute;
-  bottom: 16px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
-  width: min(520px, calc(100% - 32px));
+  width: min(390px, calc(100% - 24px));
   box-sizing: border-box;
-  padding: 14px;
+  padding: 10px 12px 11px;
   background: var(--theia-editorWidget-background);
   color: var(--theia-editorWidget-foreground);
   border: var(--theia-border-width) solid var(--theia-editorWidget-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgb(0 0 0 / 30%);
 }
 
 .qaap-terminal-ask-ai-dialog-header {
@@ -122,7 +122,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 10px;
+  margin-bottom: 7px;
+  font-size: 0.85rem;
 }
 
 .qaap-terminal-ask-ai-dialog-close {
@@ -138,14 +139,88 @@
 }
 
 .qaap-terminal-ask-ai-dialog-input {
-  width: 100%;
-  min-height: 72px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 40px;
   box-sizing: border-box;
   resize: vertical;
+  padding: 8px 9px;
+  border-radius: 8px;
+  line-height: 1.35;
+}
+
+.qaap-terminal-ask-ai-dialog-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
 }
 
 .qaap-terminal-ask-ai-dialog-footer {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.qaap-terminal-ask-ai-dialog-mic,
+.qaap-terminal-ask-ai-dialog-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--theia-descriptionForeground);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.qaap-terminal-ask-ai-dialog-mic:hover:not(:disabled),
+.qaap-terminal-ask-ai-dialog-mic:focus-visible,
+.qaap-terminal-ask-ai-dialog-send:hover:not(:disabled),
+.qaap-terminal-ask-ai-dialog-send:focus-visible {
+  color: var(--theia-foreground);
+  background: var(--theia-list-hoverBackground);
+  outline: none;
+}
+
+.qaap-terminal-ask-ai-dialog-send {
+  color: var(--theia-button-foreground);
+  background: var(--theia-button-background);
+}
+
+.qaap-terminal-ask-ai-dialog-mic:disabled,
+.qaap-terminal-ask-ai-dialog-send:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.qaap-terminal-ask-ai-dialog-mic-recording {
+  color: var(--theia-notificationsErrorIcon-foreground, #e53935);
+}
+
+.qaap-terminal-ask-ai-dialog-mic-recording .codicon {
+  animation: qaap-terminal-ask-ai-mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes qaap-terminal-ask-ai-mic-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.55;
+    transform: scale(1.1);
+  }
+}
+
+@media (max-width: 520px) {
+  .qaap-terminal-ask-ai-dialog {
+    bottom: 8px;
+    width: calc(100% - 16px);
+  }
 }
