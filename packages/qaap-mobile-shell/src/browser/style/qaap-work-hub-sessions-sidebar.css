@@ -1582,14 +1582,26 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
     overflow: hidden !important;
   }
 
+  /* Theia's mobile project surface is an absolutely-positioned shell child. Once the
+     Work Hub shell is moved into grid column 2, that inset can be resolved from the
+     viewport origin after an IDE -> Work Hub transition, leaving the surface under the
+     sessions sidebar. Anchor it to the viewport for this desktop grid and use the same
+     measured width variable as the first grid track. */
   body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-projects {
-    position: absolute !important;
+    position: fixed !important;
     inset: 0 !important;
     z-index: auto !important;
     min-width: 0 !important;
     min-height: 0 !important;
     height: 100% !important;
+    width: auto !important;
     overflow: hidden !important;
+  }
+
+  body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open #theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects {
+    left: var(--qaap-work-hub-desktop-sidebar-width) !important;
+    right: 0 !important;
+    width: auto !important;
   }
 
   body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host {
