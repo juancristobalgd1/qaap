@@ -143,7 +143,7 @@ The runtime stage of `Dockerfile` installs:
 - **Antigravity CLI** → `antigravity` (installed from `@sanchaymittal/antigravity-cli` with `antigravity` alias)
 - **OpenCode** → `opencode` (`opencode-ai`)
 - **GitHub Copilot CLI** → `copilot` (`@github/copilot`)
-- **Grok Build** → `/root/.grok/bin/grok` (`curl -fsSL https://x.ai/cli/install.sh | bash`)
+- **Grok Build** → `/opt/grok/bin/grok` (`curl -fsSL https://x.ai/cli/install.sh | bash`)
 - `git`, `curl`, `bun`, `pnpm`, `yarn`, `build-essential`, `ripgrep` for agent shell work
 
 At container start, the backend logs detected agents, for example:

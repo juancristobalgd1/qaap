@@ -21,10 +21,10 @@ export type QaapAgentModelSelection = QaapCreateAgentTaskQaiqModel;
 
 const AGENT_MODEL_STORAGE_PREFIX = 'qaap.agentTasks.selectedAgentModel';
 
-/** QAIQ-family agents use the OpenRouter/NVIDIA/etc. lists from Settings → AI Features. */
+/** QAIQ uses the OpenRouter/NVIDIA/etc. lists from Settings → AI Features. */
 // Keep these literals here: qaap-agent-task-client re-exports this module, so reading its
 // constants during CommonJS module initialization would otherwise produce undefined entries.
-export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq', 'openclaude']);
+export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq']);
 
 export function agentUsesSettingsModelCatalog(agentId: string | undefined): boolean {
     const normalized = migrateLegacyBackendAgentId(agentId)?.toLowerCase();

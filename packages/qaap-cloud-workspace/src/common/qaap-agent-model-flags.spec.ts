@@ -18,6 +18,15 @@ describe('formatModelFlagsForAgent', () => {
         expect(formatModelFlagsForAgent('grok', binding)).to.equal('-m deepseek/deepseek-chat:free');
     });
 
+    it('keeps OpenClaude on the QAIQ provider flag contract without sharing QAIQ identity', () => {
+        const binding = bindingFromQaiqModelSelection({
+            provider: 'anthropic',
+            vendor: 'anthropic',
+            modelId: 'claude-opus-4-7',
+        });
+        expect(formatModelFlagsForAgent('openclaude', binding)).to.equal('--provider anthropic --model claude-opus-4-7');
+    });
+
     it('uses -m for codex and --model for other CLIs', () => {
         const binding = bindingFromQaiqModelSelection({
             provider: 'openai',

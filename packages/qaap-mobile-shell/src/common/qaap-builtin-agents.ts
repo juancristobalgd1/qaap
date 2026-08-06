@@ -51,6 +51,7 @@ export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set([CURSOR_AGENT_ID]
 export const NATIVE_MODEL_PICKER_AGENT_IDS = new Set([
     'codex',
     'claude',
+    'openclaude',
     'grok',
     'opencode',
     'qwen',

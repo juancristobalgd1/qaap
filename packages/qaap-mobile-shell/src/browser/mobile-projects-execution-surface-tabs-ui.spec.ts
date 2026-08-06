@@ -346,25 +346,27 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }
     });
 
-    it('prepends the agent TUI selector only on the Terminal surface', () => {
+    it('keeps the agent TUI selector in the terminal toolbar, outside the header strip', () => {
         const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
         const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
-        const children = Array.from(strip.children);
-        const tuiHost = strip.querySelector('.theia-mobile-transcript-terminal-agent-tui-host');
+        const tuiHost = ui.createTerminalAgentTuiSelect();
         const viewSelect = strip.querySelector('.theia-mobile-transcript-tab-icon-select-host:not(.theia-mobile-transcript-terminal-agent-tui-host)');
         expect(tuiHost).to.exist;
         expect(viewSelect).to.exist;
-        expect(children[0]).to.equal(tuiHost);
-        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui .codicon-terminal')).to.exist;
-        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.classList.contains('theia-mod-selected')).to.equal(false);
-        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.getAttribute('data-tab')).to.equal(null);
+        expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')).to.equal(null);
+        expect(tuiHost.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.classList.contains('theia-mod-selected')).to.equal(false);
+        expect(tuiHost.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.getAttribute('data-tab')).to.equal(null);
     });
 
     it('keeps view-switcher chrome on the Terminal picker, not the agent TUI trigger', () => {
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
+        const host = createHost();
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
         const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
+        const toolbar = document.createElement('div');
+        toolbar.append(ui.createTerminalAgentTuiSelect());
+        (host as unknown as { transcriptTerminalToolbar: HTMLElement }).transcriptTerminalToolbar = toolbar;
         ui.refreshExecutionSurfaceTabStripState(strip, 'terminal');
-        const tui = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui');
+        const tui = toolbar.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui');
         const view = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui)');
         expect(tui?.dataset.tab).to.equal(undefined);
         expect(tui?.classList.contains('theia-mod-selected')).to.equal(false);
@@ -408,9 +410,9 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
         expect(ui.resolveExecutionSurfaceProject()?.id).to.equal('p-qaap');
 
-        const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
-        host.root.append(strip);
-        const trigger = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui');
+        const tuiHost = ui.createTerminalAgentTuiSelect();
+        host.root.append(tuiHost);
+        const trigger = tuiHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui');
         expect(trigger).to.exist;
         trigger!.click();
         await new Promise<void>(resolve => { window.setTimeout(resolve, 0); });
@@ -421,7 +423,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         const labels = Array.from(menu!.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
             .map(node => node.textContent);
         expect(labels).to.include.members(['QAIQ', 'Claude Code', 'Codex', 'Grok Build']);
-        strip.remove();
+        tuiHost.remove();
         ui.closeExecutionTabOverflowMenu();
     });
 

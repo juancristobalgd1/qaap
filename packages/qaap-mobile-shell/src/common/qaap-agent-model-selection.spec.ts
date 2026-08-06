@@ -38,9 +38,9 @@ describe('qaap-agent-model-selection', () => {
         expect(agentSupportsModelPicker(THEIA_CODER_AGENT_ID)).to.be.false;
     });
 
-    it('QAIQ and OpenClaude read models from Settings; others use native catalogs', () => {
+    it('QAIQ reads Settings models while OpenClaude uses its native catalog', () => {
         expect(agentUsesSettingsModelCatalog(QAIQ_AGENT_ID)).to.be.true;
-        expect(agentUsesSettingsModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.true;
+        expect(agentUsesSettingsModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.false;
         expect(agentUsesSettingsModelCatalog('qwen')).to.be.false;
         expect(agentUsesSettingsModelCatalog('opencode')).to.be.false;
         expect(agentUsesNativeModelCatalog('qwen')).to.be.true;
@@ -48,7 +48,7 @@ describe('qaap-agent-model-selection', () => {
         expect(agentUsesNativeModelCatalog('goose')).to.be.false;
         expect(agentUsesNativeModelCatalog('hermes')).to.be.false;
         expect(agentUsesNativeModelCatalog(QAIQ_AGENT_ID)).to.be.false;
-        expect(agentUsesNativeModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.false;
+        expect(agentUsesNativeModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.true;
         expect(agentUsesNativeModelCatalog('cursor')).to.be.false;
         expect(agentSupportsModelPicker('cursor')).to.be.false;
         expect(agentSupportsModelPicker('goose')).to.be.false;
@@ -80,7 +80,7 @@ describe('qaap-agent-model-selection', () => {
         expect(readStoredAgentModel(cwd, 'grok')).to.deep.equal(grokModel);
     });
 
-    it('keeps OpenClaude model storage separate while using the Settings catalog', () => {
+    it('keeps OpenClaude model storage separate from QAIQ', () => {
         const cwd = '/repo/openclaude';
         const qaiqModel = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'qaiq/model' };
         const openclaudeModel = { provider: 'anthropic' as const, vendor: 'anthropic', modelId: 'openclaude/model' };

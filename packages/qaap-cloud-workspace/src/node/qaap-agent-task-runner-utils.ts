@@ -48,7 +48,16 @@ export function isQaiqRunner(agentId: string | undefined, command: string): bool
 export function isOnPath(bin: string): boolean {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     try {
-        return spawnSync(cmd, [bin], { stdio: 'ignore' }).status === 0;
+        const result = spawnSync(cmd, [bin], { encoding: 'utf8' });
+        if (result.status !== 0 || result.error) {
+            return false;
+        }
+        const resolved = result.stdout?.trim().split(/\r?\n/)[0];
+        if (!resolved) {
+            return false;
+        }
+        fs.accessSync(resolved, fs.constants.X_OK);
+        return fs.statSync(resolved).isFile();
     } catch {
         return false;
     }

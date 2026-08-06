@@ -16,6 +16,11 @@
 
 const { enableJSDOM } = require('@theia/core/lib/browser/test/jsdom');
 
+// Mocha loads spec modules before running root hooks. Browser modules such as Lumino touch
+// `document` at import time, so the environment must exist as soon as this required helper loads.
+// The beforeEach hook below still repairs globals torn down or replaced by an earlier suite.
+enableJSDOM();
+
 exports.mochaHooks = {
     beforeEach() {
         enableJSDOM();

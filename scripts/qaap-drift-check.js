@@ -236,6 +236,18 @@ const ALLOWED = [
     // ai-ide drops @theia/file-search (single-root policy: the multi-root search
     // provider that needed it is replaced by the fork's primary-root provider).
     /^packages\/ai-ide\/package\.json$/,
+    // Security-only dependency floors (August 2026): patched Electron, Undici,
+    // MCP SDK, body-parser and js-yaml releases. No product behavior lives in
+    // these manifests; generated re-export docs mirror the Electron floor. Remove
+    // each seam once the pinned upstream base catches up.
+    /^dev-packages\/request\/package\.json$/,
+    /^packages\/(ai-core|ai-google|ai-mcp|ai-mcp-server|core|dev-container|electron|filesystem|scanoss)\/package\.json$/,
+    /^packages\/(core|electron)\/README\.md$/,
+    // Security migration seams (August 2026): AI SDK 7 changes the provider,
+    // message/tool stream and usage contracts; proxy-agent 0.44 centralizes
+    // dynamic proxy/certificate settings. Keep their focused regression specs.
+    /^packages\/ai-vercel-ai\/(package\.json|src\/node\/vercel-ai-language-model(?:-factory|\.spec)?\.ts)$/,
+    /^packages\/plugin-ext\/(package\.json|src\/hosted\/node\/plugin-host-proxy(?:\.spec)?\.ts)$/,
     // task integrates the fork-local @theia/terminal-manager (task terminals are
     // routed to the dedicated Tasks page in tree mode).
     /^packages\/task\/(package\.json|tsconfig\.json)$/,

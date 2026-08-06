@@ -18,22 +18,56 @@ import * as http from 'http';
 import * as https from 'https';
 import * as tls from 'tls';
 
-import { createHttpPatch, createProxyResolver, createTlsPatch, ProxySupportSetting } from '@vscode/proxy-agent';
+import {
+    createHttpPatch,
+    createProxyResolver,
+    createTlsPatch,
+    loadSystemCertificates,
+    Log,
+    LogLevel,
+    ProxyAgentParams,
+    ProxySupportSetting,
+    ResolveProxyWithRequest,
+} from '@vscode/proxy-agent';
 import { PreferenceRegistryExtImpl } from '../../plugin/preference-registry';
 import { WorkspaceExtImpl } from '../../plugin/workspace';
 
 export function connectProxyResolver(workspaceExt: WorkspaceExtImpl, configProvider: PreferenceRegistryExtImpl): void {
-    const resolveProxy = createProxyResolver({
-        resolveProxy: async url => workspaceExt.resolveProxy(url),
-        getHttpProxySetting: () => configProvider.getConfiguration('http').get('proxy'),
-        log: () => { },
-        getLogLevel: () => 0,
-        proxyResolveTelemetry: () => { },
-        useHostProxy: true,
-        env: process.env,
-    });
-    const lookup = createPatchedModules(configProvider, resolveProxy);
+    const params = createPluginHostProxyAgentParams(workspaceExt, configProvider);
+    const resolveProxy = createProxyResolver(params);
+    const lookup = createPatchedModules(params, resolveProxy.resolveProxyWithRequest);
     configureModuleLoading(lookup);
+}
+
+export function createPluginHostProxyAgentParams(
+    workspaceExt: WorkspaceExtImpl,
+    configProvider: PreferenceRegistryExtImpl
+): ProxyAgentParams {
+    const log: Log = {
+        trace: () => undefined,
+        debug: () => undefined,
+        info: () => undefined,
+        warn: () => undefined,
+        error: () => undefined,
+    };
+    const params: ProxyAgentParams = {
+        resolveProxy: async url => workspaceExt.resolveProxy(url),
+        getProxyURL: () => configProvider.getConfiguration('http').get<string>('proxy'),
+        getProxySupport: () => configProvider.getConfiguration('http').get<ProxySupportSetting>('proxySupport') ?? 'override',
+        getNoProxyConfig: () => configProvider.getConfiguration('http').get<string[]>('noProxy') ?? [],
+        isAdditionalFetchSupportEnabled: () => false,
+        isWebSocketPatchEnabled: () => false,
+        addCertificatesV1: () => !!configProvider.getConfiguration('http').get<boolean>('systemCertificates'),
+        addCertificatesV2: () => false,
+        loadSystemCertificatesFromNode: () => true,
+        loadAdditionalCertificates: () => loadSystemCertificates(params),
+        log,
+        getLogLevel: () => LogLevel.Off,
+        proxyResolveTelemetry: () => { },
+        isUseHostProxyEnabled: () => true,
+        env: process.env,
+    };
+    return params;
 }
 
 interface PatchedModules {
@@ -42,24 +76,11 @@ interface PatchedModules {
     tls: typeof tls;
 }
 
-function createPatchedModules(configProvider: PreferenceRegistryExtImpl, resolveProxy: ReturnType<typeof createProxyResolver>): PatchedModules {
-    const defaultConfig = 'override' as ProxySupportSetting;
-    const proxySetting = {
-        config: defaultConfig
-    };
-    const certSetting = {
-        config: false
-    };
-    configProvider.onDidChangeConfiguration(() => {
-        const httpConfig = configProvider.getConfiguration('http');
-        proxySetting.config = httpConfig?.get<ProxySupportSetting>('proxySupport') || defaultConfig;
-        certSetting.config = !!httpConfig?.get<boolean>('systemCertificates');
-    });
-
+function createPatchedModules(params: ProxyAgentParams, resolveProxy: ResolveProxyWithRequest): PatchedModules {
     return {
-        http: Object.assign(http, createHttpPatch(http, resolveProxy, proxySetting, certSetting, true)),
-        https: Object.assign(https, createHttpPatch(https, resolveProxy, proxySetting, certSetting, true)),
-        tls: Object.assign(tls, createTlsPatch(tls))
+        http: Object.assign(http, createHttpPatch(params, http, resolveProxy)),
+        https: Object.assign(https, createHttpPatch(params, https, resolveProxy)),
+        tls: Object.assign(tls, createTlsPatch(params, tls))
     };
 }
 

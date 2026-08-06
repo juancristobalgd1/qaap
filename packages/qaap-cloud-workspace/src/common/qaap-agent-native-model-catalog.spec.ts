@@ -14,9 +14,9 @@ import {
 } from './qaap-agent-native-model-catalog';
 
 describe('qaap-agent-native-model-catalog', () => {
-    it('QAIQ and OpenClaude use the Settings model catalog', () => {
+    it('only QAIQ uses the Settings model catalog', () => {
         expect(agentUsesSettingsModelCatalog('qaiq')).to.equal(true);
-        expect(agentUsesSettingsModelCatalog('openclaude')).to.equal(true);
+        expect(agentUsesSettingsModelCatalog('openclaude')).to.equal(false);
         expect(agentUsesSettingsModelCatalog('qwen')).to.equal(false);
         expect(agentUsesSettingsModelCatalog('opencode')).to.equal(false);
         expect(agentUsesSettingsModelCatalog('codex')).to.equal(false);
@@ -26,7 +26,7 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(agentUsesNativeModelCatalog('opencode')).to.equal(true);
         expect(agentUsesNativeModelCatalog('qwen')).to.equal(true);
         expect(agentUsesNativeModelCatalog('qaiq')).to.equal(false);
-        expect(agentUsesNativeModelCatalog('openclaude')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('openclaude')).to.equal(true);
         expect(agentUsesNativeModelCatalog('shell')).to.equal(false);
         expect(agentUsesNativeModelCatalog('cursor')).to.equal(false);
         expect(agentUsesNativeModelCatalog('goose')).to.equal(false);
@@ -42,6 +42,16 @@ describe('qaap-agent-native-model-catalog', () => {
     it('lists static fallbacks per agent', () => {
         expect(listStaticNativeAgentModels('codex').length).to.be.greaterThan(0);
         expect(listStaticNativeAgentModels('qwen').map(m => m.modelId)).to.include('qwen3-coder-plus');
+        expect(listStaticNativeAgentModels('openclaude').map(m => m.modelId)).to.deep.equal([
+            'claude-sonnet-4-6',
+            'claude-opus-4-7',
+            'claude-haiku-4-5',
+            'gpt-4o',
+            'gpt-5.4',
+            'gemini-3.1-pro',
+            'mistral-large-latest',
+            'qwen2.5-coder:7b',
+        ]);
         expect(listStaticNativeAgentModels('unknown-agent')).to.deep.equal([]);
     });
 

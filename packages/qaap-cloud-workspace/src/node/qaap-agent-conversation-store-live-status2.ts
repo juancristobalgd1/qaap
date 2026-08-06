@@ -419,6 +419,23 @@ export function cwdMatchesGithubRepoExtracted(ctx: any, cwd: string, owner: stri
         && parsed.name.toLowerCase() === repo.toLowerCase();
 }
 
+/** Runs one restore phase without allowing a corrupt conversation to abort the remaining set. */
+export async function runQaapConversationRestoreStep<T extends { readonly id: string }>(
+    conversations: Iterable<T>,
+    phase: string,
+    step: (conversation: T) => Promise<boolean>,
+): Promise<boolean> {
+    let changedAny = false;
+    for (const conversation of conversations) {
+        try {
+            changedAny = await step(conversation) || changedAny;
+        } catch (error) {
+            console.warn(`[qaap-conversation-store] ${phase} failed for ${conversation.id}:`, error);
+        }
+    }
+    return changedAny;
+}
+
 export async function restoreFromDiskExtracted(ctx: any): Promise<void> {
     // Sweep orphaned .tmp files left by previous (crashed/killed) backend processes before
     // reading the index. Without this, temp files from dead PIDs accumulate unboundedly
@@ -444,32 +461,35 @@ export async function restoreFromDiskExtracted(ctx: any): Promise<void> {
         const now = Date.now();
         // First try to auto-resume turns the restart interrupted (bounded, persisted counter).
         // A turn that resumes gets a live task, so the sweep below skips it (getActiveTaskIds guard).
-        let resumedAny = false;
-        for (const conv of [...ctx.conversations.values()]) {
-            if (conv.status === 'streaming' && await ctx.maybeAutoResumeInterruptedTurn(conv.id, now)) {
-                resumedAny = true;
-            }
-        }
+        const resumedAny = await runQaapConversationRestoreStep(
+            [...ctx.conversations.values()] as QaapAgentConversation[],
+            'restart resume',
+            async conv => conv.status === 'streaming' && ctx.maybeAutoResumeInterruptedTurn(conv.id, now),
+        );
         const sweptAny = ctx.sweepZombieStreamingTurns(now, { resetSurvivorsToIdle: true });
         // Evidence is persisted before its repair process is spawned. A hard kill in that
         // narrow gap therefore leaves an idle tail with `[QAAP repair required]`; resume it
         // here through the same idempotent loop instead of silently abandoning the result.
-        let visualRepairResumedAny = false;
-        for (const conv of [...ctx.conversations.values()]) {
-            const last = conv.messages[conv.messages.length - 1];
-            if (conv.status === 'idle' && last?.role === 'agent'
-                && last.content.includes(QAAP_VISUAL_REPAIR_REQUIRED_MARKER)) {
+        const visualRepairResumedAny = await runQaapConversationRestoreStep(
+            [...ctx.conversations.values()] as QaapAgentConversation[],
+            'visual repair resume',
+            async conv => {
+                const last = conv.messages[conv.messages.length - 1];
+                if (conv.status !== 'idle' || last?.role !== 'agent'
+                    || !last.content.includes(QAAP_VISUAL_REPAIR_REQUIRED_MARKER)) {
+                    return false;
+                }
                 const before = ctx.conversations.get(conv.id);
                 const after = await ctx.continueVisualRepairLoop(conv.id, last.id);
-                if (after !== before) {
-                    visualRepairResumedAny = true;
-                }
-            }
-        }
+                return after !== before;
+            },
+        );
         if (ctx.isTurnGraphEnabled()) {
             // After resume and sweep have settled every conversation's fate, close graph runs
             // whose turn is no longer live (lost terminal report, deleted conversation).
-            await ctx.reapOrphanedChatTurnRuns();
+            await ctx.reapOrphanedChatTurnRuns().catch((error: unknown) => {
+                console.warn('[qaap-conversation-store] orphaned graph-run reap failed:', error);
+            });
         }
         if (anyChanged || resumedAny || sweptAny || visualRepairResumedAny) {
             await ctx.persist();
@@ -599,4 +619,3 @@ export async function maybeAutoResumeInterruptedTurnExtracted(ctx: any, conversa
     );
     return true;
 }
-

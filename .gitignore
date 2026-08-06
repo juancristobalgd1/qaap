@@ -51,6 +51,10 @@ test-results/
 **/.env
 !**/.env.example
 /qaiq/
+/.dbg/
+/.kilo/
+**/__pycache__/
+*.pyc
 
 # Agent conversation transcripts — runtime artifacts, never source. Must not land in a public repo.
 conversation_history/

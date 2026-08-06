@@ -106,17 +106,18 @@ describe('resolveEffectiveRequestAgentModel', () => {
         }
     });
 
-    it('routes OpenClaude through the Settings catalog', () => {
-        // OpenClaude is a separate picker identity, but it shares QAIQ's provider/model contract.
-        const readPref = (key: string): unknown => key === 'ai-features.languageModelAliases'
-            ? { 'default/code': { selectedModel: 'anthropic/claude-sonnet-4-20250514' } }
-            : undefined;
+    it('routes OpenClaude through its own native catalog when a task kind is supplied', () => {
+        const context = {
+            listNativeModels: (agentId: string) => listStaticNativeAgentModels(agentId),
+            nativeTable: { openclaude: { implementation: 'claude-opus-4-7' } },
+        };
         const routed = resolveEffectiveRequestAgentModel(
-            { prompt: 'Implement the OAuth callback fix' },
-            readPref,
+            { prompt: 'Implement the OAuth callback fix', taskKind: 'implementation' },
+            () => undefined,
             'openclaude',
+            context,
         );
-        expect(routed?.modelId).to.equal('claude-sonnet-4-20250514');
+        expect(routed?.modelId).to.equal('claude-opus-4-7');
     });
 
     it('keeps an explicit picker model for a native-catalog agent', () => {

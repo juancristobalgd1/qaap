@@ -3,7 +3,8 @@
   "version": "1.73.0",
   "description": "Theia - MCP Server",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@hono/node-server": "^2.1.0",
     "@theia/core": "1.73.0",
     "@theia/workspace": "1.73.0",
     "zod": "^4.4.3"

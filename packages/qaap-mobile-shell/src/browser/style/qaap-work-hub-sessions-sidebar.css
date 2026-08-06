@@ -914,9 +914,9 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-work-hub-sessions-sidebar-view-s
   background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
 }
 
-.theia-mobile-work-hub-sessions-sidebar-head-action:focus,
 .theia-mobile-work-hub-sessions-sidebar-head-action:focus-visible {
-  outline: none;
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-head-action svg {
@@ -962,6 +962,11 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-work-hub-sessions-sidebar-view-s
 
 .theia-mobile-work-hub-sessions-sidebar-head-popover-item:active {
   background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover-item:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: -2px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-head-popover-item-label {
@@ -1122,8 +1127,8 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: 4px;
@@ -1142,9 +1147,9 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   color: var(--theia-foreground);
 }
 
-.theia-mobile-work-hub-sessions-sidebar-project-new-agent:focus,
 .theia-mobile-work-hub-sessions-sidebar-project-new-agent:focus-visible {
-  outline: none;
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-project-actions .theia-mobile-projects-row-meta-open,
@@ -1466,6 +1471,16 @@ body.theia-mobile-mod-sessions-sidebar-open #theia-mobile-bottom-bar {
 /* Mobile-only: hide chat/landing/composer under the sidebar overlay. Desktop uses flex push layout. */
 @media (max-width: 767px),
 (pointer: coarse) {
+  .theia-mobile-work-hub-sessions-sidebar-head-action,
+  .theia-mobile-work-hub-sessions-sidebar-project-new-agent {
+    width: 44px;
+    height: 44px;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-head-popover-item {
+    min-height: 44px;
+  }
+
 
   body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-agent-transcript-root,
   body.theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects,

@@ -66,15 +66,18 @@ function loadAttach(): typeof import('./qaap-mobile-composer-device-attach') {
 function collectingHandlers(uploadTargetDir?: URI): {
     handlers: MobileComposerAttachHandlers;
     appended: StickyComposerContextEntry[];
+    removed: Array<{ id: string; error?: unknown }>;
 } {
     const appended: StickyComposerContextEntry[] = [];
+    const removed: Array<{ id: string; error?: unknown }> = [];
     return {
         appended,
+        removed,
         handlers: {
             uploadTargetDir,
             appendOptimistic: entry => appended.push(entry),
             finalizeOptimistic: () => undefined,
-            removeOptimistic: () => undefined,
+            removeOptimistic: (id, error) => removed.push({ id, error }),
         },
     };
 }
@@ -128,13 +131,16 @@ describe('qaap-mobile-composer-device-attach', () => {
         expect(appended[0]!.displayName).to.equal('notes.txt');
     });
 
-    it('still throws when neither a workspace root nor an upload target dir is available', () => {
+    it('surfaces a per-chip error when neither a workspace root nor an upload target dir is available', () => {
         const { attachDeviceFilesOptimistic } = loadAttach();
-        const { handlers, appended } = collectingHandlers(undefined);
+        const { handlers, appended, removed } = collectingHandlers(undefined);
         const file = new File(['hola'], 'notes.txt', { type: 'text/plain' });
 
-        expect(() => attachDeviceFilesOptimistic([file], fakeServices([]), handlers)).to.throw();
-        expect(appended.length).to.equal(0);
+        expect(() => attachDeviceFilesOptimistic([file], fakeServices([]), handlers)).to.not.throw();
+        expect(appended.length).to.equal(1);
+        expect(removed.length).to.equal(1);
+        expect(removed[0]?.id).to.equal(appended[0]?.id);
+        expect(removed[0]?.error).to.be.instanceOf(Error);
     });
 
     it('prefers an open workspace root over the upload target dir', () => {

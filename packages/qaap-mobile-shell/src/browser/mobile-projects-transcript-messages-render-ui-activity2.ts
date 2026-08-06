@@ -281,6 +281,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, inpu
         readonly onOpenAuthUrl?: (url: string) => void;
         readonly onOpenAgentSignIn?: () => void | Promise<void>;
         readonly agentLabel?: string;
+        readonly agentId?: string;
     } {
         return {
             failedToolName: input.failedToolName,
@@ -292,6 +293,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, inpu
                 ? () => ctx.host.openAgentSignInTerminal?.(input.agentId)
                 : undefined,
             agentLabel: input.agentId ? resolveAgentDisplayLabel(input.agentId) : undefined,
+            agentId: input.agentId,
         };
 }
 

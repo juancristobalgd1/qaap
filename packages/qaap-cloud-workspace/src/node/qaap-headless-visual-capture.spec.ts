@@ -12,9 +12,61 @@ import { chromium } from 'playwright-core';
 import {
     applyQaapHeadlessRuntimeDiagnostics,
     inspectQaapHeadlessPage,
+    qaapHeadlessPublicPreviewLeaseMs,
     resolveHeadlessCaptureAppTarget,
     resolveHeadlessChromiumExecutable,
+    resolveQaapStaticPreviewFile,
 } from './qaap-headless-visual-capture';
+
+describe('resolveQaapStaticPreviewFile', () => {
+    let root: string;
+    let sibling: string;
+
+    beforeEach(() => {
+        const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-static-preview-'));
+        root = path.join(parent, 'app');
+        sibling = path.join(parent, 'app-private');
+        fs.mkdirSync(root);
+        fs.mkdirSync(sibling);
+        fs.writeFileSync(path.join(root, 'index.html'), '<h1>App</h1>');
+        fs.writeFileSync(path.join(root, 'asset.js'), 'console.log("safe")');
+        fs.writeFileSync(path.join(sibling, 'secret.txt'), 'secret');
+    });
+
+    afterEach(() => {
+        fs.rmSync(path.dirname(root), { recursive: true, force: true });
+    });
+
+    it('serves contained files and preserves the SPA fallback', async () => {
+        expect(await resolveQaapStaticPreviewFile(root, '/asset.js')).to.equal(fs.realpathSync(path.join(root, 'asset.js')));
+        expect(await resolveQaapStaticPreviewFile(root, '/dashboard?tab=active')).to.equal(fs.realpathSync(path.join(root, 'index.html')));
+    });
+
+    it('rejects plain, encoded, prefix-sibling, and malformed traversal paths', async () => {
+        expect(await resolveQaapStaticPreviewFile(root, '/../app-private/secret.txt')).to.equal(undefined);
+        expect(await resolveQaapStaticPreviewFile(root, '/%2e%2e/app-private/secret.txt')).to.equal(undefined);
+        expect(await resolveQaapStaticPreviewFile(root, '/../app-private')).to.equal(undefined);
+        expect(await resolveQaapStaticPreviewFile(root, '/%E0%A4%A')).to.equal(undefined);
+    });
+
+    it('rejects a symlink that resolves outside the preview root', async function (): Promise<void> {
+        try {
+            fs.symlinkSync(path.join(sibling, 'secret.txt'), path.join(root, 'linked-secret.txt'));
+        } catch {
+            this.skip();
+            return;
+        }
+        expect(await resolveQaapStaticPreviewFile(root, '/linked-secret.txt')).to.equal(undefined);
+    });
+});
+
+describe('qaapHeadlessPublicPreviewLeaseMs', () => {
+    it('defaults and clamps preview leases to a bounded duration', () => {
+        expect(qaapHeadlessPublicPreviewLeaseMs(undefined)).to.equal(15 * 60_000);
+        expect(qaapHeadlessPublicPreviewLeaseMs('1')).to.equal(60_000);
+        expect(qaapHeadlessPublicPreviewLeaseMs(String(48 * 60 * 60_000))).to.equal(24 * 60 * 60_000);
+    });
+});
 
 describe('resolveHeadlessCaptureAppTarget', () => {
     let root: string;

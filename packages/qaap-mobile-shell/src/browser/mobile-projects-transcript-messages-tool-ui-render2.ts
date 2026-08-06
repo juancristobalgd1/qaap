@@ -96,11 +96,12 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
             /** Opens the transcript terminal and starts the agent CLI login flow. */
             readonly onOpenAgentSignIn?: () => void | Promise<void>;
             readonly agentLabel?: string;
+            readonly agentId?: string;
         },): HTMLElement {
         const formatted = formatStoredAgentFailureMessage(error);
         const authSample = [error, technicalContent].filter(Boolean).join('\n');
         const failureKind = detectAgentFailureKind(authSample);
-        const extractedChallenge = extractAgentAuthLoginChallenge(authSample);
+        const extractedChallenge = extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
         const authChallenge = extractedChallenge
             ?? (failureKind === 'auth' ? { mode: 'session' as const } : undefined)
             ?? (/needs you to sign in|sign in required|open the sign-in/i.test(formatted)
@@ -220,6 +221,7 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: any, challenge:
             readonly onOpenAgentSignIn?: () => void | Promise<void>;
             readonly onRetry?: () => void | Promise<void>;
             readonly agentLabel?: string;
+            readonly agentId?: string;
         },): HTMLElement {
         const card = document.createElement('div');
         card.className = 'theia-mobile-agent-auth-login-card';
@@ -446,4 +448,3 @@ export function createTranscriptClampedPreExtracted(ctx: any, text: string, clas
         pre.textContent = text;
         return ctx.createTranscriptClampedBlock(pre, text.split('\n').length);
 }
-

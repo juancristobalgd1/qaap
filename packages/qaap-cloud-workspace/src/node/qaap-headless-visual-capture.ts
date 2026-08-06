@@ -61,6 +61,10 @@ const PAGE_SETTLE_MS = 700;
 /** Stay under the 5 MB evidence cap with margin. */
 const MAX_EVIDENCE_BYTES = 4_500_000;
 const CAPTURE_VIEWPORT = { width: 1280, height: 900 } as const;
+const DEFAULT_PUBLIC_PREVIEW_LEASE_MS = 15 * 60_000;
+const MIN_PUBLIC_PREVIEW_LEASE_MS = 60_000;
+const MAX_PUBLIC_PREVIEW_LEASE_MS = 24 * 60 * 60_000;
+const MAX_RETAINED_PREVIEWS_PER_OWNER = 3;
 
 const SKIPPED_SCAN_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out', 'coverage', '.cache']);
 
@@ -93,6 +97,62 @@ interface QaapHeadlessPublicPreview {
     readonly ownerLogin: string;
     readonly record: QaapDevPreviewRecord;
     readonly registeredByCapture: boolean;
+}
+
+interface QaapRetainedHeadlessPreview {
+    readonly conversationId: string;
+    readonly ownerLogin: string;
+    readonly preview: QaapHeadlessPublicPreview;
+    readonly staticServer?: http.Server;
+    readonly supervisedPreviewId?: string;
+    readonly retainedAt: number;
+    readonly expiryTimer: ReturnType<typeof setTimeout>;
+}
+
+export function qaapHeadlessPublicPreviewLeaseMs(value = process.env.QAAP_HEADLESS_PREVIEW_LEASE_MS): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return DEFAULT_PUBLIC_PREVIEW_LEASE_MS;
+    }
+    return Math.min(MAX_PUBLIC_PREVIEW_LEASE_MS, Math.max(MIN_PUBLIC_PREVIEW_LEASE_MS, Math.round(parsed)));
+}
+
+function isPathContainedBy(root: string, candidate: string): boolean {
+    const relative = path.relative(root, candidate);
+    return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+/**
+ * Resolves a static-preview request without allowing lexical or symlink traversal outside root.
+ * Unknown application routes retain the SPA fallback to the root index.html.
+ */
+export async function resolveQaapStaticPreviewFile(root: string, requestUrl: string): Promise<string | undefined> {
+    let requested: string;
+    try {
+        requested = decodeURIComponent(requestUrl.split('?')[0]);
+    } catch {
+        return undefined;
+    }
+    if (requested.includes('\0')) {
+        return undefined;
+    }
+    const absoluteRoot = path.resolve(root);
+    const relativeRequest = requested.replace(/^[/\\]+/, '');
+    const candidate = path.resolve(absoluteRoot, relativeRequest);
+    if (!isPathContainedBy(absoluteRoot, candidate)) {
+        return undefined;
+    }
+    const stat = await fsp.stat(candidate).catch(() => undefined);
+    const filePath = stat?.isDirectory()
+        ? path.join(candidate, 'index.html')
+        : stat
+            ? candidate
+            : path.join(absoluteRoot, 'index.html');
+    const [realRoot, realFile] = await Promise.all([
+        fsp.realpath(absoluteRoot).catch(() => undefined),
+        fsp.realpath(filePath).catch(() => undefined),
+    ]);
+    return realRoot && realFile && isPathContainedBy(realRoot, realFile) ? realFile : undefined;
 }
 
 function readPackageJson(dir: string): { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | undefined {
@@ -461,6 +521,8 @@ export class QaapHeadlessVisualCaptureService {
     protected readonly inFlight = new Set<string>();
     /** One headless attempt per settled turn (`conversationId:messageCount`). */
     protected readonly attemptedTurns = new Set<string>();
+    /** Successful capture previews are short-lived links, not permanent background processes. */
+    protected readonly retainedPreviews = new Map<string, QaapRetainedHeadlessPreview>();
     protected chromiumMissingLogged = false;
     /** Serializes captures — one headless browser at a time. */
     protected queue: Promise<void> = Promise.resolve();
@@ -527,7 +589,7 @@ export class QaapHeadlessVisualCaptureService {
         const message = error instanceof Error ? error.message : String(error);
         await this.store.recordVisualVerificationFailure(
             conversationId,
-            `Headless capture failed: ${message}`,
+            nls.localize('qaap/headlessCapture/failed', 'Headless capture failed: {0}', message),
             target.id,
         );
     }
@@ -547,8 +609,11 @@ export class QaapHeadlessVisualCaptureService {
             if (captureDirective.mode === 'video') {
                 await this.store.recordVisualVerificationFailure(
                     conversationId,
-                    'Video recording requires a server-side Chromium binary (set QAAP_HEADLESS_CHROMIUM '
-                    + 'or install playwright browsers). Screenshots cannot substitute for [QAAP record].',
+                    nls.localize(
+                        'qaap/headlessCapture/videoChromiumRequired',
+                        'Video recording requires a server-side Chromium binary (set QAAP_HEADLESS_CHROMIUM '
+                        + 'or install playwright browsers). Screenshots cannot substitute for [QAAP record].',
+                    ),
                     target.id,
                 );
                 return;
@@ -572,10 +637,11 @@ export class QaapHeadlessVisualCaptureService {
             );
             return;
         }
+        this.releaseRetainedPreview(conversationId);
         let staticServer: http.Server | undefined;
         let supervisedPreviewId: string | undefined;
         let publicPreview: QaapHeadlessPublicPreview | undefined;
-        let keepPreview = false;
+        let captureSucceeded = false;
         try {
             let port: number;
             if (app.kind === 'static') {
@@ -605,7 +671,11 @@ export class QaapHeadlessVisualCaptureService {
                     if (!staticRoot) {
                         await this.store.recordVisualVerificationFailure(
                             conversationId,
-                            `The dev server did not become ready for the capture: ${ready.reason}`,
+                            nls.localize(
+                                'qaap/headlessCapture/devServerNotReady',
+                                'The dev server did not become ready for the capture: {0}',
+                                ready.reason,
+                            ),
                             target.id,
                         );
                         return;
@@ -624,23 +694,68 @@ export class QaapHeadlessVisualCaptureService {
                 ? buildQaapIdentityPreviewUrl('', publicPreview.record.previewId, deriveVisualFlowSteps(conv)[0] ?? '/')
                 : undefined;
             if (captureDirective.mode === 'video') {
-                keepPreview = !!publicPreview
-                    && await this.recordFlowVideo(conversationId, conv, target.id, port, previewUrl);
+                captureSucceeded = await this.recordFlowVideo(conversationId, conv, target.id, port, previewUrl);
             } else {
-                keepPreview = !!publicPreview
-                    && await this.captureFlow(conversationId, conv, target.id, port, previewUrl);
+                captureSucceeded = await this.captureFlow(conversationId, conv, target.id, port, previewUrl);
+            }
+            if (captureSucceeded && publicPreview?.registeredByCapture) {
+                this.retainPublicPreview(conversationId, publicPreview, staticServer, supervisedPreviewId);
+                staticServer = undefined;
+                supervisedPreviewId = undefined;
+                publicPreview = undefined;
             }
         } finally {
-            if (!keepPreview) {
-                staticServer?.close();
-                if (supervisedPreviewId) {
-                    this.supervisor.stop(supervisedPreviewId);
-                }
-                if (publicPreview?.registeredByCapture) {
-                    this.previewRegistry.releasePreview(publicPreview.record.previewId, publicPreview.ownerLogin);
-                }
+            staticServer?.close();
+            if (supervisedPreviewId) {
+                this.supervisor.stop(supervisedPreviewId);
+            }
+            if (publicPreview?.registeredByCapture) {
+                this.previewRegistry.releasePreview(publicPreview.record.previewId, publicPreview.ownerLogin);
             }
         }
+    }
+
+    protected retainPublicPreview(
+        conversationId: string,
+        preview: QaapHeadlessPublicPreview,
+        staticServer?: http.Server,
+        supervisedPreviewId?: string,
+    ): void {
+        this.releaseRetainedPreview(conversationId);
+        const expiryTimer = setTimeout(
+            () => this.releaseRetainedPreview(conversationId),
+            qaapHeadlessPublicPreviewLeaseMs(),
+        );
+        expiryTimer.unref?.();
+        this.retainedPreviews.set(conversationId, {
+            conversationId,
+            ownerLogin: preview.ownerLogin,
+            preview,
+            staticServer,
+            supervisedPreviewId,
+            retainedAt: Date.now(),
+            expiryTimer,
+        });
+        const owned = [...this.retainedPreviews.values()]
+            .filter(retained => retained.ownerLogin === preview.ownerLogin)
+            .sort((left, right) => left.retainedAt - right.retainedAt);
+        for (const retained of owned.slice(0, Math.max(0, owned.length - MAX_RETAINED_PREVIEWS_PER_OWNER))) {
+            this.releaseRetainedPreview(retained.conversationId);
+        }
+    }
+
+    protected releaseRetainedPreview(conversationId: string): void {
+        const retained = this.retainedPreviews.get(conversationId);
+        if (!retained) {
+            return;
+        }
+        this.retainedPreviews.delete(conversationId);
+        clearTimeout(retained.expiryTimer);
+        retained.staticServer?.close();
+        if (retained.supervisedPreviewId) {
+            this.supervisor.stop(retained.supervisedPreviewId);
+        }
+        this.previewRegistry.releasePreview(retained.preview.record.previewId, retained.ownerLogin);
     }
 
     protected previewPortForApp(app: QaapHeadlessCaptureAppTarget): number {
@@ -756,23 +871,20 @@ export class QaapHeadlessVisualCaptureService {
     protected startStaticServer(root: string): Promise<{ server: http.Server; port: number }> {
         const server = http.createServer(async (request, response) => {
             try {
-                const requested = decodeURIComponent((request.url ?? '/').split('?')[0]);
-                const resolved = path.normalize(path.join(root, requested));
-                if (!resolved.startsWith(path.normalize(root))) {
+                const filePath = await resolveQaapStaticPreviewFile(root, request.url ?? '/');
+                if (!filePath) {
                     response.writeHead(403).end();
                     return;
-                }
-                let filePath = resolved;
-                const stat = await fsp.stat(filePath).catch(() => undefined);
-                if (!stat || stat.isDirectory()) {
-                    filePath = path.join(stat ? filePath : root, 'index.html');
                 }
                 const body = await fsp.readFile(filePath);
                 const types: Record<string, string> = {
                     '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript',
                     '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json',
                 };
-                response.writeHead(200, { 'Content-Type': types[path.extname(filePath)] ?? 'application/octet-stream' });
+                response.writeHead(200, {
+                    'Content-Type': types[path.extname(filePath)] ?? 'application/octet-stream',
+                    'X-Content-Type-Options': 'nosniff',
+                });
                 response.end(body);
             } catch {
                 response.writeHead(404).end();
@@ -823,13 +935,22 @@ export class QaapHeadlessVisualCaptureService {
                     }
                     captured.push({ label: step, evidenceId, result });
                 } catch (error) {
-                    skipped.push(`\`${step}\`: ${error instanceof Error ? error.message : String(error)}`);
+                    skipped.push(nls.localize(
+                        'qaap/headlessCapture/routeFailure',
+                        '`{0}`: {1}',
+                        step,
+                        error instanceof Error ? error.message : String(error),
+                    ));
                 }
             }
             if (captured.length === 0) {
                 await this.store.recordVisualVerificationFailure(
                     conversationId,
-                    `Headless capture reached the dev server but no route could be captured — ${skipped.join('; ')}`,
+                    nls.localize(
+                        'qaap/headlessCapture/noRouteCaptured',
+                        'Headless capture reached the dev server but no route could be captured — {0}',
+                        skipped.join('; '),
+                    ),
                     targetAgentMessageId,
                 );
                 return false;
@@ -842,7 +963,11 @@ export class QaapHeadlessVisualCaptureService {
                         ...first.result,
                         status: 'failed',
                         readiness: 'failed',
-                        issues: [...first.result.issues, ...skipped.map(reason => `Could not capture ${reason}.`)],
+                        issues: [...first.result.issues, ...skipped.map(reason => nls.localize(
+                            'qaap/headlessCapture/couldNotCaptureRoute',
+                            'Could not capture {0}.',
+                            reason,
+                        ))],
                     },
                 };
             }
@@ -904,7 +1029,12 @@ export class QaapHeadlessVisualCaptureService {
                     })`);
                     await page.waitForTimeout(800);
                 } catch (error) {
-                    skipped.push(`\`${step}\`: ${error instanceof Error ? error.message : String(error)}`);
+                    skipped.push(nls.localize(
+                        'qaap/headlessCapture/routeFailure',
+                        '`{0}`: {1}',
+                        step,
+                        error instanceof Error ? error.message : String(error),
+                    ));
                 }
             }
             await context.close();
@@ -916,7 +1046,11 @@ export class QaapHeadlessVisualCaptureService {
             if (stepResults.length === 0 || !videoPath) {
                 await this.store.recordVisualVerificationFailure(
                     conversationId,
-                    `Headless recording reached the dev server but produced no video — ${skipped.join('; ') || 'no route loaded'}`,
+                    nls.localize(
+                        'qaap/headlessCapture/noVideoProduced',
+                        'Headless recording reached the dev server but produced no video — {0}',
+                        skipped.join('; ') || nls.localize('qaap/headlessCapture/noRouteLoaded', 'no route loaded'),
+                    ),
                     targetAgentMessageId,
                 );
                 return false;
@@ -929,7 +1063,11 @@ export class QaapHeadlessVisualCaptureService {
                         ...first.result,
                         status: 'failed',
                         readiness: 'failed',
-                        issues: [...first.result.issues, ...skipped.map(reason => `Could not record ${reason}.`)],
+                        issues: [...first.result.issues, ...skipped.map(reason => nls.localize(
+                            'qaap/headlessCapture/couldNotRecordRoute',
+                            'Could not record {0}.',
+                            reason,
+                        ))],
                     },
                 };
             }
@@ -937,7 +1075,10 @@ export class QaapHeadlessVisualCaptureService {
             if (!evidenceId) {
                 await this.store.recordVisualVerificationFailure(
                     conversationId,
-                    'The recorded video could not be stored (size cap or storage limit reached).',
+                    nls.localize(
+                        'qaap/headlessCapture/videoStoreRejected',
+                        'The recorded video could not be stored (size cap or storage limit reached).',
+                    ),
                     targetAgentMessageId,
                 );
                 return false;

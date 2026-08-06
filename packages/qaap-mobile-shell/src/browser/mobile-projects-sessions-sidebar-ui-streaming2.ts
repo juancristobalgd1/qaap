@@ -68,6 +68,7 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
         sortBtn.title = nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects');
         sortBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/sort/title', 'Sort projects'));
         sortBtn.setAttribute('aria-haspopup', 'menu');
+        sortBtn.setAttribute('aria-expanded', 'false');
         sortBtn.addEventListener('click', event => {
             event.stopPropagation();
             ctx.toggleSessionsSidebarProjectSortPopover(sortBtn);
@@ -82,6 +83,7 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
         addProjectBtn.title = nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project');
         addProjectBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/addProject/title', 'Add project'));
         addProjectBtn.setAttribute('aria-haspopup', 'menu');
+        addProjectBtn.setAttribute('aria-expanded', 'false');
         addProjectBtn.addEventListener('click', event => {
             event.stopPropagation();
             ctx.toggleSessionsSidebarAddProjectPopover(addProjectBtn);
@@ -500,7 +502,9 @@ function dismissSessionsSidebarHeadPopoverOnOutside(
         };
         const handleKeydown = (event: KeyboardEvent): void => {
             if (event.key === 'Escape') {
+                event.preventDefault();
                 onDismiss();
+                window.setTimeout(() => anchor.focus(), 0);
             }
         };
         document.addEventListener('pointerdown', handlePointerDown, true);
@@ -511,6 +515,47 @@ function dismissSessionsSidebarHeadPopoverOnOutside(
             document.removeEventListener('click', handleClick, true);
             document.removeEventListener('keydown', handleKeydown, true);
         };
+}
+
+function bindSessionsSidebarHeadPopoverKeyboard(
+        popover: HTMLElement,
+        anchor: HTMLButtonElement,
+        initialIndex = 0,
+        onDismiss: () => void,
+): () => void {
+        const items = [...popover.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')];
+        const focusAt = (index: number): void => {
+            if (items.length === 0) {
+                return;
+            }
+            const normalized = (index + items.length) % items.length;
+            items.forEach((item, itemIndex) => item.tabIndex = itemIndex === normalized ? 0 : -1);
+            items[normalized].focus();
+        };
+        items.forEach((item, index) => item.tabIndex = index === initialIndex ? 0 : -1);
+        const handleKeydown = (event: KeyboardEvent): void => {
+            const currentIndex = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                focusAt(currentIndex + 1);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                focusAt(currentIndex - 1);
+            } else if (event.key === 'Home') {
+                event.preventDefault();
+                focusAt(0);
+            } else if (event.key === 'End') {
+                event.preventDefault();
+                focusAt(items.length - 1);
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                onDismiss();
+                window.setTimeout(() => anchor.focus(), 0);
+            }
+        };
+        popover.addEventListener('keydown', handleKeydown);
+        window.requestAnimationFrame(() => focusAt(initialIndex));
+        return () => popover.removeEventListener('keydown', handleKeydown);
 }
 
 export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: any, anchor: HTMLButtonElement): void {
@@ -546,15 +591,24 @@ export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: any, ancho
         }
         document.body.append(popover);
         ctx.sessionsSidebarSortPopover = popover;
+        anchor.setAttribute('aria-expanded', 'true');
         window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
         const dismissCleanup = dismissSessionsSidebarHeadPopoverOnOutside(popover, anchor, () => {
             ctx.closeSessionsSidebarHeadPopovers();
         });
         const originalClose = ctx.closeSessionsSidebarHeadPopovers.bind(ctx);
+        const keyboardCleanup = bindSessionsSidebarHeadPopoverKeyboard(
+            popover,
+            anchor,
+            Math.max(0, SESSIONS_SIDEBAR_PROJECT_SORT_MODES.findIndex(entry => entry.id === currentMode)),
+            () => ctx.closeSessionsSidebarHeadPopovers(),
+        );
         ctx.closeSessionsSidebarHeadPopovers = (): void => {
             dismissCleanup();
+            keyboardCleanup();
             popover.remove();
             ctx.sessionsSidebarSortPopover = undefined;
+            anchor.setAttribute('aria-expanded', 'false');
             ctx.closeSessionsSidebarHeadPopovers = originalClose;
         };
 }
@@ -602,16 +656,24 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: any, anchor
         popover.append(startNew, addRepo);
         document.body.append(popover);
         ctx.sessionsSidebarAddProjectPopover = popover;
+        anchor.setAttribute('aria-expanded', 'true');
         window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
         const dismissCleanup = dismissSessionsSidebarHeadPopoverOnOutside(popover, anchor, () => {
             ctx.closeSessionsSidebarHeadPopovers();
         });
         const originalClose = ctx.closeSessionsSidebarHeadPopovers.bind(ctx);
+        const keyboardCleanup = bindSessionsSidebarHeadPopoverKeyboard(
+            popover,
+            anchor,
+            0,
+            () => ctx.closeSessionsSidebarHeadPopovers(),
+        );
         ctx.closeSessionsSidebarHeadPopovers = (): void => {
             dismissCleanup();
+            keyboardCleanup();
             popover.remove();
             ctx.sessionsSidebarAddProjectPopover = undefined;
+            anchor.setAttribute('aria-expanded', 'false');
             ctx.closeSessionsSidebarHeadPopovers = originalClose;
         };
 }
-

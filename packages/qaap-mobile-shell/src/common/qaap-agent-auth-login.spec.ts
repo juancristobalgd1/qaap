@@ -37,9 +37,34 @@ describe('qaap-agent-auth-login', () => {
     it('extracts Claude OAuth authorize URLs', () => {
         const log = 'Browser didn\'t open? Use the url below to sign in\n'
             + 'https://claude.ai/oauth/authorize?code=true&client_id=abc';
-        const challenge = extractAgentAuthLoginChallenge(log);
+        const challenge = extractAgentAuthLoginChallenge(log, { agentId: 'claude' });
         expect(challenge?.url).to.equal('https://claude.ai/oauth/authorize?code=true&client_id=abc');
         expect(challenge?.mode).to.equal('session');
+    });
+
+    it('rejects deceptive, insecure, and unrelated login-looking URLs', () => {
+        const samples = [
+            'Open http://auth.openai.com/codex/device to sign in',
+            'Open https://auth.openai.com.attacker.example/codex/device to sign in',
+            'Open https://attacker.example/oauth?next=https://auth.openai.com/codex/device to sign in',
+            'Open https://github.com/example/oauth-demo to sign in',
+            'Open https://auth.openai.com:8443/codex/device to sign in',
+        ];
+        for (const sample of samples) {
+            expect(extractAgentAuthLoginChallenge(sample, { agentId: 'codex' })?.url).to.equal(undefined);
+        }
+    });
+
+    it('applies the supported agent origin policy when agent provenance is known', () => {
+        const openAiLogin = 'Sign in at https://auth.openai.com/codex/device';
+        expect(extractAgentAuthLoginChallenge(openAiLogin, { agentId: 'codex' })?.url)
+            .to.equal('https://auth.openai.com/codex/device');
+        expect(extractAgentAuthLoginChallenge(openAiLogin, { agentId: 'claude' })?.url).to.equal(undefined);
+
+        const githubLogin = 'Sign in at https://github.com/login/device';
+        expect(extractAgentAuthLoginChallenge(githubLogin, { agentId: 'copilot' })?.url)
+            .to.equal('https://github.com/login/device');
+        expect(extractAgentAuthLoginChallenge(githubLogin, { agentId: 'cursor' })?.url).to.equal(undefined);
     });
 
     it('detects session auth without a URL (Not logged in · Please run /login)', () => {

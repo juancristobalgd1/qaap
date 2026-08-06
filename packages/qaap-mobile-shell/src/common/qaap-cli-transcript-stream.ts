@@ -150,7 +150,7 @@ export function resolveAgentLogDisplayText(agentId: string | undefined, log: str
         // Keep login URLs / device codes from the CLI so the chat can offer a Sign-in CTA
         // (same affordance as the agent TUI hyperlink). Do not replace the body with the
         // generic Settings/API-key sentence.
-        const challenge = extractAgentAuthLoginChallenge(trimmed);
+        const challenge = extractAgentAuthLoginChallenge(trimmed, { agentId });
         const parsed = parseAgentLogForTranscript(agentId, trimmed).content.trim();
         const parts: string[] = [];
         if (parsed) {

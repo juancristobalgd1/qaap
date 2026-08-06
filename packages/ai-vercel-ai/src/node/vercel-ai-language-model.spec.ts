@@ -17,8 +17,8 @@
 import { expect } from 'chai';
 import { MockLogger } from '@theia/core/lib/common/test/mock-logger';
 import { LanguageModelMessage } from '@theia/ai-core';
-import { CoreMessage } from 'ai';
-import { VercelAiModel } from './vercel-ai-language-model';
+import { ModelMessage } from 'ai';
+import { VercelAiModel, VercelAiStreamTransformer } from './vercel-ai-language-model';
 import { VercelAiLanguageModelFactory } from './vercel-ai-language-model-factory';
 
 class TestableVercelAiModel extends VercelAiModel {
@@ -36,7 +36,7 @@ class TestableVercelAiModel extends VercelAiModel {
         );
     }
 
-    public callProcessMessages(messages: LanguageModelMessage[]): Array<CoreMessage> {
+    public callProcessMessages(messages: LanguageModelMessage[]): Array<ModelMessage> {
         return this.processMessages(messages);
     }
 }
@@ -85,5 +85,68 @@ describe('VercelAiModel - processMessages', () => {
         }
         expect(result).to.have.lengthOf(2);
         expect(result[1]).to.deep.equal({ role: 'assistant', content: 'reasoning\nfinal answer' });
+    });
+});
+
+describe('VercelAiModel - AI SDK 7 compatibility', () => {
+    it('keeps OpenAI-compatible models on the Chat Completions protocol', () => {
+        const languageModel = new VercelAiLanguageModelFactory().createLanguageModel({
+            id: 'openai/test',
+            model: 'gpt-4o-mini',
+            apiKey: true,
+            enableStreaming: true,
+            supportsStructuredOutput: true,
+            maxRetries: 3,
+        }, {
+            provider: 'openai',
+            apiKey: 'test-key',
+        });
+
+        expect(languageModel.provider).to.equal('openai.chat');
+    });
+
+    it('translates v7 text, tool input/output, and token usage stream parts', async () => {
+        const parts = [
+            { type: 'text-delta', id: 'text-1', text: 'hello' },
+            { type: 'tool-input-start', id: 'call-1', toolName: 'lookup' },
+            { type: 'tool-input-delta', id: 'call-1', delta: '{"q":"x"}' },
+            { type: 'tool-result', toolCallId: 'call-1', toolName: 'lookup', input: { q: 'x' }, output: 'found', dynamic: true },
+            {
+                type: 'finish-step',
+                response: { id: 'response-1', timestamp: new Date(), modelId: 'test-model' },
+                usage: {
+                    inputTokens: 7,
+                    inputTokenDetails: { noCacheTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0 },
+                    outputTokens: 3,
+                    outputTokenDetails: { textTokens: 3, reasoningTokens: 0 },
+                    totalTokens: 10,
+                },
+                finishReason: 'stop',
+                rawFinishReason: 'stop',
+                providerMetadata: undefined,
+            },
+        ];
+        const stream = {
+            cancel: () => undefined,
+            async *[Symbol.asyncIterator](): AsyncIterator<unknown> {
+                yield* parts;
+            },
+        };
+        const transformer = new VercelAiStreamTransformer(stream as never, { logger: new MockLogger() });
+        const translated: unknown[] = [];
+        for await (const part of transformer.transform()) {
+            translated.push(JSON.parse(JSON.stringify(part)));
+        }
+
+        expect(translated[0]).to.deep.equal({ content: 'hello' });
+        expect(translated).to.deep.include({
+            tool_calls: [{
+                id: 'call-1',
+                function: { name: 'lookup', arguments: '{"q":"x"}' },
+                finished: true,
+                result: 'found',
+            }],
+        });
+        expect(translated.at(-1)).to.deep.equal({ input_tokens: 7, output_tokens: 3 });
     });
 });

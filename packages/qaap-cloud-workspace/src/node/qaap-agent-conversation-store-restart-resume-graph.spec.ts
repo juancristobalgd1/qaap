@@ -19,6 +19,7 @@ import type { QaapAgentTask } from '../common/qaap-agent-task';
 import type { QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
+import { runQaapConversationRestoreStep } from './qaap-agent-conversation-store-live-status2';
 
 /** In-memory run store: mutations run the real reducer/persist ordering, disk writes are counted. */
 class TestRunStore extends QaapWorkflowRunStore {
@@ -297,5 +298,30 @@ describe('QaapAgentConversationStore restart auto-resume via the chat-turn graph
         const byConversation = new Map(chatTurnRuns(runStore).map(record => [record.inputs.conversationId, record]));
         expect(byConversation.get('c9')?.run.status).to.equal('failed');
         expect(byConversation.get('c10')?.run.status).to.equal('running');
+    });
+});
+
+describe('runQaapConversationRestoreStep', () => {
+    it('continues restoring later conversations after one conversation fails', async () => {
+        const visited: string[] = [];
+        const originalWarn = console.warn;
+        console.warn = () => undefined;
+        try {
+            const changed = await runQaapConversationRestoreStep(
+                [{ id: 'first' }, { id: 'broken' }, { id: 'last' }],
+                'test phase',
+                async conversation => {
+                    visited.push(conversation.id);
+                    if (conversation.id === 'broken') {
+                        throw new Error('corrupt persisted run');
+                    }
+                    return conversation.id === 'last';
+                },
+            );
+            expect(changed).to.equal(true);
+            expect(visited).to.deep.equal(['first', 'broken', 'last']);
+        } finally {
+            console.warn = originalWarn;
+        }
     });
 });

@@ -269,11 +269,18 @@ export function tryPatchSessionsSidebarListExtracted(ctx: any, listHost: HTMLEle
     }
     let patchedAny = false;
     const entries = ctx.collectSessionsSidebarConversationEntries();
+    const rowsByConversationId = new Map<string, HTMLElement>();
+    for (const row of listHost.querySelectorAll<HTMLElement>(
+        '.theia-mobile-projects-task-row[data-qaap-conversation-id]',
+    )) {
+        const conversationId = row.dataset.qaapConversationId;
+        if (conversationId) {
+            rowsByConversationId.set(conversationId, row);
+        }
+    }
     for (const entry of entries) {
         const nextFingerprint = ctx.buildSidebarRowFingerprint(entry);
-        const existingRow = listHost.querySelector<HTMLElement>(
-            `.theia-mobile-projects-task-row[data-qaap-conversation-id="${cssEscapeAttribute(entry.summary.id)}"]`,
-        );
+        const existingRow = rowsByConversationId.get(entry.summary.id);
         if (!existingRow) {
             return false;
         }
@@ -324,10 +331,17 @@ export function tryPatchSessionsSidebarListExtracted(ctx: any, listHost: HTMLEle
 }
 
 export function stampSessionsSidebarRowFingerprintsExtracted(ctx: any, listHost: HTMLElement): void {
+    const rowsByConversationId = new Map<string, HTMLElement>();
+    for (const row of listHost.querySelectorAll<HTMLElement>(
+        '.theia-mobile-projects-task-row[data-qaap-conversation-id]',
+    )) {
+        const conversationId = row.dataset.qaapConversationId;
+        if (conversationId) {
+            rowsByConversationId.set(conversationId, row);
+        }
+    }
     for (const entry of ctx.collectSessionsSidebarConversationEntries()) {
-        const row = listHost.querySelector<HTMLElement>(
-            `.theia-mobile-projects-task-row[data-qaap-conversation-id="${cssEscapeAttribute(entry.summary.id)}"]`,
-        );
+        const row = rowsByConversationId.get(entry.summary.id);
         if (row) {
             row.setAttribute(QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, ctx.buildSidebarRowFingerprint(entry));
         }

@@ -19,7 +19,6 @@ import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/mark
 import type { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import type { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import type { ScmService } from '@theia/scm/lib/browser/scm-service';
-import { SCM_VIEW_CONTAINER_ID } from '@theia/scm/lib/browser/scm-contribution';
 import { isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
 import {
     type TranscriptFileDecoration,
@@ -27,6 +26,10 @@ import {
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
 import { createTranscriptPreviewMonacoEditor } from './qaap-transcript-monaco-editor';
+
+// Keep this stable Theia widget id local: importing scm-contribution solely for the constant
+// eagerly pulls Monaco's ESM editor bundle into lightweight transcript and Node test paths.
+const QAAP_SCM_VIEW_CONTAINER_ID = 'scm-view-container';
 
 export async function openTranscriptWorkspaceFile(
     filePath: string,
@@ -71,7 +74,7 @@ export async function openTranscriptWorkspaceChanges(
     shell: ApplicationShell,
     widgetManager: WidgetManager,
 ): Promise<void> {
-    const widget = await widgetManager.getOrCreateWidget(SCM_VIEW_CONTAINER_ID);
+    const widget = await widgetManager.getOrCreateWidget(QAAP_SCM_VIEW_CONTAINER_ID);
     if (!widget.isAttached) {
         await shell.addWidget(widget, { area: 'left' });
     }

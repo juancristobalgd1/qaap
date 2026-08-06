@@ -24,21 +24,29 @@ export interface QaapAgentAuthLoginChallenge {
 
 const AUTH_URL_RE = /https?:\/\/[^\s<>"'`)\]|,]+/gi;
 
-/** Hosts / paths that typically appear in agent CLI login flows. */
-const AUTH_URL_HINTS: readonly RegExp[] = [
-    /auth\.openai\.com/i,
-    /chatgpt\.com/i,
-    /claude\.ai/i,
-    /console\.anthropic\.com/i,
-    /platform\.claude\.com/i,
-    /github\.com\/login/i,
-    /cursor\.(?:com|sh)/i,
-    /authenticator\.cursor/i,
-    /accounts\.google\.com/i,
-    /login\.microsoftonline\.com/i,
-    /oauth/i,
-    /\/device(?:\/|$|\?)/i,
-    /\/authorize(?:\/|$|\?)/i,
+interface AuthUrlPolicy {
+    readonly agents: readonly string[];
+    readonly hostname: string;
+    readonly path: RegExp;
+}
+
+/**
+ * Exact origins and login paths emitted by supported agent CLIs. Never infer trust from a
+ * substring such as `oauth`, a query parameter, or a parent-looking subdomain.
+ */
+const AUTH_URL_POLICIES: readonly AuthUrlPolicy[] = [
+    { agents: ['codex'], hostname: 'auth.openai.com', path: /^\/(?:codex\/device|device|oauth|authorize)(?:\/|$)/i },
+    { agents: ['codex'], hostname: 'chatgpt.com', path: /^\/(?:auth|oauth)(?:\/|$)/i },
+    { agents: ['claude'], hostname: 'claude.ai', path: /^\/oauth\/authorize(?:\/|$)/i },
+    { agents: ['claude'], hostname: 'console.anthropic.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
+    { agents: ['claude'], hostname: 'platform.claude.com', path: /^\/(?:login|oauth|authorize)(?:\/|$)/i },
+    { agents: ['copilot'], hostname: 'github.com', path: /^\/login\/(?:device|oauth|authorize)(?:\/|$)/i },
+    { agents: ['cursor'], hostname: 'cursor.com', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
+    { agents: ['cursor'], hostname: 'cursor.sh', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
+    { agents: ['cursor'], hostname: 'authenticator.cursor.sh', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
+    { agents: ['gemini', 'antigravity'], hostname: 'accounts.google.com', path: /^\/(?:o\/oauth2|signin\/oauth|device)(?:\/|$)/i },
+    { agents: ['grok'], hostname: 'auth.x.ai', path: /^\/(?:auth|login|oauth|device|authorize)(?:\/|$)/i },
+    { agents: ['copilot'], hostname: 'login.microsoftonline.com', path: /^\/[^/]+\/oauth2\/(?:v2\.0\/)?authorize(?:\/|$)/i },
 ];
 
 const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
@@ -75,16 +83,28 @@ function stripTrailingUrlPunctuation(url: string): string {
     return url.replace(/[.,;:!?)]+$/g, '');
 }
 
-function isLikelyAuthLoginUrl(url: string): boolean {
-    return AUTH_URL_HINTS.some(pattern => pattern.test(url));
+function normalizeTrustedAuthLoginUrl(candidate: string, agentId?: string): string | undefined {
+    try {
+        const parsed = new URL(candidate);
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port) {
+            return undefined;
+        }
+        const normalizedAgentId = migrateQaapProductAgentId(agentId?.trim());
+        const policy = AUTH_URL_POLICIES.find(entry => entry.hostname === parsed.hostname.toLowerCase()
+            && entry.path.test(parsed.pathname)
+            && (!normalizedAgentId || entry.agents.includes(normalizedAgentId)));
+        return policy ? parsed.toString() : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
-function extractAuthUrls(sample: string): string[] {
+function extractAuthUrls(sample: string, agentId?: string): string[] {
     const found: string[] = [];
     const seen = new Set<string>();
     for (const match of sample.matchAll(AUTH_URL_RE)) {
-        const url = stripTrailingUrlPunctuation(match[0]);
-        if (!url || seen.has(url) || !isLikelyAuthLoginUrl(url)) {
+        const url = normalizeTrustedAuthLoginUrl(stripTrailingUrlPunctuation(match[0]), agentId);
+        if (!url || seen.has(url)) {
             continue;
         }
         seen.add(url);
@@ -163,13 +183,13 @@ export function isUnauthenticatedCliDeclaration(log: string | undefined): boolea
  */
 export function extractAgentAuthLoginChallenge(
     log: string | undefined,
-    options?: { readonly preferMode?: 'session' | 'api_key' },
+    options?: { readonly preferMode?: 'session' | 'api_key'; readonly agentId?: string },
 ): QaapAgentAuthLoginChallenge | undefined {
     const sample = (log ?? '').trim();
     if (!sample) {
         return undefined;
     }
-    const urls = extractAuthUrls(sample);
+    const urls = extractAuthUrls(sample, options?.agentId);
     const userCode = extractUserCode(sample);
     const detectedMode = detectAgentAuthFailureMode(sample);
     const mode = options?.preferMode ?? detectedMode;

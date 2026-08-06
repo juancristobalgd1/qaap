@@ -288,6 +288,7 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: any, segments: Qa
                     onOpenAgentSignIn: ctx.host.openAgentSignInTerminal
                         ? () => ctx.host.openAgentSignInTerminal?.(agentId)
                         : undefined,
+                    agentId,
                 },
             ));
         }
