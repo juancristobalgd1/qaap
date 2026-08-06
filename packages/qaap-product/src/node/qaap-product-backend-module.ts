@@ -17,12 +17,15 @@ import { SocketWriteBuffer } from '@theia/core/lib/common/messaging/socket-write
 import { QaapSocketWriteBuffer } from './qaap-socket-write-buffer';
 import { QaapPluginDeployerSecurityParticipant } from './qaap-plugin-deployer-security-participant';
 import { QaapPluginServerImpl } from './qaap-plugin-server-impl';
+import { QaapTerminalEnvironmentContribution } from './qaap-terminal-environment-contribution';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapLocalizationContribution).toSelf().inSingletonScope();
     bind(LocalizationContribution).toService(QaapLocalizationContribution);
     bind(QaapBackendStartupLogFilterContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapBackendStartupLogFilterContribution);
+    bind(QaapTerminalEnvironmentContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTerminalEnvironmentContribution);
     // Owns frontend static serving (the generated server.js default yields when this is bound):
     // adds immutable caching for hashed esbuild chunks.
     bind(QaapFrontendStaticServer).toSelf().inSingletonScope();
