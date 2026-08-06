@@ -87,7 +87,7 @@ export function disposeTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey?
         if (workspaceKey) {
             const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
             if (state) {
-                for (const surface of state.surfaces) {
+                for (const surface of [...state.surfaces]) {
                     surface.dispose.dispose();
                 }
             }
@@ -95,7 +95,7 @@ export function disposeTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey?
             return;
         }
         for (const state of ctx.host.transcriptTerminalSlidesByWorkspace.values()) {
-            for (const surface of state.surfaces) {
+            for (const surface of [...state.surfaces]) {
                 surface.dispose.dispose();
             }
         }
@@ -354,4 +354,3 @@ export function resolveTranscriptPreviewUrlExtracted(ctx: any, project: MobilePr
         }
         return undefined;
 }
-

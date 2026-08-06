@@ -102,6 +102,9 @@ const ALLOWED = [
     /^(?:packages\/ai-claude-code\/src\/browser\/renderers\/(?:ls-tool-renderer|web-fetch-tool-renderer)\.tsx|packages\/ai-claude-code\/src\/browser\/renderers\/multiedit-tool-renderer\.tsx)$/,
     // Localization lint and serialized prompt templates require narrow ai-ide seams.
     /^(?:packages\/ai-ide\/src\/browser\/ai-configuration\/(?:agent-configuration-widget|token-usage-configuration-widget)\.tsx|packages\/ai-ide\/src\/browser\/architect-agent\.ts|packages\/ai-ide\/src\/browser\/user-interaction-tool-renderer\.tsx|packages\/ai-ide\/src\/common\/coder-replace-prompt-template\.ts)$/,
+    // Qaap's terminal Ask AI dialog is shared by Work Hub and the classic IDE,
+    // while the upstream stylesheet only contains the retired command mini-chat.
+    /^packages\/ai-terminal\/src\/browser\/style\/ai-terminal\.css$/,
     // Localization lint requires a stable explicit key for this property label;
     // upstream's localizeByDefault call is not present in the generated catalog.
     /^packages\/property-view\/src\/browser\/resource-property-view\/resource-property-view-tree-widget\.tsx$/,
@@ -268,6 +271,12 @@ const ALLOWED = [
     // QaapShellExecutionServerImpl (qaap-ai-config) overrides resolveCwd/execute
     // (basename fallback + ENOENT rewrite); renderer keeps the Canceled i18n key.
     /^packages\/ai-terminal\/src\/(browser\/(shell-execution-tool|shell-execution-tool-renderer)\.tsx?|common\/shell-execution-server\.ts|node\/shell-execution-server-impl\.ts)$/,
+    // Context-menu target seam: Ask AI must resolve the embedded Work Hub terminal
+    // from the menu anchor instead of requiring an active ApplicationShell widget.
+    /^packages\/ai-terminal\/src\/browser\/ai-terminal-contribution\.ts$/,
+    // Work Hub terminal actions use the shared Qaap adapter context without making
+    // the upstream ai-terminal package depend on the mobile shell implementation.
+    /^packages\/ai-terminal\/package\.json$/,
     // ai-ide drops @theia/file-search (single-root policy: the multi-root search
     // provider that needed it is replaced by the fork's primary-root provider).
     /^packages\/ai-ide\/package\.json$/,

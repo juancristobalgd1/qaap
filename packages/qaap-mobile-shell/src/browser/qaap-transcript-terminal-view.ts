@@ -11,6 +11,7 @@ import { Widget as LuminoWidget } from '@lumino/widgets';
 import { MessageLoop } from '@lumino/messaging';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
+import type { TerminalBlock } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { resolveTranscriptWorkspaceRootUri } from './qaap-transcript-file-open';
 import type { TranscriptTerminalSurface } from './qaap-transcript-surface-types';
@@ -49,6 +50,9 @@ interface TerminalStateStore {
     storeState(): object;
 }
 
+const transcriptTerminalStagingHosts = new WeakMap<TranscriptTerminalSurface, HTMLElement>();
+const TRANSCRIPT_TERMINAL_CONTEXT_LIMIT = 8000;
+
 function markTerminalRestorable(terminal: TerminalWidget): void {
     const storeState = (terminal as unknown as Partial<TerminalStateStore>).storeState;
     if (typeof storeState === 'function') {
@@ -83,13 +87,45 @@ function installTranscriptTerminalWheelScrollBridge(mountHost: HTMLElement): Dis
 }
 
 export function scheduleTranscriptTerminalResize(terminal: TerminalWidget): void {
+    if (terminal.isDisposed) {
+        return;
+    }
     terminal.update();
     requestAnimationFrame(() => {
-        if (terminal.isAttached) {
+        if (!terminal.isDisposed && terminal.isAttached) {
             MessageLoop.sendMessage(terminal, LuminoWidget.ResizeMessage.UnknownSize);
             terminal.update();
         }
     });
+}
+
+/** Returns the recent output of one Work Hub terminal for the composer hand-off. */
+export function getTranscriptTerminalContext(terminal: TerminalWidget): string {
+    const history = terminal.commandHistoryState?.commandHistory ?? [];
+    if (history.length > 0) {
+        const blocks: string[] = [];
+        let remaining = TRANSCRIPT_TERMINAL_CONTEXT_LIMIT;
+        for (let index = history.length - 1; index >= 0 && remaining > 0; index--) {
+            const block = history[index] as TerminalBlock;
+            const text = [
+                nls.localize('qaap/mobileProjects/terminalContextCommand', '### Terminal Command:'),
+                block.command,
+                '',
+                nls.localize('qaap/mobileProjects/terminalContextOutput', '### Terminal Output:'),
+                block.output,
+            ].join('\n');
+            const excerpt = text.length > remaining ? text.slice(-remaining) : text;
+            blocks.unshift(excerpt);
+            remaining -= excerpt.length;
+        }
+        return blocks.join('\n\n').trim();
+    }
+
+    const bufferLength = terminal.buffer.length;
+    return terminal.buffer.getLines(
+        Math.max(0, bufferLength - 100),
+        bufferLength,
+    ).join('\n').trim();
 }
 
 /**
@@ -134,25 +170,43 @@ export async function createTranscriptTerminalSurface(
     }
     scheduleTranscriptTerminalResize(terminal);
 
+    let surface: TranscriptTerminalSurface;
     const toDispose = new DisposableCollection(
         installTranscriptTerminalWheelScrollBridge(mountHost),
         Disposable.create(() => {
             window.removeEventListener('beforeunload', markForReload);
         }),
         Disposable.create(() => {
-            if (terminal.isAttached && terminal.node.parentElement) {
-                LuminoWidget.detach(terminal);
+            const stagingHost = transcriptTerminalStagingHosts.get(surface);
+            if (stagingHost?.isConnected && mountHost.parentElement !== stagingHost) {
+                stagingHost.append(mountHost);
+            }
+            if (terminal.isAttached && !terminal.node.isConnected && document.body) {
+                document.body.append(mountHost);
+            }
+            if (terminal.isAttached && terminal.node.isConnected) {
+                try {
+                    LuminoWidget.detach(terminal);
+                } catch {
+                    // The terminal can already be detached by a concurrent surface teardown.
+                }
             }
             if (!terminal.isDisposed) {
                 terminal.dispose();
             }
             mountHost.remove();
+            stagingHost?.remove();
+            transcriptTerminalStagingHosts.delete(surface);
         }),
     );
     const markForReload = (): void => markTerminalRestorable(terminal);
     window.addEventListener('beforeunload', markForReload);
 
-    return { terminal, mountHost, dispose: toDispose };
+    surface = { terminal, mountHost, dispose: toDispose };
+    if (mountTarget.classList.contains('theia-mobile-transcript-terminal-staging')) {
+        transcriptTerminalStagingHosts.set(surface, mountTarget);
+    }
+    return surface;
 }
 
 /** Mounts a cached terminal surface into the transcript tab host. */
@@ -186,8 +240,28 @@ export function attachTranscriptTerminalSurface(
 
 /** Detaches the surface from the sheet without killing the PTY (for reuse / cache). */
 export function detachTranscriptTerminalSurface(host: HTMLElement, surface: TranscriptTerminalSurface): void {
+    const stagingHost = transcriptTerminalStagingHosts.get(surface);
+    if (stagingHost?.isConnected) {
+        stagingHost.append(surface.mountHost);
+        return;
+    }
     if (surface.mountHost.parentElement === host) {
+        if (surface.terminal.isAttached && surface.terminal.node.isConnected) {
+            try {
+                LuminoWidget.detach(surface.terminal);
+            } catch {
+                // The terminal can already be detached by a concurrent surface teardown.
+            }
+        }
         surface.mountHost.remove();
+    }
+}
+
+/** Keeps a cached terminal node connected while its visible slide is rebuilt. */
+export function parkTranscriptTerminalSurface(surface: TranscriptTerminalSurface): void {
+    const stagingHost = transcriptTerminalStagingHosts.get(surface);
+    if (stagingHost?.isConnected && surface.mountHost.parentElement !== stagingHost) {
+        stagingHost.append(surface.mountHost);
     }
 }
 

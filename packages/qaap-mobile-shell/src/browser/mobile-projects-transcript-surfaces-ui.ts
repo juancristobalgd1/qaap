@@ -99,6 +99,7 @@ type TranscriptTab = ExecutionSurfaceTabId;
 interface TranscriptTerminalSliderState {
     surfaces: TranscriptTerminalSurface[];
     activeIndex: number;
+    suppressAutoCreate?: boolean;
 }
 
 interface ConversationPreviewRuntimeState {

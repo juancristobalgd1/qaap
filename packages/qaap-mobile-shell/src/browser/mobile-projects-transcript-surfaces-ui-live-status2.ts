@@ -58,12 +58,15 @@ import {
 import {
     createTranscriptTerminalStagingHost,
     createTranscriptTerminalSurface,
+    getTranscriptTerminalContext,
     markTranscriptTerminalRestorable,
+    parkTranscriptTerminalSurface,
     scheduleTranscriptTerminalResize,
     type TranscriptTerminalPersistedWorkspace,
     type TranscriptTerminalSurface,
     type TranscriptTerminalViewServices,
 } from './qaap-transcript-terminal-view';
+import { registerQaapWorkHubTerminalContext } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-terminal-context';
 import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
@@ -132,7 +135,7 @@ export async function ensureTranscriptTerminalTabExtracted(ctx: any, project: Mo
         state = { surfaces: [], activeIndex: 0 };
         ctx.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
     }
-    if (state.surfaces.length === 0) {
+    if (state.surfaces.length === 0 && !state.suppressAutoCreate) {
         await ctx.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary);
         state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
     }
@@ -151,6 +154,11 @@ export function ensureTranscriptTerminalChromeExtracted(ctx: any, host: HTMLElem
         && ctx.host.transcriptTerminalToolbar?.parentElement === host
         && ctx.host.transcriptTerminalDots?.parentElement === ctx.host.transcriptTerminalToolbar) {
         return;
+    }
+    for (const state of ctx.host.transcriptTerminalSlidesByWorkspace.values()) {
+        for (const surface of state.surfaces) {
+            parkTranscriptTerminalSurface(surface);
+        }
     }
     host.classList.add('theia-mobile-transcript-terminal');
     host.replaceChildren();
@@ -223,7 +231,9 @@ export async function mountFreshTranscriptTerminalSlideExtracted(ctx: any, works
     activateNewest: boolean,): Promise<void> {
     const staging = createTranscriptTerminalStagingHost();
     const surface = await createTranscriptTerminalSurface(staging, cwd, services);
+    registerTranscriptTerminalContext(ctx, workspaceKey, cwd, services, project, summary, surface);
     const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey) ?? { surfaces: [], activeIndex: 0 };
+    state.suppressAutoCreate = false;
     state.surfaces.push(surface);
     state.activeIndex = activateNewest ? state.surfaces.length - 1 : Math.max(0, state.activeIndex);
     ctx.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
@@ -239,6 +249,11 @@ export function showTranscriptTerminalErrorExtracted(ctx: any, host: HTMLElement
     error: unknown,): void {
     if (!host.isConnected) {
         return;
+    }
+    for (const state of ctx.host.transcriptTerminalSlidesByWorkspace.values()) {
+        for (const surface of state.surfaces) {
+            parkTranscriptTerminalSurface(surface);
+        }
     }
     const slider = ctx.host.transcriptTerminalSlider;
     if (slider) {
@@ -302,6 +317,9 @@ export function renderTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey: 
     const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
     if (!slider || !state) {
         return;
+    }
+    for (const surface of state.surfaces) {
+        parkTranscriptTerminalSurface(surface);
     }
     slider.replaceChildren();
     const active = state.surfaces[state.activeIndex];
@@ -407,6 +425,7 @@ export function closeTranscriptTerminalTabExtracted(ctx: any, workspaceKey: Tran
     removed?.dispose.dispose();
     if (state.surfaces.length === 0) {
         state.activeIndex = 0;
+        state.suppressAutoCreate = true;
     } else if (state.activeIndex >= state.surfaces.length) {
         state.activeIndex = state.surfaces.length - 1;
     }
@@ -430,6 +449,11 @@ export async function restoreTranscriptTerminalSlidesExtracted(ctx: any, workspa
         try {
             const staging = createTranscriptTerminalStagingHost();
             const surface = await createTranscriptTerminalSurface(staging, cwd, services, terminalState);
+            const project = ctx.host.transcriptOpenProject;
+            const summary = ctx.host.transcriptOpenSummary;
+            if (project && summary) {
+                registerTranscriptTerminalContext(ctx, workspaceKey, cwd, services, project, summary, surface);
+            }
             state.surfaces.push(surface);
         } catch (error) {
             console.warn('[qaap-mobile-shell] failed to restore WorkHub terminal', error);
@@ -441,6 +465,126 @@ export async function restoreTranscriptTerminalSlidesExtracted(ctx: any, workspa
     );
     ctx.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
     void ctx.persistTranscriptTerminalWorkspace(workspaceKey);
+}
+
+function registerTranscriptTerminalContext(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey,
+    cwd: string,
+    services: TranscriptTerminalViewServices,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    surface: TranscriptTerminalSurface,): void {
+    registerQaapWorkHubTerminalContext(surface.terminal, {
+        createNewTerminal: async () => {
+            await ctx.createTranscriptTerminalSlide(workspaceKey, cwd, services, project, summary, true);
+        },
+        closeTerminal: async () => {
+            const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
+            const index = state?.surfaces.indexOf(surface) ?? -1;
+            if (index >= 0) {
+                ctx.closeTranscriptTerminalTab(workspaceKey, index);
+            }
+        },
+        askAi: async (question: string) => {
+            await focusWorkHubChatInput(
+                ctx,
+                project,
+                summary,
+                getTranscriptTerminalContext(surface.terminal),
+                question,
+                true,
+            );
+        },
+    });
+    surface.terminal.onTerminalDidClose(() => {
+        const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
+        const index = state?.surfaces.indexOf(surface) ?? -1;
+        if (!state || index < 0) {
+            return;
+        }
+        state.surfaces.splice(index, 1);
+        state.activeIndex = state.surfaces.length === 0
+            ? 0
+            : Math.min(state.activeIndex, state.surfaces.length - 1);
+        state.suppressAutoCreate = state.surfaces.length === 0;
+        ctx.host.transcriptTerminalSlidesByWorkspace.set(workspaceKey, state);
+        void ctx.persistTranscriptTerminalWorkspace(workspaceKey);
+        const openProject = ctx.host.transcriptOpenProject;
+        const openSummary = ctx.host.transcriptOpenSummary;
+        if (openProject && openSummary
+            && ctx.resolveTranscriptWorkspaceKey(openProject, openSummary) === workspaceKey) {
+            ctx.renderTranscriptTerminalSlides(workspaceKey);
+        }
+    });
+}
+
+async function focusWorkHubChatInput(ctx: any,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    terminalContext?: string,
+    question?: string,
+    submit = false,): Promise<void> {
+    const activeProject = ctx.host.transcriptOpenProject ?? project;
+    const activeSummary = ctx.host.transcriptOpenSummary ?? summary;
+    ctx.host.executionSurfaceTabsUi.selectTranscriptTab('messages', activeProject, activeSummary);
+
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+        const input = ctx.host.transcriptComposerHost?.querySelector<HTMLTextAreaElement>(
+            '.theia-mobile-projects-sticky-composer-input',
+        );
+        if (input?.isConnected && !input.disabled) {
+            if (terminalContext?.trim() || question?.trim()) {
+                const contextMarker = nls.localize(
+                    'qaap/mobileProjects/terminalContextHeader',
+                    '### Terminal context',
+                );
+                const questionMarker = nls.localize(
+                    'qaap/mobileProjects/terminalContextQuestion',
+                    'Question:',
+                );
+                const nextDraft = terminalContext?.trim()
+                    ? [
+                        contextMarker,
+                        '',
+                        '```text',
+                        terminalContext.trim(),
+                        '```',
+                        '',
+                        questionMarker,
+                        ` ${question?.trim() ?? ''}`,
+                    ].join('\n')
+                    : question?.trim() ?? '';
+                ctx.host.transcriptComposerDraft = nextDraft;
+                input.value = nextDraft;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            input.focus({ preventScroll: true });
+            input.setSelectionRange(input.value.length, input.value.length);
+            if (submit) {
+                await submitWorkHubChat(ctx.host.transcriptComposerHost);
+            }
+            return;
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 50));
+    }
+    throw new Error('The Work Hub chat composer did not become available.');
+}
+
+async function submitWorkHubChat(host: HTMLElement | undefined): Promise<void> {
+    if (!host) {
+        return;
+    }
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+        const sendButton = host.querySelector<HTMLButtonElement>(
+            '.theia-mobile-projects-sticky-composer-send',
+        );
+        if (sendButton?.isConnected && !sendButton.disabled) {
+            sendButton.click();
+            return;
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 50));
+    }
 }
 
 export async function persistTranscriptTerminalWorkspaceExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey): Promise<void> {
@@ -470,6 +614,11 @@ export function detachTranscriptFilesFromHostExtracted(ctx: any): void {
 
 export function detachTranscriptTerminalFromHostExtracted(ctx: any): void {
     ctx.syncTranscriptTerminalResizeObserver(undefined, undefined);
+    for (const state of ctx.host.transcriptTerminalSlidesByWorkspace.values()) {
+        for (const surface of state.surfaces) {
+            parkTranscriptTerminalSurface(surface);
+        }
+    }
     const host = ctx.executionTerminalHost();
     if (host) {
         host.replaceChildren();
@@ -479,4 +628,3 @@ export function detachTranscriptTerminalFromHostExtracted(ctx: any): void {
     ctx.host.transcriptTerminalSlider = undefined;
     ctx.host.transcriptTerminalDots = undefined;
 }
-

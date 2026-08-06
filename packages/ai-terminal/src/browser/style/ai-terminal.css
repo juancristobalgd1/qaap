@@ -100,3 +100,52 @@
 .ai-terminal-chat-result p.command {
   font-family: "Droid Sans Mono", "monospace", monospace;
 }
+
+.qaap-terminal-ask-ai-dialog {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: min(520px, calc(100% - 32px));
+  box-sizing: border-box;
+  padding: 14px;
+  background: var(--theia-editorWidget-background);
+  color: var(--theia-editorWidget-foreground);
+  border: var(--theia-border-width) solid var(--theia-editorWidget-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+}
+
+.qaap-terminal-ask-ai-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.qaap-terminal-ask-ai-dialog-close {
+  padding: 2px;
+  color: var(--theia-descriptionForeground);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.qaap-terminal-ask-ai-dialog-close:hover {
+  color: var(--theia-editorWidget-foreground);
+}
+
+.qaap-terminal-ask-ai-dialog-input {
+  width: 100%;
+  min-height: 72px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.qaap-terminal-ask-ai-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
