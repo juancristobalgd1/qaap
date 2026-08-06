@@ -10,11 +10,22 @@ import * as fsp from 'fs/promises';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import { QAAP_SKIP_AUTH_USER_LOGIN } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     agentMessageHasVisualVerificationMarker,
     parseQaapCaptureDirective,
     type QaapPreviewVisualValidationResult,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+import { buildQaapIdentityPreviewUrl } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
+import {
+    isQaapProcessPreviewIdentity,
+    resolveQaapPreviewIdentity,
+    type QaapProcessPreviewIdentity,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-identity';
+import {
+    QaapDevPreviewPortRegistry,
+    type QaapDevPreviewRecord,
+} from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-port-registry';
 import { deriveVisualFlowSteps } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-flow-plan';
 import {
     QAAP_PREVIEW_CONFIG_PATH,
@@ -75,6 +86,13 @@ export interface QaapHeadlessCaptureAppTarget {
     readonly expectedPort: number;
     /** Exact argv plan shared with the frontend for non-package.json runtimes. */
     readonly launch?: QaapPreviewLaunchPlan;
+}
+
+interface QaapHeadlessPublicPreview {
+    readonly identity: QaapProcessPreviewIdentity & { readonly previewId: string };
+    readonly ownerLogin: string;
+    readonly record: QaapDevPreviewRecord;
+    readonly registeredByCapture: boolean;
 }
 
 function readPackageJson(dir: string): { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | undefined {
@@ -437,6 +455,9 @@ export class QaapHeadlessVisualCaptureService {
     @inject(QaapPreviewSupervisor)
     protected readonly supervisor: QaapPreviewSupervisor;
 
+    @inject(QaapDevPreviewPortRegistry)
+    protected readonly previewRegistry: QaapDevPreviewPortRegistry;
+
     protected readonly inFlight = new Set<string>();
     /** One headless attempt per settled turn (`conversationId:messageCount`). */
     protected readonly attemptedTurns = new Set<string>();
@@ -553,17 +574,29 @@ export class QaapHeadlessVisualCaptureService {
         }
         let staticServer: http.Server | undefined;
         let supervisedPreviewId: string | undefined;
+        let publicPreview: QaapHeadlessPublicPreview | undefined;
+        let keepPreview = false;
         try {
             let port: number;
             if (app.kind === 'static') {
                 const started = await this.startStaticServer(app.root);
                 staticServer = started.server;
                 port = started.port;
+                publicPreview = this.registerPublicPreview(conv, app.root, port);
             } else {
-                const ready = await this.ensureScriptServer(app);
+                const preferredPort = this.previewPortForApp(app);
+                publicPreview = this.registerPublicPreview(conv, app.root, preferredPort);
+                const ready = await this.ensureScriptServer(app, publicPreview?.identity);
                 if (ready.ok) {
                     supervisedPreviewId = ready.startedPreviewId;
                     port = ready.port;
+                    if (publicPreview && supervisedPreviewId) {
+                        this.previewRegistry.attachProcess(
+                            publicPreview.record.previewId,
+                            publicPreview.ownerLogin,
+                            this.supervisor.describe(supervisedPreviewId)?.processId,
+                        );
+                    }
                 } else {
                     // The dev script did not yield a reachable port, but the app may still be a
                     // plain static site behind a wrapper script — serve it in-process instead of
@@ -577,46 +610,115 @@ export class QaapHeadlessVisualCaptureService {
                         );
                         return;
                     }
+                    if (publicPreview?.registeredByCapture) {
+                        this.previewRegistry.releasePreview(publicPreview.record.previewId, publicPreview.ownerLogin);
+                    }
+                    publicPreview = undefined;
                     const started = await this.startStaticServer(staticRoot);
                     staticServer = started.server;
                     port = started.port;
+                    publicPreview = this.registerPublicPreview(conv, staticRoot, port);
                 }
             }
+            const previewUrl = publicPreview
+                ? buildQaapIdentityPreviewUrl('', publicPreview.record.previewId, deriveVisualFlowSteps(conv)[0] ?? '/')
+                : undefined;
             if (captureDirective.mode === 'video') {
-                await this.recordFlowVideo(conversationId, conv, target.id, port);
+                keepPreview = !!publicPreview
+                    && await this.recordFlowVideo(conversationId, conv, target.id, port, previewUrl);
             } else {
-                await this.captureFlow(conversationId, conv, target.id, port);
+                keepPreview = !!publicPreview
+                    && await this.captureFlow(conversationId, conv, target.id, port, previewUrl);
             }
         } finally {
-            staticServer?.close();
-            if (supervisedPreviewId) {
-                // A capture-owned dev server must never outlive its capture. Leaked servers from
-                // the startup sweep once accumulated (~46 npm/vite processes), pinned the CPU,
-                // failed the container healthcheck, and put the VPS into a restart loop.
-                this.supervisor.stop(supervisedPreviewId);
+            if (!keepPreview) {
+                staticServer?.close();
+                if (supervisedPreviewId) {
+                    this.supervisor.stop(supervisedPreviewId);
+                }
+                if (publicPreview?.registeredByCapture) {
+                    this.previewRegistry.releasePreview(publicPreview.record.previewId, publicPreview.ownerLogin);
+                }
             }
         }
+    }
+
+    protected previewPortForApp(app: QaapHeadlessCaptureAppTarget): number {
+        return app.expectedPort === qaapIdeListenPort() ? app.expectedPort + 7 : app.expectedPort;
+    }
+
+    /** Registers a capture server as a normal identity-scoped preview so transcript links can open it. */
+    protected registerPublicPreview(
+        conv: QaapAgentConversation,
+        root: string,
+        port: number,
+    ): QaapHeadlessPublicPreview | undefined {
+        const ownerLogin = conv.ownerLogin ?? QAAP_SKIP_AUTH_USER_LOGIN;
+        const existing = this.previewRegistry.getByPort(port);
+        if (existing) {
+            if (existing.ownerLogin !== ownerLogin || existing.root !== root) {
+                return undefined;
+            }
+            if (!isQaapProcessPreviewIdentity(existing)) {
+                return undefined;
+            }
+            return {
+                identity: {
+                    userId: existing.userId,
+                    workspaceId: existing.workspaceId,
+                    projectId: existing.projectId,
+                    conversationId: existing.conversationId,
+                    processId: existing.processId,
+                    previewId: existing.previewId,
+                },
+                ownerLogin,
+                record: existing,
+                registeredByCapture: false,
+            };
+        }
+        const identity = resolveQaapPreviewIdentity({
+            userId: ownerLogin,
+            workspaceId: conv.cwd,
+            projectId: conv.cwd,
+            conversationId: conv.id,
+            processId: `visual-${conv.id}`,
+        });
+        const record = this.previewRegistry.register({
+            ...identity,
+            ownerLogin,
+            root,
+            port,
+        });
+        return record
+            ? { identity, ownerLogin, record, registeredByCapture: true }
+            : undefined;
     }
 
     /** Reuses an already-listening expected port, otherwise starts the app via the supervisor. */
     protected async ensureScriptServer(
         app: QaapHeadlessCaptureAppTarget,
+        publicIdentity?: QaapProcessPreviewIdentity & { readonly previewId: string },
     ): Promise<{ ok: true; port: number; startedPreviewId?: string } | { ok: false; reason: string }> {
         // Probing the IDE's own listen port would "find" Qaap itself and screenshot the wrong
         // thing — shift to an alternate port instead ($PORT-honoring dev servers follow along).
-        const port = app.expectedPort === qaapIdeListenPort() ? app.expectedPort + 7 : app.expectedPort;
+        const port = this.previewPortForApp(app);
         if (await this.probePort(port)) {
             return { ok: true, port };
         }
         // Identity-keyed (per app root), never the global `legacy-port-<port>` supervisor key:
         // capture servers must not collide with — or be mistaken for — user preview processes.
-        // Deliberately NOT registered in the dev-preview port registry: this is an internal
-        // loopback server, not a user-facing preview, and must stay non-proxyable.
-        const startedPreviewId = `qaap-headless-capture:${app.root}`;
+        const startedPreviewId = publicIdentity?.previewId ?? `qaap-headless-capture:${app.root}`;
         const launch = app.launch ? materializeQaapPreviewLaunchPlan(app.launch, port) : undefined;
         this.supervisor.start(app.root, port, {
             previewId: startedPreviewId,
-            projectId: app.root,
+            projectId: publicIdentity?.projectId ?? app.root,
+            ...(publicIdentity ? {
+                userId: publicIdentity.userId,
+                workspaceId: publicIdentity.workspaceId,
+                conversationId: publicIdentity.conversationId,
+                processId: publicIdentity.processId,
+                ownerLogin: publicIdentity.userId,
+            } : {}),
         }, launch);
         const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
         while (Date.now() < deadline) {
@@ -694,7 +796,8 @@ export class QaapHeadlessVisualCaptureService {
         conv: QaapAgentConversation,
         targetAgentMessageId: string,
         port: number,
-    ): Promise<void> {
+        previewUrl?: string,
+    ): Promise<boolean> {
         const { chromium } = loadPlaywrightCore();
         const browser = await chromium.launch({
             executablePath: resolveHeadlessChromiumExecutable(),
@@ -729,7 +832,7 @@ export class QaapHeadlessVisualCaptureService {
                     `Headless capture reached the dev server but no route could be captured — ${skipped.join('; ')}`,
                     targetAgentMessageId,
                 );
-                return;
+                return false;
             }
             if (skipped.length > 0) {
                 const first = captured[0];
@@ -743,7 +846,12 @@ export class QaapHeadlessVisualCaptureService {
                     },
                 };
             }
-            await this.store.recordVisualVerificationFlow(conversationId, captured, targetAgentMessageId);
+            return (await this.store.recordVisualVerificationFlow(
+                conversationId,
+                captured,
+                targetAgentMessageId,
+                previewUrl,
+            )) !== undefined;
         } finally {
             await browser.close().catch(() => undefined);
         }
@@ -759,7 +867,8 @@ export class QaapHeadlessVisualCaptureService {
         conv: QaapAgentConversation,
         targetAgentMessageId: string,
         port: number,
-    ): Promise<void> {
+        previewUrl?: string,
+    ): Promise<boolean> {
         const { chromium } = loadPlaywrightCore();
         const videoDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'qaap-visual-video-'));
         const browser = await chromium.launch({
@@ -810,7 +919,7 @@ export class QaapHeadlessVisualCaptureService {
                     `Headless recording reached the dev server but produced no video — ${skipped.join('; ') || 'no route loaded'}`,
                     targetAgentMessageId,
                 );
-                return;
+                return false;
             }
             if (skipped.length > 0) {
                 const first = stepResults[0];
@@ -831,9 +940,15 @@ export class QaapHeadlessVisualCaptureService {
                     'The recorded video could not be stored (size cap or storage limit reached).',
                     targetAgentMessageId,
                 );
-                return;
+                return false;
             }
-            await this.store.recordVisualVerificationVideo(conversationId, evidenceId, stepResults, targetAgentMessageId);
+            return (await this.store.recordVisualVerificationVideo(
+                conversationId,
+                evidenceId,
+                stepResults,
+                targetAgentMessageId,
+                previewUrl,
+            )) !== undefined;
         } finally {
             await fsp.rm(videoDir, { recursive: true, force: true }).catch(() => undefined);
         }

@@ -54,6 +54,7 @@ import {
     transcriptFileIconClass as transcriptFileIconClassHelper,
 } from './mobile-projects-transcript-messages-tool-helpers';
 import { syncTranscriptToolExecutionTime } from './mobile-projects-transcript-messages-tool-ui';
+import { peekPreferDesktopIde } from './mobile-projects-open';
 
 export function patchTranscriptToolResultStreamBodyExtracted(ctx: any, pillBody: HTMLElement,
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,): boolean {
@@ -103,7 +104,9 @@ export function handleTranscriptReviewFileOpenExtracted(ctx: any, filePath: stri
         void Promise.resolve(ctx.host.openTranscriptReviewFile(filePath)).catch(error => {
             console.warn('[qaap-mobile-shell] Failed to open transcript review file:', error);
             ctx.host.messageService?.error(
-                nls.localize('qaap/mobileProjects/transcriptOpenReviewFileFailed', 'Could not open {0} in Review', filePath),
+                peekPreferDesktopIde()
+                    ? nls.localize('qaap/mobileProjects/transcriptOpenIdeChangeFailed', 'Could not open the change for {0} in the IDE', filePath)
+                    : nls.localize('qaap/mobileProjects/transcriptOpenReviewFileFailed', 'Could not open {0} in Review', filePath),
             );
         });
 }
@@ -115,7 +118,9 @@ export function attachTranscriptReviewFileOpenActionExtracted(ctx: any, row: HTM
         row.classList.add('theia-mod-clickable');
         row.setAttribute('role', 'button');
         row.tabIndex = 0;
-        row.title = nls.localize('qaap/mobileProjects/transcriptOpenFileInReview', 'Open in Review');
+        row.title = peekPreferDesktopIde()
+            ? nls.localize('qaap/mobileProjects/transcriptOpenFileInIdeDiff', 'Open change in IDE')
+            : nls.localize('qaap/mobileProjects/transcriptOpenFileInReview', 'Open in Review');
         const open = (event: Event): void => {
             event.stopPropagation();
             event.preventDefault();
@@ -134,7 +139,9 @@ export function attachTranscriptFileOpenActionExtracted(ctx: any, head: HTMLElem
             return;
         }
         head.classList.add('theia-mod-clickable');
-        head.title = nls.localize('qaap/mobileProjects/transcriptOpenFileInFiles', 'Open in Files preview');
+        head.title = peekPreferDesktopIde()
+            ? nls.localize('qaap/mobileProjects/transcriptOpenFileInEditor', 'Open in editor')
+            : nls.localize('qaap/mobileProjects/transcriptOpenFileInFiles', 'Open in Files preview');
         head.addEventListener('click', event => {
             event.stopPropagation();
             event.preventDefault();
@@ -328,6 +335,7 @@ export function createTranscriptToolPillSummaryExtracted(ctx: any, options: {
         return summary;
 }
 
+
 export function createTranscriptMcpBadgeExtracted(ctx: any, server?: string): HTMLElement {
         const badge = document.createElement('span');
         badge.className = 'theia-mobile-agent-tool-pill-badge theia-mod-mcp';
@@ -446,4 +454,3 @@ export function createTranscriptShellWindowHeadExtracted(ctx: any, options: {
         summary.append(chevron);
         return summary;
 }
-

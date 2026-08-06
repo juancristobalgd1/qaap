@@ -26,6 +26,8 @@ import type { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-edit
 import type { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
 import type { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import type { WidgetManager } from '@theia/core/lib/browser/widget-manager';
+import type { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import type { ScmService } from '@theia/scm/lib/browser/scm-service';
 import type { WorkspaceService } from '@theia/workspace/lib/browser';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
@@ -47,7 +49,7 @@ import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { resolveAgentVerifyChecksForCwd } from './qaap-agent-verify-checks-resolver';
-import { openTranscriptWorkspaceFile, createTranscriptFilesViewServices } from './qaap-transcript-file-open';
+import { openTranscriptWorkspaceChange, openTranscriptWorkspaceChanges, openTranscriptWorkspaceFile, createTranscriptFilesViewServices } from './qaap-transcript-file-open';
 import { createTranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
 import { pickMobileContextVariable } from './qaap-mobile-context-attach-menu';
 import { attachDeviceFilesOptimistic } from './qaap-mobile-composer-device-attach';
@@ -83,6 +85,8 @@ export interface MobileProjectsPanelFactoryDeps {
     projectsService: MobileProjectsService;
     commands: CommandRegistry;
     widgetManager: WidgetManager;
+    applicationShell: ApplicationShell;
+    scmService: ScmService;
     mobileProjectChatViewWidgetFactory: MobileProjectChatViewWidgetFactory;
     chatService: ChatService;
     chatAgentService: ChatAgentService;
@@ -267,6 +271,16 @@ export class MobileProjectsPanelFactory {
                     filePath,
                     deps.workspaceService,
                     deps.editorManager,
+                ),
+                openTranscriptChanges: () => openTranscriptWorkspaceChanges(
+                    deps.applicationShell,
+                    deps.widgetManager,
+                ),
+                openTranscriptReviewFile: filePath => openTranscriptWorkspaceChange(
+                    filePath,
+                    deps.workspaceService,
+                    deps.editorManager,
+                    deps.scmService,
                 ),
                 createTranscriptFilesViewServices: () => createTranscriptFilesViewServices(
                     deps.workspaceService,

@@ -49,9 +49,10 @@ import {
     groupQaiqModelsByProvider,
     listQaiqModelsFromPreferences,
     listQaiqModelsFromRegisteredLanguageModels,
+    listOpenClaudeFallbackModels,
     mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
-import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
+import { OPENCLAUDE_AGENT_ID, THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
 import {
     reconcileModelCapabilityLevel,
     writeStoredModelCapabilityLevel,
@@ -365,7 +366,11 @@ export async function resolveModelsForAgentPickerExtracted(ctx: any, agentId: st
         const credentialed = readPref
             ? filterQaiqModelsWithConfiguredCredentials(merged, readPref)
             : merged;
-        return withoutToolLess(credentialed);
+        const usable = withoutToolLess(credentialed);
+        if (usable.length === 0 && agentId.trim().toLowerCase() === OPENCLAUDE_AGENT_ID) {
+            return listOpenClaudeFallbackModels();
+        }
+        return usable;
     }
     try {
         return withoutToolLess(await fetchAgentModelsForAgent(agentId));
@@ -382,4 +387,3 @@ export async function resolveModelsForAgentPickerSafeExtracted(ctx: any, agentId
         return { models: [], loadFailed: true };
     }
 }
-

@@ -23,6 +23,7 @@ import { appendAgentBrandIcon, createAgentBrandIcon } from '../common/qaap-agent
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
 import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
+import { peekPreferDesktopIde } from './mobile-projects-open';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -116,6 +117,10 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
+    if (tab === 'review' && peekPreferDesktopIde()) {
+        void ctx.host.openTranscriptChanges?.();
+        return;
+    }
     // 'review' (Changes) is merged into the 'files' tab — redirect with a
     // pending view-mode flag so the file view activates changes mode on mount.
     if (tab === 'review') {

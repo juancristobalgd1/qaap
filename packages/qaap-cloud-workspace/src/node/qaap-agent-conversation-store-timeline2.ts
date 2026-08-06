@@ -209,7 +209,8 @@ import {
 
 export async function recordVisualVerificationFlowExtracted(ctx: any, conversationId: string,
         steps: readonly { label: string; evidenceId: string; result: QaapPreviewVisualValidationResult }[],
-        targetAgentMessageId: string,): Promise<QaapAgentConversation | undefined> {
+        targetAgentMessageId: string,
+        previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
         const conv = ctx.conversations.get(conversationId);
         if (!conv || steps.length === 0) {
             return undefined;
@@ -240,7 +241,7 @@ export async function recordVisualVerificationFlowExtracted(ctx: any, conversati
                     result: step.result,
                 });
             }
-            const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualFlowMarkdown(evidenceSteps));
+            const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualFlowMarkdown(evidenceSteps, previewUrl));
             void ctx.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
             return evidenceSteps.some(step => step.result.status === 'failed')
                 ? await ctx.continueVisualRepairLoop(conversationId, target.id)
@@ -598,4 +599,3 @@ export function parseStructuredLogExtracted(ctx: any, agentId: string,
     } | undefined {
         return parseStructuredLogHelper(agentId, log);
 }
-

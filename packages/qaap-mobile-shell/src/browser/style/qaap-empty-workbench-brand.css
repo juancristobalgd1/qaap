@@ -172,9 +172,11 @@ html.theia-splash-branded .qaap-empty-workbench-brand-shortcuts .monaco-keybindi
   border-radius: 3px;
   font-size: clamp(10px, 2.5vw, 11px);
   line-height: 1;
-  color: var(--theia-foreground);
+  color: var(--theia-input-foreground, var(--theia-foreground, #242424));
   background: var(--theia-editorWidget-background, rgba(128, 128, 128, 0.15));
   box-shadow: inset 0 -1px 0 var(--theia-widget-shadow, rgba(0, 0, 0, 0.2));
+  opacity: 1;
+  text-shadow: none;
 }
 
 /* Short viewport (landscape phone, small laptop window). */

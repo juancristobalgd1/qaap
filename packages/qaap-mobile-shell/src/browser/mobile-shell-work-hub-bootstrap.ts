@@ -44,6 +44,7 @@ export interface MobileShellWorkHubBootstrapHost {
     refreshBottomBar(): void;
     refreshWorkbenchTopBar(): void;
     ensureDesktopWorkHubSessionsSidebarOpen(): void;
+    syncWorkHubSessionsSidebarLayout(): void;
     applyLandingChrome(): void;
     releaseMobileWorkHubBootGuardWhenReady(): Promise<void>;
     isProjectsLandingSession(): boolean;
@@ -272,6 +273,7 @@ export class MobileShellWorkHubBootstrapController {
             await this.prepareWorkHubIdePanelsHidden();
             await this.host.releaseMobileWorkHubBootGuardWhenReady();
             markPreferAgentsSurface();
+            this.host.syncWorkHubSessionsSidebarLayout();
             void this.finishAgentsSurfaceBootstrap(epoch, panel);
         } finally {
             if (epoch === this.sessionState.agentsBootstrapEpoch) {
@@ -302,6 +304,7 @@ export class MobileShellWorkHubBootstrapController {
             }
             this.host.refreshProjectBootstrapFromWorkspace();
             this.host.ensureDesktopWorkHubSessionsSidebarOpen();
+            this.host.syncWorkHubSessionsSidebarLayout();
             await this.host.collapseMobileSideSheets();
             this.host.settleMobileSidePanelsCollapsed();
             syncMobileWorkHubHideIdeSidePanelsFromComposerHeader();
@@ -313,6 +316,7 @@ export class MobileShellWorkHubBootstrapController {
             this.host.syncMobileHubPrimaryBottomChrome();
             this.host.refreshBottomBar();
             this.host.refreshWorkbenchTopBar();
+            this.host.syncWorkHubSessionsSidebarLayout();
         })();
     }
 

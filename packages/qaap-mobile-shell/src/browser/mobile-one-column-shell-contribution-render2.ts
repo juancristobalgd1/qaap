@@ -181,6 +181,7 @@ export function initLandingControllerExtracted(ctx: any): void {
         ensureMainContentAfterWorkspaceReload: () => ctx.ensureMainContentAfterWorkspaceReload(),
         refreshProjectBootstrapFromWorkspace: () => { void ctx.projectBootstrap.refreshFromCurrentWorkspace(); },
         ensureDesktopWorkHubSessionsSidebarOpen: () => ctx.ensureDesktopWorkHubSessionsSidebarOpen(),
+        syncWorkHubSessionsSidebarLayout: () => ctx.projectsPanel?.syncSessionsSidebarLayout(),
         syncMobileHubPrimaryBottomChrome: () => ctx.bottomBarController.syncMobileHubPrimaryBottomChrome(),
         refreshBottomBar: () => ctx.bottomBarController.refreshBottomBar(),
         refreshWorkbenchTopBar: () => ctx.refreshWorkbenchTopBar(),
@@ -204,6 +205,8 @@ export function initProjectsPanelFactoryExtracted(ctx: any): void {
             projectsService: ctx.projectsService,
             commands: ctx.commands,
             widgetManager: ctx.widgetManager,
+            applicationShell: ctx.shell,
+            scmService: ctx.scmService,
             mobileProjectChatViewWidgetFactory: ctx.mobileProjectChatViewWidgetFactory,
             chatService: ctx.chatService,
             chatAgentService: ctx.chatAgentService,
@@ -414,6 +417,7 @@ export function initIdeFallbackControllerExtracted(ctx: any): void {
         syncMobileHubPrimaryBottomChrome: () => ctx.bottomBarController.syncMobileHubPrimaryBottomChrome(),
         refreshBottomBar: () => ctx.bottomBarController.refreshBottomBar(),
         refreshWorkbenchTopBar: () => ctx.refreshWorkbenchTopBar(),
+        syncWorkHubSessionsSidebarLayout: () => ctx.projectsPanel?.syncSessionsSidebarLayout(),
         forceCenterColumnFullWidth: () => ctx.forceCenterColumnFullWidth(),
         scheduleSnapAndUiRefresh: () => ctx.scheduleSnapAndUiRefresh(),
         ensureDesktopSidePanelSizes: () => ctx.ensureDesktopSidePanelSizes(),
@@ -563,4 +567,3 @@ export function ensureWorkHubSurfaceMountedAfterReadyExtracted(ctx: any): void {
     }
     ctx.scheduleSnapAndUiRefresh();
 }
-

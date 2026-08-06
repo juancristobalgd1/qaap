@@ -30,6 +30,14 @@ export const QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY = 'qaap.sessionsSidebar.dism
 export const QAAP_SESSIONS_SIDEBAR_DESKTOP_COLLAPSED_KEY = 'qaap.sessionsSidebar.desktopCollapsed';
 export const QAAP_SESSIONS_SIDEBAR_DESKTOP_WIDTH_KEY = 'qaap.sessionsSidebar.desktopWidthPx';
 
+/**
+ * The persistent sidebar is a desktop affordance only when the viewport has enough room for the
+ * sidebar and the conversation surface, and uses a precise pointer. Narrow windows and touch
+ * devices use the sheet layout even when they are wider than 767px.
+ * Keep this query in sync with the desktop media block in qaap-work-hub-sessions-sidebar.css.
+ */
+export const QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY = '(min-width: 768px) and (pointer: fine)';
+
 /** Minimum horizontal delta (px) to close via left-edge swipe-left (symmetric to dashboard open). */
 export const QAAP_SESSIONS_SIDEBAR_EDGE_SWIPE_DISMISS_MIN_DELTA = 40;
 
@@ -775,7 +783,7 @@ export function markDesktopSessionsSidebarCollapsed(scope?: string): void {
 
 export function isDesktopSessionsSidebarLayout(): boolean {
     return typeof window !== 'undefined'
-        && window.matchMedia?.('(min-width: 768px)').matches === true;
+        && window.matchMedia?.(QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY).matches === true;
 }
 
 function readDesktopSessionsSidebarWidth(scope?: string): number {

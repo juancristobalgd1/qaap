@@ -16,6 +16,10 @@ import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-pr
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
+import type { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import type { WidgetManager } from '@theia/core/lib/browser/widget-manager';
+import type { ScmService } from '@theia/scm/lib/browser/scm-service';
+import { SCM_VIEW_CONTAINER_ID } from '@theia/scm/lib/browser/scm-contribution';
 import { isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
 import {
     type TranscriptFileDecoration,
@@ -35,6 +39,47 @@ export async function openTranscriptWorkspaceFile(
     }
     const uri = resolveTranscriptWorkspaceFileUri(trimmed, workspaceService);
     await editorManager.open(uri, { mode: 'reveal' });
+}
+
+/** Open a changed transcript file in the IDE's native SCM diff editor. */
+export async function openTranscriptWorkspaceChange(
+    filePath: string,
+    workspaceService: WorkspaceService,
+    editorManager: EditorManager,
+    scmService: ScmService,
+): Promise<void> {
+    const trimmed = filePath.trim();
+    if (!trimmed) {
+        return;
+    }
+    const uri = resolveTranscriptWorkspaceFileUri(trimmed, workspaceService);
+    const repository = scmService.findRepository(uri);
+    const resource = repository?.provider.groups
+        .flatMap(group => group.resources)
+        .find(candidate => candidate.sourceUri.path.fsPath() === uri.path.fsPath());
+    if (resource) {
+        await resource.open();
+        return;
+    }
+    // A newly-created or remotely-scoped file may not be in the SCM snapshot yet.
+    // Opening the source editor is still the most useful native IDE fallback.
+    await editorManager.open(uri, { mode: 'reveal' });
+}
+
+/** Reveal the IDE Source Control view for aggregate change actions. */
+export async function openTranscriptWorkspaceChanges(
+    shell: ApplicationShell,
+    widgetManager: WidgetManager,
+): Promise<void> {
+    const widget = await widgetManager.getOrCreateWidget(SCM_VIEW_CONTAINER_ID);
+    if (!widget.isAttached) {
+        await shell.addWidget(widget, { area: 'left' });
+    }
+    await shell.activateWidget(widget.id);
+    const area = shell.getAreaFor(widget);
+    if (area && area !== 'main' && !shell.isExpanded(area)) {
+        shell.expandPanel(area);
+    }
 }
 
 export function resolveTranscriptWorkspaceFileUri(filePath: string, workspaceService: WorkspaceService): URI {

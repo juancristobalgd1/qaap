@@ -103,6 +103,7 @@ describe('mobile-shell-work-hub-bootstrap', () => {
             refreshBottomBar: () => { calls.push('refreshBottomBar'); },
             refreshWorkbenchTopBar: () => { calls.push('refreshWorkbenchTopBar'); },
             ensureDesktopWorkHubSessionsSidebarOpen: () => { calls.push('ensureDesktopWorkHubSessionsSidebarOpen'); },
+            syncWorkHubSessionsSidebarLayout: () => { calls.push('syncWorkHubSessionsSidebarLayout'); },
             applyLandingChrome: () => { calls.push('applyLandingChrome'); },
             releaseMobileWorkHubBootGuardWhenReady: async () => { calls.push('releaseMobileWorkHubBootGuardWhenReady'); },
             isProjectsLandingSession: () => false,

@@ -10,7 +10,6 @@ import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileHaptics } from './mobile-haptics';
 import { installMobileHorizontalTouchScroll } from './mobile-horizontal-touch-scroll';
 import {
@@ -148,10 +147,6 @@ export async function onMobileBottomButtonClickExtracted(ctx: any, def: MobileBo
         return;
     }
     if (def.id === 'editor') {
-        // Classic IDE is desktop-only — never activate it on a narrow/touch viewport.
-        if (matchesMobileNarrowViewport()) {
-            return;
-        }
         if (ctx.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND) && ctx.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
             await ctx.commands.executeCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND);
             return;

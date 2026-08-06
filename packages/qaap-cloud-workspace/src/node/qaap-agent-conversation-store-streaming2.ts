@@ -501,7 +501,8 @@ export async function continueVisualRepairLoopExtracted(ctx: any, conversationId
 export async function recordVisualVerificationExtracted(ctx: any, conversationId: string,
         result: QaapPreviewVisualValidationResult,
         png: Buffer,
-        targetAgentMessageId?: string,): Promise<QaapAgentConversation | undefined> {
+        targetAgentMessageId?: string,
+        previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
         const conv = ctx.conversations.get(conversationId);
         if (!conv || png.length === 0) {
             return undefined;
@@ -524,7 +525,7 @@ export async function recordVisualVerificationExtracted(ctx: any, conversationId
             await fsp.writeFile(path.join(directory, `${evidenceId}.png`), png, { mode: 0o600 });
             const imageUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
                 + `/visual-verifications/${encodeURIComponent(evidenceId)}`;
-            const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationMarkdown(imageUrl, result));
+            const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualVerificationMarkdown(imageUrl, result, previewUrl));
             return result.status === 'failed'
                 ? await ctx.continueVisualRepairLoop(conversationId, target.id)
                 : next;
@@ -536,7 +537,8 @@ export async function recordVisualVerificationExtracted(ctx: any, conversationId
 export async function recordVisualVerificationVideoExtracted(ctx: any, conversationId: string,
         videoEvidenceId: string,
         steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[],
-        targetAgentMessageId: string,): Promise<QaapAgentConversation | undefined> {
+        targetAgentMessageId: string,
+        previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
         const conv = ctx.conversations.get(conversationId);
         if (!conv || !/^[a-f\d-]{36}$/i.test(videoEvidenceId)) {
             return undefined;
@@ -555,7 +557,7 @@ export async function recordVisualVerificationVideoExtracted(ctx: any, conversat
         try {
             const videoUrl = `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}`
                 + `/visual-verifications/${encodeURIComponent(videoEvidenceId)}.webm`;
-            const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualVideoMarkdown(videoUrl, steps));
+            const next = ctx.attachVisualVerificationBlock(conv, target, buildQaapVisualVideoMarkdown(videoUrl, steps, previewUrl));
             void ctx.sweepUnreferencedVisualEvidence(conversationId).catch(() => undefined);
             return steps.some(step => step.result.status === 'failed')
                 ? await ctx.continueVisualRepairLoop(conversationId, target.id)
@@ -564,4 +566,3 @@ export async function recordVisualVerificationVideoExtracted(ctx: any, conversat
             ctx.visualVerificationInFlight.delete(conversationId);
         }
 }
-

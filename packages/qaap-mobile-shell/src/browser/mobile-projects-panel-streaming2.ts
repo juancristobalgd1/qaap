@@ -62,6 +62,7 @@ import {
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { MobileSnackbar } from './mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
+import { isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import {
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
@@ -522,7 +523,7 @@ export function shouldEmbedSessionsSidebarInPanelExtracted(ctx: any): boolean {
     if (!ctx.homeMode) {
         return false;
     }
-    return window.matchMedia?.('(max-width: 767px), (pointer: coarse)').matches === true
+    return !isDesktopSessionsSidebarLayout()
         || document.body.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome')
         || document.body.classList.contains('theia-mobile-mod-desktop-ide');
 }

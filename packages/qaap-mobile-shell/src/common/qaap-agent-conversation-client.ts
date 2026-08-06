@@ -18,7 +18,7 @@ import { resolveTranscriptEffectiveStatus } from './qaap-transcript-turn-status'
 import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
 import type { QaapTranscriptUserImagePreview } from './qaap-transcript-user-image-preview';
 import type { QaapTurnLatencyMark } from './qaap-agent-stream-metrics';
-import type { QaapPreviewVisualValidationResult } from './qaap-visual-verification';
+import { normalizeQaapVisualPreviewUrl, type QaapPreviewVisualValidationResult } from './qaap-visual-verification';
 import type { ComposerGitActionDisplayMetadata } from './qaap-composer-git-action-display';
 
 /**
@@ -832,7 +832,9 @@ export async function reportPreviewVisualVerification(
     png: Blob,
     result: QaapPreviewVisualValidationResult,
     targetAgentMessageId?: string,
+    previewUrl?: string,
 ): Promise<QaapAgentConversationDTO | undefined> {
+    const normalizedPreviewUrl = normalizeQaapVisualPreviewUrl(previewUrl);
     const response = await fetch(
         `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verifications`,
         {
@@ -842,6 +844,7 @@ export async function reportPreviewVisualVerification(
                 'Content-Type': 'image/png',
                 'X-Qaap-Visual-Result': encodeURIComponent(JSON.stringify(result)),
                 ...(targetAgentMessageId ? { 'X-Qaap-Visual-Target': targetAgentMessageId } : {}),
+                ...(normalizedPreviewUrl ? { 'X-Qaap-Visual-Preview': normalizedPreviewUrl } : {}),
             },
             body: png,
         },
@@ -888,14 +891,20 @@ export async function finalizeVisualFlowVerification(
     conversationId: string,
     steps: readonly QaapVisualFlowStepReport[],
     targetAgentMessageId: string,
+    previewUrl?: string,
 ): Promise<QaapAgentConversationDTO | undefined> {
+    const normalizedPreviewUrl = normalizeQaapVisualPreviewUrl(previewUrl);
     const response = await fetch(
         `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verifications`,
         {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ steps, targetMessageId: targetAgentMessageId }),
+            body: JSON.stringify({
+                steps,
+                targetMessageId: targetAgentMessageId,
+                ...(normalizedPreviewUrl ? { previewUrl: normalizedPreviewUrl } : {}),
+            }),
         },
     );
     if (response.status === 404) {

@@ -189,18 +189,16 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
     // Register the surface-switch command unconditionally. Command contributions are registered
     // once, while the viewport can change later; registering it only during a non-narrow boot
     // made the Work Hub avatar switch silently disappear from the command registry after a
-    // responsive transition. The runtime guard still keeps the classic IDE desktop-only.
+    // responsive transition. The runtime guard keeps the classic IDE on its normal responsive layout.
     registry.registerCommand({
         id: QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
         label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
     }, {
         execute: () => { void ctx.openDesktopIde(); },
         isEnabled: () => ctx.workspaceService.opened
-            && !matchesMobileNarrowViewport()
             && ctx.shouldActivateMobileLayout()
             && !peekPreferDesktopIde(),
         isVisible: () => ctx.workspaceService.opened
-            && !matchesMobileNarrowViewport()
             && ctx.shouldActivateWorkHubLayout(),
     });
     // The in-IDE header-view commands remain desktop/one-column IDE commands.
@@ -224,7 +222,7 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
 }
 
 export async function openDesktopIdeExtracted(ctx: any): Promise<void> {
-    if (matchesMobileNarrowViewport() || !ctx.ideFallback) {
+    if (!ctx.ideFallback) {
         return;
     }
 

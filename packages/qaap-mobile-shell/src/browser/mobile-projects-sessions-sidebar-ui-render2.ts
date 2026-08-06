@@ -134,8 +134,19 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
     const container = useBodyGrid
         ? document.body
         : (embeddedContainer ?? document.body);
-    if (ctx.host.sessionsSidebar.node.parentElement !== container) {
-        container.append(ctx.host.sessionsSidebar.node);
+    // A panel can be recreated while an earlier async bootstrap is still finishing.  That old
+    // panel may have left its sidebar node mounted in <body>; keeping both nodes makes the two
+    // dialogs compete for the same grid column and produces the clipped Work Hub paint seen
+    // after returning from the IDE.  The sidebar held by the current panel is the single source
+    // of truth, so remove any orphaned DOM instances before mounting it.
+    const sidebarNode = ctx.host.sessionsSidebar.node;
+    for (const orphan of Array.from(document.querySelectorAll<HTMLElement>('.theia-mobile-work-hub-sessions-sidebar'))) {
+        if (orphan !== sidebarNode) {
+            orphan.remove();
+        }
+    }
+    if (sidebarNode.parentElement !== container) {
+        container.append(sidebarNode);
     }
     ctx.host.sessionsSidebar.syncEmbeddedState?.(!useBodyGrid && embeddedContainer !== undefined);
     return ctx.host.sessionsSidebar;

@@ -22,6 +22,7 @@ import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } fr
 import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
+import { peekPreferDesktopIde } from './mobile-projects-open';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -260,6 +261,11 @@ export function syncTerminalAgentTuiTriggerExtracted(ctx: any, trigger: HTMLButt
 }
 
 export function executionSurfaceTabSpecsExtracted(ctx: any): Array<{ id: TranscriptTab; label: string; icon: string }> {
+    if (peekPreferDesktopIde()) {
+        return [
+            { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Preview'), icon: 'codicon-globe' },
+        ];
+    }
     return [
         { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Preview'), icon: 'codicon-globe' },
         { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-folder-opened' },
@@ -407,4 +413,3 @@ export function executionTabOverflowMenuMinTopExtracted(ctx: any, anchor: HTMLEl
     }
     return anchor.getBoundingClientRect().bottom + gap;
 }
-

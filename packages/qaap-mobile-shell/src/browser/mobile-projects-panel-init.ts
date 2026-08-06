@@ -6,6 +6,7 @@ import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcrip
 import type { MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-controller';
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './mobile-projects-types';
+import { peekPreferDesktopIde } from './mobile-projects-open';
 
 /**
  * Copies options fields onto the panel instance. Extracted from the constructor
@@ -58,6 +59,7 @@ export function applyPanelOptions(self: any, options: MobileProjectsPanelOptions
     self.applyComposerAttachmentsToDraft = options.applyComposerAttachmentsToDraft;
     self.composerEditorContextService = options.composerEditorContextService;
     self.workHubProjectSkillRoots = options.workHubProjectSkillRoots;
+    self.openTranscriptChanges = options.openTranscriptChanges;
 }
 
 /**
@@ -67,6 +69,9 @@ export function applyPanelOptions(self: any, options: MobileProjectsPanelOptions
 export function wireTranscriptFileOpeners(self: any, options: MobileProjectsPanelOptions): void {
     const editorOpenFallback = options.openTranscriptFile;
     self.openTranscriptFile = (filePath: string) => {
+        if (peekPreferDesktopIde()) {
+            return editorOpenFallback?.(filePath);
+        }
         const state = self.transcriptController.state;
         const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
         const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
@@ -78,6 +83,9 @@ export function wireTranscriptFileOpeners(self: any, options: MobileProjectsPane
         }
     };
     self.openTranscriptReviewFile = (filePath: string) => {
+        if (peekPreferDesktopIde()) {
+            return options.openTranscriptReviewFile?.(filePath);
+        }
         const state = self.transcriptController.state;
         const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
         const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;

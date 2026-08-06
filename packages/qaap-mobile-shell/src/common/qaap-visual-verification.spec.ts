@@ -8,6 +8,7 @@ import {
     buildQaapVisualFlowMarkdown,
     buildQaapVisualVerificationMarkdown,
     buildQaapVisualVideoMarkdown,
+    normalizeQaapVisualPreviewUrl,
     conversationLikelyNeedsVisualVerification,
     findQaapCaptureDirectivesInText,
     parseQaapCaptureDirective,
@@ -27,6 +28,23 @@ describe('qaap-visual-verification', () => {
         expect(markdown).to.contain('Needs fixes');
         expect(markdown).to.contain('Missing page heading');
         expect(markdown).to.contain('![QAAP preview evidence](/evidence/1)');
+    });
+
+    it('adds an integrated-browser link for a live preview', () => {
+        const markdown = buildQaapVisualVerificationMarkdown('/evidence/1', {
+            status: 'passed',
+            readiness: 'render_ready',
+            summary: 'The page rendered cleanly.',
+            issues: [],
+        }, '/qaap-preview/u-dev-w-app-p-app-x-visual-abc123/');
+
+        expect(markdown).to.contain('[Open preview in the integrated browser](/qaap-preview/');
+    });
+
+    it('normalizes only Qaap preview paths for evidence links', () => {
+        expect(normalizeQaapVisualPreviewUrl('https://qaap.example/qaap-preview/demo/checkout'))
+            .to.equal('/qaap-preview/demo/checkout');
+        expect(normalizeQaapVisualPreviewUrl('https://qaap.example/untrusted/path')).to.equal(undefined);
     });
 
     it('builds one evidence block per walked route, marked once', () => {

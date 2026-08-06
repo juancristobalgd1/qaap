@@ -246,7 +246,7 @@ export class QaapAgentDevPreviewAutopilotContribution implements FrontendApplica
                 },
             };
         }
-        await finalizeVisualFlowVerification(conversationId, captured, targetAgentMessageId);
+        await finalizeVisualFlowVerification(conversationId, captured, targetAgentMessageId, expectedPreviewUrl);
         // Leave the user's preview back on the root route instead of the last walked step.
         if (steps.length > 1) {
             try {

@@ -8,11 +8,14 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import {
     MobileWorkHubSessionsSidebar,
+    QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
     QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS,
     QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY,
     hasSeenSessionsSidebarDismissHint,
     markSessionsSidebarDismissHintSeen,
+    isDesktopSessionsSidebarLayout,
 } from './mobile-work-hub-sessions-sidebar';
+import { ensureWorkHubSessionsSidebarExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
 
 describe('mobile-work-hub-sessions-sidebar', () => {
 
@@ -64,6 +67,45 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(hasSeenSessionsSidebarDismissHint()).to.equal(true);
     });
 
+    it('keeps a wide coarse-pointer viewport in the mobile sheet layout', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            matchMedia: (query: string) => ({
+                matches: query === '(min-width: 768px)' ? true : false,
+                media: query,
+                onchange: null,
+                addListener: () => undefined,
+                removeListener: () => undefined,
+                addEventListener: () => undefined,
+                removeEventListener: () => undefined,
+                dispatchEvent: () => false,
+            }),
+        } as unknown as Window;
+
+        expect(QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY).to.equal('(min-width: 768px) and (pointer: fine)');
+        expect(isDesktopSessionsSidebarLayout()).to.equal(false);
+    });
+
+    it('uses the persistent sidebar only for a wide precise-pointer viewport', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            matchMedia: (query: string) => ({
+                matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
+                media: query,
+                onchange: null,
+                addListener: () => undefined,
+                removeListener: () => undefined,
+                addEventListener: () => undefined,
+                removeEventListener: () => undefined,
+                dispatchEvent: () => false,
+            }),
+        } as unknown as Window;
+
+        expect(isDesktopSessionsSidebarLayout()).to.equal(true);
+    });
+
     it('mounts appearance mode switch in the footer when delegate provides mode APIs', () => {
         let mode: 'light' | 'dark' | 'system' = 'dark';
         const sidebar = new MobileWorkHubSessionsSidebar({
@@ -110,6 +152,27 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(true);
 
         sidebar.hide();
+    });
+
+    it('removes orphan sidebar nodes when reconciling the current panel mount', () => {
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        const orphan = document.createElement('aside');
+        orphan.className = 'theia-mobile-work-hub-sessions-sidebar';
+        document.body.append(orphan, sidebar.node);
+
+        ensureWorkHubSessionsSidebarExtracted({
+            host: {
+                sessionsSidebar: sidebar,
+                sessionsSidebarContainer: () => undefined,
+            },
+        });
+
+        expect(document.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar')).to.have.length(1);
+        expect(document.body.contains(sidebar.node)).to.equal(true);
     });
 
     it('scheduleRefreshList coalesces multiple refresh requests into one render pass', async () => {
@@ -283,7 +346,7 @@ describe('mobile-work-hub-sessions-sidebar', () => {
 
     it('keeps the sidebar open when navigation happens on desktop layout', () => {
         const matchMedia = (query: string): MediaQueryList => ({
-            matches: query.includes('min-width: 768px'),
+            matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
             media: query,
             onchange: null,
             addListener: () => undefined,
@@ -318,7 +381,7 @@ describe('mobile-work-hub-sessions-sidebar', () => {
 
     it('closes the embedded chat sidebar after navigation in the classic IDE', () => {
         const matchMedia = (query: string): MediaQueryList => ({
-            matches: query.includes('min-width: 768px'),
+            matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
             media: query,
             onchange: null,
             addListener: () => undefined,

@@ -29,7 +29,10 @@ import {
 } from './qaap-workbench-account-menu';
 import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
-import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
+import {
+    peekPreferDesktopIde,
+    QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS,
+} from '../common/qaap-mobile-work-surface-preference';
 import { MobileProjectsService } from './mobile-projects-service';
 import { EXPLORER_VIEW_CONTAINER_ID, type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
@@ -47,7 +50,9 @@ const QAAP_IDE_AVATAR_VIEW_COMMAND_PREFIX = 'qaap.ide.avatarView.';
 
 /** The legacy mobile view picker belongs to Work Hub's one-column surface, never to the classic IDE. */
 export function shouldShowMobileIdeHeaderViews(): boolean {
-    return matchesMobileOneColumnLayout() && !peekPreferDesktopIde();
+    return matchesMobileOneColumnLayout()
+        && !document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
+        && !peekPreferDesktopIde();
 }
 
 function createWorkbenchNavBtn(iconClasses: string, title: string): HTMLButtonElement {
@@ -300,8 +305,8 @@ export class QaapWorkbenchMenuButtonWidget extends Widget {
     }
 
     protected syncVisibility(): void {
-        const visible = document.body.classList.contains('theia-mobile-mod-desktop-ide')
-            && !matchesMobileOneColumnLayout();
+        const visible = document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
+            || peekPreferDesktopIde();
         this.node.hidden = !visible;
         this.node.style.display = visible ? '' : 'none';
         this.menuBtn.setAttribute('aria-hidden', visible ? 'false' : 'true');
@@ -384,8 +389,8 @@ export class QaapWorkbenchViewModeCenterWidget extends Widget {
     }
 
     protected syncViewModeSwitch(): void {
-        const visible = document.body.classList.contains('theia-mobile-mod-desktop-ide')
-            && !matchesMobileOneColumnLayout();
+        const visible = document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)
+            || peekPreferDesktopIde();
         this.node.hidden = !visible;
         this.node.style.display = visible ? '' : 'none';
         this.viewModeSwitchHost.hidden = !visible;
@@ -694,7 +699,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     }
 
     protected updateAiChatSwitchVisual(): void {
-        const narrow = matchesMobileOneColumnLayout();
+        const narrow = shouldShowMobileIdeHeaderViews();
         if (!narrow) {
             this.aiChatBtn.classList.remove('theia-mod-toggled');
             this.aiChatBtn.title = nls.localize('theia/core/workbenchBar/openAiChat', 'Open AI Chat');

@@ -305,8 +305,8 @@ export class QaapAgentConversationStore {
         return continueVisualRepairLoopExtracted(this, conversationId, sourceAgentMessageId);
     }
 
-    async recordVisualVerification(conversationId: string, result: QaapPreviewVisualValidationResult, png: Buffer, targetAgentMessageId?: string,): Promise<QaapAgentConversation | undefined> {
-        return recordVisualVerificationExtracted(this, conversationId, result, png, targetAgentMessageId);
+    async recordVisualVerification(conversationId: string, result: QaapPreviewVisualValidationResult, png: Buffer, targetAgentMessageId?: string, previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+        return recordVisualVerificationExtracted(this, conversationId, result, png, targetAgentMessageId, previewUrl);
     }
 
     /**
@@ -326,8 +326,8 @@ export class QaapAgentConversationStore {
         return saveVisualEvidenceVideoHelper(this.conversations, conversationId, sourcePath, this.visualEvidenceDirectory(conversationId));
     }
 
-    async recordVisualVerificationVideo(conversationId: string, videoEvidenceId: string, steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string,): Promise<QaapAgentConversation | undefined> {
-        return recordVisualVerificationVideoExtracted(this, conversationId, videoEvidenceId, steps, targetAgentMessageId);
+    async recordVisualVerificationVideo(conversationId: string, videoEvidenceId: string, steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string, previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+        return recordVisualVerificationVideoExtracted(this, conversationId, videoEvidenceId, steps, targetAgentMessageId, previewUrl);
     }
 
     /**
@@ -338,8 +338,8 @@ export class QaapAgentConversationStore {
         return resolveVisualVerificationFileHelper(this.conversations, conversationId, evidenceRef, this.visualEvidenceDirectory(conversationId));
     }
 
-    async recordVisualVerificationFlow(conversationId: string, steps: readonly { label: string; evidenceId: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string,): Promise<QaapAgentConversation | undefined> {
-        return recordVisualVerificationFlowExtracted(this, conversationId, steps, targetAgentMessageId);
+    async recordVisualVerificationFlow(conversationId: string, steps: readonly { label: string; evidenceId: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string, previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+        return recordVisualVerificationFlowExtracted(this, conversationId, steps, targetAgentMessageId, previewUrl);
     }
 
     /**

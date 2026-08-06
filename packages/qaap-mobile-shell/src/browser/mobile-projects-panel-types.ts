@@ -100,6 +100,8 @@ export interface MobileProjectsPanelOptions {
     workHubProjectSkillRoots?: QaapWorkHubProjectSkillRoots;
     /** Opens a workspace file when the user taps a transcript read chip. */
     openTranscriptFile?: (filePath: string) => void | Promise<void>;
+    /** Opens the IDE's native Source Control view for aggregate transcript changes. */
+    openTranscriptChanges?: () => void | Promise<void>;
     /** Uploads inline preview-feedback screenshots into the workspace as imageContext requests. */
     uploadComposerFeedbackImages?: (
         images: readonly QaapAttachComposerImageAttachment[],

@@ -75,6 +75,7 @@ describe('mobile-shell-ide-fallback', () => {
             syncMobileHubPrimaryBottomChrome: () => { calls.push('syncMobileHubPrimaryBottomChrome'); },
             refreshBottomBar: () => { calls.push('refreshBottomBar'); },
             refreshWorkbenchTopBar: () => { calls.push('refreshWorkbenchTopBar'); },
+            syncWorkHubSessionsSidebarLayout: () => { calls.push('syncWorkHubSessionsSidebarLayout'); },
             forceCenterColumnFullWidth: () => { calls.push('forceCenterColumnFullWidth'); },
             scheduleSnapAndUiRefresh: () => { calls.push('scheduleSnapAndUiRefresh'); },
             ensureDesktopSidePanelSizes: async () => { calls.push('ensureDesktopSidePanelSizes'); },

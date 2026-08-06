@@ -47,12 +47,6 @@ function writePersistedPreferDesktopIde(active: boolean): void {
 
 /** Persists explicit desktop IDE choice for reload/F5 within the same browser session. */
 export function markPreferDesktopIde(): void {
-    // Classic IDE is desktop-only — never activate it on a narrow/touch viewport.
-    if (typeof window !== 'undefined'
-        && window.matchMedia
-        && window.matchMedia('(max-width: 767px)').matches) {
-        return;
-    }
     preferDesktopIdeThisRuntime = true;
     writePersistedPreferDesktopIde(true);
     syncDesktopIdeBodyClass();

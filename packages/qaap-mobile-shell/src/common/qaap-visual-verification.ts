@@ -1,6 +1,10 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import {
+    parseQaapDevPreviewRequestPath,
+    parseQaapIdentityPreviewRequestPath,
+} from './qaap-dev-preview';
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
@@ -151,9 +155,41 @@ export function buildQaapVisualVerificationFailureMarkdown(reason: string): stri
     ].join('\n');
 }
 
+/**
+ * Keeps visual-evidence links on the Qaap preview proxy so transcript clicks stay inside the
+ * integrated browser. Absolute origins are reduced to their safe same-origin preview path.
+ */
+export function normalizeQaapVisualPreviewUrl(value: string | undefined): string | undefined {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    try {
+        const parsed = new URL(trimmed, 'http://qaap.local');
+        if (!parseQaapDevPreviewRequestPath(parsed.pathname)
+            && !parseQaapIdentityPreviewRequestPath(parsed.pathname)) {
+            return undefined;
+        }
+        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+        return undefined;
+    }
+}
+
+function buildQaapPreviewLinkMarkdown(previewUrl: string | undefined): readonly string[] {
+    const normalized = normalizeQaapVisualPreviewUrl(previewUrl);
+    return normalized
+        ? ['', `[${nls.localize(
+            'qaap/visualVerification/openPreview',
+            'Open preview in the integrated browser',
+        )}](${normalized})`]
+        : [];
+}
+
 export function buildQaapVisualVerificationMarkdown(
     imageUrl: string,
     result: QaapPreviewVisualValidationResult,
+    previewUrl?: string,
 ): string {
     const outcome = result.status === 'passed'
         ? nls.localize('qaap/visualVerification/passed', 'Passed')
@@ -175,6 +211,7 @@ export function buildQaapVisualVerificationMarkdown(
         `${result.summary}${issueLines}`,
         '',
         `![QAAP preview evidence](${imageUrl})`,
+        ...buildQaapPreviewLinkMarkdown(previewUrl),
         ...repair,
     ].join('\n');
 }
@@ -194,6 +231,7 @@ export interface QaapVisualFlowStepEvidence {
 export function buildQaapVisualVideoMarkdown(
     videoUrl: string,
     steps: readonly { readonly label: string; readonly result: QaapPreviewVisualValidationResult }[],
+    previewUrl?: string,
 ): string {
     const failures = steps.filter(step => step.result.status === 'failed').length;
     const warnings = steps.filter(step => step.result.status === 'warning').length;
@@ -210,6 +248,7 @@ export function buildQaapVisualVideoMarkdown(
         ...(findings.length > 0 ? ['', ...findings] : []),
         '',
         `[QAAP preview video](${videoUrl})`,
+        ...buildQaapPreviewLinkMarkdown(previewUrl),
         ...(failures > 0 ? ['', QAAP_VISUAL_REPAIR_REQUIRED_MARKER, nls.localize(
             'qaap/visualVerification/repairAndRecord',
             'The app is not render-ready. Re-enter the repair loop with these findings, then record it again.',
@@ -218,7 +257,7 @@ export function buildQaapVisualVideoMarkdown(
 }
 
 /** Multi-step twin of {@link buildQaapVisualVerificationMarkdown} — one image per walked route. */
-export function buildQaapVisualFlowMarkdown(steps: readonly QaapVisualFlowStepEvidence[]): string {
+export function buildQaapVisualFlowMarkdown(steps: readonly QaapVisualFlowStepEvidence[], previewUrl?: string): string {
     const failures = steps.filter(step => step.result.status === 'failed').length;
     const warnings = steps.filter(step => step.result.status === 'warning').length;
     const outcome = failures > 0
@@ -239,6 +278,7 @@ export function buildQaapVisualFlowMarkdown(steps: readonly QaapVisualFlowStepEv
         `Walked ${steps.length} page${steps.length === 1 ? '' : 's'} of the app flow.`,
         '',
         blocks.join('\n\n'),
+        ...buildQaapPreviewLinkMarkdown(previewUrl),
         ...(failures > 0 ? ['', QAAP_VISUAL_REPAIR_REQUIRED_MARKER, nls.localize(
             'qaap/visualVerification/repairAndCapture',
             'The app is not render-ready. Re-enter the repair loop with these findings, then capture it again.',

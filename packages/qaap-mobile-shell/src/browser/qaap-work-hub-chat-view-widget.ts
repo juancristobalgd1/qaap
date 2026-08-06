@@ -15,7 +15,7 @@ import { AI_CHAT_SHOW_CHATS_COMMAND, ChatCommands } from '@theia/ai-chat-ui/lib/
 import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
-import { LabelProvider, PanelLayout } from '@theia/core/lib/browser';
+import { ApplicationShell, LabelProvider, PanelLayout } from '@theia/core/lib/browser';
 import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
 import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
@@ -36,6 +36,7 @@ import { createWorkHubMoreActionsIcon } from '@theia/qaap-adapters/lib/browser/q
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
+import { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -72,6 +73,10 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly commands: CommandRegistry;
     @inject(WidgetManager)
     protected readonly widgetManager: WidgetManager;
+    @inject(ApplicationShell)
+    protected readonly applicationShell: ApplicationShell;
+    @inject(ScmService)
+    protected readonly scmService: ScmService;
     @inject(MobileProjectChatViewWidgetFactory)
     protected readonly mobileProjectChatViewWidgetFactory: MobileProjectChatViewWidgetFactory;
     @inject(ChatAgentService)
@@ -190,6 +195,8 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 projectsService: this.projectsService,
                 commands: this.commands,
                 widgetManager: this.widgetManager,
+                applicationShell: this.applicationShell,
+                scmService: this.scmService,
                 mobileProjectChatViewWidgetFactory: this.mobileProjectChatViewWidgetFactory,
                 chatService: this.chatService,
                 chatAgentService: this.chatAgentService,

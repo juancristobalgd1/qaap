@@ -54,4 +54,10 @@ describe('qaap-workbench-top-bar-widgets', () => {
         markPreferDesktopIde();
         expect(shouldShowMobileIdeHeaderViews()).to.equal(false);
     });
+
+    it('keeps mobile header views hidden when the IDE body marker survives a narrow resize', () => {
+        document.body.classList.add('theia-mobile-mod-desktop-ide');
+        expect(shouldShowMobileIdeHeaderViews()).to.equal(false);
+        document.body.classList.remove('theia-mobile-mod-desktop-ide');
+    });
 });

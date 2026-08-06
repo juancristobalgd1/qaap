@@ -70,7 +70,8 @@
   max-width: 100% !important;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 767px),
+(pointer: coarse) {
   .theia-mobile-projects>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded {
     inset: 0 !important;
     width: 100% !important;
@@ -1491,7 +1492,10 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   z-index: 2147483015 !important;
 }
 
-@media (min-width: 768px) {
+/* Keep in sync with QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY in
+   mobile-work-hub-sessions-sidebar.ts. A coarse pointer remains in the mobile sheet layout even
+   when a tablet is wider than the narrow-viewport breakpoint. */
+@media (min-width: 768px) and (pointer: fine) {
   :root {
     --qaap-work-hub-desktop-sidebar-width: 328px;
   }

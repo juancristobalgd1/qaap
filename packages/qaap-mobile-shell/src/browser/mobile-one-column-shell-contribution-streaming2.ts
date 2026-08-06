@@ -103,6 +103,7 @@ import {
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
 } from './qaap-workbench-account-menu';
 import { hasDesktopSessionsSidebarCollapsed } from './mobile-work-hub-sessions-sidebar';
+import { QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '../common/qaap-mobile-work-surface-preference';
 import { writeStoredComposerSurface } from '../common/qaap-composer-surface';
 import { resolveInitialLandingBodyClass } from './mobile-shell-landing-state';
 import { MobileShellLandingController, type MobileShellLandingHost } from './mobile-shell-landing-controller';
@@ -311,8 +312,9 @@ export function onStopExtracted(ctx: any, _app: FrontendApplication): void {
 }
 
 export function shouldActivateMobileLayoutExtracted(ctx: any): boolean {
-    // Classic IDE always uses the normal desktop layout — never the mobile one-column view.
-    if (peekPreferDesktopIde()) {
+    // Classic IDE always uses the normal responsive layout — never the mobile one-column view.
+    // Keep the body marker as a runtime fallback while a persisted preference is hydrating.
+    if (peekPreferDesktopIde() || document.body.classList.contains(QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS)) {
         return false;
     }
     if (Boolean(ctx.mobileMq?.matches)) {
@@ -562,4 +564,3 @@ export function hideProjectsPanelExtracted(ctx: any): void {
     ctx.refreshBottomBar();
     ctx.refreshWorkbenchTopBar();
 }
-

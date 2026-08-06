@@ -284,7 +284,13 @@ export class QaapEmptyWorkbenchBrandingContribution implements FrontendApplicati
         const bindings = this.keybindings.getKeybindingsForCommand(commandId);
         const preferred = QAAP_WATERMARK_PREFERRED_KEYBINDINGS[commandId];
         if (preferred) {
-            return bindings.find(candidate => candidate.keybinding === preferred) ?? bindings[0];
+            // The keybinding contribution may be registered after the initial
+            // empty-workbench render. Keep the default shortcut visible while
+            // the registry catches up, and still prefer a real user binding
+            // whenever one is already available.
+            return bindings.find(candidate => candidate.keybinding === preferred)
+                ?? bindings[0]
+                ?? { command: commandId, keybinding: preferred };
         }
         return bindings[0];
     }

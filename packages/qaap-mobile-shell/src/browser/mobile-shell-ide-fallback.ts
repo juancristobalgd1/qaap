@@ -13,7 +13,6 @@ import {
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
 } from './mobile-projects-open';
-import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileShellSessionState } from './mobile-shell-session-state';
 
@@ -31,6 +30,7 @@ export interface MobileShellIdeFallbackHost {
     syncMobileHubPrimaryBottomChrome(): void;
     refreshBottomBar(): void;
     refreshWorkbenchTopBar(): void;
+    syncWorkHubSessionsSidebarLayout(): void;
     forceCenterColumnFullWidth(): void;
     scheduleSnapAndUiRefresh(): void;
     ensureDesktopSidePanelSizes(): Promise<void>;
@@ -68,10 +68,6 @@ export class MobileShellIdeFallbackController {
     }
 
     openDesktopIde(): void {
-        // Classic IDE is desktop-only — never activate it on a narrow/touch viewport.
-        if (matchesMobileNarrowViewport()) {
-            return;
-        }
         this.host.cancelAgentsBootstrap();
         clearPreferAgentsSurface();
         markPreferDesktopIde();
@@ -81,7 +77,7 @@ export class MobileShellIdeFallbackController {
         document.body.classList.remove('theia-mobile-mod-landing');
         clearMobileWorkHubBootGuard();
         this.disposeProjectsPanelForDesktopIde();
-        // Classic IDE always uses the normal desktop layout (never the mobile one-column view).
+        // Classic IDE always uses the normal responsive layout (never the mobile one-column view).
         this.host.leaveMobileLayout();
         this.host.syncOverlayEdgeSwipeZones();
         this.host.onMediaChange();
@@ -102,9 +98,17 @@ export class MobileShellIdeFallbackController {
         if (!this.host.isMobileActive() && this.host.shouldActivateMobileLayout()) {
             this.host.enterMobileLayout();
         }
+        const reconcileWorkHubLayout = (): void => {
+            this.host.syncWorkHubSessionsSidebarLayout();
+            this.host.requestFullShellRelayout();
+        };
         if (!this.host.tryBootstrapMobileAgentsChat()) {
-            void this.host.restoreAgentsSurfaceAfterReload();
+            void this.host.restoreAgentsSurfaceAfterReload().finally(reconcileWorkHubLayout);
         }
+        // Bootstrap may recreate the panel asynchronously. Reconcile now and on the next paint;
+        // the bootstrap controller repeats this after the restored panel is actually visible.
+        reconcileWorkHubLayout();
+        window.requestAnimationFrame(reconcileWorkHubLayout);
         this.host.refreshBottomBar();
         this.host.refreshWorkbenchTopBar();
         this.host.syncOverlayEdgeSwipeZones();

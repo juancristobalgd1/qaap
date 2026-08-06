@@ -37,7 +37,10 @@ import {
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 import type { QaapAgentConversation, QaapAgentConversationCwdGroup, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
-import type { QaapPreviewVisualValidationResult } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+import {
+    normalizeQaapVisualPreviewUrl,
+    type QaapPreviewVisualValidationResult,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
 
 const SSE_HEARTBEAT_MS = 25_000;
 const VISUAL_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
@@ -679,8 +682,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     /** JSON finalize of a walked flow: attach the already-uploaded step images in one block. */
     protected async handlePostVisualVerificationFlow(req: Request, res: Response): Promise<void> {
-        const body = (req.body ?? {}) as { targetMessageId?: unknown; steps?: unknown };
+        const body = (req.body ?? {}) as { targetMessageId?: unknown; steps?: unknown; previewUrl?: unknown };
         const targetMessageId = typeof body.targetMessageId === 'string' ? body.targetMessageId.trim() : '';
+        const previewUrl = normalizeQaapVisualPreviewUrl(typeof body.previewUrl === 'string' ? body.previewUrl : undefined);
         const rawSteps = Array.isArray(body.steps) ? body.steps as Partial<{
             label: unknown; evidenceId: unknown; result: unknown;
         }>[] : [];
@@ -698,7 +702,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return;
         }
         try {
-            const conv = await this.store.recordVisualVerificationFlow(req.params.id, steps, targetMessageId);
+            const conv = await this.store.recordVisualVerificationFlow(req.params.id, steps, targetMessageId, previewUrl);
             if (!conv) {
                 res.status(404).json({ error: 'Conversation, agent response, or evidence not found.' });
                 return;
@@ -733,7 +737,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         }
         try {
             const target = req.get('x-qaap-visual-target')?.trim() || undefined;
-            const conv = await this.store.recordVisualVerification(req.params.id, result, png, target);
+            const previewUrl = normalizeQaapVisualPreviewUrl(req.get('x-qaap-visual-preview'));
+            const conv = await this.store.recordVisualVerification(req.params.id, result, png, target, previewUrl);
             if (!conv) {
                 res.status(404).json({ error: 'Conversation or agent response not found.' });
                 return;

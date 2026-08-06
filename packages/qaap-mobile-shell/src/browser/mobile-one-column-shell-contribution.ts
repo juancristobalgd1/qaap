@@ -72,6 +72,7 @@ import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
 import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
+import { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
 import { MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -235,6 +236,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     @inject(WidgetManager)
     protected readonly widgetManager: WidgetManager;
+
+    @inject(ScmService)
+    protected readonly scmService: ScmService;
 
     @inject(ChatService)
     protected readonly chatService: ChatService;

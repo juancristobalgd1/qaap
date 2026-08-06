@@ -11,6 +11,7 @@ import {
     type MobileProjectsExecutionSurfaceTabsHost,
 } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import { clearPreferDesktopIde, markPreferDesktopIde } from './mobile-projects-open';
 
 describe('mobile-projects-execution-surface-tabs-ui', () => {
 
@@ -18,6 +19,14 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
     before(() => {
         disableJSDOM = enableJSDOM();
+    });
+
+    beforeEach(() => {
+        clearPreferDesktopIde();
+    });
+
+    afterEach(() => {
+        clearPreferDesktopIde();
     });
 
     after(() => {
@@ -264,6 +273,47 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(reviewHost.hidden).to.equal(true);
     });
 
+    it('routes IDE Changes to the native Source Control view', () => {
+        markPreferDesktopIde();
+        let changesOpened = 0;
+        const project: MobileProjectEntry = {
+            id: 'p1',
+            name: 'Demo',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'idle',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        const summary = {
+            id: 'conv-1',
+            cwd: '/tmp/demo',
+            agentId: 'task',
+            title: 'Build page',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+        };
+        const host = createHost({
+            openTranscriptChanges: () => {
+                changesOpened += 1;
+            },
+        });
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+        ui.selectTranscriptTab('review', project, summary);
+
+        expect(changesOpened).to.equal(1);
+        expect(host.executionSurfaceTabByProjectId.has(project.id)).to.equal(false);
+    });
+
     it('shows Chat first and excludes Editor and Changes from the execution view overflow menu', () => {
         const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
         const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
@@ -280,6 +330,20 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         const trigger = strip.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-symbol');
         expect(trigger?.classList.contains('qaap-icon-message-circle')).to.equal(true);
         expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')).to.equal(null);
+    });
+
+    it('limits the IDE execution view picker to Chat and Preview', () => {
+        markPreferDesktopIde();
+        try {
+            const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
+            expect(ui.executionSurfaceTabSpecs().map(spec => spec.id)).to.deep.equal(['preview']);
+            const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
+            const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
+                .map(label => label.textContent);
+            expect(labels).to.deep.equal(['Chat', 'Preview']);
+        } finally {
+            clearPreferDesktopIde();
+        }
     });
 
     it('prepends the agent TUI selector only on the Terminal surface', () => {

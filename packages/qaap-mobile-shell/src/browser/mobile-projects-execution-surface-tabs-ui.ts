@@ -79,6 +79,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     transcriptSurfacesUi: MobileProjectsTranscriptSurfacesUi;
     projectDetailUi: MobileProjectsProjectDetailUi;
+    openTranscriptChanges?: () => void | Promise<void>;
 
     ensureAgentsHubExecutionShellRendered(): void;
     appendTranscriptHeaderActions(header: HTMLElement, title: HTMLElement): HTMLButtonElement;
