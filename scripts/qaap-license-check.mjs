@@ -92,7 +92,7 @@ function isLocallySafe(entry, lock) {
         return false;
     }
 
-    const dependency = entry.dependency;
+    const dependency = entry.dependency.replace(/^Invalid:\s*/, '');
     if (dependency.startsWith('node_modules/')) {
         const packageInfo = lock.packages?.[dependency];
         if (packageInfo?.link === true) {
