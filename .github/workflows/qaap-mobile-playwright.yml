@@ -72,4 +72,5 @@ jobs:
           # Keep disconnected Playwright frontends alive for the complete suite.
           # The default 600s grace period expires mid-run and rejects pending RPC
           # channel opens with "transport close", taking down the test server.
-          FRONTEND_CONNECTION_TIMEOUT: '-1'
+          # 45 minutes covers the full suite while preserving eventual cleanup.
+          FRONTEND_CONNECTION_TIMEOUT: '2700000'
