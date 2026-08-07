@@ -307,23 +307,14 @@ export function ensureTranscriptDevPreview(
     const requestMap = requests ?? new Map<string, Promise<string | undefined>>();
     requestMap.set(requestKey, pending);
     transcriptPreviewBootstrapInFlight.set(bootstrap, requestMap);
-    pending.then(
-        () => {
-            if (requestMap.get(requestKey) === pending) {
-                requestMap.delete(requestKey);
-                if (requestMap.size === 0) {
-                    transcriptPreviewBootstrapInFlight.delete(bootstrap);
-                }
+    const clearRequest = (): void => {
+        if (requestMap.get(requestKey) === pending) {
+            requestMap.delete(requestKey);
+            if (requestMap.size === 0) {
+                transcriptPreviewBootstrapInFlight.delete(bootstrap);
             }
-        },
-        () => {
-            if (requestMap.get(requestKey) === pending) {
-                requestMap.delete(requestKey);
-                if (requestMap.size === 0) {
-                    transcriptPreviewBootstrapInFlight.delete(bootstrap);
-                }
-            }
-        },
-    );
+        }
+    };
+    void pending.then(clearRequest, clearRequest);
     return pending;
 }
