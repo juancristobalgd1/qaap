@@ -69,3 +69,7 @@ jobs:
           npm run ui-tests:qaap-mobile
         env:
           QAAP_SKIP_AUTH: 'true'
+          # Keep disconnected Playwright frontends alive for the complete suite.
+          # The default 600s grace period expires mid-run and rejects pending RPC
+          # channel opens with "transport close", taking down the test server.
+          FRONTEND_CONNECTION_TIMEOUT: '-1'
