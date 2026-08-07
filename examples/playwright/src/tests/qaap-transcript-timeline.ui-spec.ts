@@ -155,6 +155,8 @@ test.describe('@qaap-mobile transcript timeline', () => {
         const changedFiles = app.page.getByTestId('changed-files-card');
         await expect(changedFiles.locator('.theia-mobile-agent-changed-files-stats .theia-mod-added')).toHaveText('+3');
         await expect(changedFiles.locator('.theia-mobile-agent-changed-files-stats .theia-mod-removed')).toHaveText('−1');
+        await changedFiles.locator('summary').click();
+        await expect(changedFiles).toHaveAttribute('open', '');
         await expect(changedFiles.locator('.theia-mobile-agent-changed-files-mini-diff-line')).toBeVisible();
 
         const terminalExpand = app.page.getByTestId('terminal-step').locator('.theia-mobile-agent-activity-expand');
