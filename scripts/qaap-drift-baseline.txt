@@ -3,7 +3,7 @@
 #
 # Empty new-drift set: CI passes while paths are migrated into packages/qaap-* or ALLOWED.
 # Regenerate: node scripts/qaap-drift-check.js --write-baseline
-+dev-packages/cli/package.json
+dev-packages/cli/package.json
 dev-packages/cli/src/download-plugins.ts
 dev-packages/cli/src/run-test.ts
 dev-packages/cli/src/test-page.ts
