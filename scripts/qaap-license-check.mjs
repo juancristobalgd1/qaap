@@ -14,6 +14,18 @@ const wrapperPath = resolve(repositoryRoot, 'node_modules/@eclipse-dash/nodejs-w
 const configPath = resolve(repositoryRoot, 'configs/license-check-config.json');
 const summaryPath = resolve(repositoryRoot, 'license-check-summary.txt');
 const lockPath = resolve(repositoryRoot, 'package-lock.json');
+const PERMISSIVE_LICENSES = new Set([
+    '0BSD',
+    'Apache-2.0',
+    'BSD-2-Clause',
+    'BSD-3-Clause',
+    'BlueOak-1.0.0',
+    'CC0-1.0',
+    'ISC',
+    'MIT',
+    'Unlicense',
+    'WTFPL'
+]);
 
 const wrapperArguments = [`--configFile=${configPath}`];
 if (process.argv.includes('--review')) {
@@ -134,16 +146,3 @@ function hasPermissiveLicense(license) {
         .filter(Boolean);
     return expressions.length > 0 && expressions.every(value => PERMISSIVE_LICENSES.has(value));
 }
-
-const PERMISSIVE_LICENSES = new Set([
-    '0BSD',
-    'Apache-2.0',
-    'BSD-2-Clause',
-    'BSD-3-Clause',
-    'BlueOak-1.0.0',
-    'CC0-1.0',
-    'ISC',
-    'MIT',
-    'Unlicense',
-    'WTFPL'
-]);
