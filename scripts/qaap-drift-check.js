@@ -196,6 +196,12 @@ const ALLOWED = [
     /^scripts\/translation-update\.js$/,
     /^\.claude\/skills\/qaap-dev\.md$/,
     /^\.cursor\/rules\/mobile-touch-accessibility\.mdc$/,
+    // Qaap package project references: upstream package tsconfigs must include
+    // qaap-* dependencies so the TypeScript build graph resolves them.
+    /^packages\/ai-terminal\/tsconfig\.json$/,
+    /^packages\/plugin-ext-vscode\/tsconfig\.json$/,
+    /^packages\/plugin-ext\/tsconfig\.json$/,
+    /^packages\/remote\/tsconfig\.json$/,
     /^\.worktrees\/qaiq$/,
     /^qaiq$/,
     /^bom\.json$/,
