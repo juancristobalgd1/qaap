@@ -56,6 +56,19 @@ export default async function newTestPage(options: TestPageOptions): Promise<pup
     page.on('pageerror', console.error);
 
     let theiaLoaded = false;
+    let chaiLoad: Promise<void> | undefined;
+    const ensureChai = async (): Promise<void> => {
+        if (await page.evaluate(() => !!(window as any)['chai'])) {
+            return;
+        }
+        chaiLoad ??= page.addScriptTag({ path: require.resolve('chai/chai.js') })
+            .then(() => undefined)
+            .catch(error => {
+                chaiLoad = undefined;
+                throw error;
+            });
+        await chaiLoad;
+    };
     page.exposeFunction('fireDidUnloadTheia', () => theiaLoaded = false);
     const preLoad = (frame: puppeteer.Frame) => {
         const frameUrl = frame.url();
@@ -67,7 +80,7 @@ export default async function newTestPage(options: TestPageOptions): Promise<pup
         }
         console.log('loading chai...');
         theiaLoaded = true;
-        page.addScriptTag({ path: require.resolve('chai/chai.js') });
+        ensureChai().catch(() => undefined);
         page.evaluate(() =>
             window.addEventListener('beforeunload', () => (window as any)['fireDidUnloadTheia']())
         );
@@ -85,8 +98,9 @@ export default async function newTestPage(options: TestPageOptions): Promise<pup
         await page.waitForFunction(() => !!(window as any)['theia']?.container, {
             timeout: 120 * 1000
         });
+        await ensureChai();
         await page.addScriptTag({ path: require.resolve('mocha/mocha.js') });
-        await page.waitForFunction(() => !!(window as any)['chai'] && !!(window as any)['mocha'] && !!(window as any)['theia'].container, { timeout: 120 * 1000 });
+        await page.waitForFunction(() => !!(window as any)['mocha'] && !!(window as any)['theia']?.container, { timeout: 120 * 1000 });
 
         console.log('loading Theia...');
         await page.evaluate(() => {
