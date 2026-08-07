@@ -770,14 +770,29 @@ export function postUserMessageExtracted(ctx: any, id: string,
         }
     }
     const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);
-    const modelPatch = agentModelOverride && agentSupportsModelPicker(turnAgentId)
+    const normalizedTurnAgentId = turnAgentId.trim().toLowerCase();
+    const lastModelTurn = [...conv.messages].reverse().find(message =>
+        message.role === 'user' && message.turnAgentModel && message.turnAgentId,
+    );
+    const conversationModelOwner = lastModelTurn?.turnAgentId?.trim().toLowerCase()
+        ?? ((conv.agentModel ?? conv.qaiqModel) ? conv.agentId?.trim().toLowerCase() : undefined);
+    const conversationModel = conv.agentModel ?? conv.qaiqModel;
+    const shouldDropConversationModel = agentSupportsModelPicker(turnAgentId)
+        && !!conversationModelOwner
+        && conversationModelOwner !== normalizedTurnAgentId;
+    const selectedModelPatch = agentModelOverride && agentSupportsModelPicker(turnAgentId)
         ? { agentModel: agentModelOverride, qaiqModel: agentModelOverride }
         : {};
+    const modelPatch = Object.keys(selectedModelPatch).length > 0
+        ? selectedModelPatch
+        : shouldDropConversationModel
+            ? { agentModel: undefined, qaiqModel: undefined }
+            : {};
     // The model that will actually drive this turn. Resolved BEFORE the user message is built
     // so the very first SSE frame already carries the provenance the badge renders from:
     // sealing it after `taskRunner.create()` would ship an unsealed frame that the client's
     // replace-by-id merge (`QaapThreadStore.appendLiveMessage`) can never repair on its own.
-    const turnModel = modelPatch.agentModel ?? conv.agentModel ?? conv.qaiqModel;
+    const turnModel = modelPatch.agentModel ?? (shouldDropConversationModel ? undefined : conversationModel);
     // Agents without a model picker (shell, native CLIs) run no model of ours — sealing one
     // would badge the turn with a model that never executed. Same guard as buildTaskCreateRequest.
     const sealedTurnModel = agentSupportsModelPicker(turnAgentId) ? turnModel : undefined;

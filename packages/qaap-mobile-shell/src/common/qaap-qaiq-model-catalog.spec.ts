@@ -11,7 +11,6 @@ import {
     isQaiqByokLanguageModelId,
     listQaiqModelsFromPreferences,
     listQaiqModelsFromRegisteredLanguageModels,
-    listOpenClaudeFallbackModels,
     mergeQaiqModelOptions,
 } from './qaap-qaiq-model-catalog';
 
@@ -215,20 +214,5 @@ describe('listQaiqModelsFromPreferences', () => {
         ]);
         expect(grouped.get('openrouter')).to.have.length(1);
         expect(grouped.get('nvidia')).to.have.length(1);
-    });
-});
-
-describe('listOpenClaudeFallbackModels', () => {
-    it('exposes the built-in provider presets when Settings has no catalog', () => {
-        const models = listOpenClaudeFallbackModels();
-        expect(models.map(model => model.modelId)).to.include.members([
-            'claude-sonnet-4-6',
-            'claude-opus-4-7',
-            'gpt-4o',
-            'gemini-3.1-pro',
-            'mistral-large-latest',
-            'qwen2.5-coder:7b',
-        ]);
-        expect(models.every(model => model.label.trim().length > 0)).to.be.true;
     });
 });

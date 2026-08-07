@@ -16,25 +16,6 @@ import {
 
 export type { QaapPreferenceReader } from './qaap-qaiq-byok-provider-registry';
 
-/**
- * OpenClaude ships these provider/model presets in its built-in model catalog. They are only a
- * fallback for an empty Settings catalog; configured BYOK models always take precedence.
- */
-const OPENCLAUDE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
-    { vendor: 'anthropic', provider: 'anthropic', modelId: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { vendor: 'anthropic', provider: 'anthropic', modelId: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
-    { vendor: 'anthropic', provider: 'anthropic', modelId: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-    { vendor: 'openai', provider: 'openai', modelId: 'gpt-4o', label: 'GPT-4o' },
-    { vendor: 'openai', provider: 'openai', modelId: 'gpt-5.4', label: 'GPT-5.4' },
-    { vendor: 'google', provider: 'gemini', modelId: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
-    { vendor: 'mistral', provider: 'mistral', modelId: 'mistral-large-latest', label: 'Mistral Large Latest' },
-    { vendor: 'ollama', provider: 'ollama', modelId: 'qwen2.5-coder:7b', label: 'Qwen 2.5 Coder 7B' },
-];
-
-export function listOpenClaudeFallbackModels(): QaapQaiqModelOption[] {
-    return OPENCLAUDE_FALLBACK_MODELS.map(model => ({ ...model }));
-}
-
 type AliasMap = Record<string, { readonly selectedModel?: string } | undefined>;
 
 const ALIAS_KEYS = ['default/code', 'default/universal', 'default/code-completion', 'default/summarize'] as const;

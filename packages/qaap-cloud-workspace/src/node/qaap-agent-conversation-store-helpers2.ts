@@ -126,9 +126,20 @@ export function buildTaskCreateRequest(
         ...(requestConv.toolApprovalRules ? { toolApprovalRules: requestConv.toolApprovalRules } : {}),
         ...(latencyMarks ? { latencyMarks } : {}),
         ...(() => {
+            const normalizedTurnAgentId = turnAgentId.trim().toLowerCase();
+            const lastModelTurn = [...requestConv.messages].reverse().find(message =>
+                message.role === 'user' && message.turnAgentModel && message.turnAgentId,
+            );
+            const conversationModelOwner = lastModelTurn?.turnAgentId?.trim().toLowerCase()
+                ?? ((requestConv.agentModel ?? requestConv.qaiqModel)
+                    ? requestConv.agentId?.trim().toLowerCase()
+                    : undefined);
+            const conversationModel = !conversationModelOwner || conversationModelOwner === normalizedTurnAgentId
+                ? requestConv.agentModel ?? requestConv.qaiqModel
+                : undefined;
             const agentModel = lastUser?.turnAgentId === turnAgentId
-                ? lastUser.turnAgentModel ?? requestConv.agentModel ?? requestConv.qaiqModel
-                : requestConv.agentModel ?? requestConv.qaiqModel;
+                ? lastUser.turnAgentModel ?? conversationModel
+                : conversationModel;
             return agentSupportsModelPicker(turnAgentId) && agentModel
                 ? { agentModel, qaiqModel: agentModel }
                 : {};

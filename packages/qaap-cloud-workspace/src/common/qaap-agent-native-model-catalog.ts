@@ -8,7 +8,7 @@ import {
     NATIVE_MODEL_PICKER_AGENT_IDS,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import { listOpenClaudeFallbackModels } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
+import { listOpenClaudeNativeModels } from '@theia/qaap-mobile-shell/lib/common/qaap-openclaude-model-catalog';
 
 /** Keep in sync with {@link SETTINGS_MODEL_CATALOG_AGENT_IDS} in qaap-agent-model-selection. */
 export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq']);
@@ -99,7 +99,7 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
         case 'openclaude':
             // OpenClaude is a separate harness. It accepts the QAIQ provider flags, but its
             // picker must not inherit the user's QAIQ Settings catalog.
-            return listOpenClaudeFallbackModels();
+            return listOpenClaudeNativeModels();
         case 'copilot':
             // Keep in sync with Copilot CLI model IDs (v1.0.70+ GPT-5.6; Sonnet 5 / Opus 4.8).
             return [

@@ -11,7 +11,7 @@ import type {
 } from '../common/qaap-agent-conversation-client';
 import {
     isTheiaCoderAgent,
-    isQaiqAgent,
+    agentUsesSettingsModelCatalog,
     migrateLegacyBackendAgentId,
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     QAAP_PRIMARY_AGENT_ID,
@@ -121,7 +121,7 @@ export class MobileProjectsTranscriptComposerUi {
         if (this.host.transcriptComposerPinnedAgentId) {
             const explicit = this.host.transcriptComposerPinnedAgentId;
             if (explicit !== 'task' && !isTheiaCoderAgent(explicit)) {
-                return isQaiqAgent(explicit) ? QAAP_PRIMARY_AGENT_ID : explicit;
+                return agentUsesSettingsModelCatalog(explicit) ? QAAP_PRIMARY_AGENT_ID : explicit;
             }
         }
         const summaryAgent = isAgentsHubIdleConversationSummary(summary)
@@ -131,7 +131,7 @@ export class MobileProjectsTranscriptComposerUi {
             ?? summaryAgent
             ?? readStoredAgent(cwd);
         if (pinned && pinned !== 'task' && !isTheiaCoderAgent(pinned)) {
-            return isQaiqAgent(pinned) ? QAAP_PRIMARY_AGENT_ID : pinned;
+            return agentUsesSettingsModelCatalog(pinned) ? QAAP_PRIMARY_AGENT_ID : pinned;
         }
         return this.host.transcriptComposerBackendAgents[0]?.id ?? QAAP_COMPOSER_DEFAULT_AGENT_ID;
     }

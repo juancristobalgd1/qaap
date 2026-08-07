@@ -289,13 +289,20 @@ export function buildChildEnvExtracted(ctx: any, task: QaapAgentTask): NodeJS.Pr
         // are the sole source. Without this, User B's agent would inherit User
         // A's keys (or operator-level keys) from the shared backend process.
         ctx.stripSharedProviderEnv(env);
-        ctx.applyProviderPreferenceEnv(env, task.ownerLogin);
+        // QAIQ and OpenClaude share the hosted protocol, but OpenClaude must not inherit QAIQ's
+        // Settings → AI Features credentials/base URL as an implicit model selection. Explicit
+        // OpenClaude picks still receive their own binding below.
+        const usesQaiqSettingsCatalog = agentUsesSettingsModelCatalog(task.agentId)
+            || (!task.agentId && /\bqaiq\b/.test(task.command) && !/\bopenclaude\b/.test(task.command));
+        if (usesQaiqSettingsCatalog) {
+            ctx.applyProviderPreferenceEnv(env, task.ownerLogin);
+        }
         const binding = ctx.resolveAgentBindingForTask(task);
         if (binding) {
             applyQaapQaiqModelEnv(env, binding);
             applyQaapQaiqCredentialEnv(env, binding, key => ctx.preferenceService?.get(key));
         }
-        if (ctx.isQaiqRunner(undefined, task.command)) {
+        if (usesQaiqSettingsCatalog) {
             ctx.applyQaiqProviderEnv(env, task.command, binding);
         }
         if (ctx.isQaiqRunner(undefined, task.command)) {

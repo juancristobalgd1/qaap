@@ -16,6 +16,7 @@ import {
 import {
     resolveAgentModelForSubmit,
     resolveExplicitAgentForSubmit,
+    resolveStoredAgentModelForSubmit,
     type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
 import { applyBackendInteractionModeToPrompt } from '../common/qaap-sticky-composer-mode';
@@ -104,6 +105,16 @@ export class MobileProjectsTranscriptSubmitUi {
         agent: string | undefined,
         summary: QaapAgentConversationSummaryDTO,
     ): QaapCreateAgentTaskQaiqModel | undefined {
+        const requestedAgent = agent?.trim();
+        const currentAgent = summary.agentId?.trim();
+        const agentChanged = !!requestedAgent && !!currentAgent
+            && requestedAgent.toLowerCase() !== currentAgent.toLowerCase();
+        // A conversation's model belongs to its current agent. When the composer switches from
+        // QAIQ to OpenClaude (or back), never reuse the previous conversation/in-memory model;
+        // resolve only the new agent's own project-scoped selection.
+        if (agentChanged) {
+            return resolveStoredAgentModelForSubmit(requestedAgent, summary.cwd);
+        }
         const composerActive = this.host.transcriptComposerSummary?.id === summary.id;
         const explicitModel = composerActive
             ? (this.host.transcriptComposerAgentModel ?? summary.agentModel ?? summary.qaiqModel)

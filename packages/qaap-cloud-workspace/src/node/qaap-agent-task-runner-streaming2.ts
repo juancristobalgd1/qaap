@@ -448,6 +448,10 @@ export function buildTemplateVarsExtracted(ctx: any, agentId: string,
         agentModel?: QaapCreateAgentTaskQaiqModel,
         interaction?: QaapQaiqInteractionFlagOptions,): Record<string, string> {
         const empty = { qaiq_flags: '', model_flags: '' };
+        // QAIQ and OpenClaude share the stream-json/approval protocol, but only QAIQ owns the
+        // Settings → AI Features model catalog. Reusing isQaiqAgent here would make OpenClaude
+        // silently inherit QAIQ's configured model whenever no explicit OpenClaude model was sent.
+        const usesQaiqSettingsCatalog = agentUsesSettingsModelCatalog(agentId);
         const qaiqInteractionFlags = isQaiqAgent(agentId)
             ? formatQaiqInteractionFlags(interaction ?? {})
             : '';
@@ -460,7 +464,7 @@ export function buildTemplateVarsExtracted(ctx: any, agentId: string,
             }
             return { qaiq_flags: '', model_flags: flags };
         }
-        if (isQaiqAgent(agentId)) {
+        if (usesQaiqSettingsCatalog) {
             return { qaiq_flags: joinQaiqFlags(qaiqInteractionFlags, ctx.resolveQaiqProviderFlags()), model_flags: '' };
         }
         return empty;
@@ -486,7 +490,10 @@ export function resolveAgentBindingForTaskExtracted(ctx: any, task: QaapAgentTas
         if (selected?.provider && selected.modelId?.trim()) {
             return ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(selected));
         }
-        if (ctx.isQaiqRunner(undefined, task.command)) {
+        // OpenClaude is a QAIQ-protocol runner, not a QAIQ Settings runner. Without this guard a
+        // task with no explicit OpenClaude model would receive QAIQ's alias/provider binding.
+        if (agentUsesSettingsModelCatalog(task.agentId)
+            || (!task.agentId && /\bqaiq\b/.test(task.command) && !/\bopenclaude\b/.test(task.command))) {
             const binding = ctx.resolveQaapQaiqBinding();
             return binding ? ctx.normalizeAgentBinding(binding) : undefined;
         }
@@ -507,7 +514,9 @@ export function previewProviderEnvExtracted(ctx: any): NodeJS.ProcessEnv {
 }
 
 export function assertQaiqConfiguredExtracted(ctx: any, agentId: string): void {
-        if (!isQaiqAgent(agentId)) {
+        // OpenClaude has its own model/auth configuration. The shared stream protocol does not
+        // make QAIQ's Settings catalog a prerequisite for running it.
+        if (!agentUsesSettingsModelCatalog(agentId)) {
             return;
         }
         const env = ctx.previewProviderEnv();
