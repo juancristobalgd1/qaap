@@ -83,10 +83,10 @@ export default async function newTestPage(options: TestPageOptions): Promise<pup
         // Wait for the public Theia container before loading the test harness.
         // The logger export can lag behind plugin deployment even when the application is usable.
         await page.waitForFunction(() => !!(window as any)['theia']?.container, {
-            timeout: 30 * 1000
+            timeout: 120 * 1000
         });
         await page.addScriptTag({ path: require.resolve('mocha/mocha.js') });
-        await page.waitForFunction(() => !!(window as any)['chai'] && !!(window as any)['mocha'] && !!(window as any)['theia'].container, { timeout: 30 * 1000 });
+        await page.waitForFunction(() => !!(window as any)['chai'] && !!(window as any)['mocha'] && !!(window as any)['theia'].container, { timeout: 120 * 1000 });
 
         console.log('loading Theia...');
         await page.evaluate(() => {

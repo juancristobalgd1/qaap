@@ -45,7 +45,7 @@ jobs:
       - name: Install and Build
         shell: bash
         run: |
-          npm ci
+          npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
           node node_modules/electron/install.js
           ./scripts/check_git_status.sh
 
@@ -84,7 +84,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          npm ci
+          npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
           node node_modules/electron/install.js
           npm run build
           git status
