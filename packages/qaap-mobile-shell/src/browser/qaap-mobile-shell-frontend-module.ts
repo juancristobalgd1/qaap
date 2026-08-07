@@ -142,6 +142,8 @@ import { QaapWorkHubChatViewWidget } from './qaap-work-hub-chat-view-widget';
 import { QaapOutlineMobileContribution } from './qaap-outline-mobile-contribution';
 import { QaapMemoryInspectorMobileContribution } from './qaap-memory-inspector-mobile-contribution';
 import { QaapScmContribution } from './qaap-scm-contribution';
+import { QaapScmKeybindingContribution } from './qaap-scm-keybinding-contribution';
+import { QaapCoreKeybindingContribution } from './qaap-core-keybinding-contribution';
 import { QaapFileNavigatorContribution } from './qaap-file-navigator-contribution';
 import { QaapNavigatorTabBarDecorator } from './qaap-navigator-tab-bar-decorator';
 import { createQaapFileNavigatorWidget } from './qaap-navigator-widget-factory';
@@ -151,7 +153,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Cmd+X, etc.) pass through to the focused element instead of being
     // intercepted by the Theia keybinding system. In the classic IDE
     // (preferDesktopIde), the upstream KeybindingRegistry runs unchanged.
-    rebind(KeybindingRegistry).to(QaapKeybindingRegistry);
+    // The registry is shared by the application and every widget. Keeping the
+    // Qaap override singleton preserves contributions registered during startup.
+    rebind(KeybindingRegistry).to(QaapKeybindingRegistry).inSingletonScope();
     rebind(ChatViewTreeWidget).toDynamicValue(ctx =>
         createQaapChatViewTreeWidget(ctx.container)
     );
@@ -186,6 +190,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     })).inSingletonScope();
     bind(QaapScmContribution).toSelf().inSingletonScope();
     rebind(ScmContribution).toService(QaapScmContribution);
+    bind(QaapScmKeybindingContribution).toSelf().inSingletonScope();
+    bind(KeybindingContribution).toService(QaapScmKeybindingContribution);
+    bind(QaapCoreKeybindingContribution).toSelf().inSingletonScope();
+    bind(KeybindingContribution).toService(QaapCoreKeybindingContribution);
     bind(MobileProjectsService).toSelf().inSingletonScope();
     bind(QaapProjectSwitcherService).toSelf().inSingletonScope();
     bind(QaapProjectSwitcherContribution).toSelf().inSingletonScope();

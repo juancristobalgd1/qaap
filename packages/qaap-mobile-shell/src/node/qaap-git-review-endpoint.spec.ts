@@ -93,6 +93,9 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         git(['rm', '-q', 'deleted.ts']);
         fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 9, 8, 7]));
         fs.chmodSync(path.join(repo, 'mode.sh'), 0o755);
+        // chmodSync does not toggle Git's executable bit on Windows. Stage the mode change
+        // through Git so this fixture is deterministic on both POSIX and Windows hosts.
+        git(['update-index', '--chmod=+x', '--', 'mode.sh']);
         // Host-level breakage that killed per-file diffs in production: an external diff driver
         // that does not exist on the server. Plumbing (--numstat/status) ignores it, so the
         // changes list works while every patch-producing diff dies � unless we pass --no-ext-diff.

@@ -5,6 +5,8 @@
 
 import { expect } from 'chai';
 import type { Request } from '@theia/core/shared/express';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import * as path from 'path';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
@@ -610,6 +612,7 @@ describe('QaapDevPreviewEndpoint', () => {
             const firstRes = makeRes();
             const secondRes = makeRes();
             const root = 'file:///workspace/alice/project-a';
+            const canonicalProjectId = FileUri.create(path.resolve(FileUri.fsPath(root))).toString();
             await ep.exposeHandleClaim(claimReq(5173, identity, root), firstRes);
             ep.listeningPorts.add(5173);
             await ep.exposeHandleClaim(claimReq(5999, {
@@ -619,7 +622,7 @@ describe('QaapDevPreviewEndpoint', () => {
 
             expect(secondRes.record.body).to.deep.equal(firstRes.record.body);
             expect(registry.records()).to.have.length(1);
-            expect(registry.records()[0].projectId).to.equal(root);
+            expect(registry.records()[0].projectId).to.equal(canonicalProjectId);
         });
 
         it('persists a client-supplied osProcessId on a fresh process claim', async () => {

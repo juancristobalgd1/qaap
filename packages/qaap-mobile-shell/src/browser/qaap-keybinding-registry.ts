@@ -5,7 +5,8 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
-import { KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
+import { KeybindingRegistry, ResolvedKeybinding } from '@theia/core/lib/browser/keybinding';
+import { KeyCode } from '@theia/core/lib/common/keys';
 import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
 
 /**
@@ -41,6 +42,12 @@ export class QaapKeybindingRegistry extends KeybindingRegistry {
             return;
         }
         super.run(event);
+    }
+
+    override resolveKeybinding(binding: ResolvedKeybinding | undefined): KeyCode[] {
+        // Some optional command integrations ask for their first binding before the
+        // contribution has registered it. Keep that query harmless in the Qaap shell.
+        return binding ? super.resolveKeybinding(binding) : [];
     }
 
     /**

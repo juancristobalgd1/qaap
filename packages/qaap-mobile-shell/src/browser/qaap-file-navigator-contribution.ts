@@ -57,8 +57,18 @@ export class QaapFileNavigatorContribution extends FileNavigatorContribution {
     override async openView(args: Partial<OpenViewArguments> = {}): Promise<FileNavigatorWidget> {
         const activate = args.activate !== false;
         const reveal = args.reveal !== false;
+        const navigator = await this.widgetManager.getOrCreateWidget<FileNavigatorWidget>(FILE_NAVIGATOR_ID);
+        if (args.toggle) {
+            const viewContainer = await this.widgetManager.getOrCreateWidget<ViewContainer>(EXPLORER_VIEW_CONTAINER_ID);
+            const area = this.shell.getAreaFor(viewContainer);
+            const tabBar = area ? this.shell.getTabBarFor(viewContainer) : undefined;
+            if (area && tabBar?.currentTitle === viewContainer.title && this.shell.isExpanded(area)) {
+                await this.shell.collapsePanel(area);
+                return navigator;
+            }
+        }
         await this.ensureExplorerInLeftPanel(activate || reveal);
-        return this.widgetManager.getOrCreateWidget(FILE_NAVIGATOR_ID);
+        return navigator;
     }
 
     /**

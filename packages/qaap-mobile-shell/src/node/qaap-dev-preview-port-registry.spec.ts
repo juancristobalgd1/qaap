@@ -109,7 +109,12 @@ describe('QaapDevPreviewPortRegistry persistence', () => {
             });
             expect(restored.getForOwner(identity.previewId, 'alice')?.accessToken).to.equal(record.accessToken);
             expect(restored.getForOwner(identity.previewId, 'bob')).to.equal(undefined);
-            expect(fs.statSync(storePath).mode & 0o777).to.equal(0o600);
+            // POSIX permission bits are not authoritative on Windows/NTFS. The production
+            // chmod remains best-effort there; verify the exact private mode where the host
+            // filesystem exposes it.
+            if (process.platform !== 'win32') {
+                expect(fs.statSync(storePath).mode & 0o777).to.equal(0o600);
+            }
         } finally {
             if (previousPath === undefined) {
                 delete process.env.QAAP_PREVIEW_REGISTRY_PATH;

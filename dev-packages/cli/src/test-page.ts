@@ -52,6 +52,15 @@ export default async function newTestPage(options: TestPageOptions): Promise<pup
     const files = collectFiles(fileOptions);
 
     const page = await newPage();
+    // The API suite exercises the classic Theia workbench. Set the same
+    // session-scoped preference as the product's explicit "Open IDE" action
+    // before any application script runs, so Qaap's Work Hub default does not
+    // hide the editor and view panels underneath the tests. This is confined
+    // to the test harness; normal browser sessions still default to Work Hub.
+    await page.evaluateOnNewDocument(() => {
+        window.sessionStorage.setItem('qaap.mobileProjects.preferDesktopIde', '1');
+        window.sessionStorage.setItem('qaap.mobileProjects.explicitDesktopIde', '1');
+    });
     page.on('dialog', dialog => dialog.dismiss());
     page.on('pageerror', console.error);
 
