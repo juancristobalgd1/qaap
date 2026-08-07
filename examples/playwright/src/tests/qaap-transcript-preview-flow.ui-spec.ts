@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import { expect, test } from '@playwright/test';
 import { TheiaAppLoader } from '../theia-app-loader';
@@ -87,7 +88,7 @@ test.describe('@qaap-mobile transcript dev preview flow', () => {
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);
         await app.waitForShellAndInitialized();
         await dismissMobileTutorial(app.page);
-        await runLevantaLaAppPreviewFlow(app.page, ws.pathAsUrl());
+        await runLevantaLaAppPreviewFlow(app.page, ws.pathAsUrl(''));
         await app.page.close();
     });
 
@@ -98,7 +99,7 @@ test.describe('@qaap-mobile transcript dev preview flow', () => {
         const app = await TheiaAppLoader.load({ playwright, browser }, ws);
         await app.waitForShellAndInitialized();
         await dismissMobileTutorial(app.page);
-        await runLevantaLaAppPreviewFlow(app.page, ws.pathAsUrl());
+        await runLevantaLaAppPreviewFlow(app.page, ws.pathAsUrl(''));
         await app.page.close();
     });
 });
