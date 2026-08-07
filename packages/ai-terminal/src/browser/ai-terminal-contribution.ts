@@ -21,13 +21,12 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalMenus } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { TerminalWidgetImpl } from '@theia/terminal/lib/browser/terminal-widget-impl';
-import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
+import { TerminalBlock, TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { TerminalPreferences } from '@theia/terminal/lib/common/terminal-preferences';
 import { AiTerminalAgent } from './ai-terminal-agent';
 import { AICommandHandlerFactory } from '@theia/ai-core/lib/browser/ai-command-handler-factory';
 import { AgentService } from '@theia/ai-core';
 import { nls } from '@theia/core/lib/common/nls';
-import { TerminalBlock } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { getQaapWorkHubTerminalContext } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-terminal-context';
 
@@ -295,7 +294,7 @@ class TerminalAskAiDialog {
         this.input.onkeydown = event => {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
-                void this.submit();
+                this.submit();
             } else if (event.key === 'Escape') {
                 event.preventDefault();
                 this.dispose();
@@ -322,7 +321,7 @@ class TerminalAskAiDialog {
         this.sendButton.appendChild(this.createIcon('codicon-send'));
         this.sendButton.title = nls.localizeByDefault('Send');
         this.sendButton.setAttribute('aria-label', nls.localizeByDefault('Send'));
-        this.sendButton.onclick = () => { void this.submit(); };
+        this.sendButton.onclick = () => { this.submit(); };
         footer.appendChild(this.sendButton);
         composer.appendChild(footer);
         this.dialog.appendChild(composer);
@@ -421,7 +420,7 @@ class TerminalAskAiDialog {
         const recognition = this.recognition;
         this.recognition = undefined;
         if (recognition) {
-            recognition.onend = null;
+            recognition.onend = undefined;
             try {
                 recognition.stop();
             } catch {
@@ -469,9 +468,9 @@ interface TerminalAskAiRecognition extends EventTarget {
     continuous: boolean;
     interimResults: boolean;
     lang: string;
-    onresult: ((event: TerminalAskAiRecognitionEvent) => void) | null;
-    onerror: ((event: TerminalAskAiRecognitionErrorEvent) => void) | null;
-    onend: (() => void) | null;
+    onresult: ((event: TerminalAskAiRecognitionEvent) => void) | undefined;
+    onerror: ((event: TerminalAskAiRecognitionErrorEvent) => void) | undefined;
+    onend: (() => void) | undefined;
     start(): void;
     stop(): void;
 }
