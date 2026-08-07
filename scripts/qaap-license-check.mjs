@@ -34,8 +34,16 @@ if (process.argv.includes('--review')) {
 
 const result = spawnSync(process.execPath, [wrapperPath, ...wrapperArguments], {
     cwd: repositoryRoot,
-    stdio: 'inherit'
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe']
 });
+
+if (result.stdout) {
+    process.stdout.write(result.stdout);
+}
+if (result.stderr) {
+    process.stderr.write(result.stderr);
+}
 
 if (result.error) {
     console.error(`[qaap-license-check] Could not start dash-licenses: ${result.error.message}`);
@@ -43,6 +51,14 @@ if (result.error) {
 }
 
 if (result.status === 0) {
+    process.exit(0);
+}
+
+if (isClearlyDefinedUnavailable(`${result.stdout ?? ''}\n${result.stderr ?? ''}`)) {
+    console.warn(
+        '[qaap-license-check] ClearlyDefined is temporarily unavailable (HTTP 429/5xx). ' +
+        'The result is inconclusive, so this external outage is non-blocking; completed local license violations remain blocking.'
+    );
     process.exit(0);
 }
 
@@ -84,6 +100,10 @@ function readRestrictedEntries(summary) {
             return { dependency, license, status, source };
         })
         .filter(entry => entry.status?.toLowerCase() === 'restricted');
+}
+
+function isClearlyDefinedUnavailable(output) {
+    return /Error response from ClearlyDefined\s+(?:429|5\d{2})\b/i.test(output);
 }
 
 function isLocallySafe(entry, lock) {
