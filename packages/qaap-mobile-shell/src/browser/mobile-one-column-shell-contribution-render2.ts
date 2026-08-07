@@ -399,10 +399,6 @@ export function syncOverlayEdgeSwipeZonesExtracted(ctx: any): void {
 }
 
 export function initIdeFallbackControllerExtracted(ctx: any): void {
-    // Classic IDE is desktop-only — skip the IDE fallback controller on narrow/touch viewport.
-    if (matchesMobileNarrowViewport()) {
-        return;
-    }
     ctx.ideFallbackHost = {
         isMobileActive: () => ctx.mobileActive,
         shouldActivateMobileLayout: () => ctx.shouldActivateMobileLayout(),

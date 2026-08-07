@@ -15,6 +15,7 @@ import {
 } from './mobile-projects-open';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileShellSessionState } from './mobile-shell-session-state';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 
 export interface MobileShellIdeFallbackHost {
     isMobileActive(): boolean;
@@ -68,6 +69,7 @@ export class MobileShellIdeFallbackController {
     }
 
     openDesktopIde(): void {
+        const preserveNarrowMobileLayout = this.host.isMobileActive() && matchesMobileNarrowViewport();
         this.host.cancelAgentsBootstrap();
         clearPreferAgentsSurface();
         markPreferDesktopIde();
@@ -77,6 +79,16 @@ export class MobileShellIdeFallbackController {
         document.body.classList.remove('theia-mobile-mod-landing');
         clearMobileWorkHubBootGuard();
         this.disposeProjectsPanelForDesktopIde();
+        if (preserveNarrowMobileLayout) {
+            this.host.forceCenterColumnFullWidth();
+            this.host.syncMobileHubPrimaryBottomChrome();
+            this.host.refreshBottomBar();
+            this.host.refreshWorkbenchTopBar();
+            this.host.requestFullShellRelayout();
+            this.host.scheduleSnapAndUiRefresh();
+            this.host.syncOverlayEdgeSwipeZones();
+            return;
+        }
         // Classic IDE always uses the normal responsive layout (never the mobile one-column view).
         this.host.leaveMobileLayout();
         this.host.syncOverlayEdgeSwipeZones();
