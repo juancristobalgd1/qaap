@@ -10,6 +10,7 @@ import {
     type TranscriptMarkdownWorkerStreamResponse,
 } from './qaap-transcript-markdown-worker-protocol';
 import type { StreamingMarkdownHtmlPatch } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-streaming-markdown-view';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 
 export type TranscriptMarkdownApplyFn = (host: HTMLElement, html: string, cleanLength: number) => void;
 export type TranscriptMarkdownSyncParseFn = (host: HTMLElement, content: string) => void;
@@ -127,6 +128,9 @@ export class QaapTranscriptMarkdownWorkerClient {
     }
 
     protected enqueueLatestRequest(request: PendingRequest): void {
+        if (this.latestRequests.has(request.host) || this.inFlightRequestIds.has(request.host)) {
+            recordTranscriptRenderMetric('markdown_worker_coalesced');
+        }
         this.latestRequests.set(request.host, request);
         this.dispatchLatestRequest(request.host);
     }

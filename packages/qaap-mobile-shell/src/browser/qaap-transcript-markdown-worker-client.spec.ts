@@ -9,6 +9,11 @@ import {
     type TranscriptMarkdownWorkerRequest,
     type TranscriptMarkdownWorkerResponse,
 } from './qaap-transcript-markdown-worker-protocol';
+import {
+    enableTranscriptRenderMetrics,
+    getTranscriptRenderMetricsSnapshot,
+    resetTranscriptRenderMetrics,
+} from '../common/qaap-transcript-render-metrics';
 
 describe('qaap-transcript-markdown-worker-client', () => {
 
@@ -52,6 +57,8 @@ describe('qaap-transcript-markdown-worker-client', () => {
     });
 
     it('keeps only the latest queued snapshot per host', async () => {
+        enableTranscriptRenderMetrics(true);
+        resetTranscriptRenderMetrics();
         const runtime = globalThis as unknown as {
             Worker?: typeof Worker;
             location?: { href: string };
@@ -70,6 +77,7 @@ describe('qaap-transcript-markdown-worker-client', () => {
 
             client.requestParse(host, 'first', (_target, html) => applied.push(html), () => undefined);
             client.requestParse(host, 'second', (_target, html) => applied.push(html), () => undefined);
+            expect(getTranscriptRenderMetricsSnapshot().markdown_worker_coalesced).to.equal(1);
 
             const worker = TestWorker.latest;
             expect(worker?.posted.length).to.equal(1);
@@ -110,6 +118,8 @@ describe('qaap-transcript-markdown-worker-client', () => {
             } else {
                 delete runtime.location;
             }
+            resetTranscriptRenderMetrics();
+            enableTranscriptRenderMetrics(false);
         }
     });
 });

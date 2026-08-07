@@ -116,7 +116,10 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
         if (isQuotaFailure) {
             details.classList.add('theia-mod-quota-limit');
         }
-        details.open = true;
+        // Keep ordinary failures compact so a noisy backend error does not
+        // dominate the transcript. Authentication and quota failures expose
+        // their next-step guidance immediately because they require action.
+        details.open = !!authChallenge || isQuotaFailure;
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head';
@@ -157,6 +160,19 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
                     : formatted;
             },
         });
+        if (options?.onRetry && !authChallenge) {
+            const retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'theia-mobile-agent-turn-failure-summary-retry codicon codicon-refresh';
+            retryBtn.textContent = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
+            retryBtn.setAttribute('aria-label', retryBtn.textContent);
+            retryBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void Promise.resolve(options.onRetry!());
+            });
+            summary.querySelector<HTMLElement>('.theia-mobile-agent-shell-tail')?.append(retryBtn);
+        }
 
         const body = document.createElement('div');
         body.className = 'theia-mobile-agent-shell-body';
@@ -195,21 +211,6 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
                     'theia-mobile-agent-shell-output',
                 ));
             }
-        }
-        if (options?.onRetry && !authChallenge) {
-            const actions = document.createElement('div');
-            actions.className = 'theia-mobile-agent-activity-error-panel-actions theia-mobile-agent-turn-failure-actions';
-            const retryBtn = document.createElement('button');
-            retryBtn.type = 'button';
-            retryBtn.className = 'theia-mobile-agent-activity-error-panel-action theia-mod-retry codicon codicon-refresh';
-            retryBtn.textContent = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
-            retryBtn.addEventListener('click', event => {
-                event.stopPropagation();
-                event.preventDefault();
-                void Promise.resolve(options.onRetry!());
-            });
-            actions.append(retryBtn);
-            body.append(actions);
         }
         details.append(summary, body);
         return details;

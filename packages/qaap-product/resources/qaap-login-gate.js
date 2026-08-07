@@ -191,6 +191,21 @@
     // Arms after bundle.js executes; fires if the splash is still visible 30s later.
     var startupWatchdog = null;
 
+    // The product shell can become usable before the legacy Theia preload node
+    // finishes its own transition. Let the app explicitly dismiss this watchdog
+    // so a slow paint cannot cover a ready Work Hub with a retry dialog.
+    function markStartupReady() {
+        if (startupWatchdog) {
+            window.clearTimeout(startupWatchdog);
+            startupWatchdog = null;
+        }
+        var startupError = document.getElementById('qaap-startup-error');
+        if (startupError) {
+            startupError.remove();
+        }
+    }
+    window.addEventListener('qaap-startup-ready', markStartupReady);
+
     function armStartupWatchdog() {
         if (startupWatchdog) { return; }
         startupWatchdog = window.setTimeout(function () {
@@ -224,12 +239,17 @@
         injectErrorStyles();
         var host = document.createElement('div');
         host.id = 'qaap-startup-error';
+        host.setAttribute('role', 'alertdialog');
+        host.setAttribute('aria-live', 'assertive');
+        host.setAttribute('aria-modal', 'true');
+        host.setAttribute('aria-labelledby', 'qaap-err-name');
+        host.setAttribute('aria-describedby', 'qaap-err-message');
         host.innerHTML =
             '<div class="qaap-err-overlay">' +
             '<div class="qaap-err-box">' +
             '<div class="qaap-err-icon" aria-hidden="true">&#9888;</div>' +
-            '<p class="qaap-err-name">' + escapeHtml(name) + '</p>' +
-            '<p class="qaap-err-msg">' + escapeHtml(msg) + '</p>' +
+            '<p id="qaap-err-name" class="qaap-err-name">' + escapeHtml(name) + '</p>' +
+            '<p id="qaap-err-message" class="qaap-err-msg">' + escapeHtml(msg) + '</p>' +
             '<button type="button" id="qaap-err-retry" class="qaap-err-btn">Retry</button>' +
             '</div></div>';
         document.body.appendChild(host);
@@ -239,6 +259,7 @@
             btn.addEventListener('click', function () {
                 window.location.reload();
             });
+            btn.focus();
         }
     }
 

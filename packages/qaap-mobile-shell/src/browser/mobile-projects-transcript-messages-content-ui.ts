@@ -636,8 +636,14 @@ export class MobileProjectsTranscriptMessagesContentUi {
         return text.replace(
             /(^|[\s(])((?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?):\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-dev\/\d{2,5}(?:\/[^\s\x60<)]*)?|\/qaap-preview\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\/[^\s\x60<)]*)?|https?:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.preview\.[a-z0-9.-]+(?::\d{2,5})?(?:\/[^\s\x60<)]*)?)/gi,
             (match, prefix: string, url: string, offset: number) => {
-                const before = text.slice(0, offset);
-                if (/\[[^\]]*$/.test(before) || /\]\([^)]*$/.test(before)) {
+                // Avoid slicing the entire accumulated stream for every URL.
+                // lastIndexOf preserves the markdown-context checks while
+                // keeping a URL-heavy stream linear instead of quadratic.
+                const lastOpenBracket = text.lastIndexOf('[', offset);
+                const lastCloseBracket = text.lastIndexOf(']', offset);
+                const lastLinkStart = text.lastIndexOf('](', offset);
+                const lastLinkEnd = text.lastIndexOf(')', offset);
+                if (lastOpenBracket > lastCloseBracket || lastLinkStart > lastLinkEnd) {
                     return match;
                 }
                 return prefix + '[' + url + '](' + url + ')';

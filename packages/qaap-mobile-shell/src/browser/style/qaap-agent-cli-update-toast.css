@@ -12,7 +12,7 @@
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    bottom: calc(var(--theia-mobile-bottom-chrome-reserved, 0px) + var(--theia-mobile-keyboard-inset, 0px) + 16px);
+    bottom: calc(max(var(--theia-mobile-bottom-chrome-reserved, 0px), var(--qaap-agent-cli-update-toast-composer-lift, 0px)) + var(--theia-mobile-keyboard-inset, 0px) + 16px);
     width: min(380px, calc(100vw - 24px));
     padding: 16px 16px 14px;
     display: flex;
@@ -44,7 +44,7 @@
         left: auto;
         right: 24px;
         transform: none;
-        bottom: calc(var(--theia-mobile-bottom-chrome-reserved, var(--theia-mobile-status-chrome-height, 34px)) + var(--theia-mobile-keyboard-inset, 0px) + 16px);
+        bottom: calc(max(var(--theia-mobile-bottom-chrome-reserved, var(--theia-mobile-status-chrome-height, 34px)), var(--qaap-agent-cli-update-toast-composer-lift, 0px)) + var(--theia-mobile-keyboard-inset, 0px) + 16px);
     }
 }
 
@@ -97,8 +97,8 @@
 }
 
 .qaap-agent-cli-update-toast-close:focus-visible {
-    outline: 0.5px solid var(--theia-focusBorder);
-    outline-offset: 1px;
+    outline: 2px solid var(--theia-focusBorder);
+    outline-offset: 2px;
 }
 
 .qaap-agent-cli-update-toast-body {
@@ -218,10 +218,16 @@
 }
 
 .qaap-agent-cli-update-toast-action:focus-visible {
-    outline: 0.5px solid var(--theia-focusBorder);
+    outline: 2px solid var(--theia-focusBorder);
     outline-offset: 2px;
 }
 
-.qaap-agent-cli-update-toast.qaap-mod-updating {
-    pointer-events: none;
+@media (prefers-reduced-motion: reduce) {
+    .qaap-agent-cli-update-toast {
+        animation: none;
+    }
+
+    .qaap-agent-cli-update-toast-action {
+        transition: none;
+    }
 }

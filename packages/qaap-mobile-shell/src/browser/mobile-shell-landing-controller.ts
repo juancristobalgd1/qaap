@@ -164,6 +164,9 @@ export class MobileShellLandingController {
             && (panel.isAgentsHubShellActive() || panel.node.classList.contains('theia-mod-agents-hub-landing'));
         const landingReady = panel?.isHomeMode() === true && panel.isVisible();
         if (agentsReady || landingReady) {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new window.Event('qaap-startup-ready'));
+            }
             clearMobileWorkHubBootGuard();
         }
     }

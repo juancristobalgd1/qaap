@@ -2178,6 +2178,31 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   height: 28px;
 }
 
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 34%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-errorForeground, #f14c4c);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry:hover {
+  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 10%, transparent);
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-turn-failure-summary-retry:focus-visible {
+  outline: 2px solid var(--theia-focusBorder);
+  outline-offset: 2px;
+}
+
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-state {
   display: none;
 }

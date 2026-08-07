@@ -111,6 +111,26 @@ export function showAgentCliUpdateToast(
 
     document.body.append(root);
 
+    // The toast is mounted at body level, while the composer is a separate
+    // fixed layer. Track the composer's top edge so the notification never
+    // obscures the primary input surface on desktop or when the viewport
+    // changes height.
+    const updatePosition = (): void => {
+        const composer = document.querySelector<HTMLElement>('.theia-mobile-projects-sticky-composer:not([hidden])');
+        const composerTop = composer?.getBoundingClientRect().top;
+        const lift = composerTop === undefined
+            ? 0
+            : Math.max(0, window.innerHeight - composerTop + 12);
+        root.style.setProperty('--qaap-agent-cli-update-toast-composer-lift', `${Math.round(lift)}px`);
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition, { passive: true });
+    const composer = document.querySelector<HTMLElement>('.theia-mobile-projects-sticky-composer:not([hidden])');
+    const resizeObserver = typeof ResizeObserver === 'undefined' || !composer
+        ? undefined
+        : new ResizeObserver(updatePosition);
+    resizeObserver?.observe(composer!);
+
     return {
         root,
         setUpdating(updating: boolean): void {
@@ -122,6 +142,8 @@ export function showAgentCliUpdateToast(
                 : nls.localize('qaap/agentCliUpdate/update', 'Update');
         },
         dispose(): void {
+            resizeObserver?.disconnect();
+            window.removeEventListener('resize', updatePosition);
             root.remove();
         },
     };
