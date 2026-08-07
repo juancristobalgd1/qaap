@@ -123,6 +123,16 @@ async function probeBootstrapListeningPorts(
 
 const CLAIM_PROBE_INTERVAL_MS = 1_000;
 
+/**
+ * Transcript settlement and visual-verification autopilot can request the same preview in the
+ * same turn. Keep one bootstrap transaction per service so both callers observe the same claim
+ * and terminal instead of racing two reservations for the same project.
+ */
+const transcriptPreviewBootstrapInFlight = new WeakMap<
+    QaapProjectBootstrapService,
+    Promise<string | undefined>
+>();
+
 function waitForBootstrapPreviewUrl(
     bootstrap: QaapProjectBootstrapService,
     timeoutMs: number,
@@ -177,7 +187,7 @@ function waitForBootstrapPreviewUrl(
  * Keeps the dev server alive via {@link QaapProjectBootstrapService} (persistent terminal) instead
  * of agent shell commands that time out after ~30s. Returns a same-origin preview URL when ready.
  */
-export async function ensureTranscriptDevPreview(
+async function ensureTranscriptDevPreviewExtracted(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
@@ -272,4 +282,30 @@ export async function ensureTranscriptDevPreview(
     }
     const verified = await probeReadyPreviewUrl(finalPort);
     return verified ?? normalizePreviewUrlForSameOrigin(fromBootstrap);
+}
+
+export function ensureTranscriptDevPreview(
+    bootstrap: QaapProjectBootstrapService,
+    options: EnsureTranscriptDevPreviewOptions = {},
+): Promise<string | undefined> {
+    const inFlight = transcriptPreviewBootstrapInFlight.get(bootstrap);
+    if (inFlight) {
+        return inFlight;
+    }
+
+    const pending = ensureTranscriptDevPreviewExtracted(bootstrap, options);
+    transcriptPreviewBootstrapInFlight.set(bootstrap, pending);
+    pending.then(
+        () => {
+            if (transcriptPreviewBootstrapInFlight.get(bootstrap) === pending) {
+                transcriptPreviewBootstrapInFlight.delete(bootstrap);
+            }
+        },
+        () => {
+            if (transcriptPreviewBootstrapInFlight.get(bootstrap) === pending) {
+                transcriptPreviewBootstrapInFlight.delete(bootstrap);
+            }
+        },
+    );
+    return pending;
 }
