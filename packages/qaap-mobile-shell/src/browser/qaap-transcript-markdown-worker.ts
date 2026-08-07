@@ -16,7 +16,7 @@ const { window } = parseHTML('<!DOCTYPE html><html><body></body></html>');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const createDOMPurify = require('dompurify') as (window: Window) => ReturnType<typeof require>;
 const DOMPurify = createDOMPurify(window as unknown as Window);
-const markdownIt = markdownit({ linkify: false }).use(markdownitemoji.full);
+const markdownIt = markdownit({ linkify: true }).use(markdownitemoji.full);
 
 /**
  * Accumulated frozen-prefix HTML per live stream, so each streaming tick parses only the newly

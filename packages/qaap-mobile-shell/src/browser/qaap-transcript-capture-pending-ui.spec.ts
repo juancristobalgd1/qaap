@@ -14,7 +14,10 @@ import {
     enhanceTranscriptCaptureDirectives,
     TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS,
 } from './qaap-transcript-capture-pending-ui';
-import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
+import {
+    enhanceTranscriptMarkdownRichContent,
+    TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS,
+} from './qaap-transcript-rich-content-ui';
 
 describe('qaap-transcript-capture-pending-ui', () => {
     const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
@@ -141,5 +144,18 @@ describe('qaap-transcript-capture-pending-ui', () => {
         const { row, host } = createMessageRow('<p>Done.</p><p>[QAAP capture: /]</p>');
         enhanceTranscriptMarkdownRichContent(host);
         expect(row.querySelector(`.${TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS}`)).to.not.equal(null);
+    });
+
+    it('wraps rendered Markdown tables in a bounded horizontal scroller', () => {
+        const { host } = createMessageRow('<table><thead><tr><th>File</th></tr></thead><tbody><tr><td>index.ts</td></tr></tbody></table>');
+
+        enhanceTranscriptMarkdownRichContent(host);
+
+        const scroll = host.querySelector(`.${TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS}`);
+        expect(scroll?.querySelector('table')).to.not.equal(null);
+        expect(host.querySelectorAll(`.${TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS}`).length).to.equal(1);
+
+        enhanceTranscriptMarkdownRichContent(host);
+        expect(host.querySelectorAll(`.${TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS}`).length).to.equal(1);
     });
 });

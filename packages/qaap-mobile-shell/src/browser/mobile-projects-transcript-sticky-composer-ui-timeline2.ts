@@ -308,6 +308,12 @@ export function refreshComposerActivityStackExtracted(ctx: any): void {
         return;
     }
     const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
+    // Once the last queued entry has been dispatched or removed, the expanded
+    // state must not leak into the next queue mount. Otherwise a later queue
+    // can reopen as a stale popover even though the previous one was closed.
+    if ((activityOptions.queueEntries?.length ?? 0) === 0) {
+        ctx.host.transcriptComposerQueueExpanded = false;
+    }
     const pillFingerprint = buildStickyComposerChangesPillFingerprint(activityOptions);
     const changesPill = renderStickyComposerChangesPill(activityOptions);
     // Activity row vs Working/Step-only strip share the same host class — never tear down
@@ -489,6 +495,11 @@ export async function sendQueuedFollowUpNowExtracted(ctx: any, project: MobilePr
     if (!entry) {
         return;
     }
+    // Sending from the expanded panel is an explicit dismiss action. Collapse it
+    // before the async submit/remount so a stale activity refresh cannot reopen
+    // the full-width panel while the request is in flight.
+    ctx.host.transcriptComposerQueueExpanded = false;
+    ctx.refreshComposerActivityStack();
     if (ctx.isTranscriptStickyComposerAgentWorking()) {
         await ctx.dispatchQueuedFollowUpInParallel(project, summary, entry);
         return;
@@ -549,4 +560,3 @@ export async function startIsolatedRunIfRequestedExtracted(ctx: any, project: Mo
     });
     return true;
 }
-

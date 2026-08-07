@@ -10,6 +10,20 @@ export type TranscriptCodeLanguage =
     | 'javascript'
     | 'css'
     | 'shell'
+    | 'python'
+    | 'rust'
+    | 'go'
+    | 'java'
+    | 'kotlin'
+    | 'c'
+    | 'cpp'
+    | 'csharp'
+    | 'html'
+    | 'xml'
+    | 'yaml'
+    | 'toml'
+    | 'sql'
+    | 'markdown'
     | 'plain'
     | 'log';
 
@@ -26,6 +40,30 @@ const EXTENSION_LANGUAGE: Record<string, TranscriptCodeLanguage> = {
     sh: 'shell',
     bash: 'shell',
     zsh: 'shell',
+    py: 'python',
+    pyw: 'python',
+    rs: 'rust',
+    go: 'go',
+    java: 'java',
+    kt: 'kotlin',
+    kts: 'kotlin',
+    c: 'c',
+    h: 'c',
+    cc: 'cpp',
+    cpp: 'cpp',
+    cxx: 'cpp',
+    hpp: 'cpp',
+    cs: 'csharp',
+    html: 'html',
+    htm: 'html',
+    xml: 'xml',
+    svg: 'xml',
+    yaml: 'yaml',
+    yml: 'yaml',
+    toml: 'toml',
+    sql: 'sql',
+    md: 'markdown',
+    mdx: 'markdown',
 };
 
 const LANGUAGE_HINT: Record<string, TranscriptCodeLanguage> = {
@@ -36,6 +74,28 @@ const LANGUAGE_HINT: Record<string, TranscriptCodeLanguage> = {
     bash: 'shell',
     sh: 'shell',
     zsh: 'shell',
+    python: 'python',
+    py: 'python',
+    rust: 'rust',
+    rs: 'rust',
+    go: 'go',
+    java: 'java',
+    kotlin: 'kotlin',
+    kt: 'kotlin',
+    c: 'c',
+    cpp: 'cpp',
+    'c++': 'cpp',
+    csharp: 'csharp',
+    'c#': 'csharp',
+    html: 'html',
+    xml: 'xml',
+    svg: 'xml',
+    yaml: 'yaml',
+    yml: 'yaml',
+    toml: 'toml',
+    sql: 'sql',
+    markdown: 'markdown',
+    md: 'markdown',
     log: 'log',
     plain: 'plain',
     text: 'plain',
@@ -97,6 +157,7 @@ export function createTranscriptCodeView(text: string, language: TranscriptCodeL
     const normalized = normalizeTranscriptCodeText(text, language);
     const wrap = document.createElement('div');
     wrap.className = `theia-mobile-agent-code-view theia-mod-${language}`;
+    wrap.setAttribute('translate', 'no');
     const linesHost = document.createElement('div');
     linesHost.className = 'theia-mobile-agent-code-lines';
     const lines = normalized.split('\n');
@@ -219,6 +280,22 @@ function appendHighlightedLine(host: HTMLElement, line: string, language: Transc
             return;
         case 'shell':
             appendShellLine(host, line);
+            return;
+        case 'python':
+        case 'rust':
+        case 'go':
+        case 'java':
+        case 'kotlin':
+        case 'c':
+        case 'cpp':
+        case 'csharp':
+        case 'html':
+        case 'xml':
+        case 'yaml':
+        case 'toml':
+        case 'sql':
+        case 'markdown':
+            appendGenericLanguageLine(host, line, language);
             return;
         case 'log':
             appendLogLine(host, line);
@@ -437,6 +514,153 @@ function findScriptQuoteEnd(line: string, start: number): number {
         }
     }
     return line.length;
+}
+
+const GENERIC_LANGUAGE_KEYWORDS: Readonly<Record<string, ReadonlySet<string>>> = {
+    python: new Set([
+        'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else',
+        'False', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'None', 'nonlocal',
+        'not', 'or', 'pass', 'raise', 'return', 'True', 'try', 'with', 'while', 'yield',
+    ]),
+    rust: new Set([
+        'as', 'async', 'await', 'const', 'crate', 'dyn', 'else', 'enum', 'false', 'fn', 'for', 'if', 'impl',
+        'in', 'let', 'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 'self', 'Self', 'struct',
+        'trait', 'true', 'type', 'unsafe', 'use', 'where', 'while',
+    ]),
+    go: new Set([
+        'break', 'case', 'chan', 'const', 'continue', 'default', 'defer', 'else', 'fallthrough', 'for', 'func',
+        'go', 'goto', 'if', 'import', 'interface', 'map', 'package', 'range', 'return', 'select', 'struct',
+        'switch', 'type', 'var', 'true', 'false', 'nil',
+    ]),
+    java: new Set([
+        'abstract', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class', 'const', 'continue', 'default',
+        'do', 'double', 'else', 'enum', 'extends', 'final', 'finally', 'float', 'for', 'if', 'implements',
+        'import', 'instanceof', 'int', 'interface', 'long', 'native', 'new', 'null', 'package', 'private',
+        'protected', 'public', 'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized',
+        'this', 'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while', 'true', 'false',
+    ]),
+    kotlin: new Set([
+        'as', 'break', 'class', 'continue', 'data', 'else', 'false', 'for', 'fun', 'if', 'import', 'in', 'interface',
+        'internal', 'is', 'lateinit', 'null', 'object', 'open', 'override', 'package', 'private', 'protected',
+        'public', 'return', 'sealed', 'super', 'this', 'throw', 'true', 'try', 'typealias', 'val', 'var', 'when',
+        'while',
+    ]),
+    c: new Set([
+        'auto', 'break', 'case', 'char', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extern',
+        'float', 'for', 'goto', 'if', 'inline', 'int', 'long', 'register', 'restrict', 'return', 'short', 'signed',
+        'sizeof', 'static', 'struct', 'switch', 'typedef', 'union', 'unsigned', 'void', 'volatile', 'while',
+        'true', 'false', 'NULL',
+    ]),
+    cpp: new Set([
+        'alignas', 'auto', 'bool', 'break', 'case', 'catch', 'char', 'class', 'const', 'constexpr', 'continue',
+        'default', 'delete', 'do', 'double', 'else', 'enum', 'explicit', 'false', 'final', 'float', 'for', 'friend',
+        'if', 'inline', 'int', 'namespace', 'new', 'noexcept', 'nullptr', 'operator', 'private', 'protected',
+        'public', 'return', 'short', 'signed', 'sizeof', 'static', 'struct', 'switch', 'template', 'this', 'throw',
+        'true', 'try', 'typedef', 'typename', 'union', 'unsigned', 'using', 'virtual', 'void', 'volatile', 'while',
+    ]),
+    csharp: new Set([
+        'abstract', 'as', 'async', 'await', 'base', 'bool', 'break', 'case', 'catch', 'char', 'class', 'const',
+        'continue', 'decimal', 'default', 'delegate', 'do', 'double', 'else', 'enum', 'event', 'explicit', 'false',
+        'finally', 'fixed', 'float', 'for', 'foreach', 'if', 'implicit', 'in', 'int', 'interface', 'internal',
+        'is', 'lock', 'long', 'namespace', 'new', 'null', 'object', 'operator', 'out', 'override', 'params',
+        'private', 'protected', 'public', 'readonly', 'ref', 'return', 'sealed', 'short', 'sizeof', 'stackalloc',
+        'static', 'string', 'struct', 'switch', 'this', 'throw', 'true', 'try', 'typeof', 'uint', 'ulong', 'unchecked',
+        'unsafe', 'ushort', 'using', 'var', 'virtual', 'void', 'volatile', 'while',
+    ]),
+    html: new Set(),
+    xml: new Set(),
+    yaml: new Set(['true', 'false', 'null', 'yes', 'no']),
+    toml: new Set(['true', 'false']),
+    sql: new Set([
+        'alter', 'and', 'as', 'asc', 'between', 'by', 'case', 'create', 'delete', 'desc', 'distinct', 'drop',
+        'else', 'end', 'exists', 'from', 'group', 'having', 'in', 'insert', 'into', 'is', 'join', 'left', 'like',
+        'limit', 'not', 'null', 'or', 'order', 'outer', 'primary', 'right', 'select', 'set', 'table',
+        'then', 'union', 'update', 'values', 'when', 'where', 'with', 'on',
+    ]),
+    markdown: new Set(),
+};
+
+function appendGenericLanguageLine(
+    host: HTMLElement,
+    line: string,
+    language: Exclude<TranscriptCodeLanguage, 'json' | 'grep' | 'typescript' | 'javascript' | 'css' | 'shell' | 'log' | 'plain'>,
+): void {
+    if (!line) {
+        host.textContent = ' ';
+        return;
+    }
+    if (language === 'markdown') {
+        const heading = line.match(/^(\s{0,3}#{1,6}\s.*)$/);
+        if (heading) {
+            appendSpan(host, heading[1], 'key');
+            return;
+        }
+    }
+    const keywords = GENERIC_LANGUAGE_KEYWORDS[language] ?? new Set<string>();
+    const lineComment = language === 'python' || language === 'yaml' || language === 'toml' ? '#' : language === 'sql' ? '--' : '//';
+    let index = 0;
+    while (index < line.length) {
+        const rest = line.slice(index);
+        const whitespace = rest.match(/^\s+/)?.[0];
+        if (whitespace) {
+            appendSpan(host, whitespace, 'plain');
+            index += whitespace.length;
+            continue;
+        }
+        if (rest.startsWith('/*') || rest.startsWith('<!--') || rest.startsWith(lineComment)) {
+            appendSpan(host, rest, 'comment');
+            return;
+        }
+        if ((language === 'html' || language === 'xml') && rest.startsWith('<')) {
+            const tagEnd = rest.indexOf('>');
+            if (tagEnd >= 0) {
+                appendSpan(host, rest.slice(0, tagEnd + 1), 'key');
+                index += tagEnd + 1;
+                continue;
+            }
+        }
+        if (rest[0] === '"' || rest[0] === '\'' || (rest[0] === '`' && language !== 'markdown')) {
+            const end = findScriptQuoteEnd(line, index);
+            appendSpan(host, line.slice(index, end), 'string');
+            index = end;
+            continue;
+        }
+        const number = rest.match(/^\b(?:0[xob][\da-f]+|\d+(?:\.\d+)?)\b/i)?.[0];
+        if (number) {
+            appendSpan(host, number, 'number');
+            index += number.length;
+            continue;
+        }
+        const identifier = rest.match(/^[A-Za-z_$][\w$-]*/)?.[0];
+        if (identifier) {
+            const after = line.slice(index + identifier.length);
+            if ((language === 'yaml' || language === 'toml') && /^\s*:/.test(after)) {
+                appendSpan(host, identifier, 'key');
+            } else if (keywords.has(identifier) || keywords.has(identifier.toLowerCase())) {
+                appendSpan(host, identifier, 'keyword');
+            } else if (/^\s*\(/.test(after)) {
+                appendSpan(host, identifier, 'function');
+            } else {
+                appendSpan(host, identifier, 'plain');
+            }
+            index += identifier.length;
+            continue;
+        }
+        const operator = rest.match(/^(?:=>|->|::|:=|===|!==|==|!=|<=|>=|&&|\|\||\+\+|--|[=+\-*/%<>!?:|&^~]+)/)?.[0];
+        if (operator) {
+            appendSpan(host, operator, 'operator');
+            index += operator.length;
+            continue;
+        }
+        const punctuation = rest.match(/^[()[\]{}.,;]/)?.[0];
+        if (punctuation) {
+            appendSpan(host, punctuation, 'sep');
+            index += punctuation.length;
+            continue;
+        }
+        appendSpan(host, rest[0], 'plain');
+        index += 1;
+    }
 }
 
 function appendCssLine(host: HTMLElement, line: string): void {

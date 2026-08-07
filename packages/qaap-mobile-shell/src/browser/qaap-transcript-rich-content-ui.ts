@@ -23,6 +23,7 @@ export const TRANSCRIPT_LINK_PREVIEW_CARD_CLASS = 'theia-mobile-agent-link-previ
 export const TRANSCRIPT_CITATION_CARD_CLASS = 'theia-mobile-agent-citation-card';
 export const TRANSCRIPT_OPTION_LIST_CARD_CLASS = 'theia-mobile-agent-option-list-card';
 export const TRANSCRIPT_QUESTION_FLOW_CARD_CLASS = 'theia-mobile-agent-question-flow-card';
+export const TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS = 'theia-mobile-agent-markdown-table-scroll';
 
 function appendCopyButton(host: HTMLElement, copyFrom: () => string): void {
     const copyBtn = document.createElement('button');
@@ -379,6 +380,16 @@ function wrapMarkdownCodeBlock(pre: HTMLPreElement): void {
     pre.replaceWith(card);
 }
 
+function wrapMarkdownTable(table: HTMLTableElement): void {
+    if (table.closest(`.${TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS}`)) {
+        return;
+    }
+    const scroll = document.createElement('div');
+    scroll.className = TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS;
+    table.replaceWith(scroll);
+    scroll.append(table);
+}
+
 function tryLinkPreviewFromAnchor(anchor: HTMLAnchorElement): TranscriptToolUiLinkPreviewPayload | undefined {
     const href = anchor.getAttribute('href')?.trim();
     if (!href || !/^https?:\/\//i.test(href)) {
@@ -418,6 +429,9 @@ export function enhanceTranscriptMarkdownRichContent(host: HTMLElement): void {
     // hosts without a global document (Node-side specs). Tag selectors already narrow the type.
     host.querySelectorAll('pre').forEach(node => {
         wrapMarkdownCodeBlock(node);
+    });
+    host.querySelectorAll('table').forEach(node => {
+        wrapMarkdownTable(node);
     });
     host.querySelectorAll('blockquote').forEach(node => {
         if (node.closest(`.${TRANSCRIPT_CITATION_CARD_CLASS}`)) {

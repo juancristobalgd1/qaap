@@ -385,6 +385,7 @@ export function resolveTranscriptTheiaChatModelExtracted(ctx: any, summary: Qaap
 
 export function enqueueTranscriptFollowUpExtracted(ctx: any, conversationId: string,
         entry: TranscriptFollowUpEntry,): boolean {
+        const wasEmpty = ctx.host.transcriptFollowUpQueue.size(conversationId) === 0;
         const ok = ctx.host.transcriptFollowUpQueue.enqueue(conversationId, entry);
         if (!ok) {
             MobileSnackbar.show(
@@ -396,6 +397,11 @@ export function enqueueTranscriptFollowUpExtracted(ctx: any, conversationId: str
                 { kind: 'warning', duration: 2800 },
             );
             return false;
+        }
+        // A persisted collapsed state is useful for an existing queue, but a newly queued
+        // follow-up must be discoverable while the current agent turn is still running.
+        if (wasEmpty && ctx.isTranscriptStickyComposerAgentWorking?.()) {
+            ctx.host.transcriptComposerQueueExpanded = true;
         }
         const count = ctx.host.transcriptFollowUpQueue.size(conversationId);
         MobileSnackbar.show(
@@ -518,4 +524,3 @@ export async function fetchWorkspaceChangedFilesExtracted(ctx: any, project: Mob
         const body = await response.json() as { files?: QaapGitChangedFile[] };
         return (body.files ?? []).map(file => ctx.mapGitChangedFileToComposerView(file));
 }
-

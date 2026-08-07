@@ -44,6 +44,16 @@ export function ensureQueueControlInPillRow(wrap: HTMLElement): void {
         return;
     }
 
+    const card = wrap.querySelector<HTMLElement>(CARD_SELECTOR);
+    if (stack.classList.contains('theia-mod-expanded')) {
+        // An expanded queue is a panel, not a pill. Keeping it inside the horizontal
+        // changes row constrains it to that row's intrinsic width and can clip it off-screen.
+        if (card && (stack.parentElement !== wrap || stack.nextElementSibling !== card)) {
+            wrap.insertBefore(stack, card);
+        }
+        return;
+    }
+
     // 1. Prefer the row that contains the Working control.
     const workingControl = wrap.querySelector(WORKING_CONTROL_SELECTOR);
     const workingRow = workingControl?.closest<HTMLElement>(PILL_ROW_SELECTOR);
@@ -63,7 +73,6 @@ export function ensureQueueControlInPillRow(wrap: HTMLElement): void {
     }
 
     // 3. Last resort: before the card.
-    const card = wrap.querySelector<HTMLElement>(CARD_SELECTOR);
     if (card && stack.parentElement !== wrap) {
         wrap.insertBefore(stack, card);
     }

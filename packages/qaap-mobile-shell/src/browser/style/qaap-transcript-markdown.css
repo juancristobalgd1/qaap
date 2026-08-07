@@ -1,0 +1,314 @@
+/********************************************************************************
+ * Qaap transcript Markdown surface.
+ *
+ * Loaded after the split workbench sheets so Markdown has one canonical visual
+ * contract instead of competing rules from conversation and transcript chrome.
+ ********************************************************************************/
+
+.theia-mobile-agent-transcript-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-streaming-plain-text {
+  color: var(--theia-foreground);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-tail {
+  display: contents;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-streaming-hybrid .theia-transcript-stream-plain-preview {
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-streaming-hybrid .theia-transcript-stream-plain-preview[hidden] {
+  display: none;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown {
+  min-width: 0;
+  overflow-x: hidden;
+  color: var(--qaap-shadcn-foreground, var(--theia-foreground));
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown > :first-child,
+.theia-mobile-agent-transcript-content.theia-mod-markdown > div > :first-child {
+  margin-top: 0;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown > :last-child,
+.theia-mobile-agent-transcript-content.theia-mod-markdown > div > :last-child {
+  margin-bottom: 0;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown p {
+  margin: 0 0 0.78em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown h1,
+.theia-mobile-agent-transcript-content.theia-mod-markdown h2,
+.theia-mobile-agent-transcript-content.theia-mod-markdown h3,
+.theia-mobile-agent-transcript-content.theia-mod-markdown h4,
+.theia-mobile-agent-transcript-content.theia-mod-markdown h5,
+.theia-mobile-agent-transcript-content.theia-mod-markdown h6 {
+  color: var(--theia-foreground);
+  font-weight: 680;
+  line-height: 1.25;
+  letter-spacing: -0.012em;
+  text-wrap: pretty;
+  scroll-margin-top: 12px;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown h1 {
+  margin: 1.2em 0 0.55em;
+  font-size: 1.65em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown h2 {
+  margin: 1.1em 0 0.5em;
+  font-size: 1.4em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown h3 {
+  margin: 1em 0 0.45em;
+  font-size: 1.18em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown h4,
+.theia-mobile-agent-transcript-content.theia-mod-markdown h5,
+.theia-mobile-agent-transcript-content.theia-mod-markdown h6 {
+  margin: 0.9em 0 0.4em;
+  font-size: 1em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown ul,
+.theia-mobile-agent-transcript-content.theia-mod-markdown ol {
+  margin: 0.45em 0 0.85em;
+  padding-left: 1.35em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown li {
+  margin: 0.28em 0;
+  padding-left: 0.12em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown li > ul,
+.theia-mobile-agent-transcript-content.theia-mod-markdown li > ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.35em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown hr {
+  margin: 1.2em 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--theia-panel-border, #444) 72%, transparent);
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown strong {
+  font-weight: 680;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown del {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown code {
+  border: 1px solid color-mix(in srgb, var(--theia-panel-border, #444) 52%, transparent);
+  border-radius: 5px;
+  padding: 0.08em 0.32em;
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-foreground, #fff) 7%, transparent);
+  font-family: var(--theia-code-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown pre {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.65em 0 0.9em;
+  padding: 12px 13px;
+  overflow-x: auto;
+  border: 1px solid var(--qaap-shadcn-border, color-mix(in srgb, var(--theia-panel-border, #444) 76%, transparent));
+  border-radius: 10px;
+  color: var(--theia-foreground);
+  background: var(--qaap-shadcn-card, color-mix(in srgb, var(--theia-editor-background, #111) 92%, #fff 4%));
+  -webkit-overflow-scrolling: touch;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown pre code {
+  display: block;
+  min-width: max-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.theia-mobile-agent-markdown-table-scroll {
+  max-width: 100%;
+  margin: 0.65em 0 0.9em;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown th,
+.theia-mobile-agent-transcript-content.theia-mod-markdown td {
+  min-width: 5.5em;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--theia-panel-border, #444) 72%, transparent);
+  text-align: left;
+  vertical-align: top;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown th {
+  color: var(--theia-foreground);
+  font-weight: 680;
+  background: color-mix(in srgb, var(--theia-foreground, #fff) 9%, transparent);
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown blockquote {
+  margin: 0.65em 0 0.9em;
+  padding: 0.1em 0 0.1em 0.85em;
+  border-left: 3px solid var(--theia-focusBorder, var(--q-accent, #e58e40));
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown a {
+  color: var(--theia-textLink-foreground, var(--theia-focusBorder, #4c9aff));
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown a:hover {
+  color: var(--theia-textLink-activeForeground, var(--theia-foreground));
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown a:focus-visible,
+.theia-mobile-agent-transcript-content .theia-mobile-agent-rich-copy:focus-visible {
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
+}
+
+.theia-mobile-agent-transcript-content.theia-mod-markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-block-card {
+  margin: 0.65em 0 0.9em;
+  border-color: var(--qaap-shadcn-border, color-mix(in srgb, var(--theia-panel-border, #444) 76%, transparent));
+  border-radius: 10px;
+  background: var(--qaap-shadcn-card, color-mix(in srgb, var(--theia-editor-background, #111) 92%, #fff 4%));
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 18%, transparent);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-block-card-body {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-block-card-body .theia-mobile-agent-code-view,
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-view {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-line:hover {
+  background: color-mix(in srgb, var(--theia-foreground, #fff) 5%, transparent);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-gutter {
+  color: color-mix(in srgb, var(--theia-descriptionForeground) 82%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-key {
+  color: var(--theia-symbolIcon-propertyForeground, var(--theia-symbolIcon-keywordForeground, #9cdcfe));
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-string {
+  color: var(--theia-symbolIcon-stringForeground, #ce9178);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-number {
+  color: var(--theia-symbolIcon-numberForeground, #b5cea8);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-keyword {
+  color: var(--theia-symbolIcon-functionForeground, var(--theia-symbolIcon-keywordForeground, #569cd6));
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-function {
+  color: var(--theia-symbolIcon-functionForeground, #dcdcaa);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-parameter {
+  color: var(--theia-symbolIcon-parameterForeground, #d7ba7d);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-operator {
+  color: color-mix(in srgb, var(--theia-foreground) 82%, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-comment {
+  color: var(--theia-symbolIcon-keywordForeground, #6a9955);
+  opacity: 0.92;
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-path {
+  color: var(--theia-textLink-foreground, #4fc1ff);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-line,
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-sep {
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-content,
+.theia-mobile-agent-transcript-content .theia-mobile-agent-code-text .theia-mobile-agent-token.theia-mod-plain {
+  color: var(--theia-foreground);
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .theia-mobile-agent-transcript-content.theia-mod-markdown {
+    font-size: 14px;
+  }
+
+  .theia-mobile-agent-transcript-content.theia-mod-markdown th,
+  .theia-mobile-agent-transcript-content.theia-mod-markdown td {
+    padding: 6px 8px;
+  }
+}

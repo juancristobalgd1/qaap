@@ -8,6 +8,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import type { TranscriptFollowUpEntry } from '../common/qaap-transcript-follow-up-queue';
 import type { QaapGitCommitWorkflowAction } from '../common/qaap-git-review';
 import { createStickyComposerSendIcon } from './mobile-projects-sticky-composer-send-icon';
+import { ensureQueueControlInPillRow } from './qaap-sticky-composer-queue-position';
 
 export interface StickyComposerChangedFileView {
     readonly path: string;
@@ -408,6 +409,12 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
     stack.className = 'theia-mobile-sticky-composer-activity-stack theia-mod-queue-popover theia-mod-queue-control';
     stack.classList.toggle('theia-mod-collapsed', !expanded);
     stack.classList.toggle('theia-mod-expanded', expanded);
+    const normalizeQueuePosition = (): void => {
+        const wrap = stack.closest<HTMLElement>('.theia-mobile-projects-sticky-composer-inner');
+        if (wrap) {
+            ensureQueueControlInPillRow(wrap);
+        }
+    };
 
     const section = document.createElement('div');
     section.className = 'theia-mobile-sticky-composer-activity-section theia-mod-queue theia-mod-queue-control-section';
@@ -476,6 +483,7 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
         const finishClose = (): void => {
             stack.classList.remove('theia-mod-expanded');
             stack.classList.add('theia-mod-collapsed');
+            normalizeQueuePosition();
         };
         clip.addEventListener('transitionend', function onEnd(e: TransitionEvent): void {
             if (e.target !== clip || (e.propertyName !== 'grid-template-rows' && e.propertyName !== 'opacity')) {
@@ -511,6 +519,7 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
         if (isOpen) {
             stack.classList.remove('theia-mod-collapsed');
             stack.classList.add('theia-mod-expanded');
+            normalizeQueuePosition();
             // Double rAF for the expand animation (same as Working pill)
             window.requestAnimationFrame(() => {
                 window.requestAnimationFrame(() => {
@@ -525,6 +534,7 @@ function renderStickyComposerQueueControl(options: StickyComposerActivityStackOp
             const finishClose = (): void => {
                 stack.classList.remove('theia-mod-expanded');
                 stack.classList.add('theia-mod-collapsed');
+                normalizeQueuePosition();
             };
             clip.addEventListener('transitionend', function onEnd(e: TransitionEvent): void {
                 if (e.target !== clip || (e.propertyName !== 'grid-template-rows' && e.propertyName !== 'opacity')) {

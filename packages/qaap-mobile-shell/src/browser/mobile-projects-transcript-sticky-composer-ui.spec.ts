@@ -17,6 +17,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     // only be required once JSDOM is up, so it is loaded here instead of at module scope.
     let composerModule: typeof import('./mobile-projects-transcript-sticky-composer-ui');
     let liveStatusModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-live-status2');
+    let timelineModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-timeline2');
 
     before(() => {
         // Deliberately not torn down: sibling suites in this package enable JSDOM at module
@@ -30,6 +31,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         }
         composerModule = require('./mobile-projects-transcript-sticky-composer-ui');
         liveStatusModule = require('./mobile-projects-transcript-sticky-composer-ui-live-status2');
+        timelineModule = require('./mobile-projects-transcript-sticky-composer-ui-timeline2');
     });
 
     it('merges a failed send with text entered while the request was in flight', () => {
@@ -93,6 +95,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         const seam = ui as unknown as Record<string, unknown>;
         seam.host = {
             transcriptFollowUpQueue: queue,
+            transcriptComposerQueueExpanded: false,
             transcriptComposerAgentModel: undefined,
             messageService: { error: () => { } },
             stickyComposerWorkspaceUi: {
@@ -129,6 +132,62 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         probe.ui = ui;
         return probe;
     }
+
+    it('opens the queue popover when the first follow-up is queued during an active turn', () => {
+        const probe = createProbe({ agentWorking: true });
+        const host = (probe.ui as unknown as {
+            host: { transcriptComposerQueueExpanded: boolean };
+        }).host;
+
+        expect(host.transcriptComposerQueueExpanded).to.equal(false);
+        expect(probe.ui.enqueueTranscriptFollowUp(summary.id, { draft: 'queued while working' })).to.equal(true);
+        expect(host.transcriptComposerQueueExpanded).to.equal(true);
+    });
+
+    it('resets the expanded state after the last queued message is gone', () => {
+        const root = document.createElement('div');
+        const wrap = document.createElement('div');
+        wrap.className = 'theia-mobile-projects-sticky-composer-inner';
+        const card = document.createElement('div');
+        card.className = 'theia-mobile-projects-sticky-composer-card theia-mod-codex';
+        wrap.append(card);
+        root.append(wrap);
+        document.body.append(root);
+
+        const host = {
+            transcriptComposerHost: root,
+            transcriptComposerProject: project,
+            transcriptComposerSummary: summary,
+            transcriptComposerQueueExpanded: true,
+            composerHeaderUi: { updateStickyComposerFabLift: () => undefined },
+            updateWorkingPillChrome: () => undefined,
+        };
+        const ctx = {
+            host,
+            buildTranscriptComposerActivityOptions: () => ({ queueEntries: [], queueExpanded: true }),
+            syncComposerActivityFingerprint: () => undefined,
+            syncTranscriptQueuedFollowUpBubbles: () => undefined,
+            remountTranscriptStickyComposer: () => undefined,
+        };
+
+        timelineModule.refreshComposerActivityStackExtracted(ctx);
+
+        expect(host.transcriptComposerQueueExpanded).to.equal(false);
+        root.remove();
+    });
+
+    it('collapses the queue immediately when sending a queued message', async () => {
+        const probe = createProbe({ agentWorking: true });
+        const host = (probe.ui as unknown as {
+            host: { transcriptComposerQueueExpanded: boolean };
+        }).host;
+        host.transcriptComposerQueueExpanded = true;
+        probe.queue.enqueue(summary.id, { draft: 'send from expanded queue' });
+
+        await probe.ui.sendQueuedFollowUpNow(project, summary, 0);
+
+        expect(host.transcriptComposerQueueExpanded).to.equal(false);
+    });
 
     it('starts a peer run in the SAME conversation instead of cancelling the open turn', async () => {
         const probe = createProbe({ agentWorking: true });

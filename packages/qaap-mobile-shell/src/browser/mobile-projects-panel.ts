@@ -317,7 +317,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected static readonly CONVERSATIONS_COLLAPSED_LIMIT = MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT;
 
     /** Max automatic verify→fix loops before the closed loop gives up (avoids runaway turns/cost). */
-    protected readonly transcriptMarkdownIt = markdownit({ linkify: false }).use(markdownitemoji.full);
+    protected readonly transcriptMarkdownIt = markdownit({ linkify: true }).use(markdownitemoji.full);
 
     protected readonly root: HTMLElement;
     protected readonly scroll: HTMLElement;

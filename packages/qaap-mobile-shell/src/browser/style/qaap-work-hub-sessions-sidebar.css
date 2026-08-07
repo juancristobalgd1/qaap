@@ -1775,14 +1775,15 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   }
 
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-sticky-composer {
-    padding-left: 40px !important;
-    padding-right: 40px !important;
+    padding-left: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(var(--qaap-composer-edge-inset, 12px), env(safe-area-inset-right, 0px)) !important;
   }
 
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-sticky-composer-inner {
-    width: min(100%, 980px);
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
   }
 
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-title-row>.theia-mobile-projects-sessions-menu {

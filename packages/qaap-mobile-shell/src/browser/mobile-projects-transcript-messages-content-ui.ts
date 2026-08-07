@@ -42,11 +42,19 @@ export const TRANSCRIPT_STREAMING_HYBRID_CLASS = 'theia-mod-streaming-hybrid';
 /** Below this length streaming stays plain text; above it uses worker frozen/tail markdown. */
 export const TRANSCRIPT_STREAMING_INCREMENTAL_MIN_CHARS = 480;
 
-/** Fenced code or GFM-style tables need incremental markdown even on short streams. */
+/**
+ * Inline Markdown should enter the incremental renderer immediately, even for short replies.
+ * Keeping the plain-text fast path for prose without syntax preserves the cheap common case,
+ * while bold/code/links/lists no longer appear as raw punctuation until the turn settles.
+ */
+const TRANSCRIPT_INLINE_MARKDOWN_PATTERN = /(?:\*\*|__|~~|`|\[[^\]]+\]\(|(?:^|\n)\s{0,3}#{1,6}\s|(?:^|\n)\s*[-*+]\s|(?:^|\n)\s*\d+[.)]\s)/;
+
+/** Fenced code, GFM-style tables, or inline Markdown need incremental rendering. */
 export function transcriptContentNeedsStreamingMarkdown(content: string): boolean {
     return content.length >= TRANSCRIPT_STREAMING_INCREMENTAL_MIN_CHARS
         || /(?:^|\n)\s{0,3}```/.test(content)
-        || /(?:^|\n)\|[^\n]+\|/.test(content);
+        || /(?:^|\n)\|[^\n]+\|/.test(content)
+        || TRANSCRIPT_INLINE_MARKDOWN_PATTERN.test(content);
 }
 
 const STREAM_STABLE_LENGTH_DATA = 'qaapStreamStableLength';

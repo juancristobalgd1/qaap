@@ -34,6 +34,8 @@ interface PendingStreamRequest {
     readonly host: HTMLElement;
     readonly generation: number;
     readonly content: string;
+    readonly previousStableLength: number;
+    readonly previousTotalLength: number;
     readonly apply: TranscriptStreamingMarkdownApplyFn;
     readonly fallbackPlainText: TranscriptStreamingPlainTextFallbackFn;
 }
@@ -51,6 +53,10 @@ export class QaapTranscriptMarkdownWorkerClient {
     /** Stable per-host stream id so the worker can accumulate frozen HTML across streaming ticks. */
     protected readonly hostStreamIds = new WeakMap<HTMLElement, number>();
     protected readonly pendingRequests = new Map<number, PendingRequest>();
+    /** One queued snapshot per host; a newer stream tick replaces an older one before dispatch. */
+    protected readonly latestRequests = new Map<HTMLElement, PendingRequest>();
+    /** Keep at most one request in the worker per host so the queue cannot grow with SSE ticks. */
+    protected readonly inFlightRequestIds = new Map<HTMLElement, number>();
 
     static get(): QaapTranscriptMarkdownWorkerClient {
         if (!QaapTranscriptMarkdownWorkerClient.instance) {
@@ -84,15 +90,7 @@ export class QaapTranscriptMarkdownWorkerClient {
             return;
         }
 
-        const requestId = ++this.nextRequestId;
-        this.pendingRequests.set(requestId, { kind: 'parse', host, generation, content, apply, fallbackSync });
-        const request: TranscriptMarkdownWorkerRequest = {
-            type: 'parse',
-            requestId,
-            generation,
-            content,
-        };
-        worker.postMessage(request);
+        this.enqueueLatestRequest({ kind: 'parse', host, generation, content, apply, fallbackSync });
     }
 
     requestStreamingPatch(
@@ -116,24 +114,56 @@ export class QaapTranscriptMarkdownWorkerClient {
             return;
         }
 
-        const requestId = ++this.nextRequestId;
-        this.pendingRequests.set(requestId, {
+        this.enqueueLatestRequest({
             kind: 'stream',
             host,
             generation,
             content,
+            previousStableLength,
+            previousTotalLength,
             apply,
             fallbackPlainText,
         });
-        const request: TranscriptMarkdownWorkerRequest = {
-            type: 'parse_stream',
-            requestId,
-            generation,
-            content,
-            previousStableLength,
-            previousTotalLength,
-            streamId: this.resolveHostStreamId(host),
-        };
+    }
+
+    protected enqueueLatestRequest(request: PendingRequest): void {
+        this.latestRequests.set(request.host, request);
+        this.dispatchLatestRequest(request.host);
+    }
+
+    protected dispatchLatestRequest(host: HTMLElement): void {
+        if (this.workerFailed || this.inFlightRequestIds.has(host)) {
+            return;
+        }
+        const pending = this.latestRequests.get(host);
+        if (!pending) {
+            return;
+        }
+        const worker = this.worker;
+        if (!worker) {
+            return;
+        }
+
+        this.latestRequests.delete(host);
+        const requestId = ++this.nextRequestId;
+        this.pendingRequests.set(requestId, pending);
+        this.inFlightRequestIds.set(host, requestId);
+        const request: TranscriptMarkdownWorkerRequest = pending.kind === 'parse'
+            ? {
+                type: 'parse',
+                requestId,
+                generation: pending.generation,
+                content: pending.content,
+            }
+            : {
+                type: 'parse_stream',
+                requestId,
+                generation: pending.generation,
+                content: pending.content,
+                previousStableLength: pending.previousStableLength,
+                previousTotalLength: pending.previousTotalLength,
+                streamId: this.resolveHostStreamId(host),
+            };
         worker.postMessage(request);
     }
 
@@ -181,6 +211,8 @@ export class QaapTranscriptMarkdownWorkerClient {
             return;
         }
         this.pendingRequests.delete(message.requestId);
+        this.inFlightRequestIds.delete(pending.host);
+        this.dispatchLatestRequest(pending.host);
         if (!shouldApplyTranscriptMarkdownWorkerResult(this.hostGenerations.get(pending.host), message.generation)) {
             return;
         }
@@ -210,9 +242,16 @@ export class QaapTranscriptMarkdownWorkerClient {
 
     protected failWorkerAndFallbackPending(): void {
         this.workerFailed = true;
-        const pending = [...this.pendingRequests.values()];
+        const pendingByHost = new Map<HTMLElement, PendingRequest>();
+        for (const request of this.pendingRequests.values()) {
+            pendingByHost.set(request.host, request);
+        }
+        for (const request of this.latestRequests.values()) {
+            // The queued snapshot is newer than the in-flight request for the same host.
+            pendingByHost.set(request.host, request);
+        }
         this.disposeWorkerOnly();
-        for (const request of pending) {
+        for (const request of pendingByHost.values()) {
             if (!shouldApplyTranscriptMarkdownWorkerResult(this.hostGenerations.get(request.host), request.generation)) {
                 continue;
             }
@@ -228,6 +267,8 @@ export class QaapTranscriptMarkdownWorkerClient {
         this.worker?.terminate();
         this.worker = undefined;
         this.pendingRequests.clear();
+        this.latestRequests.clear();
+        this.inFlightRequestIds.clear();
     }
 
     dispose(): void {

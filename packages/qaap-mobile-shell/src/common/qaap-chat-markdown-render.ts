@@ -22,7 +22,7 @@ export type QaapChatMarkdownRenderMode = 'plain' | 'worker' | 'sync';
 
 export function getSharedChatMarkdownIt(): ReturnType<typeof markdownit> {
     if (!sharedMarkdownIt) {
-        sharedMarkdownIt = markdownit().use(markdownitemoji.full);
+        sharedMarkdownIt = markdownit({ linkify: true }).use(markdownitemoji.full);
     }
     return sharedMarkdownIt;
 }

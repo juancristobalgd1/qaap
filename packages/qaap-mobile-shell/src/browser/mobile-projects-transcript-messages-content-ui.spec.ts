@@ -53,17 +53,19 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
         (client as unknown as { requestStreamingPatch: () => void }).requestStreamingPatch = () => { /* tested via direct HTML patch */ };
     });
 
-    it('renderTranscriptStreamingMarkdown keeps short prose streams as plain text', () => {
+    it('renderTranscriptStreamingMarkdown keeps plain prose cheap but formats short Markdown streams incrementally', () => {
         const host = document.createElement('div');
         host.className = 'theia-mobile-agent-transcript-content';
         const ui = new MobileProjectsTranscriptMessagesContentUi({
             transcriptMarkdownIt: markdownit(),
         } as never);
-        ui.renderTranscriptStreamingMarkdown(host, '**Hello** `world`');
+        ui.renderTranscriptStreamingMarkdown(host, 'Hello world');
         expect(host.classList.contains(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS)).to.equal(true);
         expect(host.classList.contains(TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS)).to.equal(false);
-        expect(host.textContent).to.equal('**Hello** `world`');
-        expect(host.querySelector('strong')).to.equal(null);
+
+        ui.renderTranscriptStreamingMarkdown(host, '**Hello** `world`');
+        expect(host.classList.contains(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS)).to.equal(false);
+        expect(host.classList.contains(TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS)).to.equal(true);
     });
 
     it('renderTranscriptMarkdown shows plain text while worker markdown is pending', () => {
@@ -83,6 +85,8 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
 
     it('transcriptContentNeedsStreamingMarkdown detects fenced code and tables', () => {
         expect(transcriptContentNeedsStreamingMarkdown('short prose')).to.equal(false);
+        expect(transcriptContentNeedsStreamingMarkdown('**bold** and `inline code`')).to.equal(true);
+        expect(transcriptContentNeedsStreamingMarkdown('- first item\n- second item')).to.equal(true);
         expect(transcriptContentNeedsStreamingMarkdown('```js\nx\n```')).to.equal(true);
         expect(transcriptContentNeedsStreamingMarkdown('| a | b |\n|---|---|')).to.equal(true);
         expect(transcriptContentNeedsStreamingMarkdown('word '.repeat(TRANSCRIPT_STREAMING_INCREMENTAL_MIN_CHARS))).to.equal(true);

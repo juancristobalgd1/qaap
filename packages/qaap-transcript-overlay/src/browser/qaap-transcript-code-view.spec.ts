@@ -34,6 +34,13 @@ describe('qaap-transcript-code-view', () => {
         expect(resolveTranscriptCodeLanguage(undefined, undefined, 'sh')).to.equal('shell');
     });
 
+    it('resolves common application languages from extensions and fence hints', () => {
+        expect(resolveTranscriptCodeLanguage('server.py')).to.equal('python');
+        expect(resolveTranscriptCodeLanguage('config.yaml')).to.equal('yaml');
+        expect(resolveTranscriptCodeLanguage(undefined, undefined, 'rust')).to.equal('rust');
+        expect(resolveTranscriptCodeLanguage(undefined, undefined, 'c#')).to.equal('csharp');
+    });
+
     it('resolves grep output from content shape', () => {
         const text = [
             'src/index.ts:12:const value = 1',
@@ -89,6 +96,15 @@ describe('qaap-transcript-code-view', () => {
         expect(view.querySelector('.theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('npx');
         expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-path')].map(node => node.textContent)).to.include('src/store.test.ts');
         expect([...view.querySelectorAll('.theia-mobile-agent-token.theia-mod-sep')].map(node => node.textContent?.trim())).to.include('|');
+    });
+
+    it('highlights Python keywords, functions, strings, and comments', () => {
+        const view = createTranscriptCodeView('def greet(name):\n    return "Hello " + name  # greeting', 'python');
+
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-keyword')?.textContent).to.equal('def');
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-function')?.textContent).to.equal('greet');
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-string')?.textContent).to.equal('"Hello "');
+        expect(view.querySelector('.theia-mobile-agent-token.theia-mod-comment')?.textContent).to.equal('# greeting');
     });
 
     describe('patchTranscriptCodeView', () => {

@@ -49,7 +49,20 @@ jobs:
           else
             git remote add upstream https://github.com/eclipse-theia/theia.git
           fi
-          git fetch --no-tags --depth=1 upstream "$upstream_base"
+          # The drift check only compares tree paths, so avoid downloading the
+          # upstream blobs and retry transient GitHub HTTP failures.
+          fetch_attempt=1
+          max_fetch_attempts=3
+          while ! git -c http.version=HTTP/1.1 fetch --no-tags --depth=1 --filter=blob:none upstream "$upstream_base"; do
+            if (( fetch_attempt >= max_fetch_attempts )); then
+              echo "Unable to fetch reviewed upstream base after ${max_fetch_attempts} attempts: $upstream_base" >&2
+              exit 1
+            fi
+            retry_delay=$((fetch_attempt * 5))
+            echo "Upstream fetch failed; retrying in ${retry_delay}s (attempt $((fetch_attempt + 1))/${max_fetch_attempts})..." >&2
+            sleep "$retry_delay"
+            fetch_attempt=$((fetch_attempt + 1))
+          done
           git cat-file -e "${upstream_base}^{commit}"
 
       - name: Run qaap:drift-check

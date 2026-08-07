@@ -953,23 +953,6 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   width: 100%;
 }
 
-.theia-mobile-agent-transcript-content.theia-mod-markdown {
-  overflow-x: hidden;
-  color: var(--theia-foreground);
-  font-family: var(--theia-ui-font-family, sans-serif);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.58;
-}
-
-.theia-mobile-agent-transcript-msg.theia-mod-agent .theia-mobile-agent-transcript-content.theia-mod-markdown p {
-  margin-block: 0 0.72em;
-}
-
-.theia-mobile-agent-transcript-msg.theia-mod-agent .theia-mobile-agent-transcript-content.theia-mod-markdown p:last-child {
-  margin-bottom: 0;
-}
-
 .theia-mobile-agent-transcript-artifacts {
   gap: 6px;
   margin-top: 0;
@@ -1812,12 +1795,6 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 
 .theia-mobile-agent-transcript-user-wrap {
   max-width: min(74%, 620px);
-}
-
-.theia-mobile-agent-transcript-content.theia-mod-markdown {
-  color: var(--qaap-shadcn-foreground);
-  font-size: 14px;
-  line-height: 1.62;
 }
 
 .theia-mobile-agent-transcript-content.theia-mod-markdown code,
