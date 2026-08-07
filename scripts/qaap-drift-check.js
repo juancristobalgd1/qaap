@@ -80,7 +80,7 @@ function resolveDiffBase() {
 
 const base = resolveDiffBase();
 
-/** @type {RegExp[]} Paths allowed to differ from upstream (seams + examples + tooling). */
+/** @type {RegExp[]} Paths allowed to differ from upstream (seams + explicit QAAP tooling). */
 const ALLOWED = [
     /^packages\/qaap-/,
     /^scripts\/qaap-/,
@@ -183,8 +183,12 @@ const ALLOWED = [
     /^packages\/workspace\/src\/browser\/workspace-frontend-module\.ts$/,
     /^packages\/workspace\/src\/browser\/workspace-frontend-contribution\.ts$/,
     /^\.nvmrc$/,
-    // Examples / branding / deploy (not upstream Theia)
-    /^examples\//,
+    // QAAP Playwright harness seams (test-only; no upstream product code).
+    /^examples\/playwright\/src\/tests\/qaap-mobile\.test\.ts$/,
+    /^examples\/playwright\/src\/tests\/qaap-transcript-preview-flow\.ui-spec\.ts$/,
+    // CI-only API harness seam: opts the classic Theia test page into Qaap's
+    // explicit IDE surface and loads its browser test dependencies reliably.
+    /^dev-packages\/cli\/src\/test-page\.ts$/,
     // Upstream sample plugins removed in this fork — we ship our own plugin set.
     /^sample-plugins\//,
     // Fork-specific build tooling and dev scripts (not user-facing product code).
@@ -387,7 +391,6 @@ const ALLOWED = [
     /^doc\/Publishing\.md$/,
     /^dev-packages\/application-manager\//,
     /^dev-packages\/application-package\//,
-    /^dev-packages\/cli\//,
     // Fork-authored QA issue reports and multi-tenancy audit — not upstream Theia content.
     /^docs\/qa\/issues\/.*\.md$/,
     /^MULTI_TENANCY_AUDIT\.md$/,
