@@ -28,9 +28,16 @@
         border-color 160ms ease;
 }
 
-.qaap-composer-improve-btn:hover,
+.qaap-composer-improve-btn:hover {
+    color: var(--theia-foreground);
+    opacity: 1;
+}
+
 .qaap-composer-improve-btn:focus-visible {
-    outline: none;
+    color: var(--theia-foreground);
+    opacity: 1;
+    outline: 2px solid var(--theia-focusBorder, #4c9aff);
+    outline-offset: 2px;
 }
 
 .qaap-composer-improve-btn:disabled {

@@ -22125,7 +22125,11 @@ body.qaap-theme-light .theia-mobile-agent-stream-label.theia-mod-shimmer {
   text-align: left;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  transition: all 160ms ease;
+  transition:
+    background-color 160ms ease,
+    border-radius 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
 }
 
 .theia-mobile-agent-activity-timeline.theia-mod-cursor-trace[open] .theia-mobile-agent-activity-timeline-sticky-bar {

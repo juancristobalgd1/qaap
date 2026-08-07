@@ -895,6 +895,12 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   font-size: 12px;
 }
 
+.theia-mobile-agent-transcript-search input:focus-visible {
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
 .theia-mobile-agent-transcript-search-count {
   flex: 0 0 auto;
   min-width: 38px;
@@ -914,11 +920,16 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   background: transparent;
 }
 
-.theia-mobile-agent-transcript-search button:hover,
-.theia-mobile-agent-transcript-search button:focus-visible {
-  outline: none;
+.theia-mobile-agent-transcript-search button:hover {
   color: var(--theia-foreground);
   background: color-mix(in srgb, var(--theia-list-hoverBackground) 78%, transparent);
+}
+
+.theia-mobile-agent-transcript-search button:focus-visible {
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-list-hoverBackground) 78%, transparent);
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 1px;
 }
 
 .theia-mobile-agent-transcript-search button:disabled {
@@ -1394,7 +1405,8 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 .theia-mobile-agent-tool-pill>summary:focus-visible,
 .theia-mobile-agent-tool-window .theia-mobile-agent-tool-head:focus-visible,
 .theia-mobile-agent-shell-window .theia-mobile-agent-shell-head:focus-visible {
-  outline: none;
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
 }
 
 .theia-mobile-agent-tool-pill[open]>summary,
@@ -1850,8 +1862,9 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 .theia-mobile-agent-tool-window .theia-mobile-agent-tool-head:focus-visible,
 .theia-mobile-agent-shell-window .theia-mobile-agent-shell-head:focus-visible,
 .theia-mobile-agent-read-line.theia-mobile-agent-lobe-inline-step:focus-visible {
-  outline: none;
-  box-shadow: none;
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #4c9aff) 28%, transparent);
 }
 
 .theia-mobile-agent-trace-glyph,
@@ -2516,10 +2529,14 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   cursor: pointer;
 }
 
-.theia-mobile-slow-turn-hint-stop:hover,
+.theia-mobile-slow-turn-hint-stop:hover {
+  background: var(--theia-toolbar-hoverBackground);
+}
+
 .theia-mobile-slow-turn-hint-stop:focus-visible {
   background: var(--theia-toolbar-hoverBackground);
-  outline: none;
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
 }
 
 .theia-mobile-slow-turn-hint-dismiss {
@@ -2537,11 +2554,16 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   cursor: pointer;
 }
 
-.theia-mobile-slow-turn-hint-dismiss:hover,
+.theia-mobile-slow-turn-hint-dismiss:hover {
+  background: var(--theia-toolbar-hoverBackground);
+  color: var(--theia-foreground);
+}
+
 .theia-mobile-slow-turn-hint-dismiss:focus-visible {
   background: var(--theia-toolbar-hoverBackground);
   color: var(--theia-foreground);
-  outline: none;
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
 }
 
 /* ─── ExecutionEvent: one narrative + one tool group ──────────────────────── */
@@ -2956,11 +2978,16 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   text-underline-offset: 2px;
 }
 
-.theia-mobile-tool-detail-detail.theia-mod-file-link:hover,
+.theia-mobile-tool-detail-detail.theia-mod-file-link:hover {
+  color: var(--theia-textLink-activeForeground, var(--theia-textLink-foreground, #8ab4f8));
+  text-decoration: underline;
+}
+
 .theia-mobile-tool-detail-detail.theia-mod-file-link:focus-visible {
   color: var(--theia-textLink-activeForeground, var(--theia-textLink-foreground, #8ab4f8));
   text-decoration: underline;
-  outline: none;
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
 }
 
 .theia-mobile-tool-detail-file-icon {
@@ -3206,10 +3233,14 @@ body.qaap-theme-light .theia-mobile-tool-group.running .theia-mobile-tool-group-
   cursor: pointer;
 }
 
-.theia-mobile-closing-error-card-retry:hover,
+.theia-mobile-closing-error-card-retry:hover {
+  background: var(--theia-toolbar-hoverBackground);
+}
+
 .theia-mobile-closing-error-card-retry:focus-visible {
   background: var(--theia-toolbar-hoverBackground);
-  outline: none;
+  outline: 2px solid var(--theia-focusBorder, #4c9aff);
+  outline-offset: 2px;
 }
 
 .theia-mobile-closing-error-card-retry:disabled {

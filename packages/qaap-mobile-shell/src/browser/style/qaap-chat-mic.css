@@ -42,11 +42,16 @@
     opacity: 0.85;
 }
 
-.qaap-chat-mic-btn-inline:hover,
+.qaap-chat-mic-btn-inline:hover {
+    color: var(--theia-foreground);
+    opacity: 1;
+}
+
 .qaap-chat-mic-btn-inline:focus-visible {
     color: var(--theia-foreground);
     opacity: 1;
-    outline: none;
+    outline: 2px solid var(--theia-focusBorder, #4c9aff);
+    outline-offset: 2px;
 }
 
 .qaap-chat-mic-btn-inline.qaap-chat-mic-btn-recording {
@@ -70,11 +75,16 @@
     opacity: 0.85;
 }
 
-.qaap-chat-mic-btn-sticky:hover,
+.qaap-chat-mic-btn-sticky:hover {
+    color: var(--theia-foreground);
+    opacity: 1;
+}
+
 .qaap-chat-mic-btn-sticky:focus-visible {
     color: var(--theia-foreground);
     opacity: 1;
-    outline: none;
+    outline: 2px solid var(--theia-focusBorder, #4c9aff);
+    outline-offset: 2px;
 }
 
 .qaap-chat-mic-btn-sticky.qaap-chat-mic-btn-recording {

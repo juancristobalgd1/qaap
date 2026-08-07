@@ -110,11 +110,17 @@ export class MobileTouchScrollContribution implements FrontendApplicationContrib
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (active as HTMLElement).isContentEditable) {
             return;
         }
-        // Only blur if the touch did not land on the active element itself (or a
-        // descendant) — tapping a focused button again should not steal its focus
-        // before the click handler fires.
+        // Tapping the active element again should not steal its focus before the
+        // click handler fires. Defer the blur so the click can run, then clear the
+        // stale focus state unless another control has taken focus in the meantime.
         const target = e.target as Node | null;
         if (target && active.contains(target)) {
+            const activeElement = active as HTMLElement;
+            window.setTimeout(() => {
+                if (document.activeElement === activeElement) {
+                    activeElement.blur();
+                }
+            }, 0);
             return;
         }
         (active as HTMLElement).blur();
