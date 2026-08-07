@@ -67,3 +67,5 @@ jobs:
         run: |
           cd examples/playwright
           npm run ui-tests:qaap-mobile
+        env:
+          QAAP_SKIP_AUTH: 'true'
