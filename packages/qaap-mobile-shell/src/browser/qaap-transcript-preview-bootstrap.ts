@@ -130,8 +130,16 @@ const CLAIM_PROBE_INTERVAL_MS = 1_000;
  */
 const transcriptPreviewBootstrapInFlight = new WeakMap<
     QaapProjectBootstrapService,
-    Promise<string | undefined>
+    Map<string, Promise<string | undefined>>
 >();
+
+function transcriptPreviewBootstrapRequestKey(options: EnsureTranscriptDevPreviewOptions): string {
+    return options.conversationId
+        ?? options.conversation?.id
+        ?? options.projectId
+        ?? options.workspaceRoot
+        ?? 'workspace';
+}
 
 function waitForBootstrapPreviewUrl(
     bootstrap: QaapProjectBootstrapService,
@@ -288,22 +296,32 @@ export function ensureTranscriptDevPreview(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
-    const inFlight = transcriptPreviewBootstrapInFlight.get(bootstrap);
+    const requestKey = transcriptPreviewBootstrapRequestKey(options);
+    const requests = transcriptPreviewBootstrapInFlight.get(bootstrap);
+    const inFlight = requests?.get(requestKey);
     if (inFlight) {
         return inFlight;
     }
 
     const pending = ensureTranscriptDevPreviewExtracted(bootstrap, options);
-    transcriptPreviewBootstrapInFlight.set(bootstrap, pending);
+    const requestMap = requests ?? new Map<string, Promise<string | undefined>>();
+    requestMap.set(requestKey, pending);
+    transcriptPreviewBootstrapInFlight.set(bootstrap, requestMap);
     pending.then(
         () => {
-            if (transcriptPreviewBootstrapInFlight.get(bootstrap) === pending) {
-                transcriptPreviewBootstrapInFlight.delete(bootstrap);
+            if (requestMap.get(requestKey) === pending) {
+                requestMap.delete(requestKey);
+                if (requestMap.size === 0) {
+                    transcriptPreviewBootstrapInFlight.delete(bootstrap);
+                }
             }
         },
         () => {
-            if (transcriptPreviewBootstrapInFlight.get(bootstrap) === pending) {
-                transcriptPreviewBootstrapInFlight.delete(bootstrap);
+            if (requestMap.get(requestKey) === pending) {
+                requestMap.delete(requestKey);
+                if (requestMap.size === 0) {
+                    transcriptPreviewBootstrapInFlight.delete(bootstrap);
+                }
             }
         },
     );
