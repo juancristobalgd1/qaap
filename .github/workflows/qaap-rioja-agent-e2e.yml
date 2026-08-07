@@ -57,6 +57,8 @@ jobs:
 
       - name: Start browser backend with mock QAIQ
         shell: bash
+        env:
+          QAAP_SKIP_AUTH: 'true'
         run: |
           MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
           mkdir -p "${MOCK_BIN}"
