@@ -137,10 +137,14 @@ jobs:
           npm run test:theia
 
       - name: Test (browser)
+        env:
+          QAAP_SKIP_AUTH: 'true'
         run: |
           npm run test:browser
 
       - name: Test (electron)
         if: runner.os == 'Linux'
+        env:
+          QAAP_SKIP_AUTH: 'true'
         run: |
           xvfb-run -a npm run test:electron
