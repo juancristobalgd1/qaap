@@ -271,6 +271,18 @@ describe('qaap-agent-turn-completion', () => {
         expect(buildAgentAutoContinuePrompt(prompt)).to.include('starter');
     });
 
+    it('continues an actionable turn that ended with planning text but no tool segments', () => {
+        const agent: QaapAgentMessageDTO = {
+            id: 'a5-planning-only',
+            role: 'agent',
+            content: 'I will explore the project and figure out how to run it.',
+            createdAt: 2,
+        };
+        const prompt = 'Figure out how to build and run this app.';
+        expect(agentMessageDeliversTaskOutcome(prompt, agent)).to.equal(false);
+        expect(isIncompleteAgentTurn(prompt, agent)).to.equal(true);
+    });
+
     it('does not derail a build-error report or a plain task into a landing-page rewrite', () => {
         // The auto-verify UI feeds a build-failure report back into the conversation. Its text
         // contains the command `vite build`, which used to trip the loose web-generation regex and

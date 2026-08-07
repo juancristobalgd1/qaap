@@ -209,7 +209,10 @@ export function isIncompleteAgentTurn(
         return true;
     }
     const content = agentMessage.content?.trim();
-    return !content || content === '…';
+    // Some CLI adapters emit a final planning sentence without a structured segment. That is
+    // still an incomplete actionable turn: requiring a tool segment here silently disables the
+    // auto-continue path for exactly the search-only stop it is meant to recover.
+    return !content || content === '…' || agentTextLooksLikePlanningOnly(content);
 }
 
 export function buildAgentAutoContinuePrompt(userContent?: string): string {
