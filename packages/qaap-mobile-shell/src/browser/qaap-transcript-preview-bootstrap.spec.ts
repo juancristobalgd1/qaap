@@ -84,4 +84,35 @@ describe('qaap-transcript-preview-bootstrap', () => {
         await Promise.all([first, second]);
         expect(refreshCalls).to.equal(1);
     });
+
+    it('keeps concurrent requests for different conversations independent', async () => {
+        let releaseRefresh!: () => void;
+        const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+        let refreshCalls = 0;
+        const bootstrap = {
+            refreshFromProjectRoot: async (): Promise<void> => {
+                refreshCalls++;
+                await refreshGate;
+            },
+            getStateSnapshot: () => ({ descriptor: undefined }),
+        } as unknown as QaapProjectBootstrapService;
+
+        const first = ensureTranscriptDevPreview(bootstrap, {
+            conversationId: 'conversation-a',
+            workspaceRoot: '/workspace/repos/project',
+            projectId: 'project',
+            skipConversationPortProbe: true,
+        });
+        const second = ensureTranscriptDevPreview(bootstrap, {
+            conversationId: 'conversation-b',
+            workspaceRoot: '/workspace/repos/project',
+            projectId: 'project',
+            skipConversationPortProbe: true,
+        });
+
+        expect(second).not.to.equal(first);
+        releaseRefresh();
+        await Promise.all([first, second]);
+        expect(refreshCalls).to.equal(2);
+    });
 });
