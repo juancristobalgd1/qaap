@@ -20,6 +20,8 @@ describe('qaap-workspace-container-path', () => {
             '/home/jc/.qaap/workspaces',
             '/home/jc/.qaap/workspaces/users/alice',
             '/home/jc/.qaap/workspaces/users/alice/acme',
+            'D:\\workspace',
+            'D:\\workspace\\repos\\users\\alice\\acme',
         ];
         for (const path of containers) {
             expect(isQaapWorkspaceContainerPath(path), path).to.be.true;
@@ -33,6 +35,7 @@ describe('qaap-workspace-container-path', () => {
             '/workspace/repos/acme/widgets',
             '/home/jc/.qaap/workspaces/users/alice/acme/widgets',
             '/home/jc/.qaap/workspaces/acme/widgets',
+            'D:\\workspace\\repos\\users\\alice\\acme\\widgets',
         ];
         for (const path of repositories) {
             expect(isQaapWorkspaceContainerPath(path), path).to.be.false;

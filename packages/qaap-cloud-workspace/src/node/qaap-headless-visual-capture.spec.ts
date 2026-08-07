@@ -38,8 +38,8 @@ describe('resolveQaapStaticPreviewFile', () => {
     });
 
     it('serves contained files and preserves the SPA fallback', async () => {
-        expect(await resolveQaapStaticPreviewFile(root, '/asset.js')).to.equal(fs.realpathSync(path.join(root, 'asset.js')));
-        expect(await resolveQaapStaticPreviewFile(root, '/dashboard?tab=active')).to.equal(fs.realpathSync(path.join(root, 'index.html')));
+        expect(await resolveQaapStaticPreviewFile(root, '/asset.js')).to.equal(await fs.promises.realpath(path.join(root, 'asset.js')));
+        expect(await resolveQaapStaticPreviewFile(root, '/dashboard?tab=active')).to.equal(await fs.promises.realpath(path.join(root, 'index.html')));
     });
 
     it('rejects plain, encoded, prefix-sibling, and malformed traversal paths', async () => {

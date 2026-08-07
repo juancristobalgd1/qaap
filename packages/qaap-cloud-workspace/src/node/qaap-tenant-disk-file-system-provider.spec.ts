@@ -9,6 +9,14 @@ import { FileSystemProviderErrorCode } from '@theia/filesystem/lib/common/files'
 import { QaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 
+function normalizedPath(fsPath: string): string {
+    return fsPath.replace(/\\/g, '/');
+}
+
+function ownsTenantPath(login: string, fsPath: string): boolean {
+    return normalizedPath(fsPath).includes(`/users/${login}/`);
+}
+
 function createProvider(options: {
     login?: string;
     skipAuth?: boolean;
@@ -24,7 +32,7 @@ function createProvider(options: {
         loginOwnsWorkspacePath: (login: string, path: string) => boolean;
     } }).auth = {
         isSkipAuthEnabled: () => options.skipAuth ?? false,
-        loginOwnsWorkspacePath: (login, path) => options.ownsPath?.(login, path) ?? path.includes(`/users/${login}/`),
+        loginOwnsWorkspacePath: (login, fsPath) => options.ownsPath?.(login, fsPath) ?? ownsTenantPath(login, fsPath),
     };
     (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = connections;
     (provider as unknown as { reposRoot: string }).reposRoot = '/workspace/repos';
@@ -52,7 +60,7 @@ describe('QaapTenantDiskFileSystemProvider', () => {
         registry.bindSocketLogin('socket-bob', 'bob');
         const provider = createProvider({
             login: 'alice',
-            ownsPath: (login, path) => path.includes(`/users/${login}/`),
+            ownsPath: ownsTenantPath,
         });
         (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
         await registry.runWithLogin('alice', async () => {
@@ -63,7 +71,7 @@ describe('QaapTenantDiskFileSystemProvider', () => {
     it('accepts owned repository paths for the active login scope', () => {
         const registry = new QaapWebsocketAuthRegistry();
         const provider = createProvider({
-            ownsPath: (login, path) => path.includes(`/users/${login}/`),
+            ownsPath: ownsTenantPath,
         });
         (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
         const uri = new URI('file:///workspace/repos/users/alice/acme/demo/package.json');

@@ -275,7 +275,10 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
     /** Run one npm script; return an error summary on failure, or undefined on success. Overridable for tests. */
     protected async runVerificationScript(context: QaapJobFunctionContext, script: string): Promise<string | undefined> {
         try {
-            await execFileAsync('npm', ['run', script], {
+            // Windows exposes npm through the cmd shim; the bare `npm` executable works on POSIX
+            // but cannot be resolved by child_process.execFile on Windows.
+            const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+            await execFileAsync(npmExecutable, ['run', script], {
                 cwd: context.cwd,
                 signal: context.signal,
                 timeout: VERIFY_SCRIPT_TIMEOUT_MS,

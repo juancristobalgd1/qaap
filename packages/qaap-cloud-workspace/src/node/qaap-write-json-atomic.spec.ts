@@ -53,7 +53,9 @@ describe('qaap-write-json-atomic', () => {
         const file = path.join(dir, 'tokens.json');
         writeJsonAtomicSync(file, { token: 'secret' }, { mode: 0o600 });
         expect(JSON.parse(fs.readFileSync(file, 'utf8'))).to.deep.equal({ token: 'secret' });
-        expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+        if (process.platform !== 'win32') {
+            expect(fs.statSync(file).mode & 0o777).to.equal(0o600);
+        }
     });
 
     it('honors space:0 (compact) and trailingNewline', () => {

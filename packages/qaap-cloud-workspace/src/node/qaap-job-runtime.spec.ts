@@ -534,8 +534,12 @@ describe('QaapJobRuntime', () => {
             runtime.exposeRestore({ version: 1, jobs: [], requests: {}, logs: {} });
             await runtime.exposePersist();
 
-            expect(fs.statSync(runtime.testDirectory).mode & 0o777).to.equal(0o700);
-            expect(fs.statSync(path.join(runtime.testDirectory, 'index.json')).mode & 0o777).to.equal(0o600);
+            expect(fs.existsSync(runtime.testDirectory)).to.equal(true);
+            expect(fs.existsSync(path.join(runtime.testDirectory, 'index.json'))).to.equal(true);
+            if (process.platform !== 'win32') {
+                expect(fs.statSync(runtime.testDirectory).mode & 0o777).to.equal(0o700);
+                expect(fs.statSync(path.join(runtime.testDirectory, 'index.json')).mode & 0o777).to.equal(0o600);
+            }
         } finally {
             fs.rmSync(temporaryRoot, { recursive: true, force: true });
         }
