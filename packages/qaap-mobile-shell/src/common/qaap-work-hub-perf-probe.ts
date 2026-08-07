@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapTranscriptRenderMetricsSnapshot } from './qaap-transcript-render-metrics';
+
 export const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';
 
 export interface WorkHubPerfProbeDiagnostics {
@@ -17,6 +19,7 @@ export interface QaapWorkHubPerfProbeMetrics {
     readonly sidebarListReplaceChildren: number;
     readonly chatHostConnected: boolean;
     readonly inlineExecutionConnected: boolean;
+    readonly transcriptRenderMetrics: QaapTranscriptRenderMetricsSnapshot;
 }
 
 export interface QaapWorkHubPerfProbeApi {
@@ -28,6 +31,8 @@ export interface QaapWorkHubPerfProbeApi {
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
+    renderLongTranscriptForProbe(options?: { readonly messageCount?: number; readonly charsPerMessage?: number }): void;
+    tickLongTranscriptForProbe(options?: { readonly charsPerTick?: number }): void;
     hasProjectsForProbe(): boolean;
     hasWorkspaceForProbe(): boolean;
     getProbeDiagnostics(): WorkHubPerfProbeDiagnostics;

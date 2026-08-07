@@ -12,6 +12,7 @@ import { TheiaApp } from '../theia-app';
 import { TheiaWorkspace } from '../theia-workspace';
 
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
+const DESKTOP_WORK_HUB_VIEWPORT = { width: 1200, height: 953 };
 const KPI_PREVIEW_MS = 120_000;
 
 /** Compiled tests live under lib/tests; fixtures stay in src/tests/resources. */
@@ -45,7 +46,8 @@ async function dismissMobileTutorial(page: Page): Promise<void> {
 }
 
 async function waitForWorkHubReady(page: Page): Promise<void> {
-    await expect(page.locator('.theia-mobile-projects-sticky-composer-input')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-input').first())
+        .toBeVisible({ timeout: 60_000 });
 }
 
 async function expectAgentsHubLanding(page: Page): Promise<void> {
@@ -152,6 +154,71 @@ async function expectClassicIdeSurface(page: Page): Promise<void> {
     await expect(page.locator('#theia-mobile-bottom-bar')).toBeVisible();
     await expect(page.locator('body')).not.toHaveClass(/theia-mobile-mod-landing/);
     await expect(page.locator('.theia-mobile-projects-sticky-composer-input')).toHaveCount(0);
+}
+
+async function openWorkHubSessionsSidebar(page: Page): Promise<void> {
+    const openSidebar = page.locator('.theia-mobile-work-hub-sessions-sidebar.theia-mod-visible').first();
+    if (await openSidebar.isVisible().catch(() => false)) {
+        return;
+    }
+
+    await expect.poll(async () => page.evaluate(() => {
+        const button = [...document.querySelectorAll<HTMLButtonElement>('button[aria-label="Open session history"]')]
+            .find(candidate => {
+                const style = window.getComputedStyle(candidate);
+                const rect = candidate.getBoundingClientRect();
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && rect.width > 1
+                    && rect.height > 1;
+            });
+        if (!button) {
+            return false;
+        }
+        button.click();
+        return true;
+    }), { timeout: 30_000 }).toBe(true);
+    await expect(page.locator('.theia-mobile-work-hub-sessions-sidebar.theia-mod-visible')).toBeVisible();
+}
+
+async function expectDesktopSessionsSidebarLayout(page: Page): Promise<void> {
+    const layout = await page.evaluate(() => {
+        const visibleRect = (selector: string): { left: number; right: number; width: number; height: number } | undefined => {
+            const element = [...document.querySelectorAll<HTMLElement>(selector)].find(candidate => {
+                const style = window.getComputedStyle(candidate);
+                const candidateRect = candidate.getBoundingClientRect();
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && candidateRect.width > 1
+                    && candidateRect.height > 1;
+            });
+            if (!element) {
+                return undefined;
+            }
+            const elementRect = element.getBoundingClientRect();
+            return { left: elementRect.left, right: elementRect.right, width: elementRect.width, height: elementRect.height };
+        };
+
+        const sidebar = visibleRect('.theia-mobile-work-hub-sessions-sidebar.theia-mod-visible');
+        const project = visibleRect('.theia-mobile-projects.theia-mod-visible');
+        if (!sidebar || !project) {
+            throw new Error('Expected visible Work Hub project and sessions sidebar surfaces.');
+        }
+
+        return {
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+            sidebar,
+            project,
+        };
+    });
+
+    expect(layout.sidebar.left).toBeLessThanOrEqual(1);
+    // Allow the one-pixel sidebar border to meet the Work Hub surface without a gap.
+    expect(layout.project.left).toBeGreaterThanOrEqual(layout.sidebar.right - 2);
+    expect(layout.project.right).toBeGreaterThanOrEqual(layout.viewportWidth - 1);
+    expect(layout.project.height).toBeGreaterThanOrEqual(layout.viewportHeight - 1);
+    expect(layout.project.width).toBeGreaterThanOrEqual(layout.viewportWidth - layout.project.left - 1);
 }
 
 async function waitForBackendDevProbe(page: Page, port: number, timeoutMs: number = 60_000): Promise<void> {
@@ -428,6 +495,35 @@ test.describe('@qaap-mobile Classic IDE (Open IDE escape hatch)', () => {
         await expect(app.page.locator('#theia-mobile-bottom-bar')).toBeVisible();
 
         await app.page.close();
+    });
+});
+
+test.describe('@qaap-mobile Desktop Work Hub sessions sidebar regression', () => {
+
+    test.use({ viewport: DESKTOP_WORK_HUB_VIEWPORT });
+
+    test('keeps the Work Hub to the right of the sessions sidebar across remounts', async ({ playwright, browser }) => {
+        const app = await TheiaAppLoader.load({ playwright, browser });
+        try {
+            await dismissMobileTutorial(app.page);
+            await waitForWorkHubReady(app.page);
+
+            for (let cycle = 0; cycle < 3; cycle++) {
+                if (cycle > 0) {
+                    await app.page.reload();
+                    await app.waitForShellAndInitialized();
+                    await dismissMobileTutorial(app.page);
+                    await waitForWorkHubReady(app.page);
+                }
+                await openWorkHubSessionsSidebar(app.page);
+                await expectDesktopSessionsSidebarLayout(app.page);
+
+                await app.page.locator('.theia-mobile-work-hub-sessions-sidebar.theia-mod-visible button[aria-label="Close"]').click();
+                await expect(app.page.locator('body')).not.toHaveClass(/theia-mobile-mod-sessions-sidebar-open/);
+            }
+        } finally {
+            await app.page.close();
+        }
     });
 });
 

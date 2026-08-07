@@ -64,6 +64,8 @@ export interface TranscriptFilesViewServices {
 const FILES_TREE_MIN_PX = 120;
 const FILES_TREE_MAX_RATIO = 0.78;
 const TRANSCRIPT_FILES_TREE_POSITION_STORAGE_KEY = 'qaap.transcriptFiles.treePosition';
+const TRANSCRIPT_FILES_TREE_POSITION_NARROW_STORAGE_KEY = `${TRANSCRIPT_FILES_TREE_POSITION_STORAGE_KEY}.narrow`;
+const TRANSCRIPT_FILES_TREE_POSITION_WIDE_STORAGE_KEY = `${TRANSCRIPT_FILES_TREE_POSITION_STORAGE_KEY}.wide`;
 const TRANSCRIPT_FILES_TREE_VISIBLE_STORAGE_KEY = 'qaap.transcriptFiles.treeVisible';
 const TRANSCRIPT_FILES_VIEW_MODE_STORAGE_KEY = 'qaap.transcriptFiles.viewMode';
 const TRANSCRIPT_FILES_PENDING_VIEW_MODE_KEY = 'qaap.transcriptFiles.pendingViewMode';
@@ -74,12 +76,27 @@ export function defaultTranscriptFilesTreePosition(viewportWidth = typeof window
     return viewportWidth <= 767 ? 'bottom' : 'side';
 }
 
-export function readStoredTranscriptFilesTreePosition(): TranscriptFilesTreePosition | undefined {
+function transcriptFilesTreePositionStorageKey(viewportWidth: number): string {
+    return viewportWidth <= 767
+        ? TRANSCRIPT_FILES_TREE_POSITION_NARROW_STORAGE_KEY
+        : TRANSCRIPT_FILES_TREE_POSITION_WIDE_STORAGE_KEY;
+}
+
+export function readStoredTranscriptFilesTreePosition(
+    viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024,
+): TranscriptFilesTreePosition | undefined {
     try {
         if (typeof window === 'undefined') {
             return undefined;
         }
-        const value = window.localStorage.getItem(TRANSCRIPT_FILES_TREE_POSITION_STORAGE_KEY);
+        const scopedKey = transcriptFilesTreePositionStorageKey(viewportWidth);
+        // The unscoped key predates responsive layouts. Reuse it only for wide
+        // viewports; otherwise an old desktop `side` preference breaks the
+        // mobile default and brings back the compressed preview regression.
+        const value = window.localStorage.getItem(scopedKey)
+            ?? (viewportWidth > 767
+                ? window.localStorage.getItem(TRANSCRIPT_FILES_TREE_POSITION_STORAGE_KEY)
+                : undefined);
         if (value === 'side' || value === 'bottom') {
             return value;
         }
@@ -89,10 +106,13 @@ export function readStoredTranscriptFilesTreePosition(): TranscriptFilesTreePosi
     return undefined;
 }
 
-export function writeStoredTranscriptFilesTreePosition(position: TranscriptFilesTreePosition): void {
+export function writeStoredTranscriptFilesTreePosition(
+    position: TranscriptFilesTreePosition,
+    viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024,
+): void {
     try {
         if (typeof window !== 'undefined') {
-            window.localStorage.setItem(TRANSCRIPT_FILES_TREE_POSITION_STORAGE_KEY, position);
+            window.localStorage.setItem(transcriptFilesTreePositionStorageKey(viewportWidth), position);
         }
     } catch {
         /* session-only */
@@ -100,7 +120,7 @@ export function writeStoredTranscriptFilesTreePosition(position: TranscriptFiles
 }
 
 export function resolveTranscriptFilesTreePosition(viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024): TranscriptFilesTreePosition {
-    return readStoredTranscriptFilesTreePosition() ?? defaultTranscriptFilesTreePosition(viewportWidth);
+    return readStoredTranscriptFilesTreePosition(viewportWidth) ?? defaultTranscriptFilesTreePosition(viewportWidth);
 }
 
 export function isTranscriptFilesTreeStacked(position: TranscriptFilesTreePosition): boolean {

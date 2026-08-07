@@ -72,6 +72,9 @@
       "path": "../preferences"
     },
     {
+      "path": "../qaap-archive"
+    },
+    {
       "path": "../scm"
     },
     {

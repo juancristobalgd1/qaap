@@ -45,6 +45,7 @@ describe('qaap-work-hub-perf-probe', () => {
             setTranscriptChatHost: value => { transcriptChatHost = value; },
             getTranscriptOpenSummaryId: () => transcriptOpenSummaryId,
             setTranscriptOpenSummaryId: value => { transcriptOpenSummaryId = value; },
+            renderTranscriptForProbe: () => undefined,
             openWorkHubSessionsSidebar: () => undefined,
             navigateToHomeHubForProbe: () => undefined,
             expandMissionControlForProbe: () => undefined,
@@ -53,6 +54,7 @@ describe('qaap-work-hub-perf-probe', () => {
             tickProbeStreamingConversations: () => undefined,
             hasProjectsForProbe: () => true,
             hasWorkspaceForProbe: () => true,
+            getWorkspaceCwdForProbe: () => '/workspace',
             getProbeDiagnostics: () => ({
                 projectCount: 1,
                 mcRowCount: 0,
@@ -83,6 +85,7 @@ describe('qaap-work-hub-perf-probe', () => {
             setTranscriptChatHost: value => { transcriptChatHost = value; },
             getTranscriptOpenSummaryId: () => transcriptOpenSummaryId,
             setTranscriptOpenSummaryId: value => { transcriptOpenSummaryId = value; },
+            renderTranscriptForProbe: () => undefined,
             openWorkHubSessionsSidebar: () => undefined,
             navigateToHomeHubForProbe: () => undefined,
             expandMissionControlForProbe: () => undefined,
@@ -91,6 +94,7 @@ describe('qaap-work-hub-perf-probe', () => {
             tickProbeStreamingConversations: () => undefined,
             hasProjectsForProbe: () => true,
             hasWorkspaceForProbe: () => true,
+            getWorkspaceCwdForProbe: () => '/workspace',
             getProbeDiagnostics: () => ({
                 projectCount: 1,
                 mcRowCount: 0,

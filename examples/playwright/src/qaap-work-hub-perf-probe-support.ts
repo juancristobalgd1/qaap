@@ -9,6 +9,7 @@ export interface WorkHubPerfProbeMetrics {
     sidebarListReplaceChildren: number;
     chatHostConnected: boolean;
     inlineExecutionConnected: boolean;
+    transcriptRenderMetrics: Record<string, number | boolean>;
 }
 
 export interface WorkHubPerfProbeDiagnostics {
@@ -27,6 +28,8 @@ export interface WorkHubPerfProbeApi {
     showTasksInboxWithTeamForProbe(): void;
     seedMultiAgentProbeConversations(): void;
     tickProbeStreamingConversations(): void;
+    renderLongTranscriptForProbe(options?: { messageCount?: number; charsPerMessage?: number }): void;
+    tickLongTranscriptForProbe(options?: { charsPerTick?: number }): void;
     hasProjectsForProbe(): boolean;
     hasWorkspaceForProbe(): boolean;
     getProbeDiagnostics(): WorkHubPerfProbeDiagnostics;

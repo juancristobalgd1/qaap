@@ -631,8 +631,13 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: any): void {
                 panel.conversations.perfProbeTickStreamingSummaries(cwd);
             }
         },
+        renderTranscriptForProbe: (conversation, chatHost) => {
+            panel.transcriptOpenSummaryId = conversation.id;
+            panel.transcriptMessagesUi.renderTranscriptMessages(chatHost, conversation);
+        },
         hasProjectsForProbe: () => panel.projects.length > 0,
         hasWorkspaceForProbe: () => !!panel.projectsService.getCurrentWorkspaceCwd(),
+        getWorkspaceCwdForProbe: () => panel.projectsService.getCurrentWorkspaceCwd(),
         getProbeDiagnostics: (): WorkHubPerfProbeDiagnostics => ({
             projectCount: panel.projects.length,
             mcRowCount: panel.scroll.querySelectorAll('.theia-mobile-mission-control-row').length,

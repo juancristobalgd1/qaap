@@ -138,6 +138,14 @@ export class TranscriptVirtualList implements Disposable {
     }
 
     setFooter(children: readonly HTMLElement[]): void {
+        // Streaming patches refresh the footer on every tick. Most agent-tail updates have no
+        // footer at all, so avoid replaceChildren() and its follow-up measurement/layout work
+        // when the footer node set is already identical.
+        const currentChildren = this.footerHost.children;
+        if (children.length === currentChildren.length
+            && children.every((child, index) => currentChildren[index] === child)) {
+            return;
+        }
         this.footerHost.replaceChildren(...children);
         this.measureRequested = true;
         this.followReassertRequested = true;

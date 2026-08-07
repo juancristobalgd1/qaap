@@ -199,4 +199,24 @@ describe('TranscriptVirtualList follow-tail after spacer thrash', () => {
         expect(rafQueue.length).to.be.greaterThan(0);
         list.dispose();
     });
+
+    it('does not schedule layout work when the footer nodes are unchanged', () => {
+        const list = new TranscriptVirtualList({
+            scrollHost: host,
+            renderItem: index => {
+                const row = document.createElement('div');
+                row.textContent = `row-${index}`;
+                return row;
+            },
+        });
+        const footer = document.createElement('div');
+        list.setFooter([footer]);
+        flushRaf();
+        flushRaf();
+        rafQueue.length = 0;
+
+        list.setFooter([footer]);
+        expect(rafQueue).to.have.length(0);
+        list.dispose();
+    });
 });

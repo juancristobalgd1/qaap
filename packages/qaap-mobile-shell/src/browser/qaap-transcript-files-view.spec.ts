@@ -12,6 +12,7 @@ import {
     isTranscriptFilesTreeStacked,
     isTranscriptPreviewableTextFile,
     mountTranscriptFilesView,
+    resolveTranscriptFilesTreePosition,
     resolveTranscriptFilesTreeVisible,
     shouldSkipTranscriptFilesDirectory,
     transcriptFileIconClass,
@@ -57,6 +58,17 @@ describe('qaap-transcript-files-view', () => {
     it('defaults tree position by viewport width', () => {
         expect(defaultTranscriptFilesTreePosition(1024)).to.equal('side');
         expect(defaultTranscriptFilesTreePosition(480)).to.equal('bottom');
+    });
+
+    it('does not reuse an old desktop split preference on a narrow viewport', () => {
+        window.localStorage.removeItem('qaap.transcriptFiles.treePosition.narrow');
+        window.localStorage.removeItem('qaap.transcriptFiles.treePosition.wide');
+        window.localStorage.setItem('qaap.transcriptFiles.treePosition', 'side');
+
+        expect(resolveTranscriptFilesTreePosition(480)).to.equal('bottom');
+        expect(resolveTranscriptFilesTreePosition(1024)).to.equal('side');
+
+        window.localStorage.removeItem('qaap.transcriptFiles.treePosition');
     });
 
     it('resolves stacked layout from tree position', () => {
@@ -128,6 +140,27 @@ describe('qaap-transcript-files-view', () => {
             relativePathForResource: (_resourcePath, rootUri) => _resourcePath.slice(`${rootUri}/`.length),
             readFile: async () => '',
             localize: (_key, defaultValue) => defaultValue,
+        });
+
+        it('mounts the file tree below the preview on mobile despite a legacy desktop preference', () => {
+            const originalInnerWidth = window.innerWidth;
+            const host = document.createElement('div');
+            document.body.append(host);
+            Object.defineProperty(window, 'innerWidth', { configurable: true, value: 480 });
+            window.localStorage.removeItem('qaap.transcriptFiles.treePosition.narrow');
+            window.localStorage.removeItem('qaap.transcriptFiles.treePosition.wide');
+            window.localStorage.setItem('qaap.transcriptFiles.treePosition', 'side');
+
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
+            try {
+                const layout = host.querySelector('.theia-mobile-transcript-files-layout');
+                expect(layout?.classList.contains('theia-mod-tree-bottom')).to.be.true;
+                expect(layout?.classList.contains('theia-mod-tree-side')).to.be.false;
+            } finally {
+                mount.dispose.dispose();
+                window.localStorage.removeItem('qaap.transcriptFiles.treePosition');
+                Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+            }
         });
 
         it('omits preview breadcrumb; keeps lock and toolbar actions left-aligned', () => {

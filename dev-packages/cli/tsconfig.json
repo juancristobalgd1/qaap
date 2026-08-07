@@ -10,6 +10,9 @@
   ],
   "references": [
     {
+      "path": "../../packages/qaap-archive"
+    },
+    {
       "path": "../application-manager"
     },
     {

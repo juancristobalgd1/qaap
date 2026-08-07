@@ -9,7 +9,9 @@ import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '../common/qaap-work-hub-pe
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import {
+    appendLongTranscriptProbeDelta,
     buildProbeStreamingSummaries,
+    buildLongTranscriptProbeConversation,
     ensureProbeWorkspaceProject,
     QAAP_PROBE_WORKSPACE_PROJECT_ID,
 } from './qaap-work-hub-perf-probe-host';
@@ -35,6 +37,19 @@ describe('qaap-work-hub-perf-probe-host', () => {
         expect(summaries).to.have.length(3);
         expect(summaries.every(summary => summary.status === 'streaming')).to.equal(true);
         expect(summaries.every(summary => summary.cwd === '/workspace/demo')).to.equal(true);
+    });
+
+    it('builds an even long transcript with an agent tail for streaming measurements', () => {
+        const conversation = buildLongTranscriptProbeConversation('/workspace/demo', {
+            messageCount: 121,
+            charsPerMessage: 600,
+        });
+        expect(conversation.messages).to.have.length(120);
+        expect(conversation.messages.at(-1)?.role).to.equal('agent');
+        expect(conversation.messages.at(-1)?.content.length).to.equal(600);
+        const next = appendLongTranscriptProbeDelta(conversation, 1, 96);
+        expect(next.messages.at(-1)?.content.length).to.equal(696);
+        expect(next.updatedAt).to.equal(conversation.updatedAt + 1);
     });
 
     it('ensureProbeWorkspaceProject adds a synthetic current project when none maps to cwd', () => {

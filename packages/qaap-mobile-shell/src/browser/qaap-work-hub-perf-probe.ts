@@ -4,6 +4,16 @@
 // *****************************************************************************
 
 import {
+    enableTranscriptRenderMetrics,
+    getTranscriptRenderMetricsSnapshot,
+    resetTranscriptRenderMetrics,
+} from '../common/qaap-transcript-render-metrics';
+import {
+    appendLongTranscriptProbeDelta,
+    buildLongTranscriptProbeConversation,
+    type TranscriptPerfProbeOptions,
+} from './qaap-work-hub-perf-probe-host';
+import {
     isQaapWorkHubPerfProbeEnabled,
     type QaapWorkHubPerfProbeApi,
     type QaapWorkHubPerfProbeMetrics,
@@ -23,6 +33,7 @@ export interface QaapWorkHubPerfProbeHost {
     setTranscriptChatHost(value: HTMLElement | undefined): void;
     getTranscriptOpenSummaryId(): string | undefined;
     setTranscriptOpenSummaryId(value: string | undefined): void;
+    renderTranscriptForProbe(conversation: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO, host: HTMLElement): void;
     openWorkHubSessionsSidebar(): void;
     navigateToHomeHubForProbe(): void;
     expandMissionControlForProbe(): void;
@@ -31,6 +42,7 @@ export interface QaapWorkHubPerfProbeHost {
     tickProbeStreamingConversations(): void;
     hasProjectsForProbe(): boolean;
     hasWorkspaceForProbe(): boolean;
+    getWorkspaceCwdForProbe(): string | undefined;
     getProbeDiagnostics(): import('../common/qaap-work-hub-perf-probe').WorkHubPerfProbeDiagnostics;
 }
 
@@ -45,6 +57,32 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
     const metrics = {
         hubScrollReplaceChildren: 0,
         sidebarListReplaceChildren: 0,
+    };
+    let transcriptProbeConversation: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+    let transcriptProbeTick = 0;
+    enableTranscriptRenderMetrics(true);
+
+    const ensureTranscriptProbeChatHost = (): HTMLElement => {
+        const existing = host.getTranscriptChatHost();
+        if (existing?.dataset.qaapPerfProbe === '1' && existing.isConnected) {
+            return existing;
+        }
+        let transcriptSheet = host.getTranscriptSheet();
+        if (!transcriptSheet?.isConnected) {
+            transcriptSheet = document.createElement('div');
+            transcriptSheet.className = 'theia-mobile-agent-transcript-root theia-mod-visible';
+            document.body.append(transcriptSheet);
+            host.setTranscriptSheet(transcriptSheet);
+        }
+        const transcriptChatHost = document.createElement('div');
+        transcriptChatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        transcriptChatHost.dataset.qaapPerfProbe = '1';
+        const connectedExistingParent = existing?.parentElement?.isConnected === true
+            ? existing.parentElement
+            : undefined;
+        (connectedExistingParent ?? transcriptSheet).append(transcriptChatHost);
+        host.setTranscriptChatHost(transcriptChatHost);
+        return transcriptChatHost;
     };
 
     const patchReplaceChildren = (
@@ -74,9 +112,10 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         ensureSidebarListPatched();
         return {
             hubScrollReplaceChildren: metrics.hubScrollReplaceChildren,
-            sidebarListReplaceChildren: metrics.sidebarListReplaceChildren,
-            chatHostConnected: host.getTranscriptChatHost()?.isConnected === true,
-            inlineExecutionConnected: document.querySelector('.theia-mobile-agents-hub-inline-execution')?.isConnected === true,
+        sidebarListReplaceChildren: metrics.sidebarListReplaceChildren,
+        chatHostConnected: host.getTranscriptChatHost()?.isConnected === true,
+        inlineExecutionConnected: document.querySelector('.theia-mobile-agents-hub-inline-execution')?.isConnected === true,
+        transcriptRenderMetrics: getTranscriptRenderMetricsSnapshot(),
         };
     };
 
@@ -93,21 +132,7 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         setTranscriptOverlayOpenForProbe: (open: boolean) => {
             if (open) {
                 host.setTranscriptOpenSummaryId(PERF_PROBE_CONVERSATION_ID);
-                let transcriptSheet = host.getTranscriptSheet();
-                if (!transcriptSheet) {
-                    transcriptSheet = document.createElement('div');
-                    transcriptSheet.className = 'theia-mobile-agent-transcript-root theia-mod-visible';
-                    document.body.append(transcriptSheet);
-                    host.setTranscriptSheet(transcriptSheet);
-                }
-                let transcriptChatHost = host.getTranscriptChatHost();
-                if (!transcriptChatHost) {
-                    transcriptChatHost = document.createElement('div');
-                    transcriptChatHost.className = 'theia-mobile-agent-transcript-real-chat';
-                    transcriptChatHost.dataset.qaapPerfProbe = '1';
-                    transcriptSheet.append(transcriptChatHost);
-                    host.setTranscriptChatHost(transcriptChatHost);
-                }
+                ensureTranscriptProbeChatHost();
                 return;
             }
             const transcriptChatHost = host.getTranscriptChatHost();
@@ -141,12 +166,34 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         tickProbeStreamingConversations: () => {
             host.tickProbeStreamingConversations();
         },
+        renderLongTranscriptForProbe: (options?: TranscriptPerfProbeOptions) => {
+            const cwd = host.getWorkspaceCwdForProbe() ?? '/workspace/perf-probe';
+            transcriptProbeConversation = buildLongTranscriptProbeConversation(cwd, options);
+            transcriptProbeTick = 0;
+            const transcriptChatHost = ensureTranscriptProbeChatHost();
+            host.setTranscriptOpenSummaryId(transcriptProbeConversation.id);
+            host.renderTranscriptForProbe(transcriptProbeConversation, transcriptChatHost);
+        },
+        tickLongTranscriptForProbe: (options?: { readonly charsPerTick?: number }) => {
+            if (!transcriptProbeConversation) {
+                return;
+            }
+            transcriptProbeTick++;
+            transcriptProbeConversation = appendLongTranscriptProbeDelta(
+                transcriptProbeConversation,
+                transcriptProbeTick,
+                options?.charsPerTick,
+            );
+            const transcriptChatHost = ensureTranscriptProbeChatHost();
+            host.renderTranscriptForProbe(transcriptProbeConversation, transcriptChatHost);
+        },
         hasProjectsForProbe: () => host.hasProjectsForProbe(),
         hasWorkspaceForProbe: () => host.hasWorkspaceForProbe(),
         getProbeDiagnostics: () => host.getProbeDiagnostics(),
         resetMetrics: () => {
             metrics.hubScrollReplaceChildren = 0;
             metrics.sidebarListReplaceChildren = 0;
+            resetTranscriptRenderMetrics();
             return readMetrics();
         },
         getMetrics: () => readMetrics(),
