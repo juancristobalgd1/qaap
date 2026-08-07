@@ -239,7 +239,9 @@ describe('inspectQaapHeadlessPage', () => {
             await browser.close();
             await new Promise<void>(resolve => server.close(() => resolve()));
         }
-    }).timeout(30_000);
+    // Three sequential Chromium navigations can each use the production page-load
+    // budget. Keep the test deadline above that aggregate budget on busy CI runners.
+    }).timeout(120_000);
 
     it('turns request/runtime diagnostics into a failed non-ready result', () => {
         const result = applyQaapHeadlessRuntimeDiagnostics({
