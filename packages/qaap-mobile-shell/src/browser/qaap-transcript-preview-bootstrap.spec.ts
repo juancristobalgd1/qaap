@@ -55,4 +55,33 @@ describe('qaap-transcript-preview-bootstrap', () => {
         expect(result).to.equal(undefined);
         expect(calls).to.deep.equal(['root:/workspace/repos/users/owner/owner/project-b:github:owner/project-b']);
     });
+
+    it('deduplicates concurrent bootstrap requests for the same service', async () => {
+        let releaseRefresh!: () => void;
+        const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+        let refreshCalls = 0;
+        const bootstrap = {
+            refreshFromProjectRoot: async (): Promise<void> => {
+                refreshCalls++;
+                await refreshGate;
+            },
+            getStateSnapshot: () => ({ descriptor: undefined }),
+        } as unknown as QaapProjectBootstrapService;
+
+        const first = ensureTranscriptDevPreview(bootstrap, {
+            workspaceRoot: '/workspace/repos/project',
+            projectId: 'project',
+            skipConversationPortProbe: true,
+        });
+        const second = ensureTranscriptDevPreview(bootstrap, {
+            workspaceRoot: '/workspace/repos/project',
+            projectId: 'project',
+            skipConversationPortProbe: true,
+        });
+
+        expect(second).to.equal(first);
+        releaseRefresh();
+        await Promise.all([first, second]);
+        expect(refreshCalls).to.equal(1);
+    });
 });
