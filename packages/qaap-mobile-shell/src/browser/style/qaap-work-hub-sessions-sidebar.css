@@ -792,7 +792,9 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-work-hub-sessions-sidebar-view-s
 /* Suppress global :focus orange ring (core index.css → --theia-focusBorder) after tap/click. */
 .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-work-hub-sessions-sidebar-project-row:focus,
 .theia-mobile-work-hub-sessions-sidebar-project-row-wrap .theia-mobile-work-hub-sessions-sidebar-project-row:focus-visible {
-  outline: none;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-project-chevron {
@@ -1051,6 +1053,13 @@ button.theia-mod-sessions-sidebar-accordion.theia-mobile-tasks-inbox-section-hea
 
 button.theia-mod-sessions-sidebar-accordion.theia-mobile-tasks-inbox-section-head:active {
   background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+}
+
+button.theia-mod-sessions-sidebar-accordion.theia-mobile-tasks-inbox-section-head:focus,
+button.theia-mod-sessions-sidebar-accordion.theia-mobile-tasks-inbox-section-head:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-accordion-chevron {

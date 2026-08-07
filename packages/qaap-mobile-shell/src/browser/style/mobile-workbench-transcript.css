@@ -4132,3 +4132,47 @@ body.theia-dark .theia-mobile-agent-web-search,
 .theia-mobile-process-accordion-run-stop+.theia-mobile-process-accordion-chevron {
   margin-left: 8px;
 }
+
+/* Do not leave any accordion header visually marked after a touch. This covers
+   native details/summary accordions and the custom disclosure headers used by
+   tool, shell, timeline, diff, and process rows. */
+details > summary:focus,
+details > summary:focus-visible,
+.theia-mobile-agent-lobe-inspector:focus,
+.theia-mobile-agent-lobe-inspector:focus-visible,
+.theia-mobile-agent-tool-head:focus,
+.theia-mobile-agent-tool-head:focus-visible,
+.theia-mobile-agent-shell-head:focus,
+.theia-mobile-agent-shell-head:focus-visible,
+.theia-mobile-agent-transcript-feedback-header:focus,
+.theia-mobile-agent-transcript-feedback-header:focus-visible,
+.theia-mobile-agent-lobe-workflow-summary:focus,
+.theia-mobile-agent-lobe-workflow-summary:focus-visible,
+.theia-mobile-agent-diff-card-head:focus,
+.theia-mobile-agent-diff-card-head:focus-visible,
+.theia-mobile-process-accordion-header:focus,
+.theia-mobile-process-accordion-header:focus-visible,
+.theia-mobile-tool-group-summary:focus,
+.theia-mobile-tool-group-summary:focus-visible,
+.theia-mobile-terminal-output-summary:focus,
+.theia-mobile-terminal-output-summary:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+@media (hover: none), (pointer: coarse) {
+  details > summary:hover,
+  details > summary:active,
+  .theia-mobile-agent-lobe-inspector:hover,
+  .theia-mobile-agent-tool-head:hover,
+  .theia-mobile-agent-shell-head:hover,
+  .theia-mobile-agent-transcript-feedback-header:hover,
+  .theia-mobile-agent-lobe-workflow-summary:hover,
+  .theia-mobile-agent-diff-card-head:hover,
+  .theia-mobile-process-accordion-header:hover,
+  .theia-mobile-tool-group-summary:hover,
+  .theia-mobile-terminal-output-summary:hover {
+    background: transparent !important;
+  }
+}

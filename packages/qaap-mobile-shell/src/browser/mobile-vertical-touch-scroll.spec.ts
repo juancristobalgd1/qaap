@@ -55,6 +55,14 @@ describe('mobile-vertical-touch-scroll', () => {
         }
     });
 
+    it('keeps the integrated terminal viewport as the native scroll boundary', () => {
+        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css).to.include('#theia-app-shell .terminal-container .xterm-viewport');
+        expect(css).to.include('overflow-y: auto !important');
+        expect(css).to.include('overscroll-behavior-y: none !important');
+    });
+
     it('registers GPU compositor scroll isolation in qaap-mobile-touch-scroll.css', () => {
         const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-mobile-touch-scroll.css');
         const css = fs.readFileSync(cssPath, 'utf8');

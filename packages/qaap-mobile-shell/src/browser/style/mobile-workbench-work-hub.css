@@ -11803,3 +11803,57 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
     background: var(--theia-editorWidget-background, #1e1e1e);
   }
 }
+
+/* Work Hub accordions must not retain a touch-selection treatment. */
+.qaap-work-hub-chat-view-host details > summary:focus,
+.qaap-work-hub-chat-view-host details > summary:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.theia-mobile-projects-row-head:focus,
+.theia-mobile-projects-row-head:focus-visible,
+.theia-mobile-agent-transcript-feedback-header:focus,
+.theia-mobile-agent-transcript-feedback-header:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-head:focus,
+.theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-head:focus-visible {
+  background: var(--qaap-mobile-row-head-bg) !important;
+}
+
+.theia-mobile-projects:not(.theia-mod-home) .theia-mobile-projects-row-head:focus,
+.theia-mobile-projects:not(.theia-mod-home) .theia-mobile-projects-row-head:focus-visible {
+  background: var(--qaap-bg, var(--theia-editor-background, var(--q-bg))) !important;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .qaap-work-hub-chat-view-host details > summary:hover,
+  .qaap-work-hub-chat-view-host details > summary:active {
+    background: transparent !important;
+  }
+
+  .theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-head:hover,
+  .theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-head:active,
+  .theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-head:focus,
+  .theia-mobile-projects.theia-mod-home .theia-mobile-projects-row-head:focus-visible {
+    background: var(--qaap-mobile-row-head-bg) !important;
+  }
+
+  .theia-mobile-projects:not(.theia-mod-home) .theia-mobile-projects-row-head:hover,
+  .theia-mobile-projects:not(.theia-mod-home) .theia-mobile-projects-row-head:active,
+  .theia-mobile-projects:not(.theia-mod-home) .theia-mobile-projects-row-head:focus,
+  .theia-mobile-projects:not(.theia-mod-home) .theia-mobile-projects-row-head:focus-visible {
+    background: var(--qaap-bg, var(--theia-editor-background, var(--q-bg))) !important;
+  }
+
+  .theia-mobile-agent-transcript-feedback-header:hover,
+  .theia-mobile-agent-transcript-feedback-header:active,
+  .theia-mobile-agent-transcript-feedback-header:focus,
+  .theia-mobile-agent-transcript-feedback-header:focus-visible {
+    background: transparent !important;
+  }
+}

@@ -428,6 +428,7 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     height: 100dvh;
     min-height: 100dvh;
     overflow: hidden;
+    overscroll-behavior-y: none;
     background: var(--theia-editor-background);
   }
 

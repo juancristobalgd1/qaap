@@ -179,6 +179,19 @@
     overflow: hidden;
   }
 
+  /*
+   * Keep the integrated terminal as the gesture boundary. `contain` still
+   * allows the browser's root pull-to-refresh affordance at the viewport edge
+   * on some Android WebViews; `none` prevents that hand-off while preserving
+   * native scrolling inside xterm.
+   */
+  #theia-app-shell .terminal-container .xterm-viewport {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: none !important;
+    touch-action: pan-y !important;
+  }
+
   #theia-app-shell .terminal-container .xterm {
     height: 100%;
   }
