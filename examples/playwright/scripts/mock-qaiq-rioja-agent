@@ -183,6 +183,24 @@ if [[ "${QAAP_MOCK_RIOJA_SUBFOLDER:-1}" != "0" ]]; then
     mkdir -p "$APP_DIR"
 fi
 mkdir -p "$APP_DIR/src"
+
+# Keep the generated app previewable when the composer flow is immediately followed by Qaap's
+# automatic visual-verification capture. The app intentionally lives in a child folder (matching
+# create-vite), so declare that launch root explicitly instead of making the visual verifier guess
+# between the empty workspace and the scaffold.
+mkdir -p .qaap
+cat > .qaap/preview.json <<JSON
+{
+  "version": 1,
+  "runtime": "custom",
+  "name": "Rioja landing preview",
+  "cwd": "${APP_DIR}",
+  "command": "npm",
+  "args": ["run", "dev"],
+  "port": 5173
+}
+JSON
+
 cd "$APP_DIR"
 
 cat > package.json <<'PKG'
@@ -303,7 +321,16 @@ emit_write_tool "tu-write-js" "${APP_DIR}/src/main.js" "src/main.js"
 
 INSTALL_OUT=""
 if command -v npm >/dev/null 2>&1; then
-    INSTALL_OUT=$(npm install --no-fund --no-audit 2>&1 || true)
+    # The E2E backend can run with a restricted HOME (and the runner cache may be unwritable). Keep
+    # this fixture self-contained so a cache-permission problem does not make the generated app
+    # impossible for Qaap's visual verifier to start.
+    NPM_CACHE_DIR="${NPM_CONFIG_CACHE:-${TMPDIR:-/tmp}/qaap-rioja-npm-cache}"
+    if ! mkdir -p "$NPM_CACHE_DIR" 2>/dev/null || ! touch "$NPM_CACHE_DIR/.qaap-write-test" 2>/dev/null; then
+        NPM_CACHE_DIR="${TMPDIR:-/tmp}/qaap-rioja-npm-cache"
+        mkdir -p "$NPM_CACHE_DIR"
+    fi
+    rm -f "$NPM_CACHE_DIR/.qaap-write-test"
+    INSTALL_OUT=$(npm install --no-fund --no-audit --cache "$NPM_CACHE_DIR" 2>&1 || true)
     emit_tool_use "tu-bash-install" "Bash" '{"command":"npm install"}'
     emit_tool_result "tu-bash-install" "$INSTALL_OUT"
 else
