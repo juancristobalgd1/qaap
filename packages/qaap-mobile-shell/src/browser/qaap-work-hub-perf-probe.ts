@@ -149,6 +149,7 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         },
         openSessionsSidebarForProbe: () => {
             host.openWorkHubSessionsSidebar();
+            host.getSessionsSidebar()?.show();
             ensureSidebarListPatched();
         },
         navigateToHomeHubForProbe: () => {

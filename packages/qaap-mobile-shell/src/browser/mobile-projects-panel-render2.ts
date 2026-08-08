@@ -609,7 +609,7 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: any): void {
             for (const cwd of cwdSet) {
                 panel.conversations.perfProbeSeedSummaries(cwd, buildProbeStreamingSummaries(cwd));
             }
-            panel.scheduleRenderList();
+            panel.renderList();
         },
         tickProbeStreamingConversations: () => {
             if (!panel.conversations) {

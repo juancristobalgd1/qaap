@@ -26,6 +26,10 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
         return this.mayProxyPort(req, port);
     }
 
+    exposePreviewForRequest(req: Request, previewId: string): QaapDevPreviewRecord | undefined {
+        return this.previewForRequest(req, previewId);
+    }
+
     exposeIdentityPreviewUrl(req: Request, record: QaapDevPreviewRecord): string {
         return this.buildIdentityPreviewUrl(req, record);
     }
@@ -242,6 +246,32 @@ describe('QaapDevPreviewEndpoint', () => {
             ep.setFakes(authed('bob'), 'alice');
             expect(ep.exposeMayProxyPort(req, 5173)).to.equal(false);
             expect(ep.touchedPorts).to.deep.equal([]);
+        });
+    });
+
+    describe('identity preview lookup in skip-auth mode', () => {
+        it('resolves and touches the registered preview without requiring a login resolver', () => {
+            const ep = new TestQaapDevPreviewEndpoint();
+            const previewId = 'p-project-c-conv-r-run-abc1234';
+            const record = {
+                previewId,
+                ownerLogin: '_dev',
+                root: '/tmp/rioja',
+                port: 5173,
+                claimedAt: 1,
+                touchedAt: 1,
+                accessToken: 'token',
+            } as QaapDevPreviewRecord;
+            const touched: Array<{ previewId: string; ownerLogin: string }> = [];
+            const mutable = ep as unknown as { auth: unknown; portRegistry: unknown };
+            mutable.auth = { authenticate: () => ({ kind: 'skip' }) };
+            mutable.portRegistry = {
+                get: (id: string) => id === previewId ? record : undefined,
+                touchPreview: (id: string, ownerLogin: string) => touched.push({ previewId: id, ownerLogin }),
+            };
+
+            expect(ep.exposePreviewForRequest({} as Request, previewId)).to.equal(record);
+            expect(touched).to.deep.equal([{ previewId, ownerLogin: '_dev' }]);
         });
     });
 

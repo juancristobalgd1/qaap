@@ -117,6 +117,14 @@ export function previewForRequestExtracted(ctx: any, req: Request | http.Incomin
         if (authResult.kind === 'unauthorized') {
             return undefined;
         }
+        if (authResult.kind === 'skip') {
+            const record = ctx.portRegistry.get(previewId);
+            if (!record) {
+                return undefined;
+            }
+            ctx.portRegistry.touchPreview(previewId, record.ownerLogin);
+            return record;
+        }
         const login = ctx.auth.resolveUserLogin(authResult);
         if (!login) {
             return undefined;
@@ -425,4 +433,3 @@ export async function proxyWebSocketExtracted(ctx: any, req: http.IncomingMessag
         });
         proxyReq.end();
 }
-
