@@ -65,7 +65,7 @@ jobs:
       - name: Build browser app
         shell: bash
         run: |
-          npm ci
+          npm ci --include=optional
           npm run build:browser
         env:
           NODE_OPTIONS: --max_old_space_size=4096
