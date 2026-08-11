@@ -27,7 +27,7 @@ COPY sample-plugins ./sample-plugins
 
 ENV NODE_OPTIONS=--max_old_space_size=4096
 
-RUN npm ci
+RUN npm ci --include=optional
 
 # @theia/cli bin/theia.js requires ../lib/theia (built by compile)
 RUN npm run compile

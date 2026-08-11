@@ -34,6 +34,9 @@ concurrency:
   group: qaap-vps-deploy
   cancel-in-progress: true
 
+env:
+  QAAP_DEPLOY_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'master' }}
+
 jobs:
   # Pre-deploy smoke gate: build the browser app, boot it with the mock QAIQ agent, and run the
   # Rioja composer UI-flow eval — which now also asserts runtime shell health (the DI container
@@ -49,7 +52,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.sha }}
+          ref: ${{ env.QAAP_DEPLOY_BRANCH }}
 
       - name: Use Node.js 24.x
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
@@ -156,7 +159,7 @@ jobs:
       - name: Checkout deploy source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.branch || github.sha }}
+          ref: ${{ env.QAAP_DEPLOY_BRANCH }}
 
       - name: Resolve immutable source and image tag
         id: source
@@ -247,24 +250,24 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
           QAAP_DEPLOY_IMAGE: ${{ needs.publish_image.outputs.image }}
           QAAP_DEPLOY_SHA: ${{ needs.publish_image.outputs.source_sha }}
+          QAAP_DEPLOY_BRANCH: ${{ env.QAAP_DEPLOY_BRANCH }}
         with:
           host: ${{ secrets.QAAP_VPS_HOST }}
           username: ${{ secrets.QAAP_VPS_USER }}
           key: ${{ secrets.QAAP_VPS_SSH_KEY }}
           port: ${{ secrets.QAAP_VPS_SSH_PORT }}
           command_timeout: 80m
-          envs: GHCR_USERNAME,GHCR_TOKEN,QAAP_DEPLOY_IMAGE,QAAP_DEPLOY_SHA
+          envs: GHCR_USERNAME,GHCR_TOKEN,QAAP_DEPLOY_IMAGE,QAAP_DEPLOY_SHA,QAAP_DEPLOY_BRANCH
           script: |
             set -euo pipefail
             REPO_DIR="${{ secrets.QAAP_VPS_REPO_DIR || '/opt/qaap' }}"
-            BRANCH="${{ github.event.inputs.branch || 'master' }}"
             trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
             cd "$REPO_DIR"
             git fetch origin
             git checkout --detach "$QAAP_DEPLOY_SHA"
             ./scripts/qaap-vps-update.sh \
-              --branch "$BRANCH" \
+              --branch "$QAAP_DEPLOY_BRANCH" \
               --revision "$QAAP_DEPLOY_SHA" \
               --image "$QAAP_DEPLOY_IMAGE"
 
