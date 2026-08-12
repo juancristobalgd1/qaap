@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as path from 'path';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
@@ -47,6 +48,6 @@ describe('agent spawn refuses a workspace-container cwd', () => {
 
     it('still accepts a concrete repository path', () => {
         const task = buildRunner().create({ prompt: 'do work', cwd: '/workspace/repos/users/alice/acme/widgets' });
-        expect(task.cwd).to.equal('/workspace/repos/users/alice/acme/widgets');
+        expect(task.cwd).to.equal(path.resolve('/workspace/repos/users/alice/acme/widgets'));
     });
 });

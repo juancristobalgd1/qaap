@@ -15,6 +15,10 @@ const qaapMobileConfig: PlaywrightTestConfig = {
     expect: {
         timeout: 120_000,
     },
+    use: {
+        ...baseConfig.use,
+        permissions: [...new Set([...(baseConfig.use?.permissions ?? []), 'clipboard-write'])],
+    },
     retries: process.env.CI ? 1 : 0,
 };
 

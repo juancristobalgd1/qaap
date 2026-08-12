@@ -15,7 +15,7 @@ bump_ts() {
 }
 
 json_escape() {
-    python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' <<<"$1"
+    printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()), end="")'
 }
 
 emit_assistant_text() {
@@ -34,6 +34,14 @@ emit_tool_use() {
     local id="$1" name="$2" input="$3"
     bump_ts
     emit_json "$(printf '{"type":"assistant","timestamp_ms":%s,"message":{"content":[{"type":"tool_use","id":"%s","name":"%s","input":%s}]}}' "$TS" "$id" "$name" "$input")"
+}
+
+emit_write_tool() {
+    local id="$1" file_path="$2" file_contents_path="$3"
+    local content
+    content="$(<"$file_contents_path")"
+    emit_tool_use "$id" "Write" "$(printf '{\"file_path\":%s,\"content\":%s}' "$(json_escape "$file_path")" "$(json_escape "$content")")"
+    emit_tool_result "$id" "$content"
 }
 
 emit_tool_result() {
@@ -150,8 +158,7 @@ if [[ "$VANILLA_MODE" -eq 1 ]]; then
 </html>
 HTML
 
-    emit_tool_use "tu-write-html" "Write" '{"file_path":"index.html"}'
-    emit_tool_result "tu-write-html" "Wrote index.html"
+    emit_write_tool "tu-write-html" "index.html" "index.html"
 
     cat > styles.css <<'CSS'
 body { font-family: Georgia, serif; margin: 0; color: #1a1210; background: #f7f1e8; }
@@ -160,8 +167,7 @@ body { font-family: Georgia, serif; margin: 0; color: #1a1210; background: #f7f1
 section { padding: 2rem; max-width: 48rem; margin: 0 auto; }
 CSS
 
-    emit_tool_use "tu-write-css" "Write" '{"file_path":"styles.css"}'
-    emit_tool_result "tu-write-css" "Wrote styles.css"
+    emit_write_tool "tu-write-css" "styles.css" "styles.css"
 
     emit_assistant_text 'Listo. Archivos estáticos creados. Preview disponible en http://127.0.0.1:8080/ cuando Qaap arranque el servidor estático.'
     emit_result 'Landing Rioja vanilla creada (index.html + styles.css). Preview estática en puerto 8080.'
@@ -177,6 +183,24 @@ if [[ "${QAAP_MOCK_RIOJA_SUBFOLDER:-1}" != "0" ]]; then
     mkdir -p "$APP_DIR"
 fi
 mkdir -p "$APP_DIR/src"
+
+# Keep the generated app previewable when the composer flow is immediately followed by Qaap's
+# automatic visual-verification capture. The app intentionally lives in a child folder (matching
+# create-vite), so declare that launch root explicitly instead of making the visual verifier guess
+# between the empty workspace and the scaffold.
+mkdir -p .qaap
+cat > .qaap/preview.json <<JSON
+{
+  "version": 1,
+  "runtime": "custom",
+  "name": "Rioja landing preview",
+  "cwd": "${APP_DIR}",
+  "command": "npm",
+  "args": ["run", "dev"],
+  "port": 5173
+}
+JSON
+
 cd "$APP_DIR"
 
 cat > package.json <<'PKG'
@@ -196,8 +220,7 @@ cat > package.json <<'PKG'
 }
 PKG
 
-emit_tool_use "tu-write-pkg" "Write" '{"file_path":"'"${APP_DIR}/package.json"'"}'
-emit_tool_result "tu-write-pkg" "Wrote package.json"
+emit_write_tool "tu-write-pkg" "${APP_DIR}/package.json" "package.json"
 
 cat > index.html <<'HTML'
 <!DOCTYPE html>
@@ -251,8 +274,7 @@ cat > index.html <<'HTML'
 </html>
 HTML
 
-emit_tool_use "tu-write-html" "Write" '{"file_path":"'"${APP_DIR}/index.html"'"}'
-emit_tool_result "tu-write-html" "Wrote index.html"
+emit_write_tool "tu-write-html" "${APP_DIR}/index.html" "index.html"
 
 cat > src/style.css <<'CSS'
 :root {
@@ -294,14 +316,21 @@ document.querySelector('.cta')?.addEventListener('click', () => {
 });
 JS
 
-emit_tool_use "tu-write-css" "Write" '{"file_path":"'"${APP_DIR}/src/style.css"'"}'
-emit_tool_result "tu-write-css" "Wrote src/style.css"
-emit_tool_use "tu-write-js" "Write" '{"file_path":"'"${APP_DIR}/src/main.js"'"}'
-emit_tool_result "tu-write-js" "Wrote src/main.js"
+emit_write_tool "tu-write-css" "${APP_DIR}/src/style.css" "src/style.css"
+emit_write_tool "tu-write-js" "${APP_DIR}/src/main.js" "src/main.js"
 
 INSTALL_OUT=""
 if command -v npm >/dev/null 2>&1; then
-    INSTALL_OUT=$(npm install --no-fund --no-audit 2>&1 || true)
+    # The E2E backend can run with a restricted HOME (and the runner cache may be unwritable). Keep
+    # this fixture self-contained so a cache-permission problem does not make the generated app
+    # impossible for Qaap's visual verifier to start.
+    NPM_CACHE_DIR="${NPM_CONFIG_CACHE:-${TMPDIR:-/tmp}/qaap-rioja-npm-cache}"
+    if ! mkdir -p "$NPM_CACHE_DIR" 2>/dev/null || ! touch "$NPM_CACHE_DIR/.qaap-write-test" 2>/dev/null; then
+        NPM_CACHE_DIR="${TMPDIR:-/tmp}/qaap-rioja-npm-cache"
+        mkdir -p "$NPM_CACHE_DIR"
+    fi
+    rm -f "$NPM_CACHE_DIR/.qaap-write-test"
+    INSTALL_OUT=$(npm install --no-fund --no-audit --cache "$NPM_CACHE_DIR" 2>&1 || true)
     emit_tool_use "tu-bash-install" "Bash" '{"command":"npm install"}'
     emit_tool_result "tu-bash-install" "$INSTALL_OUT"
 else

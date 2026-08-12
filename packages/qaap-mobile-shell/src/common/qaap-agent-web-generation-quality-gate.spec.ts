@@ -12,6 +12,7 @@ import {
 } from './qaap-agent-web-generation-quality-gate';
 
 const RIOJA_PROMPT = 'Create a landing page for Rioja wines using Vite and React with hero, products, and contact sections.';
+const RIOJA_COMPOSER_PROMPT = 'Crea una landing page para vinos Rioja con productos, historia y contacto.';
 
 describe('qaap-agent-web-generation-quality-gate', () => {
 
@@ -105,6 +106,40 @@ describe('qaap-agent-web-generation-quality-gate', () => {
             }],
         };
         expect(evaluateWebGenerationQuality(RIOJA_PROMPT, agent).ok).to.equal(true);
+    });
+
+    it('accepts the Spanish Rioja composer Write contract with file_path and content', () => {
+        const html = [
+            '<main>',
+            '  <h1>Vinos Rioja</h1>',
+            '  <section id="productos"><h2>Productos destacados</h2><p>Selección de bodegas.</p></section>',
+            '  <section id="historia"><h2>Historia</h2><p>Tradición vitivinícola.</p></section>',
+            '  <section id="contacto"><h2>Contacto</h2><p>Reserva tu visita.</p></section>',
+            '</main>',
+        ].join('\n');
+        const packageJson = JSON.stringify({ scripts: { dev: 'vite --host 127.0.0.1 --port 5173' } });
+        const agent: QaapAgentMessageDTO = {
+            id: 'a5',
+            role: 'agent',
+            content: 'Landing de Rioja lista. Ejecuta npm run dev para abrir la preview.',
+            createdAt: 1,
+            segments: [{
+                type: 'tool',
+                toolUseId: 't1',
+                name: 'Write',
+                args: JSON.stringify({ file_path: 'index.html', content: html }),
+                finished: true,
+                result: html,
+            }, {
+                type: 'tool',
+                toolUseId: 't2',
+                name: 'Write',
+                args: JSON.stringify({ file_path: 'package.json', content: packageJson }),
+                finished: true,
+                result: packageJson,
+            }],
+        };
+        expect(evaluateWebGenerationQuality(RIOJA_COMPOSER_PROMPT, agent).ok).to.equal(true);
     });
 
     it('rejects topic mismatch when branding never mentions the requested subject', () => {

@@ -101,7 +101,9 @@ describe('QaapTenantUidRegistry', () => {
         const original = process.env.QAAP_TENANT_UID_REGISTRY_PATH;
         try {
             delete process.env.QAAP_TENANT_UID_REGISTRY_PATH;
-            expect(resolveDefaultTenantUidRegistryPath('/workspace/repos')).to.equal('/workspace/.qaap/uid-registry.json');
+            expect(resolveDefaultTenantUidRegistryPath('/workspace/repos')).to.equal(
+                path.join(path.dirname('/workspace/repos'), '.qaap', 'uid-registry.json'),
+            );
             process.env.QAAP_TENANT_UID_REGISTRY_PATH = '/custom/registry.json';
             expect(resolveDefaultTenantUidRegistryPath('/workspace/repos')).to.equal('/custom/registry.json');
         } finally {

@@ -114,7 +114,12 @@ export class MobileShellWorkHubBootstrapController {
         if (!this.host.shouldActivateMobileLayout()) {
             clearMobileWorkHubBootGuard();
             setMobileWorkHubComposerHeaderChrome(false);
-            void this.host.ensureWelcomeInMainArea();
+            // A workspace-backed classic IDE already has a project context. Starting the
+            // Welcome widget there races with the first editor activation and can steal focus;
+            // keep Welcome for genuinely empty windows only.
+            if (!this.workspaceService.opened) {
+                void this.host.ensureWelcomeInMainArea();
+            }
             window.requestAnimationFrame(() => { void this.host.ensureDesktopSidePanelSizes(); });
         }
     }

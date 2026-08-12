@@ -45,7 +45,7 @@ jobs:
       - name: Install and Build
         shell: bash
         run: |
-          npm ci
+          npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
           node node_modules/electron/install.js
           ./scripts/check_git_status.sh
 
@@ -84,7 +84,38 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          npm ci
+          npm ci --fetch-retries=5 --fetch-retry-factor=2 --fetch-retry-mintimeout=1000 --fetch-retry-maxtimeout=120000
+          if [[ "${RUNNER_OS}" == "Windows" && ! -f node_modules/@vscode/windows-ca-certs/build/Release/crypt32.node ]]; then
+            fallback_dir="$(mktemp -d)"
+            ca_tarball="${fallback_dir}/windows-ca-certs.tgz"
+            addon_tarball="${fallback_dir}/node-addon-api.tgz"
+            curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 120 \
+              'https://registry.npmjs.org/@vscode/windows-ca-certs/-/windows-ca-certs-0.3.4.tgz' \
+              -o "${ca_tarball}"
+            curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 120 \
+              'https://registry.npmjs.org/node-addon-api/-/node-addon-api-8.9.1.tgz' \
+              -o "${addon_tarball}"
+            verify_integrity() {
+              local actual
+              actual="$(node -e "const fs=require('fs'),crypto=require('crypto'); process.stdout.write('sha512-'+crypto.createHash('sha512').update(fs.readFileSync(process.argv[1])).digest('base64'))" "$1")"
+              test "${actual}" = "$2"
+            }
+            verify_integrity "${ca_tarball}" \
+              'sha512-DcDLjBpu8srh6wUiZqEMyhXHzNDO81ecZOttL3+1u3Iht4CS6Qtxy5WkTPX/aDgbheASO/MK8yg6uLq58RzEWg=='
+            verify_integrity "${addon_tarball}" \
+              'sha512-4eUQWVPCUUUiBjLnHS3cXWeC6ryoPUc0U3rP7IuzapoGbzMqd/r6KKO0clr0b+snQhsrueFEhCZDdK+LK7hxKg=='
+            mkdir -p "${fallback_dir}/ca" "${fallback_dir}/addon"
+            tar -xzf "${ca_tarball}" -C "${fallback_dir}/ca"
+            tar -xzf "${addon_tarball}" -C "${fallback_dir}/addon"
+            rm -rf node_modules/@vscode/windows-ca-certs
+            mkdir -p node_modules/@vscode/windows-ca-certs/node_modules/node-addon-api
+            cp -R "${fallback_dir}/ca/package/." node_modules/@vscode/windows-ca-certs/
+            cp -R "${fallback_dir}/addon/package/." node_modules/@vscode/windows-ca-certs/node_modules/node-addon-api/
+            workspace_dir="${PWD}"
+            pushd node_modules/@vscode/windows-ca-certs
+            node "${workspace_dir}/node_modules/node-gyp/bin/node-gyp.js" rebuild
+            popd
+          fi
           node node_modules/electron/install.js
           npm run build
           git status
@@ -106,10 +137,14 @@ jobs:
           npm run test:theia
 
       - name: Test (browser)
+        env:
+          QAAP_SKIP_AUTH: 'true'
         run: |
           npm run test:browser
 
       - name: Test (electron)
         if: runner.os == 'Linux'
+        env:
+          QAAP_SKIP_AUTH: 'true'
         run: |
           xvfb-run -a npm run test:electron

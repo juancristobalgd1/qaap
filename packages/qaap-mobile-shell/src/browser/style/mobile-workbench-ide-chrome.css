@@ -24,14 +24,14 @@
 @media (max-width: 767px),
 (pointer: coarse) {
 
-  .theia-mobile-bottom-chrome-host,
-  .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar,
-  .theia-mobile-bottom-chrome-host>#theia-statusBar,
-  .theia-mobile-bottom-activity-bar,
-  .theia-mobile-side-sheet,
-  .theia-mobile-overlay-host,
-  .theia-mobile-workbench-top-bar:not([data-qaap-work-hub-top-bar]),
-  .theia-mobile-bottom-split-panel {
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-chrome-host>#theia-statusBar,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-activity-bar,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-side-sheet,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-overlay-host,
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-workbench-top-bar:not([data-qaap-work-hub-top-bar]),
+  body:not(.theia-mobile-mod-desktop-ide) .theia-mobile-bottom-split-panel {
     display: none !important;
   }
 }

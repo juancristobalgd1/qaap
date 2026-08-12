@@ -195,11 +195,9 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
         label: nls.localize('qaap/mobile/openDesktopIde', 'Open IDE'),
     }, {
         execute: () => { void ctx.openDesktopIde(); },
-        isEnabled: () => ctx.workspaceService.opened
-            && ctx.shouldActivateMobileLayout()
+        isEnabled: () => ctx.shouldActivateMobileLayout()
             && !peekPreferDesktopIde(),
-        isVisible: () => ctx.workspaceService.opened
-            && ctx.shouldActivateWorkHubLayout(),
+        isVisible: () => ctx.shouldActivateWorkHubLayout(),
     });
     // The in-IDE header-view commands remain desktop/one-column IDE commands.
     if (!matchesMobileNarrowViewport()) {

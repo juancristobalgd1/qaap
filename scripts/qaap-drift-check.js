@@ -80,7 +80,7 @@ function resolveDiffBase() {
 
 const base = resolveDiffBase();
 
-/** @type {RegExp[]} Paths allowed to differ from upstream (seams + examples + tooling). */
+/** @type {RegExp[]} Paths allowed to differ from upstream (seams + explicit QAAP tooling). */
 const ALLOWED = [
     /^packages\/qaap-/,
     /^scripts\/qaap-/,
@@ -183,8 +183,9 @@ const ALLOWED = [
     /^packages\/workspace\/src\/browser\/workspace-frontend-module\.ts$/,
     /^packages\/workspace\/src\/browser\/workspace-frontend-contribution\.ts$/,
     /^\.nvmrc$/,
-    // Examples / branding / deploy (not upstream Theia)
-    /^examples\//,
+    // QAAP Playwright harness seams (test-only; no upstream product code).
+    /^examples\/playwright\/src\/tests\/qaap-mobile\.test\.ts$/,
+    /^examples\/playwright\/src\/tests\/qaap-transcript-preview-flow\.ui-spec\.ts$/,
     // Upstream sample plugins removed in this fork — we ship our own plugin set.
     /^sample-plugins\//,
     // Fork-specific build tooling and dev scripts (not user-facing product code).
@@ -196,6 +197,12 @@ const ALLOWED = [
     /^scripts\/translation-update\.js$/,
     /^\.claude\/skills\/qaap-dev\.md$/,
     /^\.cursor\/rules\/mobile-touch-accessibility\.mdc$/,
+    // Qaap package project references: upstream package tsconfigs must include
+    // qaap-* dependencies so the TypeScript build graph resolves them.
+    /^packages\/ai-terminal\/tsconfig\.json$/,
+    /^packages\/plugin-ext-vscode\/tsconfig\.json$/,
+    /^packages\/plugin-ext\/tsconfig\.json$/,
+    /^packages\/remote\/tsconfig\.json$/,
     /^\.worktrees\/qaiq$/,
     /^qaiq$/,
     /^bom\.json$/,
@@ -381,7 +388,6 @@ const ALLOWED = [
     /^doc\/Publishing\.md$/,
     /^dev-packages\/application-manager\//,
     /^dev-packages\/application-package\//,
-    /^dev-packages\/cli\//,
     // Fork-authored QA issue reports and multi-tenancy audit — not upstream Theia content.
     /^docs\/qa\/issues\/.*\.md$/,
     /^MULTI_TENANCY_AUDIT\.md$/,

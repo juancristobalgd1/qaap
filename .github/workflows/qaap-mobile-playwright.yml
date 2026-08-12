@@ -62,8 +62,33 @@ jobs:
           NODE_OPTIONS: --max_old_space_size=4096
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare mobile E2E fixtures and agent
+        shell: bash
+        run: |
+          # The bootstrap-banner test intentionally expects a runnable Vite project. Root npm ci
+          # does not install this nested fixture because it is not a workspace package.
+          npm ci --prefix examples/playwright/src/tests/resources/qaap-vite-fixture --no-audit --no-fund
+          npm ci --prefix examples/playwright/src/tests/resources/qaap-vite-subfolder-fixture/rioja-wines-landing-page --no-audit --no-fund
+
+          # Keep agent-backed mobile tests deterministic and independent of external credentials.
+          # This is the same checked-in mock used by the dedicated Rioja E2E workflow; no product
+          # or upstream Theia code is changed by this setup.
+          MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
+          mkdir -p "${MOCK_BIN}"
+          ln -sf "${{ github.workspace }}/examples/playwright/scripts/mock-qaiq-rioja-agent" "${MOCK_BIN}/qaiq"
+          echo "${MOCK_BIN}" >> "${GITHUB_PATH}"
+
       - name: Qaap mobile UI tests (@qaap-mobile only)
         shell: bash
         run: |
           cd examples/playwright
           npm run ui-tests:qaap-mobile
+        env:
+          QAAP_SKIP_AUTH: 'true'
+          QAAP_CLOUD_MODE: local
+          QAAP_MOCK_RIOJA_SUBFOLDER: '0'
+          # Keep disconnected Playwright frontends alive for the complete suite.
+          # The default 600s grace period expires mid-run and rejects pending RPC
+          # channel opens with "transport close", taking down the test server.
+          # 45 minutes covers the full suite while preserving eventual cleanup.
+          FRONTEND_CONNECTION_TIMEOUT: '2700000'

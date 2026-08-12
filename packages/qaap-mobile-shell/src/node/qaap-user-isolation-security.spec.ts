@@ -37,8 +37,8 @@ describe('qaap-user-isolation', () => {
     it('scopes repository clones per GitHub login (case A)', () => {
         const userA = resolveRepositoryWorkspacePath(reposRoot, 'alice', 'acme', 'demo');
         const userB = resolveRepositoryWorkspacePath(reposRoot, 'bob', 'acme', 'demo');
-        expect(userA).to.equal('/workspace/repos/users/alice/acme/demo');
-        expect(userB).to.equal('/workspace/repos/users/bob/acme/demo');
+        expect(userA).to.equal(path.join(reposRoot, 'users', 'alice', 'acme', 'demo'));
+        expect(userB).to.equal(path.join(reposRoot, 'users', 'bob', 'acme', 'demo'));
         expect(userA).to.not.equal(userB);
     });
 

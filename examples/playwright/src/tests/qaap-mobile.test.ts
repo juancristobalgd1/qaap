@@ -99,7 +99,7 @@ async function openDesktopIdeViaCommandPalette(app: TheiaApp): Promise<boolean> 
         '#quick-input-container .monaco-inputbox .input, #quick-input-container .quick-input-and-message input'
     );
     await expect(input).toBeVisible({ timeout: 10_000 });
-    await input.fill('');
+    await input.fill('>');
     await input.pressSequentially('Open IDE', { delay: 40 });
 
     const clicked = await app.page.evaluate(async () => {
@@ -244,7 +244,7 @@ async function openProxiedDevPreview(app: TheiaApp, port: number): Promise<void>
         '#quick-input-container .monaco-inputbox .input, #quick-input-container .quick-input-and-message input'
     );
     await expect(input).toBeVisible();
-    await input.fill('');
+    await input.fill('>');
     await input.pressSequentially('Open URL', { delay: 40 });
 
     const clicked = await app.page.evaluate(async (url: string) => {
@@ -262,9 +262,9 @@ async function openProxiedDevPreview(app: TheiaApp, port: number): Promise<void>
         await app.page.keyboard.press('Enter');
     }
 
-    const urlInput = app.page.locator(
-        '#quick-input-container .monaco-inputbox .input, #quick-input-container .quick-input-and-message input'
-    );
+    // Qaap's mini-browser handler opens an empty preview immediately; enter the URL
+    // in the preview toolbar rather than expecting the upstream quick-input prompt.
+    const urlInput = app.page.locator('.theia-mini-browser .theia-mini-browser-url-field input');
     await expect(urlInput).toBeVisible({ timeout: 10_000 });
     await urlInput.fill(previewUrl);
     await app.page.keyboard.press('Enter');
@@ -457,7 +457,7 @@ test.describe('@qaap-mobile Classic IDE (Open IDE escape hatch)', () => {
         await app.page.close();
     });
 
-    test('opens classic Agent chat from the bottom bar', async ({ playwright, browser }) => {
+    test('opens the Agent Work Hub chat from the bottom bar', async ({ playwright, browser }) => {
         const app = await TheiaAppLoader.load({ playwright, browser });
         await app.waitForShellAndInitialized();
         await openDesktopIde(app);
@@ -466,7 +466,8 @@ test.describe('@qaap-mobile Classic IDE (Open IDE escape hatch)', () => {
         await expect(agentBtn).toBeVisible();
         await agentBtn.click();
 
-        await expect(app.page.locator('.chat-view-widget')).toBeVisible({ timeout: 15_000 });
+        await expect(app.page.locator('.theia-mobile-projects.theia-mod-agents-hub-shell-active')).toBeVisible({ timeout: 15_000 });
+        await expect(app.page.locator('.theia-mobile-projects-sticky-composer-input')).toBeVisible({ timeout: 15_000 });
 
         await app.page.close();
     });

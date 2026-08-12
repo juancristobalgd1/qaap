@@ -123,6 +123,24 @@ async function probeBootstrapListeningPorts(
 
 const CLAIM_PROBE_INTERVAL_MS = 1_000;
 
+/**
+ * Transcript settlement and visual-verification autopilot can request the same preview in the
+ * same turn. Keep one bootstrap transaction per service so both callers observe the same claim
+ * and terminal instead of racing two reservations for the same project.
+ */
+const transcriptPreviewBootstrapInFlight = new WeakMap<
+    QaapProjectBootstrapService,
+    Map<string, Promise<string | undefined>>
+>();
+
+function transcriptPreviewBootstrapRequestKey(options: EnsureTranscriptDevPreviewOptions): string {
+    return options.conversationId
+        ?? options.conversation?.id
+        ?? options.projectId
+        ?? options.workspaceRoot
+        ?? 'workspace';
+}
+
 function waitForBootstrapPreviewUrl(
     bootstrap: QaapProjectBootstrapService,
     timeoutMs: number,
@@ -177,7 +195,7 @@ function waitForBootstrapPreviewUrl(
  * Keeps the dev server alive via {@link QaapProjectBootstrapService} (persistent terminal) instead
  * of agent shell commands that time out after ~30s. Returns a same-origin preview URL when ready.
  */
-export async function ensureTranscriptDevPreview(
+async function ensureTranscriptDevPreviewExtracted(
     bootstrap: QaapProjectBootstrapService,
     options: EnsureTranscriptDevPreviewOptions = {},
 ): Promise<string | undefined> {
@@ -272,4 +290,31 @@ export async function ensureTranscriptDevPreview(
     }
     const verified = await probeReadyPreviewUrl(finalPort);
     return verified ?? normalizePreviewUrlForSameOrigin(fromBootstrap);
+}
+
+export function ensureTranscriptDevPreview(
+    bootstrap: QaapProjectBootstrapService,
+    options: EnsureTranscriptDevPreviewOptions = {},
+): Promise<string | undefined> {
+    const requestKey = transcriptPreviewBootstrapRequestKey(options);
+    const requests = transcriptPreviewBootstrapInFlight.get(bootstrap);
+    const inFlight = requests?.get(requestKey);
+    if (inFlight) {
+        return inFlight;
+    }
+
+    const pending = ensureTranscriptDevPreviewExtracted(bootstrap, options);
+    const requestMap = requests ?? new Map<string, Promise<string | undefined>>();
+    requestMap.set(requestKey, pending);
+    transcriptPreviewBootstrapInFlight.set(bootstrap, requestMap);
+    const clearRequest = (): void => {
+        if (requestMap.get(requestKey) === pending) {
+            requestMap.delete(requestKey);
+            if (requestMap.size === 0) {
+                transcriptPreviewBootstrapInFlight.delete(bootstrap);
+            }
+        }
+    };
+    void pending.then(clearRequest, clearRequest);
+    return pending;
 }

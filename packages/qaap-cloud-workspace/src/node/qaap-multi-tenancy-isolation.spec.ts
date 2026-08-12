@@ -158,8 +158,8 @@ describe('Multi-tenancy isolation', () => {
         it('chowns + 0700-locks the tenant root when uid-per-user is on', () => {
             process.env.QAAP_AGENT_UID_PER_USER = '1';
             const runner = new IsolationRunner();
-            runner.isolate(`${reposRoot}/users/${userA}/octocat/hello`);
-            expect(runner.calls).to.deep.equal([{ userRoot: `${reposRoot}/users/${userA}`, uid: 4200, gid: 4200 }]);
+            runner.isolate(path.join(reposRoot, 'users', userA, 'octocat', 'hello'));
+            expect(runner.calls).to.deep.equal([{ userRoot: path.join(reposRoot, 'users', userA), uid: 4200, gid: 4200 }]);
         });
 
         it('is a no-op when uid-per-user is off (shared-uid deployment unchanged)', () => {

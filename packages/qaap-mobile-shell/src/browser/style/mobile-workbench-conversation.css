@@ -57,20 +57,42 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host {
   pointer-events: none !important;
 }
 
-/* Desktop IDE hides the activity bar but keeps the status strip — reserve only that height
-   so bootstrap banners and snackbars sit just above the status bar. */
-body.theia-mobile-mod-desktop-ide {
-  --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-status-chrome-height, 34px);
+/* On a narrow viewport the explicit Classic IDE escape hatch keeps the mobile
+ * activity bar. The wide responsive IDE keeps the status-only chrome. */
+@media (max-width: 767px),
+(pointer: coarse) {
+  body.theia-mobile-mod-desktop-ide {
+    --theia-mobile-bottom-chrome-reserved: calc(
+      var(--theia-mobile-bottom-bar-height, 56px)
+      + var(--theia-mobile-status-chrome-height, 34px)
+    );
+  }
+
+  body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
+    display: flex !important;
+    pointer-events: auto !important;
+  }
+
+  body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host>#theia-statusBar {
+    display: block !important;
+    pointer-events: auto !important;
+  }
 }
 
-body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
-  display: none !important;
-  pointer-events: none !important;
-}
+@media (min-width: 768px) and (pointer: fine) {
+  body.theia-mobile-mod-desktop-ide {
+    --theia-mobile-bottom-chrome-reserved: var(--theia-mobile-status-chrome-height, 34px);
+  }
 
-body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host>#theia-statusBar {
-  display: block !important;
-  pointer-events: auto !important;
+  body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host>#theia-mobile-bottom-bar.theia-mobile-bottom-activity-bar {
+    display: none !important;
+    pointer-events: none !important;
+  }
+
+  body.theia-mobile-mod-desktop-ide .theia-mobile-bottom-chrome-host>#theia-statusBar {
+    display: block !important;
+    pointer-events: auto !important;
+  }
 }
 
 body.theia-mobile-mod-workhub-no-bottom-chrome.theia-mobile-mod-landing-hub-list #theia-app-shell.theia-mod-mobile-one-column .theia-mobile-projects.theia-mod-home,

@@ -29,7 +29,10 @@ const DEV_REPOS_ROOT_SEGMENT = 'workspaces';
 const QAAP_USERS_SEGMENT = 'users';
 
 function toSegments(fsPath: string): string[] {
-    return fsPath.replace(/\\/g, '/').split('/').filter(Boolean);
+    const segments = fsPath.replace(/\\/g, '/').split('/').filter(Boolean);
+    // On Windows, path.resolve('/workspace') becomes something like
+    // `D:\\workspace`. The drive prefix is not part of either managed layout.
+    return /^[A-Za-z]:$/.test(segments[0] ?? '') ? segments.slice(1) : segments;
 }
 
 /**

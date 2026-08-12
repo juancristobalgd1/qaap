@@ -38,8 +38,8 @@ describe('resolveQaapStaticPreviewFile', () => {
     });
 
     it('serves contained files and preserves the SPA fallback', async () => {
-        expect(await resolveQaapStaticPreviewFile(root, '/asset.js')).to.equal(fs.realpathSync(path.join(root, 'asset.js')));
-        expect(await resolveQaapStaticPreviewFile(root, '/dashboard?tab=active')).to.equal(fs.realpathSync(path.join(root, 'index.html')));
+        expect(await resolveQaapStaticPreviewFile(root, '/asset.js')).to.equal(await fs.promises.realpath(path.join(root, 'asset.js')));
+        expect(await resolveQaapStaticPreviewFile(root, '/dashboard?tab=active')).to.equal(await fs.promises.realpath(path.join(root, 'index.html')));
     });
 
     it('rejects plain, encoded, prefix-sibling, and malformed traversal paths', async () => {
@@ -239,7 +239,9 @@ describe('inspectQaapHeadlessPage', () => {
             await browser.close();
             await new Promise<void>(resolve => server.close(() => resolve()));
         }
-    }).timeout(30_000);
+    // Three sequential Chromium navigations can each use the production page-load
+    // budget. Keep the test deadline above that aggregate budget on busy CI runners.
+    }).timeout(120_000);
 
     it('turns request/runtime diagnostics into a failed non-ready result', () => {
         const result = applyQaapHeadlessRuntimeDiagnostics({

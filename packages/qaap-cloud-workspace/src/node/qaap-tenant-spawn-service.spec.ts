@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import type { ChildProcess } from 'child_process';
+import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
@@ -58,7 +59,7 @@ class TestOwnershipRepairService extends QaapTenantSpawnService {
 }
 
 const reposRoot = resolveQaapReposRoot();
-const tenantCwd = `${reposRoot}/users/alice/octocat/hello`;
+const tenantCwd = path.join(reposRoot, 'users', 'alice', 'octocat', 'hello');
 
 describe('QaapTenantSpawnService.prepareTenantIsolation', () => {
 

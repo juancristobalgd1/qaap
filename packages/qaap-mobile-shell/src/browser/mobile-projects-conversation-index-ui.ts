@@ -114,7 +114,7 @@ export class MobileProjectsConversationIndexUi {
         const cwd = this.host.preparedCwdByProjectId.get(project.id)
             ?? this.host.projectsService.getProjectCwd(project);
         const threadStore = this.host.conversations.threadStore;
-        let list = cwd ? threadStore.getSummariesForCwd(cwd) : [];
+        let list = cwd ? this.host.conversations.getConversationsForCwd(cwd) : [];
         if (list.length === 0) {
             list = this.host.conversations.findConversationsForProject(project);
         }

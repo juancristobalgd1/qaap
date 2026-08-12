@@ -51,6 +51,7 @@ test-results/
 **/.env
 !**/.env.example
 /qaiq/
+/.worktrees/
 /.dbg/
 /.kilo/
 **/__pycache__/

@@ -5,6 +5,8 @@
 
 import { expect } from 'chai';
 import type { Request } from '@theia/core/shared/express';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import * as path from 'path';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
 import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
@@ -22,6 +24,10 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
 
     exposeMayProxyPort(req: Request, port: number): boolean {
         return this.mayProxyPort(req, port);
+    }
+
+    exposePreviewForRequest(req: Request, previewId: string): QaapDevPreviewRecord | undefined {
+        return this.previewForRequest(req, previewId);
     }
 
     exposeIdentityPreviewUrl(req: Request, record: QaapDevPreviewRecord): string {
@@ -240,6 +246,32 @@ describe('QaapDevPreviewEndpoint', () => {
             ep.setFakes(authed('bob'), 'alice');
             expect(ep.exposeMayProxyPort(req, 5173)).to.equal(false);
             expect(ep.touchedPorts).to.deep.equal([]);
+        });
+    });
+
+    describe('identity preview lookup in skip-auth mode', () => {
+        it('resolves and touches the registered preview without requiring a login resolver', () => {
+            const ep = new TestQaapDevPreviewEndpoint();
+            const previewId = 'p-project-c-conv-r-run-abc1234';
+            const record = {
+                previewId,
+                ownerLogin: '_dev',
+                root: '/tmp/rioja',
+                port: 5173,
+                claimedAt: 1,
+                touchedAt: 1,
+                accessToken: 'token',
+            } as QaapDevPreviewRecord;
+            const touched: Array<{ previewId: string; ownerLogin: string }> = [];
+            const mutable = ep as unknown as { auth: unknown; portRegistry: unknown };
+            mutable.auth = { authenticate: () => ({ kind: 'skip' }) };
+            mutable.portRegistry = {
+                get: (id: string) => id === previewId ? record : undefined,
+                touchPreview: (id: string, ownerLogin: string) => touched.push({ previewId: id, ownerLogin }),
+            };
+
+            expect(ep.exposePreviewForRequest({} as Request, previewId)).to.equal(record);
+            expect(touched).to.deep.equal([{ previewId, ownerLogin: '_dev' }]);
         });
     });
 
@@ -610,6 +642,7 @@ describe('QaapDevPreviewEndpoint', () => {
             const firstRes = makeRes();
             const secondRes = makeRes();
             const root = 'file:///workspace/alice/project-a';
+            const canonicalProjectId = FileUri.create(path.resolve(FileUri.fsPath(root))).toString();
             await ep.exposeHandleClaim(claimReq(5173, identity, root), firstRes);
             ep.listeningPorts.add(5173);
             await ep.exposeHandleClaim(claimReq(5999, {
@@ -619,7 +652,7 @@ describe('QaapDevPreviewEndpoint', () => {
 
             expect(secondRes.record.body).to.deep.equal(firstRes.record.body);
             expect(registry.records()).to.have.length(1);
-            expect(registry.records()[0].projectId).to.equal(root);
+            expect(registry.records()[0].projectId).to.equal(canonicalProjectId);
         });
 
         it('persists a client-supplied osProcessId on a fresh process claim', async () => {

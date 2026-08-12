@@ -452,6 +452,18 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     }
 
     onStart(_app: FrontendApplication): void {
+        this.toDispose.push(this.editorManager.onCreated(() => {
+            // The classic IDE may asynchronously restore the Welcome widget while the first
+            // editor is opening. Do not let that background activation steal focus from the
+            // editor the user explicitly opened.
+            if (!peekPreferDesktopIde()) {
+                return;
+            }
+            const welcome = this.shell.getWidgetById(GETTING_STARTED_WIDGET_COMMAND);
+            if (welcome && this.shell.activeWidget === welcome) {
+                void this.shell.closeWidget(welcome.id, { save: false });
+            }
+        }));
         onStartExtracted(this, _app);
     }
 
