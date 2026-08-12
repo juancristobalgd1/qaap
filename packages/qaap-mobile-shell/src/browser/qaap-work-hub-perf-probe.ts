@@ -46,11 +46,14 @@ export interface QaapWorkHubPerfProbeHost {
     getProbeDiagnostics(): import('../common/qaap-work-hub-perf-probe').WorkHubPerfProbeDiagnostics;
 }
 
+const installedProbeHosts = new WeakMap<Window, QaapWorkHubPerfProbeHost>();
+
 export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): void {
     if (!isQaapWorkHubPerfProbeEnabled() || typeof window === 'undefined') {
         return;
     }
-    if (window.__qaapWorkHubPerfProbe) {
+    const installedHost = installedProbeHosts.get(window);
+    if (window.__qaapWorkHubPerfProbe && (!installedHost || installedHost === host)) {
         return;
     }
 
@@ -201,4 +204,5 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
     };
 
     window.__qaapWorkHubPerfProbe = api;
+    installedProbeHosts.set(window, host);
 }
