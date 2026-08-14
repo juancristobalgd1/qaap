@@ -18,6 +18,7 @@ import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcrip
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import { TranscriptFollowUpQueue } from '../common/qaap-transcript-follow-up-queue';
+import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import type { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
 import { disposeComposerContextEntries, type StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
@@ -550,15 +551,3 @@ export class MobileProjectsTranscriptSheetUi {
     }
 }
 
-let transcriptSurfaceCssLoaded = false;
-async function ensureTranscriptSurfaceCss(): Promise<void> {
-    if (transcriptSurfaceCssLoaded) {
-        return;
-    }
-    transcriptSurfaceCssLoaded = true;
-    await import('../../src/browser/style/mobile-workbench-conversation.css');
-    await import('../../src/browser/style/mobile-workbench-transcript.css');
-    // Keep the Markdown surface last: it is the single canonical owner of transcript
-    // typography, overflow, tables, headings, and rich code block presentation.
-    await import('../../src/browser/style/qaap-transcript-markdown.css');
-}
