@@ -19,6 +19,7 @@ import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 
 /** Panel surface for Work Hub inbox grouping and Review / Chat hub list rendering. */
 export interface MobileProjectsWorkHubInboxHost {
@@ -61,6 +62,11 @@ export interface MobileProjectsWorkHubInboxHost {
                 summaries: QaapAgentConversationSummaryDTO[],
                 activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
                 parentIds: ReadonlySet<string>,
+                options?: {
+                    compact?: boolean;
+                    mode?: 'parallel-run' | 'isolated-forks';
+                    onActivate?: (summary: QaapAgentConversationSummaryDTO) => void;
+                },
             ): HTMLElement;
         };
     };
@@ -288,6 +294,16 @@ export class MobileProjectsWorkHubInboxUi {
         const list = document.createElement('div');
         list.className = 'theia-mobile-projects-chats-list';
         const activeInfo = this.host.conversationIndexUi.activeInfoForProject(project);
+        const conversationItems = items
+            .filter((item): item is Extract<MobileWorkHubInboxItem, { kind: 'conversation' }> => item.kind === 'conversation')
+            .map(item => item.summary);
+        const partitioned = partitionAgentConversations(conversationItems);
+        const nestedForkIds = new Set<string>();
+        for (const forks of partitioned.forksByParentId.values()) {
+            for (const fork of forks) {
+                nestedForkIds.add(fork.id);
+            }
+        }
 
         const variantRuns = new Map<string, QaapAgentConversationSummaryDTO[]>();
         for (const item of items) {
@@ -298,9 +314,23 @@ export class MobileProjectsWorkHubInboxUi {
                 variantRuns.set(runId, bucket);
                 continue;
             }
+            if (item.kind === 'conversation' && nestedForkIds.has(item.summary.id)) {
+                continue;
+            }
             if (item.kind === 'conversation') {
                 const task = this.host.conversationIndexUi.summaryToTaskView(item.summary);
                 list.append(this.host.projectRowsUi.createTaskItem(project, task, activeInfo, item.summary, parentIds));
+                const forks = partitioned.forksByParentId.get(item.summary.id);
+                if (forks?.length) {
+                    list.append(this.host.ensureOverlayUi().parallel.createVariantRunSection(
+                        project,
+                        item.summary.id,
+                        [...forks],
+                        activeInfo,
+                        parentIds,
+                        { mode: 'isolated-forks' },
+                    ));
+                }
             } else {
                 list.append(this.createInboxPullRequestItem(project, item.pullRequest, item.agentActivityLabel));
             }

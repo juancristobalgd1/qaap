@@ -83,9 +83,12 @@ export class MobileProjectsOverlayFactoryUi {
             readPreference: key => this.host.readPreference?.(key),
             getRegisteredLanguageModels: () => this.host.getRegisteredLanguageModels?.() ?? Promise.resolve([]),
             getWorkspaceQaiqModels: () => this.host.stickyComposerQaiqModels ?? [],
-            buildVariantTaskRow: (project, summary, activeInfo, parentIds) => {
+            buildVariantTaskRow: (project, summary, activeInfo, parentIds, options) => {
                 const task = this.host.conversationIndexUi.summaryToTaskView(summary);
-                return this.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds);
+                return this.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
+                    compact: options?.compact,
+                    onActivate: options?.onActivate,
+                });
             },
         });
         const team = new MobileProjectsTeamUi({

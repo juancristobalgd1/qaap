@@ -780,6 +780,34 @@ export async function deleteConversation(id: string): Promise<void> {
     }
 }
 
+/** Keep / merge / discard an isolated Parallel worktree fork. */
+export type QaapWorktreeApplyAction = 'keep-branch' | 'merge' | 'none';
+
+export interface QaapApplyConversationWorktreeResultDTO {
+    readonly ok: boolean;
+    readonly branch?: string;
+    readonly error?: string;
+}
+
+export async function applyConversationWorktree(
+    conversationId: string,
+    action: QaapWorktreeApplyAction,
+): Promise<QaapApplyConversationWorktreeResultDTO> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/worktree/apply`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return response.json() as Promise<QaapApplyConversationWorktreeResultDTO>;
+}
+
 /** Push one AG-UI protocol event into a streaming conversation (traceEvents + wire deltas). */
 export async function postAgUiTranscriptEvent(
     conversationId: string,

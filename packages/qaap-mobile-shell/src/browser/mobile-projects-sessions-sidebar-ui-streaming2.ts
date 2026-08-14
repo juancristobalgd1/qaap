@@ -29,6 +29,7 @@ import {
     resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE, SESSIONS_SIDEBAR_PROJECT_SORT_MODES } from './mobile-projects-sessions-sidebar-ui';
+import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 
 export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLElement): void {
         const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
@@ -276,8 +277,13 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
         conversations: readonly QaapAgentConversationSummaryDTO[],
         onActivate: () => void,
         bypassLimit: boolean,): void {
-        const { visible, hiddenCount, showLess } = ctx.resolveSessionsSidebarVisibleConversations(project, conversations, bypassLimit);
-        if (visible.length === 0) {
+        const partitioned = partitionAgentConversations(conversations);
+        const { visible, hiddenCount, showLess } = ctx.resolveSessionsSidebarVisibleConversations(
+            project,
+            partitioned.roots,
+            bypassLimit,
+        );
+        if (visible.length === 0 && partitioned.variantRuns.size === 0) {
             return;
         }
         const activeInfo = ctx.host.conversationIndexUi.activeInfoForProject(project);
@@ -287,20 +293,58 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
                 parentIds.add(summary.forkedFromId);
             }
         }
+        const parallel = ctx.host.ensureOverlayUi?.()?.parallel;
+        const openConversation = (summary: QaapAgentConversationSummaryDTO): void => {
+            ctx.beginSessionsSidebarConversationActivation(summary.id);
+            onActivate();
+        };
         for (const summary of visible) {
             const task = ctx.host.conversationIndexUi.summaryToTaskView(summary);
             listHost.append(ctx.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
-                onActivate: () => {
-                    ctx.beginSessionsSidebarConversationActivation(summary.id);
-                    onActivate();
-                },
+                onActivate: () => openConversation(summary),
                 compact: true,
             }));
+            const forks = partitioned.forksByParentId.get(summary.id);
+            if (forks?.length) {
+                if (parallel) {
+                    listHost.append(parallel.createVariantRunSection(project, summary.id, [...forks], activeInfo, parentIds, {
+                        compact: true,
+                        mode: 'isolated-forks',
+                        onActivate: openConversation,
+                    }));
+                } else {
+                    for (const fork of forks) {
+                        const forkTask = ctx.host.conversationIndexUi.summaryToTaskView(fork);
+                        listHost.append(ctx.host.projectRowsUi.createTaskItem(project, forkTask, activeInfo, fork, parentIds, {
+                            onActivate: () => openConversation(fork),
+                            compact: true,
+                        }));
+                    }
+                }
+            }
+        }
+        if (parallel) {
+            for (const [runId, summaries] of partitioned.variantRuns) {
+                listHost.append(parallel.createVariantRunSection(project, runId, [...summaries], activeInfo, parentIds, {
+                    compact: true,
+                    onActivate: openConversation,
+                }));
+            }
+        } else {
+            for (const summaries of partitioned.variantRuns.values()) {
+                for (const summary of summaries) {
+                    const task = ctx.host.conversationIndexUi.summaryToTaskView(summary);
+                    listHost.append(ctx.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
+                        onActivate: () => openConversation(summary),
+                        compact: true,
+                    }));
+                }
+            }
         }
         if (bypassLimit) {
             return;
         }
-        const totalCount = conversations.length;
+        const totalCount = partitioned.roots.length;
         if (hiddenCount > 0) {
             listHost.append(ctx.createSessionsSidebarShowMoreControl(project, hiddenCount, totalCount));
         } else if (showLess) {

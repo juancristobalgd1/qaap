@@ -8,6 +8,7 @@ import { ConfirmDialog } from '@theia/core/lib/browser';
 import { MobileProjectEntry } from './mobile-projects-types';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import {
+    applyConversationWorktree,
     getConversation,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
@@ -50,6 +51,7 @@ export interface MobileProjectsParallelUiDeps {
         summary: QaapAgentConversationSummaryDTO,
         activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
         parentIds: ReadonlySet<string>,
+        options?: { compact?: boolean; onActivate?: () => void },
     ): HTMLElement;
 }
 
@@ -133,20 +135,36 @@ export class MobileProjectsParallelUi {
         summaries: QaapAgentConversationSummaryDTO[],
         activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
         parentIds: ReadonlySet<string>,
+        options?: {
+            compact?: boolean;
+            mode?: 'parallel-run' | 'isolated-forks';
+            onActivate?: (summary: QaapAgentConversationSummaryDTO) => void;
+        },
     ): HTMLElement {
+        const isolated = options?.mode === 'isolated-forks';
         const wrap = document.createElement('section');
         wrap.className = 'theia-mobile-projects-variant-group';
-        wrap.dataset.parallelRunId = runId;
+        if (isolated) {
+            wrap.classList.add('theia-mod-isolated-forks');
+            wrap.dataset.isolatedForkParentId = runId;
+        } else {
+            wrap.dataset.parallelRunId = runId;
+        }
+        if (options?.compact) {
+            wrap.classList.add('theia-mod-compact');
+        }
 
         const head = document.createElement('div');
         head.className = 'theia-mobile-projects-variant-head';
         const label = document.createElement('span');
         label.className = 'theia-mobile-projects-variant-label';
         const icon = document.createElement('span');
-        icon.className = 'codicon codicon-git-branch';
+        icon.className = isolated ? 'codicon codicon-repo-forked' : 'codicon codicon-git-branch';
         icon.setAttribute('aria-hidden', 'true');
         const text = document.createElement('span');
-        text.textContent = nls.localize('qaap/mobileProjects/variantGroup', 'Variants · {0}', String(summaries.length));
+        text.textContent = isolated
+            ? nls.localize('qaap/mobileProjects/isolatedForkGroup', 'Parallel · {0}', String(summaries.length))
+            : nls.localize('qaap/mobileProjects/variantGroup', 'Variants · {0}', String(summaries.length));
         const runStatus = document.createElement('span');
         runStatus.className = 'theia-mobile-projects-variant-run-status';
         label.append(icon, text, runStatus);
@@ -154,9 +172,15 @@ export class MobileProjectsParallelUi {
         discard.type = 'button';
         discard.className = 'theia-mobile-projects-variant-discard';
         discard.textContent = nls.localize('qaap/mobileProjects/parallelDiscard', 'Discard');
+        const anyStreaming = summaries.some(summary => summary.status === 'streaming');
+        discard.disabled = anyStreaming;
         discard.addEventListener('click', ev => {
             ev.stopPropagation();
-            void this.discardParallelRun(runId);
+            if (isolated) {
+                void this.discardIsolatedForks(summaries);
+            } else {
+                void this.discardParallelRun(runId);
+            }
         });
         head.append(label, discard);
         wrap.append(head);
@@ -166,7 +190,10 @@ export class MobileProjectsParallelUi {
         for (const summary of summaries) {
             const row = document.createElement('div');
             row.className = 'theia-mobile-projects-variant-row';
-            row.append(this.deps.buildVariantTaskRow(project, summary, activeInfo, parentIds));
+            row.append(this.deps.buildVariantTaskRow(project, summary, activeInfo, parentIds, {
+                compact: options?.compact,
+                onActivate: options?.onActivate ? () => options.onActivate?.(summary) : undefined,
+            }));
             const side = document.createElement('div');
             side.className = 'theia-mobile-projects-variant-side';
             side.append(createAgentRowAvatar({
@@ -180,7 +207,10 @@ export class MobileProjectsParallelUi {
             const meta = document.createElement('div');
             meta.className = 'theia-mobile-projects-variant-meta';
             meta.dataset.parallelConversationId = summary.id;
-            meta.append(createDiffStatsLine({}));
+            meta.append(createDiffStatsLine({
+                added: summary.linesAdded,
+                removed: summary.linesRemoved,
+            }));
             const choose = document.createElement('button');
             choose.type = 'button';
             choose.className = 'theia-mobile-projects-variant-choose';
@@ -188,15 +218,17 @@ export class MobileProjectsParallelUi {
             choose.disabled = summary.status === 'streaming';
             choose.addEventListener('click', ev => {
                 ev.stopPropagation();
-                this.openVariantChooseSheet(runId, summary);
+                this.openVariantChooseSheet(isolated ? undefined : runId, summary);
             });
             side.append(meta, choose);
             row.append(side);
             list.append(row);
         }
         wrap.append(list);
-        this.variantSections.set(runId, wrap);
-        void this.refreshVariantStatsOnce(runId);
+        if (!isolated) {
+            this.variantSections.set(runId, wrap);
+            void this.refreshVariantStatsOnce(runId);
+        }
         return wrap;
     }
 
@@ -837,7 +869,7 @@ export class MobileProjectsParallelUi {
         }
     }
 
-    openVariantChooseSheet(runId: string, summary: QaapAgentConversationSummaryDTO): void {
+    openVariantChooseSheet(runId: string | undefined, summary: QaapAgentConversationSummaryDTO): void {
         this.closeSheet();
         const root = document.createElement('div');
         root.className = 'theia-mobile-agent-log theia-mobile-parallel-root theia-mod-visible';
@@ -878,13 +910,15 @@ export class MobileProjectsParallelUi {
         this.sheetRoot = root;
     }
 
-    protected async performParallelChoose(runId: string, conversationId: string, action: QaapParallelChooseAction): Promise<void> {
+    protected async performParallelChoose(runId: string | undefined, conversationId: string, action: QaapParallelChooseAction): Promise<void> {
         if (this.busy) {
             return;
         }
         this.busy = true;
         try {
-            const result = await chooseParallelVariant(runId, conversationId, action);
+            const result = runId
+                ? await chooseParallelVariant(runId, conversationId, action)
+                : await applyConversationWorktree(conversationId, action);
             if (!result.ok) {
                 MobileSnackbar.show(result.error ?? nls.localize('qaap/mobileProjects/parallelChooseFailed', 'Could not apply that action'), { kind: 'warning' });
                 return;
@@ -896,13 +930,47 @@ export class MobileProjectsParallelUi {
                     : nls.localize('qaap/mobileProjects/parallelClosed', 'Done');
             MobileSnackbar.show(msg, { kind: 'success', duration: 2200 });
             this.closeSheet();
-            this.variantSections.delete(runId);
+            if (runId) {
+                this.variantSections.delete(runId);
+            }
             this.deps.onRunsChanged();
         } catch (error) {
             MobileSnackbar.show(error instanceof Error ? error.message : String(error), { kind: 'warning' });
         } finally {
             this.busy = false;
         }
+    }
+
+    protected async discardIsolatedForks(summaries: readonly QaapAgentConversationSummaryDTO[]): Promise<void> {
+        const confirmed = await new ConfirmDialog({
+            title: nls.localize('qaap/mobileProjects/isolatedForkDiscardTitle', 'Discard parallel forks'),
+            msg: nls.localize(
+                'qaap/mobileProjects/isolatedForkDiscardConfirm',
+                'Discard these parallel worktrees? Branches and chats will be removed. The original session stays.',
+            ),
+            ok: nls.localize('qaap/mobileProjects/parallelDiscard', 'Discard'),
+            cancel: nls.localize('qaap/mobileProjects/parallelCancel', 'Back'),
+        }).open();
+        if (!confirmed) {
+            return;
+        }
+        const errors: string[] = [];
+        for (const summary of summaries) {
+            try {
+                const result = await applyConversationWorktree(summary.id, 'none');
+                if (!result.ok) {
+                    errors.push(result.error ?? summary.title);
+                }
+            } catch (error) {
+                errors.push(error instanceof Error ? error.message : String(error));
+            }
+        }
+        if (errors.length > 0) {
+            MobileSnackbar.show(errors[0]!, { kind: 'warning' });
+        } else {
+            MobileSnackbar.show(nls.localize('qaap/mobileProjects/isolatedForkDiscarded', 'Parallel forks discarded'), { kind: 'success', duration: 1800 });
+        }
+        this.deps.onRunsChanged();
     }
 
     protected async discardParallelRun(runId: string): Promise<void> {
