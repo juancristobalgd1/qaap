@@ -109,6 +109,11 @@ export function closeStickyComposerSheetsExtracted(ctx: any): void {
             ctx.host.stickyComposerModeSheet.remove();
             ctx.host.stickyComposerModeSheet = undefined;
         }
+        ctx.teardownDeliveryModeSheetPopover?.();
+        if (ctx.host.stickyComposerDeliveryModeSheet) {
+            ctx.host.stickyComposerDeliveryModeSheet.remove();
+            ctx.host.stickyComposerDeliveryModeSheet = undefined;
+        }
         ctx.teardownApprovalPolicySheetPopover();
         if (ctx.host.stickyComposerApprovalSheet) {
             ctx.host.stickyComposerApprovalSheet.remove();

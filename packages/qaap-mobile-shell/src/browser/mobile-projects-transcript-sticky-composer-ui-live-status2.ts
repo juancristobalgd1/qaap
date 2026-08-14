@@ -72,6 +72,10 @@ import {
     TranscriptFollowUpQueue,
     type TranscriptFollowUpEntry,
 } from '../common/qaap-transcript-follow-up-queue';
+import {
+    resolveBusyFollowUpDeliveryMode,
+    shouldBypassLocalFollowUpQueue,
+} from './qaap-delivery-mode-strip';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
@@ -142,7 +146,8 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         readonly showApprovalPolicy: boolean;
         readonly isLegacyTheiaChat: boolean;
         /** When set, bypass the queue and dispatch directly with this delivery mode. */
-        readonly forceDeliveryMode?: 'parallel' | 'interrupt';
+        readonly forceDeliveryMode?: 'queue' | 'parallel' | 'interrupt';
+        readonly selectedDeliveryMode?: 'queue' | 'parallel' | 'interrupt';
     },): Promise<void> {
     const contextSnapshot = [...ctx.host.transcriptComposerContext];
     const selectedAgentId = resolveExplicitAgentForSubmit(draft, {
@@ -194,37 +199,13 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         ctx.host.transcriptComposerDraft = '';
     };
     if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
-        // An agent is still working. By default the message is queued — it appears as
-        // a draggable list item above the composer with per-item actions (send now as
-        // parallel, interrupt, edit, remove, close). The composer draft is cleared so
-        // the user can write the next queued message.
-        //
-        // Shift+Enter bypasses the queue: when forceDeliveryMode is set, the message
-        // is dispatched immediately as a parallel run (or interrupt) instead of being
-        // queued. This lets the user send a follow-up alongside the running task
-        // without an extra round-trip through the queue UI.
-        if (options.forceDeliveryMode) {
-            const entry: TranscriptFollowUpEntry = {
-                draft,
-                selectedAgentId,
-                modeId,
-                autoApprove,
-                approvalPolicyId: reconcileAgentApprovalPolicyId(
-                    ctx.host.transcriptComposerApprovalPolicyId,
-                    summary.cwd,
-                ),
-                variables,
-                imagePreviews,
-                deliveryMode: options.forceDeliveryMode,
-            };
-            clearComposerDraft();
-            const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
-            input?.dispatchEvent(new Event('input', { bubbles: true }));
-            ctx.host.transcriptComposerSendRefresh?.();
-            void ctx.startPeerRunOrQueue(project, summary, entry);
-            ctx.remountTranscriptStickyComposer();
-            return;
-        }
+        // An agent is still working. Queue is the default: the message appears as a
+        // draggable list item above the composer. Parallel / Interrupt (selector or
+        // one-shot shortcut) bypass that local queue and dispatch immediately.
+        const deliveryMode = resolveBusyFollowUpDeliveryMode({
+            forceDeliveryMode: options.forceDeliveryMode,
+            selectedDeliveryMode: options.selectedDeliveryMode,
+        });
         const entry: TranscriptFollowUpEntry = {
             draft,
             selectedAgentId,
@@ -236,12 +217,17 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
             ),
             variables,
             imagePreviews,
+            deliveryMode,
         };
         clearComposerDraft();
         const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
         input?.dispatchEvent(new Event('input', { bubbles: true }));
         ctx.host.transcriptComposerSendRefresh?.();
-        ctx.queuePeerRunMessage(summary, entry);
+        if (shouldBypassLocalFollowUpQueue(deliveryMode)) {
+            void ctx.startPeerRunOrQueue(project, summary, entry);
+        } else {
+            ctx.queuePeerRunMessage(summary, entry);
+        }
         ctx.remountTranscriptStickyComposer();
         return;
     }

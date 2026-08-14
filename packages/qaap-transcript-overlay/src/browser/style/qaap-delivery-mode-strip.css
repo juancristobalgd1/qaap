@@ -163,3 +163,63 @@
     font-size: 13px;
   }
 }
+
+/* Permanent Queue ▾ toolbar control — reuses the mode-button chrome. */
+.theia-mobile-projects-sticky-composer-delivery-mode .qaap-delivery-mode-toolbar-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.qaap-delivery-mode-menu-option .theia-mobile-sticky-composer-sheet-option-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.qaap-delivery-mode-menu-icon {
+  flex: 0 0 auto;
+  font-size: 16px;
+}
+
+.qaap-delivery-mode-menu-shortcut {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--theia-descriptionForeground, var(--theia-foreground));
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.qaap-delivery-mode-menu-option.theia-mod-parallel .qaap-delivery-mode-menu-icon {
+  color: var(--theia-focusBorder, #007fd4);
+}
+
+.qaap-delivery-mode-menu-option.theia-mod-interrupt .qaap-delivery-mode-menu-icon {
+  color: var(--theia-errorForeground, #f48771);
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker {
+  width: min(320px, calc(100vw - 16px));
+  max-height: min(360px, 50vh);
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-panel {
+  max-height: min(360px, 50vh);
+}
+
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-list {
+  padding: 6px 10px 12px;
+}
+
+.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-header {
+  border-bottom: none;
+}
+
+.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-panel {
+  border-top: none;
+}

@@ -7738,6 +7738,8 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-header,
 .qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-header,
+.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-approval-policy .theia-mobile-sticky-composer-sheet-header,
 .qaap-sticky-composer-sheet-popover.theia-mod-approval-policy-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-context-usage .theia-mobile-sticky-composer-sheet-header,
@@ -7749,6 +7751,8 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
    already frames the top, so a second line looks redundant. */
 .theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-panel,
+.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-panel,
 .theia-mobile-sticky-composer-sheet.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel {
   border-top: none;

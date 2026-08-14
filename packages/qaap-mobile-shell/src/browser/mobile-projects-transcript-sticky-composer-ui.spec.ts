@@ -340,6 +340,108 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(optimisticRenders).to.deep.equal([]);
     });
 
+    function createBusySubmitProbe(): {
+        queued: Array<{ draft: string; deliveryMode?: string }>;
+        dispatched: Array<{ draft: string; deliveryMode?: string }>;
+        seam: Record<string, unknown>;
+    } {
+        const queued: Array<{ draft: string; deliveryMode?: string }> = [];
+        const dispatched: Array<{ draft: string; deliveryMode?: string }> = [];
+        const host = {
+            transcriptComposerContext: [],
+            transcriptComposerDraft: 'follow-up',
+            transcriptComposerDraftPersistTimer: undefined,
+            transcriptComposerModeId: undefined,
+            transcriptComposerApprovalPolicyId: undefined,
+            transcriptComposerAgentModel: undefined,
+            transcriptComposerHost: undefined,
+            transcriptComposerSendRefresh: undefined,
+            resolveAttachmentPreview: () => undefined,
+            messageService: { warn: () => undefined, error: () => undefined },
+        };
+        const ui = Object.create(
+            composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+        ) as MobileProjectsTranscriptStickyComposerUi;
+        const seam = ui as unknown as Record<string, unknown>;
+        seam.host = host;
+        seam.isTranscriptStickyComposerAgentWorking = () => true;
+        seam.queuePeerRunMessage = (
+            _summary: QaapAgentConversationSummaryDTO,
+            entry: { draft: string; deliveryMode?: string },
+        ) => {
+            queued.push({ draft: entry.draft, deliveryMode: entry.deliveryMode });
+            return true;
+        };
+        seam.startPeerRunOrQueue = async (
+            _project: MobileProjectEntry,
+            _summary: QaapAgentConversationSummaryDTO,
+            entry: { draft: string; deliveryMode?: string },
+        ) => {
+            dispatched.push({ draft: entry.draft, deliveryMode: entry.deliveryMode });
+            return true;
+        };
+        seam.remountTranscriptStickyComposer = () => undefined;
+        return { queued, dispatched, seam };
+    }
+
+    it('queues a busy follow-up when the selector is Queue', async () => {
+        const probe = createBusySubmitProbe();
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            probe.seam,
+            'wait for me',
+            project,
+            { ...summary, status: 'streaming' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+                selectedDeliveryMode: 'queue',
+            },
+        );
+        expect(probe.queued).to.deep.equal([{ draft: 'wait for me', deliveryMode: 'queue' }]);
+        expect(probe.dispatched).to.deep.equal([]);
+    });
+
+    it('dispatches Parallel immediately from the selector without touching the local queue', async () => {
+        const probe = createBusySubmitProbe();
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            probe.seam,
+            'run alongside',
+            project,
+            { ...summary, status: 'streaming' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+                selectedDeliveryMode: 'parallel',
+            },
+        );
+        expect(probe.dispatched).to.deep.equal([{ draft: 'run alongside', deliveryMode: 'parallel' }]);
+        expect(probe.queued).to.deep.equal([]);
+    });
+
+    it('lets a Cmd/Ctrl+Enter interrupt override the Queue selector', async () => {
+        const probe = createBusySubmitProbe();
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            probe.seam,
+            'stop and do this',
+            project,
+            { ...summary, status: 'streaming' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+                forceDeliveryMode: 'interrupt',
+                selectedDeliveryMode: 'queue',
+            },
+        );
+        expect(probe.dispatched).to.deep.equal([{ draft: 'stop and do this', deliveryMode: 'interrupt' }]);
+        expect(probe.queued).to.deep.equal([]);
+    });
+
     it('restores draft and composer context when an active-conversation send fails', async () => {
         const errors: string[] = [];
         const contextEntry = {

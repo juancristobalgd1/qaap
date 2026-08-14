@@ -22,6 +22,7 @@ export * from './mobile-projects-transcript-overlay-state';
 export * from './mobile-projects-transcript-ui';
 export * from './qaap-transcript-code-view';
 export * from './qaap-delivery-mode-strip';
+export * from './qaap-composer-delivery-mode';
 export * from './qaap-transcript-queued-bubbles';
 export * from './qaap-transcript-live-controller';
 export * from './qaap-transcript-monaco-editor';

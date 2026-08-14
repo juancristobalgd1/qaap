@@ -35,7 +35,7 @@ export class QaapKeybindingRegistry extends KeybindingRegistry {
     private static readonly NATIVE_SHORTCUT_KEYS = new Set(['v', 'c', 'x', 'a', 'z', 'r']);
 
     override run(event: KeyboardEvent): void {
-        if (this.shouldPassthroughNativeShortcut(event)) {
+        if (this.shouldPassthroughNativeShortcut(event) || this.shouldPassthroughComposerDeliveryShortcut(event)) {
             // Reset the chord sequence so a stale partial match doesn't carry
             // over to the next keystroke.
             this.keySequence = [];
@@ -89,5 +89,21 @@ export class QaapKeybindingRegistry extends KeybindingRegistry {
         }
 
         return true;
+    }
+
+    /**
+     * Cmd/Ctrl+Enter in the sticky composer must reach the textarea handler
+     * (Interrupt) instead of a Theia command such as SCM commit.
+     */
+    protected shouldPassthroughComposerDeliveryShortcut(event: KeyboardEvent): boolean {
+        if (event.key !== 'Enter' || event.altKey || event.shiftKey) {
+            return false;
+        }
+        if (!(event.metaKey || event.ctrlKey)) {
+            return false;
+        }
+        const target = event.target;
+        return target instanceof HTMLElement
+            && target.classList.contains('theia-mobile-projects-sticky-composer-input');
     }
 }

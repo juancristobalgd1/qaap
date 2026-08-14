@@ -4,3 +4,4 @@
 // *****************************************************************************
 
 export * from '@theia/qaap-transcript-overlay/lib/browser/qaap-delivery-mode-strip';
+export * from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';

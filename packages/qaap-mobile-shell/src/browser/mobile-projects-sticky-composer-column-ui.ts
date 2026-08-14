@@ -23,6 +23,12 @@ import {
     populateApprovalPolicyToolbarButton,
     populateModeToolbarButton,
 } from './qaap-agent-ui';
+import {
+    populateDeliveryModeToolbarButton,
+    readComposerDeliveryMode,
+    resolveComposerDeliveryModeLabel,
+    resolveComposerEnterDeliveryOverride,
+} from './qaap-delivery-mode-strip';
 import { populateModelCapabilityToolbarButton } from './model-capability-popover';
 import {
     renderStickyComposerContextStrip,
@@ -75,6 +81,7 @@ export class MobileProjectsStickyComposerColumnUi {
         resolveModeLabel?: () => string;
         resolveModeId?: () => string | undefined;
         onOpenModeSheet?: (anchor: HTMLButtonElement) => void;
+        onOpenDeliveryModeSheet?: (anchor: HTMLButtonElement) => void;
         approvalPolicyId?: QaapAgentApprovalPolicyId;
         onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
         canSubmit: boolean;
@@ -89,6 +96,8 @@ export class MobileProjectsStickyComposerColumnUi {
         onSubmit: (draft: string) => void;
         /** Shift+Enter submit — bypasses the queue and dispatches as a parallel run. */
         onSubmitParallel?: (draft: string) => void;
+        /** Cmd/Ctrl+Enter submit — cancels the running agent and sends immediately. */
+        onSubmitInterrupt?: (draft: string) => void;
         onSubmitBlocked?: () => void;
         afterInputChange?: () => void;
         sendLabel?: string;
@@ -217,6 +226,25 @@ export class MobileProjectsStickyComposerColumnUi {
         const toolbarItems: HTMLElement[] = [];
         if (modeBtn) {
             toolbarItems.push(modeBtn);
+        }
+        if (options.onOpenDeliveryModeSheet) {
+            const deliveryBtn = document.createElement('button');
+            deliveryBtn.type = 'button';
+            deliveryBtn.className = 'theia-mobile-projects-sticky-composer-mode theia-mobile-projects-sticky-composer-delivery-mode';
+            const deliveryMode = readComposerDeliveryMode();
+            const deliveryLabel = resolveComposerDeliveryModeLabel(deliveryMode);
+            deliveryBtn.title = nls.localize(
+                'qaap/mobileProjects/stickyComposerDeliveryMode',
+                'Send mode: {0}',
+                deliveryLabel,
+            );
+            deliveryBtn.setAttribute('aria-label', deliveryBtn.title);
+            deliveryBtn.setAttribute('aria-haspopup', 'menu');
+            populateDeliveryModeToolbarButton(deliveryBtn, { mode: deliveryMode, label: deliveryLabel });
+            bindStickyComposerControlClick(deliveryBtn, ev => {
+                this.openComposerControlSheet(ev, input, () => options.onOpenDeliveryModeSheet!(deliveryBtn));
+            });
+            toolbarItems.push(deliveryBtn);
         }
         if (approvalBtn) {
             toolbarItems.push(approvalBtn);
@@ -407,7 +435,7 @@ export class MobileProjectsStickyComposerColumnUi {
         let lastSubmitAt = 0;
         let lastSubmitDraft = '';
         const submitCooldownMs = 600;
-        const submit = (): void => {
+        const dispatchSubmit = (handler: (draft: string) => void): void => {
             const draft = input.value.trim();
             const now = Date.now();
             if (!draft || !options.canSubmit) {
@@ -432,12 +460,15 @@ export class MobileProjectsStickyComposerColumnUi {
             options.setDraft('');
             updateSend();
             try {
-                options.onSubmit(draft);
+                handler(draft);
             } finally {
                 window.setTimeout(() => {
                     submitInFlight = false;
                 }, submitCooldownMs);
             }
+        };
+        const submit = (): void => {
+            dispatchSubmit(draft => options.onSubmit(draft));
         };
         input.addEventListener('keydown', ev => {
             if (handleStickyComposerPromptHistoryKeydown(input, ev, {
@@ -447,41 +478,21 @@ export class MobileProjectsStickyComposerColumnUi {
                 updateSend();
                 return;
             }
-            // Shift+Enter: bypass the queue and dispatch as a parallel run.
-            if (ev.key === 'Enter' && ev.shiftKey && !ev.defaultPrevented && options.onSubmitParallel) {
-                ev.preventDefault();
-                const draft = input.value.trim();
-                if (!draft || !options.canSubmit) {
-                    if (!submitInFlight) {
-                        options.onSubmitBlocked?.();
-                    }
-                    return;
-                }
-                if (submitInFlight || (draft === lastSubmitDraft && Date.now() - lastSubmitAt < submitCooldownMs)) {
-                    return;
-                }
-                submitInFlight = true;
-                lastSubmitAt = Date.now();
-                lastSubmitDraft = draft;
-                playStickyComposerSendFly(sendBtn);
-                recordStickyComposerPromptSubmission(input, draft);
-                if (syntaxHighlight) {
-                    syntaxHighlight.syncInputValue('');
-                } else {
-                    input.value = '';
-                }
-                options.setDraft('');
-                updateSend();
-                try {
-                    options.onSubmitParallel(draft);
-                } finally {
-                    window.setTimeout(() => {
-                        submitInFlight = false;
-                    }, submitCooldownMs);
-                }
+            if (ev.key !== 'Enter' || ev.defaultPrevented) {
                 return;
             }
-            if (ev.key === 'Enter' && !ev.shiftKey && !ev.defaultPrevented) {
+            const override = resolveComposerEnterDeliveryOverride(ev);
+            if (override === 'parallel') {
+                ev.preventDefault();
+                dispatchSubmit(draft => (options.onSubmitParallel ?? options.onSubmit)(draft));
+                return;
+            }
+            if (override === 'interrupt') {
+                ev.preventDefault();
+                dispatchSubmit(draft => (options.onSubmitInterrupt ?? options.onSubmit)(draft));
+                return;
+            }
+            if (!ev.shiftKey && !(ev.metaKey || ev.ctrlKey)) {
                 ev.preventDefault();
                 submit();
             }
