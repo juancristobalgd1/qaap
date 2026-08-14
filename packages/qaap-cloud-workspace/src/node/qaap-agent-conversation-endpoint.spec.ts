@@ -230,3 +230,97 @@ describe('QaapAgentConversationEndpoint isolated parallel delivery', () => {
         expect((response.body as { id: string }).id).to.equal('c1');
     });
 });
+
+describe('QaapAgentConversationEndpoint worktree apply', () => {
+
+    function buildApplyEndpoint(overrides: {
+        conv?: Record<string, unknown>;
+        live?: boolean;
+        applyResult?: { ok: boolean; branch?: string; error?: string };
+        applyError?: string;
+    } = {}): {
+        endpoint: QaapAgentConversationEndpoint;
+        deleted: string[];
+        applied: Array<Record<string, unknown>>;
+    } {
+        const conv = {
+            id: 'fork-1',
+            cwd: '/tmp/wt',
+            status: 'idle',
+            forkedFromId: 'c1',
+            worktreeBranch: 'qaap/worktree/abcd1234',
+            parallelBaseCwd: '/tmp/project',
+            ...overrides.conv,
+        };
+        const deleted: string[] = [];
+        const applied: Array<Record<string, unknown>> = [];
+        const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+        Object.assign(endpoint, {
+            store: {
+                get: (id: string) => id === conv.id ? conv : id === 'c1' ? { id: 'c1', cwd: '/tmp/project' } : undefined,
+                getActiveTaskIdsForConversation: () => overrides.live ? ['task-1'] : [],
+                delete: (id: string) => {
+                    deleted.push(id);
+                    return true;
+                },
+            },
+            worktrees: {
+                apply: async (input: Record<string, unknown>) => {
+                    applied.push(input);
+                    if (overrides.applyError) {
+                        throw new Error(overrides.applyError);
+                    }
+                    return overrides.applyResult ?? { ok: true, branch: conv.worktreeBranch };
+                },
+            },
+            auth: {
+                authenticate: () => ({ kind: 'skip' }),
+                ownsWorkspacePath: () => true,
+                denyForbidden: () => false,
+            },
+            requireAuth: () => ({ kind: 'skip' }),
+        });
+        return { endpoint, deleted, applied };
+    }
+
+    it('applies keep-branch and deletes the fork conversation', async () => {
+        const h = buildApplyEndpoint();
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'keep-branch' } }, response);
+        expect(response.statusCode).to.equal(200);
+        expect(h.applied).to.have.length(1);
+        expect(h.applied[0].action).to.equal('keep-branch');
+        expect(h.applied[0].baseCwd).to.equal('/tmp/project');
+        expect(h.deleted).to.deep.equal(['fork-1']);
+        expect(response.body).to.deep.equal({ ok: true, branch: 'qaap/worktree/abcd1234' });
+    });
+
+    it('does not delete the conversation when merge fails', async () => {
+        const h = buildApplyEndpoint({ applyResult: { ok: false, error: 'conflict' } });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
+        expect(h.deleted).to.deep.equal([]);
+        expect(response.body).to.deep.equal({ ok: false, error: 'conflict' });
+    });
+
+    it('rejects a live streaming fork with 409', async () => {
+        const h = buildApplyEndpoint({ conv: { status: 'streaming' }, live: true });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'none' } }, response);
+        expect(response.statusCode).to.equal(409);
+        expect(h.applied).to.have.length(0);
+        expect(h.deleted).to.deep.equal([]);
+    });
+
+    it('rejects multi-agent parallel-run variants', async () => {
+        const h = buildApplyEndpoint({ conv: { parallelRunId: 'run-1' } });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handleApplyWorktree(req: unknown, res: unknown): Promise<void> })
+            .handleApplyWorktree({ params: { id: 'fork-1' }, body: { action: 'merge' } }, response);
+        expect(response.statusCode).to.equal(400);
+        expect(h.applied).to.have.length(0);
+    });
+});

@@ -439,6 +439,26 @@ export interface QaapPostAgUiTranscriptEventRequest {
     readonly event: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * What to do with an isolated Parallel worktree (`forkedFromId` + `worktreeBranch`,
+ * no `parallelRunId`) when the user chooses Keep / Merge / Discard.
+ * Mirrors {@link import('./qaap-parallel-run').QaapParallelChooseAction}.
+ */
+export type QaapWorktreeApplyAction = 'keep-branch' | 'merge' | 'none';
+
+/** POST body for `/agent-conversations/:id/worktree/apply`. */
+export interface QaapApplyConversationWorktreeRequest {
+    readonly action: QaapWorktreeApplyAction;
+}
+
+export interface QaapApplyConversationWorktreeResponse {
+    readonly ok: boolean;
+    /** Branch kept or merged when {@link ok} is true. */
+    readonly branch?: string;
+    /** Populated when a `merge` action could not complete cleanly (aborted, tree untouched). */
+    readonly error?: string;
+}
+
 /** POST body for `/agent-conversations/:id/preview-bootstrap-failure`. */
 export interface QaapPostPreviewBootstrapFailureRequest {
     readonly reason?: string;

@@ -14,12 +14,15 @@ import {
     QAAP_DEFAULT_DELIVERY_MODE,
     QaapAgentConversationAllResponse,
     QaapAgentConversationListResponse,
+    QaapApplyConversationWorktreeRequest,
+    QaapApplyConversationWorktreeResponse,
     QaapCreateAgentConversationRequest,
     QaapMessageDeliveryMode,
     QaapPostAgentMessageRequest,
     QaapPostAgUiTranscriptEventRequest,
     QaapPostPreviewBootstrapFailureRequest,
     QaapUpdateAgentConversationRequest,
+    QaapWorktreeApplyAction,
 } from '../common/qaap-agent-conversation';
 import {
     QAAP_AGENT_CONVERSATION_WS_PATH,
@@ -212,6 +215,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 return;
             }
             this.handleUpdate(req, res);
+        });
+        app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/worktree/apply`, (req, res) => {
+            void this.handleApplyWorktree(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/fork`, (req, res) => {
             const conv = this.getConversationIfOwned(req, res, req.params.id);
@@ -1040,6 +1046,64 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return undefined;
         }
         return ctx;
+    }
+
+    /**
+     * Keep / merge / discard an isolated Parallel worktree fork (`forkedFromId` + `worktreeBranch`).
+     * Multi-agent {@link QaapAgentConversation.parallelRunId} variants keep using `/parallel-runs/:id/choose`.
+     */
+    protected async handleApplyWorktree(req: Request, res: Response): Promise<void> {
+        const conv = this.getConversationIfOwned(req, res, req.params.id);
+        if (!conv) {
+            return;
+        }
+        const ctx = this.auth.authenticate(req);
+        const body = (req.body ?? {}) as Partial<QaapApplyConversationWorktreeRequest>;
+        const action = body.action;
+        if (!this.isWorktreeApplyAction(action)) {
+            res.status(400).json({ error: '"action" must be keep-branch, merge, or none.' });
+            return;
+        }
+        if (conv.parallelRunId) {
+            res.status(400).json({ error: 'Use the parallel-runs API to choose a multi-agent variant.' });
+            return;
+        }
+        if (!conv.forkedFromId || !conv.worktreeBranch) {
+            res.status(400).json({ error: 'This conversation is not an isolated Parallel worktree.' });
+            return;
+        }
+        if (this.conversationHasLiveRun(conv.id, conv)) {
+            res.status(409).json({ error: 'Wait until the agent finishes before applying this worktree.' });
+            return;
+        }
+        const parent = this.store.get(conv.forkedFromId);
+        const baseCwd = conv.parallelBaseCwd ?? parent?.parallelBaseCwd ?? parent?.cwd;
+        if (!baseCwd) {
+            res.status(400).json({ error: 'The parent repository for this worktree is unknown.' });
+            return;
+        }
+        if (ctx.kind !== 'unauthorized' && !this.auth.ownsWorkspacePath(ctx, baseCwd)) {
+            this.auth.denyForbidden(res, req, 'agent_conversation', { conversationId: conv.id, cwd: baseCwd });
+            return;
+        }
+        try {
+            const result = await this.worktrees.apply({
+                worktreePath: conv.cwd,
+                branch: conv.worktreeBranch,
+                baseCwd,
+                action,
+            }) satisfies QaapApplyConversationWorktreeResponse;
+            if (result.ok) {
+                this.store.delete(conv.id);
+            }
+            res.json(result);
+        } catch (error) {
+            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+        }
+    }
+
+    protected isWorktreeApplyAction(value: unknown): value is QaapWorktreeApplyAction {
+        return value === 'keep-branch' || value === 'merge' || value === 'none';
     }
 
     protected getConversationIfOwned(req: Request, res: Response, conversationId: string): QaapAgentConversation | undefined {
