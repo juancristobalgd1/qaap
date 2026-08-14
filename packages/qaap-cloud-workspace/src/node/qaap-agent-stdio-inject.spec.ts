@@ -20,12 +20,14 @@ class FakeStdin extends EventEmitter {
 function host(overrides: {
     readonly stdio?: boolean;
     readonly pending?: boolean;
-    readonly stdin?: FakeStdin | undefined;
+    readonly stdin?: FakeStdin | null;
 } = {}): {
     readonly ctx: Parameters<typeof injectStdioUserMessageExtracted>[0];
     readonly stdin: FakeStdin | undefined;
 } {
-    const stdin = overrides.stdin === undefined ? new FakeStdin() : overrides.stdin;
+    const stdin = overrides.stdin === null
+        ? undefined
+        : (overrides.stdin ?? new FakeStdin());
     const processes = new Map();
     if (stdin) {
         processes.set('t1', { stdin } as never);
@@ -68,7 +70,7 @@ describe('injectStdioUserMessageExtracted', () => {
         const closed = new FakeStdin();
         closed.writable = false;
         expect(injectStdioUserMessageExtracted(host({ stdin: closed }).ctx, 't1', 'hello')).to.equal(false);
-        expect(injectStdioUserMessageExtracted(host({ stdin: undefined }).ctx, 't1', 'hello')).to.equal(false);
+        expect(injectStdioUserMessageExtracted(host({ stdin: null }).ctx, 't1', 'hello')).to.equal(false);
         expect(injectStdioUserMessageExtracted(host().ctx, 't1', '   ')).to.equal(false);
     });
 });
