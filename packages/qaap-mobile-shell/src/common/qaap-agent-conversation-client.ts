@@ -34,7 +34,7 @@ export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
  * Mirrors `QaapMessageDeliveryMode` from `@theia/qaap-cloud-workspace`.
  *
  * - `'queue'` (default): enqueue and process when the agent finishes.
- * - `'parallel'`: spawn in an isolated worktree (Parallel Runs).
+ * - `'parallel'`: spawn a new conversation in an isolated git worktree.
  * - `'interrupt'`: cancel the running agent and process immediately.
  */
 export type QaapMessageDeliveryMode = 'queue' | 'parallel' | 'interrupt';
@@ -778,6 +778,34 @@ export async function deleteConversation(id: string): Promise<void> {
     if (!response.ok && response.status !== 404) {
         throw new Error(response.statusText);
     }
+}
+
+/** Keep / merge / discard an isolated Parallel worktree fork. */
+export type QaapWorktreeApplyAction = 'keep-branch' | 'merge' | 'none';
+
+export interface QaapApplyConversationWorktreeResultDTO {
+    readonly ok: boolean;
+    readonly branch?: string;
+    readonly error?: string;
+}
+
+export async function applyConversationWorktree(
+    conversationId: string,
+    action: QaapWorktreeApplyAction,
+): Promise<QaapApplyConversationWorktreeResultDTO> {
+    const response = await fetch(
+        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/worktree/apply`,
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action }),
+        },
+    );
+    if (!response.ok) {
+        throw new Error((await response.text()) || response.statusText);
+    }
+    return response.json() as Promise<QaapApplyConversationWorktreeResultDTO>;
 }
 
 /** Push one AG-UI protocol event into a streaming conversation (traceEvents + wire deltas). */

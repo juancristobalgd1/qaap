@@ -16,6 +16,11 @@ import type { MobileProjectsConversations } from './mobile-projects-conversation
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
+import {
+    partitionAgentConversations,
+    type IsolatedForkGroupingFields,
+    type PartitionedAgentConversations,
+} from '../common/qaap-isolated-fork-grouping';
 
 /** Panel surface for per-project conversation queries and task counters. */
 export interface MobileProjectsConversationIndexHost {
@@ -124,6 +129,12 @@ export class MobileProjectsConversationIndexUi {
         // Hide archived conversations from the main list. They remain in the thread store
         // and can be restored via the kebab menu's "Unarchive" action.
         return merged.filter(summary => !summary.archived);
+    }
+
+    partitionConversations<T extends IsolatedForkGroupingFields>(
+        items: readonly T[],
+    ): PartitionedAgentConversations<T> {
+        return partitionAgentConversations(items);
     }
 
     mergeConversationSummaries(

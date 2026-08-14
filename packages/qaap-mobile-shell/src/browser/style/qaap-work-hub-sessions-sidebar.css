@@ -868,6 +868,20 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-work-hub-sessions-sidebar-view-s
   padding: 0 6px 0 8px;
 }
 
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-group {
+  margin: 0 0 6px;
+  padding: 2px 0 4px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-head {
+  padding: 2px 8px 4px 12px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-choose,
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-variant-discard {
+  touch-action: manipulation;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mod-sessions-sidebar-projects-head {
   position: sticky;
   top: 0;

@@ -73,6 +73,10 @@ import {
     type TranscriptFollowUpEntry,
 } from '../common/qaap-transcript-follow-up-queue';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import {
+    readComposerDeliveryMode,
+    resolveComposerDeliveryModeLabel,
+} from './qaap-delivery-mode-strip';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
@@ -206,6 +210,35 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
         ctx.host.transcriptComposerToolApprovalRules = undefined;
     }
     const activityOptions = ctx.buildTranscriptComposerActivityOptions(project, summary);
+    const submitComposerFollowUp = (draft: string, forceDeliveryMode?: 'parallel' | 'interrupt'): void => {
+        if (hasPendingComposerContextEntries(ctx.host.transcriptComposerContext)) {
+            ctx.host.stickyComposerContextUi.notifyPendingComposerAttachments();
+            return;
+        }
+        // Re-resolve the idle-composer target at SUBMIT time. The mount
+        // closure can hold a stale project captured during boot — e.g.
+        // the ephemeral workspace-container entry fabricated before the
+        // projects list loaded — and an agent turn must never inherit
+        // that cwd from the closure (observed live: the chip showed the
+        // real project while the created conversation targeted the
+        // multi-repo container).
+        let submitProject = project;
+        let submitSummary = summary;
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            const fresh = ctx.workHub.resolveShellProject();
+            if (fresh && fresh.id !== project.id) {
+                submitProject = fresh;
+                submitSummary = ctx.workHub.resolveShellSummary(fresh) ?? summary;
+            }
+        }
+        void ctx.submitTranscriptComposerDraft(draft, submitProject, submitSummary, chatHost, {
+            resolvedPinnedId: ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(submitProject, submitSummary),
+            showApprovalPolicy,
+            isLegacyTheiaChat,
+            forceDeliveryMode,
+            selectedDeliveryMode: readComposerDeliveryMode(),
+        });
+    };
     const column = ctx.host.stickyComposerColumnUi.buildStickyComposerColumn({
         project,
         composerCwd: cwd,
@@ -251,6 +284,9 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
         onOpenModeSheet: modes.length > 1
             ? anchor => { ctx.host.transcriptComposerUi.openTranscriptComposerModeSheet(project, summary, modes, anchor); }
             : undefined,
+        onOpenDeliveryModeSheet: anchor => {
+            ctx.host.transcriptComposerUi.openTranscriptComposerDeliveryModeSheet(anchor);
+        },
         approvalPolicyId: showApprovalPolicy ? ctx.host.transcriptComposerApprovalPolicyId : undefined,
         onOpenApprovalPolicySheet: showApprovalPolicy
             ? anchor => {
@@ -304,55 +340,16 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
             ? () => { /* Legacy Theia chat is not agent-switchable */ }
             : anchor => { ctx.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary, anchor); },
         sendLabel: ctx.isTranscriptStickyComposerAgentWorking()
-            ? nls.localize('qaap/mobileProjects/transcriptQueue', 'Queue')
+            ? resolveComposerDeliveryModeLabel(readComposerDeliveryMode())
             : nls.localize('qaap/mobileProjects/transcriptSend', 'Send'),
         onSubmit: draft => {
-            if (hasPendingComposerContextEntries(ctx.host.transcriptComposerContext)) {
-                ctx.host.stickyComposerContextUi.notifyPendingComposerAttachments();
-                return;
-            }
-            // Re-resolve the idle-composer target at SUBMIT time. The mount
-            // closure can hold a stale project captured during boot — e.g.
-            // the ephemeral workspace-container entry fabricated before the
-            // projects list loaded — and an agent turn must never inherit
-            // that cwd from the closure (observed live: the chip showed the
-            // real project while the created conversation targeted the
-            // multi-repo container).
-            let submitProject = project;
-            let submitSummary = summary;
-            if (isAgentsHubIdleConversationSummary(summary)) {
-                const fresh = ctx.workHub.resolveShellProject();
-                if (fresh && fresh.id !== project.id) {
-                    submitProject = fresh;
-                    submitSummary = ctx.workHub.resolveShellSummary(fresh) ?? summary;
-                }
-            }
-            void ctx.submitTranscriptComposerDraft(draft, submitProject, submitSummary, chatHost, {
-                resolvedPinnedId: ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(submitProject, submitSummary),
-                showApprovalPolicy,
-                isLegacyTheiaChat,
-            });
+            submitComposerFollowUp(draft);
         },
         onSubmitParallel: draft => {
-            if (hasPendingComposerContextEntries(ctx.host.transcriptComposerContext)) {
-                ctx.host.stickyComposerContextUi.notifyPendingComposerAttachments();
-                return;
-            }
-            let submitProject = project;
-            let submitSummary = summary;
-            if (isAgentsHubIdleConversationSummary(summary)) {
-                const fresh = ctx.workHub.resolveShellProject();
-                if (fresh && fresh.id !== project.id) {
-                    submitProject = fresh;
-                    submitSummary = ctx.workHub.resolveShellSummary(fresh) ?? summary;
-                }
-            }
-            void ctx.submitTranscriptComposerDraft(draft, submitProject, submitSummary, chatHost, {
-                resolvedPinnedId: ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(submitProject, submitSummary),
-                showApprovalPolicy,
-                isLegacyTheiaChat,
-                forceDeliveryMode: 'parallel',
-            });
+            submitComposerFollowUp(draft, 'parallel');
+        },
+        onSubmitInterrupt: draft => {
+            submitComposerFollowUp(draft, 'interrupt');
         },
         getMentionOptions: () => ctx.host.stickyComposerContextUi.resolveComposerMentionOptions(ctx.host.transcriptComposerBackendAgents, false),
         getVariableOptions: ctx.host.getComposerVariables

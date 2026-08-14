@@ -239,6 +239,20 @@ export function listExtracted(ctx: any, cwd: string | undefined): QaapAgentConve
         .map(toConversationSummary);
 }
 
+/**
+ * How many isolated parallel children of {@link parentId} are still streaming (or visually
+ * settled with a live backend task). Used to cap delivery-mode `'parallel'` spawns.
+ */
+export function countStreamingForksExtracted(ctx: any, parentId: string): number {
+    let count = 0;
+    for (const conv of ctx.conversations.values() as Iterable<QaapAgentConversation>) {
+        if (conv.forkedFromId === parentId && (conv.status === 'streaming' || conv.status === 'settled')) {
+            count++;
+        }
+    }
+    return count;
+}
+
 export function getExtracted(ctx: any, id: string): QaapAgentConversation | undefined {
     const conv = ctx.conversations.get(id);
     if (!conv) {
@@ -323,6 +337,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentConversationRe
         ...(request.parallelRunId ? { parallelRunId: request.parallelRunId } : {}),
         ...(request.parallelBaseCwd ? { parallelBaseCwd: request.parallelBaseCwd } : {}),
         ...(request.worktreeBranch ? { worktreeBranch: request.worktreeBranch } : {}),
+        ...(request.forkedFromId ? { forkedFromId: request.forkedFromId } : {}),
         ...(request.autoApprove === false ? { autoApprove: false } : {}),
         ...(request.contextPreamble ? { contextPreamble: request.contextPreamble } : {}),
         ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
@@ -401,8 +416,9 @@ export function enqueuePendingMessageExtracted(
  * to save tokens: one LLM call with the merged content instead of N calls with the full
  * conversation history each.
  *
- * Called from `applyTaskOutcome` after the conversation status settles to `'idle'`, and
- * from `maybeDrainAtToolRoundBoundary` between tool calls (optimization A).
+ * Called from `applyTaskOutcome` after the conversation status settles to `'idle'`.
+ * Mid-turn steering uses {@link maybeDrainAtToolRoundBoundaryExtracted} (stdin inject)
+ * because this helper refuses to spawn while status is `'streaming'`.
  *
  * If {@link QAAP_COALESCE_WINDOW_MS} > 0, the drain is deferred by that many milliseconds
  * so that messages arriving in quick succession are batched together (optimization C).
@@ -572,43 +588,72 @@ export function cancelQueuedMessageExtracted(ctx: any, conversationId: string, q
 }
 
 /**
- * Optimization A: drain queued messages at tool-round boundaries (between tool calls),
- * not just at end of turn. Inspired by Claude Code's `drainPendingMessages()` which
- * checks the pending queue after each tool call completes.
+ * Optimization A: inject queued follow-ups at tool-round boundaries (between tool
+ * calls), not just at end of turn. Inspired by Claude Code's `drainPendingMessages()`.
  *
  * Called from `applyAgUiTranscriptEventExtracted` when a `TOOL_CALL_END` or
- * `TOOL_CALL_RESULT` event arrives. If the conversation has pending messages and the
- * current run is the only active one (no peer runs), the queue is drained immediately
- * — the agent picks up the queued messages as part of its next tool round instead of
- * waiting for the entire turn to finish.
+ * `TOOL_CALL_RESULT` event arrives. The follow-up is written to the live agent's
+ * stream-json stdin so the next LLM round sees it. If stdin injection is unavailable
+ * (Codex argv prompt, closed pipe, pending approval), the queue stays until the
+ * end-of-turn drain.
  *
- * This is safe because:
- * - The agent process is still running (status is 'streaming'), so we don't need to
- *   spawn a new task — we just make the pending messages visible to the next LLM call.
- * - The coalesce window (optimization C) still applies, so rapid tool completions
- *   don't trigger N separate drains.
- * - If there are peer runs (parallel variants), we skip — draining mid-turn with
- *   concurrent writers would race.
+ * No coalesce delay here: the window is the gap between tools. Waiting
+ * {@link QAAP_COALESCE_WINDOW_MS} would miss that round.
  */
 export function maybeDrainAtToolRoundBoundaryExtracted(ctx: any, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv?.pendingUserMessages?.length) {
         return;
     }
-    // Only drain at tool-round boundaries when the agent is actively streaming.
-    // If the turn already settled to 'idle'/'failed', the normal end-of-turn drain
-    // will handle it.
     if (conv.status !== 'streaming') {
         return;
     }
-    // Don't drain mid-turn if there are peer runs (parallel variants) — concurrent
-    // writers on the same conversation would race. The end-of-turn drain handles
-    // those when all runs finish.
-    if (ctx.hasOtherActiveTaskForConversation(conversationId)) {
+    const activeTaskIds = ctx.getActiveTaskIdsForConversation(conversationId) as string[];
+    if (activeTaskIds.length !== 1) {
         return;
     }
-    // Drain with coalesce window — rapid tool completions batch together.
-    ctx.drainPendingMessages(conversationId);
+    const taskId = activeTaskIds[0];
+    const batch = conv.pendingUserMessages.slice(0, QAAP_MAX_BATCH_SIZE);
+    const remaining = conv.pendingUserMessages.slice(QAAP_MAX_BATCH_SIZE);
+    const mergedContent = batch.length === 1
+        ? batch[0].content
+        : batch.map((message: QaapPendingUserMessage) => message.content).join('\n\n---\n\n');
+    if (!ctx.taskRunner.injectStdioUserMessage(taskId, mergedContent)) {
+        return;
+    }
+    const existingTimer = ctx.drainTimers?.get(conversationId);
+    if (existingTimer !== undefined) {
+        clearTimeout(existingTimer);
+        ctx.drainTimers.delete(conversationId);
+    }
+    const first = batch[0];
+    const userMessage: QaapAgentMessage = {
+        id: batch.length === 1 ? first.id : randomUUID(),
+        role: 'user',
+        content: mergedContent,
+        createdAt: Date.now(),
+        taskId,
+        ...(first.clientMessageId ? { clientMessageId: first.clientMessageId } : {}),
+        ...(first.turnAgentId ? { turnAgentId: first.turnAgentId } : {}),
+        ...(first.turnAgentModel ? { turnAgentModel: first.turnAgentModel } : {}),
+        ...(batch.length > 1 ? { batchedFromMessageIds: batch.map((message: QaapPendingUserMessage) => message.id) } : {}),
+    };
+    const next: QaapAgentConversation = {
+        ...conv,
+        messages: [...conv.messages, userMessage],
+        pendingUserMessages: remaining.length > 0 ? remaining : undefined,
+        updatedAt: Date.now(),
+    };
+    ctx.conversations.set(conversationId, next);
+    ctx.fire({
+        type: 'pending-drained',
+        conversationId,
+        cwd: conv.cwd,
+        drainedCount: batch.length,
+    });
+    ctx.fire({ type: 'message', conversationId, cwd: next.cwd, message: userMessage });
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    void ctx.persist();
 }
 
 /**
@@ -695,10 +740,9 @@ export function postUserMessageExtracted(ctx: any, id: string,
             //   Inspired by Cursor "Send after current message" and Claude Code
             //   `pendingMessages` (drained at tool-round boundaries).
             //
-            // - 'parallel': spawn a peer run in an isolated worktree (Parallel Runs). The
-            //   cap on parallel variants is enforced here. If the cap is hit, fall back to
-            //   queueing instead of throwing — the user's message is never lost.
-            //   Inspired by Devin Managed Devins and Cursor Multitask.
+            // - 'parallel': the HTTP layer spawns a NEW conversation in an isolated
+            //   worktree. If that isolation is not available, the store queues instead of
+            //   writing a second agent into this working tree.
             //
             // - 'interrupt': cancel the running agent and process the new message
             //   immediately. Inspired by Cursor "Stop & send" and Codex "Steer".
@@ -725,28 +769,25 @@ export function postUserMessageExtracted(ctx: any, id: string,
                 }
                 // Status is now idle — fall through to normal processing below.
             } else if (deliveryMode === 'parallel') {
-                if (activeTaskIds.length >= QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION) {
-                    // Cap hit: fall back to queueing instead of throwing 429.
-                    // The user's message is never lost.
-                    return ctx.enqueuePendingMessage(
-                        conv,
-                        {
-                            id: randomUUID(),
-                            role: 'user',
-                            content,
-                            createdAt: Date.now(),
-                            ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
-                        },
-                        ctx.resolveTurnAgent(conv, content, agentOverride),
-                        agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv, content, agentOverride))
-                            ? agentModelOverride
-                            : undefined,
-                        internal?.clientMessageId,
-                    );
-                }
-                // Fall through to normal processing — the backend will spawn a peer run
-                // alongside the existing one (in-session multitasking with shared working
-                // tree, same as before but now explicit opt-in by the user).
+                // Isolated parallel is created by the HTTP layer (new conversation + worktree).
+                // Reaching the store with `'parallel'` while a run is live means isolation was
+                // unavailable (not a git repo, cap hit, tests) — queue instead of a same-tree
+                // peer run. No IAD writes two agents into one working tree.
+                return ctx.enqueuePendingMessage(
+                    conv,
+                    {
+                        id: randomUUID(),
+                        role: 'user',
+                        content,
+                        createdAt: Date.now(),
+                        ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+                    },
+                    ctx.resolveTurnAgent(conv, content, agentOverride),
+                    agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv, content, agentOverride))
+                        ? agentModelOverride
+                        : undefined,
+                    internal?.clientMessageId,
+                );
             } else {
                 // Default: 'queue' — enqueue the message, don't spawn a peer run.
                 const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);

@@ -94,11 +94,10 @@ describe('Multitasking fix — no cancel on new message to streaming conversatio
         base: QaapAgentConversationDTO,
         options: { parallel?: boolean },
     ): { cancelled: boolean; parallel: boolean } {
-        const cancelled = false; // The fix never cancels — it sets parallel instead.
+        const cancelled = false; // Never cancel the live turn to make room for a follow-up.
         if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel) {
             // OLD (bug): await cancelConversation(summary.id);
-            // NEW (fix): options.parallel = true;
-            options.parallel = true;
+            // NEW: leave the turn running; the backend queues (default delivery mode).
         }
         return { cancelled, parallel: !!options.parallel };
     }
@@ -113,12 +112,12 @@ describe('Multitasking fix — no cancel on new message to streaming conversatio
         expect(isConversationTurnVisuallySettled(conv)).to.equal(false);
     });
 
-    it('simulates the fixed submit path: parallel flag is set instead of cancelling', () => {
+    it('simulates the fixed submit path: does not cancel and does not auto-parallel', () => {
         const base = makeStreamingSettledConv();
         const options: { parallel?: boolean } = {};
         const result = applyMultitaskingFix(base, options);
         expect(result.cancelled).to.equal(false);
-        expect(result.parallel).to.equal(true);
+        expect(result.parallel).to.equal(false);
     });
 
     it('does NOT set parallel when the conversation is idle (no running task to preserve)', () => {
@@ -228,8 +227,7 @@ describe('Multitasking fix — no cancel on new message to streaming conversatio
             // Step 2: the fixed decision logic
             if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel) {
                 // OLD (bug): await cancelConv(summary.id); base = await getConv(summary.id);
-                // NEW (fix):
-                options.parallel = true;
+                // NEW: do not cancel and do not auto-parallel — POST with default queue.
             }
 
             // Step 3: verify cancel was NOT called

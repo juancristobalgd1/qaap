@@ -3506,6 +3506,11 @@ body>.theia-mobile-transcript-files-menu {
   opacity: 0.5;
 }
 
+.theia-mobile-projects-variant-discard:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .theia-mobile-agent-transcript-real-chat {
   flex: 1 1 auto;
   min-height: 0;

@@ -7802,6 +7802,8 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-header,
 .qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-header,
+.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-header,
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-approval-policy .theia-mobile-sticky-composer-sheet-header,
 .qaap-sticky-composer-sheet-popover.theia-mod-approval-policy-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-context-usage .theia-mobile-sticky-composer-sheet-header,
@@ -7813,6 +7815,8 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
    already frames the top, so a second line looks redundant. */
 .theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-panel,
+.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-panel,
+.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-panel,
 .theia-mobile-sticky-composer-sheet.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel {
   border-top: none;
@@ -11700,173 +11704,6 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   }
 }
 
-
-/* ─── Inline delivery mode strip (above composer, non-blocking) ───────────── */
-
-.qaap-delivery-mode-strip {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  margin: 0 0 6px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--theia-focusBorder, #007fd4) 25%, transparent);
-  background: color-mix(in srgb, var(--theia-editorWidget-background, #1e1e1e) 92%, var(--theia-focusBorder, #007fd4) 8%);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  animation: qaap-delivery-strip-in 0.18s ease-out;
-}
-
-@keyframes qaap-delivery-strip-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.qaap-delivery-mode-strip-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.qaap-delivery-mode-strip-icon {
-  flex: 0 0 auto;
-  font-size: 14px;
-  color: var(--theia-focusBorder, #007fd4);
-  animation: qaap-delivery-spin 1.4s linear infinite;
-}
-
-@keyframes qaap-delivery-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.qaap-delivery-mode-strip-draft {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 13px;
-  line-height: 1.35;
-  color: var(--theia-foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.qaap-delivery-mode-strip-dismiss {
-  flex: 0 0 auto;
-  border: none;
-  background: transparent;
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
-  padding: 2px 4px;
-  cursor: pointer;
-  border-radius: 6px;
-  opacity: 0.6;
-  transition: opacity 0.12s, background 0.12s;
-}
-
-.qaap-delivery-mode-strip-dismiss:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
-}
-
-.qaap-delivery-mode-strip-pills {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.qaap-delivery-mode-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 5px 12px;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 15%, transparent);
-  border-radius: 20px;
-  background: transparent;
-  color: var(--theia-foreground);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.qaap-delivery-mode-pill:hover {
-  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
-  border-color: color-mix(in srgb, var(--theia-foreground) 25%, transparent);
-}
-
-.qaap-delivery-mode-pill-icon {
-  font-size: 14px;
-}
-
-.qaap-delivery-mode-pill-label {
-  line-height: 1;
-}
-
-/* Queue pill — neutral/secondary */
-.qaap-delivery-mode-pill.theia-mod-queue {
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
-}
-
-/* Parallel pill — accent/blue */
-.qaap-delivery-mode-pill.theia-mod-parallel {
-  color: var(--theia-focusBorder, #007fd4);
-  border-color: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 30%, transparent);
-}
-
-.qaap-delivery-mode-pill.theia-mod-parallel:hover {
-  background: color-mix(in srgb, var(--theia-focusBorder, #007fd4) 12%, transparent);
-}
-
-/* Interrupt pill — danger/red */
-.qaap-delivery-mode-pill.theia-mod-interrupt {
-  color: var(--theia-errorForeground, #f48771);
-  border-color: color-mix(in srgb, var(--theia-errorForeground, #f48771) 30%, transparent);
-}
-
-.qaap-delivery-mode-pill.theia-mod-interrupt:hover {
-  background: color-mix(in srgb, var(--theia-errorForeground, #f48771) 12%, transparent);
-}
-
-/* Narrow viewport */
-@media (max-width: 767px) {
-  .qaap-delivery-mode-strip {
-    padding: 8px 10px;
-    border-radius: 10px;
-  }
-
-  .qaap-delivery-mode-strip-draft {
-    font-size: 13px;
-  }
-
-  .qaap-delivery-mode-pill {
-    padding: 6px 14px;
-    font-size: 13px;
-  }
-
-  .qaap-delivery-mode-strip {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: var(--theia-editorWidget-background, #1e1e1e);
-  }
-}
 
 /* Work Hub accordions must not retain a touch-selection treatment. */
 .qaap-work-hub-chat-view-host details > summary:focus,

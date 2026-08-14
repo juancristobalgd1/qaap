@@ -28,6 +28,9 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('aria-live="polite"');
         expect(source).to.include("prefers-reduced-motion:reduce");
         expect(source).to.include("button.setAttribute('aria-busy', 'true')");
+        expect(source).to.include('cursor:not-allowed');
+        expect(source).to.include('.qaap-login-btn[aria-busy="true"]{cursor:wait}');
+        expect(source).to.not.include('.qaap-login-btn:disabled{opacity:.85;cursor:wait}');
     });
 
     it('provides a visible focus ring, touch handling and reduced motion in the bundled CSS', () => {
@@ -36,5 +39,7 @@ describe('Qaap login gate accessibility contract', () => {
         expect(css).to.include('touch-action: manipulation');
         expect(css).to.include('@media (prefers-reduced-motion: reduce)');
         expect(css).to.not.include('transition: all');
+        expect(css).to.include('cursor: not-allowed');
+        expect(css).to.match(/\.qaap-login-btn\[aria-busy="true"\][\s\S]*cursor:\s*wait/);
     });
 });

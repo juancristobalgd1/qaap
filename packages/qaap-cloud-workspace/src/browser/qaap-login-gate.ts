@@ -162,6 +162,7 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
     if (button) {
         button.disabled = true;
         button.setAttribute('aria-disabled', 'true');
+        button.classList.add('qaap-login-btn--unavailable');
         const label = button.querySelector('.qaap-login-btn-label');
         if (label) {
             label.textContent = 'GitHub sign-in unavailable';

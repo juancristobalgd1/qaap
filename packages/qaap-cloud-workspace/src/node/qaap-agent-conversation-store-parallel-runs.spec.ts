@@ -15,6 +15,9 @@ import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 class TestTaskRunner extends QaapAgentTaskRunner {
     readonly createdIds: string[] = [];
     readonly cancelledIds: string[] = [];
+    readonly injectedPrompts: string[] = [];
+    /** When true, mid-turn stdin inject succeeds (stream-json agents). */
+    injectResult = false;
     /** Runs while `detail()` is awaited — used to simulate a peer run streaming mid-outcome. */
     onDetailAwaited?: () => void;
     private nextId = 1;
@@ -33,6 +36,14 @@ class TestTaskRunner extends QaapAgentTaskRunner {
     override cancel(id: string): QaapAgentTask | undefined {
         this.cancelledIds.push(id);
         return undefined;
+    }
+
+    override injectStdioUserMessage(_taskId: string, content: string): boolean {
+        if (!this.injectResult) {
+            return false;
+        }
+        this.injectedPrompts.push(content);
+        return true;
     }
 
     override list(): QaapAgentTask[] {
@@ -140,7 +151,7 @@ async function waitForPendingDrain(): Promise<void> {
     await new Promise<void>(resolve => setTimeout(resolve, QAAP_COALESCE_WINDOW_MS + 10));
 }
 
-describe('QaapAgentConversationStore in-session parallel runs', () => {
+describe('QaapAgentConversationStore never same-tree peer-runs', () => {
 
     function createStore(): { store: TestConversationStore; runner: TestTaskRunner } {
         const runner = new TestTaskRunner();
@@ -150,30 +161,20 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
         return { store, runner };
     }
 
-    it('spawns a peer run instead of rejecting or cancelling the turn in flight (delivery mode: parallel)', () => {
+    it('queues delivery mode parallel instead of spawning a second agent on the same tree', () => {
         const { store, runner } = createStore();
 
         store.postUserMessage('c1', 'first');
         const afterSecond = store.postUserMessage('c1', 'second', undefined, undefined, undefined,
             undefined, undefined, undefined, undefined, undefined, 'parallel');
 
-        expect(runner.createdIds).to.deep.equal(['task-1', 'task-2']);
-        // The first run is never cancelled to make room for the second.
+        expect(runner.createdIds).to.deep.equal(['task-1']);
         expect(runner.cancelledIds).to.deep.equal([]);
-        expect(store.activeTaskIds('c1')).to.have.length(2);
+        expect(store.activeTaskIds('c1')).to.have.length(1);
         expect(afterSecond.status).to.equal('streaming');
-        expect(afterSecond.messages.filter(m => m.role === 'user').map(m => m.content)).to.deep.equal(['first', 'second']);
-    });
-
-    it('gives each peer run its own user message and task (delivery mode: parallel)', () => {
-        const { store } = createStore();
-
-        store.postUserMessage('c1', 'first');
-        const conv = store.postUserMessage('c1', 'second', undefined, undefined, undefined,
-            undefined, undefined, undefined, undefined, undefined, 'parallel');
-
-        const taskIds = conv.messages.filter(m => m.role === 'user').map(m => m.taskId);
-        expect(taskIds).to.deep.equal(['task-1', 'task-2']);
+        expect(afterSecond.pendingUserMessages).to.have.length(1);
+        expect(afterSecond.pendingUserMessages![0].content).to.equal('second');
+        expect(afterSecond.messages.filter(m => m.role === 'user').map(m => m.content)).to.deep.equal(['first']);
     });
 
     it('uses the optimistic client message id to make a retried submit idempotent', () => {
@@ -193,30 +194,15 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
             .to.equal('pending-user-123');
     });
 
-    it('caps how many agents may share one session (delivery mode: parallel)', () => {
+    it('does not 429 when many parallel follow-ups arrive — they queue', () => {
         const { store } = createStore();
-        for (let i = 0; i < MAX_CONCURRENT_CONVERSATION_RUNS; i++) {
+        store.postUserMessage('c1', 'first');
+        for (let i = 0; i < MAX_CONCURRENT_CONVERSATION_RUNS + 2; i++) {
             store.postUserMessage('c1', `run ${i}`, undefined, undefined, undefined,
                 undefined, undefined, undefined, undefined, undefined, 'parallel');
         }
-        // One more parallel message falls back to queueing instead of throwing 429.
-        const afterOverflow = store.postUserMessage('c1', 'one too many', undefined, undefined, undefined,
-            undefined, undefined, undefined, undefined, undefined, 'parallel');
-        expect(store.activeTaskIds('c1')).to.have.length(MAX_CONCURRENT_CONVERSATION_RUNS);
-        // The overflow message is queued, not lost.
-        expect(afterOverflow.pendingUserMessages).to.have.length(1);
-    });
-
-    it('keeps the session streaming until the LAST peer run settles (delivery mode: parallel)', () => {
-        const { store } = createStore();
-        store.postUserMessage('c1', 'first');
-        store.postUserMessage('c1', 'second', undefined, undefined, undefined,
-            undefined, undefined, undefined, undefined, undefined, 'parallel');
-
-        // task-1 finishing while task-2 still runs must not switch the session off.
-        expect(store.statusWhenRunSettles('c1', 'task-1', 'idle')).to.equal('streaming');
-        // A run that dies does not fail the whole session either.
-        expect(store.statusWhenRunSettles('c1', 'task-1', 'failed')).to.equal('streaming');
+        expect(store.activeTaskIds('c1')).to.have.length(1);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(MAX_CONCURRENT_CONVERSATION_RUNS + 2);
     });
 
     it('recovers a stale streaming conversation that has no live run', () => {
@@ -230,37 +216,6 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
         expect(store.activeTaskIds('c2')).to.deep.equal(['task-1']);
     });
 
-    it('does not drop what a peer run streamed while a settling run awaited its task detail', async () => {
-        const { store, runner } = createStore();
-        store.postUserMessage('c1', 'first');
-        const conv = store.postUserMessage('c1', 'second', undefined, undefined, undefined,
-            undefined, undefined, undefined, undefined, undefined, 'parallel');
-        const secondUserMessageId = conv.messages.filter(m => m.role === 'user')[1].id;
-        // The peer keeps streaming into the same conversation record mid-outcome. Deriving the
-        // write-back from the pre-await snapshot would clobber this message.
-        runner.onDetailAwaited = () => store.appendPeerMessage('c1', 'peer output');
-
-        await store.settleRun('c1', secondUserMessageId, 'task-2');
-
-        const contents = store.get('c1')!.messages.map(m => m.content);
-        expect(contents).to.include('peer output');
-    });
-
-    it('stops ONE run by its user message and leaves the peer working', () => {
-        const { store, runner } = createStore();
-        store.postUserMessage('c1', 'first');
-        const conv = store.postUserMessage('c1', 'second', undefined, undefined, undefined,
-            undefined, undefined, undefined, undefined, undefined, 'parallel');
-        const firstUserMessageId = conv.messages.filter(m => m.role === 'user')[0].id;
-
-        const after = store.cancelRun('c1', firstUserMessageId);
-
-        expect(runner.cancelledIds).to.deep.equal(['task-1']);
-        // The peer keeps the session alive — a per-run stop is not a session stop.
-        expect(after?.status).to.equal('streaming');
-        expect(store.activeTaskIds('c1')).to.deep.equal(['task-2']);
-    });
-
     it('leaves the session idle when the run stopped was the last one', () => {
         const { store } = createStore();
         const conv = store.postUserMessage('c1', 'only');
@@ -272,16 +227,20 @@ describe('QaapAgentConversationStore in-session parallel runs', () => {
         expect(store.activeTaskIds('c1')).to.deep.equal([]);
     });
 
-    it('stop cancels every run in the session, not just the newest', () => {
-        const { store, runner } = createStore();
-        store.postUserMessage('c1', 'first');
-        store.postUserMessage('c1', 'second', undefined, undefined, undefined,
-            undefined, undefined, undefined, undefined, undefined, 'parallel');
-
-        const cancelled = store.cancel('c1');
-
-        expect(runner.cancelledIds).to.have.members(['task-1', 'task-2']);
-        expect(cancelled?.status).to.equal('idle');
+    it('counts streaming forks of a parent conversation', () => {
+        const { store } = createStore();
+        store.seed({
+            ...idleConversation('child'),
+            forkedFromId: 'c1',
+            status: 'streaming',
+        });
+        store.seed({
+            ...idleConversation('idle-child'),
+            forkedFromId: 'c1',
+            status: 'idle',
+        });
+        expect(store.countStreamingForks('c1')).to.equal(1);
+        expect(store.countStreamingForks('missing')).to.equal(0);
     });
 });
 
@@ -413,6 +372,59 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', function (
         expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
         expect(store.get('c1')!.messages.filter(m => m.role === 'user').map(m => m.content))
             .to.include('queued after failure');
+    });
+});
+
+describe('QaapAgentConversationStore delivery mode: queue (tool-round inject)', () => {
+
+    function createStore(): { store: TestConversationStore; runner: TestTaskRunner } {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        store.seed(idleConversation('c1'));
+        return { store, runner };
+    }
+
+    it('leaves the queue in place when the live agent cannot take stdin follow-ups', () => {
+        const { store, runner } = createStore();
+        store.postUserMessage('c1', 'first');
+        store.postUserMessage('c1', 'queued');
+        store.maybeDrainAtToolRoundBoundary('c1');
+        expect(runner.injectedPrompts).to.deep.equal([]);
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+        expect(store.get('c1')!.messages.filter(m => m.role === 'user').map(m => m.content))
+            .to.deep.equal(['first']);
+    });
+
+    it('injects queued follow-ups into the live run without spawning a peer task', () => {
+        const { store, runner } = createStore();
+        runner.injectResult = true;
+        store.postUserMessage('c1', 'first');
+        store.postUserMessage('c1', 'also run tests');
+        store.maybeDrainAtToolRoundBoundary('c1');
+        expect(runner.injectedPrompts).to.deep.equal(['also run tests']);
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
+        const users = store.get('c1')!.messages.filter(m => m.role === 'user');
+        expect(users.map(m => m.content)).to.deep.equal(['first', 'also run tests']);
+        expect(users[1].taskId).to.equal('task-1');
+    });
+
+    it('batches several queued follow-ups into one stdin user message', () => {
+        const { store, runner } = createStore();
+        runner.injectResult = true;
+        store.postUserMessage('c1', 'first');
+        store.postUserMessage('c1', 'queued 1');
+        store.postUserMessage('c1', 'queued 2');
+        store.maybeDrainAtToolRoundBoundary('c1');
+        expect(runner.injectedPrompts).to.have.length(1);
+        expect(runner.injectedPrompts[0]).to.include('queued 1');
+        expect(runner.injectedPrompts[0]).to.include('queued 2');
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        const batched = store.get('c1')!.messages.find(m => m.batchedFromMessageIds?.length === 2);
+        expect(batched).to.not.be.undefined;
+        expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
     });
 });
 

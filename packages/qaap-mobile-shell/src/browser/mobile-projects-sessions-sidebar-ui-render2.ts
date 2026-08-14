@@ -22,6 +22,7 @@ import {
     QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
     type WorkHubSessionsSidebarFingerprintInput,
 } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
+import { expandConversationSlots, partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import {
     QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
@@ -370,12 +371,16 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: any): Se
     const pinnedGroups = ctx.collectSessionsSidebarPinnedGroups(projects, query);
     for (const { project, conversations } of pinnedGroups) {
         const parentIds = ctx.collectParentIds(conversations);
+        const partitioned = partitionAgentConversations(conversations);
         const { visible } = ctx.resolveSessionsSidebarVisibleConversations(
             project,
-            conversations,
+            partitioned.roots,
             bypassConversationLimit,
         );
-        for (const summary of visible) {
+        for (const summary of [
+            ...expandConversationSlots(visible, partitioned.forksByParentId),
+            ...[...partitioned.variantRuns.values()].flat(),
+        ]) {
             entries.push({ project, summary, pinned: true, parentIds, onActivate });
         }
     }
@@ -392,12 +397,16 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: any): Se
             continue;
         }
         const parentIds = ctx.collectParentIds(conversations);
+        const partitioned = partitionAgentConversations(conversations);
         const { visible } = ctx.resolveSessionsSidebarVisibleConversations(
             project,
-            conversations,
+            partitioned.roots,
             bypassConversationLimit,
         );
-        for (const summary of visible) {
+        for (const summary of [
+            ...expandConversationSlots(visible, partitioned.forksByParentId),
+            ...[...partitioned.variantRuns.values()].flat(),
+        ]) {
             entries.push({ project, summary, pinned: false, parentIds, onActivate });
         }
     }

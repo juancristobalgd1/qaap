@@ -63,6 +63,22 @@ export interface MobileProjectsSessionsSidebarHost {
         projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     };
 
+    ensureOverlayUi?(): {
+        parallel: {
+            createVariantRunSection(
+                project: MobileProjectEntry,
+                runId: string,
+                summaries: QaapAgentConversationSummaryDTO[],
+                activeInfo: ReturnType<import('./mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
+                parentIds: ReadonlySet<string>,
+                options?: {
+                    compact?: boolean;
+                    mode?: 'parallel-run' | 'isolated-forks';
+                    onActivate?: (summary: QaapAgentConversationSummaryDTO) => void;
+                },
+            ): HTMLElement;
+        };
+    };
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;

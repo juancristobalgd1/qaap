@@ -23,6 +23,23 @@ export interface QaapConversationWorktree {
     readonly branch: string;
 }
 
+/** Keep / merge / discard an isolated Parallel worktree (delivery mode `'parallel'`). */
+export type QaapConversationWorktreeApplyAction = 'keep-branch' | 'merge' | 'none';
+
+export interface QaapConversationWorktreeApplyInput {
+    readonly worktreePath: string;
+    readonly branch: string;
+    /** Base repository to merge into / unregister the worktree from. */
+    readonly baseCwd: string;
+    readonly action: QaapConversationWorktreeApplyAction;
+}
+
+export interface QaapConversationWorktreeApplyResult {
+    readonly ok: boolean;
+    readonly branch?: string;
+    readonly error?: string;
+}
+
 /**
  * Provisions isolated git worktrees for single conversations started from the composer's
  * "New Worktree" destination. Mirrors the parallel-run layout: worktrees live under the OS
@@ -54,6 +71,80 @@ export class QaapConversationWorktreeService {
         this.tenantSpawn.provisionTenantDir(cwd, path.dirname(worktreePath));
         await this.mutatingGit(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
         return { worktreePath, branch };
+    }
+
+    /**
+     * Apply Keep / Merge / Discard to one isolated Parallel worktree. Mirrors
+     * {@link QaapParallelRunStore.choose} for a single fork (no sibling variants).
+     */
+    async apply(input: QaapConversationWorktreeApplyInput): Promise<QaapConversationWorktreeApplyResult> {
+        const worktreePath = path.resolve(input.worktreePath ?? '');
+        const baseCwd = path.resolve(input.baseCwd ?? '');
+        const branch = input.branch.trim();
+        if (!branch) {
+            throw new Error('A worktree branch is required.');
+        }
+        if (!path.isAbsolute(baseCwd) || !this.isDirectory(baseCwd)) {
+            throw new Error('A valid absolute base repository directory is required.');
+        }
+        await this.assertGitRepo(baseCwd);
+
+        if (input.action === 'none') {
+            await this.removeWorktree(baseCwd, worktreePath).catch(() => undefined);
+            await this.deleteBranch(baseCwd, branch).catch(() => undefined);
+            return { ok: true, branch };
+        }
+
+        // SEC-1: commit writes objects into the shared base-repo .git; merge checks out into
+        // the base tree. Both must run as the tenant uid over a tenant-owned base repo.
+        this.tenantSpawn.prepareTenantIsolation(baseCwd);
+        if (this.isDirectory(worktreePath)) {
+            await this.commitWorktree(worktreePath, `qaap: parallel fork ${branch}`);
+        } else if (input.action === 'merge') {
+            return { ok: false, error: 'The isolated worktree is no longer on disk.' };
+        }
+
+        if (input.action === 'merge') {
+            try {
+                await this.mutatingGit(baseCwd, ['merge', '--no-ff', '--no-edit', branch]);
+            } catch (error) {
+                await this.mutatingGit(baseCwd, ['merge', '--abort']).catch(() => undefined);
+                return {
+                    ok: false,
+                    error: `Merge failed (your tree was left untouched): ${this.errorMessage(error)}`,
+                };
+            }
+            await this.removeWorktree(baseCwd, worktreePath).catch(() => undefined);
+            await this.deleteBranch(baseCwd, branch).catch(() => undefined);
+            return { ok: true, branch };
+        }
+
+        await this.removeWorktree(baseCwd, worktreePath).catch(() => undefined);
+        return { ok: true, branch };
+    }
+
+    protected async commitWorktree(worktreePath: string, message: string): Promise<void> {
+        const status = await this.git(worktreePath, ['status', '--porcelain']);
+        if (!status.trim()) {
+            return;
+        }
+        await this.mutatingGit(worktreePath, ['add', '-A']);
+        await this.mutatingGit(worktreePath, [
+            '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
+            'commit', '--no-verify', '-m', message,
+        ]);
+    }
+
+    protected async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
+        await this.git(cwd, ['worktree', 'remove', '--force', worktreePath]);
+    }
+
+    protected async deleteBranch(cwd: string, branch: string): Promise<void> {
+        await this.git(cwd, ['branch', '-D', branch]);
+    }
+
+    protected errorMessage(error: unknown): string {
+        return error instanceof Error ? error.message : String(error);
     }
 
     /** Run a MUTATING git over the tenant repo under the tenant uid (setpriv). See QaapTenantSpawnService. */

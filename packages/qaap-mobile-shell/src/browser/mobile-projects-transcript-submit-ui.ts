@@ -203,9 +203,9 @@ export class MobileProjectsTranscriptSubmitUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /**
-             * Start this message as a peer run beside the turn already streaming (in-session
-             * multitasking) instead of taking over the conversation: the backend spawns a second
-             * agent, so the open turn must not be cancelled on the way in.
+             * Opt into isolated-worktree parallel (a new conversation). Prefer the composer
+             * delivery-mode strip; this flag is kept so older callers still map to
+             * `deliveryMode: 'parallel'`.
              */
             parallel?: boolean;
             /**
@@ -349,18 +349,11 @@ export class MobileProjectsTranscriptSubmitUi {
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_start');
         let base = await getConversation(summary.id);
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
-        // In-session multitasking: when the conversation is already streaming, a new user
-        // message spawns a peer run alongside the in-flight turn instead of cancelling it.
-        // The backend supports up to MAX_CONCURRENT_CONVERSATION_RUNS (3) simultaneous runs
-        // per conversation; if the cap is hit, it throws QaapMaxConcurrentRunsError which
-        // the caller catches and queues. Previously, a "visually settled" streaming turn was
-        // cancelled here — but that killed legitimate in-flight work (e.g. a turn that had
-        // finished its tool calls but was still finalizing on the backend).
-        if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel) {
-            // Don't cancel — let the POST go through as a peer run. The backend handles
-            // concurrency limits and will throw if the cap is exceeded.
-            // Mark as parallel so the POST path knows this is a concurrent send.
-            options.parallel = true;
+        // A follow-up on a still-streaming conversation must not cancel the live turn.
+        // Delivery defaults to `'queue'` (backend pendingUserMessages). Explicit parallel
+        // isolation is opted into via the delivery-mode strip / Shift+Enter.
+        if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel && !options.deliveryMode) {
+            options.deliveryMode = 'queue';
         }
         // Skip the second optimistic render if the pending is already in transcriptLastConv
         // from renderInstantSubmitOptimistic — avoids double-painting the pending bubble when
@@ -401,6 +394,22 @@ export class MobileProjectsTranscriptSubmitUi {
             this.host.conversations?.recordSubmitLatencyMark(summary.id, 'post_message_end');
             const nextSummary = conversationToSummary(updated);
             this.host.conversations?.recordSnapshot(nextSummary);
+            if (updated.id !== summary.id) {
+                // Isolated parallel: the backend spawned a new worktree conversation. Switch
+                // the open transcript to that thread instead of painting it onto the parent.
+                this.host.seedTranscriptOptimisticSubmit?.(nextSummary, outbound, options.selectedAgentId, options.imagePreviews);
+                this.host.transcriptOpenSummaryId = updated.id;
+                this.host.transcriptOpenSummary = nextSummary;
+                this.host.transcriptComposerSummary = nextSummary;
+                const spawnedHost = this.host.resolveActiveTranscriptChatHost();
+                if (spawnedHost) {
+                    this.host.transcriptLastFingerprint = undefined;
+                    this.host.transcriptMessagesUi.renderTranscriptMessages(spawnedHost, updated);
+                }
+                this.host.applyTaskStartedToProject(nextSummary.cwd, content, updated.id);
+                this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
+                return;
+            }
             const refreshedChatHost = this.host.resolveActiveTranscriptChatHost();
             if (refreshedChatHost) {
                 this.renderTranscriptSubmitMessages(refreshedChatHost, updated, summary);

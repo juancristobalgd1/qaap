@@ -14,7 +14,9 @@ Qaap runs a hosted agent (a CLI) that executes shell commands and edits files in
 per-user workspaces. Understand the isolation model before exposing it publicly:
 
 - **Single-user is safe by default.** One person on their own box: the defaults
-  are fine.
+  are fine. **Inviting a second user onto the same instance is not a current
+  product milestone.** Do not treat this tree as multi-tenant-ready until you
+  explicitly flip that and run the VPS verification below.
 - **Multi-user requires hardening.** In a shared container one tenant's agent
   could read other tenants' secrets and code on the shared filesystem. Before
   inviting other users you **must**:

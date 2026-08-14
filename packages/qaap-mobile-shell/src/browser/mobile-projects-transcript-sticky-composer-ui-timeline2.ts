@@ -20,6 +20,7 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
+    type QaapMessageDeliveryMode,
 } from '../common/qaap-agent-conversation-client';
 import { createComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
 import {
@@ -533,12 +534,13 @@ export async function interruptQueuedFollowUpExtracted(ctx: any, project: Mobile
 export async function dispatchQueuedFollowUpInParallelExtracted(ctx: any, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     entry: TranscriptFollowUpEntry,): Promise<void> {
-    // The row already left the queue — repaint before the round-trip so the tap feels instant.
     ctx.refreshComposerActivityStack();
-    if (await ctx.startIsolatedRunIfRequested(project, entry)) {
-        return;
+    (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode = 'parallel';
+    const ok = await ctx.startPeerRunOrQueue(project, summary, entry);
+    if (!ok) {
+        ctx.host.transcriptFollowUpQueue.unshift(summary.id, entry);
+        ctx.refreshComposerActivityStack();
     }
-    await ctx.submitQueuedFollowUpEntry(project, summary, entry, { parallel: true });
 }
 
 export async function startIsolatedRunIfRequestedExtracted(ctx: any, project: MobileProjectEntry,

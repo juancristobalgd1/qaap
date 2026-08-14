@@ -442,6 +442,9 @@ export class MobileProjectsStickyComposerRenderUi {
             onOpenModeSheet: modes.length > 1
                 ? anchor => { this.host.stickyComposerSheetsUi.openStickyComposerModeSheet(project, modes, anchor); }
                 : undefined,
+            onOpenDeliveryModeSheet: anchor => {
+                this.host.stickyComposerSheetsUi.openStickyComposerDeliveryModeSheet(anchor);
+            },
             approvalPolicyId: showApprovalPolicy ? this.host.stickyComposerApprovalPolicyId : undefined,
             onOpenApprovalPolicySheet: showApprovalPolicy
                 ? anchor => {
