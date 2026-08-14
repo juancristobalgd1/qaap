@@ -384,7 +384,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         return { queued, dispatched, seam };
     }
 
-    it('queues a busy follow-up when the selector is Queue', async () => {
+    it('queues a busy follow-up by default', async () => {
         const probe = createBusySubmitProbe();
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
             probe.seam,
@@ -396,14 +396,13 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
                 resolvedPinnedId: 'qaiq',
                 showApprovalPolicy: false,
                 isLegacyTheiaChat: false,
-                selectedDeliveryMode: 'queue',
             },
         );
         expect(probe.queued).to.deep.equal([{ draft: 'wait for me', deliveryMode: 'queue' }]);
         expect(probe.dispatched).to.deep.equal([]);
     });
 
-    it('dispatches Parallel immediately from the selector without touching the local queue', async () => {
+    it('does not let a leftover Parallel preference skip the local queue', async () => {
         const probe = createBusySubmitProbe();
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
             probe.seam,
@@ -418,11 +417,11 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
                 selectedDeliveryMode: 'parallel',
             },
         );
-        expect(probe.dispatched).to.deep.equal([{ draft: 'run alongside', deliveryMode: 'parallel' }]);
-        expect(probe.queued).to.deep.equal([]);
+        expect(probe.queued).to.deep.equal([{ draft: 'run alongside', deliveryMode: 'queue' }]);
+        expect(probe.dispatched).to.deep.equal([]);
     });
 
-    it('lets a Cmd/Ctrl+Enter interrupt override the Queue selector', async () => {
+    it('lets Cmd/Ctrl+Enter interrupt without a composer selector', async () => {
         const probe = createBusySubmitProbe();
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
             probe.seam,
@@ -435,7 +434,6 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
                 showApprovalPolicy: false,
                 isLegacyTheiaChat: false,
                 forceDeliveryMode: 'interrupt',
-                selectedDeliveryMode: 'queue',
             },
         );
         expect(probe.dispatched).to.deep.equal([{ draft: 'stop and do this', deliveryMode: 'interrupt' }]);
