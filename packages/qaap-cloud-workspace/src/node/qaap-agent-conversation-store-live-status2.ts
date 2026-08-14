@@ -308,9 +308,8 @@ export function applyAgUiTranscriptEventExtracted(ctx: any, conversationId: stri
     ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
     ctx.schedulePersist();
     // Optimization A: drain queued messages at tool-round boundaries. When a tool
-    // call completes (TOOL_CALL_END or TOOL_CALL_RESULT), check if there are pending
-    // messages and drain them so the agent picks them up in its next tool round
-    // instead of waiting for the entire turn to finish.
+    // call completes (TOOL_CALL_END or TOOL_CALL_RESULT), inject pending follow-ups
+    // into the live stream-json agent so the next LLM round sees them.
     if (event.type === 'TOOL_CALL_END' || event.type === 'TOOL_CALL_RESULT') {
         ctx.maybeDrainAtToolRoundBoundary(conversationId);
     }

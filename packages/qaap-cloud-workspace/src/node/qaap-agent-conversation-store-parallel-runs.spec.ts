@@ -15,6 +15,9 @@ import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 class TestTaskRunner extends QaapAgentTaskRunner {
     readonly createdIds: string[] = [];
     readonly cancelledIds: string[] = [];
+    readonly injectedPrompts: string[] = [];
+    /** When true, mid-turn stdin inject succeeds (stream-json agents). */
+    injectResult = false;
     /** Runs while `detail()` is awaited — used to simulate a peer run streaming mid-outcome. */
     onDetailAwaited?: () => void;
     private nextId = 1;
@@ -33,6 +36,14 @@ class TestTaskRunner extends QaapAgentTaskRunner {
     override cancel(id: string): QaapAgentTask | undefined {
         this.cancelledIds.push(id);
         return undefined;
+    }
+
+    override injectStdioUserMessage(_taskId: string, content: string): boolean {
+        if (!this.injectResult) {
+            return false;
+        }
+        this.injectedPrompts.push(content);
+        return true;
     }
 
     override list(): QaapAgentTask[] {
@@ -361,6 +372,59 @@ describe('QaapAgentConversationStore delivery mode: queue (default)', function (
         expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
         expect(store.get('c1')!.messages.filter(m => m.role === 'user').map(m => m.content))
             .to.include('queued after failure');
+    });
+});
+
+describe('QaapAgentConversationStore delivery mode: queue (tool-round inject)', () => {
+
+    function createStore(): { store: TestConversationStore; runner: TestTaskRunner } {
+        const runner = new TestTaskRunner();
+        const store = new TestConversationStore();
+        store.configureForTest(runner);
+        store.seed(idleConversation('c1'));
+        return { store, runner };
+    }
+
+    it('leaves the queue in place when the live agent cannot take stdin follow-ups', () => {
+        const { store, runner } = createStore();
+        store.postUserMessage('c1', 'first');
+        store.postUserMessage('c1', 'queued');
+        store.maybeDrainAtToolRoundBoundary('c1');
+        expect(runner.injectedPrompts).to.deep.equal([]);
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.have.length(1);
+        expect(store.get('c1')!.messages.filter(m => m.role === 'user').map(m => m.content))
+            .to.deep.equal(['first']);
+    });
+
+    it('injects queued follow-ups into the live run without spawning a peer task', () => {
+        const { store, runner } = createStore();
+        runner.injectResult = true;
+        store.postUserMessage('c1', 'first');
+        store.postUserMessage('c1', 'also run tests');
+        store.maybeDrainAtToolRoundBoundary('c1');
+        expect(runner.injectedPrompts).to.deep.equal(['also run tests']);
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
+        const users = store.get('c1')!.messages.filter(m => m.role === 'user');
+        expect(users.map(m => m.content)).to.deep.equal(['first', 'also run tests']);
+        expect(users[1].taskId).to.equal('task-1');
+    });
+
+    it('batches several queued follow-ups into one stdin user message', () => {
+        const { store, runner } = createStore();
+        runner.injectResult = true;
+        store.postUserMessage('c1', 'first');
+        store.postUserMessage('c1', 'queued 1');
+        store.postUserMessage('c1', 'queued 2');
+        store.maybeDrainAtToolRoundBoundary('c1');
+        expect(runner.injectedPrompts).to.have.length(1);
+        expect(runner.injectedPrompts[0]).to.include('queued 1');
+        expect(runner.injectedPrompts[0]).to.include('queued 2');
+        expect(runner.createdIds).to.deep.equal(['task-1']);
+        const batched = store.get('c1')!.messages.find(m => m.batchedFromMessageIds?.length === 2);
+        expect(batched).to.not.be.undefined;
+        expect(store.get('c1')!.pendingUserMessages).to.be.undefined;
     });
 });
 

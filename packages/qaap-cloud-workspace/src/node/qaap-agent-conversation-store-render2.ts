@@ -416,8 +416,9 @@ export function enqueuePendingMessageExtracted(
  * to save tokens: one LLM call with the merged content instead of N calls with the full
  * conversation history each.
  *
- * Called from `applyTaskOutcome` after the conversation status settles to `'idle'`, and
- * from `maybeDrainAtToolRoundBoundary` between tool calls (optimization A).
+ * Called from `applyTaskOutcome` after the conversation status settles to `'idle'`.
+ * Mid-turn steering uses {@link maybeDrainAtToolRoundBoundaryExtracted} (stdin inject)
+ * because this helper refuses to spawn while status is `'streaming'`.
  *
  * If {@link QAAP_COALESCE_WINDOW_MS} > 0, the drain is deferred by that many milliseconds
  * so that messages arriving in quick succession are batched together (optimization C).
@@ -587,43 +588,72 @@ export function cancelQueuedMessageExtracted(ctx: any, conversationId: string, q
 }
 
 /**
- * Optimization A: drain queued messages at tool-round boundaries (between tool calls),
- * not just at end of turn. Inspired by Claude Code's `drainPendingMessages()` which
- * checks the pending queue after each tool call completes.
+ * Optimization A: inject queued follow-ups at tool-round boundaries (between tool
+ * calls), not just at end of turn. Inspired by Claude Code's `drainPendingMessages()`.
  *
  * Called from `applyAgUiTranscriptEventExtracted` when a `TOOL_CALL_END` or
- * `TOOL_CALL_RESULT` event arrives. If the conversation has pending messages and the
- * current run is the only active one (no peer runs), the queue is drained immediately
- * — the agent picks up the queued messages as part of its next tool round instead of
- * waiting for the entire turn to finish.
+ * `TOOL_CALL_RESULT` event arrives. The follow-up is written to the live agent's
+ * stream-json stdin so the next LLM round sees it. If stdin injection is unavailable
+ * (Codex argv prompt, closed pipe, pending approval), the queue stays until the
+ * end-of-turn drain.
  *
- * This is safe because:
- * - The agent process is still running (status is 'streaming'), so we don't need to
- *   spawn a new task — we just make the pending messages visible to the next LLM call.
- * - The coalesce window (optimization C) still applies, so rapid tool completions
- *   don't trigger N separate drains.
- * - If there are peer runs (parallel variants), we skip — draining mid-turn with
- *   concurrent writers would race.
+ * No coalesce delay here: the window is the gap between tools. Waiting
+ * {@link QAAP_COALESCE_WINDOW_MS} would miss that round.
  */
 export function maybeDrainAtToolRoundBoundaryExtracted(ctx: any, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv?.pendingUserMessages?.length) {
         return;
     }
-    // Only drain at tool-round boundaries when the agent is actively streaming.
-    // If the turn already settled to 'idle'/'failed', the normal end-of-turn drain
-    // will handle it.
     if (conv.status !== 'streaming') {
         return;
     }
-    // Don't drain mid-turn if there are peer runs (parallel variants) — concurrent
-    // writers on the same conversation would race. The end-of-turn drain handles
-    // those when all runs finish.
-    if (ctx.hasOtherActiveTaskForConversation(conversationId)) {
+    const activeTaskIds = ctx.getActiveTaskIdsForConversation(conversationId) as string[];
+    if (activeTaskIds.length !== 1) {
         return;
     }
-    // Drain with coalesce window — rapid tool completions batch together.
-    ctx.drainPendingMessages(conversationId);
+    const taskId = activeTaskIds[0];
+    const batch = conv.pendingUserMessages.slice(0, QAAP_MAX_BATCH_SIZE);
+    const remaining = conv.pendingUserMessages.slice(QAAP_MAX_BATCH_SIZE);
+    const mergedContent = batch.length === 1
+        ? batch[0].content
+        : batch.map((message: QaapPendingUserMessage) => message.content).join('\n\n---\n\n');
+    if (!ctx.taskRunner.injectStdioUserMessage(taskId, mergedContent)) {
+        return;
+    }
+    const existingTimer = ctx.drainTimers?.get(conversationId);
+    if (existingTimer !== undefined) {
+        clearTimeout(existingTimer);
+        ctx.drainTimers.delete(conversationId);
+    }
+    const first = batch[0];
+    const userMessage: QaapAgentMessage = {
+        id: batch.length === 1 ? first.id : randomUUID(),
+        role: 'user',
+        content: mergedContent,
+        createdAt: Date.now(),
+        taskId,
+        ...(first.clientMessageId ? { clientMessageId: first.clientMessageId } : {}),
+        ...(first.turnAgentId ? { turnAgentId: first.turnAgentId } : {}),
+        ...(first.turnAgentModel ? { turnAgentModel: first.turnAgentModel } : {}),
+        ...(batch.length > 1 ? { batchedFromMessageIds: batch.map((message: QaapPendingUserMessage) => message.id) } : {}),
+    };
+    const next: QaapAgentConversation = {
+        ...conv,
+        messages: [...conv.messages, userMessage],
+        pendingUserMessages: remaining.length > 0 ? remaining : undefined,
+        updatedAt: Date.now(),
+    };
+    ctx.conversations.set(conversationId, next);
+    ctx.fire({
+        type: 'pending-drained',
+        conversationId,
+        cwd: conv.cwd,
+        drainedCount: batch.length,
+    });
+    ctx.fire({ type: 'message', conversationId, cwd: next.cwd, message: userMessage });
+    ctx.fire({ type: 'updated', conversation: toConversationSummary(next) });
+    void ctx.persist();
 }
 
 /**
