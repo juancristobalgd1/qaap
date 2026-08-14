@@ -2,8 +2,7 @@
 // Shared module-level constants extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 // These are mutable WeakMap/WeakSet registries and must be shared across all extracted files.
 
-import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-cloud-workspace/lib/common/qaap-agent-conversation';
-import type { QaapAgentConversationDTO } from '@theia/qaap-cloud-workspace/lib/common/qaap-agent-conversation';
+import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import type { ToolUmbrella } from '../common/qaap-tool-umbrella';
 
 export interface LazyTranscriptToolPillPayload {
