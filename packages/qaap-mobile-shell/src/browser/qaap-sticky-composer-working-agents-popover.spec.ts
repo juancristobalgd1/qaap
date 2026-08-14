@@ -201,7 +201,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(filled.length).to.equal(10);
     });
 
-    it('renders header Stop All / close and indented child rows', () => {
+    it('renders header Stop All / close and indented child rows', async () => {
         const parent = member({ id: 'parent', title: 'Parent task', activityLabel: 'Building' });
         const child = member({
             id: 'child',
@@ -214,13 +214,16 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         let stopped = false;
         let closed = false;
         let selected: string | undefined;
+        let stoppedMemberId: string | undefined;
         const panel = renderWorkingAgentsPopoverPanel({
             entries: flattenWorkingAgentsTree([parent, child]),
             onStopAll: () => { stopped = true; },
             onClose: () => { closed = true; },
             onSelect: m => { selected = m.id; },
+            onStop: m => { stoppedMemberId = m.id; },
         });
         expect(panel.querySelector('.qaap-working-agents-popover-title')?.textContent).to.equal('2 Working');
+        expect(panel.querySelector('.qaap-working-agents-popover-close .codicon-close')).to.not.equal(null);
         const stopAll = panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all');
         stopAll?.click();
         expect(stopped).to.equal(false);
@@ -234,15 +237,23 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(rows).to.have.length(2);
         expect(rows[1].classList.contains('theia-mod-child')).to.equal(true);
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-title')?.textContent)
-            .to.equal('QAIQ · Parent task');
-        expect(rows[0].getAttribute('aria-label')).to.contain('run parent');
+            .to.equal('Parent task');
+        expect(rows[0].querySelectorAll('.qaap-working-loader-dot')).to.have.length(6);
+        expect(rows[0].querySelector('.qaap-working-agents-popover-cloud')).to.not.equal(null);
+        expect(rows[0].querySelector('.qaap-working-agents-popover-row-stop')?.textContent).to.equal('Stop');
+        expect(rows[0].querySelector('.qaap-working-agents-popover-row-main')?.getAttribute('aria-label'))
+            .to.contain('run parent');
         const childStatus = rows[1].querySelector('.qaap-working-agents-popover-row-status');
         expect(childStatus?.textContent).to.equal('Reading files');
         expect(childStatus?.classList.contains('theia-mod-shimmer')).to.equal(true);
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-status')?.classList.contains('theia-mod-shimmer'))
             .to.equal(true);
-        (rows[0] as HTMLButtonElement).click();
-        expect(selected).to.equal('parent');
+        rows[0].querySelector<HTMLButtonElement>('.qaap-working-agents-popover-row-stop')?.click();
+        await Promise.resolve();
+        expect(stoppedMemberId).to.equal('parent');
+        expect(selected).to.equal(undefined);
+        (rows[1].querySelector('.qaap-working-agents-popover-row-main') as HTMLButtonElement).click();
+        expect(selected).to.equal('child');
     });
 
     it('opens detail on row click without collapsing the Working expand', () => {
@@ -292,6 +303,16 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(getWorkingAgentsDetailMemberId()).to.equal('parent');
         const detail = document.querySelector(`.${WORKING_DETAIL_PANEL_CLASS}`);
         expect(detail).to.not.equal(null);
+        expect(detail?.querySelector('.qaap-working-agents-popover-title')?.textContent)
+            .to.equal('Review the latest pull request: summarize changes');
+        expect(detail?.querySelector('.qaap-working-agents-popover-back')).to.not.equal(null);
+        expect(detail?.querySelector('.qaap-working-agents-popover-header .qaap-working-agents-popover-cloud'))
+            .to.not.equal(null);
+        expect(detail?.querySelector('.qaap-working-agents-popover-expand .codicon-screen-full'))
+            .to.not.equal(null);
+        expect(detail?.querySelector('.qaap-working-agents-popover-close .codicon-close')).to.not.equal(null);
+        expect(detail?.querySelector('.qaap-working-agents-popover-header .qaap-working-agents-popover-stop-one'))
+            .to.equal(null);
         expect(detail?.textContent).to.contain('Review the latest pull request');
         expect(detail?.textContent).to.contain('Thought briefly');
         expect(detail?.textContent).to.contain('Summarize the pull request changes.');
@@ -309,7 +330,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(document.querySelector('.qaap-working-agents-popover-title')?.textContent).to.equal('2 Working');
     });
 
-    it('stops one selected agent and leaves unrelated runs available', async () => {
+    it('stops one selected agent from the list and leaves unrelated runs available', async () => {
         const rowHost = document.createElement('div');
         rowHost.className = 'theia-mobile-sticky-composer-changes-pill-row';
         const anchor = document.createElement('button');
@@ -330,10 +351,9 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             onStopAll: () => undefined,
         });
 
-        document.querySelector<HTMLButtonElement>(
-            '.qaap-working-agents-popover-row[data-member-id="first"]',
-        )?.click();
-        const stop = document.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-one');
+        const stop = document.querySelector<HTMLButtonElement>(
+            '.qaap-working-agents-popover-row[data-member-id="first"] .qaap-working-agents-popover-row-stop',
+        );
         expect(stop?.getAttribute('aria-label')).to.equal('Stop QAIQ');
         stop?.click();
         await Promise.resolve();
@@ -342,10 +362,13 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(stoppedId).to.equal('first');
         expect(isWorkingAgentsExpandSessionOpen()).to.equal(true);
         expect(getWorkingAgentsDetailMemberId()).to.equal(undefined);
+        expect(document.querySelector(`.${WORKING_DETAIL_PANEL_CLASS}`)).to.equal(null);
         const remaining = document.querySelectorAll('.qaap-working-agents-popover-row');
         expect(remaining).to.have.length(1);
         expect(remaining[0].getAttribute('data-member-id')).to.equal('second');
-        expect(remaining[0].textContent).to.contain('Codex · Same task');
+        expect(remaining[0].querySelector('.qaap-working-agents-popover-row-title')?.textContent)
+            .to.equal('Same task');
+        expect(remaining[0].textContent).to.not.contain('Codex ·');
     });
 
     it('keeps Stop All busy until asynchronous cancellation settles', async () => {

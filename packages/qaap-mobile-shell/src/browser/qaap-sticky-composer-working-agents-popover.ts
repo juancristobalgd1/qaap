@@ -434,11 +434,70 @@ export function ensureWorkingControlShell(pill: HTMLElement): HTMLElement {
     return shell;
 }
 
+function createWorkingAgentsCloseButton(onClose: () => void): HTMLButtonElement {
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'qaap-working-agents-popover-close';
+    closeBtn.title = nls.localizeByDefault('Close');
+    closeBtn.setAttribute('aria-label', closeBtn.title);
+    closeBtn.innerHTML = '<span class="codicon codicon-close" aria-hidden="true"></span>';
+    closeBtn.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+    });
+    return closeBtn;
+}
+
+function createWorkingAgentsCloudBadge(): HTMLElement {
+    const cloud = document.createElement('span');
+    cloud.className = 'qaap-working-agents-popover-cloud codicon codicon-cloud';
+    cloud.setAttribute('aria-hidden', 'true');
+    cloud.title = nls.localize('qaap/workHubChrome/workingCloudAgent', 'Cloud agent');
+    return cloud;
+}
+
+function createWorkingAgentsRowStopButton(
+    member: WorkHubTeamMember,
+    onStop: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>,
+): HTMLButtonElement {
+    const stopBtn = document.createElement('button');
+    stopBtn.type = 'button';
+    stopBtn.className = 'qaap-working-agents-popover-stop-one qaap-working-agents-popover-row-stop';
+    stopBtn.textContent = nls.localize('qaap/workHubChrome/workingStop', 'Stop');
+    stopBtn.setAttribute('aria-label', nls.localize(
+        'qaap/workHubChrome/workingStopAgent',
+        'Stop {0}',
+        resolveAgentDisplayLabel(member.agentId),
+    ));
+    stopBtn.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        stopBtn.disabled = true;
+        stopBtn.setAttribute('aria-busy', 'true');
+        void (async (): Promise<void> => {
+            try {
+                await onStop(member);
+            } catch (error) {
+                console.warn('[qaap-working-agents] Stop handler failed:', error);
+            } finally {
+                if (!stopBtn.isConnected) {
+                    return;
+                }
+                stopBtn.disabled = false;
+                stopBtn.removeAttribute('aria-busy');
+            }
+        })();
+    });
+    return stopBtn;
+}
+
 export function renderWorkingAgentsPopoverPanel(options: {
     readonly entries: readonly WorkingAgentsPopoverEntry[];
     readonly onStopAll: () => boolean | void | Promise<boolean | void>;
     readonly onClose: () => void;
     readonly onSelect: (member: WorkHubTeamMember) => void;
+    readonly onStop?: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>;
 }): HTMLElement {
     const panel = document.createElement('div');
     panel.className = 'qaap-working-agents-popover-panel';
@@ -511,19 +570,7 @@ export function renderWorkingAgentsPopoverPanel(options: {
         })();
     });
 
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'qaap-working-agents-popover-close';
-    closeBtn.title = nls.localizeByDefault('Minimize');
-    closeBtn.setAttribute('aria-label', closeBtn.title);
-    closeBtn.innerHTML = '<span class="codicon codicon-chevron-down" aria-hidden="true"></span>';
-    closeBtn.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        options.onClose();
-    });
-
-    actions.append(stopAll, closeBtn);
+    actions.append(stopAll, createWorkingAgentsCloseButton(options.onClose));
     header.append(title, actions);
 
     const list = document.createElement('div');
@@ -531,7 +578,7 @@ export function renderWorkingAgentsPopoverPanel(options: {
     list.setAttribute('role', 'list');
 
     for (const entry of options.entries) {
-        list.append(renderWorkingAgentsPopoverRow(entry, options.onSelect));
+        list.append(renderWorkingAgentsPopoverRow(entry, options.onSelect, options.onStop));
     }
 
     panel.append(header, list);
@@ -573,42 +620,11 @@ export function renderWorkingAgentsDetailPanel(options: {
 
     const title = document.createElement('span');
     title.className = 'qaap-working-agents-popover-title theia-mod-detail';
-    title.textContent = formatWorkingAgentTitle(options.member);
+    title.textContent = formatWorkingAgentTaskTitle(options.member);
+    title.title = formatWorkingAgentAccessibleTitle(options.member);
 
     const actions = document.createElement('div');
     actions.className = 'qaap-working-agents-popover-actions';
-
-    if (options.onStop && isWorkingAgentStatusLive(options.member)) {
-        const stopBtn = document.createElement('button');
-        stopBtn.type = 'button';
-        stopBtn.className = 'qaap-working-agents-popover-stop-one';
-        stopBtn.textContent = nls.localize('qaap/workHubChrome/workingStop', 'Stop');
-        stopBtn.setAttribute('aria-label', nls.localize(
-            'qaap/workHubChrome/workingStopAgent',
-            'Stop {0}',
-            resolveAgentDisplayLabel(options.member.agentId),
-        ));
-        stopBtn.addEventListener('click', event => {
-            event.preventDefault();
-            event.stopPropagation();
-            stopBtn.disabled = true;
-            stopBtn.setAttribute('aria-busy', 'true');
-            void (async (): Promise<void> => {
-                try {
-                    await options.onStop!(options.member);
-                } catch (error) {
-                    console.warn('[qaap-working-agents] Stop handler failed:', error);
-                } finally {
-                    if (!stopBtn.isConnected) {
-                        return;
-                    }
-                    stopBtn.disabled = false;
-                    stopBtn.removeAttribute('aria-busy');
-                }
-            })();
-        });
-        actions.append(stopBtn);
-    }
 
     const expandBtn = document.createElement('button');
     expandBtn.type = 'button';
@@ -627,19 +643,7 @@ export function renderWorkingAgentsDetailPanel(options: {
         options.onToggleLarge();
     });
 
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'qaap-working-agents-popover-close';
-    closeBtn.title = nls.localizeByDefault('Minimize');
-    closeBtn.setAttribute('aria-label', closeBtn.title);
-    closeBtn.innerHTML = '<span class="codicon codicon-chevron-down" aria-hidden="true"></span>';
-    closeBtn.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        options.onClose();
-    });
-
-    actions.append(expandBtn, closeBtn);
+    actions.append(createWorkingAgentsCloudBadge(), expandBtn, createWorkingAgentsCloseButton(options.onClose));
     header.append(back, title, actions);
 
     const body = document.createElement('div');
@@ -693,6 +697,7 @@ export function renderWorkingAgentsDetailPanel(options: {
             list.append(renderWorkingAgentsPopoverRow(
                 { member: child, depth: 1 },
                 options.onSelectChild,
+                options.onStop,
             ));
         }
         section.append(list);
@@ -716,9 +721,9 @@ export function resolveWorkingAgentKindLabel(member: WorkHubTeamMember): string 
 function renderWorkingAgentsPopoverRow(
     entry: WorkingAgentsPopoverEntry,
     onSelect: (member: WorkHubTeamMember) => void,
+    onStop?: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>,
 ): HTMLElement {
-    const row = document.createElement('button');
-    row.type = 'button';
+    const row = document.createElement('div');
     row.className = 'qaap-working-agents-popover-row';
     row.classList.toggle('theia-mod-child', entry.depth > 0);
     row.setAttribute('role', 'listitem');
@@ -727,7 +732,7 @@ function renderWorkingAgentsPopoverRow(
         row.style.setProperty('--qaap-working-agents-depth', String(Math.min(entry.depth, 3)));
     }
 
-    // Parent: 2×2 grid. Child: L-shaped tree connector (Cursor Working panel).
+    // Parent: 2×3 grid. Child: L-shaped tree connector (Cursor Working panel).
     const icon = entry.depth > 0
         ? createWorkHubWorkingChildIcon()
         : createWorkHubWorkingParentIcon();
@@ -738,7 +743,7 @@ function renderWorkingAgentsPopoverRow(
 
     const title = document.createElement('span');
     title.className = 'qaap-working-agents-popover-row-title';
-    title.textContent = formatWorkingAgentTitle(entry.member);
+    title.textContent = formatWorkingAgentTaskTitle(entry.member);
     title.title = formatWorkingAgentAccessibleTitle(entry.member);
 
     const status = document.createElement('span');
@@ -746,22 +751,40 @@ function renderWorkingAgentsPopoverRow(
     status.dataset.memberId = entry.member.id;
     applyWorkingAgentStatusLoader(status, entry.member);
 
-    // Progress timeline bar: when the member reports turnProgressCurrent/Total, show a
-    // visual progress bar inline in the row so the user sees step-level progress at a
-    // glance (not just a shimmer). This is the "mini-Gantt" for subtask progress.
-    const progressTrack = renderWorkingAgentProgressTrack(entry.member);
-    row.append(icon, title, status);
-    if (progressTrack) {
-        row.append(progressTrack);
-        row.classList.add('qaap-mod-has-progress');
-    }
-    row.setAttribute('aria-label', nls.localize(
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'qaap-working-agents-popover-row-main';
+    main.append(icon, title, status);
+    main.setAttribute('aria-label', nls.localize(
         'qaap/workHubChrome/workingAgentRowAria',
         '{0}, {1}',
         formatWorkingAgentAccessibleTitle(entry.member),
         resolveWorkingAgentStatusLabel(entry.member),
     ));
+    main.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelect(entry.member);
+    });
+
+    const progressTrack = renderWorkingAgentProgressTrack(entry.member);
+    row.append(main);
+    if (progressTrack) {
+        row.append(progressTrack);
+        row.classList.add('qaap-mod-has-progress');
+    }
+    row.append(createWorkingAgentsCloudBadge());
+    if (onStop && isWorkingAgentStatusLive(entry.member)) {
+        row.append(createWorkingAgentsRowStopButton(entry.member, onStop));
+    }
     row.addEventListener('click', event => {
+        if (event.defaultPrevented) {
+            return;
+        }
+        const target = event.target;
+        if (target instanceof Element && target.closest('button')) {
+            return;
+        }
         event.preventDefault();
         event.stopPropagation();
         onSelect(entry.member);
@@ -816,14 +839,17 @@ function renderWorkingAgentProgressTrack(member: WorkHubTeamMember): HTMLElement
     return track;
 }
 
-function formatWorkingAgentTitle(member: WorkHubTeamMember): string {
-    const taskTitle = member.title?.trim()
+function formatWorkingAgentTaskTitle(member: WorkHubTeamMember): string {
+    return member.title?.trim()
         || nls.localize('qaap/mobileProjects/untitledTask', 'Untitled task');
+}
+
+function formatWorkingAgentTitle(member: WorkHubTeamMember): string {
     return nls.localize(
         'qaap/workHubChrome/workingAgentAndTask',
         '{0} · {1}',
         resolveAgentDisplayLabel(member.agentId),
-        taskTitle,
+        formatWorkingAgentTaskTitle(member),
     );
 }
 
@@ -879,6 +905,24 @@ function mountActivePanel(panel: HTMLElement): void {
     active.inner.replaceChildren(panel);
 }
 
+async function stopWorkingMemberFromExpand(target: WorkHubTeamMember): Promise<boolean> {
+    const stopped = await resolveSessionOnStop()(target);
+    if (stopped === false) {
+        return false;
+    }
+    const current = activeWorkingAgentsExpand;
+    if (!current) {
+        return true;
+    }
+    current.members = current.members.filter(entry => entry.id !== target.id);
+    if (current.members.length === 0) {
+        closeWorkingAgentsPopover(true);
+    } else {
+        showWorkingAgentsListView();
+    }
+    return true;
+}
+
 function showWorkingAgentsListView(): void {
     const active = activeWorkingAgentsExpand;
     if (!active) {
@@ -910,6 +954,7 @@ function showWorkingAgentsListView(): void {
             const targets = filterWorkingTeamMembers(current?.members ?? working);
             return stop(targets);
         },
+        onStop: target => stopWorkingMemberFromExpand(target),
         onSelect: member => showWorkingAgentsDetailView(member.id),
     });
     mountActivePanel(panel);
@@ -950,23 +995,7 @@ function showWorkingAgentsDetailView(memberId: string): void {
         parent,
         detailLarge,
         activityFeed,
-        onStop: async target => {
-            const stopped = await resolveSessionOnStop()(target);
-            if (stopped === false) {
-                return false;
-            }
-            const current = activeWorkingAgentsExpand;
-            if (!current) {
-                return true;
-            }
-            current.members = current.members.filter(entry => entry.id !== target.id);
-            if (current.members.length === 0) {
-                closeWorkingAgentsPopover(true);
-            } else {
-                showWorkingAgentsListView();
-            }
-            return true;
-        },
+        onStop: async target => stopWorkingMemberFromExpand(target),
         onBack: () => showWorkingAgentsListView(),
         onClose: () => {
             const current = activeWorkingAgentsExpand;

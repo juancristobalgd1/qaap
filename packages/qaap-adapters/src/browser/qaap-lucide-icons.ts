@@ -67,7 +67,7 @@ export function createWorkHubMoreActionsIcon(): SVGSVGElement {
     return svg;
 }
 
-/** 2×2 four-dot grid for a top-level working agent row in the Working expand panel. */
+/** 2×3 six-dot grid for a top-level working agent row (Cursor Working panel). */
 export function createWorkHubWorkingParentIcon(): SVGSVGElement {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 16 16');
@@ -82,13 +82,15 @@ export function createWorkHubWorkingParentIcon(): SVGSVGElement {
         'theia-mod-working-loader',
     );
     const dots: Array<[number, number]> = [
-        [5, 5],
-        [11, 5],
-        [5, 11],
-        [11, 11],
+        [5, 3],
+        [11, 3],
+        [5, 8],
+        [11, 8],
+        [5, 13],
+        [11, 13],
     ];
     dots.forEach(([cx, cy], index) => {
-        const circle = svgEl('circle', { cx: String(cx), cy: String(cy), r: '1.45' });
+        const circle = svgEl('circle', { cx: String(cx), cy: String(cy), r: '1.35' });
         circle.classList.add('qaap-working-loader-dot');
         circle.style.setProperty('--qaap-working-loader-i', String(index));
         svg.append(circle);
