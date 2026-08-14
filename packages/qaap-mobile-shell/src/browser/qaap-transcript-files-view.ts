@@ -1654,11 +1654,17 @@ export function mountTranscriptFilesView(
         // stacked tree track stays collapsed and the preview empty-state fills
         // the whole Files surface.
         void layout.offsetHeight;
-        window.requestAnimationFrame(() => {
+        const relayoutFiles = (): void => {
             applyTreePaneSize();
             state.previewMonacoEditor?.layout();
             window.dispatchEvent(new Event('resize'));
-        });
+        };
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(relayoutFiles);
+        } else {
+            applyTreePaneSize();
+            state.previewMonacoEditor?.layout();
+        }
     };
 
     const applyViewMode = (mode: TranscriptFilesViewMode): void => {
