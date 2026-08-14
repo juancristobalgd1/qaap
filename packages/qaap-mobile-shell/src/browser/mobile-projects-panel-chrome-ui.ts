@@ -111,14 +111,14 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerProjectBtn.hidden = true;
         this.host.headerProjectBtn.setAttribute('aria-hidden', 'true');
         this.host.headerProjectBtn.setAttribute('aria-haspopup', 'dialog');
-        this.host.headerProjectBtn.title = nls.localize('qaap/mobileProjects/headerProject', 'Project');
+        this.host.headerProjectBtn.title = nls.localize('qaap/mobileProjects/headerProject', 'Switch project');
         this.host.headerProjectBtn.setAttribute('aria-label', this.host.headerProjectBtn.title);
         const headerProjectIcon = document.createElement('span');
-        headerProjectIcon.className = 'theia-mobile-projects-header-project-icon codicon codicon-folder';
+        headerProjectIcon.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
         headerProjectIcon.setAttribute('aria-hidden', 'true');
         this.host.headerProjectLabelEl = document.createElement('span');
         this.host.headerProjectLabelEl.className = 'theia-mobile-projects-header-project-label';
-        this.host.headerProjectBtn.append(headerProjectIcon, this.host.headerProjectLabelEl);
+        this.host.headerProjectBtn.append(this.host.headerProjectLabelEl, headerProjectIcon);
         this.host.headerProjectBtn.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();

@@ -2325,13 +2325,8 @@ button.theia-mobile-transcript-team-row:focus-visible {
     height: 32px;
     min-height: 32px;
     padding: 0 8px;
-    gap: 0;
+    gap: 6px;
     font-size: 13px;
-  }
-
-  /* Icon-only on mobile to save horizontal space. */
-  .theia-mobile-transcript-files-view-mode-btn-label {
-    display: none;
   }
 
   .theia-mobile-transcript-files-view-mode-btn-icon.codicon::before {
