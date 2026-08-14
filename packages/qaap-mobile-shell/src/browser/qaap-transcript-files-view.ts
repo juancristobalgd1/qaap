@@ -1639,8 +1639,39 @@ export function mountTranscriptFilesView(
         });
     };
 
+    const restoreFilesLayout = (): void => {
+        root.classList.remove('theia-mod-files-view-changes');
+        layout.hidden = false;
+        changesHost.hidden = true;
+        // Measuring the tree while the layout was `display: none` (Changes)
+        // can leave a 0px `--qaap-files-tree-height` token. Drop invalid sizes
+        // so the CSS fallback (`minmax(180px, 36vh)`) can take over.
+        if (state.treePaneHeightPx !== undefined && state.treePaneHeightPx < FILES_TREE_MIN_PX) {
+            state.treePaneHeightPx = undefined;
+        }
+        syncTreeLayout();
+        // Force a reflow now that the grid is visible again — otherwise the
+        // stacked tree track stays collapsed and the preview empty-state fills
+        // the whole Files surface.
+        void layout.offsetHeight;
+        const relayoutFiles = (): void => {
+            applyTreePaneSize();
+            state.previewMonacoEditor?.layout();
+            window.dispatchEvent(new Event('resize'));
+        };
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(relayoutFiles);
+        } else {
+            applyTreePaneSize();
+            state.previewMonacoEditor?.layout();
+        }
+    };
+
     const applyViewMode = (mode: TranscriptFilesViewMode): void => {
         if (state.viewMode === mode) {
+            if (mode === 'files' && (layout.hidden || root.classList.contains('theia-mod-files-view-changes'))) {
+                restoreFilesLayout();
+            }
             return;
         }
         state.viewMode = mode;
@@ -1662,9 +1693,7 @@ export function mountTranscriptFilesView(
         } else {
             services.unmountChangesView?.();
             state.changesMounted = false;
-            // Re-trigger preview layout after returning from changes view.
-            state.previewMonacoEditor?.layout();
-            window.dispatchEvent(new Event('resize'));
+            restoreFilesLayout();
         }
     };
 
