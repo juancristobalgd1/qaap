@@ -244,7 +244,9 @@ export class MobileProjectsStickyComposerColumnUi {
             bindStickyComposerControlClick(deliveryBtn, ev => {
                 this.openComposerControlSheet(ev, input, () => options.onOpenDeliveryModeSheet!(deliveryBtn));
             });
-            toolbarItems.push(deliveryBtn);
+            // Keep Queue ▾ on the always-visible controls row. The Codex context
+            // tray sits behind the input panel, so a toolbar-only control is hidden.
+            controlsLeftItems.push(deliveryBtn);
         }
         if (approvalBtn) {
             toolbarItems.push(approvalBtn);

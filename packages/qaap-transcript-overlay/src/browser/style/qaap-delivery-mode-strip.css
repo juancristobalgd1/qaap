@@ -223,3 +223,29 @@
 .qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-panel {
   border-top: none;
 }
+
+/* Always-visible Queue ▾ next to the agent control (not the hidden Codex tray). */
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-delivery-mode {
+  flex: 0 0 auto;
+  height: 32px;
+  max-width: min(38vw, 140px);
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--theia-foreground) 78%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  gap: 4px;
+}
+
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-delivery-mode:hover,
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-delivery-mode:focus-visible {
+  color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.theia-mobile-projects-sticky-composer-controls-left .theia-mobile-projects-sticky-composer-delivery-mode .codicon-chevron-down {
+  font-size: 10px;
+  opacity: 0.72;
+}
