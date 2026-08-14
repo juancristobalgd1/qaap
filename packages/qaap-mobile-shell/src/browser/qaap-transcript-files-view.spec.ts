@@ -129,6 +129,8 @@ describe('qaap-transcript-files-view', () => {
             document.body.innerHTML = '';
             try {
                 window.localStorage.removeItem('qaap.transcriptFiles.treeVisible');
+                window.sessionStorage.removeItem('qaap.transcriptFiles.viewMode');
+                window.sessionStorage.removeItem('qaap.transcriptFiles.pendingViewMode');
             } catch {
                 /* session-only */
             }
@@ -244,6 +246,53 @@ describe('qaap-transcript-files-view', () => {
             expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.false;
             expect(treeToggle?.getAttribute('aria-pressed')).to.equal('true');
             expect(treeToggle?.getAttribute('aria-label')).to.equal('Hide file tree');
+        });
+
+        it('restores the file tree after switching from Changes back to Files', () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            const mount = mountTranscriptFilesView(host, '/repo', {
+                ...createServices(),
+                canShowChanges: true,
+                mountChangesView: async changesHost => {
+                    const pane = document.createElement('div');
+                    pane.className = 'qaap-test-changes-pane';
+                    changesHost.append(pane);
+                },
+                unmountChangesView: () => undefined,
+            });
+
+            const root = host.querySelector<HTMLElement>('.theia-mobile-transcript-files');
+            const layout = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-layout');
+            const tree = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-tree');
+            const changesHost = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-changes-host');
+            const modeButtons = host.querySelectorAll<HTMLButtonElement>('.theia-mobile-transcript-files-view-mode-btn');
+            const filesBtn = modeButtons[0];
+            const changesBtn = modeButtons[1];
+
+            try {
+                expect(root).to.exist;
+                expect(layout?.hidden).to.equal(false);
+                expect(tree).to.exist;
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.equal(false);
+                expect(host.querySelector('.theia-mobile-transcript-files-empty')).to.exist;
+
+                changesBtn.click();
+                expect(root?.classList.contains('theia-mod-files-view-changes')).to.equal(true);
+                expect(layout?.hidden).to.equal(true);
+                expect(changesHost?.hidden).to.equal(false);
+
+                filesBtn.click();
+                expect(root?.classList.contains('theia-mod-files-view-changes')).to.equal(false);
+                expect(layout?.hidden).to.equal(false);
+                expect(changesHost?.hidden).to.equal(true);
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.equal(false);
+                expect(tree?.isConnected).to.equal(true);
+                expect(host.querySelector('.theia-mobile-transcript-files-tree')).to.equal(tree);
+                expect(host.querySelector('.theia-mobile-transcript-files-empty')).to.exist;
+            } finally {
+                mount.dispose.dispose();
+            }
         });
     });
 });

@@ -1998,6 +1998,18 @@ button.theia-mobile-transcript-team-row:focus-visible {
   box-sizing: border-box;
 }
 
+/* Files and Changes are alternate full-size panes, not a row split. */
+.theia-mobile-transcript-files {
+  flex-direction: column;
+}
+
+/* Author `display: grid` / `display: flex` beat the UA `[hidden]` rule, so the
+   inactive pane would stay in layout after Files ↔ Changes. */
+.theia-mobile-transcript-files-layout[hidden],
+.theia-mobile-transcript-files-changes-host[hidden] {
+  display: none !important;
+}
+
 .theia-mobile-transcript-files-note {
   align-items: center;
   justify-content: center;
@@ -2027,7 +2039,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 5px var(--qaap-files-tree-height, minmax(180px, 36vh));
+  grid-template-rows: minmax(0, 1fr) 5px minmax(180px, var(--qaap-files-tree-height, 36vh));
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-hidden {
@@ -2135,7 +2147,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
   }
 
   .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
-    grid-template-rows: minmax(0, 1fr) 20px var(--qaap-files-tree-height, minmax(180px, 36vh));
+    grid-template-rows: minmax(0, 1fr) 20px minmax(180px, var(--qaap-files-tree-height, 36vh));
   }
 
   .theia-mobile-transcript-files-split-handle {
@@ -2335,6 +2347,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
 /* Changes host — holds the diff review widget when view mode is 'changes'. */
 .theia-mobile-transcript-files-changes-host {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   display: flex;

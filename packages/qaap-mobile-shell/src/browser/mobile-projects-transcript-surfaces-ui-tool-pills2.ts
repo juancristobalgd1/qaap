@@ -368,6 +368,12 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
         return;
     }
     if (ctx.host.transcriptFilesAttachedKey === workspaceKey && host.querySelector('.theia-mobile-transcript-files')) {
+        const attached = ctx.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey);
+        const pendingMode = readPendingTranscriptFilesViewMode();
+        if (pendingMode) {
+            clearPendingTranscriptFilesViewMode();
+            attached?.setViewMode?.(pendingMode);
+        }
         ctx.syncHeaderFilesMoreButton(project, summary);
         ctx.syncHeaderViewModeSwitch(project, summary);
         return;
