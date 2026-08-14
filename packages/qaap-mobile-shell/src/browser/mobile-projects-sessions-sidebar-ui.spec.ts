@@ -341,4 +341,35 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(opened?.summaryId.startsWith('pending-new-chat-sheet-proj-')).to.equal(true);
     });
 
+    it('shows a GitHub sign-in CTA when the sidebar is empty and the user is signed out', () => {
+        const host = {
+            projects: [] as MobileProjectEntry[],
+            query: '',
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        ui.readQaapSignedIn = () => false;
+        const hostEl = document.createElement('div');
+
+        ui.renderWorkHubSessionsSidebarList(hostEl);
+
+        expect(hostEl.querySelector('.theia-mobile-work-hub-sessions-sidebar-signin')).to.not.equal(null);
+        expect(hostEl.textContent).to.include('Sign in with GitHub');
+        expect(hostEl.textContent).to.not.include('No agent sessions yet');
+    });
+
+    it('keeps the empty-sessions copy when the user is signed in', () => {
+        const host = {
+            projects: [] as MobileProjectEntry[],
+            query: '',
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        ui.readQaapSignedIn = () => true;
+        const hostEl = document.createElement('div');
+
+        ui.renderWorkHubSessionsSidebarList(hostEl);
+
+        expect(hostEl.querySelector('.theia-mobile-work-hub-sessions-sidebar-signin')).to.equal(null);
+        expect(hostEl.textContent).to.include('No agent sessions yet');
+    });
+
 });
