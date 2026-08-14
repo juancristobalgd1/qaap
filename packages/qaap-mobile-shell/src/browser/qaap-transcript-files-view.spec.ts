@@ -5,6 +5,9 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+enableJSDOM();
+
 import {
     defaultTranscriptFilesTreePosition,
     filterTranscriptFileTreeEntries,
