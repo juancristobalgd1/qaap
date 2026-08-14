@@ -117,11 +117,13 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
 
 describe('QaapAgentConversationEndpoint message correlation', () => {
 
-    it('forwards a valid optimistic client message id to the conversation store', () => {
+    it('forwards a valid optimistic client message id to the conversation store', async () => {
         let internal: unknown;
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
             store: {
+                get: () => undefined,
+                getActiveTaskIdsForConversation: () => [],
                 postUserMessage: (...args: unknown[]) => {
                     internal = args[9];
                     return { id: 'conv-1', messages: [] };
@@ -130,12 +132,101 @@ describe('QaapAgentConversationEndpoint message correlation', () => {
         });
         const response = fakeRes();
 
-        (endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): void }).handlePostMessage({
+        await (endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> }).handlePostMessage({
             params: { id: 'conv-1' },
             body: { content: 'como estas?', clientMessageId: 'pending-user-123' },
         }, response);
 
         expect(response.statusCode).to.equal(202);
         expect(internal).to.deep.equal({ clientMessageId: 'pending-user-123' });
+    });
+});
+
+describe('QaapAgentConversationEndpoint isolated parallel delivery', () => {
+
+    function streamingParent(): { id: string; cwd: string; status: string; ownerLogin: string; agentId: string } {
+        return { id: 'c1', cwd: '/tmp/project', status: 'streaming', ownerLogin: 'alice', agentId: 'qaiq' };
+    }
+
+    function buildEndpoint(options: { worktreeFails?: boolean } = {}): {
+        endpoint: QaapAgentConversationEndpoint;
+        created: Array<Record<string, unknown>>;
+        queuedModes: string[];
+        worktreeCalls: number;
+    } {
+        const parent = streamingParent();
+        const created: Array<Record<string, unknown>> = [];
+        const queuedModes: string[] = [];
+        let worktreeCalls = 0;
+        const conversations = new Map<string, typeof parent>([['c1', parent]]);
+        const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+        Object.assign(endpoint, {
+            clientRequestDedup: new Map<string, string>(),
+            clientRequestInFlight: new Set<string>(),
+            store: {
+                get: (id: string) => conversations.get(id),
+                getActiveTaskIdsForConversation: (id: string) => id === 'c1' ? ['task-1'] : [],
+                countStreamingForks: () => 0,
+                postUserMessage: (...args: unknown[]) => {
+                    queuedModes.push(String(args[args.length - 1]));
+                    return parent;
+                },
+                create: (request: Record<string, unknown>, owner?: string) => {
+                    const conv = {
+                        id: `fork-${created.length + 1}`,
+                        cwd: request.cwd,
+                        forkedFromId: request.forkedFromId,
+                        worktreeBranch: request.worktreeBranch,
+                        ownerLogin: owner,
+                    };
+                    created.push(conv);
+                    conversations.set(conv.id, conv as unknown as typeof parent);
+                    return conv;
+                },
+            },
+            worktrees: {
+                create: async (cwd: string, owner?: string) => {
+                    worktreeCalls += 1;
+                    if (options.worktreeFails) {
+                        throw new Error('not a git repo');
+                    }
+                    return { worktreePath: `${cwd}/.wt-${owner ?? 'anon'}`, branch: 'qaap/worktree/abcd1234' };
+                },
+            },
+        });
+        return { endpoint, created, queuedModes, get worktreeCalls() { return worktreeCalls; } };
+    }
+
+    it('spawns a forked conversation in an isolated worktree when deliveryMode is parallel', async () => {
+        const h = buildEndpoint();
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> })
+            .handlePostMessage({
+                params: { id: 'c1' },
+                body: { content: 'do this in parallel', deliveryMode: 'parallel' },
+            }, response);
+
+        expect(response.statusCode).to.equal(202);
+        expect(h.worktreeCalls).to.equal(1);
+        expect(h.created).to.have.length(1);
+        expect(h.created[0].forkedFromId).to.equal('c1');
+        expect(h.created[0].worktreeBranch).to.equal('qaap/worktree/abcd1234');
+        expect((response.body as { id: string }).id).to.equal('fork-1');
+        expect(h.queuedModes).to.deep.equal([]);
+    });
+
+    it('queues on the parent when the worktree cannot be created', async () => {
+        const h = buildEndpoint({ worktreeFails: true });
+        const response = fakeRes();
+        await (h.endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> })
+            .handlePostMessage({
+                params: { id: 'c1' },
+                body: { content: 'fallback', deliveryMode: 'parallel' },
+            }, response);
+
+        expect(response.statusCode).to.equal(202);
+        expect(h.created).to.have.length(0);
+        expect(h.queuedModes).to.deep.equal(['queue']);
+        expect((response.body as { id: string }).id).to.equal('c1');
     });
 });

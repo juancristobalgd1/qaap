@@ -239,6 +239,20 @@ export function listExtracted(ctx: any, cwd: string | undefined): QaapAgentConve
         .map(toConversationSummary);
 }
 
+/**
+ * How many isolated parallel children of {@link parentId} are still streaming (or visually
+ * settled with a live backend task). Used to cap delivery-mode `'parallel'` spawns.
+ */
+export function countStreamingForksExtracted(ctx: any, parentId: string): number {
+    let count = 0;
+    for (const conv of ctx.conversations.values() as Iterable<QaapAgentConversation>) {
+        if (conv.forkedFromId === parentId && (conv.status === 'streaming' || conv.status === 'settled')) {
+            count++;
+        }
+    }
+    return count;
+}
+
 export function getExtracted(ctx: any, id: string): QaapAgentConversation | undefined {
     const conv = ctx.conversations.get(id);
     if (!conv) {
@@ -323,6 +337,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentConversationRe
         ...(request.parallelRunId ? { parallelRunId: request.parallelRunId } : {}),
         ...(request.parallelBaseCwd ? { parallelBaseCwd: request.parallelBaseCwd } : {}),
         ...(request.worktreeBranch ? { worktreeBranch: request.worktreeBranch } : {}),
+        ...(request.forkedFromId ? { forkedFromId: request.forkedFromId } : {}),
         ...(request.autoApprove === false ? { autoApprove: false } : {}),
         ...(request.contextPreamble ? { contextPreamble: request.contextPreamble } : {}),
         ...(request.interactionModeId ? { interactionModeId: request.interactionModeId } : {}),
@@ -695,10 +710,9 @@ export function postUserMessageExtracted(ctx: any, id: string,
             //   Inspired by Cursor "Send after current message" and Claude Code
             //   `pendingMessages` (drained at tool-round boundaries).
             //
-            // - 'parallel': spawn a peer run in an isolated worktree (Parallel Runs). The
-            //   cap on parallel variants is enforced here. If the cap is hit, fall back to
-            //   queueing instead of throwing — the user's message is never lost.
-            //   Inspired by Devin Managed Devins and Cursor Multitask.
+            // - 'parallel': the HTTP layer spawns a NEW conversation in an isolated
+            //   worktree. If that isolation is not available, the store queues instead of
+            //   writing a second agent into this working tree.
             //
             // - 'interrupt': cancel the running agent and process the new message
             //   immediately. Inspired by Cursor "Stop & send" and Codex "Steer".
@@ -725,28 +739,25 @@ export function postUserMessageExtracted(ctx: any, id: string,
                 }
                 // Status is now idle — fall through to normal processing below.
             } else if (deliveryMode === 'parallel') {
-                if (activeTaskIds.length >= QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION) {
-                    // Cap hit: fall back to queueing instead of throwing 429.
-                    // The user's message is never lost.
-                    return ctx.enqueuePendingMessage(
-                        conv,
-                        {
-                            id: randomUUID(),
-                            role: 'user',
-                            content,
-                            createdAt: Date.now(),
-                            ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
-                        },
-                        ctx.resolveTurnAgent(conv, content, agentOverride),
-                        agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv, content, agentOverride))
-                            ? agentModelOverride
-                            : undefined,
-                        internal?.clientMessageId,
-                    );
-                }
-                // Fall through to normal processing — the backend will spawn a peer run
-                // alongside the existing one (in-session multitasking with shared working
-                // tree, same as before but now explicit opt-in by the user).
+                // Isolated parallel is created by the HTTP layer (new conversation + worktree).
+                // Reaching the store with `'parallel'` while a run is live means isolation was
+                // unavailable (not a git repo, cap hit, tests) — queue instead of a same-tree
+                // peer run. No IAD writes two agents into one working tree.
+                return ctx.enqueuePendingMessage(
+                    conv,
+                    {
+                        id: randomUUID(),
+                        role: 'user',
+                        content,
+                        createdAt: Date.now(),
+                        ...(internal?.clientMessageId ? { clientMessageId: internal.clientMessageId } : {}),
+                    },
+                    ctx.resolveTurnAgent(conv, content, agentOverride),
+                    agentModelOverride && agentSupportsModelPicker(ctx.resolveTurnAgent(conv, content, agentOverride))
+                        ? agentModelOverride
+                        : undefined,
+                    internal?.clientMessageId,
+                );
             } else {
                 // Default: 'queue' — enqueue the message, don't spawn a peer run.
                 const turnAgentId = ctx.resolveTurnAgent(conv, content, agentOverride);

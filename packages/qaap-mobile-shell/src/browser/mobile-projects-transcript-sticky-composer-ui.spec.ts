@@ -120,6 +120,12 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
                 return true;
             },
             submitBackgroundAgentTask: async (_project: MobileProjectEntry, draft: string, opts: Record<string, unknown>) => {
+                if (options.atRunLimit) {
+                    throw new QaapConversationMessageError('too many runs', 429, 'max-concurrent-runs');
+                }
+                if (options.submitFails) {
+                    throw new Error('backend down');
+                }
                 backgroundSubmits.push(draft);
                 backgroundOptions.push(opts);
                 return undefined;
@@ -189,7 +195,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(host.transcriptComposerQueueExpanded).to.equal(false);
     });
 
-    it('starts a peer run in the SAME conversation instead of cancelling the open turn', async () => {
+    it('starts an isolated worktree session instead of a same-tree peer run', async () => {
         const probe = createProbe({ agentWorking: true });
         probe.queue.enqueue(summary.id, { draft: 'keep', selectedAgentId: 'a1' });
         probe.queue.enqueue(summary.id, { draft: 'run me', selectedAgentId: 'a2', modeId: 'm1' });
@@ -197,19 +203,16 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         await probe.ui.sendQueuedFollowUpNow(project, summary, 1);
 
         expect(probe.stopped).to.equal(0);
-        // No second session: in-session multitasking posts into the open conversation.
-        expect(probe.backgroundSubmits).to.deep.equal([]);
-        expect(probe.conversationSubmits).to.have.length(1);
-        expect(probe.conversationSubmits[0].conversationId).to.equal(summary.id);
-        expect(probe.conversationSubmits[0].draft).to.equal('run me');
-        expect(probe.conversationSubmits[0].options.parallel).to.equal(true);
-        expect(probe.conversationSubmits[0].options.selectedAgentId).to.equal('a2');
-        expect(probe.conversationSubmits[0].options.modeId).to.equal('m1');
-        // Only the dispatched entry leaves the queue.
+        expect(probe.conversationSubmits).to.deep.equal([]);
+        expect(probe.backgroundSubmits).to.deep.equal(['run me']);
+        expect(probe.backgroundOptions[0].worktree).to.equal(true);
+        expect(probe.backgroundOptions[0].openConversation).to.equal(true);
+        expect(probe.backgroundOptions[0].selectedAgentId).to.equal('a2');
+        expect(probe.backgroundOptions[0].modeId).to.equal('m1');
         expect(probe.queue.peek(summary.id).map(entry => entry.draft)).to.deep.equal(['keep']);
     });
 
-    it('puts the message back in the queue when the peer run could not start', async () => {
+    it('falls back to the queue when the isolated parallel session cannot start', async () => {
         const probe = createProbe({ agentWorking: true, submitFails: true });
         probe.queue.enqueue(summary.id, { draft: 'run me' });
 

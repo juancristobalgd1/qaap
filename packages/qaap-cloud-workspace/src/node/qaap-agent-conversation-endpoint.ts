@@ -31,6 +31,7 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qa
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
+import { QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION } from './qaap-agent-conversation-store-constants';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import {
     QaapGithubAuthGuard,
@@ -156,7 +157,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            this.handlePostMessage(req, res);
+            void this.handlePostMessage(req, res);
         });
         app.delete(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/queued-messages/:queuedMessageId`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
@@ -168,7 +169,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
                 return;
             }
-            this.handleDispatchQueuedMessage(req, res);
+            void this.handleDispatchQueuedMessage(req, res);
         });
         app.post(`${QAAP_AGENT_CONVERSATION_API_PATH}/:id/ag-ui/events`, (req, res) => {
             if (!this.getConversationIfOwned(req, res, req.params.id)) {
@@ -493,7 +494,84 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         }
     }
 
-    protected handlePostMessage(req: Request, res: Response): void {
+    protected conversationHasLiveRun(conversationId: string, conv: QaapAgentConversation): boolean {
+        return conv.status === 'streaming' && this.store.getActiveTaskIdsForConversation(conversationId).length > 0;
+    }
+
+    /**
+     * Delivery mode `'parallel'`: new conversation in an isolated git worktree. The parent
+     * turn is left running. If isolation is unavailable (cap, not a git repo), queue on the parent.
+     */
+    protected async spawnIsolatedParallelConversation(
+        parent: QaapAgentConversation,
+        input: {
+            readonly content: string;
+            readonly agent?: string;
+            readonly agentModel?: QaapPostAgentMessageRequest['agentModel'];
+            readonly autoApprove?: boolean;
+            readonly interactionModeId?: string;
+            readonly approvalPolicyId?: string;
+            readonly toolApprovalRules?: QaapAgentToolApprovalRules;
+            readonly latencyMarks?: QaapPostAgentMessageRequest['latencyMarks'];
+            readonly clientMessageId?: string;
+        },
+    ): Promise<QaapAgentConversation> {
+        const dedupKey = input.clientMessageId
+            ? `${parent.ownerLogin ?? '_'}:parallel:${parent.id}:${input.clientMessageId}`
+            : undefined;
+        if (dedupKey) {
+            const priorId = this.clientRequestDedup.get(dedupKey);
+            const prior = priorId ? this.store.get(priorId) : undefined;
+            if (prior) {
+                return prior;
+            }
+        }
+        const queueOnParent = (): QaapAgentConversation => this.store.postUserMessage(
+            parent.id,
+            input.content,
+            input.agent,
+            input.agentModel,
+            input.autoApprove,
+            input.interactionModeId,
+            input.approvalPolicyId,
+            input.toolApprovalRules,
+            sanitizeLatencyMarks(input.latencyMarks),
+            input.clientMessageId ? { clientMessageId: input.clientMessageId } : undefined,
+            'queue',
+        );
+        if (this.store.countStreamingForks(parent.id) >= QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION) {
+            return queueOnParent();
+        }
+        try {
+            const worktree = await this.worktrees.create(parent.cwd, parent.ownerLogin);
+            const spawned = this.store.create({
+                cwd: worktree.worktreePath,
+                parallelBaseCwd: parent.parallelBaseCwd ?? parent.cwd,
+                worktreeBranch: worktree.branch,
+                forkedFromId: parent.id,
+                agent: input.agent || parent.agentId,
+                title: input.content,
+                message: input.content,
+                agentModel: input.agentModel ?? parent.agentModel,
+                qaiqModel: input.agentModel ?? parent.qaiqModel,
+                autoApprove: input.autoApprove,
+                interactionModeId: input.interactionModeId ?? parent.interactionModeId,
+                approvalPolicyId: input.approvalPolicyId ?? parent.approvalPolicyId,
+                ...(input.toolApprovalRules ?? parent.toolApprovalRules
+                    ? { toolApprovalRules: input.toolApprovalRules ?? parent.toolApprovalRules }
+                    : {}),
+                latencyMarks: sanitizeLatencyMarks(input.latencyMarks),
+            }, parent.ownerLogin);
+            if (dedupKey) {
+                this.rememberClientRequest(dedupKey, spawned.id);
+            }
+            return spawned;
+        } catch {
+            return queueOnParent();
+        }
+    }
+
+    protected async handlePostMessage(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as Partial<QaapPostAgentMessageRequest>;
         const content = typeof body.content === 'string' ? body.content.trim() : '';
         if (!content) {
@@ -515,6 +593,22 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                 body.deliveryMode === 'queue' || body.deliveryMode === 'parallel' || body.deliveryMode === 'interrupt'
                     ? body.deliveryMode
                     : QAAP_DEFAULT_DELIVERY_MODE;
+            const parent = this.store.get(req.params.id);
+            if (deliveryMode === 'parallel' && parent && this.conversationHasLiveRun(req.params.id, parent)) {
+                const spawned = await this.spawnIsolatedParallelConversation(parent, {
+                    content,
+                    agent: agent || undefined,
+                    agentModel,
+                    autoApprove,
+                    interactionModeId,
+                    approvalPolicyId,
+                    toolApprovalRules,
+                    latencyMarks: body.latencyMarks,
+                    clientMessageId,
+                });
+                res.status(202).json(spawned);
+                return;
+            }
             const conv = this.store.postUserMessage(
                 req.params.id,
                 content,
@@ -555,7 +649,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         res.status(200).json(conv);
     }
 
-    protected handleDispatchQueuedMessage(req: Request, res: Response): void {
+    protected async handleDispatchQueuedMessage(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as Partial<{ deliveryMode?: string }>;
         const queuedMessageId = req.params.queuedMessageId;
         if (!queuedMessageId) {
@@ -566,6 +660,40 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             ? body.deliveryMode
             : QAAP_DEFAULT_DELIVERY_MODE;
         try {
+            const parent = this.store.get(req.params.id);
+            if (deliveryMode === 'parallel' && parent) {
+                const pending = parent.pendingUserMessages?.find(message => message.id === queuedMessageId);
+                if (!pending) {
+                    res.status(202).json(parent);
+                    return;
+                }
+                this.store.cancelQueuedMessage(req.params.id, queuedMessageId);
+                const liveParent = this.store.get(req.params.id) ?? parent;
+                if (this.conversationHasLiveRun(req.params.id, liveParent)) {
+                    const spawned = await this.spawnIsolatedParallelConversation(liveParent, {
+                        content: pending.content,
+                        agent: pending.turnAgentId,
+                        agentModel: pending.turnAgentModel,
+                        clientMessageId: pending.clientMessageId,
+                    });
+                    res.status(202).json(spawned);
+                    return;
+                }
+                const conv = this.store.postUserMessage(
+                    req.params.id,
+                    pending.content,
+                    pending.turnAgentId,
+                    pending.turnAgentModel,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    pending.clientMessageId ? { clientMessageId: pending.clientMessageId } : undefined,
+                );
+                res.status(202).json(conv);
+                return;
+            }
             const conv = this.store.dispatchQueuedMessage(req.params.id, queuedMessageId, deliveryMode);
             if (!conv) {
                 res.status(404).json({ error: 'Conversation not found.' });

@@ -109,7 +109,7 @@ import {
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
-import { syncTranscriptQueuedBubbles } from './qaap-transcript-queued-bubbles';
+import { renderQaapDeliveryModeStrip } from '@theia/qaap-transcript-overlay/lib/browser/qaap-delivery-mode-strip';
 import {
     mergeFailedComposerDraft,
     isIdleComposerFocusStealable,
@@ -145,6 +145,39 @@ export async function startPeerRunOrQueueExtracted(ctx: any, project: MobileProj
     // pendingDeliveryChoice on the host). This function is called once the user
     // has picked a mode from that strip.
     const deliveryMode = (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode ?? 'queue';
+    if (deliveryMode === 'parallel') {
+        try {
+            await ctx.host.submitBackgroundAgentTask(project, entry.draft, {
+                openConversation: true,
+                forceVps: true,
+                worktree: true,
+                selectedAgentId: entry.selectedAgentId,
+                modeId: entry.modeId,
+                autoApprove: entry.autoApprove,
+                approvalPolicyId: entry.approvalPolicyId,
+                agentModel: ctx.host.transcriptComposerAgentModel,
+                variables: entry.variables,
+                imagePreviews: entry.imagePreviews,
+            });
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobileProjects/isolatedParallelStarted',
+                    'Started in an isolated worktree — the current agent keeps working',
+                ),
+                { duration: 2600 },
+            );
+            return true;
+        } catch (error) {
+            if (!isMaxConcurrentRunsError(error)) {
+                const detail = error instanceof Error ? error.message : String(error);
+                ctx.host.messageService?.error(nls.localize(
+                    'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,
+                ));
+                return false;
+            }
+            return ctx.queuePeerRunMessage(summary, entry);
+        }
+    }
     try {
         const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
             selectedAgentId: entry.selectedAgentId,
@@ -155,22 +188,13 @@ export async function startPeerRunOrQueueExtracted(ctx: any, project: MobileProj
             variables: entry.variables,
             imagePreviews: entry.imagePreviews,
             deliveryMode,
-            parallel: deliveryMode === 'parallel',
         });
         if (!submitted) {
             // Another POST for this conversation was still open (rapid-fire sends): the
             // message never left, and the composer draft is already cleared — queue it.
             return ctx.queuePeerRunMessage(summary, entry);
         }
-        if (deliveryMode === 'parallel') {
-            MobileSnackbar.show(
-                nls.localize(
-                    'qaap/mobileProjects/peerRunStarted',
-                    'Message sent — the agent will process it alongside the running task',
-                ),
-                { duration: 2600 },
-            );
-        } else if (deliveryMode === 'queue') {
+        if (deliveryMode === 'queue') {
             MobileSnackbar.show(
                 nls.localize(
                     'qaap/mobileProjects/messageQueued',
@@ -550,101 +574,11 @@ export function renderDeliveryModeStripExtracted(ctx: any): HTMLElement | undefi
     if (!pending) {
         return undefined;
     }
-    const { entry } = pending;
-
-    const strip = document.createElement('div');
-    strip.className = 'qaap-delivery-mode-strip';
-    strip.setAttribute('role', 'region');
-    strip.setAttribute('aria-label', nls.localize(
-        'qaap/mobileProjects/deliveryModeStripLabel',
-        'Choose how to send your message while the agent is working',
-    ));
-
-    // Top row: status icon + draft preview + dismiss button
-    const topRow = document.createElement('div');
-    topRow.className = 'qaap-delivery-mode-strip-top';
-
-    const statusIcon = document.createElement('span');
-    statusIcon.className = 'qaap-delivery-mode-strip-icon codicon codicon-sync~spin';
-    statusIcon.setAttribute('aria-hidden', 'true');
-
-    const draftPreview = document.createElement('span');
-    draftPreview.className = 'qaap-delivery-mode-strip-draft';
-    const previewText = entry.draft.length > 80
-        ? entry.draft.slice(0, 80) + '\u2026'
-        : entry.draft;
-    draftPreview.textContent = previewText;
-    draftPreview.title = entry.draft;
-
-    const dismissBtn = document.createElement('button');
-    dismissBtn.type = 'button';
-    dismissBtn.className = 'qaap-delivery-mode-strip-dismiss';
-    dismissBtn.setAttribute('aria-label', nls.localize('qaap/mobileProjects/dismissDelivery', 'Dismiss'));
-    const dismissIcon = document.createElement('span');
-    dismissIcon.className = 'codicon codicon-close';
-    dismissBtn.append(dismissIcon);
-    dismissBtn.addEventListener('click', () => ctx.dismissDeliveryChoice());
-
-    topRow.append(statusIcon, draftPreview, dismissBtn);
-    strip.append(topRow);
-
-    // Bottom row: 3 pill buttons
-    const pills = document.createElement('div');
-    pills.className = 'qaap-delivery-mode-strip-pills';
-
-    const options: Array<{
-        mode: QaapMessageDeliveryMode;
-        iconClass: string;
-        label: string;
-        title: string;
-    }> = [
-            {
-                mode: 'queue',
-                iconClass: 'codicon codicon-clock',
-                label: nls.localize('qaap/mobileProjects/deliveryQueue', 'Queue'),
-                title: nls.localize(
-                    'qaap/mobileProjects/deliveryQueueTitle',
-                    'Wait for the current agent to finish, then process this message',
-                ),
-            },
-            {
-                mode: 'parallel',
-                iconClass: 'codicon codicon-split-horizontal',
-                label: nls.localize('qaap/mobileProjects/deliveryParallel', 'Send alongside'),
-                title: nls.localize(
-                    'qaap/mobileProjects/deliveryParallelTitle',
-                    'Start a new agent alongside the current one — both work at the same time',
-                ),
-            },
-            {
-                mode: 'interrupt',
-                iconClass: 'codicon codicon-stop-circle',
-                label: nls.localize('qaap/mobileProjects/deliveryInterrupt', 'Interrupt'),
-                title: nls.localize(
-                    'qaap/mobileProjects/deliveryInterruptTitle',
-                    'Cancel the current agent and process this message immediately',
-                ),
-            },
-        ];
-
-    for (const opt of options) {
-        const pill = document.createElement('button');
-        pill.type = 'button';
-        pill.className = 'qaap-delivery-mode-pill theia-mod-' + opt.mode;
-        pill.title = opt.title;
-        const icon = document.createElement('span');
-        icon.className = 'qaap-delivery-mode-pill-icon ' + opt.iconClass;
-        icon.setAttribute('aria-hidden', 'true');
-        const label = document.createElement('span');
-        label.className = 'qaap-delivery-mode-pill-label';
-        label.textContent = opt.label;
-        pill.append(icon, label);
-        pill.addEventListener('click', () => {
-            void ctx.resolveDeliveryChoice(opt.mode);
-        });
-        pills.append(pill);
-    }
-
-    strip.append(pills);
-    return strip;
+    return renderQaapDeliveryModeStrip({
+        draft: pending.entry.draft,
+        onChoose: mode => {
+            void ctx.resolveDeliveryChoice(mode);
+        },
+        onDismiss: () => ctx.dismissDeliveryChoice(),
+    });
 }

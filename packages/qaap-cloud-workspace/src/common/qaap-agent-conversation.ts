@@ -36,8 +36,8 @@ export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
  * - `'queue'` (default): the message is enqueued in `pendingUserMessages` and processed
  *   when the running agent finishes its turn. Multiple queued messages may be batched into
  *   a single agent turn (optimization B).
- * - `'parallel'`: the message spawns a peer run in an isolated git worktree (Parallel
- *   Runs). No write conflicts because each variant has its own working tree.
+ * - `'parallel'`: spawn a **new conversation** in an isolated git worktree (never a
+ *   second agent on the same tree). No write conflicts; the original turn keeps going.
  * - `'interrupt'`: the running agent is cancelled and the new message is processed
  *   immediately. Equivalent to Cursor "Stop & send" / Codex "Steer".
  */
@@ -358,6 +358,11 @@ export interface QaapCreateAgentConversationRequest {
      * and the conversation runs there instead of the repository's main working tree.
      */
     readonly worktree?: boolean;
+    /**
+     * Set when this conversation was spawned as an isolated parallel follow-up of another
+     * thread (delivery mode `'parallel'`). Points at the parent conversation id.
+     */
+    readonly forkedFromId?: string;
     /** Set by the server on worktree conversations — the branch backing the worktree. */
     readonly worktreeBranch?: string;
     /** When `false`, tool calls need manual CLI approval on the VPS. */

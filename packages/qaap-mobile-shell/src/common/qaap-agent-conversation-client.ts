@@ -34,7 +34,7 @@ export const QAAP_AGENT_CONVERSATION_API_PATH = '/qaap/api/agent-conversations';
  * Mirrors `QaapMessageDeliveryMode` from `@theia/qaap-cloud-workspace`.
  *
  * - `'queue'` (default): enqueue and process when the agent finishes.
- * - `'parallel'`: spawn in an isolated worktree (Parallel Runs).
+ * - `'parallel'`: spawn a new conversation in an isolated git worktree.
  * - `'interrupt'`: cancel the running agent and process immediately.
  */
 export type QaapMessageDeliveryMode = 'queue' | 'parallel' | 'interrupt';

@@ -6,4 +6,6 @@ Transcript overlay kernel for Qaap mobile Work Hub:
 - `TranscriptOverlayState` — mutable overlay state bag
 - `qaap-transcript-*` rendering utilities (virtual list, scroll pin, live controller, …)
 
-`MobileProjectsTranscript*Ui` modules and `TranscriptOverlayController` remain in `@theia/qaap-mobile-shell` until shared composer / execution-surface seams are extracted.
+`MobileProjectsTranscript*Ui` modules and `TranscriptOverlayController` remain in
+`@theia/qaap-mobile-shell` until shared composer / execution-surface seams are
+extracted. Delivery-mode strip and queued-bubble cleanup already live here.
