@@ -343,7 +343,8 @@
             '.qaap-login-btn{width:100%;min-height:44px;height:48px;border-radius:10px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}',
             '.qaap-login-btn--primary{border:none;background:var(--qaap-ink);color:var(--qaap-surface)}',
             '.qaap-login-btn--secondary{height:44px;border:1px solid var(--qaap-border);background:transparent;color:var(--qaap-ink);font-size:14px;font-weight:500}',
-            '.qaap-login-btn:disabled{opacity:.85;cursor:wait}',
+            '.qaap-login-btn:disabled{opacity:.85;cursor:not-allowed}',
+            '.qaap-login-btn[aria-busy="true"]{cursor:wait}',
             '.qaap-login-btn:focus-visible{outline:2px solid var(--qaap-link);outline-offset:2px}',
             '.qaap-login-btn-icon{display:inline-flex;width:18px;height:18px;align-items:center;justify-content:center}',
             '.qaap-login-spinner{width:16px;height:16px;border-radius:50%;border:2px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;animation:qaap-spin .8s linear infinite}',
@@ -462,6 +463,7 @@
                 if (button) {
                     button.disabled = true;
                     button.setAttribute('aria-disabled', 'true');
+                    button.classList.add('qaap-login-btn--unavailable');
                     var label = button.querySelector('.qaap-login-btn-label');
                     if (label) {
                         label.textContent = 'GitHub sign-in unavailable';

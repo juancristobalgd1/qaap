@@ -124,10 +124,14 @@ body.qaap-login-active .theia-preload {
     outline-offset: 2px;
 }
 
-.qaap-login-btn:disabled,
+.qaap-login-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.85;
+}
+
+.qaap-login-btn[aria-busy="true"],
 .qaap-login-btn--loading {
     cursor: wait;
-    opacity: 0.85;
 }
 
 .qaap-login-btn--primary {
