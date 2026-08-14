@@ -10,6 +10,7 @@
 import '../../src/browser/style/mobile-workbench-base.css';
 import '../../src/browser/style/mobile-workbench-projects.css';
 import '../../src/browser/style/mobile-workbench-work-hub.css';
+import '@theia/qaap-transcript-overlay/src/browser/style/qaap-delivery-mode-strip.css';
 import '../../src/browser/style/mobile-workbench-chrome.css';
 import '../../src/browser/style/mobile-workbench-ide-chrome.css';
 import '../../src/browser/style/qaap-catalog-card-tap-feedback.css';

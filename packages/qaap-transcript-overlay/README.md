@@ -8,4 +8,5 @@ Transcript overlay kernel for Qaap mobile Work Hub:
 
 `MobileProjectsTranscript*Ui` modules and `TranscriptOverlayController` remain in
 `@theia/qaap-mobile-shell` until shared composer / execution-surface seams are
-extracted. Delivery-mode strip and queued-bubble cleanup already live here.
+extracted. Delivery-mode strip (markup + CSS) and queued-bubble cleanup already
+live here.
