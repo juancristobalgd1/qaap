@@ -715,6 +715,14 @@ export function mountTranscriptFilesView(
     const resolveMenuPortal = (): HTMLElement =>
         root.closest('.theia-mobile-agent-transcript-root') as HTMLElement ?? document.body;
 
+    const scheduleMenuPosition = (position: () => void): void => {
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(position);
+            return;
+        }
+        position();
+    };
+
     const positionAnchorMenu = (anchor: HTMLElement, menu: HTMLElement, minWidth = 220): void => {
         const margin = 8;
         const anchorRect = anchor.getBoundingClientRect();
@@ -810,7 +818,7 @@ export function mountTranscriptFilesView(
         resolveMenuPortal().appendChild(moreMenu);
         moreMenu.hidden = false;
         moreBtn.setAttribute('aria-expanded', 'true');
-        window.requestAnimationFrame(() => positionAnchorMenu(moreBtn, moreMenu));
+        scheduleMenuPosition(() => positionAnchorMenu(moreBtn, moreMenu));
         moreMenuOutsideListener = onMoreMenuOutside;
         moreMenuKeyListener = onMoreMenuKeyDown;
         document.addEventListener('pointerdown', moreMenuOutsideListener, true);
@@ -847,7 +855,7 @@ export function mountTranscriptFilesView(
         resolveMenuPortal().appendChild(newMenu);
         newMenu.hidden = false;
         newFileBtn.setAttribute('aria-expanded', 'true');
-        window.requestAnimationFrame(() => positionAnchorMenu(newFileBtn, newMenu, 196));
+        scheduleMenuPosition(() => positionAnchorMenu(newFileBtn, newMenu, 196));
         newMenuOutsideListener = onNewMenuOutside;
         newMenuKeyListener = onNewMenuKeyDown;
         document.addEventListener('pointerdown', newMenuOutsideListener, true);

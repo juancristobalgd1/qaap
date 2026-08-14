@@ -337,5 +337,22 @@ describe('qaap-transcript-files-view', () => {
                 mount.dispose.dispose();
             }
         });
+
+        it('opens the more menu when requestAnimationFrame is missing', () => {
+            const originalRaf = window.requestAnimationFrame;
+            delete (window as { requestAnimationFrame?: typeof window.requestAnimationFrame }).requestAnimationFrame;
+            const host = document.createElement('div');
+            document.body.append(host);
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
+
+            try {
+                const moreBtn = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-more');
+                moreBtn?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                expect(document.querySelector('.theia-mobile-transcript-files-menu:not(.theia-mod-create)')).to.exist;
+            } finally {
+                mount.dispose.dispose();
+                window.requestAnimationFrame = originalRaf;
+            }
+        });
     });
 });
