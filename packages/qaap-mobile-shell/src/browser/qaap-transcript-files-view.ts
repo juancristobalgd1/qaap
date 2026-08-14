@@ -665,12 +665,17 @@ export function mountTranscriptFilesView(
         const relayoutFiles = (): void => {
             applyTreePaneSize();
             state.previewMonacoEditor?.layout();
-            window.dispatchEvent(new Event('resize'));
+            try {
+                window.dispatchEvent(new Event('resize'));
+            } catch {
+                /* JSDOM rejects some Event instances on window. */
+            }
         };
         if (typeof window.requestAnimationFrame === 'function') {
             window.requestAnimationFrame(relayoutFiles);
         } else {
-            relayoutFiles();
+            applyTreePaneSize();
+            state.previewMonacoEditor?.layout();
         }
     };
 
