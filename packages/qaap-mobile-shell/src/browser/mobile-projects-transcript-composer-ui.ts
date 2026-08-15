@@ -47,10 +47,6 @@ import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
-import {
-    readComposerDeliveryMode,
-    writeComposerDeliveryMode,
-} from './qaap-delivery-mode-strip';
 
 export interface ComposerAgentPickerChrome {
     readonly sheet: HTMLElement;
@@ -65,7 +61,6 @@ export interface MobileProjectsTranscriptComposerHost {
     transcriptComposerAgentSheet: HTMLElement | undefined;
     transcriptComposerQaiqModelSheet: HTMLElement | undefined;
     transcriptComposerModeSheet: HTMLElement | undefined;
-    transcriptComposerDeliveryModeSheet: HTMLElement | undefined;
     transcriptComposerApprovalSheet: HTMLElement | undefined;
     stickyComposerWorkspaceSheet: HTMLElement | undefined;
     transcriptComposerPinnedAgentId: string | undefined;
@@ -375,27 +370,9 @@ export class MobileProjectsTranscriptComposerUi {
         });
     }
 
-    openTranscriptComposerDeliveryModeSheet(anchor?: HTMLElement): void {
-        this.host.stickyComposerSheetsUi.openComposerDeliveryModeSheet({
-            selectedMode: readComposerDeliveryMode(),
-            anchor,
-            transcriptOverlay: true,
-            closeTitle: nls.localize('qaap/mobileProjects/closeTranscript', 'Close'),
-            onClose: () => this.closeAllComposerSheets(),
-            isOpen: () => this.host.transcriptComposerDeliveryModeSheet !== undefined,
-            assignSheet: sheet => { this.host.transcriptComposerDeliveryModeSheet = sheet; },
-            onSelect: mode => {
-                writeComposerDeliveryMode(mode);
-                this.closeAllComposerSheets();
-                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            },
-        });
-    }
-
     closeTranscriptComposerSheets(): void {
         this.host.stickyComposerSheetsUi.teardownAgentPickerPopover();
         this.host.stickyComposerSheetsUi.teardownModeSheetPopover();
-        this.host.stickyComposerSheetsUi.teardownDeliveryModeSheetPopover();
         this.host.stickyComposerSheetsUi.teardownApprovalPolicySheetPopover();
         if (this.host.transcriptComposerAgentSheet) {
             this.host.transcriptComposerAgentSheet.remove();
@@ -408,10 +385,6 @@ export class MobileProjectsTranscriptComposerUi {
         if (this.host.transcriptComposerModeSheet) {
             this.host.transcriptComposerModeSheet.remove();
             this.host.transcriptComposerModeSheet = undefined;
-        }
-        if (this.host.transcriptComposerDeliveryModeSheet) {
-            this.host.transcriptComposerDeliveryModeSheet.remove();
-            this.host.transcriptComposerDeliveryModeSheet = undefined;
         }
         if (this.host.transcriptComposerApprovalSheet) {
             this.host.transcriptComposerApprovalSheet.remove();

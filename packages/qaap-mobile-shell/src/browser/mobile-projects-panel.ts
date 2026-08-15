@@ -394,7 +394,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected stickyComposerQaiqModels: QaapQaiqModelOption[] = [];
     protected stickyComposerAgentSheet: HTMLElement | undefined;
     protected stickyComposerModeSheet: HTMLElement | undefined;
-    protected stickyComposerDeliveryModeSheet: HTMLElement | undefined;
     protected stickyComposerApprovalSheet: HTMLElement | undefined;
     protected stickyComposerWorkspaceSheet: HTMLElement | undefined;
     protected stickyComposerContextUsageSheet: HTMLElement | undefined;

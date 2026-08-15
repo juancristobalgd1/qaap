@@ -98,14 +98,6 @@ import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtr
 import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, openStickyComposerModelCapabilityPopoverExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownCapabilityPresentationExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render2';
 import { createAgentSheetOptionExtracted, createModeSheetOptionExtracted, mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openComposerModeSheetExtracted, openStickyComposerApprovalPolicySheetExtracted, openStickyComposerModeSheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming2';
 import { createComposerAgentPickerChromeExtracted, renderComposerAgentPickerExtracted } from './mobile-projects-sticky-composer-sheets-ui-timeline2';
-import {
-    isDeliveryModeSheetPopoverAnchoredTo,
-    mountDeliveryModeSheetPresentation,
-    openComposerDeliveryModeSheet as openComposerDeliveryModeSheetExtracted,
-    openStickyComposerDeliveryModeSheet as openStickyComposerDeliveryModeSheetExtracted,
-    teardownDeliveryModeSheetPopover as teardownDeliveryModeSheetPopoverExtracted,
-} from './mobile-projects-sticky-composer-delivery-mode-sheet';
-import type { QaapComposerDeliveryMode } from './qaap-delivery-mode-strip';
 
 export type ComposerAgentPickerView = 'agents' | 'models';
 
@@ -126,7 +118,6 @@ export interface ComposerAgentPickerChrome {
 export interface MobileProjectsStickyComposerSheetsHost {
     stickyComposerAgentSheet: HTMLElement | undefined;
     stickyComposerModeSheet: HTMLElement | undefined;
-    stickyComposerDeliveryModeSheet: HTMLElement | undefined;
     stickyComposerApprovalSheet: HTMLElement | undefined;
     stickyComposerWorkspaceSheet: HTMLElement | undefined;
     stickyComposerContextUsageSheet: HTMLElement | undefined;
@@ -167,9 +158,6 @@ export class MobileProjectsStickyComposerSheetsUi {
     private modeSheetAnchor: HTMLElement | undefined;
     private modePopoverCleanup: (() => void) | undefined;
     private modePopoverAlign: StickyComposerPopoverAlign = 'start';
-    private deliveryModeSheetAnchor: HTMLElement | undefined;
-    private deliveryModePopoverCleanup: (() => void) | undefined;
-    private deliveryModePopoverAlign: StickyComposerPopoverAlign = 'start';
     private approvalPolicySheetAnchor: HTMLElement | undefined;
     private approvalPolicyPopoverCleanup: (() => void) | undefined;
     private approvalPolicyPopoverAlign: StickyComposerPopoverAlign = 'start';
@@ -255,34 +243,6 @@ export class MobileProjectsStickyComposerSheetsUi {
         openStickyComposerModeSheetExtracted(this, project, modes, anchor);
     }
 
-    teardownDeliveryModeSheetPopover(): void {
-        teardownDeliveryModeSheetPopoverExtracted(this);
-    }
-
-    isDeliveryModeSheetPopoverAnchoredTo(anchor?: HTMLElement): boolean {
-        return isDeliveryModeSheetPopoverAnchoredTo(this, anchor);
-    }
-
-    protected mountDeliveryModeSheetPresentation(panel: HTMLElement, options: { readonly anchor?: HTMLElement; readonly transcriptOverlay: boolean; readonly onClose: () => void; },): HTMLElement {
-        return mountDeliveryModeSheetPresentation(this, panel, options);
-    }
-
-    openComposerDeliveryModeSheet(options: {
-        readonly selectedMode: QaapComposerDeliveryMode;
-        readonly anchor?: HTMLElement;
-        readonly transcriptOverlay: boolean;
-        readonly closeTitle: string;
-        readonly onClose: () => void;
-        readonly onSelect: (mode: QaapComposerDeliveryMode) => void;
-        readonly assignSheet: (sheet: HTMLElement) => void;
-        readonly isOpen?: () => boolean;
-    }): void {
-        openComposerDeliveryModeSheetExtracted(this, options);
-    }
-
-    openStickyComposerDeliveryModeSheet(anchor?: HTMLElement): void {
-        openStickyComposerDeliveryModeSheetExtracted(this, anchor);
-    }
     openStickyComposerApprovalPolicySheet(project: MobileProjectEntry, agentLabel: string, anchor?: HTMLElement,): void {
         openStickyComposerApprovalPolicySheetExtracted(this, project, agentLabel, anchor);
     }

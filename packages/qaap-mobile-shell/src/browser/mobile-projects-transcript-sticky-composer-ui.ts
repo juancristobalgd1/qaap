@@ -137,7 +137,7 @@ import {
     resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
-import { applyTranscriptComposerPrefsExtracted, applyTranscriptComposerPrefsFromConversationExtracted, dismissDeliveryChoiceExtracted, ensureTranscriptComposerPrefsForMountExtracted, flushTranscriptComposerDraftExtracted, flushTranscriptComposerPrefsExtracted, hydrateTranscriptComposerPrefsExtracted, isTranscriptStickyComposerAgentWorkingExtracted, mountTranscriptStickyComposerExtracted, persistTranscriptComposerPrefsExtracted, queuePeerRunMessageExtracted, renderDeliveryModeStripExtracted, resetToProjectComposerDefaultsExtracted, resolveDeliveryChoiceExtracted, schedulePersistTranscriptComposerDraftExtracted, schedulePersistTranscriptComposerPrefsExtracted, startPeerRunOrQueueExtracted, stopOpenComposerAgentLikeComposerStopExtracted, submitQueuedFollowUpEntryExtracted } from './mobile-projects-transcript-sticky-composer-ui-activity2';
+import { applyTranscriptComposerPrefsExtracted, applyTranscriptComposerPrefsFromConversationExtracted, ensureTranscriptComposerPrefsForMountExtracted, flushTranscriptComposerDraftExtracted, flushTranscriptComposerPrefsExtracted, hydrateTranscriptComposerPrefsExtracted, isTranscriptStickyComposerAgentWorkingExtracted, mountTranscriptStickyComposerExtracted, persistTranscriptComposerPrefsExtracted, queuePeerRunMessageExtracted, resetToProjectComposerDefaultsExtracted, schedulePersistTranscriptComposerDraftExtracted, schedulePersistTranscriptComposerPrefsExtracted, startPeerRunOrQueueExtracted, stopOpenComposerAgentLikeComposerStopExtracted, submitQueuedFollowUpEntryExtracted } from './mobile-projects-transcript-sticky-composer-ui-activity2';
 import { remountTranscriptStickyComposerExtracted, submitTranscriptComposerDraftExtracted } from './mobile-projects-transcript-sticky-composer-ui-live-status2';
 import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtracted, fetchWorkspaceChangedFilesExtracted, hasComposerAgentActivityExtracted, hasComposerCommittableChangesFromGitExtracted, hasComposerFileActivityExtracted, onTranscriptComposerAttachExtracted, openComposerPreviewExtracted, resolveChangedFilesStatsExtracted, resolveComposerActivityFilesForStackExtracted, resolveComposerPreviewRuntimeExtracted, resolveComposerUploadTargetDirExtracted, resolveComposerWorkspaceRootExtracted, resolveTranscriptContextUsageTargetExtracted, resolveTranscriptTheiaChatModelExtracted, scheduleComposerPreviewHealthCheckExtracted, scheduleIdleComposerFocusRetentionExtracted, shouldRefetchComposerGitSnapshotExtracted, syncComposerPreviewAvailabilityExtracted, syncTranscriptComposerQuickActionsVisibilityExtracted } from './mobile-projects-transcript-sticky-composer-ui-render2';
 import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptionsExtracted, keepAllComposerChangedFilesExtracted, launchComposerDevPreviewExtracted, refreshComposerActivityGitFilesIfNeededExtracted, runComposerCommitActionExtracted, runComposerGitFileActionExtracted, submitRunGeneratedAppFollowUpExtracted, syncComposerGitSnapshotExtracted, undoAllComposerChangedFilesExtracted } from './mobile-projects-transcript-sticky-composer-ui-streaming2';
@@ -219,8 +219,6 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     agentsHubShellActive: boolean;
     transcriptFollowUpFlushInFlight: boolean;
     transcriptFollowUpQueue: TranscriptFollowUpQueue;
-    /** Pending delivery choice when the user sends while an agent is working. */
-    pendingDeliveryChoice: { summary: QaapAgentConversationSummaryDTO; entry: TranscriptFollowUpEntry; project: MobileProjectEntry } | undefined;
     transcriptTheiaSessionByConversationId: ReadonlyMap<string, string>;
     projectsService: MobileProjectsService;
     projectBootstrap?: QaapProjectBootstrapService;
@@ -563,18 +561,6 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return startPeerRunOrQueueExtracted(this, project, summary, entry);
     }
 
-    async resolveDeliveryChoice(mode: 'queue' | 'parallel' | 'interrupt'): Promise<void> {
-        return resolveDeliveryChoiceExtracted(this, mode);
-    }
-
-    dismissDeliveryChoice(): void {
-        dismissDeliveryChoiceExtracted(this);
-    }
-
-    renderDeliveryModeStrip(): HTMLElement | undefined {
-        return renderDeliveryModeStripExtracted(this);
-    }
-
     protected queuePeerRunMessage(summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): boolean {
         return queuePeerRunMessageExtracted(this, summary, entry);
     }
@@ -643,7 +629,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return mountTranscriptStickyComposerAsyncExtracted(this, host, project, summary, chatHost);
     }
 
-    protected async submitTranscriptComposerDraft(draft: string, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement, options: { readonly resolvedPinnedId: string; readonly showApprovalPolicy: boolean; readonly isLegacyTheiaChat: boolean; readonly forceDeliveryMode?: 'queue' | 'parallel' | 'interrupt'; readonly selectedDeliveryMode?: 'queue' | 'parallel' | 'interrupt'; },): Promise<void> {
+    protected async submitTranscriptComposerDraft(draft: string, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement, options: { readonly resolvedPinnedId: string; readonly showApprovalPolicy: boolean; readonly isLegacyTheiaChat: boolean; readonly forceDeliveryMode?: 'queue' | 'parallel' | 'interrupt'; },): Promise<void> {
         return submitTranscriptComposerDraftExtracted(this, draft, project, summary, chatHost, options);
     }
 

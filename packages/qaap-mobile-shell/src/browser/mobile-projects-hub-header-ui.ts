@@ -188,8 +188,8 @@ export class MobileProjectsHubHeaderUi {
     }
 
     /**
-     * Short section label next to the folder control: conversation title when a session is open,
-     * otherwise the active project name.
+     * Short section label next to the project switcher: conversation title when a session is open,
+     * otherwise the active project name. Clicking the control still opens the project switcher.
      */
     resolveHeaderProjectSectionTitle(project: MobileProjectEntry | undefined): string {
         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummary) {
