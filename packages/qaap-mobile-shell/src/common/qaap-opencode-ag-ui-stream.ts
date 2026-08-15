@@ -83,7 +83,7 @@ export class QaapOpencodeAgUiStreamEmitter implements QaapCliAgUiStreamEmitter {
         }
         const toolCallId = part.id ?? `opencode-${this.seq + 1}`;
         const name = normalizeQaiqToolName(part.tool);
-        const args = JSON.stringify(part.input ?? {});
+        const args = JSON.stringify(part.input ?? part.state?.input ?? {});
         const status = part.state?.status;
         const finished = status === 'completed' || status === 'error' || status === undefined;
         const result = extractOpencodeToolResult(part.state);
