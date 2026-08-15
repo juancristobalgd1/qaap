@@ -256,7 +256,12 @@ export class QaapParallelRunStore {
 
         if (action === 'merge') {
             try {
-                await this.mutatingGit(run.cwd, ['merge', '--no-ff', '--no-edit', winner.branch]);
+                // --no-ff always creates a merge commit; identity must be set explicitly
+                // (Windows CI runners often have no user.name / user.email configured).
+                await this.mutatingGit(run.cwd, [
+                    '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
+                    'merge', '--no-ff', '--no-edit', winner.branch,
+                ]);
             } catch (error) {
                 await this.mutatingGit(run.cwd, ['merge', '--abort']).catch(() => undefined);
                 return { ok: false, error: `Merge failed (your tree was left untouched): ${this.errorMessage(error)}` };

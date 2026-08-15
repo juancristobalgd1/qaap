@@ -106,7 +106,12 @@ export class QaapConversationWorktreeService {
 
         if (input.action === 'merge') {
             try {
-                await this.mutatingGit(baseCwd, ['merge', '--no-ff', '--no-edit', branch]);
+                // --no-ff always creates a merge commit; identity must be set explicitly
+                // (Windows CI runners often have no user.name / user.email configured).
+                await this.mutatingGit(baseCwd, [
+                    '-c', 'user.email=qaap@local', '-c', 'user.name=qaap',
+                    'merge', '--no-ff', '--no-edit', branch,
+                ]);
             } catch (error) {
                 await this.mutatingGit(baseCwd, ['merge', '--abort']).catch(() => undefined);
                 return {
