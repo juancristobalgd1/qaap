@@ -385,11 +385,11 @@ export class MobileWorkHubSessionsSidebar {
         this.notifyShellResize();
     }
 
-    /** Close after navigation on mobile and in the IDE's embedded chat sidebar.
-     *  The standalone desktop Work Hub keeps its sessions sidebar persistent. */
+    /** Close after navigation on mobile overlays and in the IDE's embedded chat sidebar.
+     *  Wide Work Hub keeps the sessions list open so users can jump between chats
+     *  without reopening ☰ — including coarse-pointer tablets in landscape. */
     hideForMobileOverlay(): void {
-        if (isDesktopSessionsSidebarLayout()
-            && !document.body.classList.contains('theia-mobile-mod-desktop-ide')) {
+        if (shouldKeepSessionsSidebarOpenAfterNavigation()) {
             return;
         }
         this.hide();
@@ -784,6 +784,19 @@ export function markDesktopSessionsSidebarCollapsed(scope?: string): void {
 export function isDesktopSessionsSidebarLayout(): boolean {
     return typeof window !== 'undefined'
         && window.matchMedia?.(QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY).matches === true;
+}
+
+/**
+ * Keep the sessions list visible after picking a task/chat when the viewport is
+ * wide enough for side-by-side navigation. Narrow phones still close the sheet.
+ * Classic IDE embeds always close (they use the right-panel chat sidebar).
+ */
+export function shouldKeepSessionsSidebarOpenAfterNavigation(): boolean {
+    if (typeof document !== 'undefined'
+        && document.body.classList.contains('theia-mobile-mod-desktop-ide')) {
+        return false;
+    }
+    return !matchesMobileNarrowViewport();
 }
 
 function readDesktopSessionsSidebarWidth(scope?: string): number {

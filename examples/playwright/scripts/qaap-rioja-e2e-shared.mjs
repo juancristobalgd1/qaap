@@ -324,6 +324,61 @@ export async function fetchBackendAgents(page) {
     });
 }
 
+const QAAP_VISUAL_VERIFICATION_MARKER = '[QAAP visual verification]';
+const VISUAL_FILE_RE = /\.(?:html?|css|scss|sass|less|tsx|jsx|vue|svelte)(?:["'\s,}]|$)/i;
+
+/** Mirrors backend `conversationLikelyNeedsVisualVerification` for E2E settlement waits. */
+export function conversationLikelyNeedsVisualVerification(messages) {
+    const lastAgent = [...(messages ?? [])].reverse().find(message => message.role === 'agent');
+    if (!lastAgent) {
+        return false;
+    }
+    if (/\[qaap\s*(capture|record)/i.test(lastAgent.content ?? '')) {
+        return true;
+    }
+    return (lastAgent.segments ?? []).some(segment =>
+        segment.type === 'tool'
+        && /write|edit|patch/i.test(segment.name ?? '')
+        && VISUAL_FILE_RE.test(segment.args ?? ''));
+}
+
+/** True when a terminal `failed` status came from the bounded visual-repair loop, not the scaffold turn. */
+export function conversationVisualRepairExhausted(conv) {
+    if (!conv || conv.status !== 'failed') {
+        return false;
+    }
+    const messages = conv.messages ?? [];
+    if (messages.some(message => message.role === 'user' && message.visualRepairSourceAgentMessageId)) {
+        return true;
+    }
+    if (messages.some(message =>
+        message.role === 'agent'
+        && (message.content ?? '').includes(QAAP_VISUAL_VERIFICATION_MARKER))) {
+        return true;
+    }
+    const lastAgent = [...messages].reverse().find(message => message.role === 'agent');
+    return /visual verification|repair attempt/i.test(lastAgent?.error ?? '');
+}
+
+/** Keep polling after the scaffold turn idles — headless/frontend capture may still be in flight. */
+export function conversationAwaitingVisualSettlement(conv, visualVerificationPending) {
+    if (!conv || conv.status !== 'idle') {
+        return false;
+    }
+    if (visualVerificationPending) {
+        return true;
+    }
+    const messages = conv.messages ?? [];
+    const lastAgent = [...messages].reverse().find(message => message.role === 'agent');
+    if (!lastAgent || lastAgent.error) {
+        return false;
+    }
+    if ((lastAgent.content ?? '').includes(QAAP_VISUAL_VERIFICATION_MARKER)) {
+        return false;
+    }
+    return conversationLikelyNeedsVisualVerification(messages);
+}
+
 export async function pollConversation(page, cwd, { timeoutMs = 180_000, onPoll } = {}) {
     const start = now();
     let last = {};
@@ -359,6 +414,32 @@ export async function pollConversation(page, cwd, { timeoutMs = 180_000, onPoll 
                 }
             }
             const lastAgent = [...(conv.messages ?? [])].reverse().find(m => m.role === 'agent');
+            const visualVerificationPending = latest.visualVerificationPending === true;
+            const visualRepairExhausted = conv.status === 'failed' && (
+                (conv.messages ?? []).some(message => message.role === 'user' && message.visualRepairSourceAgentMessageId)
+                || (conv.messages ?? []).some(message =>
+                    message.role === 'agent'
+                    && (message.content ?? '').includes('[QAAP visual verification]'))
+                || /visual verification|repair attempt/i.test(lastAgent?.error ?? '')
+            );
+            const awaitingVisualSettlement = conv.status === 'idle' && (
+                visualVerificationPending
+                || (() => {
+                    if (!lastAgent || lastAgent.error) {
+                        return false;
+                    }
+                    if ((lastAgent.content ?? '').includes('[QAAP visual verification]')) {
+                        return false;
+                    }
+                    if (/\[qaap\s*(capture|record)/i.test(lastAgent.content ?? '')) {
+                        return true;
+                    }
+                    return (lastAgent.segments ?? []).some(segment =>
+                        segment.type === 'tool'
+                        && /write|edit|patch/i.test(segment.name ?? '')
+                        && /\.(?:html?|css|scss|sass|less|tsx|jsx|vue|svelte)(?:["'\s,}]|$)/i.test(segment.args ?? ''));
+                })()
+            );
             return {
                 ok: true,
                 id: conv.id,
@@ -370,12 +451,15 @@ export async function pollConversation(page, cwd, { timeoutMs = 180_000, onPoll 
                 agentId: conv.agentId,
                 lastAgentText: lastAgent?.content?.slice(0, 200),
                 lastAgentTraceCount: lastAgent?.traceEvents?.length ?? 0,
+                visualVerificationPending,
+                visualRepairExhausted,
+                awaitingVisualSettlement,
             };
         }, cwd);
         if (onPoll) {
             await onPoll(last);
         }
-        if (last.ok && last.status !== 'streaming') {
+        if (last.ok && last.status !== 'streaming' && !last.awaitingVisualSettlement) {
             return last;
         }
         const failed = await page.locator('.theia-mobile-agent-log-header, .theia-mobile-agents-hub-inline-execution')
@@ -742,24 +826,34 @@ export async function waitForPreview(page, port = 5173, timeoutMs = 180_000) {
     return { probeReady: false, timedOut: true, elapsedMs: now() - start };
 }
 
+export function conversationStatusPassesScaffoldGate(conversation, { filesOk = false, toolTraceOk = false } = {}) {
+    if (!conversation?.ok) {
+        return false;
+    }
+    if (conversation.status !== 'failed') {
+        return true;
+    }
+    // Visual-repair exhaustion is orthogonal to the Rioja scaffold contract (files + tools).
+    return conversation.visualRepairExhausted === true && filesOk && toolTraceOk;
+}
+
 export function evaluateApiFlowSuccess(metrics) {
     const devProbeReady = metrics.preview?.probeReady
         || metrics.previewBootstrap?.probe?.ok
         || metrics.previewBootstrap?.devServer?.probe?.ok;
     const toolTraceOk = (metrics.conversation?.toolSegments?.length ?? 0) >= 1
         || (metrics.conversation?.toolTraceEvents?.length ?? 0) >= 1;
+    const filesOk = !!(metrics.files?.exists?.['index.html'] && metrics.files?.mentionsRioja && metrics.files?.hasNodeModules);
+    const conversationOk = conversationStatusPassesScaffoldGate(metrics.conversation, { filesOk, toolTraceOk });
     return {
-        files: !!(metrics.files?.exists?.['index.html'] && metrics.files?.mentionsRioja && metrics.files?.hasNodeModules),
-        conversation: !!(metrics.conversation?.ok && metrics.conversation?.status !== 'failed'),
+        files: filesOk,
+        conversation: conversationOk,
         preview: !!devProbeReady,
         toolTrace: toolTraceOk,
         tutorial: metrics.tutorialAfterPrompt?.ok !== false && metrics.tutorialAfterAgent?.ok !== false,
-        all: !!(metrics.files?.exists?.['index.html']
-            && metrics.files?.mentionsRioja
-            && metrics.files?.hasNodeModules
+        all: !!(filesOk
             && devProbeReady
-            && metrics.conversation?.ok
-            && metrics.conversation?.status !== 'failed'
+            && conversationOk
             && toolTraceOk
             && metrics.tutorialAfterPrompt?.ok !== false
             && metrics.tutorialAfterAgent?.ok !== false),
@@ -777,12 +871,15 @@ export function evaluateUiFlowSuccess(metrics) {
     const toolTraceOk = (metrics.conversation?.toolSegments?.length ?? 0) >= 1
         || (metrics.conversation?.toolTraceEvents?.length ?? 0) >= 1
         || (metrics.uiDuringAgent?.maxToolRows ?? 0) >= 1;
+    const filesOk = !!(metrics.files?.exists?.['index.html'] && metrics.files?.mentionsRioja && metrics.files?.hasNodeModules);
+    const agentSettled = metrics.conversation?.status === 'idle'
+        || conversationStatusPassesScaffoldGate(metrics.conversation, { filesOk, toolTraceOk });
     return {
         shellHealthy: metrics.shellHealth?.ok === true,
         composerSubmit: metrics.promptSentViaComposer?.ok === true,
         composerRouting: composerRoutingOk,
-        files: !!(metrics.files?.exists?.['index.html'] && metrics.files?.mentionsRioja && metrics.files?.hasNodeModules),
-        agentIdle: metrics.conversation?.status === 'idle',
+        files: filesOk,
+        agentIdle: agentSettled,
         notFailedUi: metrics.uiDuringAgent?.failedBadge !== true,
         noContradictoryBadges: metrics.uiDuringAgent?.contradictoryBadges !== true,
         tutorial: metrics.tutorialAfterPrompt?.ok !== false && metrics.tutorialAfterAgent?.ok !== false,
@@ -790,10 +887,8 @@ export function evaluateUiFlowSuccess(metrics) {
         all: metrics.shellHealth?.ok === true
             && metrics.promptSentViaComposer?.ok === true
             && composerRoutingOk
-            && metrics.files?.exists?.['index.html']
-            && metrics.files?.mentionsRioja
-            && metrics.files?.hasNodeModules
-            && metrics.conversation?.status === 'idle'
+            && filesOk
+            && agentSettled
             && metrics.uiDuringAgent?.failedBadge !== true
             && metrics.uiDuringAgent?.contradictoryBadges !== true
             && metrics.tutorialAfterPrompt?.ok !== false

@@ -6,7 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { ChatService } from '@theia/ai-chat';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO, isFailedRunSummary } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -275,7 +275,7 @@ export class MobileProjectsCardMenuUi {
         menu.setAttribute('role', 'menu');
         menu.hidden = true;
 
-        if (summary.status === 'failed' && summary.source !== 'theia-chat') {
+        if (isFailedRunSummary(summary) && summary.source !== 'theia-chat') {
             this.appendCardMenuItem(menu, {
                 label: nls.localize('qaap/mobileProjects/retryTask', 'Retry task'),
                 iconClass: 'codicon-debug-restart',

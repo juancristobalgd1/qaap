@@ -263,7 +263,13 @@ export function prefetchDocumentExtracted(ctx: any, conversationId: string): voi
             return;
         }
         const cached = ctx.threadStore.getDocument(conversationId);
-        if (cached && cached.messages.length > 0) {
+        const summary = ctx.findSummaryById?.(conversationId) ?? ctx.threadStore.findSummaryById?.(conversationId);
+        const expected = summary?.messageCount;
+        const cacheLooksComplete = !!cached
+            && cached.messages.length > 0
+            && !(typeof expected === 'number' && expected > 0 && cached.messages.length < expected)
+            && !cached.messages.some((message: { id?: string }) => message.id?.endsWith(':summary-preview'));
+        if (cacheLooksComplete) {
             return;
         }
         if (ctx.documentPrefetchInFlight.has(conversationId)) {

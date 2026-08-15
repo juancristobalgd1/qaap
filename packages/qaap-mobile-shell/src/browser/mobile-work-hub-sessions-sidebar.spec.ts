@@ -14,6 +14,7 @@ import {
     hasSeenSessionsSidebarDismissHint,
     markSessionsSidebarDismissHintSeen,
     isDesktopSessionsSidebarLayout,
+    shouldKeepSessionsSidebarOpenAfterNavigation,
 } from './mobile-work-hub-sessions-sidebar';
 import { ensureWorkHubSessionsSidebarExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
 
@@ -346,7 +347,8 @@ describe('mobile-work-hub-sessions-sidebar', () => {
 
     it('keeps the sidebar open when navigation happens on desktop layout', () => {
         const matchMedia = (query: string): MediaQueryList => ({
-            matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
+            matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY
+                || query === '(max-width: 767px)' && false,
             media: query,
             onchange: null,
             addListener: () => undefined,
@@ -362,6 +364,8 @@ describe('mobile-work-hub-sessions-sidebar', () => {
                 setTimeout(callback, delayMs ?? 0) as unknown as number,
             clearTimeout: (id: number) => clearTimeout(id),
         } as unknown as Window;
+
+        expect(shouldKeepSessionsSidebarOpenAfterNavigation()).to.equal(true);
 
         const sidebar = new MobileWorkHubSessionsSidebar({
             renderSessionList: host => { host.append(document.createElement('div')); },
@@ -379,9 +383,78 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         sidebar.hide();
     });
 
+    it('keeps the sidebar open on wide coarse-pointer viewports after task navigation', () => {
+        const matchMedia = (query: string): MediaQueryList => ({
+            // Wide enough, but not the fine-pointer desktop sidebar layout.
+            matches: query === '(max-width: 767px)' ? false : false,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        });
+        (global as { window?: Window }).window = {
+            ...(global as { window?: Window }).window,
+            matchMedia,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+
+        expect(isDesktopSessionsSidebarLayout()).to.equal(false);
+        expect(shouldKeepSessionsSidebarOpenAfterNavigation()).to.equal(true);
+
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => { host.append(document.createElement('div')); },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.show();
+        sidebar.hideForMobileOverlay();
+        expect(sidebar.isVisible()).to.equal(true);
+        sidebar.hide();
+    });
+
+    it('closes the sessions sheet after navigation on a narrow viewport', () => {
+        const matchMedia = (query: string): MediaQueryList => ({
+            matches: query === '(max-width: 767px)',
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+        });
+        (global as { window?: Window }).window = {
+            ...(global as { window?: Window }).window,
+            matchMedia,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+
+        expect(shouldKeepSessionsSidebarOpenAfterNavigation()).to.equal(false);
+
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: host => { host.append(document.createElement('div')); },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        sidebar.show();
+        sidebar.hideForMobileOverlay();
+        expect(sidebar.isVisible()).to.equal(false);
+        sidebar.hide();
+    });
+
     it('closes the embedded chat sidebar after navigation in the classic IDE', () => {
         const matchMedia = (query: string): MediaQueryList => ({
-            matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
+            matches: query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY
+                || (query === '(max-width: 767px)' ? false : false),
             media: query,
             onchange: null,
             addListener: () => undefined,
@@ -398,6 +471,8 @@ describe('mobile-work-hub-sessions-sidebar', () => {
             clearTimeout: (id: number) => clearTimeout(id),
         } as unknown as Window;
         document.body.classList.add('theia-mobile-mod-desktop-ide');
+
+        expect(shouldKeepSessionsSidebarOpenAfterNavigation()).to.equal(false);
 
         const sidebar = new MobileWorkHubSessionsSidebar({
             renderSessionList: host => { host.append(document.createElement('div')); },

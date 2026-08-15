@@ -32,7 +32,7 @@ import {
     resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { beginSessionsSidebarConversationActivationExtracted, bindSessionsSidebarInteractionGuardExtracted, buildSessionsSidebarFingerprintInputExtracted, buildSessionsSidebarStructureFingerprintExtracted, buildSidebarRowFingerprintExtracted, collectParentIdsExtracted, collectSessionsSidebarConversationEntriesExtracted, ensureWorkHubSessionsSidebarExtracted, mergeSessionsSidebarProjectsExtracted, openWorkHubSessionsSidebarExtracted, prepareSessionsSidebarDataExtracted, refreshWorkHubSessionsSidebarListExtracted, rememberSessionsSidebarListFingerprintExtracted, resolveWorkHubSessionsSidebarProjectExtracted, seedSessionsSidebarProjectsForPaintExtracted, shouldDeferSessionsSidebarListRefreshExtracted, shouldSkipSessionsSidebarListRenderExtracted, stampSessionsSidebarRowFingerprintsExtracted, toggleWorkHubSessionsSidebarExtracted, tryPatchSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
-import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming2';
+import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarClearFailedControlExtracted, createSessionsSidebarClearFailedModeFooterExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted, toggleSessionsSidebarStatusLegendPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming2';
 import { createSessionsSidebarIdeOpenControlExtracted, createSessionsSidebarNewAgentControlExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, onSessionsSidebarAccountClickExtracted, onSessionsSidebarViewModeChangeExtracted, onWorkHubSessionsSidebarNewChatExtracted, openEmptyMobileChatSheetExtracted, openSessionsSidebarSearchExtracted } from './mobile-projects-sessions-sidebar-ui-timeline2';
 
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT;
@@ -91,12 +91,18 @@ export interface MobileProjectsSessionsSidebarHost {
         activeInfo: ReturnType<import('./mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
         summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined,
         parentIds: ReadonlySet<string>,
-        options?: { onActivate?: () => void; compact?: boolean },
+        options?: {
+            onActivate?: () => void;
+            compact?: boolean;
+            failedDuplicateCount?: number;
+            selection?: { selected: boolean; onToggle: () => void };
+        },
     ): HTMLElement;
     buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
     toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
     buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement;
     toggleCardMenu(row: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
+    onClearFailedTasks(project: MobileProjectEntry, ids?: readonly string[]): Promise<boolean>;
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     shouldUseAgentsHubLanding(): boolean;
     isProjectDetailView(): boolean;
@@ -160,6 +166,11 @@ export class MobileProjectsSessionsSidebarUi {
     protected sessionsSidebarProjectSortModeValue: SessionsSidebarProjectSortMode = this.readPersistedProjectSortMode();
     protected sessionsSidebarSortPopover: HTMLElement | undefined;
     protected sessionsSidebarAddProjectPopover: HTMLElement | undefined;
+    protected sessionsSidebarStatusLegendPopover: HTMLElement | undefined;
+    /** Project id currently in failed-run multi-select clear mode (session-only; not persisted). */
+    clearFailedModeProjectId: string | undefined;
+    /** Conversation ids selected while {@link clearFailedModeProjectId} is set. */
+    selectedFailedConversationIds: Set<string> = new Set();
 
     openWorkHubSessionsSidebar(): void {
         openWorkHubSessionsSidebarExtracted(this);
@@ -301,6 +312,49 @@ export class MobileProjectsSessionsSidebarUi {
     appendSessionsSidebarConversationItems(listHost: HTMLElement, project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassLimit: boolean,): void {
         appendSessionsSidebarConversationItemsExtracted(this, listHost, project, conversations, onActivate, bypassLimit);
     }
+    createSessionsSidebarClearFailedControl(project: MobileProjectEntry, failedCount: number): HTMLButtonElement {
+        return createSessionsSidebarClearFailedControlExtracted(this, project, failedCount);
+    }
+
+    createSessionsSidebarClearFailedModeFooter(project: MobileProjectEntry): HTMLElement {
+        return createSessionsSidebarClearFailedModeFooterExtracted(this, project);
+    }
+
+    isClearFailedModeForProject(projectId: string): boolean {
+        return this.clearFailedModeProjectId === projectId;
+    }
+
+    enterClearFailedMode(project: MobileProjectEntry, failedIds: readonly string[]): void {
+        this.clearFailedModeProjectId = project.id;
+        this.selectedFailedConversationIds = new Set(failedIds);
+        this.resetSessionsSidebarListFingerprint();
+        this.host.sessionsSidebar?.refreshList({ force: true });
+    }
+
+    exitClearFailedMode(options?: { refresh?: boolean }): void {
+        if (this.clearFailedModeProjectId === undefined && this.selectedFailedConversationIds.size === 0) {
+            return;
+        }
+        this.clearFailedModeProjectId = undefined;
+        this.selectedFailedConversationIds = new Set();
+        this.resetSessionsSidebarListFingerprint();
+        if (options?.refresh !== false) {
+            this.host.sessionsSidebar?.refreshList({ force: true });
+        }
+    }
+
+    toggleClearFailedSelection(conversationId: string): void {
+        if (!this.clearFailedModeProjectId) {
+            return;
+        }
+        if (this.selectedFailedConversationIds.has(conversationId)) {
+            this.selectedFailedConversationIds.delete(conversationId);
+        } else {
+            this.selectedFailedConversationIds.add(conversationId);
+        }
+        this.resetSessionsSidebarListFingerprint();
+        this.host.sessionsSidebar?.refreshList({ force: true });
+    }
     createSessionsSidebarShowMoreControl(project: MobileProjectEntry, hiddenCount: number, totalCount: number,): HTMLButtonElement {
         return createSessionsSidebarShowMoreControlExtracted(this, project, hiddenCount, totalCount);
     }
@@ -382,11 +436,16 @@ export class MobileProjectsSessionsSidebarUi {
     toggleSessionsSidebarAddProjectPopover(anchor: HTMLButtonElement): void {
         toggleSessionsSidebarAddProjectPopoverExtracted(this, anchor);
     }
+    toggleSessionsSidebarStatusLegendPopover(anchor: HTMLButtonElement): void {
+        toggleSessionsSidebarStatusLegendPopoverExtracted(this, anchor);
+    }
     closeSessionsSidebarHeadPopovers(): void {
         this.sessionsSidebarSortPopover?.remove();
         this.sessionsSidebarSortPopover = undefined;
         this.sessionsSidebarAddProjectPopover?.remove();
         this.sessionsSidebarAddProjectPopover = undefined;
+        this.sessionsSidebarStatusLegendPopover?.remove();
+        this.sessionsSidebarStatusLegendPopover = undefined;
     }
     createSessionsSidebarProjectGroup(project: MobileProjectEntry, conversations: readonly QaapAgentConversationSummaryDTO[], onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
         return createSessionsSidebarProjectGroupExtracted(this, project, conversations, onActivate, bypassConversationLimit);

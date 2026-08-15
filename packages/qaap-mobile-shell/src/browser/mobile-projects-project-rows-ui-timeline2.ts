@@ -27,12 +27,17 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     _activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
     summary?: QaapAgentConversationSummaryDTO,
     parentIds: ReadonlySet<string> = new Set<string>(),
-    options?: { onActivate?: () => void; compact?: boolean },): HTMLElement {
+    options?: { onActivate?: () => void; compact?: boolean; failedDuplicateCount?: number; selection?: { selected: boolean; onToggle: () => void } },): HTMLElement {
     const compact = options?.compact === true;
+    const failedDuplicateCount = options?.failedDuplicateCount ?? 0;
+    const selection = options?.selection;
     const row = document.createElement('div');
     row.className = 'theia-mobile-projects-task-row';
     if (compact) {
         row.classList.add('theia-mod-sidebar-compact');
+    }
+    if (selection) {
+        row.classList.add('theia-mod-clear-failed-select');
     }
     if (summary) {
         row.dataset.qaapConversationId = summary.id;
@@ -102,7 +107,20 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     const taskSince = document.createElement('span');
     taskSince.className = 'theia-mobile-projects-task-since';
     taskSince.textContent = ctx.formatTaskSince(task, summary);
-    if (!compact && isRunning && summary?.turnProgressTotal && summary.turnProgressCurrent !== undefined) {
+    if (failedDuplicateCount > 0) {
+        const dupHint = nls.localize(
+            'qaap/sessionsSidebar/failedDuplicatesHint',
+            '{0} older failed runs with this title are hidden — Clear failed runs to select which to delete',
+            String(failedDuplicateCount),
+        );
+        taskTitle.title = dupHint;
+        const badge = document.createElement('span');
+        badge.className = 'theia-mobile-projects-task-failed-dup-badge';
+        badge.textContent = `+${failedDuplicateCount}`;
+        badge.title = dupHint;
+        badge.setAttribute('aria-label', dupHint);
+        taskTitleRow.append(taskTitle, badge);
+    } else if (!compact && isRunning && summary?.turnProgressTotal && summary.turnProgressCurrent !== undefined) {
         const progressCount = document.createElement('span');
         progressCount.className = 'theia-mobile-projects-task-progress-count';
         progressCount.textContent = `${summary.turnProgressCurrent}/${summary.turnProgressTotal}`;
@@ -172,6 +190,23 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     }
 
     item.append(taskDot, taskBody);
+    if (selection) {
+        const check = document.createElement('span');
+        check.className = 'theia-mobile-projects-task-clear-failed-check';
+        check.classList.toggle('theia-mod-selected', selection.selected);
+        check.setAttribute('aria-hidden', 'true');
+        const checkIcon = document.createElement('span');
+        checkIcon.className = selection.selected ? 'codicon codicon-check' : 'codicon codicon-circle-outline';
+        check.append(checkIcon);
+        item.prepend(check);
+        item.setAttribute('aria-pressed', selection.selected ? 'true' : 'false');
+        item.setAttribute(
+            'aria-label',
+            selection.selected
+                ? nls.localize('qaap/sessionsSidebar/clearFailedDeselect', 'Deselect failed run')
+                : nls.localize('qaap/sessionsSidebar/clearFailedSelect', 'Select failed run'),
+        );
+    }
     if (summary && summary.source !== 'theia-chat' && !summary.id.startsWith('pending-')) {
         let prefetched = false;
         item.addEventListener('pointerenter', () => {
@@ -184,6 +219,10 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     }
     item.addEventListener('click', ev => {
         ev.stopPropagation();
+        if (selection) {
+            selection.onToggle();
+            return;
+        }
         options?.onActivate?.();
         if (summary) {
             void ctx.host.conversationOpenUi.openConversationSummary(project, summary);
@@ -226,7 +265,7 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
                 taskTitleRow.insertBefore(shield, taskTitleRow.firstChild);
             }
         }
-        if (summary.source !== 'theia-chat' && !summary.archived) {
+        if (summary.source !== 'theia-chat' && !summary.archived && !compact) {
             const archiveBtn = document.createElement('button');
             archiveBtn.type = 'button';
             archiveBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-archive-btn';

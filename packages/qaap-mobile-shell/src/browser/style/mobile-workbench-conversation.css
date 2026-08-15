@@ -3758,7 +3758,7 @@ body>.theia-mobile-transcript-files-menu {
   scroll-snap-align: start;
   border: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 8%, transparent));
   border-radius: var(--q-radius-pill, 99px);
-  background: var(--q-surface-raised, color-mix(in srgb, var(--theia-foreground) 3%, transparent));
+  background: var(--theia-input-background, var(--theia-editor-background));
   color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
   font: inherit;
   font-size: 12px;
@@ -3801,13 +3801,13 @@ body>.theia-mobile-transcript-files-menu {
 
 .theia-mobile-agent-transcript-empty-action:active {
   opacity: 0.76;
-  background: var(--q-surface-raised, color-mix(in srgb, var(--theia-foreground) 3%, transparent));
+  background: color-mix(in srgb, var(--theia-input-background, var(--theia-editor-background)) 92%, var(--theia-foreground) 8%);
   border-color: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
 }
 
 .theia-mobile-agent-transcript-empty-action:hover,
 .theia-mobile-agent-transcript-empty-action:focus-visible {
-  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+  background: color-mix(in srgb, var(--theia-input-background, var(--theia-editor-background)) 90%, var(--theia-foreground) 10%);
   border-color: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
   color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
 }
@@ -9669,6 +9669,14 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   --theia-mobile-transcript-composer-scroll-gap: -34px;
 }
 
+@media (max-width: 767px) {
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-sticky-composer-changes-pill-host),
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-sticky-composer-changes-pill-host) {
+    /* Match densified 26px pill strip (+ lip) in work-hub narrow CSS. */
+    --theia-mobile-transcript-composer-scroll-gap: -30px;
+  }
+}
+
 /*
  * While live-status sits at the transcript scroller tail the pills must sit *below* it.
  * Cancelling the lip overlap achieved that, but a positive gap stops the scrollport before the
@@ -9741,7 +9749,8 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
-  --qaap-codex-shell-bg: color-mix(in srgb, var(--theia-editor-background) 94%, var(--theia-foreground) 6%);
+  /* Match classic IDE chat input surface (--theia-input-background / --qaap-surface). */
+  --qaap-codex-shell-bg: var(--theia-input-background, var(--theia-editor-background));
   --qaap-codex-tray-bg: color-mix(in srgb, var(--qaap-codex-shell-bg) 88%, #000 12%);
   --qaap-codex-send-ready-bg: color-mix(in srgb, var(--theia-foreground) 92%, #fff);
   --qaap-codex-send-ready-fg: color-mix(in srgb, var(--theia-editor-background) 92%, #000);
@@ -9781,8 +9790,8 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
   border-top-left-radius: var(--qaap-codex-shell-radius);
   border-top-right-radius: var(--qaap-codex-shell-radius);
   background: var(--qaap-codex-shell-bg);
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-has-context .theia-mobile-sticky-composer-activity-stack {
@@ -9792,8 +9801,8 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
   border-left: var(--qaap-codex-shell-border);
   border-right: var(--qaap-codex-shell-border);
   background: var(--qaap-codex-shell-bg);
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* Codex lip — input shell over the tray (light: white shell; dark: default shell mix). */
@@ -9802,18 +9811,12 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
 }
 
 body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
-  /* Frosted glass: translucent so the chat shows through; blur is applied on the surfaces below. */
-  --qaap-codex-shell-bg: color-mix(in srgb, #ffffff 74%, transparent);
+  --qaap-codex-shell-bg: var(--theia-input-background, var(--theia-editor-background));
 }
 
 body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex {
-  /* Frosted glass: translucent so the chat shows through; blur is applied on the surfaces below. */
-  --qaap-codex-shell-bg: color-mix(in srgb,
-      color-mix(in srgb, var(--theia-foreground) 14%, var(--theia-editor-background) 86%) 70%,
-      transparent);
-  --qaap-codex-tray-bg: color-mix(in srgb,
-      color-mix(in srgb, var(--theia-editor-background) 94%, var(--theia-foreground) 6%) 88%,
-      #000 12%);
+  --qaap-codex-shell-bg: var(--theia-input-background, var(--theia-editor-background));
+  --qaap-codex-tray-bg: color-mix(in srgb, var(--qaap-codex-shell-bg) 88%, #000 12%);
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-wrap.theia-mod-codex {
@@ -9867,11 +9870,11 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   background: var(--qaap-codex-shell-bg) !important;
 }
 
-/* Frosted-glass composer — blur on every input lip (empty or extended). */
+/* Solid IDE input surface — no frosted glass (shapes/radii unchanged). */
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-wrap.theia-mod-codex,
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-panel.theia-mod-codex {
-  backdrop-filter: blur(22px) saturate(150%);
-  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex:not(.theia-mod-has-context):not(.theia-mod-has-activity) .theia-mobile-projects-sticky-composer-input-panel.theia-mod-codex {

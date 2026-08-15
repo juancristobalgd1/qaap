@@ -103,7 +103,7 @@ export class MobileProjectsProjectRowsUi {
         return groupConversationTasksExtracted(this, tasks);
     }
 
-    createTaskItem(project: MobileProjectEntry, task: MobileProjectTaskView, _activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>, summary?: QaapAgentConversationSummaryDTO, parentIds: ReadonlySet<string> = new Set<string>(), options?: { onActivate?: () => void; compact?: boolean },): HTMLElement {
+    createTaskItem(project: MobileProjectEntry, task: MobileProjectTaskView, _activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>, summary?: QaapAgentConversationSummaryDTO, parentIds: ReadonlySet<string> = new Set<string>(), options?: { onActivate?: () => void; compact?: boolean; failedDuplicateCount?: number; selection?: { selected: boolean; onToggle: () => void } },): HTMLElement {
         return createTaskItemExtracted(this, project, task, _activeInfo, summary, parentIds, options);
     }
 

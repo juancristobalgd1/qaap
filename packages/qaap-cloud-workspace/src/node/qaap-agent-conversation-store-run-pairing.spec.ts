@@ -13,13 +13,19 @@
 // agentA with userB. See the mobile-shell counterpart in
 // qaap-run-turn-pairing.spec.ts.
 //
+// Production no longer spawns same-tree peer runs via deliveryMode `'parallel'`
+// (HTTP isolates into a worktree, otherwise the store queues). These specs still
+// exercise the store's sealing path by registering concurrent task refs directly.
+//
 // Same lightweight harness as the neighbouring -parallel-runs spec: disk/SSE/
 // watchdog stubbed out, a fake task runner, no Inversify container.
 
+import { randomUUID } from 'crypto';
 import { expect } from 'chai';
 import type { QaapAgentConversation, QaapAgentMessage } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
+import type { QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
@@ -57,6 +63,8 @@ class TestConversationStore extends QaapAgentConversationStore {
         readonly forceFullMessage: boolean;
     }> = [];
 
+    private testTaskRunner: TestTaskRunner | undefined;
+
     protected override async persist(): Promise<void> { /* no-op */ }
     protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
     protected override startTurnWatchdog(): void { /* no-op */ }
@@ -83,7 +91,8 @@ class TestConversationStore extends QaapAgentConversationStore {
         });
     }
 
-    configureForTest(taskRunner: QaapAgentTaskRunner): void {
+    configureForTest(taskRunner: TestTaskRunner): void {
+        this.testTaskRunner = taskRunner;
         (this as unknown as { sseBatcher: QaapAgentConversationSseBatcher }).sseBatcher =
             new QaapAgentConversationSseBatcher(() => { /* ignore SSE fanout */ });
         (this as unknown as { taskRunner: QaapAgentTaskRunner }).taskRunner = taskRunner;
@@ -93,15 +102,45 @@ class TestConversationStore extends QaapAgentConversationStore {
         (this as unknown as { conversations: Map<string, QaapAgentConversation> }).conversations.set(conv.id, conv);
     }
 
+    /**
+     * Register a concurrent peer run in the same conversation without going through
+     * postUserMessage's delivery-mode gate (which now queues `'parallel'` follow-ups).
+     */
+    forcePeerRun(content: string, agentId: string): QaapAgentConversation {
+        const conversations = (this as unknown as {
+            conversations: Map<string, QaapAgentConversation>;
+        }).conversations;
+        const conv = conversations.get('c1')!;
+        const userMessage: QaapAgentMessage = {
+            id: randomUUID(),
+            role: 'user',
+            content,
+            createdAt: Date.now(),
+            turnAgentId: agentId,
+        };
+        const task = this.testTaskRunner!.create();
+        const sealedUser: QaapAgentMessage = { ...userMessage, taskId: task.id, turnAgentId: agentId };
+        const next: QaapAgentConversation = {
+            ...conv,
+            agentId,
+            status: 'streaming',
+            updatedAt: Date.now(),
+            messages: [...conv.messages, sealedUser],
+        };
+        conversations.set('c1', next);
+        (this as unknown as { taskToConversation: Map<string, QaapConversationTaskRef> })
+            .taskToConversation.set(task.id, {
+                conversationId: 'c1',
+                userMessageId: sealedUser.id,
+                turnAgentId: agentId,
+            });
+        return next;
+    }
+
     /** Drives the stdout path the task runner normally invokes for a live run. */
     streamOutput(taskId: string, chunk: string): void {
         const ref = (this as unknown as {
-            taskToConversation: Map<string, {
-                conversationId: string;
-                userMessageId: string;
-                turnAgentId: string;
-                agentMessageId?: string;
-            }>;
+            taskToConversation: Map<string, QaapConversationTaskRef>;
         }).taskToConversation.get(taskId)!;
         (this as unknown as {
             applyTaskOutput: (t: string, r: unknown, c: string) => void;
@@ -111,25 +150,16 @@ class TestConversationStore extends QaapAgentConversationStore {
     /** Drives the task-outcome path (normally invoked by the task runner's events). */
     async settleRun(taskId: string, task: QaapAgentTask): Promise<void> {
         const ref = (this as unknown as {
-            taskToConversation: Map<string, {
-                conversationId: string;
-                userMessageId: string;
-                turnAgentId: string;
-                agentMessageId?: string;
-            }>;
+            taskToConversation: Map<string, QaapConversationTaskRef>;
         }).taskToConversation.get(taskId)!;
         await (this as unknown as {
             applyTaskOutcome: (r: unknown, t: QaapAgentTask) => Promise<void>;
         }).applyTaskOutcome(ref, task);
     }
 
-    runRef(taskId: string): { readonly userMessageId: string; readonly turnAgentId: string; agentMessageId?: string } {
+    runRef(taskId: string): QaapConversationTaskRef {
         return (this as unknown as {
-            taskToConversation: Map<string, {
-                userMessageId: string;
-                turnAgentId: string;
-                agentMessageId?: string;
-            }>;
+            taskToConversation: Map<string, QaapConversationTaskRef>;
         }).taskToConversation.get(taskId)!;
     }
 }
@@ -148,9 +178,13 @@ function idleConversation(id: string): QaapAgentConversation {
     };
 }
 
-function postParallelMessage(store: TestConversationStore, content: string, agentId: string): QaapAgentConversation {
-    return store.postUserMessage('c1', content, agentId, undefined, undefined, undefined, undefined,
-        undefined, undefined, undefined, 'parallel');
+/** First turn via the real post path; later turns via forcePeerRun (concurrent refs). */
+function postConcurrentMessage(store: TestConversationStore, content: string, agentId: string): QaapAgentConversation {
+    const active = store.getActiveTaskIdsForConversation('c1');
+    if (active.length === 0) {
+        return store.postUserMessage('c1', content, agentId);
+    }
+    return store.forcePeerRun(content, agentId);
 }
 
 describe('QaapAgentConversationStore run pairing across concurrent runs', () => {
@@ -168,8 +202,8 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
 
     it('seals the driving run onto an agent message whose run started FIRST but spoke SECOND', () => {
         const store = createStore();
-        postParallelMessage(store, 'run A', PLAIN_AGENT_ID);
-        postParallelMessage(store, 'run B', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run A', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run B', PLAIN_AGENT_ID);
         const [userA, userB] = userIds(store);
 
         // B produces output before A does — the array ends up interleaved.
@@ -191,8 +225,8 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
 
     it('keeps the link across later chunks of the same run', () => {
         const store = createStore();
-        postParallelMessage(store, 'run A', PLAIN_AGENT_ID);
-        postParallelMessage(store, 'run B', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run A', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run B', PLAIN_AGENT_ID);
         const [userA] = userIds(store);
 
         store.streamOutput('task-1', 'first chunk ');
@@ -205,8 +239,8 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
 
     it('links the failure message of a run that died before producing any output', async () => {
         const store = createStore();
-        postParallelMessage(store, 'run A', PLAIN_AGENT_ID);
-        postParallelMessage(store, 'run B', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run A', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run B', PLAIN_AGENT_ID);
         const [userA] = userIds(store);
 
         await store.settleRun('task-1', { id: 'task-1', state: 'failed' } as QaapAgentTask);
@@ -219,8 +253,8 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
 
     it('keeps each run parser bound to its sealed agent after a peer changes the conversation picker', () => {
         const store = createStore();
-        postParallelMessage(store, 'plain run', PLAIN_AGENT_ID);
-        postParallelMessage(store, 'structured peer', 'qaiq');
+        postConcurrentMessage(store, 'plain run', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'structured peer', 'qaiq');
         const [plainUser] = userIds(store);
 
         // The conversation-level picker now says QAIQ. This chunk still belongs to shell and must
@@ -234,8 +268,8 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
 
     it('finalizes and publishes the settled run instead of the peer message at the array tail', async () => {
         const store = createStore();
-        postParallelMessage(store, 'run A', PLAIN_AGENT_ID);
-        postParallelMessage(store, 'run B', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run A', PLAIN_AGENT_ID);
+        postConcurrentMessage(store, 'run B', PLAIN_AGENT_ID);
         const [userA, userB] = userIds(store);
         store.streamOutput('task-1', 'A output');
         store.streamOutput('task-2', 'B output');
@@ -264,8 +298,8 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
             const store = new TestConversationStore();
             store.configureForTest(new TestTaskRunner());
             store.seed({ ...idleConversation('c1'), agentId: AG_UI_AGENT_ID });
-            postParallelMessage(store, 'run A', AG_UI_AGENT_ID);
-            postParallelMessage(store, 'run B', AG_UI_AGENT_ID);
+            postConcurrentMessage(store, 'run A', AG_UI_AGENT_ID);
+            postConcurrentMessage(store, 'run B', AG_UI_AGENT_ID);
             return store;
         }
 
@@ -344,8 +378,8 @@ describe('QaapAgentConversationStore run pairing across concurrent runs', () => 
             const store = new TestConversationStore();
             store.configureForTest(new TestTaskRunner());
             store.seed({ ...idleConversation('c1'), agentId: AG_UI_AGENT_ID });
-            postParallelMessage(store, 'AG-UI run', AG_UI_AGENT_ID);
-            postParallelMessage(store, 'plain peer', PLAIN_AGENT_ID);
+            postConcurrentMessage(store, 'AG-UI run', AG_UI_AGENT_ID);
+            postConcurrentMessage(store, 'plain peer', PLAIN_AGENT_ID);
 
             const agUiTaskId = store.runRef('task-1').turnAgentId === AG_UI_AGENT_ID ? 'task-1' : 'task-2';
             expect(store.runRef(agUiTaskId).turnAgentId).to.equal(AG_UI_AGENT_ID);

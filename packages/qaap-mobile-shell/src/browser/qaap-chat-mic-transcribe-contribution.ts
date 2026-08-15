@@ -9,6 +9,13 @@ import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposa
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { nls } from '@theia/core/lib/common/nls';
 import * as monaco from '@theia/monaco-editor-core';
+import {
+    advanceDictationBaseline,
+    composeDictationFieldValue,
+    normalizeRestartedDictationSession,
+    splitSpeechRecognitionTranscript,
+    trailingSpaceForDictationBaseline,
+} from './qaap-chat-mic-dictation';
 
 /**
  * Injects a microphone toggle into every AI chat input toolbar so the user can dictate the prompt
@@ -211,18 +218,24 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         let userStopped = false;
         let baseline = '';
         let trailingSpace = '';
+        let sessionFinals = '';
+        let lastCommittedFinals = '';
         let detachObserver: MutationObserver | undefined;
 
         const refreshBaseline = (): void => {
             const editor = this.findEditorForInput(chatInput);
             const model = editor?.getModel();
             baseline = model?.getValue() ?? '';
-            trailingSpace = this.trailingSpaceForBaseline(baseline);
+            trailingSpace = trailingSpaceForDictationBaseline(baseline);
+            sessionFinals = '';
+            lastCommittedFinals = '';
         };
 
         const endSession = (): void => {
             sessionActive = false;
             userStopped = false;
+            sessionFinals = '';
+            lastCommittedFinals = '';
             if (recognition) {
                 try {
                     recognition.onend = null;
@@ -247,11 +260,19 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
             if (!editor) {
                 return;
             }
-            this.replaceInputText(editor, baseline + trailingSpace + transcript);
+            this.replaceInputText(editor, transcript);
         };
 
-        const beginRecognition = (): boolean => {
-            refreshBaseline();
+        const beginRecognition = (continueFromSession = false): boolean => {
+            if (continueFromSession) {
+                lastCommittedFinals = sessionFinals;
+                ({ baseline, trailingSpace } = advanceDictationBaseline(baseline, trailingSpace, sessionFinals));
+                sessionFinals = '';
+                // Paint finals-only before the next recognition wave (drop stale interim).
+                applyTranscript(composeDictationFieldValue(baseline, trailingSpace, '', ''));
+            } else {
+                refreshBaseline();
+            }
             try {
                 const rec = new Ctor();
                 recognition = rec;
@@ -263,7 +284,28 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                         stop();
                         return;
                     }
-                    applyTranscript(this.buildTranscriptFromEvent(event));
+                    const split = splitSpeechRecognitionTranscript(event.results);
+                    const priorCommit = lastCommittedFinals;
+                    let finals = split.finals;
+                    let interim = split.interim;
+                    if (priorCommit) {
+                        const raw = finals + interim;
+                        const effective = normalizeRestartedDictationSession(raw, priorCommit);
+                        if (effective !== raw) {
+                            lastCommittedFinals = '';
+                        }
+                        finals = normalizeRestartedDictationSession(split.finals, priorCommit);
+                        if (!finals && effective) {
+                            interim = effective;
+                        } else if (finals && effective.startsWith(finals)) {
+                            interim = effective.slice(finals.length);
+                        } else {
+                            finals = '';
+                            interim = effective;
+                        }
+                    }
+                    sessionFinals = finals;
+                    applyTranscript(composeDictationFieldValue(baseline, trailingSpace, finals, interim));
                 };
                 rec.onerror = (event: SpeechRecognitionErrorEvent) => {
                     const error = event.error;
@@ -279,7 +321,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                         return;
                     }
                     if (this.isMobileDictationDevice()) {
-                        if (!beginRecognition()) {
+                        if (!beginRecognition(true)) {
                             endSession();
                         }
                         return;
@@ -297,7 +339,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         const startSession = (): void => {
             sessionActive = true;
             userStopped = false;
-            if (!beginRecognition()) {
+            if (!beginRecognition(false)) {
                 endSession();
                 return;
             }
@@ -357,6 +399,8 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         let userStopped = false;
         let baseline = '';
         let trailingSpace = '';
+        let sessionFinals = '';
+        let lastCommittedFinals = '';
         let detachObserver: MutationObserver | undefined;
 
         const resolveInput = (): HTMLInputElement | HTMLTextAreaElement | undefined =>
@@ -365,12 +409,16 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         const refreshBaseline = (): void => {
             const liveInput = resolveInput();
             baseline = liveInput?.value ?? '';
-            trailingSpace = this.trailingSpaceForBaseline(baseline);
+            trailingSpace = trailingSpaceForDictationBaseline(baseline);
+            sessionFinals = '';
+            lastCommittedFinals = '';
         };
 
         const endSession = (): void => {
             sessionActive = false;
             userStopped = false;
+            sessionFinals = '';
+            lastCommittedFinals = '';
             if (recognition) {
                 try {
                     recognition.onend = null;
@@ -395,11 +443,18 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
             if (!liveInput) {
                 return;
             }
-            this.applyPlainInputText(liveInput, baseline + trailingSpace + transcript);
+            this.applyPlainInputText(liveInput, transcript);
         };
 
-        const beginRecognition = (): boolean => {
-            refreshBaseline();
+        const beginRecognition = (continueFromSession = false): boolean => {
+            if (continueFromSession) {
+                lastCommittedFinals = sessionFinals;
+                ({ baseline, trailingSpace } = advanceDictationBaseline(baseline, trailingSpace, sessionFinals));
+                sessionFinals = '';
+                applyTranscript(composeDictationFieldValue(baseline, trailingSpace, '', ''));
+            } else {
+                refreshBaseline();
+            }
             try {
                 const rec = new Ctor();
                 recognition = rec;
@@ -411,7 +466,28 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                         stop();
                         return;
                     }
-                    applyTranscript(this.buildTranscriptFromEvent(event));
+                    const split = splitSpeechRecognitionTranscript(event.results);
+                    const priorCommit = lastCommittedFinals;
+                    let finals = split.finals;
+                    let interim = split.interim;
+                    if (priorCommit) {
+                        const raw = finals + interim;
+                        const effective = normalizeRestartedDictationSession(raw, priorCommit);
+                        if (effective !== raw) {
+                            lastCommittedFinals = '';
+                        }
+                        finals = normalizeRestartedDictationSession(split.finals, priorCommit);
+                        if (!finals && effective) {
+                            interim = effective;
+                        } else if (finals && effective.startsWith(finals)) {
+                            interim = effective.slice(finals.length);
+                        } else {
+                            finals = '';
+                            interim = effective;
+                        }
+                    }
+                    sessionFinals = finals;
+                    applyTranscript(composeDictationFieldValue(baseline, trailingSpace, finals, interim));
                 };
                 rec.onerror = (event: SpeechRecognitionErrorEvent) => {
                     const error = event.error;
@@ -426,7 +502,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                         return;
                     }
                     if (this.isMobileDictationDevice()) {
-                        if (!beginRecognition()) {
+                        if (!beginRecognition(true)) {
                             endSession();
                         }
                         return;
@@ -447,7 +523,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
             }
             sessionActive = true;
             userStopped = false;
-            if (!beginRecognition()) {
+            if (!beginRecognition(false)) {
                 endSession();
                 return;
             }
@@ -491,18 +567,6 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                 activate(evt);
             }
         });
-    }
-
-    protected buildTranscriptFromEvent(event: SpeechRecognitionEvent): string {
-        let transcript = '';
-        for (let i = 0; i < event.results.length; i++) {
-            transcript += event.results[i][0]?.transcript ?? '';
-        }
-        return transcript;
-    }
-
-    protected trailingSpaceForBaseline(baseline: string): string {
-        return baseline.length > 0 && !/\s$/.test(baseline) ? ' ' : '';
     }
 
     protected resolvePlainComposerInput(
@@ -637,7 +701,11 @@ interface SpeechRecognition extends EventTarget {
 }
 
 interface SpeechRecognitionEvent {
-    results: ArrayLike<ArrayLike<{ transcript: string }>>;
+    results: ArrayLike<{
+        isFinal?: boolean;
+        length?: number;
+        [index: number]: { transcript: string } | undefined;
+    }>;
 }
 
 interface SpeechRecognitionErrorEvent extends Event {

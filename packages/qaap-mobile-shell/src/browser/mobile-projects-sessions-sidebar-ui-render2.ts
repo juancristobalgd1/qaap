@@ -111,6 +111,7 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
             onStartNewProject: () => { void ctx.host.onStartNewProject(); },
             onClose: () => {
                 ctx.host.cardMenuUi.closeCardMenu();
+                ctx.exitClearFailedMode({ refresh: false });
             },
             storageScope: () => ctx.host.projectsService.getCurrentWorkspaceCwd(),
             onAccountMenu: anchor => { ctx.onSessionsSidebarAccountClick(anchor); },
@@ -261,6 +262,9 @@ export function rememberSessionsSidebarListFingerprintExtracted(ctx: any, listHo
 }
 
 export function tryPatchSessionsSidebarListExtracted(ctx: any, listHost: HTMLElement): boolean {
+    if (ctx.clearFailedModeProjectId) {
+        return false;
+    }
     if (ctx.isSessionsSidebarInteractionGuardActive()) {
         return true;
     }

@@ -106,7 +106,7 @@ Follow the printed steps:
 | `QAAP_VPS_SSH_KEY` | contents of `~/.ssh/qaap-vps-deploy` (private key) |
 | `QAAP_VPS_SSH_PORT` | `22` (optional) |
 | `QAAP_VPS_REPO_DIR` | `/opt/qaap` (optional) |
-| `QAAP_VPS_PUBLIC_URL` | `http://178.105.136.93:4873` (optional health check) |
+| `QAAP_VPS_PUBLIC_URL` | `https://178.105.136.93.sslip.io` (health check / monitor — Caddy HTTPS, not `:4873`) |
 
 3. **Cursor Cloud Agent** (optional) — same `QAAP_VPS_HOST` + `QAAP_VPS_SSH_KEY` as agent secrets so chat can run `./scripts/qaap-vps-remote-update.sh`.
 
@@ -275,6 +275,12 @@ Update the GitHub OAuth app callback to
 
 Caddy obtains a Let’s Encrypt certificate for the sslip.io hostname automatically.
 If you later buy a real domain, point DNS at the VPS and change `QAAP_PUBLIC_HOST`.
+
+Set the GitHub Actions secret `QAAP_VPS_PUBLIC_URL` to that same HTTPS origin
+(`https://178.105.136.93.sslip.io`). Do **not** use `:4873` — that port is loopback-only
+behind Caddy, so deploy health checks and the VPS monitor will fail. Workflows rewrite a
+stale `:4873` secret as a safety net (`scripts/qaap-vps-normalize-public-url.sh`), but the
+secret itself should still be rotated.
 
 ## Hardening the agent for multi-tenant use (non-root privilege drop)
 

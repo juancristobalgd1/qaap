@@ -156,14 +156,12 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         } as unknown as WorkHubTranscriptBridge;
     }
 
-    it('keeps the last summary preview in a streaming placeholder', () => {
+    it('keeps an empty shell for the open placeholder (no preview message)', () => {
         const ui = new MobileProjectsTranscriptSheetUi(createHost(), createWorkHub());
         const conv = ui.summaryToTranscriptPlaceholder(summary());
 
         expect(conv.status).to.equal('streaming');
-        expect(conv.messages).to.have.length(1);
-        expect(conv.messages[0].role).to.equal('user');
-        expect(conv.messages[0].content).to.equal('Build the feature');
+        expect(conv.messages).to.deep.equal([]);
     });
 
     it('reopens the same mounted conversation without tearing down the sheet', async () => {

@@ -398,7 +398,6 @@ export class MobileProjectsTranscriptSheetUi {
     }
 
     summaryToTranscriptPlaceholder(summary: QaapAgentConversationSummaryDTO): QaapAgentConversationDTO {
-        const preview = summary.lastMessagePreview?.trim();
         return {
             id: summary.id,
             cwd: summary.cwd,
@@ -407,12 +406,8 @@ export class MobileProjectsTranscriptSheetUi {
             status: summary.status,
             createdAt: summary.createdAt,
             updatedAt: summary.updatedAt,
-            messages: preview && summary.lastMessageRole ? [{
-                id: `${summary.id}:summary-preview`,
-                role: summary.lastMessageRole,
-                content: preview,
-                createdAt: summary.updatedAt,
-            }] : [],
+            // Empty shell only — never invent a message from lastMessagePreview (truncated list chrome).
+            messages: [],
         };
     }
 

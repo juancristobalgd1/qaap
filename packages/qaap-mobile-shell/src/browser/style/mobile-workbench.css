@@ -8295,6 +8295,56 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   width: 32px;
 }
 
+/* Phone / narrow: densify Changes · Commit · Run so the strip steals less transcript. */
+@media (max-width: 767px) {
+  .theia-mobile-projects.theia-mod-sticky-composer {
+    --qaap-composer-pill-strip-height: 26px;
+  }
+
+  .theia-mobile-sticky-composer-changes-pill-host {
+    padding: 0;
+  }
+
+  .theia-mobile-sticky-composer-changes-pill-host+.theia-mobile-projects-sticky-composer-card {
+    margin-top: 2px;
+  }
+
+  .theia-mobile-sticky-composer-changes-pill-row {
+    gap: 6px;
+  }
+
+  .theia-mobile-sticky-composer-changes-pill,
+  .theia-mobile-sticky-composer-working-pill,
+  .theia-mobile-sticky-composer-step-pill,
+  .theia-mobile-sticky-composer-next-action,
+  .theia-mobile-sticky-composer-changes-group,
+  .theia-mobile-sticky-composer-commit-group {
+    min-height: 26px;
+  }
+
+  .theia-mobile-sticky-composer-changes-pill,
+  .theia-mobile-sticky-composer-working-pill,
+  .theia-mobile-sticky-composer-step-pill,
+  .theia-mobile-sticky-composer-next-action {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+
+  .theia-mobile-sticky-composer-commit-btn {
+    padding: 3px 6px 3px 8px;
+    font-size: 11px;
+  }
+
+  .theia-mobile-sticky-composer-changes-group .theia-mobile-sticky-composer-commit-menu {
+    width: 28px;
+  }
+
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-sticky-composer-changes-pill-host),
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-sticky-composer-changes-pill-host) {
+    --theia-mobile-transcript-composer-scroll-gap: -30px;
+  }
+}
+
 @media (max-width: 430px) {
   .theia-mobile-sticky-composer-changes-pill-row {
     gap: 6px;
@@ -11669,6 +11719,36 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   font-weight: 500;
   line-height: 1.2;
   text-align: left;
+}
+
+/* Narrow header: ☰ + conversation title + + + ⋮ + surface picker compete for width.
+   Let the title shrink first so action buttons stay tappable and fully visible. */
+@media (max-width: 767px) {
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-title-block {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project {
+    flex: 1 1 0;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-label {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster {
+    flex: 0 0 auto;
+    flex-shrink: 0;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-execution-tabs {
+    max-width: min(42vw, 120px);
+  }
 }
 
 .theia-mobile-projects-title-row:has(.theia-mobile-projects-header-project:not([hidden])) {

@@ -99,11 +99,15 @@ export function scheduleTranscriptConversationRefreshExtracted(ctx: any, project
         ctx.bindOpenTranscriptThreadStore(summary.id);
         ctx.host.transcriptScheduleRefresh = controller.onScheduleRefresh;
         ctx.scheduleTranscriptApprovalRefresh();
+        // Always force a GET on open/switch so incomplete SSE caches / preview shells
+        // cannot stick until the next SSE event (transcript looked truncated on reopen).
+        void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
 }
 
 export function renderOpenTranscriptPlaceholderExtracted(ctx: any, chatHost: HTMLElement,
         summary: QaapAgentConversationSummaryDTO,): void {
-        const preview = summary.lastMessagePreview?.trim();
+        // Never paint lastMessagePreview as a fake transcript row — it is list chrome (often
+        // mid-sentence / truncated) and sticks until a GET finishes. Show an empty shell instead.
         ctx.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, {
             id: summary.id,
             cwd: summary.cwd,
@@ -112,19 +116,39 @@ export function renderOpenTranscriptPlaceholderExtracted(ctx: any, chatHost: HTM
             status: summary.status,
             createdAt: summary.createdAt,
             updatedAt: summary.updatedAt,
-            messages: preview && summary.lastMessageRole ? [{
-                id: `${summary.id}:summary-preview`,
-                role: summary.lastMessageRole,
-                content: preview,
-                createdAt: summary.updatedAt,
-            }] : [],
+            messages: [],
         });
+}
+
+/**
+ * Only reuse a cached document when it looks complete vs the list summary.
+ * Incomplete SSE caches and stale messageCount mismatches caused truncated
+ * transcripts on reopen ("uld you like to work on?").
+ */
+export function isTrustedOpenTranscriptCache(
+    cached: QaapAgentConversationDTO,
+    summary: QaapAgentConversationSummaryDTO,
+): boolean {
+    if (cached.id !== summary.id) {
+        return false;
+    }
+    if (cached.messages.some(message => message.id.endsWith(':summary-preview'))) {
+        return false;
+    }
+    const expected = summary.messageCount;
+    if (typeof expected === 'number' && expected > 0 && cached.messages.length < expected) {
+        return false;
+    }
+    if (cached.messages.length === 0 && resolveTranscriptEffectiveStatus(cached) !== 'streaming') {
+        return false;
+    }
+    return true;
 }
 
 export function applyCachedTranscriptOnOpenExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
         chatHost: HTMLElement,): boolean {
         const cached = ctx.readCachedTranscriptConversation(summary.id);
-        if (!cached || (cached.messages.length === 0 && resolveTranscriptEffectiveStatus(cached) !== 'streaming')) {
+        if (!cached || !isTrustedOpenTranscriptCache(cached, summary)) {
             return false;
         }
         // Safety net: merge the fresh summary status into the cached document so

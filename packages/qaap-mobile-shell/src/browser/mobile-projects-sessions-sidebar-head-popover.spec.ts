@@ -5,8 +5,13 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// streaming2 pulls shell/layout modules that touch `document` at import time.
+enableJSDOM();
+
 import {
     toggleSessionsSidebarProjectSortPopoverExtracted,
+    toggleSessionsSidebarStatusLegendPopoverExtracted,
 } from './mobile-projects-sessions-sidebar-ui-streaming2';
 import { stampSessionsSidebarRowFingerprintsExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
 
@@ -35,6 +40,7 @@ describe('sessions sidebar head popovers', () => {
         const ctx: any = {
             sessionsSidebarSortPopover: undefined,
             sessionsSidebarAddProjectPopover: undefined,
+            sessionsSidebarStatusLegendPopover: undefined,
             getSessionsSidebarProjectSortMode: () => 'createdAt',
             setSessionsSidebarProjectSortMode: () => undefined,
             closeSessionsSidebarHeadPopovers(): void {
@@ -42,6 +48,8 @@ describe('sessions sidebar head popovers', () => {
                 this.sessionsSidebarSortPopover = undefined;
                 this.sessionsSidebarAddProjectPopover?.remove();
                 this.sessionsSidebarAddProjectPopover = undefined;
+                this.sessionsSidebarStatusLegendPopover?.remove();
+                this.sessionsSidebarStatusLegendPopover = undefined;
             },
         };
 
@@ -64,6 +72,38 @@ describe('sessions sidebar head popovers', () => {
         expect(anchor.getAttribute('aria-expanded')).to.equal('false');
         expect(document.activeElement).to.equal(anchor);
         expect(document.querySelector('[role="menu"]')).to.equal(null);
+    });
+
+    it('opens a status legend dialog with one row per core visual status', async () => {
+        const anchor = document.createElement('button');
+        anchor.setAttribute('aria-expanded', 'false');
+        document.body.append(anchor);
+        const ctx: any = {
+            sessionsSidebarSortPopover: undefined,
+            sessionsSidebarAddProjectPopover: undefined,
+            sessionsSidebarStatusLegendPopover: undefined,
+            closeSessionsSidebarHeadPopovers(): void {
+                this.sessionsSidebarSortPopover?.remove();
+                this.sessionsSidebarSortPopover = undefined;
+                this.sessionsSidebarAddProjectPopover?.remove();
+                this.sessionsSidebarAddProjectPopover = undefined;
+                this.sessionsSidebarStatusLegendPopover?.remove();
+                this.sessionsSidebarStatusLegendPopover = undefined;
+            },
+        };
+
+        toggleSessionsSidebarStatusLegendPopoverExtracted(ctx, anchor);
+        await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()));
+
+        expect(anchor.getAttribute('aria-expanded')).to.equal('true');
+        expect(document.querySelector('.theia-mod-status-legend[role="dialog"]')).to.not.equal(null);
+        expect(document.querySelectorAll('[role="listitem"]')).to.have.length(9);
+        expect(document.querySelector('.theia-mod-legend-running')).to.not.equal(null);
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+        expect(anchor.getAttribute('aria-expanded')).to.equal('false');
+        expect(document.querySelector('.theia-mod-status-legend')).to.equal(null);
     });
 });
 
