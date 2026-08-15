@@ -88,7 +88,7 @@ export class MobileProjectsStickyComposerColumnUi {
         onDropFiles?: (files: File[], uploadTargetDir?: import('@theia/core').URI) => void;
         onOpenAgentSheet: (anchor: HTMLButtonElement) => void;
         onSubmit: (draft: string) => void;
-        /** Shift+Enter submit — bypasses the queue and dispatches as a parallel run. */
+        /** Alt+Enter submit — bypasses the queue and dispatches as a parallel run. */
         onSubmitParallel?: (draft: string) => void;
         /** Cmd/Ctrl+Enter submit — cancels the running agent and sends immediately. */
         onSubmitInterrupt?: (draft: string) => void;
@@ -467,7 +467,8 @@ export class MobileProjectsStickyComposerColumnUi {
                 dispatchSubmit(draft => (options.onSubmitInterrupt ?? options.onSubmit)(draft));
                 return;
             }
-            if (!ev.shiftKey && !(ev.metaKey || ev.ctrlKey)) {
+            // Shift+Enter → native newline. Alt+Enter handled above as parallel.
+            if (!ev.shiftKey && !ev.altKey && !(ev.metaKey || ev.ctrlKey)) {
                 ev.preventDefault();
                 submit();
             }

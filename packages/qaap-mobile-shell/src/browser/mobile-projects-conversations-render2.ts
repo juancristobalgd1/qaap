@@ -438,6 +438,8 @@ export function openSseStreamExtracted(ctx: any): void {
             source.addEventListener('message_delta', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('deleted', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('parallel-run', ev => ctx.dispatchSseEvent(ev as MessageEvent));
+            source.addEventListener('pending-queued', ev => ctx.dispatchSseEvent(ev as MessageEvent));
+            source.addEventListener('pending-drained', ev => ctx.dispatchSseEvent(ev as MessageEvent));
             source.addEventListener('heartbeat', () => ctx.onDidReceiveTransportActivityEmitter.fire());
             source.addEventListener('open', () => {
                 if (ctx.transportWasDisconnected) {

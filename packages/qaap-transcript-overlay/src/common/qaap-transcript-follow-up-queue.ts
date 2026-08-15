@@ -21,7 +21,7 @@ export interface TranscriptFollowUpEntry {
     readonly variables?: readonly AIVariableResolutionRequest[];
     /** Optimistic transcript previews paired with {@link variables}. */
     readonly imagePreviews?: readonly TranscriptFollowUpImagePreview[];
-    /** Delivery mode for this entry — set when bypassing the queue (e.g. Shift+Enter). */
+    /** Delivery mode for this entry — set when posting parallel/interrupt (or queue) to the server. */
     readonly deliveryMode?: 'queue' | 'parallel' | 'interrupt';
 }
 

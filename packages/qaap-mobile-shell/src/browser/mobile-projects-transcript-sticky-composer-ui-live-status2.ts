@@ -198,9 +198,9 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         ctx.host.transcriptComposerDraft = '';
     };
     if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
-        // An agent is still working. Queue is the default: the message appears as a
-        // draggable list item above the composer (Send now / Run in parallel live there).
-        // Shift+Enter and Cmd/Ctrl+Enter are one-shot overrides and bypass that queue.
+        // An agent is still working. Default `'queue'` POSTs to the durable server-side
+        // pendingUserMessages list (Cursor-style). Alt+Enter / Cmd+Enter override to
+        // parallel / interrupt. Local in-memory queue is only a fallback on POST failure.
         const deliveryMode = resolveBusyFollowUpDeliveryMode({
             forceDeliveryMode: options.forceDeliveryMode,
         });

@@ -64,6 +64,9 @@ services:
       COPILOT_CLI_VERSION: ${COPILOT_CLI_VERSION:-}
       ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-}
       QAAP_QAIQ_MIN_VERSION: ${QAAP_QAIQ_MIN_VERSION:-}
+      # Cursor-like same-session queue: one follow-up per drained turn, short coalesce.
+      QAAP_MAX_BATCH_SIZE: ${QAAP_MAX_BATCH_SIZE:-1}
+      QAAP_COALESCE_WINDOW_MS: ${QAAP_COALESCE_WINDOW_MS:-400}
       # Hard backend cap for distinct variants in a parallel run (demo script uses 2).
       QAAP_MAX_PARALLEL_VARIANTS: ${QAAP_MAX_PARALLEL_VARIANTS:-3}
       # Agent processes dominate memory. Defaults leave headroom for Parallel×2 on a 4 GiB box;
