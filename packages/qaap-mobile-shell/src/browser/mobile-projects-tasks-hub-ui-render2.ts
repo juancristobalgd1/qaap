@@ -110,7 +110,7 @@ export function createAgentsHubLandingHeroBlockExtracted(ctx: any): HTMLElement 
         startNew.type = 'button';
         startNew.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary theia-mobile-agents-hub-landing-hero-cta';
         const startNewIcon = document.createElement('span');
-        startNewIcon.className = 'codicon codicon-new-folder theia-mobile-agents-hub-onboarding-btn-icon';
+        startNewIcon.className = 'codicon codicon-repo theia-mobile-agents-hub-onboarding-btn-icon';
         startNewIcon.setAttribute('aria-hidden', 'true');
         const startNewLabel = document.createElement('span');
         startNewLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';

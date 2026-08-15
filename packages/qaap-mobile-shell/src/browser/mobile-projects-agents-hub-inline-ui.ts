@@ -385,7 +385,7 @@ export class MobileProjectsAgentsHubInlineUi {
         newProject.type = 'button';
         newProject.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary';
         const newProjectIcon = document.createElement('span');
-        newProjectIcon.className = 'codicon codicon-new-folder theia-mobile-agents-hub-onboarding-btn-icon';
+        newProjectIcon.className = 'codicon codicon-repo theia-mobile-agents-hub-onboarding-btn-icon';
         newProjectIcon.setAttribute('aria-hidden', 'true');
         const newProjectLabel = document.createElement('span');
         newProjectLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
