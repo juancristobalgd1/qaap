@@ -281,19 +281,34 @@ jobs:
         env:
           QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
         run: |
-          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
+          # Theia is published on host loopback only; public traffic hits Caddy on :443.
+          # Prefer QAAP_VPS_PUBLIC_URL (https://…sslip.io). Fall back when the secret still
+          # points at the old direct :4873 URL, which is no longer world-reachable.
+          PRIMARY="${QAAP_VPS_PUBLIC_URL:-}"
+          FALLBACK="https://178.105.136.93.sslip.io"
+          URLS=()
+          if [ -n "$PRIMARY" ]; then
+            URLS+=("$PRIMARY")
+          fi
+          if [ -z "$PRIMARY" ] || [[ "$PRIMARY" == *":4873"* ]] || [[ "$PRIMARY" == http://* ]]; then
+            URLS+=("$FALLBACK")
+          fi
+          if [ "${#URLS[@]}" -eq 0 ]; then
             echo "QAAP_VPS_PUBLIC_URL not set — skip HTTP check"
             exit 0
           fi
           for attempt in $(seq 1 24); do
-            if curl -fsS -o /dev/null "$QAAP_VPS_PUBLIC_URL"; then
-              echo "OK: $QAAP_VPS_PUBLIC_URL"
-              exit 0
-            fi
-            echo "waiting for $QAAP_VPS_PUBLIC_URL ($attempt/24)..."
+            for url in "${URLS[@]}"; do
+              if curl -fsS --max-time 15 -o /dev/null "$url"; then
+                echo "OK: $url"
+                echo "verified_url=$url" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              echo "waiting for $url ($attempt/24)..."
+            done
             sleep 10
           done
-          echo "Health check failed for $QAAP_VPS_PUBLIC_URL" >&2
+          echo "Health check failed for: ${URLS[*]}" >&2
           exit 1
 
       - name: Verify deployed build matches pushed commit
@@ -306,17 +321,27 @@ jobs:
           # testing mid-rebuild all bit us in practice). The backend bakes QAAP_BUILD_SHA
           # into the image and serves it at /qaap/api/auth/config; assert it is a prefix
           # of the exact source revision baked into the GHCR image.
-          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
+          PRIMARY="${QAAP_VPS_PUBLIC_URL:-}"
+          FALLBACK="https://178.105.136.93.sslip.io"
+          BASE_URL="${verified_url:-}"
+          if [ -z "$BASE_URL" ]; then
+            if [ -n "$PRIMARY" ] && [[ "$PRIMARY" != *":4873"* ]] && [[ "$PRIMARY" != http://* ]]; then
+              BASE_URL="$PRIMARY"
+            else
+              BASE_URL="$FALLBACK"
+            fi
+          fi
+          if [ -z "$BASE_URL" ]; then
             echo "QAAP_VPS_PUBLIC_URL not set — skip build check"
             exit 0
           fi
-          DEPLOYED="$(curl -fsS "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build") or "")')"
+          DEPLOYED="$(curl -fsS --max-time 15 "$BASE_URL/qaap/api/auth/config" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build") or "")')"
           if [ -z "$DEPLOYED" ]; then
             echo "::warning::Backend did not report a build SHA (pre-QAAP_BUILD_SHA image?) — skipping assertion this once."
             exit 0
           fi
           EXPECTED="${{ needs.publish_image.outputs.source_sha }}"
-          echo "deployed=$DEPLOYED expected=$EXPECTED image=${{ needs.publish_image.outputs.image }}"
+          echo "deployed=$DEPLOYED expected=$EXPECTED image=${{ needs.publish_image.outputs.image }} url=$BASE_URL"
           case "$EXPECTED" in
             "$DEPLOYED"*) echo "OK: serving container runs the exact GHCR source revision." ;;
             *) echo "::error::Deployed build $DEPLOYED does not match GHCR source $EXPECTED."; exit 1 ;;

@@ -27,22 +27,33 @@ jobs:
         env:
           QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
         run: |
-          if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
+          PRIMARY="${QAAP_VPS_PUBLIC_URL:-}"
+          FALLBACK="https://178.105.136.93.sslip.io"
+          URLS=()
+          if [ -n "$PRIMARY" ]; then
+            URLS+=("$PRIMARY")
+          fi
+          if [ -z "$PRIMARY" ] || [[ "$PRIMARY" == *":4873"* ]] || [[ "$PRIMARY" == http://* ]]; then
+            URLS+=("$FALLBACK")
+          fi
+          if [ "${#URLS[@]}" -eq 0 ]; then
             echo "QAAP_VPS_PUBLIC_URL not set — nothing to monitor"
             echo "status=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # 3 attempts, 20s apart: a single blip must not page anyone.
           for attempt in 1 2 3; do
-            BODY="$(curl -fsS --max-time 15 "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" 2>/dev/null || true)"
-            BUILD="$(printf '%s' "$BODY" | jq -r '.build // empty' 2>/dev/null || true)"
-            if [ -n "$BODY" ]; then
-              echo "healthy (attempt $attempt) — build=${BUILD:-unknown}"
-              echo "status=healthy" >> "$GITHUB_OUTPUT"
-              echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "attempt $attempt failed"
+            for url in "${URLS[@]}"; do
+              BODY="$(curl -fsS --max-time 15 "$url/qaap/api/auth/config" 2>/dev/null || true)"
+              BUILD="$(printf '%s' "$BODY" | jq -r '.build // empty' 2>/dev/null || true)"
+              if [ -n "$BODY" ]; then
+                echo "healthy (attempt $attempt) via $url — build=${BUILD:-unknown}"
+                echo "status=healthy" >> "$GITHUB_OUTPUT"
+                echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "attempt $attempt failed for $url"
+            done
             [ "$attempt" -lt 3 ] && sleep 20
           done
           echo "status=down" >> "$GITHUB_OUTPUT"
