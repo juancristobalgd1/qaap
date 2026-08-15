@@ -265,13 +265,45 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
                 taskTitleRow.insertBefore(shield, taskTitleRow.firstChild);
             }
         }
-        if (summary.source !== 'theia-chat' && !summary.archived && !compact) {
+
+        // Cursor-style hover actions (desktop sidebar): Pin + Archive fade in over the time slot.
+        if (compact) {
+            const pinBtn = document.createElement('button');
+            pinBtn.type = 'button';
+            pinBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-pin-btn';
+            const pinned = !!(flags.priority && !flags.paused);
+            const pinLabel = pinned
+                ? nls.localize('qaap/mobileProjects/unpinConversation', 'Unpin')
+                : nls.localize('qaap/mobileProjects/pinConversation', 'Pin');
+            pinBtn.setAttribute('aria-label', pinLabel);
+            pinBtn.title = pinLabel;
+            pinBtn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+            if (pinned) {
+                pinBtn.classList.add('theia-mod-pinned');
+            }
+            const pinIcon = document.createElement('span');
+            pinIcon.className = `codicon ${pinned ? 'codicon-pinned' : 'codicon-pin'}`;
+            pinIcon.setAttribute('aria-hidden', 'true');
+            pinBtn.append(pinIcon);
+            pinBtn.addEventListener('click', ev => {
+                ev.stopPropagation();
+                void ctx.host.onSetConversationPriority(summary, !pinned);
+            });
+            row.append(pinBtn);
+        }
+
+        if (summary.source !== 'theia-chat' && (compact || !summary.archived)) {
             const archiveBtn = document.createElement('button');
             archiveBtn.type = 'button';
             archiveBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-archive-btn';
-            const archiveLabel = nls.localize('qaap/mobileProjects/archiveTask', 'Archive task');
+            const archiveLabel = summary.archived
+                ? nls.localize('qaap/mobileProjects/unarchiveTask', 'Unarchive task')
+                : nls.localize('qaap/mobileProjects/archiveTask', 'Archive task');
             archiveBtn.setAttribute('aria-label', archiveLabel);
             archiveBtn.title = archiveLabel;
+            if (summary.archived) {
+                archiveBtn.classList.add('theia-mod-archived');
+            }
             const archiveIcon = document.createElement('span');
             archiveIcon.className = 'codicon codicon-archive';
             archiveIcon.setAttribute('aria-hidden', 'true');
