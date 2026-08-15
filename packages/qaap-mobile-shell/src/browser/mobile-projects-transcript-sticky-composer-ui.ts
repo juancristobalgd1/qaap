@@ -36,6 +36,7 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
+import { mergePendingUserMessagesWithLocalQueue } from '../common/qaap-pending-user-messages-merge';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
     resolveChatModelContextUsageBreakdown,
@@ -520,13 +521,30 @@ export class MobileProjectsTranscriptStickyComposerUi {
     }
 
     /**
-     * Paints queued follow-ups as user bubbles at the transcript tail. Riding on the composer
-     * refresh (which already runs on enqueue/edit/remove and on every SSE tick) keeps the
-     * bubbles in step with the queue and re-mounts them after a full transcript rebuild.
+     * Keeps same-session queued follow-ups visible in the transcript footer (`pendingUserMessages`)
+     * in lockstep with the composer queue — including optimistic local rows before the mirror POST.
      */
     protected syncTranscriptQueuedFollowUpBubbles(summary: QaapAgentConversationSummaryDTO): void {
         const chatHost = this.host.resolveActiveTranscriptChatHost() ?? this.host.transcriptChatHost;
+        // Legacy DOM cleanup (old in-scroller queued bubbles).
         syncTranscriptQueuedBubbles(chatHost, this.host.transcriptFollowUpQueue.peek(summary.id));
+        const cached = this.host.transcriptLastConv;
+        if (!chatHost?.isConnected || !cached || cached.id !== summary.id) {
+            return;
+        }
+        const pendingUserMessages = mergePendingUserMessagesWithLocalQueue(
+            cached.pendingUserMessages,
+            this.host.transcriptFollowUpQueue.peek(summary.id),
+        );
+        const next = { ...cached, pendingUserMessages };
+        // Avoid a no-op full re-render when the merge did not change ids/content.
+        const prevKey = (cached.pendingUserMessages ?? []).map(item => `${item.id}:${item.content}`).join('|');
+        const nextKey = pendingUserMessages.map(item => `${item.id}:${item.content}`).join('|');
+        if (prevKey === nextKey) {
+            return;
+        }
+        this.host.transcriptLastFingerprint = undefined;
+        this.host.transcriptMessagesUi.renderTranscriptMessages(chatHost, next);
     }
 
     refreshTranscriptComposerActivityIfNeeded(conv: QaapAgentConversationDTO): void {

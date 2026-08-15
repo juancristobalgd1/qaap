@@ -376,15 +376,15 @@ describe('Multitasking fix — no cancel on new message to streaming conversatio
             expect(blocked).to.equal(true, 'non-parallel send MUST be blocked by in-flight gate');
         });
 
-        it('simulates two parallel sends both going through concurrently', async () => {
+        it('simulates a queue delivery bypassing the in-flight gate (multi follow-up)', () => {
             const inFlightIds = new Set<string>();
             const convId = 'c1';
-
-            // Neither parallel send should be blocked
-            const blocked1 = !true && inFlightIds.has(convId);
-            const blocked2 = !true && inFlightIds.has(convId);
-            expect(blocked1).to.equal(false);
-            expect(blocked2).to.equal(false);
+            inFlightIds.add(convId);
+            const deliveryMode = 'queue' as const;
+            const parallel = false;
+            const allowConcurrent = parallel || deliveryMode === 'queue';
+            const blocked = !allowConcurrent && inFlightIds.has(convId);
+            expect(blocked).to.equal(false, 'queue delivery must NOT be blocked by in-flight gate');
         });
     });
 });

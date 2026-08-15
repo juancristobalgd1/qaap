@@ -12,7 +12,9 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapMessageDeliveryMode,
+    type QaapPendingUserMessageDTO,
 } from '../common/qaap-agent-conversation-client';
+import { mergePendingUserMessagesWithLocalQueue } from '../common/qaap-pending-user-messages-merge';
 import {
     resolveAgentModelForSubmit,
     resolveExplicitAgentForSubmit,
@@ -61,6 +63,10 @@ export interface MobileProjectsTranscriptSubmitHost {
     transcriptMessagesUi: MobileProjectsTranscriptMessagesUi;
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
+    /** Optional: merge local composer queue into optimistic pending footer rows. */
+    transcriptFollowUpQueue?: {
+        peek(conversationId: string): readonly import('../common/qaap-transcript-follow-up-queue').TranscriptFollowUpEntry[];
+    };
 
     isPendingNewChatSummary(summary: QaapAgentConversationSummaryDTO): boolean;
     createProjectChatSession(
@@ -187,6 +193,45 @@ export class MobileProjectsTranscriptSubmitUi {
         return renderedAt;
     }
 
+    /**
+     * Optimistic paint for deliveryMode `queue`: append a footer "Queued" row without treating
+     * the follow-up as the live user turn (keeps the streaming activity under the active turn).
+     */
+    protected renderInstantQueuedPendingOptimistic(
+        summary: QaapAgentConversationSummaryDTO,
+        pending: QaapPendingUserMessageDTO,
+    ): number | undefined {
+        const cached = this.host.transcriptLastConv;
+        const chatHost = this.host.resolveActiveTranscriptChatHost();
+        if (!chatHost) {
+            return undefined;
+        }
+        const baseConv: QaapAgentConversationDTO = cached?.id === summary.id ? cached : {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: summary.status,
+            createdAt: summary.createdAt,
+            updatedAt: Date.now(),
+            messages: [],
+        };
+        const pendingUserMessages = [
+            ...(baseConv.pendingUserMessages ?? []).filter(item =>
+                item.id !== pending.id
+                && item.clientMessageId !== pending.clientMessageId
+                && item.content !== pending.content),
+            pending,
+        ];
+        this.renderTranscriptSubmitMessages(chatHost, {
+            ...baseConv,
+            pendingUserMessages,
+        }, summary);
+        const renderedAt = Date.now();
+        this.host.conversations?.recordSubmitLatencyMark(summary.id, 'optimistic_render_done', renderedAt);
+        return renderedAt;
+    }
+
     async submitTranscriptViaBackendConversation(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -221,12 +266,16 @@ export class MobileProjectsTranscriptSubmitUi {
         // already cleared from the composer draft by then). Parallel (peer-run) sends bypass this
         // gate because they are intentionally concurrent with the in-flight POST.
         const parallel = !!options.parallel;
-        if (!parallel && this.submitInFlightByConversationId.has(summary.id)) {
+        const queueDelivery = options.deliveryMode === 'queue';
+        // Queue mirrors must not block each other: several same-session follow-ups can be
+        // posted while the agent is still working. Parallel peers also bypass the gate.
+        const allowConcurrent = parallel || queueDelivery;
+        if (!allowConcurrent && this.submitInFlightByConversationId.has(summary.id)) {
             return false;
         }
         const submitAt = Date.now();
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'ui_submit_clicked', submitAt);
-        if (!parallel) {
+        if (!allowConcurrent) {
             this.submitInFlightByConversationId.add(summary.id);
         }
         // Fire-and-forget: a user starting a task is the natural consent moment to ask whether
@@ -236,7 +285,7 @@ export class MobileProjectsTranscriptSubmitUi {
             await this.submitTranscriptViaBackendConversationInner(project, summary, content, options, submitAt);
             return true;
         } finally {
-            if (!parallel) {
+            if (!allowConcurrent) {
                 this.submitInFlightByConversationId.delete(summary.id);
             }
         }
@@ -342,9 +391,22 @@ export class MobileProjectsTranscriptSubmitUi {
             createdAt: Date.now(),
             ...(options.imagePreviews?.length ? { optimisticImagePreviews: options.imagePreviews } : {}),
         };
-        // Zero perceived latency: paint the user bubble + activity skeleton from the cached
-        // conversation before the GET/POST round-trips; the server render below reconciles.
-        this.renderInstantSubmitOptimistic(summary, pendingUserMessage, options.imagePreviews);
+        // Queue delivery: paint as transcript footer "Queued" rows (pendingUserMessages), not as
+        // a live user bubble that would flash then vanish when the server parks the message.
+        const queueDelivery = options.deliveryMode === 'queue';
+        if (queueDelivery) {
+            this.renderInstantQueuedPendingOptimistic(summary, {
+                id: pendingUserMessage.id,
+                content: outbound,
+                createdAt: pendingUserMessage.createdAt,
+                turnAgentId: agent,
+                clientMessageId: pendingUserMessage.id,
+            });
+        } else {
+            // Zero perceived latency: paint the user bubble + activity skeleton from the cached
+            // conversation before the GET/POST round-trips; the server render below reconciles.
+            this.renderInstantSubmitOptimistic(summary, pendingUserMessage, options.imagePreviews);
+        }
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_start');
         let base = await getConversation(summary.id);
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
@@ -354,20 +416,42 @@ export class MobileProjectsTranscriptSubmitUi {
         if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel && !options.deliveryMode) {
             options.deliveryMode = 'queue';
         }
-        // Skip the second optimistic render if the pending is already in transcriptLastConv
-        // from renderInstantSubmitOptimistic — avoids double-painting the pending bubble when
-        // an SSE tick from the first agent updated transcriptLastConv between the two renders.
-        const pendingAlreadyRendered = this.host.transcriptLastConv?.id === summary.id
-            && this.host.transcriptLastConv.messages.some(m => m.id === pendingUserMessage.id);
-        if (!pendingAlreadyRendered) {
-            const optimistic: QaapAgentConversationDTO = {
-                ...base,
-                status: 'streaming',
-                messages: appendOptimisticPendingUserMessage(base.messages, pendingUserMessage),
-            };
+        if (!queueDelivery) {
+            // Skip the second optimistic render if the pending is already in transcriptLastConv
+            // from renderInstantSubmitOptimistic — avoids double-painting the pending bubble when
+            // an SSE tick from the first agent updated transcriptLastConv between the two renders.
+            const pendingAlreadyRendered = this.host.transcriptLastConv?.id === summary.id
+                && this.host.transcriptLastConv.messages.some(m => m.id === pendingUserMessage.id);
+            if (!pendingAlreadyRendered) {
+                const optimistic: QaapAgentConversationDTO = {
+                    ...base,
+                    status: 'streaming',
+                    messages: appendOptimisticPendingUserMessage(base.messages, pendingUserMessage),
+                };
+                const activeChatHost = this.host.resolveActiveTranscriptChatHost();
+                if (activeChatHost) {
+                    this.renderTranscriptSubmitMessages(activeChatHost, optimistic, summary);
+                }
+            }
+        } else {
+            // Re-merge after GET so we keep optimistic local rows + any server pending already present.
             const activeChatHost = this.host.resolveActiveTranscriptChatHost();
             if (activeChatHost) {
-                this.renderTranscriptSubmitMessages(activeChatHost, optimistic, summary);
+                const withThisPending = [
+                    ...(base.pendingUserMessages ?? []).filter(item => item.id !== pendingUserMessage.id
+                        && item.clientMessageId !== pendingUserMessage.id
+                        && item.content !== outbound),
+                    {
+                        id: pendingUserMessage.id,
+                        content: outbound,
+                        createdAt: pendingUserMessage.createdAt,
+                        turnAgentId: agent,
+                        clientMessageId: pendingUserMessage.id,
+                    },
+                ];
+                const localQueue = this.host.transcriptFollowUpQueue?.peek(summary.id) ?? [];
+                const pendingUserMessages = mergePendingUserMessagesWithLocalQueue(withThisPending, localQueue);
+                this.renderTranscriptSubmitMessages(activeChatHost, { ...base, pendingUserMessages }, summary);
             }
         }
         try {
