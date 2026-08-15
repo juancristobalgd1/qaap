@@ -156,6 +156,8 @@ else
 fi
 docker compose ps
 
+# Loopback :4873 only. Public HTTPS health is asserted by Actions against
+# QAAP_VPS_PUBLIC_URL (Caddy / sslip.io), never against a public :4873 bind.
 echo "[qaap-vps-update] waiting for health..."
 for _ in $(seq 1 60); do
     if docker compose exec -T theia node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))" 2>/dev/null; then
