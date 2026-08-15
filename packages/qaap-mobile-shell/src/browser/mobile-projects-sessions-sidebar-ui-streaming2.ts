@@ -701,7 +701,7 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: any, anchor
         startNew.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
         startNew.setAttribute('role', 'menuitem');
         const startNewIcon = document.createElement('span');
-        startNewIcon.className = 'codicon codicon-add theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
+        startNewIcon.className = 'codicon codicon-repo theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
         startNewIcon.setAttribute('aria-hidden', 'true');
         const startNewLabel = document.createElement('span');
         startNewLabel.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';

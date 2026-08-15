@@ -121,6 +121,9 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             'Current',
             'Next',
         ]);
+        const startNew = [...document.body.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option')]
+            .find(option => option.textContent?.includes('Start new project'));
+        expect(startNew?.querySelector('.codicon-repo')).to.not.equal(null);
     });
 
     it('opens the project menu as a top popover when anchored to the Work Hub header control', () => {
