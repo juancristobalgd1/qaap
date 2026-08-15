@@ -61,6 +61,15 @@ export function composeDictationFieldValue(
 }
 
 /**
+ * Mobile SpeechRecognition often ends mid-utterance with only interim text.
+ * Repainting finals-only then would wipe that interim and make dictation look dead
+ * until the next result. Only clear interim when finals were actually committed.
+ */
+export function shouldClearInterimOnRecognitionRestart(sessionFinals: string): boolean {
+    return sessionFinals.length > 0;
+}
+
+/**
  * After a mobile onend restart, Chrome/WebKit sometimes re-emits the phrase that
  * was just committed into the baseline. Drop that pure re-emit (and strip it when
  * it is only a prefix of new speech).
