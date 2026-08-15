@@ -81,6 +81,18 @@ interface ConversationParallelRunEvent {
     readonly runId: string;
     readonly variants: import('../common/qaap-parallel-run-client').QaapParallelRunVariantStatsDTO[];
 }
+interface ConversationPendingQueuedEvent {
+    readonly type: 'pending-queued';
+    readonly conversationId: string;
+    readonly cwd: string;
+    readonly message: import('../common/qaap-agent-conversation-client').QaapPendingUserMessageDTO;
+}
+interface ConversationPendingDrainedEvent {
+    readonly type: 'pending-drained';
+    readonly conversationId: string;
+    readonly cwd: string;
+    readonly drainedCount: number;
+}
 interface ConversationSnapshotEvent {
     readonly type: 'snapshot';
     readonly groups: ReadonlyArray<{
@@ -95,6 +107,8 @@ type ConversationServerEvent =
     | ConversationMessageDeltaEvent
     | ConversationDeletedEvent
     | ConversationParallelRunEvent
+    | ConversationPendingQueuedEvent
+    | ConversationPendingDrainedEvent
     | { readonly type: 'pong' }
     | { readonly type: 'heartbeat' };
 
@@ -151,6 +165,11 @@ export class MobileProjectsConversations {
     protected readonly onDidReceiveParallelRunEmitter = new Emitter<ConversationParallelRunEvent>();
     /** Fires when parallel-run variant diff stats change on the VPS. */
     readonly onDidReceiveParallelRun: Event<ConversationParallelRunEvent> = this.onDidReceiveParallelRunEmitter.event;
+
+    protected readonly onDidReceivePendingQueueEmitter = new Emitter<ConversationPendingQueuedEvent | ConversationPendingDrainedEvent>();
+    /** Fires when same-session follow-ups are queued or drained (Cursor-style pending list). */
+    readonly onDidReceivePendingQueue: Event<ConversationPendingQueuedEvent | ConversationPendingDrainedEvent> =
+        this.onDidReceivePendingQueueEmitter.event;
 
     protected readonly onDidReconnectTransportEmitter = new Emitter<void>();
     /** Fires after WS/SSE reconnect — open transcript should refetch (MessagesSnapshot-style). */

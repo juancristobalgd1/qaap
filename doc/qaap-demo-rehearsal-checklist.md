@@ -27,9 +27,19 @@ VPS: `https://178.105.136.93.sslip.io`
 1. **Móvil / Work Hub** — abrir sesión, composer sticky visible
 2. **Prompt corto** (QAIQ) → tools en timeline / Agent Trace
 3. **Preview** — Open preview / tab Preview con iframe (no abrir 2 proyectos a la vez)
-4. **2º mensaje mientras corre** → debe encolar (queued), no peer raro
-5. **Parallel (2 variantes)** — mismo prompt, comparar, quedarse con una
-6. **Mic (Chrome)** — dictar 1 frase; el texto no debe parpadear/desaparecer
+4. **2º mensaje mientras corre** → cola durable en servidor (badge Queued en transcript); NO peer en el mismo árbol
+5. **Varias tareas en la misma sesión** — Enter mientras trabaja = queue; Alt+Enter = parallel (worktree); Cmd/Ctrl+Enter = interrupt
+6. **Parallel (2 variantes)** — mismo prompt vía menú / Alt+Enter, comparar, quedarse con una
+7. **Mic (Chrome)** — dictar 1 frase; el texto no debe parpadear/desaparecer
+
+### Atajos composer (multitarea)
+
+| Tecla | Comportamiento |
+|-------|----------------|
+| Enter | Enviar (si el agente trabaja → cola en servidor, como Cursor) |
+| Shift+Enter | Nueva línea |
+| Alt+Enter | Parallel en worktree aislado (otra conversación) |
+| Cmd/Ctrl+Enter | Interrumpir el turno actual y enviar |
 
 ## No hacer en vivo
 

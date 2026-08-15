@@ -395,6 +395,11 @@ export class MobileProjectsPanelLifecycleUi {
                 this.host.conversations.onDidReceiveParallelRun(payload => {
                     this.host.ensureOverlayUi().parallel.applyParallelRunStats(payload.runId, payload.variants);
                 }),
+                this.host.conversations.onDidReceivePendingQueue(payload => {
+                    if (this.host.transcriptOpenSummaryId === payload.conversationId) {
+                        this.host.transcriptLiveUi.ensureTranscriptConversationRefresh();
+                    }
+                }),
             );
             this.host.conversationsDispose = conversationUpdates;
         }

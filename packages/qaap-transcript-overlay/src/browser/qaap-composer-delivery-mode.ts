@@ -14,14 +14,21 @@ export function isQaapComposerDeliveryMode(value: unknown): value is QaapCompose
 
 /**
  * One-shot override from a composer Enter keydown.
- * Plain Enter queues while an agent is working; Shift+Enter is Parallel; Cmd/Ctrl+Enter is Interrupt.
+ * - Plain Enter: submit (queues on the server while an agent is working).
+ * - Shift+Enter: newline (no delivery override — caller must not preventDefault).
+ * - Alt+Enter: Parallel (isolated worktree conversation).
+ * - Cmd/Ctrl+Enter: Interrupt the live turn, then send.
  */
 export function resolveComposerEnterDeliveryOverride(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'altKey' | 'metaKey' | 'ctrlKey'>): QaapComposerDeliveryMode | undefined {
-    if (event.key !== 'Enter' || event.altKey) {
+    if (event.key !== 'Enter') {
         return undefined;
     }
-    if (event.shiftKey && !event.metaKey && !event.ctrlKey) {
+    if (event.altKey && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
         return 'parallel';
+    }
+    if (event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        // Native newline — do not treat as a delivery mode.
+        return undefined;
     }
     if ((event.metaKey || event.ctrlKey) && !event.shiftKey) {
         return 'interrupt';
@@ -35,6 +42,11 @@ export function resolveBusyFollowUpDeliveryMode(options: {
     return options.forceDeliveryMode ?? QAAP_DEFAULT_COMPOSER_DELIVERY_MODE;
 }
 
-export function shouldBypassLocalFollowUpQueue(mode: QaapComposerDeliveryMode): boolean {
-    return mode === 'parallel' || mode === 'interrupt';
+/**
+ * Always POST to the backend (including `'queue'`). The local in-memory follow-up
+ * queue is only a fallback when the server rejects/errors — Cursor-style same-session
+ * multitask requires durable `pendingUserMessages` on the conversation.
+ */
+export function shouldBypassLocalFollowUpQueue(_mode: QaapComposerDeliveryMode): boolean {
+    return true;
 }

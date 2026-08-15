@@ -139,8 +139,8 @@ export async function startPeerRunOrQueueExtracted(ctx: any, project: MobileProj
     if (await ctx.startIsolatedRunIfRequested(project, entry)) {
         return true;
     }
-    // Busy Send queues by default. Shift+Enter / Cmd+Enter set entry.deliveryMode
-    // to parallel / interrupt and bypass that local queue.
+    // Busy Send queues on the server by default. Alt+Enter / Cmd+Enter set
+    // entry.deliveryMode to parallel / interrupt.
     const deliveryMode = (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode ?? 'queue';
     if (deliveryMode === 'parallel') {
         try {

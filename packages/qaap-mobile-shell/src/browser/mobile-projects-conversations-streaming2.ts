@@ -88,6 +88,16 @@ export function dispatchServerPayloadExtracted(ctx: any, payload: ConversationSe
             case 'parallel-run':
                 ctx.onDidReceiveParallelRunEmitter.fire(payload);
                 return;
+            case 'pending-queued':
+            case 'pending-drained':
+                // Same-session queue mutations: refresh list badges + open transcript footers.
+                ctx.onDidReceivePendingQueueEmitter.fire(payload);
+                ctx.emitConversationChange({
+                    kind: 'updated',
+                    conversationId: payload.conversationId,
+                    cwd: payload.cwd,
+                });
+                return;
             case 'pong':
             case 'heartbeat':
                 // Transport-liveness frames carry no conversation payload — they only prove the
