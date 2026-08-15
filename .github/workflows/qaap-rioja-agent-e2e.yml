@@ -42,6 +42,10 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Install native-keymap build deps
+        shell: bash
+        run: bash scripts/qaap-ci-install-native-deps.sh
+
       - name: Build browser app
         shell: bash
         run: |
