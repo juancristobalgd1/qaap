@@ -13,6 +13,7 @@ import {
     advanceDictationBaseline,
     composeDictationFieldValue,
     normalizeRestartedDictationSession,
+    shouldClearInterimOnRecognitionRestart,
     splitSpeechRecognitionTranscript,
     trailingSpaceForDictationBaseline,
 } from './qaap-chat-mic-dictation';
@@ -265,11 +266,15 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
 
         const beginRecognition = (continueFromSession = false): boolean => {
             if (continueFromSession) {
-                lastCommittedFinals = sessionFinals;
-                ({ baseline, trailingSpace } = advanceDictationBaseline(baseline, trailingSpace, sessionFinals));
+                const committedFinals = sessionFinals;
+                lastCommittedFinals = committedFinals;
+                ({ baseline, trailingSpace } = advanceDictationBaseline(baseline, trailingSpace, committedFinals));
                 sessionFinals = '';
-                // Paint finals-only before the next recognition wave (drop stale interim).
-                applyTranscript(composeDictationFieldValue(baseline, trailingSpace, '', ''));
+                // Only drop interim when finals were committed. Interim-only onend restarts
+                // (common on mobile) must leave the visible draft alone or dictation looks dead.
+                if (shouldClearInterimOnRecognitionRestart(committedFinals)) {
+                    applyTranscript(composeDictationFieldValue(baseline, trailingSpace, '', ''));
+                }
             } else {
                 refreshBaseline();
             }
@@ -310,6 +315,13 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                 rec.onerror = (event: SpeechRecognitionErrorEvent) => {
                     const error = event.error;
                     if (userStopped || this.isFatalSpeechError(error)) {
+                        if (this.isFatalSpeechError(error)) {
+                            button.title = nls.localize(
+                                'qaap/chatMic/speechError',
+                                'Microphone dictation stopped ({0}). Check permission and try again.',
+                                error,
+                            );
+                        }
                         stop();
                     }
                     // Recoverable errors (no-speech while pausing) are handled by onend restart on mobile.
@@ -448,10 +460,13 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
 
         const beginRecognition = (continueFromSession = false): boolean => {
             if (continueFromSession) {
-                lastCommittedFinals = sessionFinals;
-                ({ baseline, trailingSpace } = advanceDictationBaseline(baseline, trailingSpace, sessionFinals));
+                const committedFinals = sessionFinals;
+                lastCommittedFinals = committedFinals;
+                ({ baseline, trailingSpace } = advanceDictationBaseline(baseline, trailingSpace, committedFinals));
                 sessionFinals = '';
-                applyTranscript(composeDictationFieldValue(baseline, trailingSpace, '', ''));
+                if (shouldClearInterimOnRecognitionRestart(committedFinals)) {
+                    applyTranscript(composeDictationFieldValue(baseline, trailingSpace, '', ''));
+                }
             } else {
                 refreshBaseline();
             }
@@ -492,6 +507,13 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
                 rec.onerror = (event: SpeechRecognitionErrorEvent) => {
                     const error = event.error;
                     if (userStopped || this.isFatalSpeechError(error)) {
+                        if (this.isFatalSpeechError(error)) {
+                            button.title = nls.localize(
+                                'qaap/chatMic/speechError',
+                                'Microphone dictation stopped ({0}). Check permission and try again.',
+                                error,
+                            );
+                        }
                         stop();
                     }
                 };

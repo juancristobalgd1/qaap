@@ -8,6 +8,7 @@ import {
     advanceDictationBaseline,
     composeDictationFieldValue,
     normalizeRestartedDictationSession,
+    shouldClearInterimOnRecognitionRestart,
     splitSpeechRecognitionTranscript,
     trailingSpaceForDictationBaseline,
 } from './qaap-chat-mic-dictation';
@@ -55,5 +56,19 @@ describe('qaap-chat-mic-dictation', () => {
 
         const continued = normalizeRestartedDictationSession('hello world', 'hello');
         expect(composeDictationFieldValue(baseline, trailing, continued, '')).to.equal('hello world');
+    });
+
+    it('keeps interim across mobile restart when no finals were committed', () => {
+        expect(shouldClearInterimOnRecognitionRestart('')).to.equal(false);
+        expect(shouldClearInterimOnRecognitionRestart('hello')).to.equal(true);
+
+        const baseline = 'Note:';
+        const trailing = ' ';
+        const interimOnly = 'crea una landing';
+        expect(composeDictationFieldValue(baseline, trailing, '', interimOnly)).to.equal('Note: crea una landing');
+        // Restart without finals must not paint finals-only (would drop interim).
+        if (shouldClearInterimOnRecognitionRestart('')) {
+            expect.fail('must not clear interim-only sessions');
+        }
     });
 });
