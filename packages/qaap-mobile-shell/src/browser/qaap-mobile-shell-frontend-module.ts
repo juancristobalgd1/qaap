@@ -139,6 +139,7 @@ import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigato
 import { NavigatorTabBarDecorator } from '@theia/navigator/lib/browser/navigator-tab-bar-decorator';
 import { QaapAiChatMobileContribution } from './qaap-ai-chat-mobile-contribution';
 import { QaapWorkHubChatViewWidget } from './qaap-work-hub-chat-view-widget';
+import { WorkHubShellAIChatInputWidget } from './work-hub-shell-ai-chat-input-widget';
 import { QaapOutlineMobileContribution } from './qaap-outline-mobile-contribution';
 import { QaapMemoryInspectorMobileContribution } from './qaap-memory-inspector-mobile-contribution';
 import { QaapScmContribution } from './qaap-scm-contribution';
@@ -316,7 +317,15 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapAiChatMobileContribution).toSelf().inSingletonScope();
     rebind(AIChatContribution).toService(QaapAiChatMobileContribution);
     bind(ShellLayoutTransformer).toService(QaapAiChatMobileContribution);
-    rebind(ChatViewWidget).to(QaapWorkHubChatViewWidget);
+    // Child container so Work Hub's inherited input widget does not claim the
+    // singleton `ai-chat:/input.aichatviewlanguage` resource used by Monaco / IDE chat.
+    bind(WorkHubShellAIChatInputWidget).toSelf();
+    rebind(ChatViewWidget).toDynamicValue(ctx => {
+        const child = ctx.container.createChild();
+        child.bind(AIChatInputWidget).to(WorkHubShellAIChatInputWidget);
+        child.bind(QaapWorkHubChatViewWidget).toSelf();
+        return child.get(QaapWorkHubChatViewWidget);
+    });
 
     bind(QaapOutlineMobileContribution).toSelf().inSingletonScope();
     rebind(OutlineViewContribution).toService(QaapOutlineMobileContribution);
