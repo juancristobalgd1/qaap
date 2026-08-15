@@ -22,11 +22,21 @@ jobs:
     timeout-minutes: 10
     if: github.repository == 'juancristobalgd1/qaap'
     steps:
+      - name: Checkout URL normalizer
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          sparse-checkout: |
+            scripts/qaap-vps-normalize-public-url.sh
+          sparse-checkout-cone-mode: false
+
       - name: Probe public endpoint
         id: probe
         env:
           QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
         run: |
+          # shellcheck source=scripts/qaap-vps-normalize-public-url.sh
+          source ./scripts/qaap-vps-normalize-public-url.sh
+          QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
           if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
             echo "QAAP_VPS_PUBLIC_URL not set — nothing to monitor"
             echo "status=skipped" >> "$GITHUB_OUTPUT"
