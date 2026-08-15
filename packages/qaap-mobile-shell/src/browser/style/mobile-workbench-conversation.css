@@ -9669,6 +9669,14 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   --theia-mobile-transcript-composer-scroll-gap: -34px;
 }
 
+@media (max-width: 767px) {
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-sticky-composer-changes-pill-host),
+  .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-sticky-composer-changes-pill-host) {
+    /* Match densified 26px pill strip (+ lip) in work-hub narrow CSS. */
+    --theia-mobile-transcript-composer-scroll-gap: -30px;
+  }
+}
+
 /*
  * While live-status sits at the transcript scroller tail the pills must sit *below* it.
  * Cancelling the lip overlap achieved that, but a positive gap stops the scrollport before the
