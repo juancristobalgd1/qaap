@@ -97,7 +97,7 @@ describe('qaap-sticky-composer-workspace-bar', () => {
         expect(branchBtn?.querySelector('.codicon-git-branch')).to.not.equal(null);
         expect(branchBtn?.getAttribute('aria-pressed')).to.equal('true');
         const projectBtn = nav.querySelector<HTMLButtonElement>('.theia-qaap-segmented-option[aria-label="Project"]');
-        expect(projectBtn?.querySelector('.codicon-folder')).to.not.equal(null);
+        expect(projectBtn?.querySelector('.codicon-repo')).to.not.equal(null);
         const destinationBtn = nav.querySelector<HTMLButtonElement>('.theia-qaap-segmented-option[aria-label="Run in"]');
         expect(destinationBtn?.querySelector('.codicon-device-desktop')).to.not.equal(null);
         expect(destinationBtn?.querySelector('.codicon')?.getAttribute('aria-hidden')).to.equal('true');

@@ -30,6 +30,8 @@ import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcri
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTasksHubUi } from './mobile-projects-tasks-hub-ui';
 import { disposeComposerContextEntries, type StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
+import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 
 /** Panel surface for the Agents Hub inline execution shell (tasks landing). */
 export interface MobileProjectsAgentsHubInlineHost {
@@ -39,6 +41,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     scroll: HTMLElement;
     root: HTMLElement;
     projects: MobileProjectEntry[];
+    readQaapSignedIn?: () => boolean;
     tasksFirstLoadPending: boolean;
     agentsHubLegacyInbox: boolean;
     agentsHubSelectedProjectId: string | undefined;
@@ -382,7 +385,7 @@ export class MobileProjectsAgentsHubInlineUi {
         newProject.type = 'button';
         newProject.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary';
         const newProjectIcon = document.createElement('span');
-        newProjectIcon.className = 'codicon codicon-new-folder theia-mobile-agents-hub-onboarding-btn-icon';
+        newProjectIcon.className = 'codicon codicon-repo theia-mobile-agents-hub-onboarding-btn-icon';
         newProjectIcon.setAttribute('aria-hidden', 'true');
         const newProjectLabel = document.createElement('span');
         newProjectLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
@@ -402,10 +405,38 @@ export class MobileProjectsAgentsHubInlineUi {
         addRepo.append(addRepoIcon, addRepoLabel);
         addRepo.addEventListener('click', () => { void this.host.onNewClick(); });
 
+        if (!this.isAgentsHubSignedIn()) {
+            hint.textContent = nls.localize(
+                'qaap/agentsHub/noProjectsSignIn',
+                'Sign in with GitHub to see your repositories and agent sessions.',
+            );
+            newProject.classList.remove('theia-mod-primary');
+            newProject.classList.add('theia-mod-ghost');
+            actions.append(this.createAgentsHubGithubSignInButton());
+        }
         actions.append(newProject, addRepo);
 
         root.append(mark, title, hint, actions);
         return root;
+    }
+
+    protected isAgentsHubSignedIn(): boolean {
+        return this.host.readQaapSignedIn?.() ?? readQaapSignedIn();
+    }
+
+    protected createAgentsHubGithubSignInButton(): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary theia-mobile-agents-hub-signin-btn';
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-github theia-mobile-agents-hub-onboarding-btn-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agents-hub-onboarding-btn-label';
+        label.textContent = nls.localize('qaap/agentsHub/signIn', 'Sign in with GitHub');
+        btn.append(icon, label);
+        btn.addEventListener('click', () => startGithubOAuth());
+        return btn;
     }
 
     /** Same transcript host for idle and active sessions; idle shows starter chips in the scroll area. */

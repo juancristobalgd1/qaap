@@ -7,6 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { scrollElementTo } from '../common/qaap-prefers-reduced-motion';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
+import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
@@ -187,8 +188,8 @@ export class MobileProjectsHubHeaderUi {
     }
 
     /**
-     * Short section label next to the folder control: conversation title when a session is open,
-     * otherwise the active project name.
+     * Short section label next to the project switcher: conversation title when a session is open,
+     * otherwise the active project name. Clicking the control still opens the project switcher.
      */
     resolveHeaderProjectSectionTitle(project: MobileProjectEntry | undefined): string {
         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummary) {
@@ -226,7 +227,9 @@ export class MobileProjectsHubHeaderUi {
     }
 
     syncAgentsHubAccountChrome(): void {
-        const hideAccount = this.host.homeMode && (
+        const signedIn = this.readQaapSignedIn();
+        this.host.accountBtn.closest('.theia-mobile-projects')?.classList.toggle('theia-mod-signed-out', !signedIn);
+        const hideAccount = signedIn && this.host.homeMode && (
             (this.host.hubView === 'tasks' && this.host.shouldUseAgentsHubLanding())
             || this.host.hubQueryUi.isSidebarSecondaryHubView()
         );
@@ -236,6 +239,10 @@ export class MobileProjectsHubHeaderUi {
         if (hideAccount) {
             dismissQaapAccountMenu();
         }
+    }
+
+    readQaapSignedIn(): boolean {
+        return readQaapSignedIn();
     }
 
     projectDetailHeaderTitle(project: MobileProjectEntry | undefined): string {

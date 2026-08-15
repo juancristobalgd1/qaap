@@ -171,7 +171,7 @@ export class MobileOpenRepositoryDialog {
         this.createButton = document.createElement('button');
         this.createButton.type = 'button';
         this.createButton.className = 'theia-mobile-open-repo-create';
-        this.createButton.innerHTML = '<span class="codicon codicon-add" aria-hidden="true"></span> ' +
+        this.createButton.innerHTML = '<span class="codicon codicon-repo" aria-hidden="true"></span> ' +
             nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project');
         this.createButton.addEventListener('click', () => { void this.onCreateNew(); });
         this.footer.append(this.createButton);

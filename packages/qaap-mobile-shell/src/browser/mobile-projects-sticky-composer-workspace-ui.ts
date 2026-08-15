@@ -365,7 +365,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         actionsLabel.textContent = nls.localize('qaap/composerWorkspace/projectSheetActions', 'Add');
         list.append(actionsLabel);
         list.append(this.createComposerProjectSheetAction({
-            iconClass: 'codicon-add',
+            iconClass: 'codicon-repo',
             label: nls.localize('qaap/mobileOpenRepo/startNewProject', 'Start new project'),
             onSelect: () => {
                 this.host.stickyComposerSheetsUi.closeStickyComposerSheets();

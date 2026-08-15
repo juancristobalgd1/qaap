@@ -937,7 +937,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: none !important;
 }
 
-.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-actions .theia-workbench-account-btn {
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing:not(.theia-mod-signed-out) .theia-mobile-projects-header-actions .theia-workbench-account-btn {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -1293,6 +1293,11 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   cursor: pointer;
   color: var(--theia-button-foreground);
   background: var(--theia-button-background);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-signin.theia-mod-compact {
+  margin: 8px 12px 12px;
+  padding: 10px 12px;
 }
 
 /* Work Hub catalog (Workflows) — card list shared layout. */
@@ -7802,8 +7807,6 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
 .qaap-sticky-composer-sheet-popover.theia-mod-agent-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-header,
 .qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-header,
-.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-header,
-.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-approval-policy .theia-mobile-sticky-composer-sheet-header,
 .qaap-sticky-composer-sheet-popover.theia-mod-approval-policy-picker .theia-mobile-sticky-composer-sheet-header,
 .theia-mobile-sticky-composer-sheet.theia-mod-context-usage .theia-mobile-sticky-composer-sheet-header,
@@ -7815,8 +7818,6 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
    already frames the top, so a second line looks redundant. */
 .theia-mobile-sticky-composer-sheet.theia-mod-mode .theia-mobile-sticky-composer-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-mode-picker .theia-mobile-sticky-composer-sheet-panel,
-.theia-mobile-sticky-composer-sheet.theia-mod-delivery-mode .theia-mobile-sticky-composer-sheet-panel,
-.qaap-sticky-composer-sheet-popover.theia-mod-delivery-mode-picker .theia-mobile-sticky-composer-sheet-panel,
 .theia-mobile-sticky-composer-sheet.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-context-usage .qaap-chat-context-usage-sheet-panel {
   border-top: none;

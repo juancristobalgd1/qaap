@@ -44,7 +44,6 @@ import {
     applyConversationComposerPrefs,
     applyProjectComposerDefaults,
     buildRuntimeComposerPersistPatch,
-    clearConversationComposerDraft,
     extractConversationComposerPrefs,
     extractConversationComposerPrefsFromSummary,
     readConversationComposerDraft,
@@ -75,7 +74,7 @@ import {
     type TranscriptFollowUpEntry,
 } from '../common/qaap-transcript-follow-up-queue';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
+import { readProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
 import {
@@ -109,7 +108,6 @@ import {
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
-import { renderQaapDeliveryModeStrip } from '@theia/qaap-transcript-overlay/lib/browser/qaap-delivery-mode-strip';
 import {
     mergeFailedComposerDraft,
     isIdleComposerFocusStealable,
@@ -141,9 +139,8 @@ export async function startPeerRunOrQueueExtracted(ctx: any, project: MobileProj
     if (await ctx.startIsolatedRunIfRequested(project, entry)) {
         return true;
     }
-    // The delivery mode is chosen via the inline strip above the composer (see
-    // pendingDeliveryChoice on the host). This function is called once the user
-    // has picked a mode from that strip.
+    // Busy Send queues by default. Shift+Enter / Cmd+Enter set entry.deliveryMode
+    // to parallel / interrupt and bypass that local queue.
     const deliveryMode = (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode ?? 'queue';
     if (deliveryMode === 'parallel') {
         try {
@@ -502,83 +499,4 @@ export function mountTranscriptStickyComposerExtracted(ctx: any, host: HTMLEleme
     summary: QaapAgentConversationSummaryDTO,
     chatHost: HTMLElement,): void {
     void ctx.mountTranscriptStickyComposerAsync(host, project, summary, chatHost);
-}
-
-
-// ─── Inline delivery mode strip (above composer, non-blocking) ──────────────
-
-/**
- * Process a delivery mode choice from the inline strip above the composer.
- * Called when the user clicks one of the three pill buttons (queue / parallel / interrupt).
- * Clears the pending delivery choice, clears the composer draft, and dispatches the message.
- */
-export async function resolveDeliveryChoiceExtracted(
-    ctx: any,
-    mode: QaapMessageDeliveryMode,
-): Promise<void> {
-    const pending = ctx.host.pendingDeliveryChoice;
-    if (!pending) {
-        return;
-    }
-    ctx.host.pendingDeliveryChoice = undefined;
-    const { summary, entry, project } = pending;
-    (entry as TranscriptFollowUpEntry & { deliveryMode?: QaapMessageDeliveryMode }).deliveryMode = mode;
-
-    // Now clear the composer draft — the user has committed to sending.
-    if (isAgentsHubIdleConversationSummary(summary)) {
-        writeProjectComposerDraft(project.id, '');
-    } else {
-        clearConversationComposerDraft(summary.id);
-    }
-    ctx.host.transcriptComposerDraft = '';
-    const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
-    input?.dispatchEvent(new Event('input', { bubbles: true }));
-    ctx.host.transcriptComposerSendRefresh?.();
-
-    try {
-        const ok = await ctx.startPeerRunOrQueue(project, summary, entry);
-        if (!ok) {
-            ctx.remountTranscriptStickyComposer();
-        }
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        ctx.host.messageService?.error(nls.localize(
-            'qaap/mobileProjects/transcriptSendFailed', 'Could not send: {0}', detail,
-        ));
-        ctx.remountTranscriptStickyComposer();
-    }
-}
-
-/**
- * Dismiss the inline delivery mode strip without sending. The draft stays in the composer
- * so the user can keep editing.
- */
-export function dismissDeliveryChoiceExtracted(ctx: any): void {
-    ctx.host.pendingDeliveryChoice = undefined;
-    ctx.refreshComposerActivityStack();
-}
-
-/**
- * Render the inline delivery mode strip that appears above the composer card when
- * the user has pressed send while an agent is working. The strip is non-blocking:
- * the composer input stays fully interactive below it.
- *
- * Layout (like Cursor's inline queue prompt):
- * +-----------------------------------------------+
- * |  ~  "your draft text..."           [x]        |
- * |  [Queue]  [Send alongside]  [Interrupt]       |
- * +-----------------------------------------------+
- */
-export function renderDeliveryModeStripExtracted(ctx: any): HTMLElement | undefined {
-    const pending = ctx.host.pendingDeliveryChoice;
-    if (!pending) {
-        return undefined;
-    }
-    return renderQaapDeliveryModeStrip({
-        draft: pending.entry.draft,
-        onChoose: mode => {
-            void ctx.resolveDeliveryChoice(mode);
-        },
-        onDismiss: () => ctx.dismissDeliveryChoice(),
-    });
 }

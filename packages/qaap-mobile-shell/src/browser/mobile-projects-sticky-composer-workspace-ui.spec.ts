@@ -121,6 +121,9 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             'Current',
             'Next',
         ]);
+        const startNew = [...document.body.querySelectorAll<HTMLElement>('.theia-mobile-sticky-composer-sheet-option')]
+            .find(option => option.textContent?.includes('Start new project'));
+        expect(startNew?.querySelector('.codicon-repo')).to.not.equal(null);
     });
 
     it('opens the project menu as a top popover when anchored to the Work Hub header control', () => {
@@ -180,7 +183,7 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option.theia-mod-selected',
         );
         expect(projectBtn?.textContent?.trim()).to.equal('Project');
-        expect(projectBtn?.querySelector('.codicon-folder')).to.not.equal(null);
+        expect(projectBtn?.querySelector('.codicon-repo')).to.not.equal(null);
         expect(document.body.querySelector(
             '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Branch"] .codicon-git-branch',
         )).to.not.equal(null);

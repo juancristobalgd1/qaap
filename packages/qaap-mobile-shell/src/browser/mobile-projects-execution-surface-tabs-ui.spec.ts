@@ -210,6 +210,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(ui.executionSurfaceTabSpecs().map(spec => spec.id)).to.deep.equal([
             'preview', 'files', 'terminal',
         ]);
+        expect(ui.executionSurfaceTabSpecs().find(spec => spec.id === 'files')?.icon).to.equal('codicon-files');
     });
 
     it('redirects Changes (review) to the Files tab with changes view mode', () => {

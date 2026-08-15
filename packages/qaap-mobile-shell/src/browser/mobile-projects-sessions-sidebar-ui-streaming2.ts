@@ -32,9 +32,12 @@ import {
 import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE, SESSIONS_SIDEBAR_PROJECT_SORT_MODES } from './mobile-projects-sessions-sidebar-ui';
 import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 
-export function createSessionsSidebarSignInHintExtracted(): HTMLElement {
+export function createSessionsSidebarSignInHintExtracted(options?: { readonly compact?: boolean }): HTMLElement {
         const hint = document.createElement('div');
         hint.className = 'theia-mobile-projects-inbox-hint theia-mobile-work-hub-sessions-sidebar-signin';
+        if (options?.compact) {
+            hint.classList.add('theia-mod-compact');
+        }
         const text = document.createElement('p');
         text.textContent = nls.localize(
             'qaap/sessionsSidebar/signInHint',
@@ -65,6 +68,9 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
                 : nls.localize('qaap/sessionsSidebar/noSessions', 'No agent sessions yet. Start one from Agents.');
             host.append(empty);
             return;
+        }
+        if (!query && !signedIn) {
+            host.append(createSessionsSidebarSignInHintExtracted({ compact: true }));
         }
         const onActivate = (): void => {
             ctx.host.sessionsSidebar?.hideForMobileOverlay();
@@ -695,7 +701,7 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: any, anchor
         startNew.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item';
         startNew.setAttribute('role', 'menuitem');
         const startNewIcon = document.createElement('span');
-        startNewIcon.className = 'codicon codicon-add theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
+        startNewIcon.className = 'codicon codicon-repo theia-mobile-work-hub-sessions-sidebar-head-popover-item-icon';
         startNewIcon.setAttribute('aria-hidden', 'true');
         const startNewLabel = document.createElement('span');
         startNewLabel.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';

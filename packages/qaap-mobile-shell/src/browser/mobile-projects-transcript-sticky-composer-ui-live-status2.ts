@@ -147,7 +147,6 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         readonly isLegacyTheiaChat: boolean;
         /** When set, bypass the queue and dispatch directly with this delivery mode. */
         readonly forceDeliveryMode?: 'queue' | 'parallel' | 'interrupt';
-        readonly selectedDeliveryMode?: 'queue' | 'parallel' | 'interrupt';
     },): Promise<void> {
     const contextSnapshot = [...ctx.host.transcriptComposerContext];
     const selectedAgentId = resolveExplicitAgentForSubmit(draft, {

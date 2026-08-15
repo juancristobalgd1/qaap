@@ -203,9 +203,8 @@ export class MobileProjectsTranscriptSubmitUi {
             agentModel?: QaapCreateAgentTaskQaiqModel;
             imagePreviews?: readonly QaapTranscriptUserImagePreview[];
             /**
-             * Opt into isolated-worktree parallel (a new conversation). Prefer the composer
-             * delivery-mode strip; this flag is kept so older callers still map to
-             * `deliveryMode: 'parallel'`.
+             * Opt into isolated-worktree parallel (a new conversation). Prefer
+             * Shift+Enter or an explicit `deliveryMode: 'parallel'`.
              */
             parallel?: boolean;
             /**
@@ -351,7 +350,7 @@ export class MobileProjectsTranscriptSubmitUi {
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
         // A follow-up on a still-streaming conversation must not cancel the live turn.
         // Delivery defaults to `'queue'` (backend pendingUserMessages). Explicit parallel
-        // isolation is opted into via the delivery-mode strip / Shift+Enter.
+        // isolation is opted into via Shift+Enter or `deliveryMode: 'parallel'`.
         if (base.status === 'streaming' && isConversationTurnVisuallySettled(base) && !options.parallel && !options.deliveryMode) {
             options.deliveryMode = 'queue';
         }

@@ -161,14 +161,27 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
     }
 
     it('shows add-repository onboarding when no project is available', () => {
-        const host = createHost();
+        const host = createHost({ readQaapSignedIn: () => true });
         const ui = new MobileProjectsAgentsHubInlineUi(host);
         ui.renderAgentsHubExecutionShell();
         expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding')).to.not.equal(null);
         const primaryBtn = host.scroll.querySelector('.theia-mobile-agents-hub-onboarding-btn.theia-mod-primary');
         expect(primaryBtn).to.not.equal(null);
         expect(primaryBtn?.textContent).to.include('Start new project');
+        expect(primaryBtn?.querySelector('.codicon-repo')).to.not.equal(null);
         expect(host.scroll.textContent).to.include('Add repository');
+        expect(host.scroll.querySelector('.theia-mobile-agents-hub-signin-btn')).to.equal(null);
+    });
+
+    it('shows a GitHub sign-in CTA on onboarding when the user is signed out', () => {
+        const host = createHost({ readQaapSignedIn: () => false });
+        const ui = new MobileProjectsAgentsHubInlineUi(host);
+        ui.renderAgentsHubExecutionShell();
+        const signIn = host.scroll.querySelector('.theia-mobile-agents-hub-signin-btn');
+        expect(signIn).to.not.equal(null);
+        expect(signIn?.textContent).to.include('Sign in with GitHub');
+        expect(host.scroll.querySelector('.theia-mobile-agents-hub-onboarding-btn.theia-mod-primary')).to.equal(signIn);
+        expect(host.scroll.textContent).to.include('Start new project');
     });
 
     const openSummary = (): QaapAgentConversationSummaryDTO => ({

@@ -402,7 +402,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(probe.dispatched).to.deep.equal([]);
     });
 
-    it('does not let a leftover Parallel preference skip the local queue', async () => {
+    it('ignores a leftover Parallel preference and still queues busy Send', async () => {
         const probe = createBusySubmitProbe();
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
             probe.seam,
@@ -414,7 +414,6 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
                 resolvedPinnedId: 'qaiq',
                 showApprovalPolicy: false,
                 isLegacyTheiaChat: false,
-                selectedDeliveryMode: 'parallel',
             },
         );
         expect(probe.queued).to.deep.equal([{ draft: 'run alongside', deliveryMode: 'queue' }]);

@@ -410,12 +410,12 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   flex: 0 0 auto;
   box-sizing: border-box;
   min-width: 36px;
-  width: 36px;
+  width: auto;
   min-height: 36px;
   height: 36px;
-  padding: 0;
+  padding: 0 8px;
   margin: 0;
-  gap: 0;
+  gap: 6px;
   border: none;
   border-bottom: none;
   border-radius: var(--qaap-mobile-radius-control, 8px);
@@ -443,7 +443,12 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
 .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tab-label,
 .theia-mobile-agent-log-title-row>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs .theia-mobile-transcript-tab-label,
 .theia-mobile-agent-log-title-row>.theia-mobile-transcript-tabs .theia-mobile-transcript-tab-label {
-  display: none !important;
+  display: inline;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
 /* Header-inline view picker — single overflow control for all execution surfaces. */
@@ -616,9 +621,13 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   line-height: 1;
 }
 
-/* Visually icon-only on the inline header row; label stays in DOM for menu sync / future breakpoints. */
 .theia-mobile-transcript-tab-icon-select-label {
-  display: none !important;
+  display: inline;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
 }
 
 .theia-mobile-transcript-tab-icon-select-chevron {
@@ -670,17 +679,23 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   .theia-mobile-agent-log-title-row>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs .theia-mobile-transcript-tab,
   .theia-mobile-agent-log-title-row>.theia-mobile-transcript-tabs .theia-mobile-transcript-tab {
     min-width: 36px;
-    width: 36px;
+    width: auto;
     min-height: 36px;
     height: 36px;
-    padding: 0;
+    padding: 0 8px;
+    gap: 6px;
   }
 
   .theia-mobile-projects-title-row>.theia-mobile-projects-header-execution-tabs,
   .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tab-label,
   .theia-mobile-agent-log-title-row>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs .theia-mobile-transcript-tab-label,
   .theia-mobile-agent-log-title-row>.theia-mobile-transcript-tabs .theia-mobile-transcript-tab-label {
-    display: none !important;
+    display: inline;
+    max-width: 7em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
   }
 }
 
