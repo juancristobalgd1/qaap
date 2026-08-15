@@ -137,7 +137,7 @@ import {
     resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
-import { applyTranscriptComposerPrefsExtracted, applyTranscriptComposerPrefsFromConversationExtracted, ensureTranscriptComposerPrefsForMountExtracted, flushTranscriptComposerDraftExtracted, flushTranscriptComposerPrefsExtracted, hydrateTranscriptComposerPrefsExtracted, isTranscriptStickyComposerAgentWorkingExtracted, mountTranscriptStickyComposerExtracted, persistTranscriptComposerPrefsExtracted, queuePeerRunMessageExtracted, resetToProjectComposerDefaultsExtracted, schedulePersistTranscriptComposerDraftExtracted, schedulePersistTranscriptComposerPrefsExtracted, startPeerRunOrQueueExtracted, stopOpenComposerAgentLikeComposerStopExtracted, submitQueuedFollowUpEntryExtracted } from './mobile-projects-transcript-sticky-composer-ui-activity2';
+import { applyTranscriptComposerPrefsExtracted, applyTranscriptComposerPrefsFromConversationExtracted, ensureTranscriptComposerPrefsForMountExtracted, flushTranscriptComposerDraftExtracted, flushTranscriptComposerPrefsExtracted, hydrateTranscriptComposerPrefsExtracted, isTranscriptStickyComposerAgentWorkingExtracted, mirrorFollowUpToServerQueueExtracted, mountTranscriptStickyComposerExtracted, persistTranscriptComposerPrefsExtracted, queuePeerRunMessageExtracted, resetToProjectComposerDefaultsExtracted, schedulePersistTranscriptComposerDraftExtracted, schedulePersistTranscriptComposerPrefsExtracted, startPeerRunOrQueueExtracted, stopOpenComposerAgentLikeComposerStopExtracted, submitQueuedFollowUpEntryExtracted } from './mobile-projects-transcript-sticky-composer-ui-activity2';
 import { remountTranscriptStickyComposerExtracted, submitTranscriptComposerDraftExtracted } from './mobile-projects-transcript-sticky-composer-ui-live-status2';
 import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtracted, fetchWorkspaceChangedFilesExtracted, hasComposerAgentActivityExtracted, hasComposerCommittableChangesFromGitExtracted, hasComposerFileActivityExtracted, onTranscriptComposerAttachExtracted, openComposerPreviewExtracted, resolveChangedFilesStatsExtracted, resolveComposerActivityFilesForStackExtracted, resolveComposerPreviewRuntimeExtracted, resolveComposerUploadTargetDirExtracted, resolveComposerWorkspaceRootExtracted, resolveTranscriptContextUsageTargetExtracted, resolveTranscriptTheiaChatModelExtracted, scheduleComposerPreviewHealthCheckExtracted, scheduleIdleComposerFocusRetentionExtracted, shouldRefetchComposerGitSnapshotExtracted, syncComposerPreviewAvailabilityExtracted, syncTranscriptComposerQuickActionsVisibilityExtracted } from './mobile-projects-transcript-sticky-composer-ui-render2';
 import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptionsExtracted, keepAllComposerChangedFilesExtracted, launchComposerDevPreviewExtracted, refreshComposerActivityGitFilesIfNeededExtracted, runComposerCommitActionExtracted, runComposerGitFileActionExtracted, submitRunGeneratedAppFollowUpExtracted, syncComposerGitSnapshotExtracted, undoAllComposerChangedFilesExtracted } from './mobile-projects-transcript-sticky-composer-ui-streaming2';
@@ -563,6 +563,14 @@ export class MobileProjectsTranscriptStickyComposerUi {
 
     protected queuePeerRunMessage(summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): boolean {
         return queuePeerRunMessageExtracted(this, summary, entry);
+    }
+
+    protected async mirrorFollowUpToServerQueue(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        entry: TranscriptFollowUpEntry,
+    ): Promise<void> {
+        return mirrorFollowUpToServerQueueExtracted(this, project, summary, entry);
     }
 
     protected async submitQueuedFollowUpEntry(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry, options: { readonly parallel?: boolean } = {},): Promise<void> {

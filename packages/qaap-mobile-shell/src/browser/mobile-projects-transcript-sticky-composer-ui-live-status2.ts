@@ -198,9 +198,9 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         ctx.host.transcriptComposerDraft = '';
     };
     if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
-        // An agent is still working. Default `'queue'` POSTs to the durable server-side
-        // pendingUserMessages list (Cursor-style). Alt+Enter / Cmd+Enter override to
-        // parallel / interrupt. Local in-memory queue is only a fallback on POST failure.
+        // Busy follow-up: Queue stays in the composer popover (Edit / Send now / wait).
+        // Parallel / Interrupt bypass that UI and POST immediately. Queue is also mirrored
+        // to durable server pendingUserMessages so F5 does not drop the follow-up.
         const deliveryMode = resolveBusyFollowUpDeliveryMode({
             forceDeliveryMode: options.forceDeliveryMode,
         });
@@ -225,6 +225,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
             void ctx.startPeerRunOrQueue(project, summary, entry);
         } else {
             ctx.queuePeerRunMessage(summary, entry);
+            void ctx.mirrorFollowUpToServerQueue(project, summary, entry);
         }
         ctx.remountTranscriptStickyComposer();
         return;
