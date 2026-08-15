@@ -223,7 +223,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             onStop: m => { stoppedMemberId = m.id; },
         });
         expect(panel.querySelector('.qaap-working-agents-popover-title')?.textContent).to.equal('2 Working');
-        expect(panel.querySelector('.qaap-working-agents-popover-close .codicon-close')).to.not.equal(null);
+        expect(panel.querySelector('.qaap-working-agents-popover-close .codicon-chevron-down')).to.not.equal(null);
         const stopAll = panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all');
         stopAll?.click();
         expect(stopped).to.equal(false);
@@ -310,7 +310,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             .to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-expand .codicon-screen-full'))
             .to.not.equal(null);
-        expect(detail?.querySelector('.qaap-working-agents-popover-close .codicon-close')).to.not.equal(null);
+        expect(detail?.querySelector('.qaap-working-agents-popover-close .codicon-chevron-down')).to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-header .qaap-working-agents-popover-stop-one'))
             .to.equal(null);
         expect(detail?.textContent).to.contain('Review the latest pull request');
