@@ -27,8 +27,9 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     _activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
     summary?: QaapAgentConversationSummaryDTO,
     parentIds: ReadonlySet<string> = new Set<string>(),
-    options?: { onActivate?: () => void; compact?: boolean },): HTMLElement {
+    options?: { onActivate?: () => void; compact?: boolean; failedDuplicateCount?: number },): HTMLElement {
     const compact = options?.compact === true;
+    const failedDuplicateCount = options?.failedDuplicateCount ?? 0;
     const row = document.createElement('div');
     row.className = 'theia-mobile-projects-task-row';
     if (compact) {
@@ -102,7 +103,20 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     const taskSince = document.createElement('span');
     taskSince.className = 'theia-mobile-projects-task-since';
     taskSince.textContent = ctx.formatTaskSince(task, summary);
-    if (!compact && isRunning && summary?.turnProgressTotal && summary.turnProgressCurrent !== undefined) {
+    if (failedDuplicateCount > 0) {
+        const dupHint = nls.localize(
+            'qaap/sessionsSidebar/failedDuplicatesHint',
+            '{0} older failed runs with this title are hidden — use Clear failed runs',
+            String(failedDuplicateCount),
+        );
+        taskTitle.title = dupHint;
+        const badge = document.createElement('span');
+        badge.className = 'theia-mobile-projects-task-failed-dup-badge';
+        badge.textContent = `+${failedDuplicateCount}`;
+        badge.title = dupHint;
+        badge.setAttribute('aria-label', dupHint);
+        taskTitleRow.append(taskTitle, badge);
+    } else if (!compact && isRunning && summary?.turnProgressTotal && summary.turnProgressCurrent !== undefined) {
         const progressCount = document.createElement('span');
         progressCount.className = 'theia-mobile-projects-task-progress-count';
         progressCount.textContent = `${summary.turnProgressCurrent}/${summary.turnProgressTotal}`;
@@ -226,7 +240,7 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
                 taskTitleRow.insertBefore(shield, taskTitleRow.firstChild);
             }
         }
-        if (summary.source !== 'theia-chat' && !summary.archived) {
+        if (summary.source !== 'theia-chat' && !summary.archived && !compact) {
             const archiveBtn = document.createElement('button');
             archiveBtn.type = 'button';
             archiveBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-archive-btn';

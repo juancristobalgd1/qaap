@@ -56,3 +56,49 @@ describe('MobileProjectsCardMenuUi.buildProjectOptionsMenu', () => {
         expect(items[0]?.querySelector('.codicon-add')).to.equal(null);
     });
 });
+
+describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
+    it('offers Retry for self-reported stop failures even when status is idle', () => {
+        const target = project({ id: 'alpha' });
+        let retried = false;
+        const host = {
+            chatService: undefined,
+            conversations: undefined,
+            conversationIndexUi: {
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            conversationFlags: undefined,
+            ensureOverlayUi: () => ({ parallel: { openParallelRunsSheet: () => undefined } }),
+            onRetryConversation: async () => { retried = true; },
+            onForkConversation: async () => undefined,
+            onRunVariants: async () => undefined,
+            onRenameConversation: async () => undefined,
+            onSetConversationPriority: async () => undefined,
+            onSetConversationPaused: async () => undefined,
+            onCancelConversation: async () => undefined,
+            onArchiveConversation: async () => undefined,
+            onDeleteConversation: async () => undefined,
+            openConversationSummary: async () => undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+
+        const ui = new MobileProjectsCardMenuUi(host);
+        const menu = ui.buildConversationMenu(target, {
+            id: 'c1',
+            title: 'Find and fix a bug',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+            agentId: 'qaiq',
+            cwd: '/repo',
+            source: 'vps',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Stopped: tool failed',
+        } as never);
+        const retry = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .find(item => item.textContent?.includes('Retry'));
+        expect(retry).to.not.equal(undefined);
+        (retry as HTMLElement).click();
+        expect(retried).to.equal(true);
+    });
+});

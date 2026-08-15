@@ -9,6 +9,7 @@ import {
     SHELL_AGENT_ID,
 } from '../common/qaap-agent-task-client';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { collapseOlderFailedDuplicateTitles } from '../common/qaap-failed-duplicate-collapse';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
@@ -306,18 +307,23 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
         conversations: readonly QaapAgentConversationSummaryDTO[],
         onActivate: () => void,
         bypassLimit: boolean,): void {
-        const partitioned = partitionAgentConversations(conversations);
+        const collapsed = collapseOlderFailedDuplicateTitles(conversations);
+        const partitioned = partitionAgentConversations(collapsed.conversations);
         const { visible, hiddenCount, showLess } = ctx.resolveSessionsSidebarVisibleConversations(
             project,
             partitioned.roots,
             bypassLimit,
         );
         if (visible.length === 0 && partitioned.variantRuns.size === 0) {
+            const failedCount = ctx.host.conversationIndexUi.countFailedTasks(project);
+            if (failedCount > 0) {
+                listHost.append(ctx.createSessionsSidebarClearFailedControl(project, failedCount));
+            }
             return;
         }
         const activeInfo = ctx.host.conversationIndexUi.activeInfoForProject(project);
         const parentIds = new Set<string>();
-        for (const summary of conversations) {
+        for (const summary of collapsed.conversations) {
             if (summary.forkedFromId) {
                 parentIds.add(summary.forkedFromId);
             }
@@ -332,6 +338,7 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
             listHost.append(ctx.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
                 onActivate: () => openConversation(summary),
                 compact: true,
+                failedDuplicateCount: collapsed.hiddenFailedByKeptId.get(summary.id) ?? 0,
             }));
             const forks = partitioned.forksByParentId.get(summary.id);
             if (forks?.length) {
@@ -347,6 +354,7 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
                         listHost.append(ctx.host.projectRowsUi.createTaskItem(project, forkTask, activeInfo, fork, parentIds, {
                             onActivate: () => openConversation(fork),
                             compact: true,
+                            failedDuplicateCount: collapsed.hiddenFailedByKeptId.get(fork.id) ?? 0,
                         }));
                     }
                 }
@@ -366,9 +374,14 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
                     listHost.append(ctx.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
                         onActivate: () => openConversation(summary),
                         compact: true,
+                        failedDuplicateCount: collapsed.hiddenFailedByKeptId.get(summary.id) ?? 0,
                     }));
                 }
             }
+        }
+        const failedCount = ctx.host.conversationIndexUi.countFailedTasks(project);
+        if (failedCount > 0) {
+            listHost.append(ctx.createSessionsSidebarClearFailedControl(project, failedCount));
         }
         if (bypassLimit) {
             return;
@@ -379,6 +392,33 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
         } else if (showLess) {
             listHost.append(ctx.createSessionsSidebarShowLessControl(project));
         }
+}
+
+export function createSessionsSidebarClearFailedControlExtracted(
+    ctx: any,
+    project: MobileProjectEntry,
+    failedCount: number,
+): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'theia-mobile-work-hub-sessions-sidebar-clear-failed';
+    btn.textContent = failedCount === 1
+        ? nls.localize('qaap/mobileProjects/clearFailedTasksOne', 'Clear failed run')
+        : nls.localize('qaap/mobileProjects/clearFailedTasksMany', 'Clear failed runs ({0})', String(failedCount));
+    btn.title = nls.localize(
+        'qaap/sessionsSidebar/clearFailedHint',
+        'Delete failed runs for this project',
+    );
+    const icon = document.createElement('span');
+    icon.className = 'codicon codicon-clear-all';
+    icon.setAttribute('aria-hidden', 'true');
+    btn.prepend(icon);
+    btn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void ctx.host.onClearFailedTasks(project);
+    });
+    return btn;
 }
 
 export function createSessionsSidebarShowMoreControlExtracted(ctx: any, project: MobileProjectEntry,
