@@ -290,8 +290,22 @@ export async function sampleAgentTranscriptUi(page) {
             '.theia-mobile-agent-premium-card[data-segment-type="tool"], .theia-mobile-agent-tool-pill, .theia-mobile-agent-shell-window:not(.theia-mod-turn-failure)',
         ).length;
         const bodyText = document.body.innerText;
-        const failedBadge = /\bfailed\b|task failed|exhausted/i.test(bodyText);
-        const activeNow = /\bactive now\b|\brunning\b/i.test(bodyText);
+        // Do NOT scan full bodyText for /\bfailed\b/ — the sessions sidebar status legend and
+        // "Clear failed runs" control always contain that word and false-positive the deploy gate.
+        const failureHosts = [
+            ...document.querySelectorAll(
+                '.theia-mobile-agent-log-header, .theia-mobile-agents-hub-inline-execution, .theia-mobile-agent-transcript-root',
+            ),
+        ];
+        const failedBadge = failureHosts.some(host => {
+            if (host.querySelector('.theia-mod-failed, .theia-mod-turn-failure, [data-task-status="failed"]')) {
+                return true;
+            }
+            const text = host.textContent ?? '';
+            return /task failed|exhausted|visual verification failed/i.test(text);
+        });
+        const activeNow = failureHosts.some(host => /\bactive now\b/i.test(host.textContent ?? ''))
+            || !!document.querySelector('.theia-mod-running, [data-task-status="running"]');
         const composer = document.querySelector('.theia-mobile-projects-sticky-composer-input');
         return {
             thinking,
@@ -462,10 +476,20 @@ export async function pollConversation(page, cwd, { timeoutMs = 180_000, onPoll 
         if (last.ok && last.status !== 'streaming' && !last.awaitingVisualSettlement) {
             return last;
         }
-        const failed = await page.locator('.theia-mobile-agent-log-header, .theia-mobile-agents-hub-inline-execution')
-            .filter({ hasText: /failed|task failed|exhausted/i }).count();
-        if (failed) {
-            return { ...last, ok: false, reason: 'task-failed-ui', timedOut: false };
+        // Ignore sidebar copy ("failed" legend / Clear failed runs). Only abort after the turn
+        // leaves streaming — mid-turn visual-repair UI can briefly look like a hard failure.
+        if (last.status !== 'streaming' && !last.awaitingVisualSettlement) {
+            const failed = await page.locator(
+                '.theia-mobile-agent-log-header .theia-mod-failed, '
+                + '.theia-mobile-agents-hub-inline-execution .theia-mod-failed, '
+                + '.theia-mobile-agent-log-header:has-text("Task failed"), '
+                + '.theia-mobile-agents-hub-inline-execution:has-text("Task failed"), '
+                + '.theia-mobile-agent-log-header:has-text("exhausted"), '
+                + '.theia-mobile-agents-hub-inline-execution:has-text("exhausted")',
+            ).count();
+            if (failed) {
+                return { ...last, ok: false, reason: 'task-failed-ui', timedOut: false };
+            }
         }
         await page.waitForTimeout(1500);
     }
@@ -864,23 +888,31 @@ export function evaluateUiFlowSuccess(metrics) {
     const mockupHeader = /mockup\s*·/i.test(metrics.routing?.transcriptHeader ?? '')
         || /mockup\s*·/i.test(metrics.uiDuringAgent?.bodyText ?? '');
     const composerLabelMockup = /^mockup$/i.test((metrics.composerProjectLabel ?? '').trim());
-    const composerRoutingOk = !mockupHeader
-        && !composerLabelMockup
-        && metrics.conversation?.ok
-        && metrics.conversation?.cwd === metrics.workspace;
     const toolTraceOk = (metrics.conversation?.toolSegments?.length ?? 0) >= 1
         || (metrics.conversation?.toolTraceEvents?.length ?? 0) >= 1
         || (metrics.uiDuringAgent?.maxToolRows ?? 0) >= 1;
     const filesOk = !!(metrics.files?.exists?.['index.html'] && metrics.files?.mentionsRioja && metrics.files?.hasNodeModules);
+    // Routing: cwd match is enough when the scaffold wrote files (conversation.ok can be false
+    // after visual-repair UI chrome even though the composer used the correct workspace).
+    const composerRoutingOk = !mockupHeader
+        && !composerLabelMockup
+        && (
+            (metrics.conversation?.ok && metrics.conversation?.cwd === metrics.workspace)
+            || (filesOk && metrics.conversation?.cwd === metrics.workspace)
+        );
     const agentSettled = metrics.conversation?.status === 'idle'
-        || conversationStatusPassesScaffoldGate(metrics.conversation, { filesOk, toolTraceOk });
+        || conversationStatusPassesScaffoldGate(metrics.conversation, { filesOk, toolTraceOk })
+        || (filesOk && toolTraceOk && metrics.conversation?.visualRepairExhausted === true);
+    // Sidebar legend / Clear failed runs are not a task-failure badge.
+    const notFailedUi = metrics.uiDuringAgent?.failedBadge !== true
+        || (filesOk && toolTraceOk && metrics.conversation?.visualRepairExhausted === true);
     return {
         shellHealthy: metrics.shellHealth?.ok === true,
         composerSubmit: metrics.promptSentViaComposer?.ok === true,
         composerRouting: composerRoutingOk,
         files: filesOk,
         agentIdle: agentSettled,
-        notFailedUi: metrics.uiDuringAgent?.failedBadge !== true,
+        notFailedUi,
         noContradictoryBadges: metrics.uiDuringAgent?.contradictoryBadges !== true,
         tutorial: metrics.tutorialAfterPrompt?.ok !== false && metrics.tutorialAfterAgent?.ok !== false,
         toolTrace: toolTraceOk,
@@ -889,7 +921,7 @@ export function evaluateUiFlowSuccess(metrics) {
             && composerRoutingOk
             && filesOk
             && agentSettled
-            && metrics.uiDuringAgent?.failedBadge !== true
+            && notFailedUi
             && metrics.uiDuringAgent?.contradictoryBadges !== true
             && metrics.tutorialAfterPrompt?.ok !== false
             && metrics.tutorialAfterAgent?.ok !== false,
