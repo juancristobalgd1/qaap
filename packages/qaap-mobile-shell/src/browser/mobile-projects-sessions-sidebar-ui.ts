@@ -265,6 +265,10 @@ export class MobileProjectsSessionsSidebarUi {
         renderWorkHubSessionsSidebarListExtracted(this, host);
     }
 
+    readQaapSignedIn(): boolean {
+        return readQaapSignedIn();
+    }
+
     protected bindSessionsSidebarThreadStoreSubscriptions(): void {
         bindSessionsSidebarThreadStoreSubscriptionsExtracted(this);
     }

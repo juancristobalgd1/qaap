@@ -11,6 +11,7 @@ import {
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { createLucideArrowUpRightIcon, createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -31,10 +32,32 @@ import {
 import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE, SESSIONS_SIDEBAR_PROJECT_SORT_MODES } from './mobile-projects-sessions-sidebar-ui';
 import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 
+export function createSessionsSidebarSignInHintExtracted(): HTMLElement {
+        const hint = document.createElement('div');
+        hint.className = 'theia-mobile-projects-inbox-hint theia-mobile-work-hub-sessions-sidebar-signin';
+        const text = document.createElement('p');
+        text.textContent = nls.localize(
+            'qaap/sessionsSidebar/signInHint',
+            'Sign in with GitHub to see your agent sessions.',
+        );
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'theia-mobile-projects-inbox-hint-btn';
+        btn.textContent = nls.localize('qaap/sessionsSidebar/signIn', 'Sign in with GitHub');
+        btn.addEventListener('click', () => startGithubOAuth());
+        hint.append(text, btn);
+        return hint;
+}
+
 export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLElement): void {
         const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
         const query = ctx.host.query.trim().toLowerCase();
+        const signedIn = typeof ctx.readQaapSignedIn === 'function' ? ctx.readQaapSignedIn() : readQaapSignedIn();
         if (projects.length === 0) {
+            if (!query && !signedIn) {
+                host.append(createSessionsSidebarSignInHintExtracted());
+                return;
+            }
             const empty = document.createElement('p');
             empty.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
             empty.textContent = query

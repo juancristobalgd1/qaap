@@ -69,13 +69,6 @@ import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
-import {
-    recordTranscriptRenderMetric,
-    // QAAP-METRICS-DEBUG (temporary, gated by ?qaapRenderMetrics=1) — revert with this block.
-    enableTranscriptRenderMetrics,
-    resetTranscriptRenderMetrics,
-    getTranscriptRenderMetricsSnapshot,
-} from '../common/qaap-transcript-render-metrics';
 import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import {

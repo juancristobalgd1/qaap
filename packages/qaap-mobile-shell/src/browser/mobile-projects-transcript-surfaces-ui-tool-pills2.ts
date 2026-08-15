@@ -38,6 +38,7 @@ import {
     resolveDevPreviewPublicOrigin,
 } from '../common/qaap-dev-preview';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
+import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
 import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
@@ -329,6 +330,7 @@ export function resolveProjectScopedWorkspaceKeyExtracted(ctx: any, project: Mob
 }
 
 export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+    void ensureTranscriptSurfaceCss();
     const host = ctx.executionFilesHost();
     if (!host) {
         return;

@@ -23,12 +23,7 @@ import {
     populateApprovalPolicyToolbarButton,
     populateModeToolbarButton,
 } from './qaap-agent-ui';
-import {
-    populateDeliveryModeToolbarButton,
-    readComposerDeliveryMode,
-    resolveComposerDeliveryModeLabel,
-    resolveComposerEnterDeliveryOverride,
-} from './qaap-delivery-mode-strip';
+import { resolveComposerEnterDeliveryOverride } from './qaap-delivery-mode-strip';
 import { populateModelCapabilityToolbarButton } from './model-capability-popover';
 import {
     renderStickyComposerContextStrip,
@@ -81,7 +76,6 @@ export class MobileProjectsStickyComposerColumnUi {
         resolveModeLabel?: () => string;
         resolveModeId?: () => string | undefined;
         onOpenModeSheet?: (anchor: HTMLButtonElement) => void;
-        onOpenDeliveryModeSheet?: (anchor: HTMLButtonElement) => void;
         approvalPolicyId?: QaapAgentApprovalPolicyId;
         onOpenApprovalPolicySheet?: (anchor: HTMLButtonElement) => void;
         canSubmit: boolean;
@@ -226,27 +220,6 @@ export class MobileProjectsStickyComposerColumnUi {
         const toolbarItems: HTMLElement[] = [];
         if (modeBtn) {
             toolbarItems.push(modeBtn);
-        }
-        if (options.onOpenDeliveryModeSheet) {
-            const deliveryBtn = document.createElement('button');
-            deliveryBtn.type = 'button';
-            deliveryBtn.className = 'theia-mobile-projects-sticky-composer-mode theia-mobile-projects-sticky-composer-delivery-mode';
-            const deliveryMode = readComposerDeliveryMode();
-            const deliveryLabel = resolveComposerDeliveryModeLabel(deliveryMode);
-            deliveryBtn.title = nls.localize(
-                'qaap/mobileProjects/stickyComposerDeliveryMode',
-                'Send mode: {0}',
-                deliveryLabel,
-            );
-            deliveryBtn.setAttribute('aria-label', deliveryBtn.title);
-            deliveryBtn.setAttribute('aria-haspopup', 'menu');
-            populateDeliveryModeToolbarButton(deliveryBtn, { mode: deliveryMode, label: deliveryLabel });
-            bindStickyComposerControlClick(deliveryBtn, ev => {
-                this.openComposerControlSheet(ev, input, () => options.onOpenDeliveryModeSheet!(deliveryBtn));
-            });
-            // Keep Queue ▾ on the always-visible controls row. The Codex context
-            // tray sits behind the input panel, so a toolbar-only control is hidden.
-            controlsLeftItems.push(deliveryBtn);
         }
         if (approvalBtn) {
             toolbarItems.push(approvalBtn);

@@ -32,7 +32,8 @@ on:
 
 concurrency:
   group: qaap-vps-deploy
-  cancel-in-progress: true
+  # Never abort an in-flight publish/SSH deploy. A newer push waits its turn.
+  cancel-in-progress: false
 
 env:
   QAAP_DEPLOY_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'master' }}
@@ -44,7 +45,7 @@ jobs:
   # and build:browser. The deploy job depends on this, so a red gate blocks the VPS deploy.
   gate:
     name: Pre-deploy smoke gate
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     if: github.repository == 'juancristobalgd1/qaap' && github.event.inputs.skip_gate != 'true'
 
@@ -133,7 +134,7 @@ jobs:
 
   publish_image:
     name: Publish immutable GHCR image
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: gate
     # Publish only after the gate passed, or after an explicit emergency skip. Failed gates never
@@ -216,7 +217,7 @@ jobs:
 
   deploy:
     name: Deploy to VPS
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     needs: [gate, publish_image]
     # Deploy when the gate passed, or when it was intentionally skipped via workflow_dispatch.

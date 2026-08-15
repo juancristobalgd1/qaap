@@ -73,10 +73,6 @@ import {
     type TranscriptFollowUpEntry,
 } from '../common/qaap-transcript-follow-up-queue';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import {
-    readComposerDeliveryMode,
-    resolveComposerDeliveryModeLabel,
-} from './qaap-delivery-mode-strip';
 import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
@@ -236,7 +232,6 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
             showApprovalPolicy,
             isLegacyTheiaChat,
             forceDeliveryMode,
-            selectedDeliveryMode: readComposerDeliveryMode(),
         });
     };
     const column = ctx.host.stickyComposerColumnUi.buildStickyComposerColumn({
@@ -284,9 +279,6 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
         onOpenModeSheet: modes.length > 1
             ? anchor => { ctx.host.transcriptComposerUi.openTranscriptComposerModeSheet(project, summary, modes, anchor); }
             : undefined,
-        onOpenDeliveryModeSheet: anchor => {
-            ctx.host.transcriptComposerUi.openTranscriptComposerDeliveryModeSheet(anchor);
-        },
         approvalPolicyId: showApprovalPolicy ? ctx.host.transcriptComposerApprovalPolicyId : undefined,
         onOpenApprovalPolicySheet: showApprovalPolicy
             ? anchor => {
@@ -339,9 +331,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
         onOpenAgentSheet: isLegacyTheiaChat
             ? () => { /* Legacy Theia chat is not agent-switchable */ }
             : anchor => { ctx.host.transcriptComposerUi.openTranscriptComposerAgentSheet(project, summary, anchor); },
-        sendLabel: ctx.isTranscriptStickyComposerAgentWorking()
-            ? resolveComposerDeliveryModeLabel(readComposerDeliveryMode())
-            : nls.localize('qaap/mobileProjects/transcriptSend', 'Send'),
+        sendLabel: nls.localize('qaap/mobileProjects/transcriptSend', 'Send'),
         onSubmit: draft => {
             submitComposerFollowUp(draft);
         },

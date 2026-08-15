@@ -200,11 +200,10 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
     };
     if ((ctx.isTranscriptStickyComposerAgentWorking() || summary.status === 'streaming' || summary.status === 'settled') && !isAgentsHubIdleConversationSummary(summary)) {
         // An agent is still working. Queue is the default: the message appears as a
-        // draggable list item above the composer. Parallel / Interrupt (selector or
-        // one-shot shortcut) bypass that local queue and dispatch immediately.
+        // draggable list item above the composer (Send now / Run in parallel live there).
+        // Shift+Enter and Cmd/Ctrl+Enter are one-shot overrides and bypass that queue.
         const deliveryMode = resolveBusyFollowUpDeliveryMode({
             forceDeliveryMode: options.forceDeliveryMode,
-            selectedDeliveryMode: options.selectedDeliveryMode,
         });
         const entry: TranscriptFollowUpEntry = {
             draft,

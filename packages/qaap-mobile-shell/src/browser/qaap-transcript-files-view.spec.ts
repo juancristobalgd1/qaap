@@ -5,6 +5,9 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+enableJSDOM();
+
 import {
     defaultTranscriptFilesTreePosition,
     filterTranscriptFileTreeEntries,
@@ -231,21 +234,64 @@ describe('qaap-transcript-files-view', () => {
         it('toggles file tree visibility from the toolbar button', () => {
             const host = document.createElement('div');
             document.body.append(host);
-            mountTranscriptFilesView(host, '/repo', createServices());
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
 
-            const layout = host.querySelector('.theia-mobile-transcript-files-layout');
+            const layout = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-layout');
+            const tree = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-tree');
             const treeToggle = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-tree-toggle');
-            expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.false;
+            try {
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.false;
 
-            treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-            expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.true;
-            expect(treeToggle?.getAttribute('aria-pressed')).to.equal('false');
-            expect(treeToggle?.getAttribute('aria-label')).to.equal('Show file tree');
+                treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.true;
+                expect(treeToggle?.getAttribute('aria-pressed')).to.equal('false');
+                expect(treeToggle?.getAttribute('aria-label')).to.equal('Show file tree');
 
-            treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-            expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.false;
-            expect(treeToggle?.getAttribute('aria-pressed')).to.equal('true');
-            expect(treeToggle?.getAttribute('aria-label')).to.equal('Hide file tree');
+                treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.be.false;
+                expect(treeToggle?.getAttribute('aria-pressed')).to.equal('true');
+                expect(treeToggle?.getAttribute('aria-label')).to.equal('Hide file tree');
+                expect(tree?.isConnected).to.equal(true);
+                expect(host.querySelector('.theia-mobile-transcript-files-tree')).to.equal(tree);
+                expect(host.querySelector('.theia-mobile-transcript-files-empty')).to.exist;
+                expect(layout?.style.getPropertyValue('--qaap-files-tree-height')).to.equal('');
+            } finally {
+                mount.dispose.dispose();
+            }
+        });
+
+        it('restores the file tree after hide then show on a narrow viewport', () => {
+            const originalInnerWidth = window.innerWidth;
+            Object.defineProperty(window, 'innerWidth', { configurable: true, value: 480 });
+            const host = document.createElement('div');
+            document.body.append(host);
+            const mount = mountTranscriptFilesView(host, '/repo', {
+                ...createServices(),
+                listDirectory: async () => [entry('README.md', 'README.md')],
+            });
+
+            const layout = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-layout');
+            const tree = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-tree');
+            const treeToggle = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-tree-toggle');
+
+            try {
+                expect(layout?.classList.contains('theia-mod-tree-bottom')).to.equal(true);
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.equal(false);
+                expect(tree).to.exist;
+
+                treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.equal(true);
+
+                treeToggle?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                expect(layout?.classList.contains('theia-mod-tree-hidden')).to.equal(false);
+                expect(layout?.classList.contains('theia-mod-tree-bottom')).to.equal(true);
+                expect(tree?.isConnected).to.equal(true);
+                expect(host.querySelector('.theia-mobile-transcript-files-tree')).to.equal(tree);
+                expect(host.querySelector('.theia-mobile-transcript-files-empty')).to.exist;
+            } finally {
+                mount.dispose.dispose();
+                Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+            }
         });
 
         it('restores the file tree after switching from Changes back to Files', () => {
@@ -292,6 +338,23 @@ describe('qaap-transcript-files-view', () => {
                 expect(host.querySelector('.theia-mobile-transcript-files-empty')).to.exist;
             } finally {
                 mount.dispose.dispose();
+            }
+        });
+
+        it('opens the more menu when requestAnimationFrame is missing', () => {
+            const originalRaf = window.requestAnimationFrame;
+            delete (window as { requestAnimationFrame?: typeof window.requestAnimationFrame }).requestAnimationFrame;
+            const host = document.createElement('div');
+            document.body.append(host);
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
+
+            try {
+                const moreBtn = host.querySelector<HTMLButtonElement>('.theia-mobile-transcript-files-more');
+                moreBtn?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                expect(document.querySelector('.theia-mobile-transcript-files-menu:not(.theia-mod-create)')).to.exist;
+            } finally {
+                mount.dispose.dispose();
+                window.requestAnimationFrame = originalRaf;
             }
         });
     });

@@ -647,6 +647,38 @@ export function mountTranscriptFilesView(
         applyTreePaneSize();
     };
 
+    const relayoutVisibleFilesTree = (): void => {
+        // Measuring the tree while it was `display: none` (hidden toggle or Changes)
+        // can leave a 0px pane token. Drop invalid sizes so the CSS fallback
+        // (`minmax(180px, 36vh)`) can take over.
+        if (state.treePaneHeightPx !== undefined && state.treePaneHeightPx < FILES_TREE_MIN_PX) {
+            state.treePaneHeightPx = undefined;
+        }
+        if (state.treePaneWidthPx !== undefined && state.treePaneWidthPx < FILES_TREE_MIN_PX) {
+            state.treePaneWidthPx = undefined;
+        }
+        syncTreeLayout();
+        // Force a reflow now that the grid is visible again — otherwise the
+        // stacked tree track stays collapsed and the preview empty-state fills
+        // the whole Files surface.
+        void layout.offsetHeight;
+        const relayoutFiles = (): void => {
+            applyTreePaneSize();
+            state.previewMonacoEditor?.layout();
+            try {
+                window.dispatchEvent(new Event('resize'));
+            } catch {
+                /* JSDOM rejects some Event instances on window. */
+            }
+        };
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(relayoutFiles);
+        } else {
+            applyTreePaneSize();
+            state.previewMonacoEditor?.layout();
+        }
+    };
+
     const setTreePosition = (position: TranscriptFilesTreePosition): void => {
         if (state.treePosition === position) {
             return;
@@ -662,6 +694,10 @@ export function mountTranscriptFilesView(
         }
         state.treeVisible = visible;
         writeStoredTranscriptFilesTreeVisible(visible);
+        if (visible) {
+            relayoutVisibleFilesTree();
+            return;
+        }
         syncTreeLayout();
     };
 
@@ -678,6 +714,14 @@ export function mountTranscriptFilesView(
     // are created on a detached stash, so `host.closest(...)` would miss the transcript root.
     const resolveMenuPortal = (): HTMLElement =>
         root.closest('.theia-mobile-agent-transcript-root') as HTMLElement ?? document.body;
+
+    const scheduleMenuPosition = (position: () => void): void => {
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(position);
+            return;
+        }
+        position();
+    };
 
     const positionAnchorMenu = (anchor: HTMLElement, menu: HTMLElement, minWidth = 220): void => {
         const margin = 8;
@@ -774,7 +818,7 @@ export function mountTranscriptFilesView(
         resolveMenuPortal().appendChild(moreMenu);
         moreMenu.hidden = false;
         moreBtn.setAttribute('aria-expanded', 'true');
-        window.requestAnimationFrame(() => positionAnchorMenu(moreBtn, moreMenu));
+        scheduleMenuPosition(() => positionAnchorMenu(moreBtn, moreMenu));
         moreMenuOutsideListener = onMoreMenuOutside;
         moreMenuKeyListener = onMoreMenuKeyDown;
         document.addEventListener('pointerdown', moreMenuOutsideListener, true);
@@ -811,7 +855,7 @@ export function mountTranscriptFilesView(
         resolveMenuPortal().appendChild(newMenu);
         newMenu.hidden = false;
         newFileBtn.setAttribute('aria-expanded', 'true');
-        window.requestAnimationFrame(() => positionAnchorMenu(newFileBtn, newMenu, 196));
+        scheduleMenuPosition(() => positionAnchorMenu(newFileBtn, newMenu, 196));
         newMenuOutsideListener = onNewMenuOutside;
         newMenuKeyListener = onNewMenuKeyDown;
         document.addEventListener('pointerdown', newMenuOutsideListener, true);
@@ -1643,28 +1687,7 @@ export function mountTranscriptFilesView(
         root.classList.remove('theia-mod-files-view-changes');
         layout.hidden = false;
         changesHost.hidden = true;
-        // Measuring the tree while the layout was `display: none` (Changes)
-        // can leave a 0px `--qaap-files-tree-height` token. Drop invalid sizes
-        // so the CSS fallback (`minmax(180px, 36vh)`) can take over.
-        if (state.treePaneHeightPx !== undefined && state.treePaneHeightPx < FILES_TREE_MIN_PX) {
-            state.treePaneHeightPx = undefined;
-        }
-        syncTreeLayout();
-        // Force a reflow now that the grid is visible again — otherwise the
-        // stacked tree track stays collapsed and the preview empty-state fills
-        // the whole Files surface.
-        void layout.offsetHeight;
-        const relayoutFiles = (): void => {
-            applyTreePaneSize();
-            state.previewMonacoEditor?.layout();
-            window.dispatchEvent(new Event('resize'));
-        };
-        if (typeof window.requestAnimationFrame === 'function') {
-            window.requestAnimationFrame(relayoutFiles);
-        } else {
-            applyTreePaneSize();
-            state.previewMonacoEditor?.layout();
-        }
+        relayoutVisibleFilesTree();
     };
 
     const applyViewMode = (mode: TranscriptFilesViewMode): void => {

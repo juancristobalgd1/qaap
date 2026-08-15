@@ -76,13 +76,23 @@ describe('application-package', function (): void {
     });
 
     it('should override application icon from .env IDE_APPLICATION_ICON', function (): void {
-        const root = track.mkdirSync('env-app-icon');
-        fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
-            theia: { frontend: { config: { applicationIcon: './pkg-icon.png' } } }
-        }));
-        fs.writeFileSync(path.join(root, '.env'), `${IDE_APPLICATION_ICON_ENV}=https://example.com/icon.png\n`);
-        const applicationPackage = new ApplicationPackage({ projectPath: root });
-        assert.strictEqual(applicationPackage.props.frontend.config.applicationIcon, 'https://example.com/icon.png');
+        const originalIcon = process.env[IDE_APPLICATION_ICON_ENV];
+        delete process.env[IDE_APPLICATION_ICON_ENV];
+        try {
+            const root = track.mkdirSync('env-app-icon');
+            fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+                theia: { frontend: { config: { applicationIcon: './pkg-icon.png' } } }
+            }));
+            fs.writeFileSync(path.join(root, '.env'), `${IDE_APPLICATION_ICON_ENV}=https://example.com/icon.png\n`);
+            const applicationPackage = new ApplicationPackage({ projectPath: root });
+            assert.strictEqual(applicationPackage.props.frontend.config.applicationIcon, 'https://example.com/icon.png');
+        } finally {
+            if (originalIcon !== undefined) {
+                process.env[IDE_APPLICATION_ICON_ENV] = originalIcon;
+            } else {
+                delete process.env[IDE_APPLICATION_ICON_ENV];
+            }
+        }
     });
 
     function createProjectWithTarget(target: string): string {

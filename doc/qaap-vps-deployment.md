@@ -120,6 +120,10 @@ After secrets exist:
 - The deploy job lends its short-lived `GITHUB_TOKEN` to the SSH process only for `docker pull`,
   then logs out from GHCR. No persistent GHCR PAT is required on the VPS.
 - Manual run: **Actions → Qaap VPS deploy → Run workflow** (pick branch / `--no-cache`).
+- **Skip the pre-deploy smoke gate** is an emergency-only input. Use it when the
+  Rioja gate is queued or blocked and a hotfix must reach the VPS. Publish still
+  runs if the gate is skipped or cancelled. In-flight deploys are not cancelled
+  when a newer `master` push starts.
 
 The GHCR package remains private by default. Keep it private: the runtime image contains the built
 application and source tree. GitHub links the package to this repository through the
