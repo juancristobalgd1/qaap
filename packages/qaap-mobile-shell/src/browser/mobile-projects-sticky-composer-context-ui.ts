@@ -106,7 +106,7 @@ export class MobileProjectsStickyComposerContextUi {
         const entry = createComposerContextEntry(request);
         // Store the full text on the entry so the agent receives the untruncated
         // version when the context is resolved at submit time.
-        entry.displayName = nls.localizeByDefault('Quoted text');
+        entry.displayName = nls.localize('qaap/mobileProjects/quotedText', 'Quoted text');
         this.host.stickyComposerContext.push(entry);
         this.host.stickyComposerRenderUi.renderStickyComposer();
     }

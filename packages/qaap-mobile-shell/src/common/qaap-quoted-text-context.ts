@@ -27,7 +27,7 @@ const QAAP_QUOTED_TEXT_SUBTITLE_MAX = 80;
 export const QAAP_QUOTED_TEXT_VARIABLE: AIVariable = {
     id: QAAP_QUOTED_TEXT_VARIABLE_NAME,
     name: QAAP_QUOTED_TEXT_VARIABLE_NAME,
-    label: nls.localizeByDefault('Quoted text'),
+    label: nls.localize('qaap/mobileProjects/quotedText', 'Quoted text'),
     description: nls.localize(
         'qaap/mobileProjects/quotedTextVariableDescription',
         'Text dragged from the transcript or other sources',

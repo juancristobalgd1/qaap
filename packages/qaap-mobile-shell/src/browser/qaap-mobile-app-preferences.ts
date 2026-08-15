@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { PreferenceContribution, PreferenceSchema } from '@theia/core/lib/common/preferences';
+import { PreferenceSchemaService } from '@theia/core/lib/common/preferences/preference-schema';
 import { injectable } from '@theia/core/shared/inversify';
 
 export const QAAP_MOBILE_APP_TESTER_AFTER_PREVIEW_PREF = 'qaap.mobile.appTesterAfterPreview';
@@ -25,4 +26,13 @@ export const qaapMobileAppPreferenceSchema: PreferenceSchema = {
 @injectable()
 export class QaapMobileAppPreferenceContribution implements PreferenceContribution {
     readonly schema = qaapMobileAppPreferenceSchema;
+
+    /**
+     * Work Hub hides the main panel on boot. Auto-opening Welcome with activate:true
+     * leaves getting.started.widget focused but untouchable → ApplicationShell warn.
+     * Default to none; users can still open Welcome from the command palette.
+     */
+    async initSchema(service: PreferenceSchemaService): Promise<void> {
+        service.registerOverride('workbench.startupEditor', undefined, 'none');
+    }
 }

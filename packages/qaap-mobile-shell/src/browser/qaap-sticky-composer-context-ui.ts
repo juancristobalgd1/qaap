@@ -144,7 +144,7 @@ export function resolveStickyComposerContextChip(
     }
     if (isQuotedTextRequest(request)) {
         return {
-            title: nls.localizeByDefault('Quoted text'),
+            title: nls.localize('qaap/mobileProjects/quotedText', 'Quoted text'),
             subtitle: truncateQuotedTextForSubtitle(request.arg ?? ''),
             iconClasses: 'codicon codicon-quote',
             kind: QAAP_QUOTED_TEXT_VARIABLE_NAME,
