@@ -3,6 +3,8 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
+import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
     isAgentsHubIdleConversationSummary,
@@ -128,6 +130,27 @@ export function createAgentsHubLandingHeroBlockExtracted(ctx: any): HTMLElement 
         addRepo.append(addRepoIcon, addRepoLabel);
         addRepo.addEventListener('click', () => { void ctx.host.onNewClick(); });
 
+        const signedIn = typeof ctx.readQaapSignedIn === 'function' ? ctx.readQaapSignedIn() : readQaapSignedIn();
+        if (!signedIn) {
+            body.textContent = nls.localize(
+                'qaap/agentsHub/landingHeroSignInBody',
+                'Sign in with GitHub to open your repositories and start an agent.',
+            );
+            startNew.classList.remove('theia-mod-primary');
+            startNew.classList.add('theia-mod-ghost');
+            const signIn = document.createElement('button');
+            signIn.type = 'button';
+            signIn.className = 'theia-mobile-agents-hub-onboarding-btn theia-mod-primary theia-mobile-agents-hub-landing-hero-cta theia-mobile-agents-hub-signin-btn';
+            const signInIcon = document.createElement('span');
+            signInIcon.className = 'codicon codicon-github theia-mobile-agents-hub-onboarding-btn-icon';
+            signInIcon.setAttribute('aria-hidden', 'true');
+            const signInLabel = document.createElement('span');
+            signInLabel.className = 'theia-mobile-agents-hub-onboarding-btn-label';
+            signInLabel.textContent = nls.localize('qaap/agentsHub/signIn', 'Sign in with GitHub');
+            signIn.append(signInIcon, signInLabel);
+            signIn.addEventListener('click', () => startGithubOAuth());
+            actions.append(signIn);
+        }
         actions.append(startNew, addRepo);
         hero.append(title, body, actions);
         return hero;

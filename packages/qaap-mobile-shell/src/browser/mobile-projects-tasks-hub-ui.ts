@@ -6,6 +6,7 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
+import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
     isAgentsHubIdleConversationSummary,
@@ -67,6 +68,7 @@ export interface MobileProjectsTasksHubHost {
     visible: boolean;
     agentsHubShellActive: boolean;
     projects: MobileProjectEntry[];
+    readQaapSignedIn?: () => boolean;
     transcriptSheet: HTMLElement | undefined;
     transcriptComposerHost: HTMLElement | undefined;
     transcriptComposerDraft: string;
@@ -168,6 +170,10 @@ export class MobileProjectsTasksHubUi {
 
     createAgentsHubLandingHeroBlock(): HTMLElement {
         return createAgentsHubLandingHeroBlockExtracted(this);
+    }
+
+    readQaapSignedIn(): boolean {
+        return this.host.readQaapSignedIn?.() ?? readQaapSignedIn();
     }
 
     createAgentsHubQuickActionsBlock(): HTMLElement {
