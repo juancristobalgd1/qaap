@@ -24,7 +24,7 @@ import {
     QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
     type WorkHubSessionsSidebarFingerprintInput,
 } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { listQaapAgentTaskVisualStatusLegendEntries, resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import {
     QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
     QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
@@ -104,6 +104,21 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
             event.stopPropagation();
             ctx.toggleSessionsSidebarProjectSortPopover(sortBtn);
         });
+        const legendBtn = document.createElement('button');
+        legendBtn.type = 'button';
+        legendBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-status-legend';
+        const legendIcon = document.createElement('span');
+        legendIcon.className = 'codicon codicon-question';
+        legendIcon.setAttribute('aria-hidden', 'true');
+        legendBtn.append(legendIcon);
+        legendBtn.title = nls.localize('qaap/sessionsSidebar/statusLegend/title', 'Status icon meanings');
+        legendBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/statusLegend/title', 'Status icon meanings'));
+        legendBtn.setAttribute('aria-haspopup', 'dialog');
+        legendBtn.setAttribute('aria-expanded', 'false');
+        legendBtn.addEventListener('click', event => {
+            event.stopPropagation();
+            ctx.toggleSessionsSidebarStatusLegendPopover(legendBtn);
+        });
         const addProjectBtn = document.createElement('button');
         addProjectBtn.type = 'button';
         addProjectBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-add-project';
@@ -119,7 +134,7 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
             event.stopPropagation();
             ctx.toggleSessionsSidebarAddProjectPopover(addProjectBtn);
         });
-        sectionActions.append(sortBtn, addProjectBtn);
+        sectionActions.append(sortBtn, legendBtn, addProjectBtn);
         sectionHead.append(sectionActions);
         const list = document.createElement('div');
         list.className = 'theia-mobile-work-hub-sessions-sidebar-projects-list';
@@ -786,6 +801,70 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: any, anchor
             keyboardCleanup();
             popover.remove();
             ctx.sessionsSidebarAddProjectPopover = undefined;
+            anchor.setAttribute('aria-expanded', 'false');
+            ctx.closeSessionsSidebarHeadPopovers = originalClose;
+        };
+}
+
+function createSessionsSidebarStatusLegendGlyph(status: ReturnType<typeof listQaapAgentTaskVisualStatusLegendEntries>[number]): HTMLElement {
+        const glyph = document.createElement('span');
+        glyph.className = `theia-mobile-work-hub-sessions-sidebar-status-legend-glyph theia-mobile-projects-task-dot ${status.className}`;
+        glyph.setAttribute('aria-hidden', 'true');
+        if (status.id === 'running') {
+            glyph.classList.add('theia-mod-legend-running');
+            const spin = document.createElement('span');
+            spin.className = 'codicon codicon-loading codicon-modifier-spin theia-mobile-projects-task-leading-glyph';
+            glyph.append(spin);
+            return glyph;
+        }
+        if (status.id === 'idle') {
+            glyph.style.background = status.color;
+            return glyph;
+        }
+        if (status.iconClass) {
+            const icon = document.createElement('span');
+            icon.className = `theia-mobile-projects-task-leading-glyph codicon ${status.iconClass}`;
+            glyph.append(icon);
+        }
+        return glyph;
+}
+
+export function toggleSessionsSidebarStatusLegendPopoverExtracted(ctx: any, anchor: HTMLButtonElement): void {
+        if (ctx.sessionsSidebarStatusLegendPopover) {
+            ctx.closeSessionsSidebarHeadPopovers();
+            return;
+        }
+        ctx.closeSessionsSidebarHeadPopovers();
+        const popover = document.createElement('div');
+        popover.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover theia-mod-status-legend';
+        popover.setAttribute('role', 'dialog');
+        popover.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/statusLegend/title', 'Status icon meanings'));
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-work-hub-sessions-sidebar-status-legend-list';
+        list.setAttribute('role', 'list');
+        for (const status of listQaapAgentTaskVisualStatusLegendEntries()) {
+            const row = document.createElement('div');
+            row.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item theia-mod-legend-row';
+            row.setAttribute('role', 'listitem');
+            const label = document.createElement('span');
+            label.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
+            label.textContent = nls.localize(status.labelKey, status.label);
+            row.append(createSessionsSidebarStatusLegendGlyph(status), label);
+            list.append(row);
+        }
+        popover.append(list);
+        document.body.append(popover);
+        ctx.sessionsSidebarStatusLegendPopover = popover;
+        anchor.setAttribute('aria-expanded', 'true');
+        window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
+        const dismissCleanup = dismissSessionsSidebarHeadPopoverOnOutside(popover, anchor, () => {
+            ctx.closeSessionsSidebarHeadPopovers();
+        });
+        const originalClose = ctx.closeSessionsSidebarHeadPopovers.bind(ctx);
+        ctx.closeSessionsSidebarHeadPopovers = (): void => {
+            dismissCleanup();
+            popover.remove();
+            ctx.sessionsSidebarStatusLegendPopover = undefined;
             anchor.setAttribute('aria-expanded', 'false');
             ctx.closeSessionsSidebarHeadPopovers = originalClose;
         };

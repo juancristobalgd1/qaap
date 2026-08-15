@@ -139,6 +139,7 @@ export const MOBILE_VERTICAL_SCROLL_SELECTORS = [
     '.chat-tree-view-widget .body',
     '.theia-mobile-projects-scroll',
     '.theia-mobile-work-hub-sessions-sidebar-scroll',
+    '.theia-mobile-work-hub-sessions-sidebar-status-legend-list',
     '.theia-mobile-pr-stack',
     '.theia-mobile-pr-picker',
     '.theia-mobile-sticky-composer-sheet-list',

@@ -1045,8 +1045,58 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-work-hub-sessions-sidebar-view-s
 
 .theia-mobile-work-hub-sessions-sidebar-head-popover-item-check {
   flex: 0 0 auto;
+  margin-left: auto;
+  opacity: 0.85;
   font-size: 14px;
   color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover.theia-mod-status-legend {
+  min-width: 220px;
+  max-width: 300px;
+  padding: 6px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-status-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: min(60vh, 360px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-head-popover-item.theia-mod-legend-row {
+  cursor: default;
+  pointer-events: none;
+  padding: 7px 8px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-status-legend-glyph {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-sizing: border-box;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-status-legend-glyph .theia-mobile-projects-task-leading-glyph {
+  font-size: 12px;
+  line-height: 1;
+  width: 12px;
+  height: 12px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-status-legend-glyph.theia-mod-legend-running {
+  background: transparent;
 }
 
 /* Accordion project groups (Projects → project → sessions). */
