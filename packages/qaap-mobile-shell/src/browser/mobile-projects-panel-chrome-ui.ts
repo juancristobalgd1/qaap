@@ -214,6 +214,7 @@ export class MobileProjectsPanelChromeUi {
         });
 
         this.host.headerExecutionCluster.append(
+            this.host.headerNewChatBtn,
             this.host.headerOverflowMenuBtn,
             this.host.headerPreviewRunHost,
             this.host.headerViewModeSwitchHost,

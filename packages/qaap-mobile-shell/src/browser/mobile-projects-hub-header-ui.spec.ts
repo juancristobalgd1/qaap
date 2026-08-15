@@ -204,7 +204,21 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.titleEl.textContent).to.equal('Agents');
         });
 
-        it('shows the header project control with the conversation title beside the folder', () => {
+        it('unhides New agent when chat is active on Agents hub', () => {
+            const p = project('mockup', 'Mockup');
+            const host = createRenderableHost({
+                agentsHubInlineActive: true,
+                transcriptOpenProject: p,
+            });
+            host.headerNewChatBtn.hidden = true;
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.headerNewChatBtn.hidden).to.equal(false);
+            expect(host.headerNewChatBtn.getAttribute('aria-hidden')).to.equal('false');
+        });
+
+        it('shows the header project control with the conversation title beside the switcher', () => {
             const p = project('mockup', 'Mockup');
             const summary = {
                 id: 'test-id',
