@@ -9,6 +9,7 @@ import {
     resolveMessagePreviewText,
     resolveOptimisticPendingUserDisplayText,
     resolveTranscriptUserMessageView,
+    stripQaapControlMarkersForDisplay,
 } from './qaap-agent-message-content';
 import { applyResolvedAttachmentsToPrompt } from './qaap-composer-attachment-prompt';
 import { createComposerSkillDisplayMarker } from './qaap-composer-skill-display';
@@ -81,6 +82,22 @@ describe('normalizeAgentMessageContentForDisplay', () => {
     it('treats missing content as empty text', () => {
         expect(normalizeAgentMessageContentForDisplay(undefined)).to.equal('');
         expect(normalizeAgentMessageContentForDisplay(null)).to.equal('');
+    });
+
+    it('strips @@QAAP:BLOCKED@@ sentinels and keeps a meaningful need', () => {
+        const raw = [
+            'I cannot finish without a choice.',
+            '@@QAAP:BLOCKED@@ Which database should the export use?',
+        ].join('\n');
+        expect(normalizeAgentMessageContentForDisplay(raw)).to.equal(
+            'I cannot finish without a choice.\nWhich database should the export use?',
+        );
+    });
+
+    it('drops garbage blocked needs and bare markers', () => {
+        expect(normalizeAgentMessageContentForDisplay('@@QAAP:BLOCKED@@ knj')).to.equal('');
+        expect(normalizeAgentMessageContentForDisplay('Stuck.\n@@QAAP:BLOCKED@@')).to.equal('Stuck.');
+        expect(stripQaapControlMarkersForDisplay('Verdict @@QAAP:VERDICT@@ pass ok')).to.equal('Verdict pass ok');
     });
 });
 

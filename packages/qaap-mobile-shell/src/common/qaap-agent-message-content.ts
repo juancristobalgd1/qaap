@@ -42,20 +42,63 @@ interface AgentMessageLike {
 export function normalizeAgentMessageContentForDisplay(raw: string | undefined | null): string {
     const text = raw ?? '';
     const trimmed = text.trim();
+    let display: string;
     if (looksLikeQaiqProcessLog(trimmed)) {
-        return parseAgentLogForTranscript(QAAP_PRIMARY_AGENT_ID, trimmed).content.trim();
+        display = parseAgentLogForTranscript(QAAP_PRIMARY_AGENT_ID, trimmed).content.trim();
+    } else if (!looksLikeJson(trimmed)) {
+        display = text;
+    } else {
+        const extracted = extractDisplayTextFromJsonString(trimmed);
+        if (extracted !== undefined) {
+            display = extracted;
+        } else if (isQaiqStreamMetadataJson(trimmed)) {
+            display = '';
+        } else {
+            display = text;
+        }
     }
-    if (!looksLikeJson(trimmed)) {
+    return stripQaapControlMarkersForDisplay(display);
+}
+
+/**
+ * Machine sentinels agents emit for the conversation store (`@@QAAP:BLOCKED@@`,
+ * `@@QAAP:VERDICT@@`, …). Never show them raw in the transcript or sidebar preview.
+ * Keep any human need/reason that follows the marker on the same line.
+ */
+const QAAP_CONTROL_MARKER_LINE = /^@@QAAP:[A-Z0-9_]+@@(?:\s+(.*))?$/;
+const QAAP_CONTROL_MARKER_INLINE = /@@QAAP:[A-Z0-9_]+@@/g;
+
+export function stripQaapControlMarkersForDisplay(text: string): string {
+    if (!text || !text.includes('@@QAAP:')) {
         return text;
     }
-    const extracted = extractDisplayTextFromJsonString(trimmed);
-    if (extracted !== undefined) {
-        return extracted;
+    const lines = text.split('\n');
+    const kept: string[] = [];
+    for (const line of lines) {
+        const trimmed = line.trim();
+        const match = QAAP_CONTROL_MARKER_LINE.exec(trimmed);
+        if (match) {
+            const need = (match[1] ?? '').trim();
+            if (need && isMeaningfulBlockedNeed(need)) {
+                kept.push(need);
+            }
+            continue;
+        }
+        kept.push(line.replace(QAAP_CONTROL_MARKER_INLINE, '').replace(/[ \t]{2,}/g, ' ').trimEnd());
     }
-    if (isQaiqStreamMetadataJson(trimmed)) {
-        return '';
+    return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Drop accidental/garbage needs like "knj" after a blocked sentinel. */
+function isMeaningfulBlockedNeed(need: string): boolean {
+    if (need.length >= 12) {
+        return true;
     }
-    return text;
+    if (/\s/.test(need)) {
+        return true;
+    }
+    // Single token shorter than 12 chars is almost never a real question.
+    return need.length >= 8 && /[?¿]/.test(need);
 }
 
 type MessagePreviewLike = {
@@ -193,7 +236,10 @@ export function resolveMessagePreviewText(message: MessagePreviewLike | undefine
     }
     for (const segment of [...resolveAgentMessageSegments(message as QaapAgentMessageDTO)].reverse()) {
         if (segment.type === 'text' && segment.content?.trim()) {
-            return segment.content.trim();
+            const cleaned = stripQaapControlMarkersForDisplay(segment.content).trim();
+            if (cleaned) {
+                return cleaned;
+            }
         }
     }
     return trimmed;

@@ -11671,6 +11671,36 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   text-align: left;
 }
 
+/* Narrow header: ☰ + conversation title + + + ⋮ + surface picker compete for width.
+   Let the title shrink first so action buttons stay tappable and fully visible. */
+@media (max-width: 767px) {
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-title-block {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project {
+    flex: 1 1 0;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-label {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster {
+    flex: 0 0 auto;
+    flex-shrink: 0;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-execution-tabs {
+    max-width: min(42vw, 120px);
+  }
+}
+
 .theia-mobile-projects-title-row:has(.theia-mobile-projects-header-project:not([hidden])) {
   gap: 6px;
 }
