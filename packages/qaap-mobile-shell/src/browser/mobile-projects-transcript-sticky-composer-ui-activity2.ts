@@ -225,7 +225,9 @@ export function queuePeerRunMessageExtracted(ctx: any, summary: QaapAgentConvers
         ));
         return false;
     }
-    // enqueueTranscriptFollowUp already expands the queue popover + shows the snackbar.
+    // Show every queued follow-up in the open transcript immediately (Queued footer rows),
+    // then expand the composer popover. Mirror POST may still be in flight.
+    ctx.syncTranscriptQueuedFollowUpBubbles?.(summary);
     ctx.refreshComposerActivityStack();
     return true;
 }
@@ -274,6 +276,7 @@ export async function mirrorFollowUpToServerQueueExtracted(
                     serverPendingId: pending.id,
                     serverSynced: true,
                 });
+                ctx.syncTranscriptQueuedFollowUpBubbles?.(summary);
                 ctx.refreshComposerActivityStack();
                 break;
             }

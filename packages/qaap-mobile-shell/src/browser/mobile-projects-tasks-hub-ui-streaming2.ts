@@ -40,7 +40,7 @@ import {
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
 } from './qaap-sticky-composer-working-detail-activity';
-import { shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
+import { parseWorkingDetailTaskLogSegments, shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
 import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-pill';
 import {
     resolveLatestTranscriptTodos,
@@ -180,8 +180,13 @@ export function resolveWorkingDetailActivityFeedExtracted(ctx: any, member: Work
                 traceEvents: [...liveReducer.traceEvents],
             })]
             : undefined;
+        const taskLogText = member.taskId?.trim()
+            ? ctx.host.activeTasks?.getTaskLogTail(member.taskId)?.text
+            : undefined;
+        const taskLogSegments = parseWorkingDetailTaskLogSegments(taskLogText);
         return resolveWorkingAgentDetailActivityFeedFromConversation(document, member, {
             liveSegments,
+            taskLogSegments: taskLogSegments.length > 0 ? taskLogSegments : undefined,
         });
 }
 

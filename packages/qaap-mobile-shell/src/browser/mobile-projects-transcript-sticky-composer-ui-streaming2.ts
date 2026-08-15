@@ -322,6 +322,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, projec
             if (entry.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
                 void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, entry.serverPendingId);
             }
+            ctx.syncTranscriptQueuedFollowUpBubbles(summary);
             ctx.remountTranscriptStickyComposer();
         },
         onQueueSendNow: index => {
