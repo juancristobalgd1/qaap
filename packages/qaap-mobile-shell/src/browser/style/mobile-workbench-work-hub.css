@@ -8021,6 +8021,22 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.65));
 }
 
+.theia-qaap-agent-sheet-empty-models-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 12px 12px;
+}
+
+.theia-qaap-agent-sheet-empty-models-block > .theia-qaap-agent-sheet-empty-models {
+  margin: 0;
+}
+
+.theia-qaap-agent-sheet-empty-models-block > .theia-qaap-agent-sheet-open-ai-features {
+  align-self: flex-start;
+}
+
 .theia-mobile-sticky-composer-sheet.theia-mod-generate-variant .theia-mobile-sticky-composer-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-generate-variant .theia-mobile-sticky-composer-sheet-panel {
   border-top: 2px solid color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 45%, transparent);

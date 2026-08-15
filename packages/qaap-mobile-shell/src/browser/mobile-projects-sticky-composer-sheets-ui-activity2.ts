@@ -57,6 +57,7 @@ import {
     listQaiqModelsFromRegisteredLanguageModels,
     mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
+import { createEmptyAgentModelsCta } from './qaap-agent-sheet-empty-models-cta';
 import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
 import {
     reconcileModelCapabilityLevel,
@@ -164,18 +165,15 @@ export function appendAgentModelPickerListExtracted(ctx: any, list: HTMLElement,
         // arguments as plain text, so picking them only produces a dead turn.
         const agentCapableModels = models.filter(model => qaiqModelSupportsToolCalls(model.modelId) !== false);
         if (agentCapableModels.length === 0) {
-            const hint = document.createElement('p');
-            hint.className = 'theia-qaap-agent-sheet-empty-models';
-            hint.textContent = agentUsesSettingsModelCatalog(agentId)
-                ? nls.localize(
-                    'qaap/mobileProjects/stickyComposerNoQaiqModels',
-                    'Add an API key in Settings → AI Features to choose a model.',
-                )
-                : nls.localize(
-                    'qaap/mobileProjects/stickyComposerNoAgentModels',
-                    'No models are available for this agent on the workspace.',
-                );
-            list.append(hint);
+            list.append(createEmptyAgentModelsCta({
+                settingsCatalog: agentUsesSettingsModelCatalog(agentId),
+                onOpenAiFeatures: ctx.host.openPreferencesSheet
+                    ? () => {
+                        ctx.closeAllComposerSheets();
+                        void ctx.host.openPreferencesSheet?.('ai-features');
+                    }
+                    : undefined,
+            }));
             return;
         }
         for (const [vendor, providerModels] of groupQaiqModelsByProvider(agentCapableModels)) {

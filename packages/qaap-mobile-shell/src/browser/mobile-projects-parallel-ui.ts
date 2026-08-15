@@ -37,6 +37,7 @@ import {
     mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
 import { createAgentBrandChip, createAgentBrandSplitChip, createAgentRowAvatar, createDiffStatsLine, createPickerSheetOptionButton } from './qaap-agent-ui';
+import { createEmptyAgentModelsCta } from './qaap-agent-sheet-empty-models-cta';
 import { MobileSnackbar } from './mobile-snackbar';
 
 export interface MobileProjectsParallelUiDeps {
@@ -46,6 +47,8 @@ export interface MobileProjectsParallelUiDeps {
     readPreference?: (key: string) => unknown;
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
     getWorkspaceQaiqModels?: () => readonly QaapQaiqModelOption[];
+    /** Opens Work Hub preferences (e.g. `ai-features`) when the model menu has no BYOK keys. */
+    openPreferencesSheet?: (query?: string) => Promise<void>;
     buildVariantTaskRow(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -660,14 +663,17 @@ export class MobileProjectsParallelUi {
             return;
         }
         if (models.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'theia-mobile-parallel-model-menu-note';
-            empty.textContent = agentUsesSettingsModelCatalog(agent.id)
-                ? nls.localize(
-                    'qaap/mobileProjects/stickyComposerNoQaiqModels',
-                    'Add an API key in Settings → AI Features to choose a model.',
-                )
-                : nls.localize('qaap/mobileProjects/parallelModelEmpty', 'No models available.');
+            const empty = createEmptyAgentModelsCta({
+                settingsCatalog: agentUsesSettingsModelCatalog(agent.id),
+                emptyAgentMessage: nls.localize('qaap/mobileProjects/parallelModelEmpty', 'No models available.'),
+                onOpenAiFeatures: this.deps.openPreferencesSheet
+                    ? () => {
+                        this.closeParallelModelMenu();
+                        void this.deps.openPreferencesSheet?.('ai-features');
+                    }
+                    : undefined,
+            });
+            empty.classList.add('theia-mobile-parallel-model-menu-note');
             list.append(empty);
             return;
         }
