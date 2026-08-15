@@ -10502,6 +10502,18 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   color: var(--theia-notificationsWarningIcon-foreground, #bf8700);
 }
 
+.theia-mobile-projects-task-dot.theia-mod-branch {
+  color: var(--theia-gitDecoration-untrackedResourceForeground, #73c991);
+}
+
+.theia-mobile-projects-task-dot.theia-mod-committed {
+  color: var(--theia-gitDecoration-modifiedResourceForeground, #e2c08d);
+}
+
+.theia-mobile-projects-task-dot.theia-mod-pushed {
+  color: var(--theia-gitDecoration-addedResourceForeground, #2da44e);
+}
+
 .theia-mobile-projects-task-dot.theia-mod-pr-draft,
 .theia-mobile-projects-task-dot.theia-mod-pr-unknown {
   color: var(--theia-descriptionForeground);
@@ -10680,6 +10692,14 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   transform: translate(-50%, -50%) scale(1.15);
 }
 
+.theia-mobile-projects-task-leading-glyph.codicon-git-branch::before,
+.theia-mobile-projects-task-leading-glyph.codicon-git-commit::before,
+.theia-mobile-projects-task-leading-glyph.codicon-repo-push::before,
+.theia-mobile-projects-task-leading-glyph.codicon-git-merge::before,
+.theia-mobile-projects-task-leading-glyph.codicon-diff-modified::before {
+  transform: translate(-50%, -50%) scale(1.12);
+}
+
 .theia-mobile-projects-task-dot.theia-mod-pr-ready,
 .theia-mobile-projects-task-dot.theia-mod-git-pr,
 .theia-mobile-projects-task-dot.theia-mod-verified,
@@ -10826,6 +10846,21 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 .theia-mobile-projects-task-status-chip.theia-mod-changes {
   color: var(--theia-notificationsWarningIcon-foreground, #bf8700);
   background: color-mix(in srgb, var(--theia-notificationsWarningIcon-foreground, #bf8700) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-branch {
+  color: var(--theia-gitDecoration-untrackedResourceForeground, #73c991);
+  background: color-mix(in srgb, var(--theia-gitDecoration-untrackedResourceForeground, #73c991) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-committed {
+  color: var(--theia-gitDecoration-modifiedResourceForeground, #e2c08d);
+  background: color-mix(in srgb, var(--theia-gitDecoration-modifiedResourceForeground, #e2c08d) 18%, transparent);
+}
+
+.theia-mobile-projects-task-status-chip.theia-mod-pushed {
+  color: var(--theia-gitDecoration-addedResourceForeground, #2da44e);
+  background: color-mix(in srgb, var(--theia-gitDecoration-addedResourceForeground, #2da44e) 18%, transparent);
 }
 
 .theia-mobile-projects-task-status-chip.theia-mod-pr-draft,

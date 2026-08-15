@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import type { QaapSidebarGitActionKind } from './qaap-agent-conversation-list-metrics';
 import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
 
 export type QaapAgentTaskVisualStatusId =
@@ -18,6 +19,9 @@ export type QaapAgentTaskVisualStatusId =
     | 'pr-conflicts'
     | 'checks-failed'
     | 'checks-pending'
+    | 'branch'
+    | 'committed'
+    | 'pushed'
     | 'changes'
     | 'pr-unknown'
     | 'verified'
@@ -141,6 +145,33 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         color: 'var(--theia-notificationsWarningIcon-foreground, #bf8700)',
         gitPr: true,
     },
+    'branch': {
+        id: 'branch',
+        labelKey: 'qaap/mobileProjects/taskStateBranch',
+        label: 'Branch',
+        className: 'theia-mod-branch',
+        iconClass: 'codicon-git-branch',
+        color: 'var(--theia-gitDecoration-untrackedResourceForeground, #73c991)',
+        gitPr: true,
+    },
+    'committed': {
+        id: 'committed',
+        labelKey: 'qaap/mobileProjects/taskStateCommitted',
+        label: 'Committed',
+        className: 'theia-mod-committed',
+        iconClass: 'codicon-git-commit',
+        color: 'var(--theia-gitDecoration-modifiedResourceForeground, #e2c08d)',
+        gitPr: true,
+    },
+    'pushed': {
+        id: 'pushed',
+        labelKey: 'qaap/mobileProjects/taskStatePushed',
+        label: 'Pushed',
+        className: 'theia-mod-pushed',
+        iconClass: 'codicon-repo-push',
+        color: 'var(--theia-gitDecoration-addedResourceForeground, #2da44e)',
+        gitPr: true,
+    },
     'changes': {
         id: 'changes',
         labelKey: 'qaap/mobileProjects/taskStateChanges',
@@ -188,7 +219,7 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
     },
 };
 
-/** Core sidebar glyphs shown in the sessions status legend (not the full PR matrix). */
+/** Core sidebar glyphs shown in the sessions status legend (agent + git actions, not every PR edge-case). */
 const LEGEND_STATUS_IDS: readonly QaapAgentTaskVisualStatusId[] = [
     'idle',
     'queued',
@@ -198,7 +229,14 @@ const LEGEND_STATUS_IDS: readonly QaapAgentTaskVisualStatusId[] = [
     'background',
     'verified',
     'warnings',
+    'branch',
+    'changes',
+    'committed',
+    'pushed',
     'pr-ready',
+    'pr-merged',
+    'pr-closed',
+    'pr-draft',
 ];
 
 export function listQaapAgentTaskVisualStatusLegendEntries(): readonly QaapAgentTaskVisualStatus[] {
@@ -214,11 +252,13 @@ export interface QaapGitPrStatusInput {
     readonly hasGitOperation?: boolean;
     readonly linesAdded?: number;
     readonly linesRemoved?: number;
+    readonly lastGitActionKind?: QaapSidebarGitActionKind;
+    readonly worktreeBranch?: string;
 }
 
 /**
- * Resolve only Git/PR state. A legacy linked PR number is intentionally neutral:
- * linkage proves neither that the PR is still open nor that it was merged.
+ * Resolve Git/PR sidebar glyphs. Pull-request lifecycle wins; otherwise map branch /
+ * commit / push / local changes so rows are not limited to the PR icon.
  */
 export function resolveQaapGitPrVisualStatus(
     summary: QaapGitPrStatusInput,
@@ -250,13 +290,30 @@ export function resolveQaapGitPrVisualStatus(
             return STATUS_BY_ID['pr-unknown'];
         }
     }
+    const actionKind = summary.lastGitActionKind;
+    if (actionKind === 'push') {
+        return STATUS_BY_ID['pushed'];
+    }
+    if (actionKind === 'commit') {
+        return STATUS_BY_ID['committed'];
+    }
     if (
-        pullRequest?.branch
-        || summary.hasGitOperation
+        actionKind === 'branch'
+        || !!pullRequest?.branch?.trim()
+        || !!summary.worktreeBranch?.trim()
+    ) {
+        return STATUS_BY_ID['branch'];
+    }
+    if (
+        actionKind === 'changes'
         || (summary.linesAdded ?? 0) > 0
         || (summary.linesRemoved ?? 0) > 0
     ) {
         return STATUS_BY_ID['changes'];
+    }
+    if (summary.hasGitOperation) {
+        // Generic git CLI without a more specific verb — show branch, not PR.
+        return STATUS_BY_ID['branch'];
     }
     return undefined;
 }
@@ -271,6 +328,8 @@ export function resolveQaapAgentTaskVisualStatus(
         | 'linkedPullRequest'
         | 'lastMessagePreview'
         | 'hasGitOperation'
+        | 'lastGitActionKind'
+        | 'worktreeBranch'
         | 'linesAdded'
         | 'linesRemoved'>,
     unread = false,
