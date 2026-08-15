@@ -360,6 +360,61 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(hostEl.textContent).to.not.include('No agent sessions yet');
     });
 
+    it('shows a compact GitHub sign-in banner when signed out even if a local project exists', () => {
+        const project = {
+            id: 'ws:file:///Users/jc/qaap',
+            name: 'qaap',
+            status: 'working',
+            color: '#3B6FA0',
+            isCurrent: true,
+        } as MobileProjectEntry;
+        const host = {
+            projects: [project],
+            query: '',
+            transcriptOpenSummaryId: undefined,
+            sessionsSidebarExpandedProjectIds: new Set<string>(),
+            sessionsSidebarVisibleConversationCountByProjectId: new Map(),
+            sessionsSidebarAccordionDefaultsApplied: false,
+            conversationIndexUi: {
+                conversationsForProject: () => [],
+                compareConversationOrder: () => 0,
+                countRunningTasks: () => 0,
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            hubQueryUi: {
+                conversationMatchesQuery: () => true,
+                projectsForCurrentHubList: () => [project],
+            },
+            compareChatInboxProjectOrder: () => 0,
+            cardMenuUi: {
+                buildProjectOptionsMenu: () => document.createElement('div'),
+            },
+            delegate: {
+                onProjectOpenInIde: undefined,
+            },
+            projectsService: {
+                getProjectCwd: () => '/Users/jc/qaap',
+            },
+            conversations: {
+                prefetchDocuments: () => undefined,
+                threadStore: { subscribe: () => ({ dispose: () => undefined }) },
+            },
+            sessionsSidebar: { isVisible: () => false },
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        ui.readQaapSignedIn = () => false;
+        const hostEl = document.createElement('div');
+
+        ui.renderWorkHubSessionsSidebarList(hostEl);
+
+        const hint = hostEl.querySelector('.theia-mobile-work-hub-sessions-sidebar-signin');
+        expect(hint).to.not.equal(null);
+        expect(hint?.classList.contains('theia-mod-compact')).to.equal(true);
+        expect(hostEl.textContent).to.include('Sign in with GitHub');
+        expect(hostEl.textContent).to.include('Projects');
+        expect(hostEl.textContent).to.include('qaap');
+    });
+
     it('keeps the empty-sessions copy when the user is signed in', () => {
         const host = {
             projects: [] as MobileProjectEntry[],

@@ -32,9 +32,12 @@ import {
 import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE, SESSIONS_SIDEBAR_PROJECT_SORT_MODES } from './mobile-projects-sessions-sidebar-ui';
 import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 
-export function createSessionsSidebarSignInHintExtracted(): HTMLElement {
+export function createSessionsSidebarSignInHintExtracted(options?: { readonly compact?: boolean }): HTMLElement {
         const hint = document.createElement('div');
         hint.className = 'theia-mobile-projects-inbox-hint theia-mobile-work-hub-sessions-sidebar-signin';
+        if (options?.compact) {
+            hint.classList.add('theia-mod-compact');
+        }
         const text = document.createElement('p');
         text.textContent = nls.localize(
             'qaap/sessionsSidebar/signInHint',
@@ -65,6 +68,9 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
                 : nls.localize('qaap/sessionsSidebar/noSessions', 'No agent sessions yet. Start one from Agents.');
             host.append(empty);
             return;
+        }
+        if (!query && !signedIn) {
+            host.append(createSessionsSidebarSignInHintExtracted({ compact: true }));
         }
         const onActivate = (): void => {
             ctx.host.sessionsSidebar?.hideForMobileOverlay();

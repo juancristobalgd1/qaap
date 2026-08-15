@@ -937,7 +937,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   display: none !important;
 }
 
-.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-actions .theia-workbench-account-btn {
+.theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing:not(.theia-mod-signed-out) .theia-mobile-projects-header-actions .theia-workbench-account-btn {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -1293,6 +1293,11 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   cursor: pointer;
   color: var(--theia-button-foreground);
   background: var(--theia-button-background);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-signin.theia-mod-compact {
+  margin: 8px 12px 12px;
+  padding: 10px 12px;
 }
 
 /* Work Hub catalog (Workflows) — card list shared layout. */
