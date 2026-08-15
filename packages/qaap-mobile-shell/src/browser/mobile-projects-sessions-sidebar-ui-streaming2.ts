@@ -8,7 +8,7 @@ import {
     readStoredAgent,
     SHELL_AGENT_ID,
 } from '../common/qaap-agent-task-client';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { collapseOlderFailedDuplicateTitles } from '../common/qaap-failed-duplicate-collapse';
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
@@ -322,7 +322,11 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
         conversations: readonly QaapAgentConversationSummaryDTO[],
         onActivate: () => void,
         bypassLimit: boolean,): void {
-        const collapsed = collapseOlderFailedDuplicateTitles(conversations);
+        const clearMode = ctx.isClearFailedModeForProject?.(project.id) === true
+            || ctx.clearFailedModeProjectId === project.id;
+        const collapsed = clearMode
+            ? { conversations: [...conversations], hiddenFailedByKeptId: new Map<string, number>() }
+            : collapseOlderFailedDuplicateTitles(conversations);
         const partitioned = partitionAgentConversations(collapsed.conversations);
         const { visible, hiddenCount, showLess } = ctx.resolveSessionsSidebarVisibleConversations(
             project,
@@ -332,7 +336,9 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
         if (visible.length === 0 && partitioned.variantRuns.size === 0) {
             const failedCount = ctx.host.conversationIndexUi.countFailedTasks(project);
             if (failedCount > 0) {
-                listHost.append(ctx.createSessionsSidebarClearFailedControl(project, failedCount));
+                listHost.append(clearMode
+                    ? ctx.createSessionsSidebarClearFailedModeFooter(project)
+                    : ctx.createSessionsSidebarClearFailedControl(project, failedCount));
             }
             return;
         }
@@ -348,12 +354,22 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
             ctx.beginSessionsSidebarConversationActivation(summary.id);
             onActivate();
         };
+        const selectionFor = (summary: QaapAgentConversationSummaryDTO): { selected: boolean; onToggle: () => void } | undefined => {
+            if (!clearMode || !isFailedRunSummary(summary)) {
+                return undefined;
+            }
+            return {
+                selected: ctx.selectedFailedConversationIds.has(summary.id),
+                onToggle: () => ctx.toggleClearFailedSelection(summary.id),
+            };
+        };
         for (const summary of visible) {
             const task = ctx.host.conversationIndexUi.summaryToTaskView(summary);
             listHost.append(ctx.host.projectRowsUi.createTaskItem(project, task, activeInfo, summary, parentIds, {
                 onActivate: () => openConversation(summary),
                 compact: true,
                 failedDuplicateCount: collapsed.hiddenFailedByKeptId.get(summary.id) ?? 0,
+                selection: selectionFor(summary),
             }));
             const forks = partitioned.forksByParentId.get(summary.id);
             if (forks?.length) {
@@ -370,6 +386,7 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
                             onActivate: () => openConversation(fork),
                             compact: true,
                             failedDuplicateCount: collapsed.hiddenFailedByKeptId.get(fork.id) ?? 0,
+                            selection: selectionFor(fork),
                         }));
                     }
                 }
@@ -390,13 +407,16 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
                         onActivate: () => openConversation(summary),
                         compact: true,
                         failedDuplicateCount: collapsed.hiddenFailedByKeptId.get(summary.id) ?? 0,
+                        selection: selectionFor(summary),
                     }));
                 }
             }
         }
         const failedCount = ctx.host.conversationIndexUi.countFailedTasks(project);
         if (failedCount > 0) {
-            listHost.append(ctx.createSessionsSidebarClearFailedControl(project, failedCount));
+            listHost.append(clearMode
+                ? ctx.createSessionsSidebarClearFailedModeFooter(project)
+                : ctx.createSessionsSidebarClearFailedControl(project, failedCount));
         }
         if (bypassLimit) {
             return;
@@ -422,7 +442,7 @@ export function createSessionsSidebarClearFailedControlExtracted(
         : nls.localize('qaap/mobileProjects/clearFailedTasksMany', 'Clear failed runs ({0})', String(failedCount));
     btn.title = nls.localize(
         'qaap/sessionsSidebar/clearFailedHint',
-        'Delete failed runs for this project',
+        'Select failed runs to delete for this project',
     );
     const icon = document.createElement('span');
     icon.className = 'codicon codicon-clear-all';
@@ -431,9 +451,60 @@ export function createSessionsSidebarClearFailedControlExtracted(
     btn.addEventListener('click', ev => {
         ev.preventDefault();
         ev.stopPropagation();
-        void ctx.host.onClearFailedTasks(project);
+        const failedIds = ctx.host.conversationIndexUi.vpsTasksForProject(project)
+            .filter((summary: QaapAgentConversationSummaryDTO) => isFailedRunSummary(summary))
+            .map((summary: QaapAgentConversationSummaryDTO) => summary.id);
+        ctx.enterClearFailedMode(project, failedIds);
     });
     return btn;
+}
+
+export function createSessionsSidebarClearFailedModeFooterExtracted(
+    ctx: any,
+    project: MobileProjectEntry,
+): HTMLElement {
+    const footer = document.createElement('div');
+    footer.className = 'theia-mobile-work-hub-sessions-sidebar-clear-failed-mode-footer';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'theia-mobile-work-hub-sessions-sidebar-clear-failed-cancel';
+    cancelBtn.textContent = nls.localize('qaap/sessionsSidebar/clearFailedCancel', 'Cancel');
+    cancelBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ctx.exitClearFailedMode();
+    });
+
+    const selectedCount = [...ctx.selectedFailedConversationIds].filter(id => {
+        const summaries = ctx.host.conversationIndexUi.vpsTasksForProject(project) as QaapAgentConversationSummaryDTO[];
+        return summaries.some(summary => summary.id === id && isFailedRunSummary(summary));
+    }).length;
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'theia-mobile-work-hub-sessions-sidebar-clear-failed-confirm';
+    clearBtn.textContent = selectedCount === 0
+        ? nls.localize('qaap/sessionsSidebar/clearFailedSelectedNone', 'Clear selected')
+        : nls.localize('qaap/sessionsSidebar/clearFailedSelectedMany', 'Clear selected ({0})', String(selectedCount));
+    clearBtn.disabled = selectedCount === 0;
+    clearBtn.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (clearBtn.disabled) {
+            return;
+        }
+        const ids = [...ctx.selectedFailedConversationIds];
+        void (async () => {
+            const cleared = await ctx.host.onClearFailedTasks(project, ids);
+            if (cleared) {
+                ctx.exitClearFailedMode();
+            }
+        })();
+    });
+
+    footer.append(cancelBtn, clearBtn);
+    return footer;
 }
 
 export function createSessionsSidebarShowMoreControlExtracted(ctx: any, project: MobileProjectEntry,

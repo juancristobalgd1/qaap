@@ -136,4 +136,53 @@ describe('MobileProjectsProjectRowsUi Git/PR status', () => {
         expect(row.querySelector('.theia-mobile-projects-task-status-chip')).to.equal(null);
         expect(row.querySelector('.theia-mod-pr-ready, .theia-mod-pr-merged')).to.equal(null);
     });
+
+    it('selection mode toggles checkbox instead of opening the transcript', async () => {
+        let toggled = 0;
+        let opened = 0;
+        const host = {
+            homeMode: false,
+            hubView: 'tasks',
+            expandedConversationProjectIds: new Set<string>(),
+            preparedCwdByProjectId: new Map<string, string>(),
+            projectsService: {},
+            delegate: { onProjectOpen: () => undefined },
+            cardMenuUi: {
+                buildConversationMenu: () => document.createElement('div'),
+                toggleCardMenu: () => undefined,
+            },
+            conversationIndexUi: {
+                isConversationUnread: () => false,
+                resolveConversationLineage: () => 'none',
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            conversationOpenUi: {
+                prefetchConversationDocument: () => undefined,
+                openConversationSummary: async () => { opened += 1; },
+                openTaskInAgent: async () => { opened += 1; },
+            },
+            onRetryConversation: async () => undefined,
+            openTaskInAgent: async () => undefined,
+        } as unknown as MobileProjectsProjectRowsHost;
+        const ui = new MobileProjectsProjectRowsUi(host);
+        const failedSummary: QaapAgentConversationSummaryDTO = {
+            ...summary(undefined),
+            id: 'failed-1',
+            status: 'failed',
+        };
+        const failedTask = { ...task, id: 'failed-1', state: 'failed' as const };
+        const row = ui.createTaskItem(project, failedTask, undefined, failedSummary, new Set(), {
+            compact: true,
+            selection: {
+                selected: true,
+                onToggle: () => { toggled += 1; },
+            },
+        });
+        expect(row.classList.contains('theia-mod-clear-failed-select')).to.equal(true);
+        expect(row.querySelector('.theia-mobile-projects-task-clear-failed-check.theia-mod-selected')).to.not.equal(null);
+        const item = row.querySelector('.theia-mobile-projects-task-item') as HTMLButtonElement;
+        item.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        expect(toggled).to.equal(1);
+        expect(opened).to.equal(0);
+    });
 });

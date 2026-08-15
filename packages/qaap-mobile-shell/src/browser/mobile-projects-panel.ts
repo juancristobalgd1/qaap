@@ -1551,9 +1551,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.projectActionsUi.onClearProjectChats(project);
     }
 
-    protected async onClearFailedTasks(project: MobileProjectEntry): Promise<void> {
-        this.sessionsSidebar?.hideForMobileOverlay();
-        return this.projectActionsUi.onClearFailedTasks(project);
+    protected async onClearFailedTasks(project: MobileProjectEntry, ids?: readonly string[]): Promise<boolean> {
+        if (!ids || ids.length === 0) {
+            this.sessionsSidebar?.hideForMobileOverlay();
+        }
+        return this.projectActionsUi.onClearFailedTasks(project, ids);
     }
 
     protected async onRemoveProject(project: MobileProjectEntry): Promise<void> {

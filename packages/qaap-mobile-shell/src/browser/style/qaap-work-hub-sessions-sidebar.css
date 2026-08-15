@@ -622,6 +622,86 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-work-hub-sessions-sidebar-view-s
   outline: none;
 }
 
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-mode-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 4px 0 8px;
+  padding: 0 8px 0 12px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-cancel,
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-confirm {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-cancel {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-cancel:hover,
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-cancel:focus-visible {
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  outline: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-confirm {
+  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 16%, transparent);
+  color: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 92%, var(--theia-foreground));
+}
+
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-confirm:hover:not(:disabled),
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-confirm:focus-visible:not(:disabled) {
+  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 24%, transparent);
+  outline: none;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-clear-failed-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-clear-failed-select .theia-mobile-projects-task-item {
+  padding-left: 4px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-clear-failed-check {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--theia-foreground) 55%, transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-clear-failed-check.theia-mod-selected {
+  color: var(--theia-errorForeground, #f14c4c);
+  background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 12%, transparent);
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-clear-failed-check .codicon {
+  font-size: 14px;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-failed-dup-badge {
   flex: 0 0 auto;
   margin-left: 4px;

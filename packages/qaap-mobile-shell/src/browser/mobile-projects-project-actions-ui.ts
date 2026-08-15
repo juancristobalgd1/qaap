@@ -12,6 +12,18 @@ import type { MobileProjectsConversations } from './mobile-projects-conversation
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
+/** Resolve which failed summaries to delete (all, or an explicit id subset). */
+export function resolveFailedTasksToClear(
+    failed: readonly QaapAgentConversationSummaryDTO[],
+    ids?: readonly string[],
+): QaapAgentConversationSummaryDTO[] {
+    if (ids && ids.length > 0) {
+        const selected = new Set(ids);
+        return failed.filter(summary => selected.has(summary.id));
+    }
+    return [...failed];
+}
+
 /** Panel surface for repository card menu actions. */
 export interface MobileProjectsProjectActionsHost {
     projects: MobileProjectEntry[];
@@ -104,43 +116,52 @@ export class MobileProjectsProjectActionsUi {
         }
     }
 
-    async onClearFailedTasks(project: MobileProjectEntry): Promise<void> {
+    async onClearFailedTasks(project: MobileProjectEntry, ids?: readonly string[]): Promise<boolean> {
         this.host.cardMenuUi.closeCardMenu();
         const failed = this.host.conversationIndexUi.vpsTasksForProject(project)
             .filter(summary => isFailedRunSummary(summary));
-        if (failed.length === 0) {
-            return;
+        const targets = resolveFailedTasksToClear(failed, ids);
+        if (targets.length === 0) {
+            return false;
         }
         const confirmed = await new ConfirmDialog({
             title: nls.localize('qaap/mobileProjects/clearFailedTasks', 'Clear failed runs'),
-            msg: failed.length === 1
+            msg: targets.length === 1
                 ? nls.localize(
                     'qaap/mobileProjects/clearFailedTasksConfirmOne',
                     'Delete the 1 failed run for this project? This cannot be undone.'
                 )
-                : nls.localize(
-                    'qaap/mobileProjects/clearFailedTasksConfirmMany',
-                    'Delete all {0} failed runs for this project? This cannot be undone.',
-                    String(failed.length)
-                ),
+                : ids && ids.length > 0
+                    ? nls.localize(
+                        'qaap/mobileProjects/clearFailedTasksConfirmSelectedMany',
+                        'Delete {0} selected failed runs for this project? This cannot be undone.',
+                        String(targets.length)
+                    )
+                    : nls.localize(
+                        'qaap/mobileProjects/clearFailedTasksConfirmMany',
+                        'Delete all {0} failed runs for this project? This cannot be undone.',
+                        String(targets.length)
+                    ),
         }).open();
         if (!confirmed) {
-            return;
+            return false;
         }
         try {
-            for (const summary of failed) {
+            for (const summary of targets) {
                 this.host.releasePreviewForConversation?.(project, summary);
                 await deleteConversation(summary.id);
                 this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
             }
             this.host.transcriptSheetUi.closeTranscriptSheet();
             this.host.renderList();
+            return true;
         } catch (error) {
             this.host.messageService?.error(nls.localize(
                 'qaap/mobileProjects/clearFailedTasksFailed',
                 'Could not clear failed runs: {0}',
                 error instanceof Error ? error.message : String(error)
             ));
+            return false;
         }
     }
 

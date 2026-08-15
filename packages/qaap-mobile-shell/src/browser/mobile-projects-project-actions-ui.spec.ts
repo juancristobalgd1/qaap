@@ -111,4 +111,14 @@ describe('MobileProjectsProjectActionsUi', () => {
 
         expect(released).to.deep.equal(['task-a', 'task-b']);
     });
+
+    it('resolveFailedTasksToClear keeps only the selected failed ids when provided', () => {
+        const { resolveFailedTasksToClear } = require('./mobile-projects-project-actions-ui') as typeof import('./mobile-projects-project-actions-ui');
+        const failed = [
+            { id: 'keep-failed' },
+            { id: 'delete-me' },
+        ] as any[];
+        expect(resolveFailedTasksToClear(failed, ['delete-me']).map((row: { id: string }) => row.id)).to.deep.equal(['delete-me']);
+        expect(resolveFailedTasksToClear(failed).map((row: { id: string }) => row.id)).to.deep.equal(['keep-failed', 'delete-me']);
+    });
 });
