@@ -180,7 +180,7 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option.theia-mod-selected',
         );
         expect(projectBtn?.textContent?.trim()).to.equal('Project');
-        expect(projectBtn?.querySelector('.codicon-folder')).to.not.equal(null);
+        expect(projectBtn?.querySelector('.codicon-repo')).to.not.equal(null);
         expect(document.body.querySelector(
             '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Branch"] .codicon-git-branch',
         )).to.not.equal(null);

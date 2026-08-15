@@ -42,7 +42,7 @@ export function createComposerWorkspaceSheetNavGroup(options: {
         {
             id: 'project',
             label: nls.localize('qaap/composerWorkspace/projectSheetTitle', 'Project'),
-            iconClass: 'codicon-folder',
+            iconClass: 'codicon-repo',
         },
         {
             id: 'branch',
@@ -129,7 +129,7 @@ export function renderStickyComposerWorkspaceBar(options: {
 
     if (options.includeProject !== false) {
         appendField(createWorkspacePill({
-            iconClass: 'codicon-folder',
+            iconClass: 'codicon-repo',
             label: options.view.projectName,
             ariaLabel: nls.localize('qaap/composerWorkspace/projectAria', 'Project: {0}', options.view.projectName),
             onClick: options.onOpenProject,
