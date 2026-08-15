@@ -495,6 +495,45 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(panel.querySelector('.qaap-working-agents-detail-command-log')).to.equal(null);
     });
 
+    it('omits command-output card when the VPS log already has OpenCode transcript segments', () => {
+        const opencodeLog = [
+            '{"type":"tool_use","part":{"id":"p1","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"a.ts"},"output":"ok"}}}',
+            '{"type":"text","part":{"type":"text","text":"Done reading."}}',
+        ].join('\n');
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'task:vps-oc',
+                kind: 'leader-task',
+                title: 'opencode run',
+                command: 'opencode run --format json hi',
+                taskId: 'vps-oc',
+                state: 'running',
+                conversationId: undefined,
+            }),
+            children: [],
+            commandLogText: opencodeLog,
+            activityFeed: {
+                items: [{
+                    label: 'Read a.ts',
+                    verb: 'Read',
+                    detail: 'a.ts',
+                    state: 'success',
+                    navigate: 'file',
+                    toolKind: 'reading',
+                }],
+                liveLabel: 'Working',
+            },
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        expect(panel.querySelector('.qaap-working-agents-detail-command-log')).to.equal(null);
+        expect(panel.textContent).to.not.match(/Command output/i);
+        expect(panel.textContent).to.not.include('step_finish');
+        expect(panel.textContent).to.contain('Read');
+    });
+
     it('notifies detail member changes and refreshes activity feed after hydration', () => {
         const rowHost = document.createElement('div');
         rowHost.className = 'theia-mobile-sticky-composer-changes-pill-row';
