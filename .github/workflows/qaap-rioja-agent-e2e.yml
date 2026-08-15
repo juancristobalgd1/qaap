@@ -63,6 +63,9 @@ jobs:
         shell: bash
         env:
           QAAP_SKIP_AUTH: 'true'
+          # Rioja E2E asserts scaffold + preview, not headless visual verification. Disabling
+          # the backend capture avoids racing the browser autopilot and flaky repair→failed.
+          QAAP_HEADLESS_VISUAL_CAPTURE: '0'
         run: |
           MOCK_BIN="${{ github.workspace }}/test-results/mock-qaiq-bin"
           mkdir -p "${MOCK_BIN}"
