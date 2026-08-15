@@ -225,15 +225,62 @@ export function queuePeerRunMessageExtracted(ctx: any, summary: QaapAgentConvers
         ));
         return false;
     }
+    // enqueueTranscriptFollowUp already expands the queue popover + shows the snackbar.
     ctx.refreshComposerActivityStack();
-    MobileSnackbar.show(
-        nls.localize(
-            'qaap/mobileProjects/peerRunLimitQueued',
-            'Queued — this session is already running the maximum number of agents',
-        ),
-        { duration: 2600 },
-    );
     return true;
+}
+
+/**
+ * Mirror a local composer-queue entry onto durable server `pendingUserMessages` so F5
+ * does not drop it. Tags the local entry with {@link TranscriptFollowUpEntry.serverPendingId}
+ * so settle flush / Edit / Cancel talk to the same server row.
+ */
+export async function mirrorFollowUpToServerQueueExtracted(
+    ctx: any,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    entry: TranscriptFollowUpEntry,
+): Promise<void> {
+    try {
+        const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
+            selectedAgentId: entry.selectedAgentId,
+            modeId: entry.modeId,
+            autoApprove: entry.autoApprove,
+            approvalPolicyId: entry.approvalPolicyId,
+            agentModel: ctx.host.transcriptComposerAgentModel,
+            variables: entry.variables,
+            imagePreviews: entry.imagePreviews,
+            deliveryMode: 'queue',
+        });
+        if (!submitted) {
+            return;
+        }
+        const conv = ctx.host.transcriptLastConv;
+        if (!conv || conv.id !== summary.id) {
+            return;
+        }
+        const pending = [...(conv.pendingUserMessages ?? [])]
+            .reverse()
+            .find(item => item.content === entry.draft || item.content?.endsWith(entry.draft));
+        if (!pending) {
+            return;
+        }
+        const queue = ctx.host.transcriptFollowUpQueue.peek(summary.id);
+        for (let index = queue.length - 1; index >= 0; index -= 1) {
+            const current = queue[index];
+            if (current.draft === entry.draft && !current.serverPendingId) {
+                ctx.host.transcriptFollowUpQueue.replaceAt(summary.id, index, {
+                    ...current,
+                    serverPendingId: pending.id,
+                    serverSynced: true,
+                });
+                ctx.refreshComposerActivityStack();
+                break;
+            }
+        }
+    } catch {
+        // Local popover still owns the follow-up; durability is best-effort.
+    }
 }
 
 export async function submitQueuedFollowUpEntryExtracted(ctx: any, project: MobileProjectEntry,

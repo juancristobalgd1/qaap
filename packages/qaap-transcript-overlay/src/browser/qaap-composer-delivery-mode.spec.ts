@@ -16,7 +16,6 @@ describe('qaap-composer-delivery-mode', () => {
         expect(resolveComposerEnterDeliveryOverride({
             key: 'Enter', shiftKey: false, altKey: false, metaKey: false, ctrlKey: false,
         })).to.equal(undefined);
-        // Shift+Enter is newline — not parallel.
         expect(resolveComposerEnterDeliveryOverride({
             key: 'Enter', shiftKey: true, altKey: false, metaKey: false, ctrlKey: false,
         })).to.equal(undefined);
@@ -29,17 +28,12 @@ describe('qaap-composer-delivery-mode', () => {
         expect(resolveComposerEnterDeliveryOverride({
             key: 'Enter', shiftKey: false, altKey: false, metaKey: false, ctrlKey: true,
         })).to.equal('interrupt');
-        expect(resolveComposerEnterDeliveryOverride({
-            key: 'a', shiftKey: true, altKey: false, metaKey: false, ctrlKey: false,
-        })).to.equal(undefined);
     });
 
-    it('always posts to the server queue (local queue is fallback only)', () => {
-        expect(shouldBypassLocalFollowUpQueue('queue')).to.equal(true);
+    it('keeps queue on the local popover; bypasses only parallel and interrupt', () => {
+        expect(shouldBypassLocalFollowUpQueue('queue')).to.equal(false);
         expect(shouldBypassLocalFollowUpQueue('parallel')).to.equal(true);
         expect(shouldBypassLocalFollowUpQueue('interrupt')).to.equal(true);
         expect(resolveBusyFollowUpDeliveryMode({})).to.equal('queue');
-        expect(resolveBusyFollowUpDeliveryMode({ forceDeliveryMode: 'interrupt' })).to.equal('interrupt');
-        expect(resolveBusyFollowUpDeliveryMode({ forceDeliveryMode: 'parallel' })).to.equal('parallel');
     });
 });

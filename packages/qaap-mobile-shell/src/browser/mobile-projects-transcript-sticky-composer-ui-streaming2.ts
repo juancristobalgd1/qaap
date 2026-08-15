@@ -319,6 +319,9 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, projec
                 .map(request => createComposerContextEntry(request));
             ctx.host.transcriptComposerContext = [...restored, ...ctx.host.transcriptComposerContext];
             ctx.host.transcriptFollowUpQueue.removeAt(summary.id, index);
+            if (entry.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
+                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, entry.serverPendingId);
+            }
             ctx.remountTranscriptStickyComposer();
         },
         onQueueSendNow: index => {
@@ -328,11 +331,17 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, projec
             void ctx.interruptQueuedFollowUp(project, summary, index);
         },
         onQueueRemove: index => {
-            ctx.host.transcriptFollowUpQueue.removeAt(summary.id, index);
+            const removed = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
+            if (removed?.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
+                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, removed.serverPendingId);
+            }
             ctx.refreshComposerActivityStack();
         },
         onQueueClose: index => {
-            ctx.host.transcriptFollowUpQueue.removeAt(summary.id, index);
+            const removed = ctx.host.transcriptFollowUpQueue.takeAt(summary.id, index);
+            if (removed?.serverPendingId && ctx.host.transcriptMessagesUi?.cancelQueuedMessage) {
+                void ctx.host.transcriptMessagesUi.cancelQueuedMessage(summary.id, removed.serverPendingId);
+            }
             ctx.refreshComposerActivityStack();
         },
         onQueueReorder: (fromIndex, toIndex) => {

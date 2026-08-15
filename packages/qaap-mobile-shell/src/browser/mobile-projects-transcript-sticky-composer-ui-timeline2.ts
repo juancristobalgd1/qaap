@@ -482,8 +482,16 @@ export async function flushTranscriptFollowUpQueueExtracted(ctx: any, project: M
     if (!ctx.isTranscriptFollowUpReady(summary)) {
         return;
     }
+    // Drop leading entries already mirrored to the server — the backend drain owns them.
+    while (ctx.host.transcriptFollowUpQueue.peek(summary.id)[0]?.serverSynced) {
+        ctx.host.transcriptFollowUpQueue.shift(summary.id);
+    }
+    ctx.refreshComposerActivityStack();
     const next = ctx.host.transcriptFollowUpQueue.shift(summary.id);
     if (!next) {
+        return;
+    }
+    if (next.serverSynced) {
         return;
     }
     await ctx.submitQueuedFollowUpEntry(project, summary, next);
@@ -496,11 +504,16 @@ export async function sendQueuedFollowUpNowExtracted(ctx: any, project: MobilePr
     if (!entry) {
         return;
     }
-    // Sending from the expanded panel is an explicit dismiss action. Collapse it
-    // before the async submit/remount so a stale activity refresh cannot reopen
-    // the full-width panel while the request is in flight.
     ctx.host.transcriptComposerQueueExpanded = false;
     ctx.refreshComposerActivityStack();
+    if (entry.serverPendingId && ctx.host.transcriptMessagesUi?.dispatchQueuedMessage) {
+        await ctx.host.transcriptMessagesUi.dispatchQueuedMessage(
+            summary.id,
+            { id: entry.serverPendingId, content: entry.draft, createdAt: Date.now() },
+            'parallel',
+        );
+        return;
+    }
     if (ctx.isTranscriptStickyComposerAgentWorking()) {
         await ctx.dispatchQueuedFollowUpInParallel(project, summary, entry);
         return;

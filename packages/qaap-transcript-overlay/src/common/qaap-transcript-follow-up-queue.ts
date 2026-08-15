@@ -23,6 +23,13 @@ export interface TranscriptFollowUpEntry {
     readonly imagePreviews?: readonly TranscriptFollowUpImagePreview[];
     /** Delivery mode for this entry — set when posting parallel/interrupt (or queue) to the server. */
     readonly deliveryMode?: 'queue' | 'parallel' | 'interrupt';
+    /**
+     * When the follow-up was also mirrored to durable `pendingUserMessages`, the server id.
+     * Lets Edit / Cancel / Send now drive the backend queue instead of double-posting on flush.
+     */
+    readonly serverPendingId?: string;
+    /** True once {@link serverPendingId} is confirmed — settle flush must not POST again. */
+    readonly serverSynced?: boolean;
 }
 
 export const MAX_TRANSCRIPT_FOLLOW_UP_QUEUE = 5;
