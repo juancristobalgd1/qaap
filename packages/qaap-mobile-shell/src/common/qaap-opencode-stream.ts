@@ -20,6 +20,7 @@ interface OpencodeToolPart {
         readonly error?: string;
         readonly output?: string;
         readonly stdout?: string;
+        readonly input?: Record<string, unknown>;
     };
     readonly tokens?: {
         readonly input?: number;
@@ -167,7 +168,8 @@ export class QaapOpencodeStreamAccumulator {
         }
         const toolUseId = part.id ?? `opencode-${this.segments.length}`;
         const name = normalizeQaiqToolName(part.tool);
-        const args = JSON.stringify(part.input ?? {});
+        const input = part.input ?? part.state?.input ?? {};
+        const args = JSON.stringify(input);
         const status = part.state?.status;
         const finished = status === 'completed' || status === 'error' || status === undefined;
         const result = extractOpencodeToolResult(part.state);
@@ -268,7 +270,8 @@ function extractOpencodeToolResult(state: OpencodeToolPart['state']): string | u
  */
 export function parseOpencodeLog(log: string): { content: string; segments: QaapAgentMessageSegment[] } {
     const jsonAcc = new QaapOpencodeStreamAccumulator();
-    jsonAcc.push(log);
+    // Ensure the final NDJSON line is consumed even when the log has no trailing newline.
+    jsonAcc.push(log.endsWith('\n') ? log : `${log}\n`);
     if (jsonAcc.consumedJsonEvents()) {
         const segments = [...jsonAcc.getSegments()];
         return { content: jsonAcc.getDisplayText() || log, segments };

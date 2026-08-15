@@ -19,6 +19,7 @@ interface OpencodeToolPart {
         readonly error?: string;
         readonly output?: string;
         readonly stdout?: string;
+        readonly input?: Record<string, unknown>;
     };
 }
 

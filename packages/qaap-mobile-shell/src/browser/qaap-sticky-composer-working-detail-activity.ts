@@ -166,6 +166,11 @@ export function buildWorkingAgentDetailActivityFeed(
 export interface ResolveWorkingAgentDetailActivityFeedOptions {
     /** Live AG-UI trace segments when the cached document is still empty / stale. */
     readonly liveSegments?: readonly QaapAgentMessageSegmentDTO[];
+    /**
+     * Parsed VPS task-log segments (OpenCode NDJSON, etc.) when the member has no
+     * conversation document yet — drives the Cursor-style DETAIL feed.
+     */
+    readonly taskLogSegments?: readonly QaapAgentMessageSegmentDTO[];
 }
 
 /**
@@ -181,7 +186,10 @@ export function resolveWorkingAgentDetailActivityFeedFromConversation(
 ): WorkingAgentDetailActivityFeed | undefined {
     const documentSegments = document ? resolveLatestAgentSegments(document) : [];
     const liveSegments = options?.liveSegments ?? [];
-    const segments = documentSegments.length > 0 ? documentSegments : [...liveSegments];
+    const taskLogSegments = options?.taskLogSegments ?? [];
+    const segments = documentSegments.length > 0
+        ? documentSegments
+        : (liveSegments.length > 0 ? [...liveSegments] : [...taskLogSegments]);
     if (segments.length > 0) {
         const streaming = document?.status === 'streaming'
             || document?.status === 'settled'

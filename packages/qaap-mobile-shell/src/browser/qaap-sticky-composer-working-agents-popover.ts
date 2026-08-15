@@ -23,6 +23,7 @@ import {
     renderWorkingDetailTaskLog,
     shouldShowWorkingDetailTaskLog,
     updateWorkingDetailTaskLog,
+    workingDetailTaskLogHasTranscriptSegments,
     WORKING_DETAIL_TASK_LOG_CLASS,
 } from './qaap-sticky-composer-working-detail-task-log';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
@@ -667,7 +668,8 @@ export function renderWorkingAgentsDetailPanel(options: {
     };
     body.append(renderWorkingAgentDetailActivityFeed(feed));
 
-    if (shouldShowWorkingDetailTaskLog(options.member) && options.member.taskId) {
+    if (shouldShowWorkingDetailTaskLog(options.member) && options.member.taskId
+        && !workingDetailTaskLogHasTranscriptSegments(options.commandLogText)) {
         const running = isWorkingAgentStatusLive(options.member);
         body.append(renderWorkingDetailTaskLog({
             taskId: options.member.taskId,
@@ -1257,6 +1259,13 @@ export function refreshWorkingAgentsDetailCommandLog(options: {
     const body = active.inner.querySelector('.qaap-working-agents-detail-body');
     if (!(body instanceof HTMLElement)) {
         return false;
+    }
+    // Structured OpenCode/QAIQ streams belong in the Cursor-style activity feed, not a raw
+    // "Command output" card — keep the log card only for unstructured shell tails.
+    if (workingDetailTaskLogHasTranscriptSegments(options.text)) {
+        findWorkingDetailTaskLog(body)?.remove();
+        refreshWorkingAgentsDetailActivityFeed();
+        return true;
     }
     let log = findWorkingDetailTaskLog(body);
     if (!log) {
