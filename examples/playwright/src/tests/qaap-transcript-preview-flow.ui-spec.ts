@@ -34,7 +34,10 @@ function ensureFixtureDeps(cwd: string): void {
     }
 }
 
-async function expectDevPreviewReady(page: import('@playwright/test').Page, projectId: string): Promise<void> {
+async function expectDevServerClaimReady(
+    page: import('@playwright/test').Page,
+    projectId: string,
+): Promise<void> {
     await expect.poll(async () => {
         const state = await page.evaluate(async (currentProjectId: string) => {
             const currentResponse = await fetch(
@@ -49,21 +52,22 @@ async function expectDevPreviewReady(page: import('@playwright/test').Page, proj
                 port?: number;
                 previewUrl?: string;
             };
-            const onPreview = document.querySelector('[data-active-surface="preview"]') !== null;
-            // The backend may allocate a safe alternate port and the UI may use either the
-            // legacy port URL or the identity-scoped URL. Assert the current project claim
-            // instead of coupling the test to the default port or URL shape.
-            const iframe = document.querySelector(
-                'iframe[src*="/qaap-dev/"], iframe[src*="/qaap-preview/"]',
-            ) !== null;
             return current.ready === true
                 && Number.isInteger(current.port)
-                && typeof current.previewUrl === 'string'
-                && onPreview
-                && iframe;
+                && typeof current.previewUrl === 'string';
         }, projectId);
         return state;
     }, { timeout: 180_000 }).toBe(true);
+}
+
+async function expectDevPreviewMounted(page: import('@playwright/test').Page): Promise<void> {
+    await expect.poll(async () => page.evaluate(() => {
+        const onPreview = document.querySelector('[data-active-surface="preview"]') !== null;
+        const iframe = document.querySelector(
+            'iframe[src*="/qaap-dev/"], iframe[src*="/qaap-preview/"]',
+        ) !== null;
+        return onPreview && iframe;
+    }), { timeout: 60_000 }).toBe(true);
 }
 
 async function runLevantaLaAppPreviewFlow(
@@ -75,7 +79,19 @@ async function runLevantaLaAppPreviewFlow(
     await composer.fill('levanta la app');
     await page.getByRole('button', { name: /^send$|^create$/i }).click();
     await expect(page.getByRole('heading', { name: /levanta la app/i })).toBeVisible({ timeout: 60_000 });
-    await expectDevPreviewReady(page, projectId);
+    // Product no longer auto-switches to Preview on "levanta la app" — wait for the
+    // staged Open preview affordance (or API claim), then navigate explicitly.
+    await expectDevServerClaimReady(page, projectId);
+    const openPreview = page.getByRole('button', { name: /open preview/i }).first();
+    if (await openPreview.count()) {
+        await openPreview.click();
+    } else {
+        // Composer / transcript may expose the same CTA as a link.
+        const openLink = page.getByRole('link', { name: /open preview/i }).first();
+        await expect(openLink).toBeVisible({ timeout: 30_000 });
+        await openLink.click();
+    }
+    await expectDevPreviewMounted(page);
 }
 
 test.describe('@qaap-mobile transcript dev preview flow', () => {

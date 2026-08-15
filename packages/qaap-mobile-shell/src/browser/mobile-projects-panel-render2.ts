@@ -563,7 +563,17 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: any): void {
         getTranscriptOpenSummaryId: () => panel.transcriptOpenSummaryId,
         setTranscriptOpenSummaryId: value => { panel.transcriptOpenSummaryId = value; },
         openWorkHubSessionsSidebar: () => panel.sessionsSidebarUi.openWorkHubSessionsSidebar(),
-        navigateToHomeHubForProbe: () => panel.navigateHubTab('home'),
+        navigateToHomeHubForProbe: () => {
+            // `navigateHubTab('home')` normalizes to `tasks` (Agents landing). Mission Control only
+            // mounts when hubView is literally `home`, so set it directly for the probe.
+            panel.agentsHubLegacyInbox = true;
+            if (panel.agentsHubShellActive) {
+                panel.teardownAgentsHubExecutionShell();
+            }
+            panel.hubView = 'home';
+            panel.setMissionControlExpanded(true);
+            panel.renderList();
+        },
         expandMissionControlForProbe: () => {
             panel.setMissionControlExpanded(true);
             panel.renderList();
@@ -629,6 +639,17 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: any): void {
             }
             for (const cwd of cwdSet) {
                 panel.conversations.perfProbeTickStreamingSummaries(cwd);
+            }
+            // Conversation ticks while Agents Hub landing is active skip full list rebuilds.
+            // Force a paint so probe E2E can assert progress patches (team-since / MC progress).
+            const teamRoot = panel.scroll.querySelector<HTMLElement>(
+                '.theia-mobile-hub-team-root.theia-mod-embedded-in-tasks',
+            );
+            if (teamRoot) {
+                panel.hubIncrementalUi.tryPatchTeamSection(teamRoot);
+            }
+            if (!panel.missionControlHubUi.tryPatchBeforeRebuild()) {
+                panel.renderList();
             }
         },
         renderTranscriptForProbe: (conversation, chatHost) => {

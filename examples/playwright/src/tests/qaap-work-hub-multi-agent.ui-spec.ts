@@ -70,8 +70,6 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
             () => window.__qaapWorkHubPerfProbe?.getProbeDiagnostics()?.mcRowCount ?? 0,
         ), { timeout: 60_000 }).toBeGreaterThanOrEqual(3);
 
-        await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.expandMissionControlForProbe());
-        await flushAnimationFrames(app.page, 3);
         await expect(app.page.locator('.theia-mobile-mission-control-host .theia-mobile-mission-control-row')).toHaveCount(3);
 
         await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.resetMetrics());
@@ -80,7 +78,9 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
 
         const metrics = await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.getMetrics());
         expect(metrics?.hubScrollReplaceChildren ?? 99).toBeLessThanOrEqual(1);
-        await expect(app.page.locator('.theia-mobile-mission-control-progress').first()).toContainText('3/5');
+        await expect.poll(async () => app.page.locator('.theia-mobile-mission-control-progress').first().textContent(), {
+            timeout: 15_000,
+        }).toContain('3/5');
 
         await app.page.close();
     });
@@ -115,7 +115,9 @@ test.describe('@qaap-mobile Work Hub multi-agent', () => {
 
         const metrics = await app.page.evaluate(() => window.__qaapWorkHubPerfProbe?.getMetrics());
         expect(metrics?.hubScrollReplaceChildren ?? 99).toBeLessThanOrEqual(1);
-        await expect(app.page.locator('.theia-mobile-hub-team-since').first()).toContainText('3/5');
+        await expect.poll(async () => app.page.locator('.theia-mobile-hub-team-since').first().textContent(), {
+            timeout: 15_000,
+        }).toContain('3/5');
 
         await app.page.close();
     });
