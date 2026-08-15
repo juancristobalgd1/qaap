@@ -665,6 +665,27 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   }
 }
 
+/* Header view picker: icon-only on phones to reclaim horizontal space. */
+@media (max-width: 767px), (pointer: coarse) {
+  .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui),
+  .theia-mobile-agent-log-title-row>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui),
+  .theia-mobile-agent-log-title-row>.theia-mobile-transcript-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui) {
+    min-width: 36px;
+    width: 36px;
+    padding: 0;
+    gap: 0;
+  }
+
+  .theia-mobile-transcript-tabs.theia-mod-header-inline
+  .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui)
+  .theia-mobile-transcript-tab-icon-select-label,
+  .theia-mobile-transcript-tabs.theia-mod-header-inline
+  .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui)
+  .theia-mobile-transcript-tab-icon-select-chevron {
+    display: none;
+  }
+}
+
 @media (min-width: 560px) {
 
   .theia-mobile-projects-title-row>.theia-mobile-projects-header-execution-tabs,
