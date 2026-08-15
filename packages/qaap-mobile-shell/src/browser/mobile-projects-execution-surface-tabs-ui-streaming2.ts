@@ -305,7 +305,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: any, displayTabId
     trigger.dataset.surfaceActive = 'true';
     trigger.setAttribute('aria-selected', 'true');
     trigger.title = displaySpec.label;
-    trigger.setAttribute('aria-label', menuLabel);
+    trigger.setAttribute('aria-label', `${displaySpec.label}, ${menuLabel}`);
 
     appendExecutionSurfaceTabIcon(trigger, displaySpec.icon, 'theia-mobile-transcript-tab-icon-select-symbol');
     const triggerLabel = document.createElement('span');
