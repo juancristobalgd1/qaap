@@ -18,6 +18,7 @@ import {
     resolveWorkingMemberCommand,
     type WorkingAgentDetailActivityFeed,
 } from './qaap-sticky-composer-working-detail-activity';
+import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
 import {
     findWorkingDetailTaskLog,
     renderWorkingDetailTaskLog,
@@ -54,12 +55,20 @@ export interface OpenWorkingAgentsPopoverOptions {
     ) => boolean | void | Promise<boolean | void>;
     readonly onClose?: () => void;
     /**
-     * Cursor-style live activity feed for the DETAIL panel.
+     * Cursor-style live activity feed for the DETAIL panel (fallback when transcript
+     * excerpt is unavailable).
      * Prefer transcript segments from threadStore; fallback to activityLabel.
      */
     readonly resolveDetailActivityFeed?: (
         member: WorkHubTeamMember,
     ) => WorkingAgentDetailActivityFeed | undefined;
+    /**
+     * Preferred DETAIL body: same transcript row DOM as the main chat
+     * (user bubble + agent segments). When present, replaces the compact activity feed.
+     */
+    readonly resolveDetailTranscriptExcerpt?: (
+        member: WorkHubTeamMember,
+    ) => HTMLElement | undefined;
     /**
      * Fired when the DETAIL member changes (row → detail, back → list, close).
      * Hosts use this to subscribe/unsubscribe live transcript activity.
@@ -82,6 +91,9 @@ interface ActiveWorkingAgentsExpand {
     resolveDetailActivityFeed?: (
         member: WorkHubTeamMember,
     ) => WorkingAgentDetailActivityFeed | undefined;
+    resolveDetailTranscriptExcerpt?: (
+        member: WorkHubTeamMember,
+    ) => HTMLElement | undefined;
     onDetailMemberChange?: (member: WorkHubTeamMember | undefined) => void;
     members: WorkHubTeamMember[];
     detailMemberId: string | undefined;
@@ -105,6 +117,9 @@ interface WorkingExpandSession {
     resolveDetailActivityFeed?: (
         member: WorkHubTeamMember,
     ) => WorkingAgentDetailActivityFeed | undefined;
+    resolveDetailTranscriptExcerpt?: (
+        member: WorkHubTeamMember,
+    ) => HTMLElement | undefined;
     onDetailMemberChange?: (member: WorkHubTeamMember | undefined) => void;
 }
 
@@ -117,6 +132,9 @@ function bindSessionHandlers(options: OpenWorkingAgentsPopoverOptions): void {
     workingExpandSession.onCloseExtra = options.onClose;
     if (options.resolveDetailActivityFeed) {
         workingExpandSession.resolveDetailActivityFeed = options.resolveDetailActivityFeed;
+    }
+    if (options.resolveDetailTranscriptExcerpt) {
+        workingExpandSession.resolveDetailTranscriptExcerpt = options.resolveDetailTranscriptExcerpt;
     }
     if (options.onDetailMemberChange) {
         workingExpandSession.onDetailMemberChange = options.onDetailMemberChange;
@@ -134,6 +152,14 @@ function resolveSessionDetailActivityFeed(
 ): WorkingAgentDetailActivityFeed | undefined {
     const resolve = workingExpandSession.resolveDetailActivityFeed
         ?? activeWorkingAgentsExpand?.resolveDetailActivityFeed;
+    return resolve?.(member);
+}
+
+function resolveSessionDetailTranscriptExcerpt(
+    member: WorkHubTeamMember,
+): HTMLElement | undefined {
+    const resolve = workingExpandSession.resolveDetailTranscriptExcerpt
+        ?? activeWorkingAgentsExpand?.resolveDetailTranscriptExcerpt;
     return resolve?.(member);
 }
 
@@ -343,6 +369,8 @@ export function reclaimParkedWorkingControlIntoRow(
                 onClose,
                 resolveDetailActivityFeed: workingExpandSession.resolveDetailActivityFeed
                     ?? activeWorkingAgentsExpand?.resolveDetailActivityFeed,
+                resolveDetailTranscriptExcerpt: workingExpandSession.resolveDetailTranscriptExcerpt
+                    ?? activeWorkingAgentsExpand?.resolveDetailTranscriptExcerpt,
                 members: activeWorkingAgentsExpand?.members ?? [],
                 detailMemberId: workingExpandSession.detailMemberId,
             };
@@ -592,6 +620,8 @@ export function renderWorkingAgentsDetailPanel(options: {
     readonly parent?: WorkHubTeamMember;
     readonly detailLarge?: boolean;
     readonly activityFeed?: WorkingAgentDetailActivityFeed;
+    /** Preferred: main-transcript DOM (user + agent rows). When set, skips compact activity feed. */
+    readonly transcriptExcerpt?: HTMLElement;
     readonly commandLogText?: string;
     readonly commandLogTruncated?: boolean;
     readonly onStop?: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>;
@@ -666,7 +696,12 @@ export function renderWorkingAgentsDetailPanel(options: {
         items: [],
         liveLabel: resolveWorkingAgentStatusLabel(options.member),
     };
-    body.append(renderWorkingAgentDetailActivityFeed(feed));
+    // Prefer the real transcript DOM (same as main chat). Compact activity feed is fallback only.
+    if (options.transcriptExcerpt) {
+        body.append(options.transcriptExcerpt);
+    } else {
+        body.append(renderWorkingAgentDetailActivityFeed(feed));
+    }
 
     if (shouldShowWorkingDetailTaskLog(options.member) && options.member.taskId
         && !workingDetailTaskLogHasTranscriptSegments(options.commandLogText)) {
@@ -991,12 +1026,14 @@ function showWorkingAgentsDetailView(memberId: string): void {
     const children = working.filter(entry => entry.parentId === member.id);
     const detailLarge = !!workingExpandSession.detailLarge;
     const activityFeed = resolveSessionDetailActivityFeed(member);
+    const transcriptExcerpt = resolveSessionDetailTranscriptExcerpt(member);
     const panel = renderWorkingAgentsDetailPanel({
         member,
         children,
         parent,
         detailLarge,
         activityFeed,
+        transcriptExcerpt,
         onStop: async target => stopWorkingMemberFromExpand(target),
         onBack: () => showWorkingAgentsListView(),
         onClose: () => {
@@ -1197,7 +1234,7 @@ export function getWorkingAgentsDetailMember(): WorkHubTeamMember | undefined {
 }
 
 /**
- * Re-resolve and patch only the DETAIL activity feed (no header/list remount).
+ * Re-resolve and patch only the DETAIL body content (transcript excerpt or activity feed).
  * Used when threadStore hydrates or streams segments after the panel opened.
  */
 export function refreshWorkingAgentsDetailActivityFeed(): boolean {
@@ -1211,16 +1248,29 @@ export function refreshWorkingAgentsDetailActivityFeed(): boolean {
         return false;
     }
     const body = active.inner.querySelector('.qaap-working-agents-detail-body');
-    const existing = body?.querySelector('.qaap-working-agents-detail-activity');
     if (!(body instanceof HTMLElement)) {
         showWorkingAgentsDetailView(detailId);
         return true;
     }
-    const feed = resolveSessionDetailActivityFeed(member) ?? {
-        items: [],
-        liveLabel: resolveWorkingAgentStatusLabel(member),
-    };
-    const next = renderWorkingAgentDetailActivityFeed(feed);
+    const stickToBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 48;
+    const existingTranscript = body.querySelector(`.${WORKING_DETAIL_TRANSCRIPT_CLASS}`);
+    const existingActivity = body.querySelector('.qaap-working-agents-detail-activity');
+    const transcriptExcerpt = resolveSessionDetailTranscriptExcerpt(member);
+    const next = transcriptExcerpt ?? renderWorkingAgentDetailActivityFeed(
+        resolveSessionDetailActivityFeed(member) ?? {
+            items: [],
+            liveLabel: resolveWorkingAgentStatusLabel(member),
+        },
+    );
+    // Drop the alternate body surface when switching transcript ↔ compact feed.
+    if (transcriptExcerpt) {
+        existingActivity?.remove();
+    } else {
+        existingTranscript?.remove();
+    }
+    const existing = transcriptExcerpt
+        ? existingTranscript
+        : existingActivity;
     if (existing instanceof HTMLElement) {
         existing.replaceWith(next);
     } else {
@@ -1231,6 +1281,9 @@ export function refreshWorkingAgentsDetailActivityFeed(): boolean {
         } else {
             body.append(next);
         }
+    }
+    if (stickToBottom) {
+        body.scrollTop = body.scrollHeight;
     }
     return true;
 }
@@ -1355,6 +1408,8 @@ function mountWorkingAgentsExpand(
         onClose,
         resolveDetailActivityFeed: options.resolveDetailActivityFeed
             ?? workingExpandSession.resolveDetailActivityFeed,
+        resolveDetailTranscriptExcerpt: options.resolveDetailTranscriptExcerpt
+            ?? workingExpandSession.resolveDetailTranscriptExcerpt,
         onDetailMemberChange: options.onDetailMemberChange
             ?? workingExpandSession.onDetailMemberChange,
         members: [...working],
@@ -1420,6 +1475,9 @@ export function restoreWorkingAgentsExpandIfNeeded(options: OpenWorkingAgentsPop
             if (options.resolveDetailActivityFeed) {
                 activeWorkingAgentsExpand.resolveDetailActivityFeed = options.resolveDetailActivityFeed;
             }
+            if (options.resolveDetailTranscriptExcerpt) {
+                activeWorkingAgentsExpand.resolveDetailTranscriptExcerpt = options.resolveDetailTranscriptExcerpt;
+            }
             if (options.onDetailMemberChange) {
                 activeWorkingAgentsExpand.onDetailMemberChange = options.onDetailMemberChange;
             }
@@ -1456,6 +1514,9 @@ export function restoreWorkingAgentsExpandIfNeeded(options: OpenWorkingAgentsPop
             };
             if (options.resolveDetailActivityFeed) {
                 active.resolveDetailActivityFeed = options.resolveDetailActivityFeed;
+            }
+            if (options.resolveDetailTranscriptExcerpt) {
+                active.resolveDetailTranscriptExcerpt = options.resolveDetailTranscriptExcerpt;
             }
             if (options.onDetailMemberChange) {
                 active.onDetailMemberChange = options.onDetailMemberChange;

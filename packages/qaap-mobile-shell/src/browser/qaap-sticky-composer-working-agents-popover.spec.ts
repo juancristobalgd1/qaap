@@ -428,6 +428,50 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(panel.textContent).to.not.match(/\bWorkspace\b/);
     });
 
+    it('prefers transcript excerpt DOM over compact activity feed in DETAIL', () => {
+        const excerpt = document.createElement('div');
+        excerpt.className = 'qaap-working-agents-detail-transcript';
+        const user = document.createElement('div');
+        user.className = 'theia-mobile-agent-transcript-user-wrap';
+        user.textContent = 'Investigate same-session multitask';
+        const agent = document.createElement('div');
+        agent.className = 'theia-mobile-agent-transcript-msg theia-mod-agent';
+        agent.textContent = 'Explored 4 files';
+        excerpt.append(user, agent);
+
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'parent',
+                title: 'Transcript parity',
+                activityLabel: 'Reading files',
+                conversationId: 'c-parity',
+            }),
+            children: [],
+            activityFeed: {
+                items: [{
+                    label: 'ShouldNotShowCompactRow',
+                    verb: 'ShouldNotShowCompactRow',
+                    state: 'running',
+                    navigate: 'file',
+                    toolKind: 'reading',
+                }],
+                liveLabel: 'Working',
+            },
+            transcriptExcerpt: excerpt,
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        expect(panel.querySelector('.qaap-working-agents-detail-transcript')).to.equal(excerpt);
+        expect(panel.querySelector('.theia-mobile-agent-transcript-user-wrap')?.textContent)
+            .to.contain('Investigate same-session multitask');
+        expect(panel.querySelector('.theia-mobile-agent-transcript-msg.theia-mod-agent')?.textContent)
+            .to.contain('Explored 4 files');
+        expect(panel.querySelector('.qaap-working-agents-detail-activity')).to.equal(null);
+        expect(panel.textContent).to.not.contain('ShouldNotShowCompactRow');
+    });
+
     it('renders a command-output card for VPS tasks without conversationId', () => {
         const panel = renderWorkingAgentsDetailPanel({
             member: member({

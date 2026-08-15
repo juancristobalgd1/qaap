@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { parseOpencodeLog } from '../common/qaap-opencode-stream';
+import { parseOpencodeFormattedLog, parseOpencodeLog, QaapOpencodeStreamAccumulator } from '../common/qaap-opencode-stream';
 import type { QaapAgentMessageSegment } from '../common/qaap-qaiq-stream';
 
 /** Match server `MAX_LOG_BYTES` — keep a bounded live tail in the Working DETAIL panel. */
@@ -284,20 +284,32 @@ export function formatVpsTaskLogForHuman(raw: string): string {
 
 /** True when the VPS log parses into structured transcript segments (OpenCode / similar). */
 export function workingDetailTaskLogHasTranscriptSegments(raw: string | undefined): boolean {
-    const text = raw?.trim();
-    if (!text) {
-        return false;
-    }
-    return parseOpencodeLog(text).segments.length > 0;
+    return parseWorkingDetailTaskLogSegments(raw).length > 0;
 }
 
-/** Parse a VPS task log into transcript segments for the Cursor-style DETAIL feed. */
+/**
+ * Parse a VPS task log into transcript segments for Working DETAIL.
+ * Only returns segments for structured OpenCode NDJSON or formatted CLI tool markers —
+ * plain shell tails (test runners, npm, etc.) stay empty so Command output remains.
+ */
 export function parseWorkingDetailTaskLogSegments(raw: string | undefined): readonly QaapAgentMessageSegment[] {
     const text = raw?.trim();
     if (!text) {
         return [];
     }
-    return parseOpencodeLog(text).segments;
+    const jsonAcc = new QaapOpencodeStreamAccumulator();
+    // Ensure the final NDJSON line is consumed even when the log has no trailing newline.
+    jsonAcc.push(text.endsWith('\n') ? text : `${text}\n`);
+    if (jsonAcc.consumedJsonEvents()) {
+        return [...jsonAcc.getSegments()];
+    }
+    const formatted = parseOpencodeFormattedLog(text);
+    // Formatted fallback treats every prose line as a text segment — that would hide the
+    // Command output card for ordinary shell logs. Require at least one tool/thinking cue.
+    if (formatted.segments.some(segment => segment.type === 'tool' || segment.type === 'thinking')) {
+        return formatted.segments;
+    }
+    return [];
 }
 
 function formatSegmentsAsTranscriptText(segments: readonly QaapAgentMessageSegment[]): string {

@@ -3,7 +3,7 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {
     isAgentsHubIdleConversationSummary,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
@@ -162,6 +162,40 @@ export async function seedWorkingDetailTaskLogFromServerExtracted(ctx: any, memb
 export function resolveWorkingDetailActivityFeedExtracted(ctx: any, member: WorkHubTeamMember): ReturnType<
         typeof resolveWorkingAgentDetailActivityFeedFromConversation
     > {
+        const source = resolveWorkingDetailTranscriptSource(ctx, member);
+        return resolveWorkingAgentDetailActivityFeedFromConversation(source.document, member, {
+            liveSegments: source.liveSegments,
+            taskLogSegments: source.taskLogSegments,
+        });
+}
+
+/** Same transcript DOM as the main chat, for Working DETAIL (Cursor-style panel). */
+export function resolveWorkingDetailTranscriptExcerptExtracted(ctx: any, member: WorkHubTeamMember): HTMLElement | undefined {
+        const messagesUi = ctx.host.transcriptMessagesUi;
+        if (!messagesUi?.createWorkingDetailTranscriptExcerpt) {
+            return undefined;
+        }
+        const source = resolveWorkingDetailTranscriptSource(ctx, member);
+        const streaming = source.document?.status === 'streaming'
+            || source.document?.status === 'settled'
+            || member.state === 'streaming'
+            || member.state === 'running';
+        return messagesUi.createWorkingDetailTranscriptExcerpt({
+            document: source.document,
+            liveSegments: source.liveSegments,
+            taskLogSegments: source.taskLogSegments,
+            streaming,
+            conversationId: member.conversationId,
+            agentId: member.agentId,
+            title: member.title,
+        });
+}
+
+function resolveWorkingDetailTranscriptSource(ctx: any, member: WorkHubTeamMember): {
+        readonly document: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+        readonly liveSegments: QaapAgentMessageSegmentDTO[] | undefined;
+        readonly taskLogSegments: QaapAgentMessageSegmentDTO[] | undefined;
+    } {
         const conversationId = member.conversationId?.trim();
         if (conversationId) {
             ctx.host.conversations?.prefetchDocument(conversationId);
@@ -183,11 +217,12 @@ export function resolveWorkingDetailActivityFeedExtracted(ctx: any, member: Work
         const taskLogText = member.taskId?.trim()
             ? ctx.host.activeTasks?.getTaskLogTail(member.taskId)?.text
             : undefined;
-        const taskLogSegments = parseWorkingDetailTaskLogSegments(taskLogText);
-        return resolveWorkingAgentDetailActivityFeedFromConversation(document, member, {
+        const parsedTaskLog = parseWorkingDetailTaskLogSegments(taskLogText);
+        return {
+            document,
             liveSegments,
-            taskLogSegments: taskLogSegments.length > 0 ? taskLogSegments : undefined,
-        });
+            taskLogSegments: parsedTaskLog.length > 0 ? parsedTaskLog : undefined,
+        };
 }
 
 export function prefetchWorkingDetailDocumentsExtracted(ctx: any, members: readonly WorkHubTeamMember[]): void {

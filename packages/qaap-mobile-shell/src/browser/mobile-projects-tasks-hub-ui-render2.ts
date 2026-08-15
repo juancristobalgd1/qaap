@@ -350,6 +350,7 @@ export function updateWorkingPillChromeExtracted(ctx: any): void {
                     onStop: member => ctx.stopWorkingAgent(member),
                     onStopAll: working => ctx.stopAllWorkingAgents(working),
                     resolveDetailActivityFeed: member => ctx.resolveWorkingDetailActivityFeed(member),
+                    resolveDetailTranscriptExcerpt: member => ctx.resolveWorkingDetailTranscriptExcerpt(member),
                     onDetailMemberChange: member => ctx.bindWorkingDetailActivitySubscription(member),
                 });
             } else if (isWorkingAgentsPopoverOpen()) {
@@ -374,6 +375,7 @@ export function openWorkingAgentsPopoverFromPillExtracted(ctx: any, anchor: HTML
             onStop: member => ctx.stopWorkingAgent(member),
             onStopAll: working => ctx.stopAllWorkingAgents(working),
             resolveDetailActivityFeed: member => ctx.resolveWorkingDetailActivityFeed(member),
+            resolveDetailTranscriptExcerpt: member => ctx.resolveWorkingDetailTranscriptExcerpt(member),
             onDetailMemberChange: member => ctx.bindWorkingDetailActivitySubscription(member),
         });
 }

@@ -141,6 +141,9 @@ describe('qaap-sticky-composer-working-detail-task-log', () => {
         expect(workingDetailTaskLogHasTranscriptSegments(log)).to.equal(true);
         expect(parseWorkingDetailTaskLogSegments(log)).to.deep.equal([{ type: 'text', content: 'Hola' }]);
         expect(workingDetailTaskLogHasTranscriptSegments('{"type":"step_finish","part":{"type":"step-finish"}}')).to.equal(false);
+        // Plain shell / test-runner tails must not be treated as OpenCode transcripts.
+        expect(workingDetailTaskLogHasTranscriptSegments('PASS src/foo.spec.ts\n')).to.equal(false);
+        expect(parseWorkingDetailTaskLogSegments('PASS src/foo.spec.ts\n')).to.deep.equal([]);
     });
 
     it('shows a settled empty state when the task finished with no output', () => {

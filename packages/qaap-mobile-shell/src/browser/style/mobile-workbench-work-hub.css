@@ -4342,9 +4342,9 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  flex: 1 1 auto;
-  align-self: flex-end;
-  width: min(100%, 420px);
+  flex: 1 1 100%;
+  align-self: stretch;
+  width: 100%;
   max-width: 100%;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
@@ -4356,8 +4356,10 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 
 .theia-mobile-sticky-composer-changes-pill-host:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
   overflow: visible;
-  align-items: flex-end;
-  justify-content: flex-end;
+  align-items: stretch;
+  justify-content: stretch;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
@@ -4368,10 +4370,10 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)>.theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  flex: 1 1 auto;
-  width: min(100%, 420px);
+  flex: 1 1 100%;
+  width: 100%;
   max-width: 100%;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 /* Working open: hide the horizontal pill slider (Changes, Commit, Step, …). */
@@ -4630,7 +4632,27 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   overscroll-behavior-y: contain;
 }
 
-/* Cursor-style live activity feed (primary DETAIL content). */
+/* Main-transcript parity inside Working DETAIL (replaces compact activity timeline). */
+.qaap-working-agents-detail-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+}
+
+.qaap-working-agents-detail-transcript .theia-mobile-agent-transcript-msg.theia-mod-agent {
+  width: 100%;
+  max-width: 100%;
+  margin-inline: 0;
+}
+
+.qaap-working-agents-detail-transcript .theia-mobile-agent-transcript-user-wrap {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Cursor-style live activity feed (fallback when transcript excerpt is unavailable). */
 .qaap-working-agents-detail-activity {
   display: flex;
   flex-direction: column;
