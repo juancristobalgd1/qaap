@@ -49,6 +49,21 @@ describe('QaapOpencodeStreamAccumulator', () => {
         });
     });
 
+    it('maps state.input from newer OpenCode tool_use envelopes', () => {
+        const acc = new QaapOpencodeStreamAccumulator();
+        acc.push('{"type":"tool_use","part":{"id":"p2","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"pkg.json"},"output":"{}"}}}\n');
+        expect(acc.getSegments()).to.deep.equal([
+            {
+                type: 'tool',
+                toolUseId: 'p2',
+                name: 'Read',
+                args: '{"filePath":"pkg.json"}',
+                finished: true,
+                result: '{}',
+            },
+        ]);
+    });
+
     it('nests child tools under an active task subagent', () => {
         const acc = new QaapOpencodeStreamAccumulator();
         acc.push([
