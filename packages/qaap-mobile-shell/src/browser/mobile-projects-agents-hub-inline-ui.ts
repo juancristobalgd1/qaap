@@ -448,12 +448,15 @@ export class MobileProjectsAgentsHubInlineUi {
         const activeSummary = this.host.agentsHubInlineActive && this.host.transcriptOpenSummary
             ? this.host.transcriptOpenSummary
             : summary;
-        const cached = this.host.agentsHubInlineActive
+        const cachedRaw = this.host.agentsHubInlineActive
             && this.host.transcriptLastConv
             && this.host.transcriptLastConv.id === activeSummary.id
             ? this.host.transcriptLastConv
             : this.host.transcriptLiveUi.peekCachedOpenTranscript(activeSummary.id)
             ?? this.host.transcriptConversationCache.get(activeSummary.id);
+        const cached = cachedRaw && this.host.transcriptLiveUi.isTrustedOpenTranscriptCache(cachedRaw, activeSummary)
+            ? cachedRaw
+            : undefined;
         const conv = cached
             ?? (activeSummary.status === 'streaming' && !isAgentsHubIdleConversationSummary(activeSummary)
                 ? this.buildAgentsHubWorkingConversation(activeSummary)
