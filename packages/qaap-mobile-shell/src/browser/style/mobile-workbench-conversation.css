@@ -2079,7 +2079,21 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-side {
-  grid-template-columns: minmax(0, 1fr) 5px minmax(120px, var(--qaap-files-tree-width, 38%));
+  /* Explorer on the left (tree | split | preview), matching Work Hub Files. */
+  grid-template-columns: minmax(120px, var(--qaap-files-tree-width, 38%)) 5px minmax(0, 1fr);
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-tree {
+  grid-column: 1;
+  border-right: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-split-handle {
+  grid-column: 2;
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-preview {
+  grid-column: 3;
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
@@ -2189,7 +2203,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
 @media (pointer: coarse),
 (max-width: 767px) {
   .theia-mobile-transcript-files-layout.theia-mod-tree-side {
-    grid-template-columns: minmax(0, 1fr) 20px minmax(120px, var(--qaap-files-tree-width, 38%));
+    grid-template-columns: minmax(120px, var(--qaap-files-tree-width, 38%)) 20px minmax(0, 1fr);
   }
 
   .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
@@ -2293,7 +2307,8 @@ button.theia-mobile-transcript-team-row:focus-visible {
   gap: 0;
   min-height: 44px;
   padding: 0 8px 0 4px;
-  border-bottom: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.12));
+  /* Seamless with preview body — no hairline under lock / outline / more actions. */
+  border-bottom: none;
   background: var(--theia-editor-background);
 }
 
@@ -2719,6 +2734,10 @@ body>.theia-mobile-transcript-files-menu {
   flex-direction: column;
   box-sizing: border-box;
   background: var(--theia-sideBar-background, var(--theia-editor-background));
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-bottom > .theia-mobile-transcript-files-tree {
+  border-top: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
 }
 
 .theia-mobile-transcript-files-tree-toolbar {

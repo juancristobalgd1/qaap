@@ -1427,7 +1427,8 @@ export function mountTranscriptFilesView(
             );
             const delta = stacked
                 ? clientY - startCoord
-                : clientX - startCoord;
+                // Tree sits on the left: dragging the handle right grows the tree.
+                : startCoord - clientX;
             const nextSize = Math.min(maxSize, Math.max(FILES_TREE_MIN_PX, startSize - delta));
             if (stacked) {
                 state.treePaneHeightPx = nextSize;
