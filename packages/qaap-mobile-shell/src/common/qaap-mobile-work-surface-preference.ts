@@ -95,3 +95,37 @@ export function hasWorkspaceRouteInUrl(): boolean {
     const hash = decodeURIComponent(window.location.hash.replace(/^#/, '').trim());
     return hash.length > 0 && hash !== '/';
 }
+
+/**
+ * Which surface the boot sequence should end up on:
+ * - `ide` — an explicit "Open IDE" choice persisted for this browser tab session.
+ * - `pending` — a Work Hub action is mid-flight (e.g. opening a project) and has not
+ *   committed to either surface yet; boot guards should hold off rather than flash.
+ * - `hub` — the default: Work Hub.
+ */
+export type WorkSurfaceBootIntent = 'hub' | 'ide' | 'pending';
+
+/** Session-scoped marker for a Work Hub action in flight before it resolves to hub/ide. */
+export const QAAP_HUB_PENDING_ACTION_KEY = 'qaap.hub.pendingAction';
+
+export function resolveWorkSurfaceBootIntent(options?: {
+    readonly preferDesktopIde?: boolean;
+    readonly hasPendingHubAction?: boolean;
+}): WorkSurfaceBootIntent {
+    const ide = options?.preferDesktopIde ?? peekPreferDesktopIde();
+    if (ide) {
+        return 'ide';
+    }
+    const pending = options?.hasPendingHubAction ?? (
+        typeof sessionStorage !== 'undefined' && sessionStorage.getItem(QAAP_HUB_PENDING_ACTION_KEY) !== null
+    );
+    if (pending) {
+        return 'pending';
+    }
+    return 'hub';
+}
+
+/** Should the early/TS boot guard hide the IDE shell? */
+export function shouldInstallWorkHubBootGuard(intent = resolveWorkSurfaceBootIntent()): boolean {
+    return intent === 'hub';
+}

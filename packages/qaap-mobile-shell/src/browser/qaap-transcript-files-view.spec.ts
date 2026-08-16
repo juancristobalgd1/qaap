@@ -11,6 +11,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 enableJSDOM();
 
 import {
+    clampTranscriptFilesTreeSize,
     defaultTranscriptFilesTreePosition,
     filterTranscriptFileTreeEntries,
     findTranscriptReadmeEntry,
@@ -21,6 +22,7 @@ import {
     resolveTranscriptFilesTreeVisible,
     shouldSkipTranscriptFilesDirectory,
     transcriptFileIconClass,
+    writeStoredTranscriptFilesTreePosition,
     type TranscriptFileTreeEntry,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
@@ -85,6 +87,38 @@ describe('qaap-transcript-files-view', () => {
     it('resolves stacked layout from tree position', () => {
         expect(isTranscriptFilesTreeStacked('bottom')).to.be.true;
         expect(isTranscriptFilesTreeStacked('side')).to.be.false;
+    });
+
+    describe('clampTranscriptFilesTreeSize', () => {
+        it('never returns less than the minimum pane size', () => {
+            expect(clampTranscriptFilesTreeSize(150, 200, 1000)).to.equal(120);
+            expect(clampTranscriptFilesTreeSize(150, 5000, 1000)).to.equal(120);
+        });
+
+        it('never returns more than maxRatio of the layout size', () => {
+            // layout = 1000 → max = 0.78 * 1000 = 780
+            expect(clampTranscriptFilesTreeSize(150, -1000, 1000)).to.equal(780);
+        });
+
+        it('tracks startSize - delta within bounds', () => {
+            expect(clampTranscriptFilesTreeSize(300, 50, 1000)).to.equal(250);
+            expect(clampTranscriptFilesTreeSize(300, -50, 1000)).to.equal(350);
+        });
+    });
+
+    it('writes the narrow-scoped key when persisting a position at a narrow viewport', () => {
+        window.localStorage.removeItem('qaap.transcriptFiles.treePosition.narrow');
+        writeStoredTranscriptFilesTreePosition('bottom', 480);
+        expect(window.localStorage.getItem('qaap.transcriptFiles.treePosition.narrow')).to.equal('bottom');
+        window.localStorage.removeItem('qaap.transcriptFiles.treePosition.narrow');
+    });
+
+    it('keeps the Files layout contract in CSS: side grid tracks, side/bottom tree borders', () => {
+        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css).to.include('minmax(0, 1fr) 5px minmax(120px');
+        expect(css).to.match(/\.theia-mobile-transcript-files-layout\.theia-mod-tree-side\s*>\s*\.theia-mobile-transcript-files-tree\s*\{\s*border-left:/);
+        expect(css).to.match(/\.theia-mobile-transcript-files-layout\.theia-mod-tree-bottom\s*>\s*\.theia-mobile-transcript-files-tree\s*\{\s*border-top:/);
     });
 
     it('defaults file tree to visible', () => {
@@ -173,6 +207,72 @@ describe('qaap-transcript-files-view', () => {
                 mount.dispose.dispose();
                 window.localStorage.removeItem('qaap.transcriptFiles.treePosition');
                 Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+            }
+        });
+
+        it('mounts the file tree beside the preview on a wide viewport', () => {
+            const originalInnerWidth = window.innerWidth;
+            const host = document.createElement('div');
+            document.body.append(host);
+            Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
+            window.localStorage.removeItem('qaap.transcriptFiles.treePosition.narrow');
+            window.localStorage.removeItem('qaap.transcriptFiles.treePosition.wide');
+
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
+            try {
+                const layout = host.querySelector('.theia-mobile-transcript-files-layout');
+                expect(layout?.classList.contains('theia-mod-tree-side')).to.be.true;
+                expect(layout?.classList.contains('theia-mod-tree-bottom')).to.be.false;
+            } finally {
+                mount.dispose.dispose();
+                Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+            }
+        });
+
+        it('re-resolves tree position on resize across the narrow/wide breakpoint without persisting', () => {
+            const originalInnerWidth = window.innerWidth;
+            const host = document.createElement('div');
+            document.body.append(host);
+            window.localStorage.removeItem('qaap.transcriptFiles.treePosition.narrow');
+            window.localStorage.removeItem('qaap.transcriptFiles.treePosition.wide');
+            Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
+
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
+            try {
+                const layout = host.querySelector('.theia-mobile-transcript-files-layout');
+                expect(layout?.classList.contains('theia-mod-tree-side')).to.be.true;
+
+                Object.defineProperty(window, 'innerWidth', { configurable: true, value: 480 });
+                // Prefer `window.Event` — jsdom rejects cross-realm `Event` on `dispatchEvent`.
+                // `onWindowResize` falls back to sync layout when rAF is missing (common in jsdom).
+                window.dispatchEvent(new window.Event('resize'));
+
+                expect(layout?.classList.contains('theia-mod-tree-bottom')).to.be.true;
+                // Resize only re-resolves visually — it must not write the scoped storage.
+                expect(window.localStorage.getItem('qaap.transcriptFiles.treePosition.narrow')).to.be.null;
+            } finally {
+                mount.dispose.dispose();
+                window.localStorage.removeItem('qaap.transcriptFiles.treePosition.narrow');
+                window.localStorage.removeItem('qaap.transcriptFiles.treePosition.wide');
+                Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+            }
+        });
+
+        it('keeps the preview | split-handle | tree DOM order (no reordering)', () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            const mount = mountTranscriptFilesView(host, '/repo', createServices());
+
+            try {
+                const layout = host.querySelector<HTMLElement>('.theia-mobile-transcript-files-layout');
+                const children = layout ? Array.from(layout.children) : [];
+                expect(children.map(child => child.className)).to.deep.equal([
+                    'theia-mobile-transcript-files-preview',
+                    'theia-mobile-transcript-files-split-handle',
+                    'theia-mobile-transcript-files-tree',
+                ]);
+            } finally {
+                mount.dispose.dispose();
             }
         });
 

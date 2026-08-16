@@ -11,6 +11,7 @@ import {
     markPreferDesktopIde,
     peekPreferAgentsSurface,
     peekPreferDesktopIde,
+    shouldInstallWorkHubBootGuard,
 } from '../common/qaap-mobile-work-surface-preference';
 
 export {
@@ -21,8 +22,12 @@ export {
     markPreferDesktopIde,
     peekPreferAgentsSurface,
     peekPreferDesktopIde,
+    resolveWorkSurfaceBootIntent,
+    shouldInstallWorkHubBootGuard,
+    QAAP_HUB_PENDING_ACTION_KEY,
     QAAP_MOBILE_PREFER_AGENTS_SURFACE_KEY,
     QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY,
+    type WorkSurfaceBootIntent,
 } from '../common/qaap-mobile-work-surface-preference';
 
 /** Set before navigating to a workspace from the mobile Projects panel. */
@@ -199,11 +204,11 @@ export function installMobileWorkHubBootGuard(): void {
     if (typeof document === 'undefined' || typeof window === 'undefined') {
         return;
     }
-    const hasPendingHubAction = typeof sessionStorage !== 'undefined'
-        && sessionStorage.getItem('qaap.hub.pendingAction') !== null;
     // `homeVisible` is intentionally NOT a skip: the Work Hub Home is a hub surface, so the guard
     // must keep the IDE hidden on reload until the home mounts (applyLandingChrome releases it).
-    if (peekPreferDesktopIde() || hasPendingHubAction) {
+    // A `pending` boot intent (Work Hub action mid-flight) also skips the guard — same as an
+    // explicit IDE preference — so it never flashes the guard on top of an in-flight navigation.
+    if (!shouldInstallWorkHubBootGuard()) {
         return;
     }
     // Work Hub is the default surface on every viewport. The guard is lifted once the

@@ -583,11 +583,12 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return queuePeerRunMessageExtracted(this, summary, entry);
     }
 
+    /** Resolves `false` when the mirror to durable server storage could not be confirmed. */
     protected async mirrorFollowUpToServerQueue(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         entry: TranscriptFollowUpEntry,
-    ): Promise<void> {
+    ): Promise<boolean> {
         return mirrorFollowUpToServerQueueExtracted(this, project, summary, entry);
     }
 

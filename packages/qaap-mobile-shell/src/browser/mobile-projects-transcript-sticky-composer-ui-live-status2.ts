@@ -201,6 +201,10 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
         // Busy follow-up: Queue stays in the composer popover (Edit / Send now / wait).
         // Parallel / Interrupt bypass that UI and POST immediately. Queue is also mirrored
         // to durable server pendingUserMessages so F5 does not drop the follow-up.
+        //
+        // The draft is kept in the composer until the follow-up is actually captured —
+        // locally queued or accepted by the peer-run POST. If either fails, the user still
+        // has their text and attachments in the box instead of losing them to a toast.
         const deliveryMode = resolveBusyFollowUpDeliveryMode({
             forceDeliveryMode: options.forceDeliveryMode,
         });
@@ -217,15 +221,41 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
             imagePreviews,
             deliveryMode,
         };
-        clearComposerDraft();
-        const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
-        input?.dispatchEvent(new Event('input', { bubbles: true }));
-        ctx.host.transcriptComposerSendRefresh?.();
+        const refreshComposerAfterCapture = (): void => {
+            clearComposerDraft();
+            const input = ctx.host.transcriptComposerHost?.querySelector('.theia-mobile-projects-sticky-composer-input');
+            input?.dispatchEvent(new Event('input', { bubbles: true }));
+            ctx.host.transcriptComposerSendRefresh?.();
+        };
         if (shouldBypassLocalFollowUpQueue(deliveryMode)) {
-            void ctx.startPeerRunOrQueue(project, summary, entry);
-        } else {
-            ctx.queuePeerRunMessage(summary, entry);
-            void ctx.mirrorFollowUpToServerQueue(project, summary, entry);
+            const ok = await ctx.startPeerRunOrQueue(project, summary, entry);
+            if (!ok) {
+                restoreComposerSubmission();
+                ctx.host.messageService?.warn(nls.localize(
+                    'qaap/mobileProjects/followUpSendFailedRestored',
+                    'Could not send the follow-up. Your draft and attachments were restored.',
+                ));
+                ctx.remountTranscriptStickyComposer();
+                return;
+            }
+            refreshComposerAfterCapture();
+            ctx.remountTranscriptStickyComposer();
+            return;
+        }
+        const queued = ctx.queuePeerRunMessage(summary, entry);
+        if (!queued) {
+            // queuePeerRunMessage already surfaced the "queue full" error.
+            restoreComposerSubmission();
+            ctx.remountTranscriptStickyComposer();
+            return;
+        }
+        refreshComposerAfterCapture();
+        const mirrored = await ctx.mirrorFollowUpToServerQueue(project, summary, entry);
+        if (mirrored === false) {
+            ctx.host.messageService?.warn(nls.localize(
+                'qaap/mobileProjects/followUpMirrorFailed',
+                'Queued locally; could not sync to server. It may not survive reload.',
+            ));
         }
         ctx.remountTranscriptStickyComposer();
         return;
