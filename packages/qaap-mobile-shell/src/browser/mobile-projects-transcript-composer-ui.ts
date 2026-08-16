@@ -314,22 +314,27 @@ export class MobileProjectsTranscriptComposerUi {
                 onSelectAgent: (agentId, model) => {
                     this.host.transcriptComposerPinnedAgentId = agentId;
                     this.host.transcriptComposerPrefsConvId = summary.id;
-                    this.host.transcriptComposerAgentModel = model;
-                    if (cwd) {
-                        writeStoredAgent(cwd, agentId);
-                        if (model) {
-                            writeStoredAgentModel(cwd, agentId, model);
+                    void (async (): Promise<void> => {
+                        let resolvedModel = model;
+                        if (cwd) {
+                            writeStoredAgent(cwd, agentId);
+                            if (model) {
+                                writeStoredAgentModel(cwd, agentId, model);
+                            } else {
+                                resolvedModel = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+                            }
                         }
-                    }
-                    const modes = resolveStickyComposerModes(agentId, this.host.chatAgentService);
-                    this.host.transcriptComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
-                    if (cwd && this.host.transcriptComposerModeId) {
-                        writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
-                    }
-                    this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
-                    this.closeAllComposerSheets();
-                    this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-                    options?.onSelectionApplied?.();
+                        this.host.transcriptComposerAgentModel = resolvedModel;
+                        const modes = resolveStickyComposerModes(agentId, this.host.chatAgentService);
+                        this.host.transcriptComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
+                        if (cwd && this.host.transcriptComposerModeId) {
+                            writeStoredComposerMode(cwd, this.host.transcriptComposerModeId);
+                        }
+                        this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
+                        this.closeAllComposerSheets();
+                        this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
+                        options?.onSelectionApplied?.();
+                    })();
                 },
                 });
             }).catch(() => {
