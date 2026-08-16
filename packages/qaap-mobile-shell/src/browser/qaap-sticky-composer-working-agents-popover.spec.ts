@@ -239,7 +239,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-title')?.textContent)
             .to.equal('Parent task');
         expect(rows[0].querySelectorAll('.qaap-working-loader-dot')).to.have.length(6);
-        expect(rows[0].querySelector('.qaap-working-agents-popover-cloud')).to.not.equal(null);
+        expect(rows[0].querySelector('.qaap-working-agents-popover-cloud')).to.equal(null);
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-stop')?.textContent).to.equal('Stop');
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-main')?.getAttribute('aria-label'))
             .to.contain('run parent');
@@ -307,7 +307,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             .to.equal('Review the latest pull request: summarize changes');
         expect(detail?.querySelector('.qaap-working-agents-popover-back')).to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-header .qaap-working-agents-popover-cloud'))
-            .to.not.equal(null);
+            .to.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-expand .codicon-screen-full'))
             .to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-close .codicon-chevron-down')).to.not.equal(null);
