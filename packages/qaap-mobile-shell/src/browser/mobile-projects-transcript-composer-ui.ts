@@ -315,7 +315,9 @@ export class MobileProjectsTranscriptComposerUi {
                     this.host.transcriptComposerPinnedAgentId = agentId;
                     this.host.transcriptComposerPrefsConvId = summary.id;
                     void (async (): Promise<void> => {
-                        let resolvedModel = model;
+                        let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
+                            ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
+                            : undefined;
                         if (cwd) {
                             writeStoredAgent(cwd, agentId);
                             if (model) {
