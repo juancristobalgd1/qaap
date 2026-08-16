@@ -8,6 +8,7 @@ import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import {
     agentWebGenerationPassesQualityGate,
     evaluateWebGenerationQuality,
+    messageExplicitlyRequestsWebPage,
     messageRequestsWebGeneration,
 } from './qaap-agent-web-generation-quality-gate';
 
@@ -20,6 +21,15 @@ describe('qaap-agent-web-generation-quality-gate', () => {
         expect(messageRequestsWebGeneration(RIOJA_PROMPT)).to.equal(true);
         expect(messageRequestsWebGeneration('Crea una página web con Vite')).to.equal(true);
         expect(messageRequestsWebGeneration('refactor auth module')).to.equal(false);
+    });
+
+    it('does not treat a title change on an existing page as a landing-page rewrite', () => {
+        const prompt = 'Analiza este proyecto y explícame brevemente su arquitectura. '
+            + 'Luego cambia el título principal visible de la página a PROJECT-A-TEST.';
+        expect(messageRequestsWebGeneration(prompt)).to.equal(false);
+        expect(messageExplicitlyRequestsWebPage(prompt)).to.equal(false);
+        expect(messageExplicitlyRequestsWebPage('Crea una página web para vinos Rioja')).to.equal(true);
+        expect(messageExplicitlyRequestsWebPage('Crea una página de aterrizaje para vinos')).to.equal(true);
     });
 
     it('rejects scaffold-only turns without UI customization', () => {
