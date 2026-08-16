@@ -8,7 +8,9 @@ import {
     agentSupportsModelPicker,
     agentUsesNativeModelCatalog,
     agentUsesSettingsModelCatalog,
+    ensureStoredAgentModel,
     isStoredAgentModelUsable,
+    pickDefaultAgentModel,
     readStoredAgentModel,
     resolveAgentModelForSubmit,
     writeStoredAgentModel,
@@ -97,5 +99,22 @@ describe('qaap-agent-model-selection', () => {
         writeStoredAgentModel(cwd, 'opencode', stored);
         expect(resolveAgentModelForSubmit('opencode', cwd, runtime)).to.deep.equal(runtime);
         expect(resolveAgentModelForSubmit('opencode', cwd)).to.deep.equal(stored);
+    });
+
+    it('ensureStoredAgentModel seeds the first usable catalog entry when empty', () => {
+        const cwd = '/repo';
+        expect(readStoredAgentModel(cwd, 'opencode')).to.be.undefined;
+        const catalog = [
+            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' },
+        ];
+        expect(pickDefaultAgentModel(catalog)?.modelId).to.equal('opencode/claude-sonnet-4-6');
+        const seeded = ensureStoredAgentModel(cwd, 'opencode', catalog);
+        expect(seeded?.modelId).to.equal('opencode/claude-sonnet-4-6');
+        expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/claude-sonnet-4-6');
+        const again = ensureStoredAgentModel(cwd, 'opencode', [
+            { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' },
+        ]);
+        expect(again?.modelId).to.equal('opencode/claude-sonnet-4-6');
     });
 });

@@ -302,19 +302,23 @@ export function openStickyComposerAgentSheetExtracted(ctx: any, project: MobileP
                 includeCoder: true,
                 onSelectAgent: (agentId, model) => {
                     ctx.host.stickyComposerPinnedAgentId = agentId;
-                    if (cwd) {
-                        writeStoredAgent(cwd, agentId);
-                        if (model) {
-                            writeStoredAgentModel(cwd, agentId, model);
+                    void (async (): Promise<void> => {
+                        if (cwd) {
+                            writeStoredAgent(cwd, agentId);
+                            if (model) {
+                                writeStoredAgentModel(cwd, agentId, model);
+                            } else {
+                                await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+                            }
                         }
-                    }
-                    const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
-                    ctx.host.stickyComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
-                    if (cwd && ctx.host.stickyComposerModeId) {
-                        writeStoredComposerMode(cwd, ctx.host.stickyComposerModeId);
-                    }
-                    ctx.closeAllComposerSheets();
-                    ctx.host.stickyComposerRenderUi.renderStickyComposer();
+                        const modes = resolveStickyComposerModes(agentId, ctx.host.chatAgentService);
+                        ctx.host.stickyComposerModeId = reconcileComposerModeId(undefined, modes, cwd);
+                        if (cwd && ctx.host.stickyComposerModeId) {
+                            writeStoredComposerMode(cwd, ctx.host.stickyComposerModeId);
+                        }
+                        ctx.closeAllComposerSheets();
+                        ctx.host.stickyComposerRenderUi.renderStickyComposer();
+                    })();
                 },
                 onProactiveLogin: ctx.host.openAgentSignInTerminal
                     ? agentId => {
@@ -386,17 +390,24 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: any, project: Mob
                     agentsIntro,
                     onSelectAgent: (agentId, model) => {
                         ctx.host.stickyComposerPinnedAgentId = agentId;
-                        if (cwd) {
-                            writeStoredAgent(cwd, agentId);
-                            if (model) {
-                                writeStoredAgentModel(cwd, agentId, model);
+                        void (async (): Promise<void> => {
+                            let resolvedModel: QaapCreateAgentTaskQaiqModel | undefined = model
+                                ? { provider: model.provider, vendor: model.vendor, modelId: model.modelId }
+                                : undefined;
+                            if (cwd) {
+                                writeStoredAgent(cwd, agentId);
+                                if (model) {
+                                    writeStoredAgentModel(cwd, agentId, model);
+                                } else {
+                                    resolvedModel = await ctx.host.stickyComposerAgentsUi.ensureStickyComposerAgentModel(agentId, cwd);
+                                }
                             }
-                        }
-                        ctx.closeAllComposerSheets();
-                        void ctx.host.submitExternalComposerPrompt?.(draft, {
-                            agentId,
-                            ...(model ? { agentModel: model } : {}),
-                        });
+                            ctx.closeAllComposerSheets();
+                            void ctx.host.submitExternalComposerPrompt?.(draft, {
+                                agentId,
+                                ...(resolvedModel ? { agentModel: resolvedModel } : {}),
+                            });
+                        })();
                     },
                 });
             }).catch(() => {

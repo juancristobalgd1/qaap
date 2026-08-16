@@ -330,6 +330,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(chatOption?.querySelector('.qaap-icon-message-circle')).to.exist;
         const trigger = strip.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui)');
         expect(trigger?.querySelector('.theia-mobile-transcript-tab-icon-select-symbol')?.classList.contains('qaap-icon-message-circle')).to.equal(true);
+        expect(trigger?.querySelector('.theia-mobile-transcript-tab-icon-select-chevron.codicon-chevron-down')).to.not.equal(null);
         expect(trigger?.getAttribute('aria-label')).to.equal('Chat, Change view');
         expect(trigger?.title).to.equal('Chat');
         expect(strip.querySelector('.theia-mobile-transcript-terminal-agent-tui')).to.equal(null);

@@ -190,3 +190,48 @@ export function resolveStoredAgentModelForSubmit(
 ): QaapAgentModelSelection | undefined {
     return resolveAgentModelForSubmit(agentId, cwd);
 }
+
+/** First catalog entry that is still usable as a composer default. */
+export function pickDefaultAgentModel(
+    models: readonly QaapQaiqModelOption[],
+): QaapQaiqModelOption | undefined {
+    for (const model of models) {
+        const candidate: QaapAgentModelSelection = {
+            provider: model.provider,
+            vendor: model.vendor,
+            modelId: model.modelId,
+        };
+        if (isStoredAgentModelUsable(candidate)) {
+            return model;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Persist a usable model when a model-capable agent has none selected.
+ * Returns the existing or newly written selection (undefined if catalog empty).
+ */
+export function ensureStoredAgentModel(
+    cwd: string | undefined,
+    agentId: string | undefined,
+    models: readonly QaapQaiqModelOption[],
+): QaapAgentModelSelection | undefined {
+    if (!cwd || !agentId || !agentSupportsModelPicker(agentId)) {
+        return undefined;
+    }
+    const existing = readStoredAgentModel(cwd, agentId);
+    if (existing) {
+        return existing;
+    }
+    const picked = pickDefaultAgentModel(models);
+    if (!picked) {
+        return undefined;
+    }
+    writeStoredAgentModel(cwd, agentId, picked);
+    return {
+        provider: picked.provider,
+        vendor: picked.vendor,
+        modelId: picked.modelId,
+    };
+}

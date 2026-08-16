@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 enableJSDOM();
@@ -24,6 +26,12 @@ import {
 } from './qaap-transcript-files-view';
 
 describe('qaap-transcript-files-view', () => {
+    it('hides Files/Changes labels on narrow or coarse pointers', () => {
+        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css).to.match(/@media \(max-width: 767px\),\s*\(pointer: coarse\)[\s\S]*?\.theia-mobile-transcript-files-view-mode-btn-label\s*\{\s*display:\s*none;/);
+    });
+
     const entry = (name: string, relativePath: string, isDirectory = false): TranscriptFileTreeEntry => ({
         name,
         resourcePath: `file:///repo/${relativePath}`,
@@ -322,6 +330,12 @@ describe('qaap-transcript-files-view', () => {
                 expect(tree).to.exist;
                 expect(layout?.classList.contains('theia-mod-tree-hidden')).to.equal(false);
                 expect(host.querySelector('.theia-mobile-transcript-files-empty')).to.exist;
+                expect(filesBtn.getAttribute('aria-label')).to.equal('Files');
+                expect(changesBtn.getAttribute('aria-label')).to.equal('Changes');
+                expect(filesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-icon')).to.exist;
+                expect(changesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-icon')).to.exist;
+                expect(filesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-label')?.textContent).to.equal('Files');
+                expect(changesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-label')?.textContent).to.equal('Changes');
 
                 changesBtn.click();
                 expect(root?.classList.contains('theia-mod-files-view-changes')).to.equal(true);

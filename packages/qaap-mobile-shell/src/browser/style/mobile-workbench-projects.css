@@ -119,8 +119,30 @@
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   min-width: 0;
+}
+
+/*
+ * Mobile header actions (+ / ⋮ / Chat): pack as a tight group.
+ * 36px hit targets (gap 0, no outer margin) stay tappable while icons
+ * read closer together than the previous ~40–44px + 2px margin rhythm.
+ */
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-projects-header-execution-cluster>.theia-workbench-nav-btn,
+  .theia-mobile-projects-header-execution-cluster .theia-mobile-projects-new-chat-btn,
+  .theia-mobile-projects-header-execution-cluster .qaap-work-hub-toolbar-menu-button {
+    width: 36px;
+    min-width: 36px;
+    max-width: 36px;
+    height: 36px;
+    min-height: 36px;
+    max-height: 36px;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 36px;
+  }
 }
 
 .theia-mobile-projects-header-preview-run {

@@ -951,13 +951,13 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-execution-cluster .theia-mobile-projects-new-chat-btn {
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
-  max-width: 44px;
-  max-height: 44px;
-  flex: 0 0 44px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  max-width: 36px;
+  max-height: 36px;
+  flex: 0 0 36px;
 }
 
 .theia-mobile-agents-hub-inline-transcript .theia-mobile-agent-transcript.theia-mod-empty-chat {
@@ -3262,7 +3262,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   transform: translateY(0) scale(1);
 }
 
-/* Header — same layout as qaap-working-agents-popover-header */
+/* Header — same layout as qaap-working-agents-popover-header; no divider for a cleaner stack. */
 .qaap-queue-expand-header {
   display: flex;
   align-items: center;
@@ -3271,7 +3271,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 0 0 auto;
   min-height: 36px;
   padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  border-bottom: none;
 }
 
 .qaap-queue-expand-title {
@@ -3987,6 +3987,14 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   min-width: 0;
 }
 
+.theia-mobile-sticky-composer-activity-section:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
+  flex: 1 0 100%;
+  align-self: stretch;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+}
+
 .theia-mobile-sticky-composer-changes-pill-host {
   flex: 0 0 auto;
   display: flex;
@@ -4342,9 +4350,12 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  flex: 1 1 100%;
+  /* Match Queued: flex-shrink 0 + min-width 100% so short titles cannot
+     collapse the panel to content width (~180px) inside the pill row. */
+  flex: 1 0 100%;
   align-self: stretch;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
@@ -4360,18 +4371,25 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   justify-content: stretch;
   padding-left: 0;
   padding-right: 0;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
   flex-wrap: wrap;
+  min-width: 100%;
+  width: 100%;
   overflow-x: hidden;
   overflow-y: visible;
   align-items: stretch;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)>.theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  flex: 1 1 100%;
+  flex: 1 0 100%;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
   margin-left: 0;
 }
@@ -4608,13 +4626,17 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-working-control.theia-mod-expanded.theia-mod-detail {
+  flex: 1 0 100%;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
   align-self: stretch;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded.theia-mod-detail)>.theia-mobile-sticky-composer-working-control.theia-mod-expanded {
+  flex: 1 0 100%;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
 }
 
@@ -5123,18 +5145,6 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   white-space: nowrap;
   border: 0;
   pointer-events: none;
-}
-
-.qaap-working-agents-popover-cloud {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  opacity: 0.55;
-  color: var(--theia-descriptionForeground, var(--theia-foreground));
 }
 
 .qaap-working-agents-popover-row-stop {

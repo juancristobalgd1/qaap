@@ -479,14 +479,6 @@ function createWorkingAgentsCloseButton(onClose: () => void): HTMLButtonElement 
     return closeBtn;
 }
 
-function createWorkingAgentsCloudBadge(): HTMLElement {
-    const cloud = document.createElement('span');
-    cloud.className = 'qaap-working-agents-popover-cloud codicon codicon-cloud';
-    cloud.setAttribute('aria-hidden', 'true');
-    cloud.title = nls.localize('qaap/workHubChrome/workingCloudAgent', 'Cloud agent');
-    return cloud;
-}
-
 function createWorkingAgentsRowStopButton(
     member: WorkHubTeamMember,
     onStop: (member: WorkHubTeamMember) => boolean | void | Promise<boolean | void>,
@@ -675,7 +667,7 @@ export function renderWorkingAgentsDetailPanel(options: {
         options.onToggleLarge();
     });
 
-    actions.append(createWorkingAgentsCloudBadge(), expandBtn, createWorkingAgentsCloseButton(options.onClose));
+    actions.append(expandBtn, createWorkingAgentsCloseButton(options.onClose));
     header.append(back, title, actions);
 
     const body = document.createElement('div');
@@ -811,7 +803,6 @@ function renderWorkingAgentsPopoverRow(
         row.append(progressTrack);
         row.classList.add('qaap-mod-has-progress');
     }
-    row.append(createWorkingAgentsCloudBadge());
     if (onStop && isWorkingAgentStatusLive(entry.member)) {
         row.append(createWorkingAgentsRowStopButton(entry.member, onStop));
     }

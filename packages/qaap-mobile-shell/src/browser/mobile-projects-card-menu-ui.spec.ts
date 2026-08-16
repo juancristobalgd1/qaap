@@ -101,4 +101,47 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
         (retry as HTMLElement).click();
         expect(retried).to.equal(true);
     });
+
+    it('uses pin icons for the high-priority (pin) action', () => {
+        const target = project({ id: 'alpha' });
+        const host = {
+            chatService: undefined,
+            conversations: undefined,
+            conversationIndexUi: {
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            conversationFlags: { /* present so flag actions stay enabled */ },
+            ensureOverlayUi: () => ({ parallel: { openParallelRunsSheet: () => undefined } }),
+            onRetryConversation: async () => undefined,
+            onForkConversation: async () => undefined,
+            onRunVariants: async () => undefined,
+            onRenameConversation: async () => undefined,
+            onSetConversationPriority: async () => undefined,
+            onSetConversationPaused: async () => undefined,
+            onCancelConversation: async () => undefined,
+            onArchiveConversation: async () => undefined,
+            onDeleteConversation: async () => undefined,
+            openConversationSummary: async () => undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+
+        const ui = new MobileProjectsCardMenuUi(host);
+        const menu = ui.buildConversationMenu(target, {
+            id: 'c1',
+            title: 'Find and fix a bug',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 2,
+            agentId: 'qaiq',
+            cwd: '/repo',
+            source: 'vps',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Hello',
+        } as never);
+        const priority = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
+            .find(item => item.textContent?.trim() === 'Pin');
+        expect(priority).to.not.equal(undefined);
+        expect(priority?.querySelector('.codicon-pin')).to.not.equal(null);
+        expect(priority?.querySelector('.codicon-star-empty')).to.equal(null);
+    });
 });

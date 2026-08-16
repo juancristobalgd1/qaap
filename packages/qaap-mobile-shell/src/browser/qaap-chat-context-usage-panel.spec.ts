@@ -17,12 +17,12 @@ import {
 } from './qaap-chat-context-usage-panel';
 
 describe('qaap-chat-context-usage-panel', () => {
-    it('uses one neutral row surface and a violet Prompt context swatch', () => {
+    it('uses flat transparent rows and a violet Prompt context swatch', () => {
         const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
         const css = fs.readFileSync(cssPath, 'utf8');
         expect(css).to.include('.qaap-chat-context-usage-panel-row {');
         expect(css).to.include('border: none');
-        expect(css).to.include('background: color-mix(in srgb, var(--theia-foreground) 3%, transparent)');
+        expect(css).to.match(/\.qaap-chat-context-usage-panel-row\s*\{[^}]*background:\s*transparent;/s);
         expect(css).to.include('.qaap-chat-context-usage-panel-swatch.theia-mod-prompt-context');
         expect(css).to.include('background: #a78bfa');
         expect(css).not.to.include('.qaap-chat-context-usage-panel-row.theia-mod-prompt-context');

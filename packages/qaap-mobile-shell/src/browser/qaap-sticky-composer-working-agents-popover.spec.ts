@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import {
@@ -30,6 +32,20 @@ import {
 import { buildWorkingAgentDetailActivityFeed } from './qaap-sticky-composer-working-detail-activity';
 
 describe('qaap-sticky-composer-working-agents-popover', () => {
+    it('locks expanded Working to full composer width (no flex-shrink to content)', () => {
+        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css).to.match(
+            /\.theia-mobile-sticky-composer-working-control\.theia-mod-expanded\s*\{[^}]*flex:\s*1 0 100%;[^}]*min-width:\s*100%;/s,
+        );
+        expect(css).to.match(
+            /\.theia-mobile-sticky-composer-changes-pill-host:has\(\.theia-mobile-sticky-composer-working-control\.theia-mod-expanded\)\s*\{[^}]*min-width:\s*100%;/s,
+        );
+        expect(css).to.match(
+            /\.theia-mobile-sticky-composer-changes-pill-row:has\(\.theia-mobile-sticky-composer-working-control\.theia-mod-expanded\)\s*\{[^}]*min-width:\s*100%;/s,
+        );
+    });
+
     let disableJSDOM: () => void;
 
     before(() => {
@@ -239,7 +255,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-title')?.textContent)
             .to.equal('Parent task');
         expect(rows[0].querySelectorAll('.qaap-working-loader-dot')).to.have.length(6);
-        expect(rows[0].querySelector('.qaap-working-agents-popover-cloud')).to.not.equal(null);
+        expect(rows[0].querySelector('.qaap-working-agents-popover-cloud')).to.equal(null);
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-stop')?.textContent).to.equal('Stop');
         expect(rows[0].querySelector('.qaap-working-agents-popover-row-main')?.getAttribute('aria-label'))
             .to.contain('run parent');
@@ -307,7 +323,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             .to.equal('Review the latest pull request: summarize changes');
         expect(detail?.querySelector('.qaap-working-agents-popover-back')).to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-header .qaap-working-agents-popover-cloud'))
-            .to.not.equal(null);
+            .to.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-expand .codicon-screen-full'))
             .to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-close .codicon-chevron-down')).to.not.equal(null);

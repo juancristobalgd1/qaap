@@ -8,6 +8,8 @@ import { ChatAgent } from '@theia/ai-chat';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import {
     agentSupportsModelPicker,
+    ensureStoredAgentModel,
+    fetchAgentModelsForAgent,
     filterQaapComposerAgents,
     isTheiaCoderAgent,
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
@@ -85,6 +87,34 @@ export class MobileProjectsStickyComposerAgentsUi {
             : undefined);
         return readStoredAgentModel(cwd, agentId);
     }
+
+    /**
+     * Model-capable agents must always have a concrete model so the toolbar
+     * never falls back to logo-only (user cannot tell which model will run).
+     */
+    async ensureStickyComposerAgentModel(
+        agentId: string,
+        cwd: string | undefined,
+        preferredModels?: readonly QaapQaiqModelOption[],
+    ): Promise<QaapCreateAgentTaskQaiqModel | undefined> {
+        if (!cwd || !agentSupportsModelPicker(agentId)) {
+            return undefined;
+        }
+        const existing = readStoredAgentModel(cwd, agentId);
+        if (existing) {
+            return existing;
+        }
+        let catalog = preferredModels ?? [];
+        if (catalog.length === 0) {
+            try {
+                catalog = await fetchAgentModelsForAgent(agentId);
+            } catch {
+                catalog = [];
+            }
+        }
+        return ensureStoredAgentModel(cwd, agentId, catalog);
+    }
+
     resolveStickyComposerModelLabel(
         agentId: string,
         project?: MobileProjectEntry,
@@ -133,8 +163,16 @@ export class MobileProjectsStickyComposerAgentsUi {
                 snapshot.defaultAgent,
                 cwd,
             );
-            if (this.host.stickyComposerPinnedAgentId !== resolved) {
-                this.host.stickyComposerPinnedAgentId = resolved;
+            const agentChanged = this.host.stickyComposerPinnedAgentId !== resolved;
+            this.host.stickyComposerPinnedAgentId = resolved;
+            const hadModel = !!readStoredAgentModel(cwd, resolved);
+            await this.ensureStickyComposerAgentModel(
+                resolved,
+                cwd,
+                resolved === 'qaiq' ? snapshot.qaiqModels : undefined,
+            );
+            const seededModel = !hadModel && !!readStoredAgentModel(cwd, resolved);
+            if (agentChanged || seededModel) {
                 this.host.stickyComposerRenderUi.renderStickyComposer();
             }
             return true;
