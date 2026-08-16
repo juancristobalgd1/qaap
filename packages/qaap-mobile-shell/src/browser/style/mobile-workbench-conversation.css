@@ -12124,14 +12124,18 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
 body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
   margin-top: 0 !important;
   padding: 8px 12px 12px;
-  border-top: none;
+  border-top: none !important;
   background: var(--theia-panel-background, var(--theia-sideBar-background));
   box-sizing: border-box;
 }
 
-/* Work Hub chat (any body chrome): never draw a separator above the sticky composer. */
+/*
+ * Never draw a hairline between transcript scroll and sticky composer (Work Hub chat,
+ * agents hub, or classic IDE embedded chat). The composer lip stays flush with chips.
+ */
+.theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]),
 .qaap-work-hub-chat-view-panel.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
-  border-top: none;
+  border-top: none !important;
 }
 
 body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-inner {
