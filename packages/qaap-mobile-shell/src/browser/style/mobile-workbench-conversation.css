@@ -2293,7 +2293,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
   gap: 0;
   min-height: 44px;
   padding: 0 8px 0 4px;
-  border-bottom: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.12));
+  border-bottom: none;
   background: var(--theia-editor-background);
 }
 
