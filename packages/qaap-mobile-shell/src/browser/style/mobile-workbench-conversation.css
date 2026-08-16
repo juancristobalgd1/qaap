@@ -12119,13 +12119,19 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
  * Classic IDE chat panel: keep the composer functional, but use the quieter panel/input
  * surfaces of the IDE instead of the floating mobile glass treatment. This stays scoped to the
  * embedded chat widget so the standalone Work Hub keeps its existing composer appearance.
+ * No hairline between transcript scroll and composer — seamless lip with the empty-chat chips.
  */
 body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
   margin-top: 0 !important;
   padding: 8px 12px 12px;
-  border-top: 1px solid var(--theia-panel-border, var(--theia-widget-border));
+  border-top: none;
   background: var(--theia-panel-background, var(--theia-sideBar-background));
   box-sizing: border-box;
+}
+
+/* Work Hub chat (any body chrome): never draw a separator above the sticky composer. */
+.qaap-work-hub-chat-view-panel.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
+  border-top: none;
 }
 
 body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-inner {
