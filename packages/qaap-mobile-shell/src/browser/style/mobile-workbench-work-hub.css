@@ -3262,7 +3262,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   transform: translateY(0) scale(1);
 }
 
-/* Header — same layout as qaap-working-agents-popover-header */
+/* Header — same layout as qaap-working-agents-popover-header; no divider for a cleaner stack. */
 .qaap-queue-expand-header {
   display: flex;
   align-items: center;
@@ -3271,7 +3271,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   flex: 0 0 auto;
   min-height: 36px;
   padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  border-bottom: none;
 }
 
 .qaap-queue-expand-title {
