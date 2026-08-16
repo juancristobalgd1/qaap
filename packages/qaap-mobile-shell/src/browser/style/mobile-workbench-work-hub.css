@@ -3987,6 +3987,14 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   min-width: 0;
 }
 
+.theia-mobile-sticky-composer-activity-section:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
+  flex: 1 0 100%;
+  align-self: stretch;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+}
+
 .theia-mobile-sticky-composer-changes-pill-host {
   flex: 0 0 auto;
   display: flex;
@@ -4342,9 +4350,12 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  flex: 1 1 100%;
+  /* Match Queued: flex-shrink 0 + min-width 100% so short titles cannot
+     collapse the panel to content width (~180px) inside the pill row. */
+  flex: 1 0 100%;
   align-self: stretch;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--theia-foreground) 16%, transparent);
@@ -4360,18 +4371,25 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   justify-content: stretch;
   padding-left: 0;
   padding-right: 0;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded) {
   flex-wrap: wrap;
+  min-width: 100%;
+  width: 100%;
   overflow-x: hidden;
   overflow-y: visible;
   align-items: stretch;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded)>.theia-mobile-sticky-composer-working-control.theia-mod-expanded {
-  flex: 1 1 100%;
+  flex: 1 0 100%;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
   margin-left: 0;
 }
@@ -4608,13 +4626,17 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 }
 
 .theia-mobile-sticky-composer-working-control.theia-mod-expanded.theia-mod-detail {
+  flex: 1 0 100%;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
   align-self: stretch;
 }
 
 .theia-mobile-sticky-composer-changes-pill-row:has(.theia-mobile-sticky-composer-working-control.theia-mod-expanded.theia-mod-detail)>.theia-mobile-sticky-composer-working-control.theia-mod-expanded {
+  flex: 1 0 100%;
   width: 100%;
+  min-width: 100%;
   max-width: 100%;
 }
 
