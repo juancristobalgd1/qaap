@@ -17,26 +17,20 @@ describe('qaap-agent-interactive-approvals', () => {
         expect(usesInteractiveAgentApprovals({ approvalPolicyId: 'full-access', autoApprove: true })).to.equal(false);
     });
 
-    it('treats default approve-for-me (shell auto) as non-interactive', () => {
+    it('treats approve-for-me as interactive so Allow/Deny cards can surface queued high-risk tools', () => {
         expect(usesInteractiveAgentApprovals({
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
-        })).to.equal(false);
-    });
-
-    it('treats approve-for-me without shell auto as interactive', () => {
+        })).to.equal(true);
+        expect(usesInteractiveAgentApprovals({
+            approvalPolicyId: 'approve-for-me',
+            autoApprove: true,
+            toolApprovalRules: { shell: true, network: true },
+        })).to.equal(true);
         expect(usesInteractiveAgentApprovals({
             approvalPolicyId: 'approve-for-me',
             autoApprove: true,
             toolApprovalRules: { shell: false, network: false },
         })).to.equal(true);
-    });
-
-    it('treats approve-for-me with shell+network auto as non-interactive', () => {
-        expect(usesInteractiveAgentApprovals({
-            approvalPolicyId: 'approve-for-me',
-            autoApprove: true,
-            toolApprovalRules: { shell: true, network: true },
-        })).to.equal(false);
     });
 });

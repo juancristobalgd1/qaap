@@ -15,8 +15,8 @@ export interface QaapInteractiveApprovalOptions {
 
 /**
  * Whether a VPS agent run can pause mid-turn for tool permission approval.
- * True for "request approval", explicit YOLO-off, and "approve for me" when shell is not
- * auto-approved — without shell, headless QAIQ cannot run Bash without the stdio control protocol.
+ * True for "request approval", explicit YOLO-off, and "approve for me" — QAIQ stdio may
+ * queue high-risk / gated tools for the Allow/Deny card above the composer.
  */
 export function usesInteractiveAgentApprovals(options: QaapInteractiveApprovalOptions): boolean {
     if (options.autoApprove === false || options.approvalPolicyId === 'request-approval') {
@@ -28,11 +28,10 @@ export function usesInteractiveAgentApprovals(options: QaapInteractiveApprovalOp
     if (policyId === 'full-access') {
         return false;
     }
-    const rules = reconcileAgentToolApprovalRules(policyId, options.cwd, options.toolApprovalRules);
-    // approve-for-me with shell auto uses headless QAIQ --allowed-tools (incl. Bash), not stdio control.
-    if (policyId === 'approve-for-me' && rules.shell === true) {
-        return false;
+    if (policyId === 'approve-for-me') {
+        return true;
     }
+    const rules = reconcileAgentToolApprovalRules(policyId, options.cwd, options.toolApprovalRules);
     return !(rules.shell && rules.network);
 }
 

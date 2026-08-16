@@ -11,11 +11,10 @@ import type { QaapQaiqPendingControlRequest } from './qaap-qaiq-stdio-approvals'
  * Guard against agents running destructive shell commands without an explicit user request.
  *
  * Mirrors `qaap-agent-dev-server-guard`: enforced on the QAIQ stdio `can_use_tool` control path,
- * so it is a hard denial whenever the CLI asks before running tools. Qaap's default
- * `approve-for-me` QAIQ policy also uses that control path: safe tools are answered automatically,
- * while these patterns are denied before the shell starts. The hosted QAIQ shell is additionally
- * forced through the versioned shell boundary, so full-access and headless runs receive the same
- * policy before reaching `/bin/bash`.
+ * so Qaap can decide before the shell starts. Qaap's default `approve-for-me` QAIQ policy uses
+ * that control path: safe tools are answered automatically, while these patterns are queued for
+ * an Allow/Deny card (never auto-approved). Full-access / bypassPermissions still hard-denies them.
+ * The hosted QAIQ shell is additionally forced through the versioned shell boundary.
  */
 
 /** `git push --force`, `-f`, `--force-with-lease`, or a `+refspec` force push. */
