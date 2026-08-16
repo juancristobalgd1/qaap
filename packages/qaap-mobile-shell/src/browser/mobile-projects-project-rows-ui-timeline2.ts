@@ -237,11 +237,11 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
         if (flags.priority && !flags.paused) {
             row.classList.add('theia-mod-priority');
             if (!compact) {
-                const star = document.createElement('span');
-                star.className = 'codicon codicon-star-full theia-mobile-projects-conversation-priority-badge';
-                star.setAttribute('aria-label', nls.localize('qaap/mobileProjects/priorityBadge', 'High priority'));
-                star.title = star.getAttribute('aria-label')!;
-                taskTitleRow.insertBefore(star, taskTitleRow.firstChild);
+                const pinBadge = document.createElement('span');
+                pinBadge.className = 'codicon codicon-pinned theia-mobile-projects-conversation-priority-badge';
+                pinBadge.setAttribute('aria-label', nls.localize('qaap/mobileProjects/priorityBadge', 'High priority'));
+                pinBadge.title = pinBadge.getAttribute('aria-label')!;
+                taskTitleRow.insertBefore(pinBadge, taskTitleRow.firstChild);
             }
         }
         if (flags.paused) {
