@@ -11705,13 +11705,13 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
 .qaap-chat-context-usage-panel-row {
   box-sizing: border-box;
   border: none;
-  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+  background: transparent;
   color: var(--theia-foreground);
 }
 
 .qaap-chat-context-usage-panel-row:hover {
-  border-color: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
-  background: color-mix(in srgb, var(--theia-foreground) 6%, transparent);
+  border: none;
+  background: transparent;
 }
 
 .qaap-chat-context-usage-panel-empty {
