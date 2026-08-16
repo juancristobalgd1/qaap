@@ -105,6 +105,14 @@ describe('qaap-agent-auth-login', () => {
         expect(localizeAgentAuthFailureMessage({ mode: 'session' })).to.match(/sign in/i);
     });
 
+    it('classifies QAIQ Codex credential refusal as auth, not a generic turn failure', () => {
+        const log = 'Codex auth is required for gpt-5.5. Set CODEX_API_KEY or run qaiq login.';
+        expect(detectAgentFailureKind(log)).to.equal('auth');
+        const message = resolveAgentTurnFailureMessage(log, { state: 'failed', exitCode: 1 });
+        expect(message).to.not.match(/could not finish this task/i);
+        expect(message.toLowerCase()).to.match(/sign in|api key/);
+    });
+
     it('resolveAgentLoginCliCommand maps agents to their audited device-code login command', () => {
         // Verified against the installed CLIs (Aug 2026): device-code where the CLI offers one.
         expect(resolveAgentLoginCliCommand('codex')).to.equal('codex login --device-auth');

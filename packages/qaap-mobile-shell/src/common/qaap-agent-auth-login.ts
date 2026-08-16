@@ -60,6 +60,8 @@ const SESSION_AUTH_PATTERNS: readonly RegExp[] = [
     /\bfailed\s+to\s+authenticate\b/i,
     /\blog(?:\s|-)?in\s+required\b/i,
     /\bsign(?:\s|-)?in\s+required\b/i,
+    /\bauth(?:entication)?\s+is\s+required\b/i,
+    /\bcodex\s+auth\b/i,
     /\bsign\s+in\s+with\s+(?:chatgpt|claude|cursor|github)\b/i,
     /\bdevice(?:\s|-)?auth\b/i,
     /\bone[- ]time\s+code\b/i,
@@ -73,6 +75,7 @@ const API_KEY_AUTH_PATTERNS: readonly RegExp[] = [
     /\bANTHROPIC_API_KEY\b/,
     /\bOPENAI_API_KEY\b/,
     /\bCURSOR_API_KEY\b/,
+    /\bCODEX_API_KEY\b/,
     /\bmissing\s+(?:an?\s+)?api\s+key\b/i,
 ];
 

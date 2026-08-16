@@ -11,6 +11,7 @@ import {
     resolveNativeAgentModelForTaskKind,
     type QaapNativeModelRoutingTable,
 } from './qaap-agent-native-model-routing';
+import { vendorHasByokCredential } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     parseTheiaLanguageModelId,
     resolveQaapQaiqModelBinding,
@@ -90,6 +91,30 @@ export function bindingToAgentModel(binding: QaapQaiqModelBinding): QaapCreateAg
         vendor: binding.vendor,
         modelId: binding.modelId,
     };
+}
+
+/**
+ * Drop a Settings/alias model the runtime cannot actually call (no BYOK pref and no matching
+ * env credential) in favour of a credentialed env fallback such as Ollama. Theia ships
+ * `openai/gpt-5.5` as the default `default/code` alias; without this, QAIQ is launched against
+ * Codex/OpenAI and fails in ~1s on a skip-auth host that only has `OLLAMA_HOST`.
+ *
+ * Native-catalog agents (claude, codex, …) must not go through this — their vendor strings are
+ * not BYOK registry keys, so they would be replaced with the QAIQ env fallback.
+ */
+export function coerceRunnableAgentModel(
+    model: QaapCreateAgentTaskQaiqModel | undefined,
+    readPref: QaapPreferenceReader,
+    readEnv: (key: string) => string | undefined,
+    fallback: QaapCreateAgentTaskQaiqModel | undefined,
+): QaapCreateAgentTaskQaiqModel | undefined {
+    if (model && vendorHasByokCredential(readPref, model.vendor, readEnv)) {
+        return model;
+    }
+    if (fallback && vendorHasByokCredential(readPref, fallback.vendor, readEnv)) {
+        return fallback;
+    }
+    return model;
 }
 
 export interface ResolveEffectiveAgentModelRequest {

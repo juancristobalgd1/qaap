@@ -59,6 +59,8 @@ describe('qaap-agent-failure-message', () => {
     it('detectAgentFailureKind recognizes auth, timeout, and network failures', () => {
         expect(detectAgentFailureKind('invalid_api_key'))
             .to.equal('auth');
+        expect(detectAgentFailureKind('Codex auth is required for gpt-5.5. Set CODEX_API_KEY or run qaiq login.'))
+            .to.equal('auth');
         expect(detectAgentFailureKind('request timed out after 90s'))
             .to.equal('timeout');
         expect(detectAgentFailureKind('fetch failed: ECONNREFUSED'))
@@ -70,6 +72,9 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('provider rejected the request');
         expect(extractAgentLogFailureHint('info\nError: something went wrong\n'))
             .to.equal('Error: something went wrong');
+        expect(extractAgentLogFailureHint(
+            'info\nCodex auth is required for gpt-5.5. Set CODEX_API_KEY or run qaiq login.\n',
+        )).to.equal('Codex auth is required for gpt-5.5. Set CODEX_API_KEY or run qaiq login.');
     });
 
     it('resolveAgentTurnFailureMessage prefers provider quota text over generic copy', () => {

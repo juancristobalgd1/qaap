@@ -9,6 +9,7 @@ import { listStaticNativeAgentModels } from './qaap-agent-native-model-catalog';
 import { parseQaapNativeModelRoutingTable } from './qaap-agent-native-model-routing';
 import {
     classifyAgentTaskKind,
+    coerceRunnableAgentModel,
     resolveEffectiveRequestAgentModel,
     resolveRoutedQaiqModelBinding,
 } from './qaap-agent-task-model-routing';
@@ -286,5 +287,39 @@ describe('QaapAgentTaskKind.is', () => {
         for (const value of ['Exploration', 'implement', '', 'general ', 0, 1, true, null, undefined, {}, ['general']]) {
             expect(QaapAgentTaskKind.is(value), JSON.stringify(value) ?? 'undefined').to.equal(false);
         }
+    });
+});
+
+describe('coerceRunnableAgentModel', () => {
+    const ollama = { provider: 'ollama' as const, vendor: 'ollama', modelId: 'qwen2.5-coder:7b' };
+    const openai = { provider: 'openai' as const, vendor: 'openai', modelId: 'gpt-5.5' };
+
+    it('keeps a model whose vendor has a credential', () => {
+        const readPref = (key: string): unknown => key === 'ai-features.openAiOfficial.openAiApiKey' ? 'sk-test' : undefined;
+        expect(coerceRunnableAgentModel(openai, readPref, () => undefined, ollama)).to.deep.equal(openai);
+    });
+
+    it('replaces Theia default OpenAI alias with an env Ollama fallback', () => {
+        const coerced = coerceRunnableAgentModel(
+            openai,
+            () => undefined,
+            key => key === 'OLLAMA_HOST' ? 'http://127.0.0.1:11434' : undefined,
+            ollama,
+        );
+        expect(coerced).to.deep.equal(ollama);
+    });
+
+    it('uses the env fallback when no model was routed', () => {
+        const coerced = coerceRunnableAgentModel(
+            undefined,
+            () => undefined,
+            key => key === 'OLLAMA_HOST' ? 'http://127.0.0.1:11434' : undefined,
+            ollama,
+        );
+        expect(coerced).to.deep.equal(ollama);
+    });
+
+    it('keeps the unrunnable model when there is no credentialed fallback', () => {
+        expect(coerceRunnableAgentModel(openai, () => undefined, () => undefined, undefined)).to.deep.equal(openai);
     });
 });
