@@ -326,6 +326,11 @@ function stripNonInteractiveApprovalFlags(command: string, agentId: string | und
     if (effectiveId === 'codex') {
         return stripCodexApprovalFlags(command);
     }
+    if (effectiveId === 'opencode') {
+        // Headless `opencode run` auto-rejects gated permissions without YOLO; still strip the
+        // template skip flag so Request approval is not silently Full access.
+        return stripFlagTokens(command, ['--dangerously-skip-permissions', '--auto', '--yolo']);
+    }
     return command;
 }
 

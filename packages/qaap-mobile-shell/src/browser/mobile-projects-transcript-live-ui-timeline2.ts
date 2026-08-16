@@ -209,7 +209,10 @@ export function getPendingTranscriptToolApprovalExtracted(ctx: any, conversation
 
 export function syncTranscriptPendingApprovalExtracted(ctx: any, conv: QaapAgentConversationDTO): void {
         const chatHost = ctx.resolveActiveTranscriptChatHost();
-        if (!conversationUsesInteractiveApprovals(conv)) {
+        const pending = resolveTranscriptInlineApproval(ctx.host.cachedAgentApprovals, conv.id);
+        // Always surface a real pending store item (Allow/Deny card), even if policy reconciliation
+        // thought the run was non-interactive — high-risk queue under approve-for-me depends on this.
+        if (!conversationUsesInteractiveApprovals(conv) && !pending) {
             if (chatHost && ctx.lastInlineApprovalSyncKey !== undefined) {
                 removeTranscriptPendingApprovalHosts(chatHost);
                 ctx.lastInlineApprovalSyncKey = undefined;
@@ -220,7 +223,6 @@ export function syncTranscriptPendingApprovalExtracted(ctx: any, conv: QaapAgent
             }
             return;
         }
-        const pending = resolveTranscriptInlineApproval(ctx.host.cachedAgentApprovals, conv.id);
         const pendingId = pending?.id;
         const syncKey = ctx.buildTranscriptApprovalSyncKey(chatHost, conv, pendingId);
         if (syncKey === ctx.lastInlineApprovalSyncKey && pendingId === ctx.lastMountedApprovalId) {
