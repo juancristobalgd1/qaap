@@ -665,24 +665,30 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   }
 }
 
-/* Header view picker: icon-only on phones to reclaim horizontal space. */
+/* Header view picker: hide the text label on phones, keep icon + chevron-down
+   so the control still reads as a menu (same affordance as before / Queued). */
 @media (max-width: 767px), (pointer: coarse) {
   .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui),
   .theia-mobile-agent-log-title-row>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui),
   .theia-mobile-agent-log-title-row>.theia-mobile-transcript-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui) {
-    min-width: 36px;
-    width: 36px;
-    padding: 0;
-    gap: 0;
+    min-width: 44px;
+    width: auto;
+    padding: 0 6px;
+    gap: 2px;
   }
 
   .theia-mobile-transcript-tabs.theia-mod-header-inline
   .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui)
-  .theia-mobile-transcript-tab-icon-select-label,
+  .theia-mobile-transcript-tab-icon-select-label {
+    display: none;
+  }
+
   .theia-mobile-transcript-tabs.theia-mod-header-inline
   .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui)
   .theia-mobile-transcript-tab-icon-select-chevron {
-    display: none;
+    display: inline-flex;
+    font-size: 10px;
+    opacity: 0.78;
   }
 }
 
