@@ -322,6 +322,12 @@ describe('qaap-transcript-files-view', () => {
                 expect(tree).to.exist;
                 expect(layout?.classList.contains('theia-mod-tree-hidden')).to.equal(false);
                 expect(host.querySelector('.theia-mobile-transcript-files-empty')).to.exist;
+                expect(filesBtn.getAttribute('aria-label')).to.equal('Files');
+                expect(changesBtn.getAttribute('aria-label')).to.equal('Changes');
+                expect(filesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-icon')).to.exist;
+                expect(changesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-icon')).to.exist;
+                expect(filesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-label')?.textContent).to.equal('Files');
+                expect(changesBtn.querySelector('.theia-mobile-transcript-files-view-mode-btn-label')?.textContent).to.equal('Changes');
 
                 changesBtn.click();
                 expect(root?.classList.contains('theia-mod-files-view-changes')).to.equal(true);

@@ -2357,12 +2357,18 @@ button.theia-mobile-transcript-team-row:focus-visible {
 
 @media (max-width: 767px),
 (pointer: coarse) {
+  /* Header + preview: icon-only segmented control on phones / coarse pointers. */
   .theia-mobile-transcript-files-view-mode-btn {
     height: 32px;
     min-height: 32px;
+    min-width: 32px;
     padding: 0 8px;
-    gap: 6px;
+    gap: 0;
     font-size: 13px;
+  }
+
+  .theia-mobile-transcript-files-view-mode-btn-label {
+    display: none;
   }
 
   .theia-mobile-transcript-files-view-mode-btn-icon.codicon::before {

@@ -385,6 +385,7 @@ export function mountTranscriptFilesView(
     filesModeLabel.textContent = services.localize('qaap/mobileProjects/tabFiles', 'Files');
     filesModeBtn.append(filesModeIcon, filesModeLabel);
     filesModeBtn.title = filesModeLabel.textContent;
+    filesModeBtn.setAttribute('aria-label', filesModeLabel.textContent ?? '');
     filesModeBtn.setAttribute('aria-selected', state.viewMode === 'files' ? 'true' : 'false');
     const changesModeBtn = document.createElement('button');
     changesModeBtn.type = 'button';
@@ -399,6 +400,7 @@ export function mountTranscriptFilesView(
     changesModeLabel.textContent = services.localize('qaap/mobileProjects/tabChanges', 'Changes');
     changesModeBtn.append(changesModeIcon, changesModeLabel);
     changesModeBtn.title = changesModeLabel.textContent;
+    changesModeBtn.setAttribute('aria-label', changesModeLabel.textContent ?? '');
     changesModeBtn.setAttribute('aria-selected', state.viewMode === 'changes' ? 'true' : 'false');
     viewModeSwitch.append(filesModeBtn, changesModeBtn);
 
