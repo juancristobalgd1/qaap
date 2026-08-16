@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { parseOpencodeFormattedLog, parseOpencodeLog, QaapOpencodeStreamAccumulator } from '../common/qaap-opencode-stream';
+import type { QaapAgentMessageSegment } from '../common/qaap-qaiq-stream';
 
 /** Match server `MAX_LOG_BYTES` — keep a bounded live tail in the Working DETAIL panel. */
 export const WORKING_DETAIL_TASK_LOG_MAX_BYTES = 512 * 1024;
@@ -211,6 +213,17 @@ function applyWorkingDetailTaskLogText(
     }
     output.classList.remove('theia-mod-empty', 'theia-mod-waiting');
     const humanReadable = formatVpsTaskLogForHuman(trimmed);
+    if (!humanReadable.trim()) {
+        output.textContent = options.running
+            ? nls.localize('qaap/mobileProjects/status/working', 'Working')
+            : nls.localize(
+                'qaap/workHubChrome/workingDetailCommandOutputEmpty',
+                'No output',
+            );
+        output.classList.add('theia-mod-empty');
+        output.classList.toggle('theia-mod-waiting', options.running);
+        return;
+    }
     if (options.truncated) {
         const notice = nls.localize(
             'qaap/workHubChrome/workingDetailCommandOutputTruncated',
@@ -224,10 +237,13 @@ function applyWorkingDetailTaskLogText(
 
 /**
  * Transform raw VPS task log (JSON stream events, one per line) into human-readable text.
- * Extracts assistant text, tool calls, and results — skips wire-protocol noise.
- * Non-JSON lines are kept as-is (shell output, plain text logs).
+ * Prefers OpenCode NDJSON → transcript segments, then Anthropic-style stream-json, then raw lines.
  */
-function formatVpsTaskLogForHuman(raw: string): string {
+export function formatVpsTaskLogForHuman(raw: string): string {
+    const opencode = parseOpencodeLog(raw);
+    if (opencode.segments.length > 0) {
+        return formatSegmentsAsTranscriptText(opencode.segments);
+    }
     const lines = raw.split('\n');
     const out: string[] = [];
     let sawJson = false;
@@ -245,6 +261,9 @@ function formatVpsTaskLogForHuman(raw: string): string {
                 if (formatted) {
                     out.push(formatted);
                     sawJson = true;
+                } else {
+                    // Recognized JSON wire noise (e.g. step_finish) — do not fall back to raw.
+                    sawJson = true;
                 }
                 continue;
             } catch {
@@ -259,7 +278,71 @@ function formatVpsTaskLogForHuman(raw: string): string {
     if (!sawJson) {
         return raw;
     }
-    return out.join('\n');
+    // Prefer a clean transcript; never dump unrecognized wire JSON back to the user.
+    return out.join('\n').trim();
+}
+
+/** True when the VPS log parses into structured transcript segments (OpenCode / similar). */
+export function workingDetailTaskLogHasTranscriptSegments(raw: string | undefined): boolean {
+    return parseWorkingDetailTaskLogSegments(raw).length > 0;
+}
+
+/**
+ * Parse a VPS task log into transcript segments for Working DETAIL.
+ * Only returns segments for structured OpenCode NDJSON or formatted CLI tool markers —
+ * plain shell tails (test runners, npm, etc.) stay empty so Command output remains.
+ */
+export function parseWorkingDetailTaskLogSegments(raw: string | undefined): readonly QaapAgentMessageSegment[] {
+    const text = raw?.trim();
+    if (!text) {
+        return [];
+    }
+    const jsonAcc = new QaapOpencodeStreamAccumulator();
+    // Ensure the final NDJSON line is consumed even when the log has no trailing newline.
+    jsonAcc.push(text.endsWith('\n') ? text : `${text}\n`);
+    if (jsonAcc.consumedJsonEvents()) {
+        return [...jsonAcc.getSegments()];
+    }
+    const formatted = parseOpencodeFormattedLog(text);
+    // Formatted fallback treats every prose line as a text segment — that would hide the
+    // Command output card for ordinary shell logs. Require at least one tool/thinking cue.
+    if (formatted.segments.some(segment => segment.type === 'tool' || segment.type === 'thinking')) {
+        return formatted.segments;
+    }
+    return [];
+}
+
+function formatSegmentsAsTranscriptText(segments: readonly QaapAgentMessageSegment[]): string {
+    const parts: string[] = [];
+    for (const segment of segments) {
+        if (segment.type === 'text' && segment.content.trim()) {
+            parts.push(segment.content.trim());
+        } else if (segment.type === 'thinking' && segment.content.trim()) {
+            parts.push(segment.content.trim());
+        } else if (segment.type === 'tool') {
+            const status = segment.finished ? 'done' : 'running';
+            let detail = '';
+            try {
+                const args = JSON.parse(segment.args || '{}') as Record<string, unknown>;
+                const candidate = args.command ?? args.path ?? args.file_path ?? args.pattern ?? args.query;
+                if (typeof candidate === 'string' && candidate.trim()) {
+                    detail = candidate.trim().length > 120
+                        ? `${candidate.trim().slice(0, 117)}…`
+                        : candidate.trim();
+                }
+            } catch {
+                /* ignore */
+            }
+            parts.push(detail ? `→ ${segment.name} (${status}): ${detail}` : `→ ${segment.name} (${status})`);
+            if (segment.finished && segment.result?.trim()) {
+                const clean = segment.result.replace(/\x1b\[[0-9;]*m/g, '').trim();
+                if (clean) {
+                    parts.push(clean.length > 400 ? `  ${clean.slice(0, 397)}…` : `  ${clean}`);
+                }
+            }
+        }
+    }
+    return parts.join('\n');
 }
 
 /** Extract a human-readable summary from a single JSON stream event object. */

@@ -8,10 +8,12 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     appendWorkingDetailTaskLogChunk,
     isWorkingDetailTaskLogNearBottom,
+    parseWorkingDetailTaskLogSegments,
     renderWorkingDetailTaskLog,
     seedWorkingDetailTaskLog,
     shouldShowWorkingDetailTaskLog,
     updateWorkingDetailTaskLog,
+    workingDetailTaskLogHasTranscriptSegments,
     WORKING_DETAIL_TASK_LOG_MAX_BYTES,
 } from './qaap-sticky-composer-working-detail-task-log';
 
@@ -111,6 +113,37 @@ describe('qaap-sticky-composer-working-detail-task-log', () => {
         expect(root.dataset.truncated).to.equal('true');
         expect(output?.textContent).to.match(/truncated/i);
         expect(output?.getAttribute('aria-live')).to.equal('off');
+    });
+
+    it('formats OpenCode NDJSON as a readable transcript instead of raw JSON', () => {
+        const root = renderWorkingDetailTaskLog({
+            taskId: 'task-oc',
+            text: '',
+            running: true,
+        });
+        const output = root.querySelector('.qaap-working-agents-detail-command-log-output');
+        updateWorkingDetailTaskLog(root, {
+            text: [
+                '{"type":"tool_use","part":{"id":"p1","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"a.ts"},"output":"ok"}}}',
+                '{"type":"text","part":{"type":"text","text":"Done reading."}}',
+                '{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":1,"output":1}}}',
+            ].join('\n'),
+            running: true,
+        });
+        expect(output?.textContent).to.include('Read');
+        expect(output?.textContent).to.include('Done reading.');
+        expect(output?.textContent).to.not.include('step_finish');
+        expect(output?.textContent).to.not.include('"tokens"');
+    });
+
+    it('detects structured OpenCode transcript segments in the task log', () => {
+        const log = '{"type":"text","part":{"type":"text","text":"Hola"}}\n';
+        expect(workingDetailTaskLogHasTranscriptSegments(log)).to.equal(true);
+        expect(parseWorkingDetailTaskLogSegments(log)).to.deep.equal([{ type: 'text', content: 'Hola' }]);
+        expect(workingDetailTaskLogHasTranscriptSegments('{"type":"step_finish","part":{"type":"step-finish"}}')).to.equal(false);
+        // Plain shell / test-runner tails must not be treated as OpenCode transcripts.
+        expect(workingDetailTaskLogHasTranscriptSegments('PASS src/foo.spec.ts\n')).to.equal(false);
+        expect(parseWorkingDetailTaskLogSegments('PASS src/foo.spec.ts\n')).to.deep.equal([]);
     });
 
     it('shows a settled empty state when the task finished with no output', () => {

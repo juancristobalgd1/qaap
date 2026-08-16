@@ -54,7 +54,7 @@ import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-mod
 import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import { applyComposerQuickActionPromptExtracted, bindWorkingDetailConversationSubscriptionExtracted, collectAgentsHubRecentItemsExtracted, createAgentsHubLandingHeroBlockExtracted, createAgentsHubQuickActionsBlockExtracted, createAgentsHubRecentsBlockExtracted, openWorkingAgentsPopoverFromPillExtracted, resolveActiveConversationTodoStepProgressExtracted, shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted, updateStepPillChromeExtracted, updateTasksAttentionChromeExtracted, updateWorkingPillChromeExtracted } from './mobile-projects-tasks-hub-ui-render2';
-import { bindWorkingDetailTaskLogSubscriptionExtracted, cancelWorkingConversationLikeComposerStopExtracted, collectTeamMembersForTranscriptSectionExtracted, createTaskSkeletonRowExtracted, createTasksEmptyStateExtracted, createTasksLoadingStateExtracted, isEmptyComposerQuickActionsSurfacePaintedExtracted, markTasksFirstLoadCompleteExtracted, paintWorkingDetailTaskLogExtracted, prefetchWorkingDetailDocumentsExtracted, resolveOpenComposerConversationIdExtracted, resolveWorkingDetailActivityFeedExtracted, seedWorkingDetailTaskLogFromServerExtracted, shouldSuppressWorkingPillForEmptyComposerExtracted, stopAllWorkingAgentsExtracted, stopWorkingAgentExtracted } from './mobile-projects-tasks-hub-ui-streaming2';
+import { bindWorkingDetailTaskLogSubscriptionExtracted, cancelWorkingConversationLikeComposerStopExtracted, collectTeamMembersForTranscriptSectionExtracted, createTaskSkeletonRowExtracted, createTasksEmptyStateExtracted, createTasksLoadingStateExtracted, isEmptyComposerQuickActionsSurfacePaintedExtracted, markTasksFirstLoadCompleteExtracted, paintWorkingDetailTaskLogExtracted, prefetchWorkingDetailDocumentsExtracted, resolveOpenComposerConversationIdExtracted, resolveWorkingDetailActivityFeedExtracted, resolveWorkingDetailTranscriptExcerptExtracted, seedWorkingDetailTaskLogFromServerExtracted, shouldSuppressWorkingPillForEmptyComposerExtracted, stopAllWorkingAgentsExtracted, stopWorkingAgentExtracted } from './mobile-projects-tasks-hub-ui-streaming2';
 import { appendTasksHubTeamSectionExtracted, renderTasksHubViewExtracted } from './mobile-projects-tasks-hub-ui-timeline2';
 
 /** Panel surface for Tasks hub list rendering and Agents Hub landing recents/quick actions. */
@@ -244,6 +244,10 @@ export class MobileProjectsTasksHubUi {
         typeof resolveWorkingAgentDetailActivityFeedFromConversation
     > {
         return resolveWorkingDetailActivityFeedExtracted(this, member);
+    }
+
+    protected resolveWorkingDetailTranscriptExcerpt(member: WorkHubTeamMember): HTMLElement | undefined {
+        return resolveWorkingDetailTranscriptExcerptExtracted(this, member);
     }
 
     protected prefetchWorkingDetailDocuments(members: readonly WorkHubTeamMember[]): void {

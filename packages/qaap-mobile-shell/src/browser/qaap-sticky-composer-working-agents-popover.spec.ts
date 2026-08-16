@@ -223,7 +223,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             onStop: m => { stoppedMemberId = m.id; },
         });
         expect(panel.querySelector('.qaap-working-agents-popover-title')?.textContent).to.equal('2 Working');
-        expect(panel.querySelector('.qaap-working-agents-popover-close .codicon-close')).to.not.equal(null);
+        expect(panel.querySelector('.qaap-working-agents-popover-close .codicon-chevron-down')).to.not.equal(null);
         const stopAll = panel.querySelector<HTMLButtonElement>('.qaap-working-agents-popover-stop-all');
         stopAll?.click();
         expect(stopped).to.equal(false);
@@ -310,7 +310,7 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             .to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-expand .codicon-screen-full'))
             .to.not.equal(null);
-        expect(detail?.querySelector('.qaap-working-agents-popover-close .codicon-close')).to.not.equal(null);
+        expect(detail?.querySelector('.qaap-working-agents-popover-close .codicon-chevron-down')).to.not.equal(null);
         expect(detail?.querySelector('.qaap-working-agents-popover-header .qaap-working-agents-popover-stop-one'))
             .to.equal(null);
         expect(detail?.textContent).to.contain('Review the latest pull request');
@@ -428,6 +428,50 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
         expect(panel.textContent).to.not.match(/\bWorkspace\b/);
     });
 
+    it('prefers transcript excerpt DOM over compact activity feed in DETAIL', () => {
+        const excerpt = document.createElement('div');
+        excerpt.className = 'qaap-working-agents-detail-transcript';
+        const user = document.createElement('div');
+        user.className = 'theia-mobile-agent-transcript-user-wrap';
+        user.textContent = 'Investigate same-session multitask';
+        const agent = document.createElement('div');
+        agent.className = 'theia-mobile-agent-transcript-msg theia-mod-agent';
+        agent.textContent = 'Explored 4 files';
+        excerpt.append(user, agent);
+
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'parent',
+                title: 'Transcript parity',
+                activityLabel: 'Reading files',
+                conversationId: 'c-parity',
+            }),
+            children: [],
+            activityFeed: {
+                items: [{
+                    label: 'ShouldNotShowCompactRow',
+                    verb: 'ShouldNotShowCompactRow',
+                    state: 'running',
+                    navigate: 'file',
+                    toolKind: 'reading',
+                }],
+                liveLabel: 'Working',
+            },
+            transcriptExcerpt: excerpt,
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        expect(panel.querySelector('.qaap-working-agents-detail-transcript')).to.equal(excerpt);
+        expect(panel.querySelector('.theia-mobile-agent-transcript-user-wrap')?.textContent)
+            .to.contain('Investigate same-session multitask');
+        expect(panel.querySelector('.theia-mobile-agent-transcript-msg.theia-mod-agent')?.textContent)
+            .to.contain('Explored 4 files');
+        expect(panel.querySelector('.qaap-working-agents-detail-activity')).to.equal(null);
+        expect(panel.textContent).to.not.contain('ShouldNotShowCompactRow');
+    });
+
     it('renders a command-output card for VPS tasks without conversationId', () => {
         const panel = renderWorkingAgentsDetailPanel({
             member: member({
@@ -493,6 +537,45 @@ describe('qaap-sticky-composer-working-agents-popover', () => {
             onSelectChild: () => undefined,
         });
         expect(panel.querySelector('.qaap-working-agents-detail-command-log')).to.equal(null);
+    });
+
+    it('omits command-output card when the VPS log already has OpenCode transcript segments', () => {
+        const opencodeLog = [
+            '{"type":"tool_use","part":{"id":"p1","type":"tool","tool":"read","state":{"status":"completed","input":{"filePath":"a.ts"},"output":"ok"}}}',
+            '{"type":"text","part":{"type":"text","text":"Done reading."}}',
+        ].join('\n');
+        const panel = renderWorkingAgentsDetailPanel({
+            member: member({
+                id: 'task:vps-oc',
+                kind: 'leader-task',
+                title: 'opencode run',
+                command: 'opencode run --format json hi',
+                taskId: 'vps-oc',
+                state: 'running',
+                conversationId: undefined,
+            }),
+            children: [],
+            commandLogText: opencodeLog,
+            activityFeed: {
+                items: [{
+                    label: 'Read a.ts',
+                    verb: 'Read',
+                    detail: 'a.ts',
+                    state: 'success',
+                    navigate: 'file',
+                    toolKind: 'reading',
+                }],
+                liveLabel: 'Working',
+            },
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onToggleLarge: () => undefined,
+            onSelectChild: () => undefined,
+        });
+        expect(panel.querySelector('.qaap-working-agents-detail-command-log')).to.equal(null);
+        expect(panel.textContent).to.not.match(/Command output/i);
+        expect(panel.textContent).to.not.include('step_finish');
+        expect(panel.textContent).to.contain('Read');
     });
 
     it('notifies detail member changes and refreshes activity feed after hydration', () => {

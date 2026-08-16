@@ -28,7 +28,11 @@ export class MobileProjectsTranscriptMessagesUserUi {
     createTranscriptUserMessageRow(
         msg: QaapAgentMessageDTO,
         conv: QaapAgentConversationDTO,
-        options?: { readonly deferHeavyContent?: boolean },
+        options?: {
+            readonly deferHeavyContent?: boolean;
+            /** Working DETAIL / read-only excerpts: bubble only, no Edit/Undo chrome. */
+            readonly readOnly?: boolean;
+        },
     ): HTMLElement {
         const wrap = document.createElement('div');
         wrap.className = 'theia-mobile-agent-transcript-user-wrap';
@@ -81,6 +85,10 @@ export class MobileProjectsTranscriptMessagesUserUi {
             }
         }
         wrap.append(row);
+
+        if (options?.readOnly) {
+            return wrap;
+        }
 
         const plainText = this.contentUi.cleanTranscriptDisplayText(displayContent).trim();
         const summary = this.host.transcriptComposerSummary;

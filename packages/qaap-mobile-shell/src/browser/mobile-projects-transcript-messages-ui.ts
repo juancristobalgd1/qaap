@@ -24,6 +24,7 @@ import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-t
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
 import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
+import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
@@ -232,6 +233,92 @@ export class MobileProjectsTranscriptMessagesUi {
             // 'todowrite' / 'todo_write' track the agent's task list, not workspace files.
             && !segment.name.toLowerCase().includes('todo')
             && !!this.resolversUi.resolveTranscriptFileChangeKind(segment.name));
+    }
+
+    /**
+     * Working DETAIL excerpt: same user/agent row DOM as the main transcript so expanding
+     * a Working pill shows Qaap's transcript rendering (Cursor-style panel, Qaap content).
+     */
+    createWorkingDetailTranscriptExcerpt(options: {
+        readonly document?: QaapAgentConversationDTO;
+        readonly liveSegments?: readonly QaapAgentMessageSegmentDTO[];
+        readonly taskLogSegments?: readonly QaapAgentMessageSegmentDTO[];
+        readonly streaming?: boolean;
+        readonly conversationId?: string;
+        readonly agentId?: string;
+        readonly title?: string;
+    }): HTMLElement | undefined {
+        const root = document.createElement('div');
+        root.className = WORKING_DETAIL_TRANSCRIPT_CLASS;
+
+        const conv = options.document;
+        if (conv?.messages?.length) {
+            for (let index = 0; index < conv.messages.length; index++) {
+                const msg = conv.messages[index]!;
+                const isTail = index === conv.messages.length - 1;
+                if (msg.role === 'user') {
+                    root.append(this.userUi.createTranscriptUserMessageRow(msg, conv, { readOnly: true }));
+                    continue;
+                }
+                if (msg.role !== 'agent') {
+                    continue;
+                }
+                let segments = this.resolveTranscriptAgentSegments(conv, msg) ?? [...resolveAgentMessageSegments(msg)];
+                if (isTail && options.liveSegments && options.liveSegments.length > segments.length) {
+                    segments = [...options.liveSegments];
+                }
+                const streaming = !!options.streaming
+                    || (isTail && (conv.status === 'streaming' || conv.status === 'settled'));
+                if (segments.length > 0) {
+                    const row = this.artifactsUi.createTranscriptAgentSegmentsRow(segments, msg.error, conv, {
+                        streaming,
+                        message: msg,
+                    });
+                    if (msg.id) {
+                        row.setAttribute('data-transcript-message-id', msg.id);
+                    }
+                    root.append(row);
+                } else if (msg.error?.trim()) {
+                    const row = this.artifactsUi.createTranscriptAgentSegmentsRow([], msg.error, conv, {
+                        streaming: false,
+                        message: msg,
+                    });
+                    root.append(row);
+                }
+            }
+            return root.childElementCount > 0 ? root : undefined;
+        }
+
+        const fallbackSegments = (options.liveSegments && options.liveSegments.length > 0)
+            ? options.liveSegments
+            : (options.taskLogSegments ?? []);
+        if (fallbackSegments.length === 0) {
+            return undefined;
+        }
+        const now = Date.now();
+        const synthetic: QaapAgentConversationDTO = {
+            id: options.conversationId?.trim() || 'working-detail-excerpt',
+            cwd: '',
+            agentId: options.agentId?.trim() || 'agent',
+            title: options.title?.trim() || '',
+            status: options.streaming ? 'streaming' : 'idle',
+            createdAt: now,
+            updatedAt: now,
+            messages: [{
+                id: 'working-detail-agent',
+                role: 'agent',
+                content: '',
+                createdAt: now,
+                segments: [...fallbackSegments],
+            }],
+        };
+        root.append(this.artifactsUi.createTranscriptAgentSegmentsRow(
+            [...fallbackSegments],
+            undefined,
+            synthetic,
+            { streaming: !!options.streaming, message: synthetic.messages[0] },
+        ));
+        return root;
     }
 
     /**

@@ -131,6 +131,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidReceiveParallelRun: Event.None,
                 onDidReceiveTransportActivity: Event.None,
                 onDidReconnectTransport: Event.None,
+                onDidReceivePendingQueue: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });
         const ui = new MobileProjectsPanelLifecycleUi(host);
@@ -157,6 +158,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidReceiveParallelRun: Event.None,
                 onDidReceiveTransportActivity: Event.None,
                 onDidReconnectTransport: Event.None,
+                onDidReceivePendingQueue: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });
         const ui = new MobileProjectsPanelLifecycleUi(host);
@@ -188,6 +190,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidReceiveParallelRun: Event.None,
                 onDidReceiveTransportActivity: Event.None,
                 onDidReconnectTransport: Event.None,
+                onDidReceivePendingQueue: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });
         const ui = new MobileProjectsPanelLifecycleUi(host);
@@ -216,6 +219,7 @@ describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
                 onDidReceiveParallelRun: Event.None,
                 onDidReceiveTransportActivity: Event.None,
                 onDidReconnectTransport: Event.None,
+                onDidReceivePendingQueue: Event.None,
             } as MobileProjectsPanelLifecycleHost['conversations'],
         });
         const ui = new MobileProjectsPanelLifecycleUi(host);
