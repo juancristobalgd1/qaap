@@ -1987,7 +1987,7 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
 .theia-mobile-projects.theia-mod-home.theia-mod-hub-home .theia-mobile-projects-header {
   padding-top: max(14px, env(safe-area-inset-top, 0px));
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--q-line-soft, color-mix(in srgb, var(--theia-foreground) 6%, transparent));
+  border-bottom: none;
 }
 
 .theia-mobile-projects.theia-mod-home.theia-mod-hub-home .theia-mobile-projects-title {

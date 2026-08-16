@@ -1944,7 +1944,7 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header {
     flex: 0 0 auto;
     padding: 14px 28px 10px;
-    border-bottom: 1px solid color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+    border-bottom: none;
   }
 
   body:not(.theia-mobile-mod-desktop-ide).theia-mobile-mod-sessions-sidebar-open .theia-mobile-projects-header-main {
