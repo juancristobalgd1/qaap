@@ -262,14 +262,13 @@ export function conversationShouldKickoffDevPreviewBootstrap(conv: QaapAgentConv
 }
 
 /**
- * True when the UI may auto-switch to Preview / Browser without an explicit user action.
+ * True when the UI may auto-switch to Preview / Browser without a second tap.
  *
- * Always false: a ready preview is staged for the "Open preview" pill and clickable transcript
- * links. Navigation happens only when the user taps those affordances or manually opens the
- * Preview tab — never because the agent said "levanta la app" or the turn settled.
+ * Only when a user turn asked to run or preview the app. A URL that merely appears in agent
+ * prose still stages the "Open preview" pill instead of yanking the transcript.
  */
-export function conversationMayAutoOpenTranscriptPreview(_conv: QaapAgentConversationDTO | undefined): boolean {
-    return false;
+export function conversationMayAutoOpenTranscriptPreview(conv: QaapAgentConversationDTO | undefined): boolean {
+    return !!conv && conversationEverRequestedDevPreview(conv);
 }
 
 /** Ports to probe while waiting for a dev server to bind. */

@@ -117,6 +117,8 @@ export interface MobileProjectsSessionsSidebarHost {
     resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void;
     /** Select a project and land on its Agents idle shell (scoped; not the ambiguous workspace default). */
     activateAgentsHubProject(project: MobileProjectEntry): Promise<void>;
+    /** Switch the Work Hub transcript/composer to this sidebar project. */
+    selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void>;
     renderHeader(): void;
     renderSubtitle(): void;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
@@ -452,6 +454,10 @@ export class MobileProjectsSessionsSidebarUi {
     }
     createSessionsSidebarProjectRowHead(project: MobileProjectEntry, expanded: boolean, onToggleExpand: () => void,): HTMLElement {
         return createSessionsSidebarProjectRowHeadExtracted(this, project, expanded, onToggleExpand);
+    }
+    async selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void> {
+        await this.host.selectSessionsSidebarProject(project);
+        this.host.sessionsSidebar?.hideForMobileOverlay();
     }
     createSessionsSidebarIdeOpenControl(project: MobileProjectEntry): HTMLButtonElement {
         return createSessionsSidebarIdeOpenControlExtracted(this, project);

@@ -236,7 +236,7 @@ describe('qaap-transcript-preview-offer', () => {
         expect(conversationAwaitingDevPreview(conv)).to.equal(true);
     });
 
-    it('conversationMayAutoOpenTranscriptPreview never auto-opens — not even after the turn settles', () => {
+    it('conversationMayAutoOpenTranscriptPreview stays off unless a user turn asked to run or preview', () => {
         const base: QaapAgentConversationDTO = {
             id: 'c4',
             cwd: '/repo',
@@ -248,7 +248,7 @@ describe('qaap-transcript-preview-offer', () => {
             messages: [{
                 id: 'a1',
                 role: 'agent',
-                // A printed URL must stage the offer; idle settle must not yank the surface either.
+                // A printed URL must stage the offer when the user never asked for preview.
                 content: 'Dev server running at http://localhost:5175/',
                 createdAt: 2,
                 segments: [{
@@ -263,5 +263,16 @@ describe('qaap-transcript-preview-offer', () => {
         expect(conversationMayAutoOpenTranscriptPreview(base)).to.equal(false);
         expect(conversationMayAutoOpenTranscriptPreview({ ...base, status: 'idle' })).to.equal(false);
         expect(conversationMayAutoOpenTranscriptPreview(undefined)).to.equal(false);
+        const requested: QaapAgentConversationDTO = {
+            ...base,
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Levanta la app y abre la preview.',
+                createdAt: 1,
+            }, ...base.messages],
+        };
+        expect(conversationMayAutoOpenTranscriptPreview(requested)).to.equal(true);
+        expect(conversationMayAutoOpenTranscriptPreview({ ...requested, status: 'idle' })).to.equal(true);
     });
 });

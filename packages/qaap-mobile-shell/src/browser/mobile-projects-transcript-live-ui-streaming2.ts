@@ -333,14 +333,27 @@ export async function maybeReportTranscriptPreviewBootstrapFailureExtracted(ctx:
 }
 
 export async function openReadyTranscriptPreviewUrlExtracted(ctx: any, readyUrl: string,
-    _conv: QaapAgentConversationDTO | undefined,): Promise<void> {
+    conv: QaapAgentConversationDTO | undefined,): Promise<void> {
     const normalized = normalizePreviewUrlForSameOrigin(readyUrl);
     if (ctx.transcriptPreviewOfferAnnouncedUrl === normalized) {
         return;
     }
-    // Never auto-navigate: stage the Ready/Open-preview affordances for an explicit tap.
     ctx.host.stageTranscriptPreviewReadyUrl(normalized);
     ctx.transcriptPreviewOfferAnnouncedUrl = normalized;
+    if (
+        ctx.host.transcriptPreviewSuppressedByUser
+        || !conversationMayAutoOpenTranscriptPreview(conv)
+    ) {
+        return;
+    }
+    const project = ctx.host.transcriptOpenProject;
+    const summary = ctx.host.transcriptOpenSummary;
+    if (!project || !summary) {
+        return;
+    }
+    const previewProject = { ...project, previewUrl: normalized };
+    ctx.host.transcriptOpenProject = previewProject;
+    ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', previewProject, summary);
 }
 
 export async function finalizeTranscriptDevPreviewAfterSettleExtracted(ctx: any): Promise<void> {

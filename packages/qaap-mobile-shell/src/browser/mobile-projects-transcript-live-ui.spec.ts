@@ -370,4 +370,103 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         chatHost.remove();
         composerHost.remove();
     });
+
+    it('openReadyTranscriptPreviewUrl switches to Preview when the user asked to run the app', async () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        const project = { id: 'vitesse-lite', name: 'vitesse-lite', status: 'working' } as import('./mobile-projects-types').MobileProjectEntry;
+        const summary = {
+            id: 'conv-preview',
+            cwd: '/tmp/vitesse-lite',
+            agentId: 'qaiq',
+            title: 'Preview',
+            status: 'idle' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        host.transcriptOpenProject = project;
+        host.transcriptOpenSummary = summary;
+        host.transcriptOpenSummaryId = summary.id;
+        const selected: string[] = [];
+        let stagedUrl: string | undefined;
+        host.stageTranscriptPreviewReadyUrl = (url: string) => { stagedUrl = url; };
+        host.executionSurfaceTabsUi = {
+            selectTranscriptTab: (tab: string) => { selected.push(tab); },
+        } as unknown as MobileProjectsTranscriptLiveHost['executionSurfaceTabsUi'];
+        const conv: QaapAgentConversationDTO = {
+            id: summary.id,
+            cwd: summary.cwd,
+            agentId: summary.agentId,
+            title: summary.title,
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [{
+                id: 'u1',
+                role: 'user',
+                content: 'Levanta la app y abre la preview.',
+                createdAt: 1,
+            }],
+        };
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        await (liveUi as unknown as {
+            openReadyTranscriptPreviewUrl: (url: string, conversation: QaapAgentConversationDTO) => Promise<void>;
+        }).openReadyTranscriptPreviewUrl('http://127.0.0.1:5173/', conv);
+
+        expect(stagedUrl).to.contain('5173');
+        expect(selected).to.deep.equal(['preview']);
+        expect(host.transcriptOpenProject?.previewUrl).to.contain('5173');
+
+        chatHost.remove();
+        composerHost.remove();
+    });
+
+    it('openReadyTranscriptPreviewUrl only stages the pill when the user never asked for preview', async () => {
+        const chatHost = document.createElement('div');
+        const composerHost = document.createElement('div');
+        document.body.append(chatHost, composerHost);
+        const host = createHost(chatHost, composerHost);
+        host.transcriptOpenProject = { id: 'json-server', name: 'json-server', status: 'working' } as import('./mobile-projects-types').MobileProjectEntry;
+        host.transcriptOpenSummary = {
+            id: 'conv-silent',
+            cwd: '/tmp/json-server',
+            agentId: 'qaiq',
+            title: 'Silent',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        const selected: string[] = [];
+        host.executionSurfaceTabsUi = {
+            selectTranscriptTab: (tab: string) => { selected.push(tab); },
+        } as unknown as MobileProjectsTranscriptLiveHost['executionSurfaceTabsUi'];
+        const conv: QaapAgentConversationDTO = {
+            id: 'conv-silent',
+            cwd: '/tmp/json-server',
+            agentId: 'qaiq',
+            title: 'Silent',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+            messages: [{
+                id: 'a1',
+                role: 'agent',
+                content: 'Dev server running at http://localhost:3000/',
+                createdAt: 2,
+            }],
+        };
+        const liveUi = new MobileProjectsTranscriptLiveUi(host);
+        await (liveUi as unknown as {
+            openReadyTranscriptPreviewUrl: (url: string, conversation: QaapAgentConversationDTO) => Promise<void>;
+        }).openReadyTranscriptPreviewUrl('http://127.0.0.1:3000/', conv);
+
+        expect(selected).to.deep.equal([]);
+
+        chatHost.remove();
+        composerHost.remove();
+    });
 });
