@@ -2079,7 +2079,21 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-side {
-  grid-template-columns: minmax(0, 1fr) 5px minmax(120px, var(--qaap-files-tree-width, 38%));
+  /* Explorer on the left (tree | split | preview), matching Work Hub Files. */
+  grid-template-columns: minmax(120px, var(--qaap-files-tree-width, 38%)) 5px minmax(0, 1fr);
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-tree {
+  grid-column: 1;
+  border-right: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-split-handle {
+  grid-column: 2;
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-preview {
+  grid-column: 3;
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
@@ -2189,7 +2203,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
 @media (pointer: coarse),
 (max-width: 767px) {
   .theia-mobile-transcript-files-layout.theia-mod-tree-side {
-    grid-template-columns: minmax(0, 1fr) 20px minmax(120px, var(--qaap-files-tree-width, 38%));
+    grid-template-columns: minmax(120px, var(--qaap-files-tree-width, 38%)) 20px minmax(0, 1fr);
   }
 
   .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
@@ -2293,6 +2307,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
   gap: 0;
   min-height: 44px;
   padding: 0 8px 0 4px;
+  /* Seamless with preview body — no hairline under lock / outline / more actions. */
   border-bottom: none;
   background: var(--theia-editor-background);
 }
@@ -2719,6 +2734,10 @@ body>.theia-mobile-transcript-files-menu {
   flex-direction: column;
   box-sizing: border-box;
   background: var(--theia-sideBar-background, var(--theia-editor-background));
+}
+
+.theia-mobile-transcript-files-layout.theia-mod-tree-bottom > .theia-mobile-transcript-files-tree {
+  border-top: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
 }
 
 .theia-mobile-transcript-files-tree-toolbar {
@@ -12119,13 +12138,23 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .qaap-chat-conte
  * Classic IDE chat panel: keep the composer functional, but use the quieter panel/input
  * surfaces of the IDE instead of the floating mobile glass treatment. This stays scoped to the
  * embedded chat widget so the standalone Work Hub keeps its existing composer appearance.
+ * No hairline between transcript scroll and composer — seamless lip with the empty-chat chips.
  */
 body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
   margin-top: 0 !important;
   padding: 8px 12px 12px;
-  border-top: 1px solid var(--theia-panel-border, var(--theia-widget-border));
+  border-top: none !important;
   background: var(--theia-panel-background, var(--theia-sideBar-background));
   box-sizing: border-box;
+}
+
+/*
+ * Never draw a hairline between transcript scroll and sticky composer (Work Hub chat,
+ * agents hub, or classic IDE embedded chat). The composer lip stays flush with chips.
+ */
+.theia-mobile-projects.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]),
+.qaap-work-hub-chat-view-panel.theia-mod-sticky-composer > .theia-mobile-projects-sticky-composer:not([hidden]) {
+  border-top: none !important;
 }
 
 body.theia-mobile-mod-desktop-ide #theia-right-content-panel:has(.qaap-work-hub-chat-view-widget) .theia-mobile-projects-sticky-composer-inner {
