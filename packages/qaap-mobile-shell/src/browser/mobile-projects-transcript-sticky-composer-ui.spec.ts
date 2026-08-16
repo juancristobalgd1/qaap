@@ -95,6 +95,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         const seam = ui as unknown as Record<string, unknown>;
         seam.host = {
             transcriptFollowUpQueue: queue,
+            resolveActiveTranscriptChatHost: () => undefined,
             transcriptComposerQueueExpanded: false,
             transcriptComposerAgentModel: undefined,
             messageService: { error: () => { } },
