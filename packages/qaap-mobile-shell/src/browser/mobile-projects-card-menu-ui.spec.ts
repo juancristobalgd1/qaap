@@ -139,7 +139,7 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
             lastMessagePreview: 'Hello',
         } as never);
         const priority = [...menu.querySelectorAll('.theia-mobile-projects-card-menu-item')]
-            .find(item => item.textContent?.includes('Mark as high priority'));
+            .find(item => item.textContent?.trim() === 'Pin');
         expect(priority).to.not.equal(undefined);
         expect(priority?.querySelector('.codicon-pin')).to.not.equal(null);
         expect(priority?.querySelector('.codicon-star-empty')).to.equal(null);

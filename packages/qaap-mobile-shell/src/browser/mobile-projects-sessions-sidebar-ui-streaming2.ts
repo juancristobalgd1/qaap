@@ -104,21 +104,6 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
             event.stopPropagation();
             ctx.toggleSessionsSidebarProjectSortPopover(sortBtn);
         });
-        const legendBtn = document.createElement('button');
-        legendBtn.type = 'button';
-        legendBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-status-legend';
-        const legendIcon = document.createElement('span');
-        legendIcon.className = 'codicon codicon-question';
-        legendIcon.setAttribute('aria-hidden', 'true');
-        legendBtn.append(legendIcon);
-        legendBtn.title = nls.localize('qaap/sessionsSidebar/statusLegend/title', 'Status icon meanings');
-        legendBtn.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/statusLegend/title', 'Status icon meanings'));
-        legendBtn.setAttribute('aria-haspopup', 'dialog');
-        legendBtn.setAttribute('aria-expanded', 'false');
-        legendBtn.addEventListener('click', event => {
-            event.stopPropagation();
-            ctx.toggleSessionsSidebarStatusLegendPopover(legendBtn);
-        });
         const addProjectBtn = document.createElement('button');
         addProjectBtn.type = 'button';
         addProjectBtn.className = 'theia-mobile-work-hub-sessions-sidebar-head-action theia-mod-add-project';
@@ -134,7 +119,9 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
             event.stopPropagation();
             ctx.toggleSessionsSidebarAddProjectPopover(addProjectBtn);
         });
-        sectionActions.append(sortBtn, legendBtn, addProjectBtn);
+        // Status-legend control removed from the Projects head — it crowded the
+        // mobile action cluster; keep the popover helpers for possible reuse.
+        sectionActions.append(sortBtn, addProjectBtn);
         sectionHead.append(sectionActions);
         const list = document.createElement('div');
         list.className = 'theia-mobile-work-hub-sessions-sidebar-projects-list';

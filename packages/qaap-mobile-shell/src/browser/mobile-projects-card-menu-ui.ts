@@ -349,8 +349,8 @@ export class MobileProjectsCardMenuUi {
         const canFlag = isTheiaChat ? !!this.host.conversationFlags : true;
         this.appendCardMenuItem(menu, {
             label: flags.priority
-                ? nls.localize('qaap/mobileProjects/removePriority', 'Remove high priority')
-                : nls.localize('qaap/mobileProjects/markPriority', 'Mark as high priority'),
+                ? nls.localize('qaap/mobileProjects/unpinConversation', 'Unpin')
+                : nls.localize('qaap/mobileProjects/pinConversation', 'Pin'),
             iconClass: flags.priority ? 'codicon-pinned' : 'codicon-pin',
             disabled: !canFlag,
             title: flags.priority
