@@ -671,10 +671,13 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui),
   .theia-mobile-agent-log-title-row>.theia-mobile-projects-header-execution-tabs .theia-mobile-transcript-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui),
   .theia-mobile-agent-log-title-row>.theia-mobile-transcript-tabs .theia-mobile-transcript-tab-icon-select:not(.theia-mobile-transcript-terminal-agent-tui) {
-    min-width: 44px;
+    min-width: 40px;
     width: auto;
-    padding: 0 6px;
-    gap: 2px;
+    height: 36px;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 4px;
+    gap: 1px;
   }
 
   .theia-mobile-transcript-tabs.theia-mod-header-inline
