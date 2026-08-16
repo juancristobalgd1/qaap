@@ -2079,21 +2079,11 @@ button.theia-mobile-transcript-team-row:focus-visible {
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-side {
-  /* Explorer on the left (tree | split | preview), matching Work Hub Files. */
-  grid-template-columns: minmax(120px, var(--qaap-files-tree-width, 38%)) 5px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 5px minmax(120px, var(--qaap-files-tree-width, 38%));
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-tree {
-  grid-column: 1;
-  border-right: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
-}
-
-.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-split-handle {
-  grid-column: 2;
-}
-
-.theia-mobile-transcript-files-layout.theia-mod-tree-side > .theia-mobile-transcript-files-preview {
-  grid-column: 3;
+  border-left: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.18));
 }
 
 .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
@@ -2203,7 +2193,7 @@ button.theia-mobile-transcript-team-row:focus-visible {
 @media (pointer: coarse),
 (max-width: 767px) {
   .theia-mobile-transcript-files-layout.theia-mod-tree-side {
-    grid-template-columns: minmax(120px, var(--qaap-files-tree-width, 38%)) 20px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 20px minmax(120px, var(--qaap-files-tree-width, 38%));
   }
 
   .theia-mobile-transcript-files-layout.theia-mod-tree-bottom {
