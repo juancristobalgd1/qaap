@@ -188,7 +188,10 @@ export async function startPeerRunOrQueueExtracted(ctx: any, project: MobileProj
         });
         if (!submitted) {
             // Another POST for this conversation was still open (rapid-fire sends): the
-            // message never left, and the composer draft is already cleared — queue it.
+            // message never left. Fall back to the local queue — the caller (composer
+            // submit path) has NOT cleared the draft yet at this point, so a `false`
+            // return here would still let it restore the draft; a `true` return (via the
+            // queue) tells it the message is safely held instead and it can clear.
             return ctx.queuePeerRunMessage(summary, entry);
         }
         if (deliveryMode === 'queue') {
@@ -236,13 +239,19 @@ export function queuePeerRunMessageExtracted(ctx: any, summary: QaapAgentConvers
  * Mirror a local composer-queue entry onto durable server `pendingUserMessages` so F5
  * does not drop it. Tags the local entry with {@link TranscriptFollowUpEntry.serverPendingId}
  * so settle flush / Edit / Cancel talk to the same server row.
+ *
+ * Resolves `false` when the mirror could not be confirmed (POST rejected/skipped, or the
+ * server call threw) so the caller can warn that the follow-up only lives in the local
+ * queue and may not survive a reload. Resolves `true` once the POST is accepted — including
+ * when the local queue entry could not be tagged with a `serverPendingId` (the server still
+ * has the message; only the local Edit/Cancel correlation is best-effort).
  */
 export async function mirrorFollowUpToServerQueueExtracted(
     ctx: any,
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     entry: TranscriptFollowUpEntry,
-): Promise<void> {
+): Promise<boolean> {
     try {
         const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, entry.draft, {
             selectedAgentId: entry.selectedAgentId,
@@ -255,17 +264,17 @@ export async function mirrorFollowUpToServerQueueExtracted(
             deliveryMode: 'queue',
         });
         if (!submitted) {
-            return;
+            return false;
         }
         const conv = ctx.host.transcriptLastConv;
         if (!conv || conv.id !== summary.id) {
-            return;
+            return true;
         }
         const pending = [...(conv.pendingUserMessages ?? [])]
             .reverse()
             .find(item => item.content === entry.draft || item.content?.endsWith(entry.draft));
         if (!pending) {
-            return;
+            return true;
         }
         const queue = ctx.host.transcriptFollowUpQueue.peek(summary.id);
         for (let index = queue.length - 1; index >= 0; index -= 1) {
@@ -281,8 +290,10 @@ export async function mirrorFollowUpToServerQueueExtracted(
                 break;
             }
         }
+        return true;
     } catch {
         // Local popover still owns the follow-up; durability is best-effort.
+        return false;
     }
 }
 

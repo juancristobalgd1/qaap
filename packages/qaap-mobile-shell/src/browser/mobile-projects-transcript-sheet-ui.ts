@@ -528,12 +528,21 @@ export class MobileProjectsTranscriptSheetUi {
     /**
      * Publishes composer height on the sheet root (`--qaap-transcript-composer-height`) for
      * edge-fade / layout consumers. Scroll clearance is geometric (composer is a flex sibling).
+     *
+     * Also publishes `--qaap-composer-pill-strip-height`: the height of the changes/pill
+     * strip row (`.theia-mobile-sticky-composer-changes-pill-host`) nested in the composer,
+     * 0 when absent or hidden. Empty-chat padding uses this to avoid a dead zone above the
+     * composer when the pill strip is showing.
      */
     protected observeTranscriptComposerSize(root: HTMLElement, composer: HTMLElement): void {
         this.host.transcriptComposerSizeDispose.dispose();
+        const pillHostSelector = '.theia-mobile-sticky-composer-changes-pill-host';
         const apply = () => {
             const height = composer.hidden ? 0 : Math.round(composer.getBoundingClientRect().height);
             root.style.setProperty('--qaap-transcript-composer-height', `${height}px`);
+            const pillHost = composer.querySelector<HTMLElement>(pillHostSelector);
+            const pillHeight = pillHost && !pillHost.hidden ? Math.round(pillHost.getBoundingClientRect().height) : 0;
+            root.style.setProperty('--qaap-composer-pill-strip-height', `${pillHeight}px`);
         };
         apply();
         if (typeof ResizeObserver === 'undefined') {
@@ -542,6 +551,10 @@ export class MobileProjectsTranscriptSheetUi {
         }
         const observer = new ResizeObserver(() => apply());
         observer.observe(composer);
+        const pillHost = composer.querySelector<HTMLElement>(pillHostSelector);
+        if (pillHost) {
+            observer.observe(pillHost);
+        }
         this.host.transcriptComposerSizeDispose = Disposable.create(() => observer.disconnect());
     }
 }

@@ -341,13 +341,24 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         expect(optimisticRenders).to.deep.equal([]);
     });
 
-    function createBusySubmitProbe(): {
+    interface BusySubmitOverrides {
+        readonly queuePeerRunMessage?: boolean;
+        readonly startPeerRunOrQueue?: boolean;
+        readonly mirrorFollowUpToServerQueue?: boolean;
+    }
+
+    function createBusySubmitProbe(overrides: BusySubmitOverrides = {}): {
         queued: Array<{ draft: string; deliveryMode?: string }>;
         dispatched: Array<{ draft: string; deliveryMode?: string }>;
+        mirrored: Array<{ draft: string; deliveryMode?: string }>;
+        warnings: string[];
+        host: { transcriptComposerDraft: string };
         seam: Record<string, unknown>;
     } {
         const queued: Array<{ draft: string; deliveryMode?: string }> = [];
         const dispatched: Array<{ draft: string; deliveryMode?: string }> = [];
+        const mirrored: Array<{ draft: string; deliveryMode?: string }> = [];
+        const warnings: string[] = [];
         const host = {
             transcriptComposerContext: [],
             transcriptComposerDraft: 'follow-up',
@@ -358,7 +369,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             transcriptComposerHost: undefined,
             transcriptComposerSendRefresh: undefined,
             resolveAttachmentPreview: () => undefined,
-            messageService: { warn: () => undefined, error: () => undefined },
+            messageService: { warn: (message: string) => warnings.push(message), error: () => undefined },
         };
         const ui = Object.create(
             composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
@@ -371,7 +382,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             entry: { draft: string; deliveryMode?: string },
         ) => {
             queued.push({ draft: entry.draft, deliveryMode: entry.deliveryMode });
-            return true;
+            return overrides.queuePeerRunMessage ?? true;
         };
         seam.startPeerRunOrQueue = async (
             _project: MobileProjectEntry,
@@ -379,10 +390,18 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             entry: { draft: string; deliveryMode?: string },
         ) => {
             dispatched.push({ draft: entry.draft, deliveryMode: entry.deliveryMode });
-            return true;
+            return overrides.startPeerRunOrQueue ?? true;
+        };
+        seam.mirrorFollowUpToServerQueue = async (
+            _project: MobileProjectEntry,
+            _summary: QaapAgentConversationSummaryDTO,
+            entry: { draft: string; deliveryMode?: string },
+        ) => {
+            mirrored.push({ draft: entry.draft, deliveryMode: entry.deliveryMode });
+            return overrides.mirrorFollowUpToServerQueue ?? true;
         };
         seam.remountTranscriptStickyComposer = () => undefined;
-        return { queued, dispatched, seam };
+        return { queued, dispatched, mirrored, warnings, host, seam };
     }
 
     it('queues a busy follow-up by default', async () => {
@@ -438,6 +457,68 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         );
         expect(probe.dispatched).to.deep.equal([{ draft: 'stop and do this', deliveryMode: 'interrupt' }]);
         expect(probe.queued).to.deep.equal([]);
+    });
+
+    it('clears the draft once the local queue accepts it, but warns when the server mirror fails', async () => {
+        const probe = createBusySubmitProbe({ mirrorFollowUpToServerQueue: false });
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            probe.seam,
+            'wait for me',
+            project,
+            { ...summary, status: 'streaming' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+            },
+        );
+        expect(probe.queued).to.deep.equal([{ draft: 'wait for me', deliveryMode: 'queue' }]);
+        expect(probe.mirrored).to.deep.equal([{ draft: 'wait for me', deliveryMode: 'queue' }]);
+        // Local queue capture is durable enough to clear the composer immediately.
+        expect(probe.host.transcriptComposerDraft).to.equal('');
+        expect(probe.warnings).to.have.length(1);
+    });
+
+    it('keeps the draft in the composer when the local follow-up queue is full', async () => {
+        const probe = createBusySubmitProbe({ queuePeerRunMessage: false });
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            probe.seam,
+            'one more thing',
+            project,
+            { ...summary, status: 'streaming' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+            },
+        );
+        expect(probe.queued).to.deep.equal([{ draft: 'one more thing', deliveryMode: 'queue' }]);
+        // Never captured anywhere — the draft must not be cleared (queuePeerRunMessage already
+        // surfaced its own "queue full" error, so no additional warn here).
+        expect(probe.host.transcriptComposerDraft).to.not.equal('');
+        expect(probe.mirrored).to.deep.equal([]);
+    });
+
+    it('restores the draft when an interrupt/parallel dispatch fails', async () => {
+        const probe = createBusySubmitProbe({ startPeerRunOrQueue: false });
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            probe.seam,
+            'stop and do this',
+            project,
+            { ...summary, status: 'streaming' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+                forceDeliveryMode: 'interrupt',
+            },
+        );
+        expect(probe.dispatched).to.deep.equal([{ draft: 'stop and do this', deliveryMode: 'interrupt' }]);
+        expect(probe.host.transcriptComposerDraft).to.not.equal('');
+        expect(probe.warnings).to.have.length(1);
     });
 
     it('restores draft and composer context when an active-conversation send fails', async () => {

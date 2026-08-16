@@ -123,6 +123,22 @@ export function resolveTranscriptFilesTreePosition(viewportWidth = typeof window
     return readStoredTranscriptFilesTreePosition(viewportWidth) ?? defaultTranscriptFilesTreePosition(viewportWidth);
 }
 
+/**
+ * Clamps the dragged tree-pane size to the same bounds used by the resize
+ * handle: never smaller than `minPx`, never larger than `maxRatio` of the
+ * layout's own size (height when stacked, width when side-by-side).
+ */
+export function clampTranscriptFilesTreeSize(
+    startSize: number,
+    delta: number,
+    layoutSize: number,
+    minPx = FILES_TREE_MIN_PX,
+    maxRatio = FILES_TREE_MAX_RATIO,
+): number {
+    const maxSize = Math.max(minPx, layoutSize * maxRatio);
+    return Math.min(maxSize, Math.max(minPx, startSize - delta));
+}
+
 export function isTranscriptFilesTreeStacked(position: TranscriptFilesTreePosition): boolean {
     return position === 'bottom';
 }
@@ -1421,14 +1437,14 @@ export function mountTranscriptFilesView(
             const { stacked, startSize } = splitDragSession;
             const startCoord = stacked ? startClientY : startClientX;
             const layoutRect = layout.getBoundingClientRect();
-            const maxSize = Math.max(
-                FILES_TREE_MIN_PX,
-                (stacked ? layoutRect.height : layoutRect.width) * FILES_TREE_MAX_RATIO,
-            );
             const delta = stacked
                 ? clientY - startCoord
                 : clientX - startCoord;
-            const nextSize = Math.min(maxSize, Math.max(FILES_TREE_MIN_PX, startSize - delta));
+            const nextSize = clampTranscriptFilesTreeSize(
+                startSize,
+                delta,
+                stacked ? layoutRect.height : layoutRect.width,
+            );
             if (stacked) {
                 state.treePaneHeightPx = nextSize;
             } else {
@@ -1560,23 +1576,41 @@ export function mountTranscriptFilesView(
     }
 
     let resizeRaf = 0;
+    const applyWindowResizeLayout = (): void => {
+        resizeRaf = 0;
+        if (moreMenuOpen) {
+            positionAnchorMenu(moreBtn, moreMenu);
+        }
+        if (newMenuOpen) {
+            positionAnchorMenu(newFileBtn, newMenu, 196);
+        }
+        // Crossing the narrow/wide breakpoint (e.g. rotating a tablet, or
+        // resizing a desktop window) should re-resolve the tree position
+        // from the scoped storage/default for the new viewport — without
+        // persisting anything, so an explicit choice at one breakpoint
+        // never leaks into the other.
+        const nextPosition = resolveTranscriptFilesTreePosition(window.innerWidth);
+        if (nextPosition !== state.treePosition) {
+            state.treePosition = nextPosition;
+            syncTreeLayout();
+        }
+        updateSplitHandleAria();
+        applyTreePaneSize();
+        state.previewMonacoEditor?.layout();
+    };
     const onWindowResize = (): void => {
         // Throttle via rAF: resize fires continuously on mobile; Monaco editor layout()
         // and menu repositioning are expensive synchronous reflows — coalesce to one pass per frame.
+        // JSDOM (and some test polyfills) may omit requestAnimationFrame — fall through sync.
+        if (typeof window.requestAnimationFrame !== 'function') {
+            applyWindowResizeLayout();
+            return;
+        }
         if (resizeRaf) {
             return;
         }
         resizeRaf = window.requestAnimationFrame(() => {
-            resizeRaf = 0;
-            if (moreMenuOpen) {
-                positionAnchorMenu(moreBtn, moreMenu);
-            }
-            if (newMenuOpen) {
-                positionAnchorMenu(newFileBtn, newMenu, 196);
-            }
-            updateSplitHandleAria();
-            applyTreePaneSize();
-            state.previewMonacoEditor?.layout();
+            applyWindowResizeLayout();
         });
     };
     window.addEventListener('resize', onWindowResize);

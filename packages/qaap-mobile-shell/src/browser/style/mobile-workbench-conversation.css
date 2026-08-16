@@ -3642,6 +3642,21 @@ body>.theia-mobile-transcript-files-menu {
   padding: clamp(24px, 8vh, 72px) 18px 96px;
 }
 
+/*
+ * Sticky composer overlaps the empty-chat state (negative scroll-gap margin), leaving a dead
+ * zone between the last welcome content and the composer's top edge. Grow the bottom padding
+ * to at least the composer's overlap so tapping there always lands inside a real element.
+ */
+.theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agent-transcript.theia-mod-empty-chat {
+  padding-bottom: max(24px, calc(-1 * var(--theia-mobile-transcript-composer-scroll-gap, -28px)));
+}
+
+@media (max-width: 640px) {
+  .theia-mobile-projects.theia-mod-sticky-composer .theia-mobile-agent-transcript.theia-mod-empty-chat {
+    padding-bottom: max(18px, calc(-1 * var(--theia-mobile-transcript-composer-scroll-gap, -28px)));
+  }
+}
+
 .theia-mobile-agent-transcript.theia-mod-empty-chat:has(.theia-mod-transcript-recents) {
   justify-content: flex-start;
   align-items: stretch;

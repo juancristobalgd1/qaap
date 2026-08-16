@@ -8,6 +8,8 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 enableJSDOM();
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -226,5 +228,64 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         expect(ui.closeCalls).to.equal(0);
         expect(host.transcriptOpenSummaryId).to.equal('conv-2');
         expect(host.calls).to.include.members(['schedule', 'placeholder', 'messages', 'mount-messages', 'prefetch']);
+    });
+
+    describe('observeTranscriptComposerSize pill-strip height', () => {
+        function invokeObserve(root: HTMLElement, composer: HTMLElement): void {
+            const ui = new MobileProjectsTranscriptSheetUi(createHost(), createWorkHub());
+            (ui as unknown as { observeTranscriptComposerSize(root: HTMLElement, composer: HTMLElement): void })
+                .observeTranscriptComposerSize(root, composer);
+        }
+
+        it('publishes 0px when the composer has no changes-pill host', () => {
+            const root = document.createElement('div');
+            const composer = document.createElement('div');
+            document.body.append(root, composer);
+
+            invokeObserve(root, composer);
+
+            expect(root.style.getPropertyValue('--qaap-composer-pill-strip-height')).to.equal('0px');
+        });
+
+        it('publishes 0px when the changes-pill host is hidden', () => {
+            const root = document.createElement('div');
+            const composer = document.createElement('div');
+            const pillHost = document.createElement('div');
+            pillHost.className = 'theia-mobile-sticky-composer-changes-pill-host';
+            pillHost.hidden = true;
+            composer.append(pillHost);
+            document.body.append(root, composer);
+
+            invokeObserve(root, composer);
+
+            expect(root.style.getPropertyValue('--qaap-composer-pill-strip-height')).to.equal('0px');
+        });
+
+        it('publishes the pill-strip height when the changes-pill host is visible', () => {
+            const root = document.createElement('div');
+            const composer = document.createElement('div');
+            const pillHost = document.createElement('div');
+            pillHost.className = 'theia-mobile-sticky-composer-changes-pill-host';
+            pillHost.getBoundingClientRect = () => ({
+                height: 32, width: 100, top: 0, left: 0, right: 100, bottom: 32, x: 0, y: 0, toJSON: () => ({}),
+            });
+            composer.append(pillHost);
+            document.body.append(root, composer);
+
+            invokeObserve(root, composer);
+
+            expect(root.style.getPropertyValue('--qaap-composer-pill-strip-height')).to.equal('32px');
+        });
+    });
+
+    it('grows empty-chat bottom padding under the sticky composer to cover its overlap', () => {
+        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
+        const css = fs.readFileSync(cssPath, 'utf8');
+        expect(css).to.match(
+            /\.theia-mobile-projects\.theia-mod-sticky-composer \.theia-mobile-agent-transcript\.theia-mod-empty-chat\s*\{\s*padding-bottom:\s*max\(24px,/,
+        );
+        expect(css).to.match(
+            /@media \(max-width: 640px\)[\s\S]*?\.theia-mobile-projects\.theia-mod-sticky-composer \.theia-mobile-agent-transcript\.theia-mod-empty-chat\s*\{\s*padding-bottom:\s*max\(18px,/,
+        );
     });
 });
