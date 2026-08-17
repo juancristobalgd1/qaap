@@ -257,13 +257,16 @@ export function createTranscriptAgentFailureRowExtracted(ctx: any, msg: QaapAgen
         body.append(ctx.toolUi.createTranscriptAgentFailureDialog(
             msg.error ?? '',
             resolveAgentTurnFailureTechnicalContent(msg),
-            ctx.buildTranscriptAgentFailureDialogOptions({
-                failedToolName: failedTool?.name,
-                canRetry,
-                agentId,
-                error: msg.error,
-                technicalContent: resolveAgentTurnFailureTechnicalContent(msg),
-            }),
+            {
+                ...ctx.buildTranscriptAgentFailureDialogOptions({
+                    failedToolName: failedTool?.name,
+                    canRetry,
+                    agentId,
+                    error: msg.error,
+                    technicalContent: resolveAgentTurnFailureTechnicalContent(msg),
+                }),
+                agentMessage: msg,
+            },
         ));
         row.append(body);
         return row;
@@ -275,6 +278,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, inpu
         readonly agentId?: string;
         readonly error?: string;
         readonly technicalContent?: string;
+        readonly agentMessage?: unknown;
     }): {
         readonly failedToolName?: string;
         readonly onRetry?: () => void | Promise<void>;
@@ -294,6 +298,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, inpu
                 : undefined,
             agentLabel: input.agentId ? resolveAgentDisplayLabel(input.agentId) : undefined,
             agentId: input.agentId,
+            agentMessage: input.agentMessage,
         };
 }
 

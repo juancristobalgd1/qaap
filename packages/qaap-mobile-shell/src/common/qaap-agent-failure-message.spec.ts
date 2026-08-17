@@ -204,6 +204,27 @@ describe('qaap-agent-failure-message', () => {
         expect(friendly).to.equal(localizeAgentFailureMessage('cli_missing'));
     });
 
+    it('resolveAgentTurnFailureMessage names the failed tool when the log is empty', () => {
+        const friendly = resolveAgentTurnFailureMessage(undefined, {
+            state: 'failed',
+            exitCode: 1,
+            agentMessage: {
+                role: 'agent',
+                content: '',
+                segments: [{
+                    type: 'tool',
+                    toolUseId: 't1',
+                    name: 'Bash',
+                    args: '{}',
+                    finished: true,
+                    result: 'Error: EACCES permission denied\nexit code 13',
+                }],
+            },
+        });
+        expect(friendly).to.match(/Bash/i);
+        expect(friendly).to.not.equal(localizeGenericAgentFailureMessage('failed', 1));
+    });
+
     it('resolveAgentTurnFailureTechnicalContent prefers failed tool stderr', () => {
         const technical = resolveAgentTurnFailureTechnicalContent({
             role: 'agent',

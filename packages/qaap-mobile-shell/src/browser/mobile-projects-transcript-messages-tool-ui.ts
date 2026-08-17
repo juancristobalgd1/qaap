@@ -144,7 +144,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
         renderTranscriptRichContentExtracted(this, host, content, options);
     }
 
-    createTranscriptAgentFailureDialog(error: string, technicalContent?: string, options?: { readonly failedToolName?: string; readonly onRetry?: () => void | Promise<void>; readonly onOpenAuthUrl?: (url: string) => void; readonly onOpenAgentSignIn?: () => void | Promise<void>; readonly agentLabel?: string; readonly agentId?: string; },): HTMLElement {
+    createTranscriptAgentFailureDialog(error: string, technicalContent?: string, options?: { readonly failedToolName?: string; readonly onRetry?: () => void | Promise<void>; readonly onOpenAuthUrl?: (url: string) => void; readonly onOpenAgentSignIn?: () => void | Promise<void>; readonly agentLabel?: string; readonly agentId?: string; readonly agentMessage?: Pick<import('../common/qaap-agent-conversation-client').QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>; },): HTMLElement {
         return createTranscriptAgentFailureDialogExtracted(this, error, technicalContent, options);
     }
 
