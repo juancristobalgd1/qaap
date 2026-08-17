@@ -18,4 +18,6 @@ export {
     buildStaticIndexHtml,
     buildStaticPackageJson,
     buildStaticServeCommand,
+    nestedStaticUrlFallbacks,
+    shouldServeNestedStaticFromWorkspaceRoot,
 } from '../common/qaap-project-bootstrap-static';

@@ -241,7 +241,29 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         const descriptor = await detector.detect(URI.fromFilePath('/ws'));
         expect(descriptor!.kind).to.equal('static');
         expect(descriptor!.devCommand).to.include('docs/demo');
+        expect(descriptor!.devCommand).to.include('npm run build');
+        expect(descriptor!.installCommand).to.match(/npm install/);
         expect(descriptor!.expectedPort).to.equal(8080);
+    });
+
+    it('prefers build:esbuild over build for nested library static demos', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/docs');
+        mock.addDir('/ws/docs/demo');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'marked',
+            scripts: { 'build:esbuild': 'node esbuild.config.js', build: 'npm run build:esbuild && npm run build:types' },
+        }));
+        mock.addFile('/ws/docs/demo/index.html', '<!doctype html><title>Marked Demo</title>');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('static');
+        expect(descriptor!.devCommand).to.include('npm run build:esbuild');
+        expect(descriptor!.devCommand).to.not.match(/npm run build /);
     });
 
     it('prefers static index.html at workspace root over child Node projects', async () => {

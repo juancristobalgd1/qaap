@@ -26,6 +26,7 @@ import {
     STATIC_INSTALL_COMMAND,
     STATIC_ROOT_CANDIDATE_DIRS,
     buildStaticServeCommand,
+    shouldServeNestedStaticFromWorkspaceRoot,
 } from './qaap-project-bootstrap-static';
 import { formatMissingBootstrapProjectHint } from '../common/qaap-project-bootstrap-scaffold-plan';
 import {
@@ -157,7 +158,13 @@ export class QaapProjectBootstrapDetector {
         if (!devCommand && apps.length === 0) {
             const staticSite = await this.detectStaticSite(rootUri);
             if (staticSite) {
-                return { ...staticSite, name };
+                return this.decorateLibraryStaticSite(staticSite, {
+                    name,
+                    packageManager,
+                    installCommand,
+                    nodeModulesPresent,
+                    scripts,
+                });
             }
             const native = await this.detectNativeProject(rootUri);
             if (native) {
@@ -385,6 +392,51 @@ export class QaapProjectBootstrapDetector {
             monorepoFlavor: undefined,
             apps: [],
         };
+    }
+
+    /**
+     * Library repos (marked, etc.) often have a `build` script and a nested `docs/demo` but no
+     * `dev`/`start`. Serve from the workspace root so `/lib/*.js` resolves, and run the lightest
+     * available build so that file exists after install.
+     */
+    protected decorateLibraryStaticSite(
+        staticSite: QaapProjectDescriptor,
+        options: {
+            readonly name: string;
+            readonly packageManager: QaapPackageManager;
+            readonly installCommand: string;
+            readonly nodeModulesPresent: boolean;
+            readonly scripts: Record<string, unknown>;
+        },
+    ): QaapProjectDescriptor {
+        const serveCommand = staticSite.devCommand ?? '';
+        const nested = /QAAP_STATIC_ENTRY="\/[^"]+\//.test(serveCommand)
+            || shouldServeNestedStaticFromWorkspaceRoot(
+                serveCommand.match(/QAAP_STATIC_ENTRY="([^"]+)"/)?.[1]?.replace(/^\/|\/$/g, '') ?? '',
+            );
+        const buildScript = this.pickLibraryStaticBuildScript(options.scripts);
+        const buildPrefix = nested && buildScript
+            ? `${this.buildRunCommand(options.packageManager, buildScript)} && `
+            : '';
+        return {
+            ...staticSite,
+            name: options.name,
+            packageManager: options.packageManager,
+            installCommand: options.installCommand,
+            nodeModulesPresent: nested && buildScript ? options.nodeModulesPresent : true,
+            devCommand: buildPrefix + serveCommand,
+            devCommandLabel: staticSite.devCommandLabel,
+        };
+    }
+
+    protected pickLibraryStaticBuildScript(scripts: Record<string, unknown>): string | undefined {
+        if (typeof scripts['build:esbuild'] === 'string') {
+            return 'build:esbuild';
+        }
+        if (typeof scripts.build === 'string') {
+            return 'build';
+        }
+        return undefined;
     }
 
     /**

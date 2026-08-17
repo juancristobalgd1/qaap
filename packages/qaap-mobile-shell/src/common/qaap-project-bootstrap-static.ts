@@ -49,6 +49,10 @@ export const STATIC_INSTALL_COMMAND = 'echo "Static site: no dependencies to ins
 export const STATIC_SERVER_SCRIPT = [
     'const http=require("http"),fs=require("fs"),p=require("path");',
     'const root=p.resolve(process.env.QAAP_STATIC_ROOT||".");',
+    'const entryRaw=process.env.QAAP_STATIC_ENTRY||"/";',
+    'const entry=entryRaw.charAt(0)==="/" ? entryRaw : "/"+entryRaw;',
+    'const entryDir=entry.replace(/\\/+$/,"")||"";',
+    'const stripSeg=entryDir.split("/").filter(Boolean)[0];',
     'const port=Number(process.env.PORT)||8080;',
     'const T={".html":"text/html",".htm":"text/html",".js":"text/javascript",".mjs":"text/javascript",',
     '".css":"text/css",".json":"application/json",".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",',
@@ -58,26 +62,66 @@ export const STATIC_SERVER_SCRIPT = [
     'const send=(res,code,type,body)=>{res.writeHead(code,{"content-type":type});res.end(body);};',
     'http.createServer((req,res)=>{',
     'const u=decodeURIComponent((req.url||"/").split("?")[0]);',
-    'let f=p.normalize(p.join(root,u));',
-    'if(f!==root&&!f.startsWith(root+p.sep)){send(res,403,"text/plain","Forbidden");return;}',
+    'const alts=[u];',
+    'if(stripSeg && u.indexOf("/"+stripSeg+"/")===0){alts.push(u.slice(stripSeg.length+1));}',
+    'const finishMiss=()=>{',
+    'const ext=p.extname(u).toLowerCase();',
+    'if(ext && ext!==".html" && ext!==".htm"){send(res,404,"text/plain","Not found");return;}',
+    'fs.readFile(p.join(root,"index.html"),(e2,idx)=>{',
+    'if(e2){send(res,404,"text/plain","Not found");}else{send(res,200,"text/html",idx);}});};',
+    'const tryAt=(i)=>{',
+    'if(i>=alts.length){finishMiss();return;}',
+    'let f=p.normalize(p.join(root,alts[i]));',
+    'if(f!==root&&!f.startsWith(root+p.sep)){tryAt(i+1);return;}',
     'fs.stat(f,(e,st)=>{',
     'if(!e&&st.isDirectory()){f=p.join(f,"index.html");}',
     'fs.readFile(f,(err,buf)=>{',
-    'if(err){fs.readFile(p.join(root,"index.html"),(e2,idx)=>{',
-    'if(e2){send(res,404,"text/plain","Not found");}else{send(res,200,"text/html",idx);}});return;}',
+    'if(err){tryAt(i+1);return;}',
     'send(res,200,T[p.extname(f).toLowerCase()]||"application/octet-stream",buf);',
-    '});});',
-    '}).listen(port,"127.0.0.1",()=>console.log("Static dev server running at http://127.0.0.1:"+port+"/"));',
+    '});});};',
+    'tryAt(0);',
+    '}).listen(port,"127.0.0.1",()=>console.log("Static dev server running at http://127.0.0.1:"+port+entry));',
 ].join('');
+
+/**
+ * Nested demo folders (e.g. `docs/demo`) reference repo-root assets such as `/lib/*.js`.
+ * Chrooting the static server to that folder 404s those assets. Serve the workspace root
+ * and open the nested path instead. Top-level output dirs (`public`, `dist`) stay chrooted.
+ */
+export function shouldServeNestedStaticFromWorkspaceRoot(relDir: string): boolean {
+    return relDir.includes('/') || relDir.includes('\\');
+}
+
+/**
+ * Extra lookup paths for nested demos. `docs/demo/worker.js` imports `../lib/marked.esm.js`,
+ * which the browser requests as `/docs/lib/...`. If that file is missing, retry `/lib/...`
+ * at the workspace root (where `build:esbuild` writes the library bundle).
+ */
+export function nestedStaticUrlFallbacks(urlPath: string, entryPath: string): string[] {
+    const url = urlPath.charAt(0) === '/' ? urlPath : `/${urlPath}`;
+    const entryDir = (entryPath || '/').replace(/\/+$/g, '');
+    const stripSeg = entryDir.split('/').filter(Boolean)[0];
+    const alts = [url];
+    if (stripSeg && url.startsWith(`/${stripSeg}/`)) {
+        alts.push(url.slice(stripSeg.length + 1));
+    }
+    return alts;
+}
 
 /**
  * Builds the shell command that serves `relDir` (relative to the workspace root) over HTTP.
  * The port is injected by the bootstrap port wrapper via the `PORT` env var.
  */
 export function buildStaticServeCommand(relDir: string): string {
-    const dir = relDir && relDir.length > 0 ? relDir : '.';
+    const raw = relDir && relDir.length > 0 ? relDir : '.';
+    const nested = shouldServeNestedStaticFromWorkspaceRoot(raw);
+    const dir = nested ? '.' : raw;
+    const entry = nested
+        ? `/${raw.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')}/`
+        : '/';
     const escapedDir = dir.replace(/"/g, '\\"');
-    return `QAAP_STATIC_ROOT="${escapedDir}" node -e '${STATIC_SERVER_SCRIPT}'`;
+    const escapedEntry = entry.replace(/"/g, '\\"');
+    return `QAAP_STATIC_ROOT="${escapedDir}" QAAP_STATIC_ENTRY="${escapedEntry}" node -e '${STATIC_SERVER_SCRIPT}'`;
 }
 
 /**
