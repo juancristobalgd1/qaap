@@ -319,6 +319,19 @@ export class QaapDevPreviewPortRegistry {
         return [...this.previews.values()].filter(record => !this.isRecordExpired(record));
     }
 
+    /** Live preview claims owned by `ownerLogin` whose workspace root is `root` or a child of it. */
+    listForOwnerUnderRoot(ownerLogin: string, root: string): QaapDevPreviewRecord[] {
+        const resolvedRoot = path.resolve(root);
+        const prefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+        return this.records().filter(record => {
+            if (record.ownerLogin !== ownerLogin) {
+                return false;
+            }
+            const recordRoot = path.resolve(record.root);
+            return recordRoot === resolvedRoot || recordRoot.startsWith(prefix);
+        });
+    }
+
     /** The login that owns this port, or undefined if unclaimed or the claim has expired. */
     ownerOf(port: number): string | undefined {
         const entry = this.claims.get(port);

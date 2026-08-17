@@ -45,6 +45,8 @@ export interface MobileProjectsProjectActionsHost {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): void;
+    /** Tests stub confirmation; production uses ConfirmDialog. */
+    confirmRemoveProject?(project: MobileProjectEntry): Promise<boolean | undefined>;
 }
 
 /** Repository card actions: rename, duplicate, clear tasks, clear failed tasks, remove. */
@@ -171,6 +173,28 @@ export class MobileProjectsProjectActionsUi {
             return;
         }
 
+        const confirmed = this.host.confirmRemoveProject
+            ? await this.host.confirmRemoveProject(project)
+            : await new ConfirmDialog({
+                title: project.github
+                    ? nls.localize('qaap/mobileProjects/removeFromVps', 'Remove from this VPS')
+                    : nls.localize('qaap/mobileProjects/remove', 'Remove'),
+                msg: project.github
+                    ? nls.localize(
+                        'qaap/mobileProjects/removeGithubConfirm',
+                        'Remove {0} from this VPS? This deletes the local clone, its tasks, and previews. The GitHub repository is not deleted.',
+                        project.github.fullName || `${project.github.owner}/${project.github.name}`,
+                    )
+                    : nls.localize(
+                        'qaap/mobileProjects/removeConfirm',
+                        'Remove {0} from Projects? This cannot be undone.',
+                        project.name,
+                    ),
+            }).open();
+        if (!confirmed) {
+            return;
+        }
+
         const previousProjects = this.host.projects;
         this.host.projects = previousProjects.filter(candidate => candidate.id !== project.id);
         this.host.render();
@@ -185,6 +209,17 @@ export class MobileProjectsProjectActionsUi {
         }
 
         try {
+            for (const summary of projectConversations) {
+                if (summary.source === 'theia-chat') {
+                    if (summary.sessionId && this.host.chatService) {
+                        await this.host.chatService.deleteSession(summary.sessionId);
+                        this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+                    }
+                } else if (summary.id) {
+                    await deleteConversation(summary.id);
+                    this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
+                }
+            }
             const removed = await this.host.projectsService.removeProject(project);
             if (!removed) {
                 throw new Error(nls.localize('qaap/mobileProjects/removeRejected', 'The project could not be removed.'));

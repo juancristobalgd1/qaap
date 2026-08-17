@@ -52,6 +52,18 @@ export class QaapProjectSessionStore {
         return this.byUser.get(login)?.get(repoKey);
     }
 
+    deleteForUser(login: string, repoKey: string): boolean {
+        const map = this.byUser.get(login);
+        if (!map || !map.delete(repoKey)) {
+            return false;
+        }
+        if (map.size === 0) {
+            this.byUser.delete(login);
+        }
+        this.schedulePersist();
+        return true;
+    }
+
     upsertForUser(login: string, patch: QaapProjectSessionUpsertRequest): QaapProjectSessionSummary {
         let map = this.byUser.get(login);
         if (!map) {

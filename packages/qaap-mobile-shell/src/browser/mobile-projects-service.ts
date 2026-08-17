@@ -218,7 +218,7 @@ export class MobileProjectsService {
     }
 
     canRemove(project: MobileProjectEntry): boolean {
-        return !project.isCurrent && !project.github;
+        return !project.isCurrent;
     }
 
     async removeProject(project: MobileProjectEntry): Promise<boolean> {

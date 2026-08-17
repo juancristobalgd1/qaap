@@ -140,10 +140,10 @@ export class MobileProjectsCardMenuUi {
             iconClass: 'codicon-trash',
             danger: true,
             disabled: !canRemove,
-            title: !canRemove && project.github
-                ? nls.localize('qaap/mobileProjects/removeGithubDisabled', 'Remove is only for custom or recent projects')
-                : !canRemove
-                    ? nls.localize('qaap/mobileProjects/removeCurrentDisabled', 'Cannot remove the active workspace')
+            title: !canRemove
+                ? nls.localize('qaap/mobileProjects/removeCurrentDisabled', 'Cannot remove the active workspace')
+                : project.github
+                    ? nls.localize('qaap/mobileProjects/removeGithubHint', 'Remove this app from the VPS. The GitHub repository is not deleted.')
                     : undefined,
             onSelect: () => { void this.host.onRemoveProject(project); },
         });
@@ -255,10 +255,10 @@ export class MobileProjectsCardMenuUi {
             label: nls.localize('qaap/mobileProjects/remove', 'Remove'),
             danger: true,
             disabled: !canRemove,
-            title: !canRemove && project.github
-                ? nls.localize('qaap/mobileProjects/removeGithubDisabled', 'GitHub repositories stay visible in Projects')
-                : !canRemove
-                    ? nls.localize('qaap/mobileProjects/removeCurrentDisabled', 'Cannot remove the active workspace')
+            title: !canRemove
+                ? nls.localize('qaap/mobileProjects/removeCurrentDisabled', 'Cannot remove the active workspace')
+                : project.github
+                    ? nls.localize('qaap/mobileProjects/removeGithubHint', 'Remove this app from the VPS. The GitHub repository is not deleted.')
                     : undefined,
             onSelect: () => { void this.host.onRemoveProject(project); },
         });

@@ -7,6 +7,7 @@ import {
     QAAP_AUTH_API_PATH,
     QAAP_GITHUB_API_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
+    QAAP_USER_SETTINGS_API_PATH,
     type QaapAuthConfigResponse,
     type QaapAuthSessionResponse,
     type QaapGithubCreateRepositoryRequest,
@@ -148,6 +149,16 @@ export async function openQaapGithubRepository(owner: string, name: string): Pro
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
 
+/** Delete this user's on-disk clone of `owner/name` from the VPS. Does not delete the GitHub remote. */
+export async function deleteQaapGithubRepository(owner: string, name: string): Promise<void> {
+    const url = `${QAAP_GITHUB_API_PATH}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+    const response = await fetch(url, qaapAuthenticatedFetchInit({ method: 'DELETE' }));
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || `Failed to remove repository (${response.status})`);
+    }
+}
+
 export async function createQaapGithubRepository(request: QaapGithubCreateRepositoryRequest): Promise<QaapGithubOpenRepositoryResponse> {
     const response = await fetch(`${QAAP_GITHUB_API_PATH}/repositories`, qaapAuthenticatedFetchInit({
         method: 'POST',
@@ -173,6 +184,29 @@ export async function cloneQaapGithubRepository(repository: string): Promise<Qaa
         throw new Error(body.error || `Failed to clone GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
+}
+
+export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>> {
+    const response = await fetch(QAAP_USER_SETTINGS_API_PATH, qaapAuthenticatedFetchInit());
+    if (!response.ok) {
+        return {};
+    }
+    const body = await response.json() as { settings?: Record<string, unknown> };
+    return body.settings && typeof body.settings === 'object' ? body.settings : {};
+}
+
+export async function putQaapUserAiSettings(settings: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const response = await fetch(QAAP_USER_SETTINGS_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings }),
+    }));
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || `Failed to save AI settings (${response.status})`);
+    }
+    const body = await response.json() as { settings?: Record<string, unknown> };
+    return body.settings && typeof body.settings === 'object' ? body.settings : settings;
 }
 
 export function startGithubOAuth(): void {
