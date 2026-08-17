@@ -12,10 +12,12 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import {
+    applyNestedPathToPreviewUrl,
     parsePreviewIdentityPath,
     parsePreviewProxyPath,
     rebasePreviewUrlToIdentityClaim,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -212,12 +214,21 @@ export function recordForwardedPortExtracted(ctx: any, port: number,
         }
 }
 
+function previewUrlForIdentityOpen(ctx: any, discoveredUrl: string, identityPreviewUrl?: string): string {
+        const nestedEntry = staticEntryPathFromDevCommand(ctx._descriptor?.devCommand);
+        const base = identityPreviewUrl || discoveredUrl;
+        const rebased = identityPreviewUrl && discoveredUrl
+            ? rebasePreviewUrlToIdentityClaim(discoveredUrl, identityPreviewUrl)
+            : base;
+        return nestedEntry ? applyNestedPathToPreviewUrl(rebased || base, nestedEntry) : (rebased || base);
+}
+
 export function resolvePrimaryPreviewTargetExtracted(ctx: any, port: number, url: string): { port: number; url: string } {
         const claim = ctx.activePreviewClaim;
         if (claim && claim.port !== undefined && claim.port !== port) {
-            return { port: claim.port, url: claim.previewUrl };
+            return { port: claim.port, url: previewUrlForIdentityOpen(ctx, url, claim.previewUrl) };
         }
-        return { port, url };
+        return { port, url: previewUrlForIdentityOpen(ctx, url, claim?.previewUrl) };
 }
 
 export function mayAutoOpenPreviewNowExtracted(ctx: any): boolean {
@@ -255,7 +266,7 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: any, port: numbe
             ready = await ctx.healPreviewClaimToListeningPort(port);
             if (ready && ctx.activePreviewClaim) {
                 port = ctx.activePreviewClaim.port;
-                url = ctx.activePreviewClaim.previewUrl;
+                url = previewUrlForIdentityOpen(ctx, url, ctx.activePreviewClaim.previewUrl);
             }
         }
         if (ctx._previewUrl) {
@@ -273,10 +284,11 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: any, port: numbe
             if (!identity.ready) {
                 return;
             }
-            await ctx.openPreview(identity.previewUrl || activeUrl || ready.previewUrl || url, true, options);
+            const identityBase = identity.previewUrl || activeUrl || ready.previewUrl;
+            await ctx.openPreview(previewUrlForIdentityOpen(ctx, url, identityBase), true, options);
             return;
         }
-        await ctx.openPreview(activeUrl ?? ready.previewUrl ?? url, true, options);
+        await ctx.openPreview(previewUrlForIdentityOpen(ctx, url, activeUrl ?? ready.previewUrl), true, options);
 }
 
 export async function healPreviewClaimToListeningPortExtracted(ctx: any, deadPort: number,): Promise<Awaited<ReturnType<typeof waitForQaapDevPreviewPort>>> {

@@ -8,6 +8,7 @@ import {
     buildStaticServeCommand,
     nestedStaticUrlFallbacks,
     shouldServeNestedStaticFromWorkspaceRoot,
+    staticEntryPathFromDevCommand,
 } from './qaap-project-bootstrap-static';
 
 describe('qaap-project-bootstrap-static', () => {
@@ -53,7 +54,11 @@ describe('qaap-project-bootstrap-static', () => {
         it('retries nested demo library paths at the workspace root', () => {
             const cmd = buildStaticServeCommand('docs/demo');
             expect(cmd).to.include('stripSeg');
+            expect(cmd).to.include('writeHead(302');
             expect(cmd).to.include('alts.push');
+            expect(staticEntryPathFromDevCommand(cmd)).to.equal('/docs/demo/');
+            expect(staticEntryPathFromDevCommand(buildStaticServeCommand('.'))).to.equal(undefined);
+            expect(staticEntryPathFromDevCommand('npm run dev')).to.equal(undefined);
             expect(nestedStaticUrlFallbacks('/docs/lib/marked.esm.js', '/docs/demo/')).to.deep.equal([
                 '/docs/lib/marked.esm.js',
                 '/lib/marked.esm.js',

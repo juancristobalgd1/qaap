@@ -62,6 +62,7 @@ export const STATIC_SERVER_SCRIPT = [
     'const send=(res,code,type,body)=>{res.writeHead(code,{"content-type":type});res.end(body);};',
     'http.createServer((req,res)=>{',
     'const u=decodeURIComponent((req.url||"/").split("?")[0]);',
+    'if(entryDir && (u==="/"||u==="/index.html")){res.writeHead(302,{Location:entryDir+"/"});res.end();return;}',
     'const alts=[u];',
     'if(entryDir && (u==="/"||u==="/index.html")){alts.push(entryDir+"/",entryDir+"/index.html");}',
     'if(stripSeg && u.indexOf("/"+stripSeg+"/")===0){alts.push(u.slice(stripSeg.length+1));}',
@@ -91,6 +92,16 @@ export const STATIC_SERVER_SCRIPT = [
  */
 export function shouldServeNestedStaticFromWorkspaceRoot(relDir: string): boolean {
     return relDir.includes('/') || relDir.includes('\\');
+}
+
+/** Nested static entry from a synthesized `QAAP_STATIC_ENTRY=... node -e` serve command. */
+export function staticEntryPathFromDevCommand(devCommand: string | undefined): string | undefined {
+    const match = /QAAP_STATIC_ENTRY="(\/[^"]*)"/.exec(devCommand ?? '');
+    const entry = match?.[1];
+    if (!entry || entry === '/') {
+        return undefined;
+    }
+    return entry.endsWith('/') ? entry : `${entry}/`;
 }
 
 /**

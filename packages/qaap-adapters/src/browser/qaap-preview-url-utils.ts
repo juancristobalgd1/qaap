@@ -167,6 +167,54 @@ export function rebasePreviewUrlToIdentityClaim(sourceUrl: string, claimedPrevie
     }
 }
 
+function normalizeNestedPreviewPath(nestedPath: string): string | undefined {
+    const trimmed = nestedPath.trim();
+    if (!trimmed || trimmed === '/') {
+        return undefined;
+    }
+    const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    return withSlash.endsWith('/') ? withSlash : `${withSlash}/`;
+}
+
+/**
+ * When a nested static demo (e.g. `/docs/demo/`) is served from the workspace root, identity
+ * claims still advertise `/qaap-preview/:id/`. Opening that root hits backend `/` → "Not found".
+ * If the preview URL has no app path yet, pin the nested entry so relative `../css` / `../js`
+ * resolve under the identity prefix.
+ */
+export function applyNestedPathToPreviewUrl(previewUrl: string, nestedPath: string): string {
+    const nested = normalizeNestedPreviewPath(nestedPath);
+    if (!nested) {
+        return previewUrl;
+    }
+    try {
+        const parsed = new URL(previewUrl);
+        const identity = parsePreviewIdentityPath(parsed.pathname);
+        if (identity) {
+            if (identity.targetPath && identity.targetPath !== '/') {
+                return previewUrl;
+            }
+            parsed.pathname = `${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/${encodeURIComponent(identity.previewId)}${nested}`;
+            return parsed.toString();
+        }
+        const proxy = parsePreviewProxyPath(parsed.pathname);
+        if (proxy) {
+            if (proxy.targetPath && proxy.targetPath !== '/') {
+                return previewUrl;
+            }
+            parsed.pathname = `${QAAP_DEV_PREVIEW_PATH_PREFIX}/${proxy.port}${nested}`;
+            return parsed.toString();
+        }
+        if (!parsed.pathname || parsed.pathname === '/') {
+            parsed.pathname = nested;
+            return parsed.toString();
+        }
+        return previewUrl;
+    } catch {
+        return previewUrl;
+    }
+}
+
 /**
  * User-facing URL for browsing history (direct `localhost:PORT` instead of `/qaap-dev/:port/`).
  */

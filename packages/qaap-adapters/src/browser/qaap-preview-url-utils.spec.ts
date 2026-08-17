@@ -9,6 +9,7 @@ import {
     canonicalPreviewHistoryKey,
     getSameOriginPreviewProxyPort,
     normalizePreviewUrlForSameOrigin,
+    applyNestedPathToPreviewUrl,
     rebasePreviewUrlToIdentityClaim,
     toPreviewHistoryDisplayUrl,
 } from './qaap-preview-url-utils';
@@ -79,5 +80,32 @@ describe('qaap-preview-url-utils', () => {
             'http://127.0.0.1:8080/docs/demo/',
             claim,
         )).to.equal('http://localhost:3000/qaap-preview/live-execution/docs/demo/');
+    });
+
+    it('pins a nested static entry onto identity and proxy roots without clobbering an app route', () => {
+        expect(applyNestedPathToPreviewUrl(
+            'http://localhost:3000/qaap-preview/live-execution/',
+            '/docs/demo/',
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/docs/demo/');
+        expect(applyNestedPathToPreviewUrl(
+            'http://localhost:3000/qaap-dev/8080/',
+            'docs/demo',
+        )).to.equal('http://localhost:3000/qaap-dev/8080/docs/demo/');
+        expect(applyNestedPathToPreviewUrl(
+            'http://127.0.0.1:8080/',
+            '/docs/demo/',
+        )).to.equal('http://127.0.0.1:8080/docs/demo/');
+        expect(applyNestedPathToPreviewUrl(
+            'http://localhost:3000/qaap-preview/live-execution/docs/demo/',
+            '/docs/demo/',
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/docs/demo/');
+        expect(applyNestedPathToPreviewUrl(
+            'http://localhost:3000/qaap-preview/live-execution/settings',
+            '/docs/demo/',
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/settings');
+        expect(applyNestedPathToPreviewUrl(
+            'http://localhost:3000/qaap-preview/live-execution/',
+            '/',
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/');
     });
 });
