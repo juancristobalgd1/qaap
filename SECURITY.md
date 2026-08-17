@@ -92,6 +92,10 @@ Current state of these paths:
 > you MUST run `scripts/qaap-verify-multitenant.sh <login-A> <login-B>` on the VPS
 > (after the two test tenants exercise agent + New Worktree + a parallel run); a
 > green PASSED is the gate.
+>
+> Before the first public boot, also run `scripts/qaap-verify-launch-readiness.sh`
+> against the live origin. A production runtime without GitHub OAuth now **exits on
+> startup** unless `QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION` is set.
 
 ## Dependency audit notes
 

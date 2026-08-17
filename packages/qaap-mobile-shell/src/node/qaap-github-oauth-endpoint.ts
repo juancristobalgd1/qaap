@@ -47,6 +47,7 @@ import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
+import { evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -293,9 +294,14 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     protected handleAuthConfig(_req: Request, res: Response): void {
         const build = process.env.QAAP_BUILD_SHA?.trim();
+        const readiness = evaluateQaapProductionAuthReadiness();
         res.json({
-            githubOAuth: !!readQaapGithubOAuthConfig(),
+            githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
+            productionRuntime: readiness.productionRuntime,
+            oauthConfigured: readiness.oauthConfigured,
+            agentUidPerUser: readiness.agentUidPerUser,
+            ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
             // Deployed-build identity (short git SHA, baked into the image at build time).
             // Public by design: the repo is public, and this is the one signal that ends
             // "which build am I actually on?" during deploys — the post-deploy gate asserts
