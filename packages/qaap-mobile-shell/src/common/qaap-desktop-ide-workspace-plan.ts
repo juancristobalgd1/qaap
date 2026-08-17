@@ -18,13 +18,21 @@ export interface QaapDesktopIdeHubProject {
 
 /**
  * When opening the classic IDE from Work Hub:
+ * - a selected/pinned hub project → open that repository;
  * - one hub project → open that repository in the IDE;
- * - several → show the IDE without a repository root so the user picks one later.
+ * - several with none selected → show the IDE without a repository root so the user picks one later.
  */
 export function planDesktopIdeWorkspaceOpen(
     projects: readonly QaapDesktopIdeHubProject[],
     currentCwd: string | undefined,
+    selectedProjectId?: string,
 ): QaapDesktopIdeWorkspacePlan {
+    if (selectedProjectId) {
+        const selectedIndex = projects.findIndex(project => project.id === selectedProjectId);
+        if (selectedIndex >= 0) {
+            return { kind: 'open-project', projectIndex: selectedIndex };
+        }
+    }
     if (projects.length === 1) {
         return { kind: 'open-project', projectIndex: 0 };
     }

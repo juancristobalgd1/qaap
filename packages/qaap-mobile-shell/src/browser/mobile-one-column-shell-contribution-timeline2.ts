@@ -164,8 +164,10 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
             }
             return ctx.toggleProjectsPanel();
         },
-        isEnabled: () => (ctx.shouldActivateMobileLayout() || peekPreferDesktopIde()) && ctx.workspaceService.opened,
-        isVisible: () => matchesMobileOneColumnLayout() && ctx.workspaceService.opened,
+        isEnabled: () => peekPreferDesktopIde()
+            || (ctx.shouldActivateMobileLayout() && ctx.workspaceService.opened),
+        isVisible: () => peekPreferDesktopIde()
+            || (matchesMobileOneColumnLayout() && ctx.workspaceService.opened),
     });
     // Project card "Open agent" button. Submits to the backend agent-task runner so the work
     // is a detached child process, not a tab-bound chat; the agent keeps going after the
@@ -228,9 +230,10 @@ export async function openDesktopIdeExtracted(ctx: any): Promise<void> {
     // network, and waiting for it made the avatar switch look like a lost click. The existing
     // workspace is already enough to show the classic IDE; preparation can continue in the
     // background and may still reload/open the correct project when the hub has one selected.
+    const selectedProjectId = ctx.projectsPanel?.getAgentsHubSelectedProjectId?.();
     ctx.ideFallback.openDesktopIde();
     try {
-        await ctx.prepareDesktopIdeWorkspaceFromHub();
+        await ctx.prepareDesktopIdeWorkspaceFromHub(selectedProjectId);
     } catch (error) {
         // The surface switch has already succeeded. Do not turn a project-list refresh failure
         // into an unhandled rejection that makes the control appear intermittent.
@@ -238,7 +241,7 @@ export async function openDesktopIdeExtracted(ctx: any): Promise<void> {
     }
 }
 
-export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: any): Promise<boolean> {
+export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: any, selectedProjectId?: string): Promise<boolean> {
     const projects = await ctx.projectsService.loadProjects();
     const plan = planDesktopIdeWorkspaceOpen(
         projects.map(project => ({
@@ -246,6 +249,7 @@ export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: any): Prom
             cwd: ctx.projectsService.getProjectCwd(project),
         })),
         ctx.projectsService.getCurrentWorkspaceCwd(),
+        selectedProjectId,
     );
     if (plan.kind === 'reload-empty') {
         markPreferDesktopIde();

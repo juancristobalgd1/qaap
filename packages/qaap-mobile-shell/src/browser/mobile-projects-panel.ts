@@ -1650,6 +1650,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.shouldUseAgentsHubLanding();
     }
 
+    getAgentsHubSelectedProjectId(): string | undefined {
+        return this.agentsHubSelectedProjectId;
+    }
+
     resolveShellProject(): MobileProjectEntry | undefined {
         return this.resolveAgentsHubShellProject();
     }

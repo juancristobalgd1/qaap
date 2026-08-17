@@ -37,4 +37,34 @@ describe('planDesktopIdeWorkspaceOpen', () => {
             '/workspace',
         )).to.deep.equal({ kind: 'proceed' });
     });
+
+    it('opens the pinned hub project when several exist', () => {
+        expect(planDesktopIdeWorkspaceOpen(
+            [
+                { id: 'github:typicode/json-server', cwd: '/ws/json-server' },
+                { id: 'github:antfu-collective/vitesse-lite', cwd: '/ws/vitesse-lite' },
+            ],
+            undefined,
+            'github:antfu-collective/vitesse-lite',
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
+    });
+
+    it('opens the pinned project instead of emptying the IDE when another repo is already open', () => {
+        expect(planDesktopIdeWorkspaceOpen(
+            [
+                { id: 'a', cwd: '/workspace/repos/users/alice/acme/a' },
+                { id: 'b', cwd: '/workspace/repos/users/alice/acme/b' },
+            ],
+            '/workspace/repos/users/alice/acme/a',
+            'b',
+        )).to.deep.equal({ kind: 'open-project', projectIndex: 1 });
+    });
+
+    it('falls back to the multi-project plan when the selected id is unknown', () => {
+        expect(planDesktopIdeWorkspaceOpen(
+            [{ id: 'a' }, { id: 'b' }],
+            undefined,
+            'missing',
+        )).to.deep.equal({ kind: 'proceed' });
+    });
 });
