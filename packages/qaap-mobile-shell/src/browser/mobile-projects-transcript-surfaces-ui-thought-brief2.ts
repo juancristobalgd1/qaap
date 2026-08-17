@@ -45,6 +45,7 @@ import {
     buildQaapPreviewId,
     normalizeQaapPreviewConversationId,
     qaapPreviewProjectIdMatches,
+    qaapPreviewFileUriMatchesProjectName,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
 import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
@@ -248,7 +249,7 @@ export async function previewUrlMatchesProjectExtracted(ctx: any, previewUrl: st
                         project.id,
                         project.uri?.toString(),
                         cwdUri,
-                    );
+                    ) || qaapPreviewFileUriMatchesProjectName(probe.projectId, project.name);
                 }
                 // Legacy identity links predate project coordinates in the probe response. Keep
                 // title matching only for that migration path, never as the primary identity.
@@ -282,7 +283,7 @@ export async function discoverProjectDevPreviewUrlExtracted(ctx: any, project: M
         if (!isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin())) {
             return undefined;
         }
-        const ports = Array.from({ length: 18 }, (_, index) => 5173 + index);
+        const ports = [8080, 3333, 3001, 4173, ...Array.from({ length: 18 }, (_, index) => 5173 + index)];
         const probes = await Promise.all(ports.map(async port => {
             const probe = await probeQaapDevPreviewPort(port);
             if (!probe.ready || !await ctx.previewUrlMatchesProject(probe.previewUrl, project)) {

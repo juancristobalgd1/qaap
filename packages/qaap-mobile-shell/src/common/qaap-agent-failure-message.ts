@@ -69,6 +69,9 @@ const AUTH_PATTERNS: readonly RegExp[] = [
     /\bnot\s+logged\s+in\b/i,
     /\bplease\s+run\s+\/login\b/i,
     /\brun\s+\/login\b/i,
+    /\bauth(?:entication)?\s+is\s+required\b/i,
+    /\bcodex\s+auth\b/i,
+    /\bCODEX_API_KEY\b/,
     /\bauthentication\b/i,
     /\bunauthorized\b/i,
     /\b401\b/,
@@ -163,6 +166,11 @@ export function extractAgentLogFailureHint(log: string | undefined): string | un
     for (let i = lines.length - 1; i >= 0; i--) {
         const line = lines[i];
         if (/^(Error|error|npm error|failed to|Cannot find|fatal:)/i.test(line)) {
+            return truncateAgentFailureHint(line);
+        }
+        // QAIQ/Codex often emit a bare credential line without an `Error:` prefix
+        // ("Codex auth is required for gpt-5.5. Set CODEX_API_KEY…").
+        if (/\b(?:auth(?:entication)?\s+is\s+required|CODEX_API_KEY|invalid[_\s-]?api[_\s-]?key)\b/i.test(line)) {
             return truncateAgentFailureHint(line);
         }
     }

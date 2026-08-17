@@ -95,6 +95,7 @@ describe('mobile-projects-panel host delegates', () => {
         'syncSearchChrome',
         'renderTranscriptInlineApproval',
         'onResumePreview',
+        'selectSessionsSidebarProject',
     ] as const;
 
     for (const method of REQUIRED_PANEL_DELEGATES) {

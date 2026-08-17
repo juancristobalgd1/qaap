@@ -44,6 +44,7 @@ import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors
 import {
     buildQaapPreviewId,
     normalizeQaapPreviewConversationId,
+    qaapPreviewFileUriMatchesProjectName,
     qaapPreviewProjectIdMatches,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
@@ -224,18 +225,24 @@ export function bootstrapAppliesToProjectExtracted(ctx: any, project: MobileProj
     if (projectCwd) {
         return ctx.pathsEqual(projectCwd, bootstrapRoot);
     }
+    // Hub cards for skip-auth clones often lack `uri`/`isCurrent` while Theia still has another
+    // workspace open. Match the pinned bootstrap root by folder name so Preview can adopt it.
+    if (qaapPreviewFileUriMatchesProjectName(bootstrap.descriptor.rootUri.toString(), project.name)) {
+        return true;
+    }
     return project.isCurrent === true;
 }
 
 export function bootstrapPreviewUrlForProjectExtracted(ctx: any, project: MobileProjectEntry): string | undefined {
     const bootstrap = ctx.host.projectBootstrap;
-    if (!bootstrap || bootstrap.phase !== 'running' || !bootstrap.previewUrl) {
+    const previewUrl = bootstrap?.previewUrl ?? bootstrap?.previewClaimUrl;
+    if (!bootstrap || bootstrap.phase !== 'running' || !previewUrl) {
         return undefined;
     }
     if (!ctx.bootstrapAppliesToProject(project)) {
         return undefined;
     }
-    return normalizePreviewUrlForSameOrigin(bootstrap.previewUrl);
+    return normalizePreviewUrlForSameOrigin(previewUrl);
 }
 
 export function ensurePreviewProjectContextExtracted(ctx: any, project: MobileProjectEntry): void {

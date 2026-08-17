@@ -206,6 +206,44 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(descriptor!.expectedPort).to.equal(4173);
     });
 
+    it('treats json-server as a generic Node preview on the conventional :3000', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'json-server',
+            bin: { 'json-server': 'lib/bin.js' },
+            scripts: { dev: 'node --watch --experimental-strip-types src/bin.ts fixtures/db.json' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('node-generic');
+        expect(descriptor!.expectedPort).to.equal(3000);
+        expect(descriptor!.devCommand).to.include('dev');
+    });
+
+    it('serves docs/demo/index.html when a library has package.json but no dev script', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/docs');
+        mock.addDir('/ws/docs/demo');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'marked',
+            scripts: { test: 'node test', build: 'node build' },
+        }));
+        mock.addFile('/ws/docs/demo/index.html', '<!doctype html><title>Marked Demo</title>');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('static');
+        expect(descriptor!.devCommand).to.include('docs/demo');
+        expect(descriptor!.expectedPort).to.equal(8080);
+    });
+
     it('prefers static index.html at workspace root over child Node projects', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');

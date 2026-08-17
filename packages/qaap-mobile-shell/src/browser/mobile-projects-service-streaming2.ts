@@ -400,6 +400,30 @@ export async function loadProjectsExtracted(ctx: any): Promise<MobileProjectEntr
             entries.push(entry);
         }
 
+        // Skip-auth and public clones never appear in `/github/repositories`. Surface every
+        // github: session that already has an on-disk workspace so the hub lists cloned repos.
+        const currentUri = current?.resource;
+        for (const session of sessionMap.values()) {
+            if (!session.repoKey.startsWith('github:')) {
+                continue;
+            }
+            const entry = ctx.cachedGithubSessionToEntry(session, pinnedIds, currentUri);
+            if (!entry || hiddenIds.has(entry.id) || entries.some(e => e.id === entry.id)) {
+                continue;
+            }
+            const uriKey = entry.uri?.toString();
+            if (uriKey && seen.has(uriKey)) {
+                continue;
+            }
+            if (!ctx.isBrowsableHubProject(entry)) {
+                continue;
+            }
+            if (uriKey) {
+                seen.add(uriKey);
+            }
+            entries.push(entry);
+        }
+
         // Only GitHub repos already opened/cloned into Qaap (sessions + current), not the full
         // remote catalog — Work Hub / sidebar are "projects in the app", not a GitHub browser.
         // Full catalog remains available via {@link listGithubRepositories} (Open repository dialog).

@@ -167,19 +167,37 @@ export function isDirectory(target: string): boolean {
 
 // ─── Environment utilities ───────────────────────────────────────────────────
 
-/** Env-only fallback when no model alias or provider list is configured yet. */
-export function resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string {
+export interface QaapQaiqEnvFallbackModel {
+    readonly provider: 'openai' | 'gemini' | 'ollama' | 'anthropic' | 'mistral';
+    readonly vendor: string;
+    readonly modelId: string;
+}
+
+/**
+ * Env-only model when Settings aliases are missing or point at a vendor with no credentials.
+ * Keep in lockstep with {@link resolveQaiqProviderFlagsFromEnv}.
+ */
+export function resolveQaiqEnvFallbackModel(env: NodeJS.ProcessEnv): QaapQaiqEnvFallbackModel | undefined {
     if (env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim()) {
-        return '--provider gemini --model gemini-2.5-flash';
+        return { provider: 'gemini', vendor: 'google', modelId: 'gemini-2.5-flash' };
     }
     if (env.OPENROUTER_API_KEY?.trim()) {
-        return '--provider openai --model nvidia/nemotron-3-super-120b-a12b:free';
+        return { provider: 'openai', vendor: 'openrouter', modelId: 'nvidia/nemotron-3-super-120b-a12b:free' };
     }
     if (env.NVIDIA_API_KEY?.trim()) {
-        return '--provider openai --model meta/llama-3.3-70b-instruct';
+        return { provider: 'openai', vendor: 'nvidia', modelId: 'meta/llama-3.3-70b-instruct' };
     }
     if (env.OLLAMA_HOST?.trim()) {
-        return '--provider ollama --model qwen2.5-coder:7b';
+        return { provider: 'ollama', vendor: 'ollama', modelId: 'qwen2.5-coder:7b' };
+    }
+    return undefined;
+}
+
+/** Env-only fallback when no model alias or provider list is configured yet. */
+export function resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string {
+    const fallback = resolveQaiqEnvFallbackModel(env);
+    if (fallback) {
+        return `--provider ${fallback.provider} --model ${fallback.modelId}`;
     }
     if (env.OPENAI_API_KEY?.trim()) {
         return '--provider openai';

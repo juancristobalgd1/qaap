@@ -118,6 +118,23 @@ describe('QaapDevPreviewEndpoint', () => {
         );
     });
 
+    it('pins Vite BASE_URL to the identity prefix so vue-router matches the home route', () => {
+        const prefix = '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234';
+        const moduleSource = 'import.meta.env = {"BASE_URL": "/", "DEV": true};'
+            + 'const asset = "/models/iphone16promax.glb";';
+        expect(endpoint.exposeRewriteDevPreviewBody(moduleSource, 5184, prefix)).to.equal(
+            'import.meta.env = {"BASE_URL": "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/", "DEV": true};'
+            + 'const asset = "/models/iphone16promax.glb";',
+        );
+        expect(endpoint.exposeRewriteDevPreviewBody(
+            'import.meta.env = {"BASE_URL": "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/", "DEV": true};',
+            5184,
+            prefix,
+        )).to.equal(
+            'import.meta.env = {"BASE_URL": "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/", "DEV": true};',
+        );
+    });
+
     it('rebases the generated Vite HMR client onto the identity-scoped preview', () => {
         const viteClient = [
             'console.debug("[vite] connecting...");',

@@ -464,7 +464,7 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return buildTranscriptComposerActivityOptionsExtracted(this, project, summary);
     }
 
-    protected async launchComposerDevPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    async launchComposerDevPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return launchComposerDevPreviewExtracted(this, project, summary);
     }
 

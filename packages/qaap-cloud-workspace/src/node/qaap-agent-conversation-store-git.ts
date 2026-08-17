@@ -8,23 +8,60 @@
 
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as path from 'path';
 import { parseGitNumstat } from './qaap-agent-conversation-store-constants';
 
+/** True only when `cwd` itself is a git root/worktree — never walk to a parent repository. */
+export function cwdIsGitRepository(cwd: string): boolean {
+    try {
+        return fs.existsSync(path.join(cwd, '.git'));
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Parse `owner/repo` from a GitHub remote URL. Uses `URL` for https remotes so a path like
+ * `/juancristobalgd1/qaap.git` cannot match as owner=`juancristobalgd1`, name=`q` (the previous
+ * unanchored `(.+?)(?:\.git)?` regex stopped at the first "git" substring).
+ */
+export function parseGithubRepoFromRemoteUrl(url: string): { owner: string; name: string } | undefined {
+    const trimmed = url.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    const ssh = /^git@github\.com:([^/]+)\/([^/]+)$/i.exec(trimmed);
+    if (ssh) {
+        return { owner: ssh[1], name: ssh[2].replace(/\.git$/i, '') };
+    }
+    try {
+        const withProtocol = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)
+            ? trimmed
+            : `https://${trimmed}`;
+        const parsed = new URL(withProtocol);
+        if (!/(^|\.)github\.com$/i.test(parsed.hostname)) {
+            return undefined;
+        }
+        const parts = parsed.pathname.replace(/^\/+/, '').replace(/\.git$/i, '').split('/');
+        if (parts.length >= 2 && parts[0] && parts[1]) {
+            return { owner: parts[0], name: parts[1] };
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
+}
+
 export function parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined {
+    if (!cwdIsGitRepository(cwd)) {
+        return undefined;
+    }
     try {
         const result = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8' });
         if (result.status !== 0) {
             return undefined;
         }
-        const url = result.stdout.trim();
-        const ssh = /^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/i.exec(url);
-        if (ssh) {
-            return { owner: ssh[1], name: ssh[2].replace(/\.git$/, '') };
-        }
-        const https = /github\.com[/:]([^/]+)\/(.+?)(?:\.git)?/i.exec(url);
-        if (https) {
-            return { owner: https[1], name: https[2].replace(/\.git$/, '') };
-        }
+        return parseGithubRepoFromRemoteUrl(result.stdout);
     } catch { /* not a git repo */ }
     return undefined;
 }

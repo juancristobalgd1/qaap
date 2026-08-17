@@ -50,6 +50,7 @@ import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
+import { vendorHasByokCredential } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
@@ -87,7 +88,7 @@ import {
     type QaapQaiqModelBinding,
 } from '../common/qaap-qaiq-model-binding';
 import { resolveRequestAgentModel, resolveTaskAgentModel } from '../common/qaap-agent-task';
-import { resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
+import { coerceRunnableAgentModel, resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
 import {
     parseQaapNativeModelRoutingTable,
     QAAP_AGENT_TASK_MODELS_ENV,
@@ -119,6 +120,7 @@ import {
     readRepoMemory as readRepoMemoryHelper,
     readResearchLedger as readResearchLedgerHelper,
     isDirectory as isDirectoryHelper,
+    resolveQaiqEnvFallbackModel as resolveQaiqEnvFallbackModelHelper,
     resolveQaiqProviderFlagsFromEnv as resolveQaiqProviderFlagsFromEnvHelper,
     applyOpenRouterOpenAiCompatEnv as applyOpenRouterOpenAiCompatEnvHelper,
     applyNvidiaOpenAiCompatEnv as applyNvidiaOpenAiCompatEnvHelper,
@@ -157,22 +159,29 @@ import {
 
 export function resolveAgentModelForRequestExtracted(ctx: any, request: QaapCreateAgentTaskRequest,
         prompt: string,): QaapCreateAgentTaskQaiqModel | undefined {
-        const explicit = resolveRequestAgentModel(request);
-        if (explicit) {
-            return explicit;
-        }
         const agentId = ctx.resolveAgentId(prompt, request.agent);
+        const readPref = (key: string): unknown => ctx.preferenceService?.get(key);
         // No preference guard here: only QAIQ's alias routing needs preferences, and the native-CLI
         // branch (claude & co.) must still route when none is available — the reader simply yields
         // undefined and the QAIQ path resolves to no binding, as before.
-        return resolveEffectiveRequestAgentModel(
+        const resolved = resolveEffectiveRequestAgentModel(
             request,
-            key => ctx.preferenceService?.get(key),
+            readPref,
             agentId,
             {
                 listNativeModels: id => listNativeAgentModels(id),
                 nativeTable: ctx.nativeModelRoutingTable(),
             },
+        );
+        if (!agentUsesSettingsModelCatalog(agentId)) {
+            return resolved;
+        }
+        const env = ctx.previewProviderEnv();
+        return coerceRunnableAgentModel(
+            resolved,
+            readPref,
+            key => env[key],
+            resolveQaiqEnvFallbackModelHelper(env),
         );
 }
 
@@ -471,11 +480,16 @@ export function buildTemplateVarsExtracted(ctx: any, agentId: string,
 }
 
 export function resolveQaiqProviderFlagsExtracted(ctx: any): string {
+        const env = ctx.previewProviderEnv();
         const binding = ctx.resolveQaapQaiqBinding();
-        if (binding) {
+        if (binding && vendorHasByokCredential(
+            key => ctx.preferenceService?.get(key),
+            binding.vendor,
+            key => env[key],
+        )) {
             return formatQaiqProviderFlags(binding);
         }
-        return ctx.resolveQaiqProviderFlagsFromEnv(ctx.previewProviderEnv());
+        return ctx.resolveQaiqProviderFlagsFromEnv(env);
 }
 
 export function resolveQaapQaiqBindingExtracted(ctx: any): QaapQaiqModelBinding | undefined {

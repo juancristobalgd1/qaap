@@ -234,9 +234,10 @@ export function adoptReadyTranscriptPreviewExtracted(ctx: any, project: MobilePr
         void ctx.host.projectsService.recordProjectPreviewUrl(readyProject, readyUrl);
         ctx.host.transcriptPreviewRequestRunning = false;
         ctx.host.transcriptPreviewRequestPending = false;
-        if (ctx.matchesActivePreviewSummary(summary)) {
+        const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
+        if (ctx.matchesActivePreviewSummary(summary) || previewTabActive) {
             ctx.stageTranscriptPreviewReadyUrl(ctx.previewScopeId(summary), readyUrl);
-            if (ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview') {
+            if (previewTabActive) {
                 ctx.renderPreviewTab(readyProject, summary);
             } else {
                 ctx.host.transcriptScheduleRefresh?.();

@@ -262,14 +262,13 @@ export function buildEphemeralCurrentWorkspaceEntryExtracted(ctx: any): MobilePr
 export async function loadSessionMapExtracted(ctx: any): Promise<Map<string, QaapProjectSessionSummary>> {
         const local = readLocalProjectSessions();
         const config = await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
-        if (config.skipAuth) {
-            return local;
-        }
-        if (readQaapSignedIn()) {
-            await syncQaapAuthSessionFromServer();
-        }
-        if (!readQaapSignedIn()) {
-            return local;
+        if (!config.skipAuth) {
+            if (readQaapSignedIn()) {
+                await syncQaapAuthSessionFromServer();
+            }
+            if (!readQaapSignedIn()) {
+                return local;
+            }
         }
         try {
             const remote = await fetchQaapProjectSessions();

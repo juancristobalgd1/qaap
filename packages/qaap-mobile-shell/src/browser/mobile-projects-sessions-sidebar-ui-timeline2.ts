@@ -48,7 +48,8 @@ export function createSessionsSidebarProjectGroupExtracted(ctx: any, project: Mo
     const toggleExpand = (): void => {
         const willExpand = section.classList.contains('theia-mod-collapsed');
         section.classList.toggle('theia-mod-collapsed');
-        head.setAttribute('aria-expanded', String(willExpand));
+        const chevronBtn = head.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn');
+        chevronBtn?.setAttribute('aria-expanded', String(willExpand));
         const folderIcon = head.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-folder');
         if (folderIcon) {
             folderIcon.classList.toggle('codicon-folder', !willExpand);
@@ -76,13 +77,36 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: 
     if (project.isCurrent) {
         row.classList.add('theia-mod-current');
     }
-    const head = document.createElement('button');
-    head.type = 'button';
-    head.className = 'theia-mobile-work-hub-sessions-sidebar-project-row';
-    head.setAttribute('aria-expanded', String(expanded));
+    if (ctx.host.agentsHubSelectedProjectId === project.id) {
+        row.classList.add('theia-mod-selected');
+    }
+    const chevronBtn = document.createElement('button');
+    chevronBtn.type = 'button';
+    chevronBtn.className = 'theia-mobile-work-hub-sessions-sidebar-project-chevron-btn';
+    chevronBtn.setAttribute('aria-expanded', String(expanded));
+    chevronBtn.setAttribute('aria-label', expanded
+        ? nls.localize('qaap/sessionsSidebar/collapseProject', 'Collapse {0}', project.name)
+        : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name));
     const chevron = document.createElement('span');
     chevron.className = 'codicon codicon-chevron-right theia-mobile-work-hub-sessions-sidebar-project-chevron';
     chevron.setAttribute('aria-hidden', 'true');
+    chevronBtn.append(chevron);
+    chevronBtn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        onToggleExpand();
+        const nowExpanded = ctx.host.sessionsSidebarExpandedProjectIds.has(project.id);
+        chevronBtn.setAttribute('aria-expanded', String(nowExpanded));
+        chevronBtn.setAttribute('aria-label', nowExpanded
+            ? nls.localize('qaap/sessionsSidebar/collapseProject', 'Collapse {0}', project.name)
+            : nls.localize('qaap/sessionsSidebar/expandProject', 'Expand {0}', project.name));
+    });
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'theia-mobile-work-hub-sessions-sidebar-project-row';
+    head.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/openProject', 'Open {0}', project.name));
+    if (ctx.host.agentsHubSelectedProjectId === project.id) {
+        head.setAttribute('aria-current', 'true');
+    }
     const folder = document.createElement('span');
     folder.className = 'theia-mobile-work-hub-sessions-sidebar-project-folder codicon '
         + (expanded ? 'codicon-folder-opened' : 'codicon-folder');
@@ -90,10 +114,13 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: 
     const name = document.createElement('span');
     name.className = 'theia-mobile-work-hub-sessions-sidebar-project-name';
     name.textContent = project.name;
-    head.append(chevron, folder, name);
+    head.append(folder, name);
     head.addEventListener('click', ev => {
         ev.stopPropagation();
-        onToggleExpand();
+        if (!ctx.host.sessionsSidebarExpandedProjectIds.has(project.id)) {
+            onToggleExpand();
+        }
+        void ctx.selectSessionsSidebarProject(project);
     });
     const actions = document.createElement('div');
     actions.className = 'theia-mobile-work-hub-sessions-sidebar-project-actions';
@@ -113,7 +140,7 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: 
         ev.stopPropagation();
         ctx.host.cardMenuUi.toggleCardMenu(row, menu, menuBtn);
     });
-    row.append(head, actions, menuBtn, menu);
+    row.append(chevronBtn, head, actions, menuBtn, menu);
     return row;
 }
 

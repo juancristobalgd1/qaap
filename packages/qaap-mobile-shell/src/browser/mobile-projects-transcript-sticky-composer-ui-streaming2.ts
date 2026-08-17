@@ -2,6 +2,7 @@
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { ConfirmDialog } from '@theia/core/lib/browser';
@@ -409,11 +410,42 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
     if (!bootstrap) {
         return;
     }
+    const projectRoot = ctx.host.projectsService.getProjectCwd(project)
+        ?? ctx.host.preparedCwdByProjectId?.get?.(project.id)
+        ?? summary.cwd;
+    if (!projectRoot) {
+        MobileSnackbar.show(nls.localize(
+            'qaap/mobileProjects/previewRootUnresolved',
+            'Could not resolve this project\'s folder — open the project and retry.',
+        ), { kind: 'warning' });
+        return;
+    }
     // Clear any stale preview state for this section and switch to the Preview tab so the
     // user sees the loading surface immediately while the dev server starts.
     ctx.host.beginTranscriptDevPreviewRequest(project, summary);
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
-    await bootstrap.runDevServer({ conversationId: summary.id });
+    await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
+    const readyUrl = await ensureTranscriptDevPreview(bootstrap, {
+        conversationId: summary.id,
+        projectId: project.id,
+        workspaceRoot: projectRoot,
+        skipConversationPortProbe: true,
+    });
+    if (!readyUrl) {
+        return;
+    }
+    // `renderPreviewTab` reads `host.projects`, not the object passed to selectTranscriptTab.
+    // Record the ready URL on the hub entry before remounting Preview or the iframe stays empty.
+    const refreshed = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
+    const readyProject = { ...refreshed, previewUrl: readyUrl };
+    ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === refreshed.id
+        ? readyProject
+        : candidate);
+    if (ctx.host.transcriptOpenProject?.id === project.id) {
+        ctx.host.transcriptOpenProject = readyProject;
+    }
+    void ctx.host.projectsService.recordProjectPreviewUrl(readyProject, readyUrl);
+    ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', readyProject, summary);
 }
 
 export async function submitRunGeneratedAppFollowUpExtracted(ctx: any, project: MobileProjectEntry,

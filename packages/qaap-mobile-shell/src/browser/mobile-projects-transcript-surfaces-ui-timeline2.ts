@@ -91,7 +91,8 @@ export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: any, host:
         candidateUrl: string,): Promise<void> {
         const port = extractDevPreviewPortFromUrl(candidateUrl);
         if (port === undefined) {
-            if (!ctx.matchesActivePreviewSummary(summary) || !host.isConnected
+            const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
+            if ((!ctx.matchesActivePreviewSummary(summary) && !previewTabActive) || !host.isConnected
                 || !await ctx.previewUrlMatchesProject(candidateUrl, latestProject)) {
                 return;
             }
@@ -406,9 +407,15 @@ export async function tryMountProjectScopedPreviewExtracted(ctx: any, host: HTML
             void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
             return;
         }
-        const port = extractDevPreviewPortFromUrl(candidateUrl);
-        if (port === undefined) {
-            if (ctx.matchesActivePreviewSummary(summary)) {
+        let identityPath: ReturnType<typeof parseQaapIdentityPreviewRequestPath>;
+        try {
+            identityPath = parseQaapIdentityPreviewRequestPath(new URL(candidateUrl, window.location.href).pathname);
+        } catch {
+            identityPath = undefined;
+        }
+        const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
+        if (identityPath || extractDevPreviewPortFromUrl(candidateUrl) === undefined) {
+            if (ctx.matchesActivePreviewSummary(summary) || previewTabActive) {
                 ctx.mountTranscriptEmbeddedPreview(host, candidateUrl, latestProject, summary);
             }
             return;
@@ -431,8 +438,13 @@ export function renderPreviewTabExtracted(ctx: any, project: MobileProjectEntry,
         ctx.ensurePreviewProjectContext(project);
 
         const conv = ctx.host.transcriptLastConv;
-        const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
-        const candidateUrl = ctx.resolveTranscriptPreviewUrl(latestProject, conv);
+        const fromHost = ctx.host.projects.find(candidate => candidate.id === project.id);
+        const latestProject = {
+            ...(fromHost ?? project),
+            previewUrl: project.previewUrl ?? fromHost?.previewUrl,
+        };
+        const candidateUrl = ctx.resolveTranscriptPreviewUrl(latestProject, conv)
+            ?? ctx.bootstrapPreviewUrlForProject(latestProject);
         if (candidateUrl) {
             void ctx.tryMountProjectScopedPreview(host, project, summary, latestProject, candidateUrl);
             return;

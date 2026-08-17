@@ -22,6 +22,17 @@ describe('qaap-transcript-preview-bootstrap', () => {
         expect(extractDevPreviewPortFromUrl('http://127.0.0.1:3001')).to.equal(3001);
     });
 
+    it('extractDevPreviewPortFromUrl does not treat identity proxy URLs as the IDE port', () => {
+        // Regression: `/qaap-preview/<id>/` is served on the Work Hub origin (`:3000`). Parsing
+        // that host port as the app made Preview probe Theia and stay on the empty overlay.
+        expect(extractDevPreviewPortFromUrl(
+            'http://localhost:3000/qaap-preview/u-dev-w-file-hom-p-file-hom-x-deef6807-0o8ryxb0u0gn8s/',
+        )).to.equal(undefined);
+        expect(extractDevPreviewPortFromUrl(
+            'http://127.0.0.1:3000/qaap-preview/u-alice-w-file-wor-p-file-wor-x-11111111-abcdefgh/app',
+        )).to.equal(undefined);
+    });
+
     it('only probes ports tied to the current workspace bootstrap history', () => {
         expect(collectTrustedBootstrapPreviewPorts({
             previewUrl: 'http://localhost:3000/qaap-dev/5180/',

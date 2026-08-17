@@ -224,6 +224,9 @@ export function readGitStatusSnapshot(cwd: string): string | undefined {
 // ─── Worktree fingerprinting ─────────────────────────────────────────────────
 
 export function captureWorktreeStatus(cwd: string): string | undefined {
+    if (!fs.existsSync(path.join(cwd, '.git'))) {
+        return undefined;
+    }
     const result = spawnSync('git', ['-C', cwd, 'status', '--porcelain', '--untracked-files=all'], {
         cwd,
         encoding: 'utf8',
@@ -248,6 +251,9 @@ export function captureWorktreeStatus(cwd: string): string | undefined {
  * instead of a bare "any dirty path" probe.
  */
 export function captureWorktreeFingerprint(cwd: string): string | undefined {
+    if (!fs.existsSync(path.join(cwd, '.git'))) {
+        return undefined;
+    }
     const runGit = (args: readonly string[]): string | undefined => {
         const result = spawnSync('git', ['-C', cwd, ...args], {
             cwd,

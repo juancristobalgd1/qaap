@@ -12,7 +12,7 @@ export interface WebGenerationQualityVerdict {
     readonly reason?: string;
 }
 
-const WEB_GENERATION_PROMPT_RE = /\b(?:landing(?:\s+page)?|p[aá]gina(?:\s+web)?|sitio\s+web|homepage|single[\s-]page(?:\s+site)?|marketing\s+(?:site|page)|website)\b/i;
+const WEB_GENERATION_PROMPT_RE = /\b(?:landing(?:\s+page)?|p[aá]gina\s+(?:web|de\s+aterrizaje)|sitio\s+web|homepage|single[\s-]page(?:\s+site)?|marketing\s+(?:site|page)|website)\b/i;
 const WEB_GENERATION_ACTION_RE = /\b(?:create|build|make|design|scaffold|generate)\b[\s\S]{0,80}\b(?:landing|website|web\s+app|react\s+app|vite|homepage)\b/i;
 const WEB_GENERATION_STACK_RE = /\b(?:vite|react)\b[\s\S]{0,80}\b(?:landing|website|page|app)\b/i;
 

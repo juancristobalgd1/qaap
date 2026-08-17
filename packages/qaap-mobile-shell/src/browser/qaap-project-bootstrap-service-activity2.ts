@@ -7,7 +7,6 @@ import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposa
 import { generateUuid } from '@theia/core/lib/common/uuid';
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
-import { FileUri } from '@theia/core/lib/common/file-uri';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
@@ -81,7 +80,7 @@ import {
     shouldDisposeRestoredPreviewTerminal,
 } from './qaap-preview-terminal-lifecycle';
 import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
-import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
+import { buildQaapManagedShellInvocation, resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import {
     previewProjectId as previewProjectIdHelper,
     normalizeDevUrl as normalizeDevUrlHelper,
@@ -285,7 +284,7 @@ export async function spawnCommandExtracted(ctx: any, options: {
         // when the command completes. We use a login shell so the user's `node` / `pnpm` / `npm`
         // resolve from `~/.nvm`, `/opt/homebrew/bin`, etc. Without `-l` the PATH would be the
         // minimal one inherited from the IDE, which on macOS often lacks node entirely.
-        const terminalCwd = FileUri.fsPath(options.cwd.toString());
+        const terminalCwd = resolveWorkspaceHostFsPath(options.cwd);
         const { shellPath, shellArgs } = ctx.buildShellInvocation(options.command, terminalCwd);
         const terminal = await ctx.terminalService.newTerminal({
             title: options.title,

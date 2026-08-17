@@ -292,6 +292,9 @@ describe('qaap-agent-turn-completion', () => {
             + '@workspace/mockup-studio build: vite build --config vite.config.ts';
         expect(buildAgentAutoContinuePrompt(verifyReport)).to.not.include('starter');
         expect(buildAgentAutoContinuePrompt('add a formatDate function in a new file')).to.not.include('starter');
+        expect(buildAgentAutoContinuePrompt(
+            'Analiza este proyecto y explícame brevemente su arquitectura. Luego cambia el título principal visible de la página a PROJECT-A-TEST.',
+        )).to.not.include('starter');
     });
 
     it('treats a normal file-editing task as complete — no auto-continue', () => {

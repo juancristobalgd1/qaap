@@ -22,6 +22,22 @@ export function previewProjectId(workspaceRoot: URI): string {
     return workspaceRoot.toString();
 }
 
+/** Identity for a preview claim: the detected clone root, never a leftover Theia workspace. */
+export function resolvePreviewClaimWorkspaceRoot(ctx: {
+        readonly _descriptor?: { readonly rootUri?: URI };
+        readonly activeWorkspaceRoot?: URI;
+    }, cwd: URI): URI {
+    return ctx._descriptor?.rootUri ?? cwd ?? ctx.activeWorkspaceRoot;
+}
+
+/** True when Work Hub pinned a clone that is not the currently open Theia folder. */
+export function shouldIgnoreWorkspaceRefreshForHubPin(
+    pinnedRoot: string | undefined,
+    theiaWorkspaceRoot: string | undefined,
+): boolean {
+    return !!pinnedRoot && theiaWorkspaceRoot !== pinnedRoot;
+}
+
 // ─── URL / port utilities ────────────────────────────────────────────────────
 
 export function normalizeDevUrl(raw: string): string | undefined {

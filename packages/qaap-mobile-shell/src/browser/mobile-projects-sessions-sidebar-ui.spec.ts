@@ -601,4 +601,84 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(ui.clearFailedModeProjectId).to.equal(undefined);
     });
 
+    it('project name switches the workspace; chevron only expands or collapses', async () => {
+        const project = { id: 'json-server', name: 'json-server', status: 'working' } as MobileProjectEntry;
+        let selectedId: string | undefined;
+        let toggled = 0;
+        let hidOverlay = false;
+        const expandedIds = new Set<string>();
+        const host = {
+            sessionsSidebarExpandedProjectIds: expandedIds,
+            agentsHubSelectedProjectId: 'vitesse-lite',
+            cardMenuUi: {
+                buildProjectOptionsMenu: () => {
+                    const menu = document.createElement('div');
+                    menu.hidden = true;
+                    return menu;
+                },
+                toggleCardMenu: () => undefined,
+            },
+            selectSessionsSidebarProject: async (entry: MobileProjectEntry) => {
+                selectedId = entry.id;
+            },
+            sessionsSidebar: {
+                hideForMobileOverlay: () => { hidOverlay = true; },
+            },
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        const row = ui.createSessionsSidebarProjectRowHead(project, false, () => {
+            toggled += 1;
+            if (expandedIds.has(project.id)) {
+                expandedIds.delete(project.id);
+            } else {
+                expandedIds.add(project.id);
+            }
+        });
+        document.body.append(row);
+
+        const chevron = row.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-chevron-btn') as HTMLButtonElement;
+        const name = row.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-row') as HTMLButtonElement;
+        expect(chevron).to.not.equal(null);
+        expect(name).to.not.equal(null);
+
+        chevron.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        expect(toggled).to.equal(1);
+        expect(selectedId).to.equal(undefined);
+        expect(hidOverlay).to.equal(false);
+
+        name.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+        expect(selectedId).to.equal(project.id);
+        expect(toggled).to.equal(1);
+        expect(hidOverlay).to.equal(true);
+
+        row.remove();
+    });
+
+    it('selecting a collapsed project expands it so its conversations become visible', async () => {
+        const project = { id: 'marked', name: 'marked', status: 'working' } as MobileProjectEntry;
+        let toggled = 0;
+        const expandedIds = new Set<string>();
+        const host = {
+            sessionsSidebarExpandedProjectIds: expandedIds,
+            agentsHubSelectedProjectId: 'vitesse-lite',
+            cardMenuUi: {
+                buildProjectOptionsMenu: () => document.createElement('div'),
+                toggleCardMenu: () => undefined,
+            },
+            selectSessionsSidebarProject: async () => undefined,
+            sessionsSidebar: { hideForMobileOverlay: () => undefined },
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        const row = ui.createSessionsSidebarProjectRowHead(project, false, () => {
+            toggled += 1;
+            expandedIds.add(project.id);
+        });
+        const name = row.querySelector('.theia-mobile-work-hub-sessions-sidebar-project-row') as HTMLButtonElement;
+        name.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await new Promise<void>(resolve => { setTimeout(resolve, 0); });
+        expect(toggled).to.equal(1);
+        expect(expandedIds.has(project.id)).to.equal(true);
+    });
+
 });

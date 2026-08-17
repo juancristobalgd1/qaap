@@ -66,3 +66,61 @@ describe('QaapGithubOauthEndpoint.enrichSessionWithWorkspaceUri', () => {
         expect(enriched.workspaceUri).to.equal(undefined);
     });
 });
+
+describe('QaapGithubOauthEndpoint skip-auth and on-disk clone sessions', () => {
+
+    let reposRoot: string;
+    let endpoint: QaapGithubOauthEndpoint;
+    const login = '_dev';
+
+    beforeEach(() => {
+        reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-skip-sessions-'));
+        endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, { reposRoot });
+    });
+
+    afterEach(() => {
+        fs.rmSync(reposRoot, { recursive: true, force: true });
+    });
+
+    it('lists cloned owner/repo directories that have a .git dir', () => {
+        const clone = path.join(reposRoot, 'users', login, 'antfu-collective', 'vitesse-lite');
+        fs.mkdirSync(path.join(clone, '.git'), { recursive: true });
+        const listed = (endpoint as unknown as {
+            listOnDiskGithubCloneSessions(l: string): QaapProjectSessionSummary[];
+        }).listOnDiskGithubCloneSessions(login);
+        expect(listed.map(s => s.repoKey)).to.deep.equal(['github:antfu-collective/vitesse-lite']);
+    });
+
+    it('does not list a nested folder without .git', () => {
+        fs.mkdirSync(path.join(reposRoot, 'users', login, 'antfu-collective', 'not-a-repo'), { recursive: true });
+        const listed = (endpoint as unknown as {
+            listOnDiskGithubCloneSessions(l: string): QaapProjectSessionSummary[];
+        }).listOnDiskGithubCloneSessions(login);
+        expect(listed).to.deep.equal([]);
+    });
+
+    it('does not leak another user\'s clones into the skip-auth bucket', () => {
+        fs.mkdirSync(path.join(reposRoot, 'users', 'alice', 'octocat', 'hello', '.git'), { recursive: true });
+        const listed = (endpoint as unknown as {
+            listOnDiskGithubCloneSessions(l: string): QaapProjectSessionSummary[];
+        }).listOnDiskGithubCloneSessions(login);
+        expect(listed).to.deep.equal([]);
+    });
+
+    it('merge prefers stored sessions over disk-only rows', () => {
+        const clone = path.join(reposRoot, 'users', login, 'typicode', 'json-server');
+        fs.mkdirSync(path.join(clone, '.git'), { recursive: true });
+        const stored: QaapProjectSessionSummary[] = [{
+            repoKey: 'github:typicode/json-server',
+            branch: 'master',
+            lastTask: 'from-store',
+        }];
+        const merged = (endpoint as unknown as {
+            mergeOnDiskGithubSessions(l: string, s: QaapProjectSessionSummary[]): QaapProjectSessionSummary[];
+        }).mergeOnDiskGithubSessions(login, stored);
+        expect(merged).to.have.length(1);
+        expect(merged[0].branch).to.equal('master');
+        expect(merged[0].lastTask).to.equal('from-store');
+    });
+});

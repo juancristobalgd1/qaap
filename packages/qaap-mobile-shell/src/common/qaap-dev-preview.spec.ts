@@ -10,6 +10,7 @@ import {
     buildQaapDevPreviewUrl,
     injectQaapPreviewViteEnvBootstrap,
     injectQaapPreviewDiagnostics,
+    injectQaapPreviewHistoryBase,
     parseQaapDevPreviewRequestPath,
     parseQaapDevPreviewPort,
 } from './qaap-dev-preview';
@@ -83,6 +84,19 @@ describe('qaap-dev-preview', () => {
             .to.contain('await import("/@vite/env")');
         expect(injectQaapPreviewViteEnvBootstrap('<div>fragment</div>', ''))
             .to.match(/^<script type="module" data-qaap-preview-vite-env>/);
+    });
+
+    it('injectQaapPreviewHistoryBase strips the proxy prefix from location.pathname', () => {
+        const html = '<html><head><script type="module" src="/qaap-preview/abc/@vite/client"></script></head></html>';
+        const injected = injectQaapPreviewHistoryBase(html, '/qaap-preview/abc/');
+        expect(injected).to.contain('data-qaap-preview-history-base');
+        expect(injected).to.contain('var x="/qaap-preview/abc"');
+        expect(injected).to.contain('Location.prototype,"pathname"');
+        expect(injected).to.contain('History.prototype.pushState');
+        expect(injected.indexOf('data-qaap-preview-history-base'))
+            .to.be.lessThan(injected.indexOf('@vite/client'));
+        expect(injectQaapPreviewHistoryBase(injected, '/qaap-preview/abc/')).to.equal(injected);
+        expect(injectQaapPreviewHistoryBase(html, '')).to.equal(html);
     });
 
     it('injectQaapPreviewViteEnvBootstrap rebases TSS_ROUTER_BASEPATH onto the proxy prefix', () => {

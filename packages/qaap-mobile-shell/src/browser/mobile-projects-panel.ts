@@ -1152,6 +1152,18 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return createSessionsSidebarProjectRowHeadExtracted(this, project, expanded, onToggleExpand);
     }
 
+    protected async selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void> {
+        const context = this.resolveAgentsHubShellProject()
+            ?? this.transcriptController.state.transcriptOpenProject
+            ?? this.projects.find(entry => entry.isCurrent)
+            ?? this.projects[0];
+        if (!context) {
+            await this.activateAgentsHubProject(project);
+            return;
+        }
+        await this.stickyComposerWorkspaceUi.selectComposerWorkspaceProject(project, context);
+    }
+
     protected createSessionsSidebarIdeOpenControl(project: MobileProjectEntry): HTMLButtonElement {
         return this.sessionsSidebarUi.createSessionsSidebarIdeOpenControl(project);
     }

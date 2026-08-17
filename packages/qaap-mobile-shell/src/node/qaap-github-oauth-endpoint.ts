@@ -9,7 +9,7 @@ import { json } from 'body-parser';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import {
@@ -31,6 +31,7 @@ import {
     parseGithubFullNameFromWorkspacePath,
     resolveQaapReposRoot,
     resolveRepositoryWorkspacePath,
+    resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     createGithubRepository,
@@ -98,13 +99,13 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }
-        if (auth.kind === 'skip') {
-            res.json({ sessions: [] });
+        const login = this.auth.resolveUserLogin(auth);
+        if (!login) {
+            res.status(401).json({ error: 'Not signed in' });
             return;
         }
-        const login = auth.session.user.login;
         res.json({
-            sessions: this.projectSessions.listForUser(login)
+            sessions: this.mergeOnDiskGithubSessions(login, this.projectSessions.listForUser(login))
                 .map(session => this.enrichSessionWithWorkspaceUri(login, session)),
         });
     }
@@ -134,25 +135,92 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         return { ...session, workspaceUri: FileUri.create(target).toString() };
     }
 
+    /**
+     * Skip-auth (`_dev`) and authenticated clones live on disk even when the in-memory session
+     * store was never upserted (API clone, restarted process, empty skip-auth GET). Hub entries
+     * need those paths or the developer cannot switch to a cloned repository.
+     */
+    protected listOnDiskGithubCloneSessions(login: string): QaapProjectSessionSummary[] {
+        const userRoot = resolveUserReposRoot(this.reposRoot, login);
+        if (!existsSync(userRoot)) {
+            return [];
+        }
+        let owners: Array<{ readonly name: string; isDirectory(): boolean }>;
+        try {
+            owners = readdirSync(userRoot, { withFileTypes: true });
+        } catch {
+            return [];
+        }
+        const sessions: QaapProjectSessionSummary[] = [];
+        for (const ownerEnt of owners) {
+            if (!ownerEnt.isDirectory() || ownerEnt.name.startsWith('.')) {
+                continue;
+            }
+            const ownerDir = path.join(userRoot, ownerEnt.name);
+            let repos: Array<{ readonly name: string; isDirectory(): boolean }>;
+            try {
+                repos = readdirSync(ownerDir, { withFileTypes: true });
+            } catch {
+                continue;
+            }
+            for (const repoEnt of repos) {
+                if (!repoEnt.isDirectory() || repoEnt.name.startsWith('.')) {
+                    continue;
+                }
+                const target = path.join(ownerDir, repoEnt.name);
+                if (!existsSync(path.join(target, '.git'))) {
+                    continue;
+                }
+                sessions.push({
+                    repoKey: `github:${ownerEnt.name}/${repoEnt.name}`,
+                    branch: 'main',
+                });
+            }
+        }
+        return sessions;
+    }
+
+    protected mergeOnDiskGithubSessions(
+        login: string,
+        stored: readonly QaapProjectSessionSummary[],
+    ): QaapProjectSessionSummary[] {
+        const byKey = new Map(stored.map(session => [session.repoKey, session]));
+        for (const disk of this.listOnDiskGithubCloneSessions(login)) {
+            if (!byKey.has(disk.repoKey)) {
+                byKey.set(disk.repoKey, disk);
+            }
+        }
+        return [...byKey.values()];
+    }
+
+    protected rememberGithubCloneSession(
+        userLogin: string,
+        repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name' | 'fullName' | 'defaultBranch'>,
+    ): void {
+        const fullName = repository.fullName?.trim() || `${repository.owner}/${repository.name}`;
+        this.projectSessions.upsertForUser(userLogin, {
+            repoKey: `github:${fullName}`,
+            branch: repository.defaultBranch,
+        });
+    }
+
     protected handleUpsertProjectSession(req: Request, res: Response): void {
         const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
             return;
         }
-        if (auth.kind === 'skip') {
-            // Dev bypass: no GitHub identity to persist against. Mirror the GET's empty 200 so
-            // clients don't surface a console 503 on every session sync attempt.
-            res.json({});
+        const login = this.auth.resolveUserLogin(auth);
+        if (!login) {
+            res.status(401).json({ error: 'Not signed in' });
             return;
         }
-        const stored = auth.session;
         const body = (req.body ?? {}) as Partial<QaapProjectSessionUpsertRequest>;
         if (!body.repoKey || typeof body.repoKey !== 'string') {
             res.status(400).json({ error: 'repoKey is required' });
             return;
         }
-        const session = this.projectSessions.upsertForUser(stored.user.login, {
+        const session = this.projectSessions.upsertForUser(login, {
             repoKey: body.repoKey,
             branch: body.branch,
             tokens: body.tokens,
@@ -423,6 +491,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 return;
             }
             const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin);
+            this.rememberGithubCloneSession(auth.userLogin, repository);
             res.json({
                 repository,
                 workspaceUri: FileUri.create(workspacePath).toString(),
@@ -457,6 +526,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 description: typeof body.description === 'string' ? body.description.trim() : undefined,
             });
             const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin);
+            this.rememberGithubCloneSession(auth.userLogin, repository);
             res.json({
                 repository,
                 workspaceUri: FileUri.create(workspacePath).toString(),
@@ -506,6 +576,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 userLogin = QAAP_ANONYMOUS_USER_LOGIN;
             }
             const workspacePath = await this.ensureRepositoryWorkspace(repository, accessToken, userLogin);
+            this.rememberGithubCloneSession(userLogin, repository);
             res.json({
                 repository,
                 workspaceUri: FileUri.create(workspacePath).toString(),
