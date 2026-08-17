@@ -5,7 +5,11 @@
 
 import { normalizePreviewUrlForSameOrigin, parsePreviewProxyPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
-import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
+import {
+    isLocalQaapPreviewOrigin,
+    parseQaapIdentityPreviewRequestPath,
+    resolveDevPreviewPublicOrigin,
+} from '../common/qaap-dev-preview';
 import {
     resolveReadyTranscriptPreviewUrlFromProbe,
     type TranscriptPreviewPortProbeResult,
@@ -43,6 +47,12 @@ export function extractDevPreviewPortFromUrl(url: string | undefined): number | 
     }
     try {
         const parsed = new URL(url.trim(), resolveDevPreviewPublicOrigin());
+        // Identity URLs live on the IDE origin (`:3000/qaap-preview/<id>/`). That host port is
+        // the Work Hub itself — never a preview process. Treating it as port 3000 made Preview
+        // probe Theia, fail, and stay on the empty "Enter a URL" overlay.
+        if (parseQaapIdentityPreviewRequestPath(parsed.pathname)) {
+            return undefined;
+        }
         const proxy = parsePreviewProxyPath(parsed.pathname);
         if (proxy) {
             return proxy.port;

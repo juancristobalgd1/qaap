@@ -410,7 +410,9 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
     if (!bootstrap) {
         return;
     }
-    const projectRoot = ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd;
+    const projectRoot = ctx.host.projectsService.getProjectCwd(project)
+        ?? ctx.host.preparedCwdByProjectId?.get?.(project.id)
+        ?? summary.cwd;
     if (!projectRoot) {
         MobileSnackbar.show(nls.localize(
             'qaap/mobileProjects/previewRootUnresolved',
@@ -432,7 +434,13 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
     if (!readyUrl) {
         return;
     }
-    const readyProject = { ...project, previewUrl: readyUrl };
+    // `renderPreviewTab` reads `host.projects`, not the object passed to selectTranscriptTab.
+    // Record the ready URL on the hub entry before remounting Preview or the iframe stays empty.
+    const refreshed = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
+    const readyProject = { ...refreshed, previewUrl: readyUrl };
+    ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === refreshed.id
+        ? readyProject
+        : candidate);
     if (ctx.host.transcriptOpenProject?.id === project.id) {
         ctx.host.transcriptOpenProject = readyProject;
     }
