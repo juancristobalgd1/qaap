@@ -116,6 +116,14 @@ export function isMonorepoDescriptor(descriptor: QaapProjectDescriptor): boolean
     return descriptor.apps.length > 0;
 }
 
+/** True when a managed preview stop closed the dev terminal on purpose. */
+export function isQaapUserCancelledPreviewError(error?: string): boolean {
+    if (!error) {
+        return false;
+    }
+    return /dev server tab closed/i.test(error) || /vista previa detenida/i.test(error);
+}
+
 /**
  * A port observed in the dev-server stdout. We keep one entry per port (deduped by port number,
  * since `localhost` / `127.0.0.1` / `0.0.0.0` are equivalent endpoints), tagged with metadata that

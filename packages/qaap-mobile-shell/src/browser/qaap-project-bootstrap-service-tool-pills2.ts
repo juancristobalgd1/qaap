@@ -118,6 +118,7 @@ export function waitForExitExtracted(ctx: any, terminal: TerminalWidget): Promis
 }
 
 export function beginDevRunExtracted(ctx: any): void {
+        ctx.devRunCancelledByUser = false;
         ctx.devRunGeneration++;
         ctx.releaseActivePreview();
         ctx.cancelDevPreviewFallbacks();

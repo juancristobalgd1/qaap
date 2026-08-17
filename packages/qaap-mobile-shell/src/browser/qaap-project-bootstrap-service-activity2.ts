@@ -95,7 +95,7 @@ import { DEV_PORT_RECOVERY_MAX_ATTEMPTS, PORT_IN_USE_REGEX, RESTORED_PREVIEW_TER
 export async function failDevRunExtracted(ctx: any, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
         runId: number,): Promise<void> {
-        if (runId !== ctx.devRunGeneration) {
+        if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
             return;
         }
         if (ctx._phase !== 'starting' && ctx._phase !== 'running') {
@@ -113,6 +113,9 @@ export async function failDevRunExtracted(ctx: any, message: string,
             ?? plan.expectedPort;
         if (!portConflict) {
             const attached = await ctx.tryAttachToExistingServer(ctx.collectProbePorts(plan));
+            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+                return;
+            }
             if (attached || ctx._previewUrl) {
                 ctx._error = undefined;
                 ctx._portConflictDetected = false;
@@ -135,6 +138,9 @@ export async function failDevRunExtracted(ctx: any, message: string,
                 await ctx.startDevServer({ ...plan }, descriptor);
                 return;
             }
+        }
+        if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+            return;
         }
         ctx._needsInstall = terminalOutputNeedsInstall(ctx.devOutputTail);
         const diagnosedError = nextLock
@@ -428,7 +434,10 @@ export function watchAttachedDevTerminalExtracted(ctx: any, terminal: TerminalWi
             }
         });
         const onWidgetClose = terminal.onTerminalDidClose(() => {
-            if (runId === ctx.devRunGeneration) {
+            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+                return;
+            }
+            if (ctx._phase === 'starting' || ctx._phase === 'running') {
                 void ctx.failDevRun(nls.localize(
                     'qaap/projectBootstrap/devServerTabClosed',
                     'Dev server tab closed.',

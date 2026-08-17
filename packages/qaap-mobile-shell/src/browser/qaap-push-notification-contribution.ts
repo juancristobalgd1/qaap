@@ -9,6 +9,7 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { WindowBlinkService } from '@theia/ai-core/lib/browser/window-blink-service';
 import { QaapBootstrapStateChange, QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { isQaapUserCancelledPreviewError } from './qaap-project-bootstrap-types';
 import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
 
 export const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
@@ -27,6 +28,9 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
     onStart(): void {
         this.bootstrap.onStateChange((state: QaapBootstrapStateChange) => {
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
+                if (isQaapUserCancelledPreviewError(state.error)) {
+                    return;
+                }
                 this.notifyBuildFailed(state.error);
                 window.dispatchEvent(new CustomEvent(QAAP_BOOTSTRAP_FAILED_EVENT, { detail: { error: state.error } }));
             }

@@ -6,6 +6,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { QaapProjectBootstrapService } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-service';
+import { isQaapUserCancelledPreviewError } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-types';
 
 /** Must match mobile-shell push contribution event names. */
 const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
@@ -23,6 +24,9 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         void this.registerWebPushSubscription();
         this.bootstrap.onStateChange(state => {
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
+                if (isQaapUserCancelledPreviewError(state.error)) {
+                    return;
+                }
                 void sendQaapPushNotify({
                     title: 'Build failed',
                     body: state.error ?? 'Check the terminal output and retry.',

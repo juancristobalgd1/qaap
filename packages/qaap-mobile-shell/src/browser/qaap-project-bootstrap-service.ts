@@ -259,6 +259,7 @@ export class QaapProjectBootstrapService {
     protected _portConflictPort: number | undefined;
     /** Invalidates stale terminal exit/close callbacks when a new dev run starts. */
     protected devRunGeneration = 0;
+    protected devRunCancelledByUser = false;
     /** Invalidates in-flight install when the workspace session is reset. */
     protected installGeneration = 0;
     protected refreshDebounceTimer: number | undefined;
