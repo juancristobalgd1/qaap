@@ -272,7 +272,12 @@ export function kickoffTranscriptDevPreviewBootstrapExtracted(ctx: any, conv: Qa
         || !conversationShouldKickoffDevPreviewBootstrap(conv)) {
         return;
     }
-    if (ctx.transcriptDevPreviewBootstrapConversationId === conv.id) {
+    const snapshot = typeof bootstrap.getStateSnapshot === 'function'
+        ? bootstrap.getStateSnapshot()
+        : undefined;
+    const previewAlreadyRunning = snapshot?.phase === 'running' && !!snapshot?.previewUrl;
+    // A previous kickoff that ran before files existed must be allowed to retry (QA-004).
+    if (ctx.transcriptDevPreviewBootstrapConversationId === conv.id && previewAlreadyRunning) {
         return;
     }
     ctx.transcriptDevPreviewBootstrapConversationId = conv.id;
