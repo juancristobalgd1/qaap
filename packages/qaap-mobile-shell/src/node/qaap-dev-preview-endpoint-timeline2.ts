@@ -24,6 +24,7 @@ import {
     buildQaapIdentityPreviewUrl,
     injectQaapPreviewViteEnvBootstrap,
     injectQaapPreviewDiagnostics,
+    injectQaapPreviewHistoryBase,
     isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
     parseQaapIdentityPreviewRequestPath,
@@ -98,8 +99,11 @@ export async function forwardHttpExtracted(ctx: any, incoming: Request,
                 const rewritten = ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix);
                 const contentType = proxyRes.headers['content-type'];
                 outgoing.end(typeof contentType === 'string' && /\btext\/html\b/i.test(contentType)
-                    ? injectQaapPreviewDiagnostics(injectQaapPreviewViteEnvBootstrap(
-                        injectQaapPreviewBridgeLoader(rewritten, ctx.resolvePublicOrigin(incoming)),
+                    ? injectQaapPreviewDiagnostics(injectQaapPreviewHistoryBase(
+                        injectQaapPreviewViteEnvBootstrap(
+                            injectQaapPreviewBridgeLoader(rewritten, ctx.resolvePublicOrigin(incoming)),
+                            publicPrefix,
+                        ),
                         publicPrefix,
                     ))
                     : rewritten);

@@ -115,6 +115,60 @@ export function buildQaapIdentityPreviewUrl(publicOrigin: string, previewId: str
 
 export const QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER = 'data-qaap-preview-vite-env';
 export const QAAP_PREVIEW_DIAGNOSTICS_MARKER = 'data-qaap-preview-diagnostics';
+export const QAAP_PREVIEW_HISTORY_BASE_MARKER = 'data-qaap-preview-history-base';
+
+function insertPreviewHeadScript(html: string, script: string): string {
+    const headOpen = /<head(?:\s[^>]*)?>/i;
+    if (headOpen.test(html)) {
+        return html.replace(headOpen, match => `${match}${script}`);
+    }
+    const htmlOpen = /<html(?:\s[^>]*)?>/i;
+    if (htmlOpen.test(html)) {
+        return html.replace(htmlOpen, match => `${match}${script}`);
+    }
+    return `${script}${html}`;
+}
+
+/**
+ * Vue / React routers compiled with `base: '/'` read `location.pathname`. Under the same-origin
+ * path proxy that value is `/qaap-preview/<id>/…`, so the app 404s (vitesse-lite "Not Found")
+ * even though index.html loaded. Strip the prefix for reads and re-apply it on history writes.
+ */
+export function injectQaapPreviewHistoryBase(html: string, publicPrefix: string): string {
+    const prefix = publicPrefix.replace(/\/+$/, '');
+    if (!html || !prefix || html.includes(QAAP_PREVIEW_HISTORY_BASE_MARKER)) {
+        return html;
+    }
+    const script = `<script ${QAAP_PREVIEW_HISTORY_BASE_MARKER}>(function(){
+var x=${JSON.stringify(prefix)};
+function strip(p){return p.indexOf(x)===0?(p.slice(x.length)||"/"):p;}
+function add(u){
+if(u==null||u===""||typeof u!=="string"||u.charAt(0)==="#")return u;
+try{
+var parsed=/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(u)?new URL(u):new URL(u,location.href);
+if(parsed.origin!==location.origin)return u;
+if(parsed.pathname.indexOf(x)!==0){
+parsed.pathname=x+(parsed.pathname.charAt(0)==="/"?parsed.pathname:"/"+parsed.pathname);
+}
+return parsed.pathname+parsed.search+parsed.hash;
+}catch(err){return u;}
+}
+try{
+var pd=Object.getOwnPropertyDescriptor(Location.prototype,"pathname");
+if(pd&&pd.get){
+Object.defineProperty(Location.prototype,"pathname",{
+configurable:true,enumerable:true,
+get:function(){return strip(pd.get.call(this));},
+set:pd.set
+});
+}
+}catch(err){}
+var push=History.prototype.pushState,repl=History.prototype.replaceState;
+History.prototype.pushState=function(s,t,u){return push.call(this,s,t,u==null?u:add(u));};
+History.prototype.replaceState=function(s,t,u){return repl.call(this,s,t,u==null?u:add(u));};
+})();</script>`;
+    return insertPreviewHeadScript(html, script);
+}
 
 /**
  * Installs a bounded, same-origin diagnostic buffer before application scripts execute. The
