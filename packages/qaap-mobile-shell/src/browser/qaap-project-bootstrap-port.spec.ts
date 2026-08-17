@@ -14,6 +14,7 @@ import {
     pickAlternateDevPort,
     pickNextDevPort,
     resolveBootstrapDevPort,
+    wrapCommandForDevNodeEnv,
     wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
 
@@ -211,5 +212,13 @@ describe('qaap-project-bootstrap-port', () => {
         expect(pickNextDevPort(5173, [], 3000)).to.equal(5174);
         expect(pickNextDevPort(5173, [5174, 5175], 3000)).to.equal(5176);
         expect(pickNextDevPort(2999, [], 3000)).to.equal(3001);
+    });
+
+    it('wrapDevCommandForPort uses POSIX env prefixes on a Linux host instead of cmd.exe SET', () => {
+        const command = wrapDevCommandForPort('pnpm run dev', 3333, 'node-vite', false);
+        expect(command).to.match(/^QAAP_PREVIEW_PORT=3333 PORT=3333/);
+        expect(command).to.not.include('set "PORT=');
+        expect(wrapCommandForDevNodeEnv('pnpm install', false)).to.equal('NODE_ENV=development pnpm install');
+        expect(wrapCommandForDevNodeEnv('pnpm install', true)).to.equal('set "NODE_ENV=development"&& pnpm install');
     });
 });

@@ -3,7 +3,16 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { OS } from '@theia/core/lib/common/os';
 import { QAAP_STATIC_DEV_PORT, QAAP_THEIA_DEV_PORT, QaapProjectKind } from './qaap-project-bootstrap-types';
+
+/**
+ * Shell syntax for env prefixes must follow the **workspace host**, not `navigator.platform`.
+ * A Windows browser talking to a Linux backend would otherwise emit `set PORT=…` for bash.
+ */
+export function isWorkspaceHostWindows(explicit?: boolean): boolean {
+    return explicit ?? OS.backend.isWindows === true;
+}
 
 /** Default dev port per framework when `package.json` does not imply one. */
 export function getImplicitDevPort(kind: QaapProjectKind): number | undefined {
@@ -136,8 +145,13 @@ export function resolveBootstrapDevPort(
 /**
  * Prefixes / suffixes the dev command so the child process binds to `port` inside the host.
  */
-export function wrapDevCommandForPort(command: string, port: number, kind: QaapProjectKind): string {
-    const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
+export function wrapDevCommandForPort(
+    command: string,
+    port: number,
+    kind: QaapProjectKind,
+    backendIsWindows?: boolean,
+): string {
+    const isWindows = isWorkspaceHostWindows(backendIsWindows);
     const materialized = command.replaceAll('{{PORT}}', String(port));
     switch (kind) {
         case 'node-vite':
@@ -214,8 +228,8 @@ function prefixPortEnv(command: string, port: number, kind: QaapProjectKind, isW
  * production `process.env.NODE_ENV` via `/@vite/env`, flipping React and framework dev branches.
  * An inline assignment in the project's own script still wins over this prefix — deliberate.
  */
-export function wrapCommandForDevNodeEnv(command: string): string {
-    const isWindows = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
+export function wrapCommandForDevNodeEnv(command: string, backendIsWindows?: boolean): string {
+    const isWindows = isWorkspaceHostWindows(backendIsWindows);
     if (isWindows) {
         return `set "NODE_ENV=development"&& ${command}`;
     }

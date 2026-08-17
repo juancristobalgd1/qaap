@@ -8,7 +8,10 @@ import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
+import { OS } from '@theia/core/lib/common/os';
+import URI from '@theia/core/lib/common/uri';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import { buildQaapManagedShellInvocation, resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 
 describe('qaap-project-bootstrap-shell', () => {
 
@@ -30,6 +33,35 @@ describe('qaap-project-bootstrap-shell', () => {
             expect(invocation.shellArgs[2]).to.include('cd --');
         } finally {
             rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('uses bash on a Linux workspace host instead of the browser navigator platform', () => {
+        const previousBackendWindows = OS.backend.isWindows;
+        OS.backend.isWindows = false;
+        try {
+            const invocation = buildQaapManagedShellInvocation('pnpm run dev', '/home/ubuntu/app');
+            expect(invocation.shellPath).to.equal('/bin/bash');
+            expect(invocation.shellArgs[2]).to.include("cd -- '/home/ubuntu/app'");
+        } finally {
+            OS.backend.isWindows = previousBackendWindows;
+        }
+    });
+
+    it('keeps POSIX workspace paths on a Linux host (FileUri.fsPath follows the browser OS)', () => {
+        const previousBackendWindows = OS.backend.isWindows;
+        OS.backend.isWindows = false;
+        try {
+            const uri = new URI('file:///home/ubuntu/.qaap/workspaces/users/_dev/antfu-collective/vitesse-lite');
+            expect(resolveWorkspaceHostFsPath(uri)).to.equal(
+                '/home/ubuntu/.qaap/workspaces/users/_dev/antfu-collective/vitesse-lite',
+            );
+            expect(resolveWorkspaceHostFsPath(uri)).to.not.include('\\');
+            if (process.platform !== 'win32') {
+                expect(FileUri.fsPath(uri)).to.equal(resolveWorkspaceHostFsPath(uri));
+            }
+        } finally {
+            OS.backend.isWindows = previousBackendWindows;
         }
     });
 });
