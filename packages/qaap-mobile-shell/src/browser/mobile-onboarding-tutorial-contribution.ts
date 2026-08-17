@@ -314,7 +314,7 @@ export class MobileOnboardingTutorialContribution implements FrontendApplication
                 }
             });
         };
-        this.activeAgentWatchTimer = window.setInterval(tick, 2000);
+        this.activeAgentWatchTimer = window.setInterval(tick, 400);
         tick();
     }
 

@@ -44,8 +44,13 @@ export function shouldDeferMobileOnboardingTutorial(root: ParentNode = document)
     if (typeof document === 'undefined') {
         return false;
     }
+    // An open transcript is never first-run onboarding (QA-006): coach-marks must not cover
+    // a failed or in-progress task.
+    if (root.querySelector('.theia-mobile-agent-transcript-root.theia-mod-visible')) {
+        return true;
+    }
     const transcriptSurface = root.querySelector(
-        '.theia-mobile-agent-transcript-root.theia-mod-visible, .theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-visible',
+        '.theia-mobile-projects.theia-mod-agents-hub-inline-active.theia-mod-visible',
     );
     if (!transcriptSurface) {
         return false;
