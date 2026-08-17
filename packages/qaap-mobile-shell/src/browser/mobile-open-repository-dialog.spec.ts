@@ -28,6 +28,9 @@ describe('mobile-open-repository-dialog styles', () => {
         expect(css).to.match(/\.theia-mobile-open-repo-tab\s*\{[^}]*background:\s*transparent;/s);
         expect(css).to.match(/\.theia-mobile-open-repo-create\s*\{[^}]*background:\s*transparent;/s);
         expect(css).to.match(/\.theia-mobile-open-repo-filter\s*\{[^}]*background:\s*var\(--theia-input-background/s);
+        expect(css).to.include('.theia-mobile-open-repo button {');
+        expect(css).to.include('appearance: none');
+        expect(css).to.include('display: none !important');
     });
 
     it('does not leave drawer styles stranded in the unloaded PR-review partial', () => {

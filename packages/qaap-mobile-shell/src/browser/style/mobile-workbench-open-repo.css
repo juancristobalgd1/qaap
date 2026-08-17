@@ -168,6 +168,11 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   outline: none;
 }
 
+.theia-mobile-open-repo button {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 .theia-mobile-open-repo-description {
   flex-shrink: 0;
   margin: 0 16px 16px;
@@ -234,6 +239,12 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
 }
 
 .theia-mobile-open-repo-panel[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-open-repo-busy[hidden],
+.theia-mobile-open-repo-empty[hidden],
+.theia-mobile-open-repo-public-error[hidden] {
   display: none !important;
 }
 
