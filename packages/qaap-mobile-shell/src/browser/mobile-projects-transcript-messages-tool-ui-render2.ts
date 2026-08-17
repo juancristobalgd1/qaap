@@ -108,6 +108,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
                 ? { mode: 'session' as const }
                 : undefined);
         const isQuotaFailure = !authChallenge && (failureKind === 'quota' || failureKind === 'rate_limit');
+        const isCliMissing = !authChallenge && failureKind === 'cli_missing';
         const details = document.createElement('details');
         details.className = 'theia-mobile-agent-shell-window theia-mod-failed theia-mod-turn-failure';
         if (authChallenge) {
@@ -116,10 +117,13 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
         if (isQuotaFailure) {
             details.classList.add('theia-mod-quota-limit');
         }
+        if (isCliMissing) {
+            details.classList.add('theia-mod-cli-missing');
+        }
         // Keep ordinary failures compact so a noisy backend error does not
-        // dominate the transcript. Authentication and quota failures expose
-        // their next-step guidance immediately because they require action.
-        details.open = !!authChallenge || isQuotaFailure;
+        // dominate the transcript. Authentication, quota, and missing-CLI
+        // failures expose their next-step guidance immediately.
+        details.open = !!authChallenge || isQuotaFailure || isCliMissing;
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head';
@@ -129,7 +133,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
         const iconWrap = document.createElement('span');
         iconWrap.className = 'theia-mobile-agent-shell-icon-wrap';
         const icon = document.createElement('span');
-        icon.className = `theia-mobile-agent-shell-icon codicon ${authChallenge ? 'codicon-key' : 'codicon-warning'}`;
+        icon.className = `theia-mobile-agent-shell-icon codicon ${authChallenge ? 'codicon-key' : isCliMissing ? 'codicon-desktop-download' : 'codicon-warning'}`;
         icon.setAttribute('aria-hidden', 'true');
         iconWrap.append(icon);
         const titleWrap = document.createElement('span');
@@ -140,7 +144,9 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
             ? nls.localize('qaap/mobileProjects/transcriptSignInRequired', 'Sign in required')
             : isQuotaFailure
                 ? nls.localize('qaap/mobileProjects/transcriptQuotaReached', 'Quota reached')
-                : nls.localize('qaap/mobileProjects/transcriptTurnFailed', 'Task failed');
+                : isCliMissing
+                    ? nls.localize('qaap/mobileProjects/transcriptAgentCliMissing', 'Agent CLI missing')
+                    : nls.localize('qaap/mobileProjects/transcriptTurnFailed', 'Task failed');
         titleWrap.append(label);
         const failedToolName = options?.failedToolName?.trim();
         if (failedToolName) {

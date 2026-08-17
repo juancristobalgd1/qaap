@@ -252,6 +252,13 @@ export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: any, selec
         selectedProjectId,
     );
     if (plan.kind === 'reload-empty') {
+        MobileSnackbar.show(
+            nls.localize(
+                'qaap/mobile/openDesktopIdeEmptyWorkspace',
+                'Opening the IDE without a folder. Pin a project in Work Hub to open it directly.',
+            ),
+            { duration: 4200 },
+        );
         markPreferDesktopIde();
         await ctx.workspaceService.close();
         return false;
@@ -274,6 +281,14 @@ export async function prepareDesktopIdeWorkspaceFromHubExtracted(ctx: any, selec
         }
         const current = ctx.projectsService.getCurrentWorkspaceCwd();
         if (current !== cwd) {
+            MobileSnackbar.show(
+                nls.localize(
+                    'qaap/mobile/openDesktopIdeOpeningProject',
+                    'Opening {0} in the IDE…',
+                    project.name || project.id,
+                ),
+                { duration: 2800 },
+            );
             markPreferDesktopIde();
             await ctx.projectsService.openInCurrentWindowAsync(project);
         }

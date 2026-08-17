@@ -11,6 +11,7 @@ import {
     type EmbeddedAgentPreviewChrome,
 } from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -275,7 +276,12 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: any, host: HTMLElem
         previewUrl: string,
         project: MobileProjectEntry,
         summary?: QaapAgentConversationSummaryDTO,): void {
-        const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
+        const normalized = resolveTranscriptPreviewOpenUrl({
+            candidateUrl: previewUrl,
+            project,
+            bootstrap: ctx.host.projectBootstrap,
+            appliesToProject: ctx.bootstrapAppliesToProject(project),
+        });
         const conversationScopeId = ctx.previewScopeId(summary);
 
         if (ctx.transcriptPreviewConversationScopeId && ctx.transcriptPreviewConversationScopeId !== conversationScopeId) {

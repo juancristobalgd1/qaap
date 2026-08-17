@@ -9,7 +9,7 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { WindowBlinkService } from '@theia/ai-core/lib/browser/window-blink-service';
 import { QaapBootstrapStateChange, QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { isQaapUserCancelledPreviewError } from './qaap-project-bootstrap-types';
+import { qaapBootstrapFailureKind } from './qaap-project-bootstrap-types';
 import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
 
 export const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
@@ -28,11 +28,14 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
     onStart(): void {
         this.bootstrap.onStateChange((state: QaapBootstrapStateChange) => {
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
-                if (isQaapUserCancelledPreviewError(state.error)) {
+                const kind = qaapBootstrapFailureKind(state.phase, state.error);
+                if (!kind || kind === 'cancelled') {
                     return;
                 }
-                this.notifyBuildFailed(state.error);
-                window.dispatchEvent(new CustomEvent(QAAP_BOOTSTRAP_FAILED_EVENT, { detail: { error: state.error } }));
+                this.notifyBootstrapFailed(kind, state.error);
+                window.dispatchEvent(new CustomEvent(QAAP_BOOTSTRAP_FAILED_EVENT, {
+                    detail: { error: state.error, kind },
+                }));
             }
             if (state.phase === 'running') {
                 void this.requestNotificationPermission();
@@ -77,14 +80,20 @@ export class QaapPushNotificationContribution implements FrontendApplicationCont
         );
     }
 
-    protected notifyBuildFailed(error?: string): void {
+    protected notifyBootstrapFailed(kind: 'install' | 'preview', error?: string): void {
         if (typeof document !== 'undefined') {
             const app = FrontendApplicationConfigProvider.get().applicationName;
-            document.title = '⚠ ' + nls.localize('qaap/blink/buildFailed', '{0} — build failed', app);
+            document.title = kind === 'install'
+                ? '⚠ ' + nls.localize('qaap/blink/buildFailed', '{0} — build failed', app)
+                : '⚠ ' + nls.localize('qaap/blink/previewFailed', '{0} — preview failed', app);
         }
         this.showSystemNotification(
-            nls.localize('qaap/push/buildFailed', 'Build failed'),
-            error ?? nls.localize('qaap/push/buildFailedBody', 'Check the terminal output and retry.'),
+            kind === 'install'
+                ? nls.localize('qaap/push/buildFailed', 'Build failed')
+                : nls.localize('qaap/push/previewFailed', 'Preview failed'),
+            error ?? (kind === 'install'
+                ? nls.localize('qaap/push/buildFailedBody', 'Check the terminal output and retry.')
+                : nls.localize('qaap/push/previewFailedBody', 'Check the Dev terminal and retry.')),
         );
     }
 

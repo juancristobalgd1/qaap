@@ -124,6 +124,20 @@ export function isQaapUserCancelledPreviewError(error?: string): boolean {
     return /dev server tab closed/i.test(error) || /vista previa detenida/i.test(error);
 }
 
+/** Distinguishes install failures (build) from a failed preview/dev-server start. */
+export function qaapBootstrapFailureKind(
+    phase: QaapBootstrapPhase,
+    error?: string,
+): 'cancelled' | 'install' | 'preview' | undefined {
+    if (phase !== 'install-failed' && phase !== 'run-failed') {
+        return undefined;
+    }
+    if (isQaapUserCancelledPreviewError(error)) {
+        return 'cancelled';
+    }
+    return phase === 'install-failed' ? 'install' : 'preview';
+}
+
 /**
  * A port observed in the dev-server stdout. We keep one entry per port (deduped by port number,
  * since `localhost` / `127.0.0.1` / `0.0.0.0` are equivalent endpoints), tagged with metadata that

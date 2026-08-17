@@ -12,10 +12,10 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import {
-    applyNestedPathToPreviewUrl,
     parsePreviewIdentityPath,
     parsePreviewProxyPath,
     rebasePreviewUrlToIdentityClaim,
+    resolveEffectivePreviewUrl,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
@@ -216,11 +216,12 @@ export function recordForwardedPortExtracted(ctx: any, port: number,
 
 function previewUrlForIdentityOpen(ctx: any, discoveredUrl: string, identityPreviewUrl?: string): string {
         const nestedEntry = staticEntryPathFromDevCommand(ctx._descriptor?.devCommand);
-        const base = identityPreviewUrl || discoveredUrl;
-        const rebased = identityPreviewUrl && discoveredUrl
-            ? rebasePreviewUrlToIdentityClaim(discoveredUrl, identityPreviewUrl)
-            : base;
-        return nestedEntry ? applyNestedPathToPreviewUrl(rebased || base, nestedEntry) : (rebased || base);
+        return resolveEffectivePreviewUrl({
+            candidateUrl: discoveredUrl || identityPreviewUrl || '',
+            identityUrl: identityPreviewUrl,
+            nestedEntry,
+            rememberedUrls: [ctx._previewUrl, discoveredUrl],
+        });
 }
 
 export function resolvePrimaryPreviewTargetExtracted(ctx: any, port: number, url: string): { port: number; url: string } {

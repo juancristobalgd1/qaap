@@ -11,6 +11,7 @@ import {
     type EmbeddedAgentPreviewChrome,
 } from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -285,7 +286,12 @@ export async function fetchCurrentProjectClaimUrlExtracted(ctx: any, project: Mo
         if (ctx.bootstrapAppliesToProject(project)) {
             ctx.host.projectBootstrap?.adoptSupersedingPreviewClaim(claim);
         }
-        return normalizePreviewUrlForSameOrigin(claim.previewUrl);
+        return resolveTranscriptPreviewOpenUrl({
+            candidateUrl: claim.previewUrl,
+            project,
+            bootstrap: ctx.host.projectBootstrap,
+            appliesToProject: ctx.bootstrapAppliesToProject(project),
+        });
 }
 
 export async function reconcileSupersededProjectPreviewUrlExtracted(ctx: any, project: MobileProjectEntry,

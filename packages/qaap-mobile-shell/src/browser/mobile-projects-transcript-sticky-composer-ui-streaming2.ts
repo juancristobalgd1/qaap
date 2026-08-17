@@ -406,6 +406,15 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, projec
 
 export async function launchComposerDevPreviewExtracted(ctx: any, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    if (typeof ctx.host.requestTranscriptPreview === 'function') {
+        // Same launcher as header Play: managed bootstrap, nested identity URL, Stop latch.
+        // Never fall through to an LLM prompt from Run app.
+        await ctx.host.requestTranscriptPreview(project, summary, {
+            revealPreviewTab: true,
+            allowAgentFallback: false,
+        });
+        return;
+    }
     const bootstrap = ctx.host.projectBootstrap;
     if (!bootstrap) {
         return;
@@ -420,10 +429,6 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
         ), { kind: 'warning' });
         return;
     }
-    // Clear any stale preview state for this section and switch to the Preview tab so the
-    // user sees the loading surface immediately while the dev server starts.
-    // A previous Stop left the Preview tab on the empty URL chrome. Clear that latch before
-    // starting a new managed launch so Run app / Re-Run can remount the iframe.
     ctx.host.transcriptPreviewSuppressedByUser = false;
     ctx.host.beginTranscriptDevPreviewRequest(project, summary);
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
@@ -442,7 +447,6 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
         ctx.host.transcriptSurfacesUi.adoptReadyTranscriptPreview(project, summary, readyUrl);
         return;
     }
-    // `renderPreviewTab` reads `host.projects`, not the object passed to selectTranscriptTab.
     const refreshed = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
     const readyProject = { ...refreshed, previewUrl: readyUrl };
     ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === refreshed.id

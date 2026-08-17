@@ -11,6 +11,7 @@ import {
     type EmbeddedAgentPreviewChrome,
 } from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -330,7 +331,12 @@ export function resolveTranscriptPreviewUrlExtracted(ctx: any, project: MobilePr
             window.location.href,
         );
         if (identityUrl) {
-            return identityUrl;
+            return resolveTranscriptPreviewOpenUrl({
+                candidateUrl: identityUrl,
+                project,
+                bootstrap: ctx.host.projectBootstrap,
+                appliesToProject: ctx.bootstrapAppliesToProject(project),
+            });
         }
         if (conv) {
             const fromConversation = findTranscriptPreviewUrlFromConversation(conv, window.location.origin);
@@ -351,10 +357,20 @@ export function resolveTranscriptPreviewUrlExtracted(ctx: any, project: MobilePr
             return undefined;
         }
         if (storedUrl) {
-            return storedUrl;
+            return resolveTranscriptPreviewOpenUrl({
+                candidateUrl: storedUrl,
+                project,
+                bootstrap: ctx.host.projectBootstrap,
+                appliesToProject: ctx.bootstrapAppliesToProject(project),
+            });
         }
         if (bootstrapUrl) {
-            return bootstrapUrl;
+            return resolveTranscriptPreviewOpenUrl({
+                candidateUrl: bootstrapUrl,
+                project,
+                bootstrap: ctx.host.projectBootstrap,
+                appliesToProject: ctx.bootstrapAppliesToProject(project),
+            });
         }
         return undefined;
 }

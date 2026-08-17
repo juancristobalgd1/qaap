@@ -723,8 +723,8 @@ export class MobileProjectsTranscriptSurfacesUi {
         return resolveTranscriptPreviewUrlExtracted(this, project, conv);
     }
 
-    async requestTranscriptPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
-        return requestTranscriptPreviewExtracted(this, project, summary);
+    async requestTranscriptPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },): Promise<void> {
+        return requestTranscriptPreviewExtracted(this, project, summary, options);
     }
 
     protected adoptReadyTranscriptPreview(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, readyUrl: string,): MobileProjectEntry {

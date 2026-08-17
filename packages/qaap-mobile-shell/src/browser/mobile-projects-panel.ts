@@ -1847,6 +1847,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         beginTranscriptDevPreviewRequestExtracted(this, project, summary);
     }
 
+    protected async requestTranscriptPreview(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean },
+    ): Promise<void> {
+        return this.transcriptSurfacesUi.requestTranscriptPreview(project, summary, options);
+    }
+
     protected stageTranscriptPreviewReadyUrl(readyUrl: string): void {
         stageTranscriptPreviewReadyUrlExtracted(this, readyUrl);
     }

@@ -11,10 +11,9 @@ import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobi
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import {
-    applyNestedPathToPreviewUrl,
     parsePreviewIdentityPath,
     parsePreviewProxyPath,
-    rebasePreviewUrlToIdentityClaim,
+    resolveEffectivePreviewUrl,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
@@ -236,13 +235,15 @@ export async function openPreviewExtracted(ctx: any, url: string,
             await ctx.claimDevPreviewPort(targetPortForClaim);
         }
         const activeClaim = ctx.activePreviewClaim;
-        const rebasedUrl = activeClaim && activeClaim.port === targetPortForClaim
-            ? rebasePreviewUrlToIdentityClaim(url, activeClaim.previewUrl)
-            : url;
         const nestedEntry = staticEntryPathFromDevCommand(ctx._descriptor?.devCommand);
-        const targetUrl = nestedEntry
-            ? applyNestedPathToPreviewUrl(rebasedUrl, nestedEntry)
-            : rebasedUrl;
+        const targetUrl = resolveEffectivePreviewUrl({
+            candidateUrl: url,
+            identityUrl: activeClaim && activeClaim.port === targetPortForClaim
+                ? activeClaim.previewUrl
+                : undefined,
+            nestedEntry,
+            rememberedUrls: [ctx._previewUrl],
+        });
         if (options?.auto && !ctx.mayAutoOpenPreviewNow()) {
             // Stage instead of navigating: record the ready URL and flip to `running` so the
             // transcript listener offers the "Open preview" pill; the user performs navigation.

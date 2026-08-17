@@ -74,6 +74,10 @@ export function normalizePreviewUrlForSameOrigin(url: string, publicOrigin?: str
             return parsed.toString();
         }
 
+        if (parsePreviewIdentityPath(parsed.pathname)) {
+            return parsed.toString();
+        }
+
         if (!LOCAL_DEV_HOSTS.has(parsed.hostname)) {
             return trimmed;
         }
@@ -174,6 +178,69 @@ function normalizeNestedPreviewPath(nestedPath: string): string | undefined {
     }
     const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
     return withSlash.endsWith('/') ? withSlash : `${withSlash}/`;
+}
+
+/** App path under a preview identity, `/qaap-dev/:port`, or a direct localhost URL. */
+export function previewAppPathFromUrl(url: string | undefined): string | undefined {
+    const trimmed = url?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    try {
+        const parsed = new URL(trimmed);
+        const identity = parsePreviewIdentityPath(parsed.pathname);
+        if (identity) {
+            return identity.targetPath && identity.targetPath !== '/' ? identity.targetPath : undefined;
+        }
+        const proxy = parsePreviewProxyPath(parsed.pathname);
+        if (proxy) {
+            return proxy.targetPath && proxy.targetPath !== '/' ? proxy.targetPath : undefined;
+        }
+        if (parsed.pathname && parsed.pathname !== '/') {
+            return parsed.pathname.endsWith('/') ? parsed.pathname : `${parsed.pathname}/`;
+        }
+        return undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Single open-URL for Preview: rebase onto the live identity, then pin a nested static
+ * entry (`/docs/demo/`) when the claim still points at `/`. Call this at every mount,
+ * remount, and claim fetch — not only at bootstrap `openPreview`.
+ */
+export function resolveEffectivePreviewUrl(options: {
+    readonly candidateUrl: string;
+    readonly identityUrl?: string;
+    readonly nestedEntry?: string;
+    readonly rememberedUrls?: readonly (string | undefined)[];
+}): string {
+    const candidate = options.candidateUrl.trim();
+    const identity = options.identityUrl?.trim();
+    const rememberedPath = (options.rememberedUrls ?? [])
+        .map(previewAppPathFromUrl)
+        .find((path): path is string => !!path);
+    const nested = previewAppPathFromUrl(candidate)
+        ?? rememberedPath
+        ?? options.nestedEntry;
+    let next = candidate || identity || '';
+    if (!next) {
+        return next;
+    }
+    if (identity) {
+        try {
+            if (parsePreviewIdentityPath(new URL(identity).pathname)) {
+                next = rebasePreviewUrlToIdentityClaim(next, identity);
+            }
+        } catch {
+            /* keep next */
+        }
+    }
+    if (nested) {
+        next = applyNestedPathToPreviewUrl(next, nested);
+    }
+    return normalizePreviewUrlForSameOrigin(next);
 }
 
 /**

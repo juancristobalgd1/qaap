@@ -606,6 +606,9 @@ export class MobileWorkMissionControl {
             case 'auth':
                 chip.textContent = nls.localize('qaap/workMissionControl/authChip', 'Auth');
                 break;
+            case 'cli_missing':
+                chip.textContent = nls.localize('qaap/workMissionControl/cliMissingChip', 'CLI missing');
+                break;
             default:
                 chip.textContent = nls.localize('qaap/workMissionControl/failedChip', 'Failed');
         }

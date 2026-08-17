@@ -11,6 +11,7 @@ import {
     type EmbeddedAgentPreviewChrome,
 } from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -242,7 +243,12 @@ export function bootstrapPreviewUrlForProjectExtracted(ctx: any, project: Mobile
     if (!ctx.bootstrapAppliesToProject(project)) {
         return undefined;
     }
-    return normalizePreviewUrlForSameOrigin(previewUrl);
+    return resolveTranscriptPreviewOpenUrl({
+        candidateUrl: previewUrl,
+        project,
+        bootstrap,
+        appliesToProject: true,
+    });
 }
 
 export function ensurePreviewProjectContextExtracted(ctx: any, project: MobileProjectEntry): void {
