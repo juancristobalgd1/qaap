@@ -23,10 +23,12 @@ import {
     createQaapViewModeSwitch,
     dismissQaapAccountMenu,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
+    qaapAccountMenuAppearanceFromService,
     toggleQaapAccountMenu,
     type MobileViewToggleId,
     type QaapAccountMenuEntry,
 } from './qaap-workbench-account-menu';
+import type { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
 import {
@@ -428,7 +430,8 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         protected readonly terminalService: TerminalService,
         protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler,
         protected readonly projectBootstrap: QaapProjectBootstrapService,
-        protected readonly workspaceService: WorkspaceService
+        protected readonly workspaceService: WorkspaceService,
+        protected readonly appearanceModeService?: QaapAppearanceModeService,
     ) {
         const node = document.createElement('motion.div');
         node.classList.add('theia-workbench-right-controls');
@@ -522,7 +525,9 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     };
     protected readonly onAccountClick = (): void => {
         const signedIn = readQaapSignedIn();
-        toggleQaapAccountMenu(this.accountBtn, this.commands, this.buildAccountMenuEntries(signedIn));
+        toggleQaapAccountMenu(this.accountBtn, this.commands, this.buildAccountMenuEntries(signedIn), undefined, {
+            appearance: qaapAccountMenuAppearanceFromService(this.appearanceModeService),
+        });
     };
     protected buildAccountMenuEntries(signedIn: boolean): QaapAccountMenuEntry[] {
         // The IDE views (Preview / Terminal / Explorer / PR) live in the dedicated view

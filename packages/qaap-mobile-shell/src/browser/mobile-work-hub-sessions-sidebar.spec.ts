@@ -107,23 +107,15 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(isDesktopSessionsSidebarLayout()).to.equal(true);
     });
 
-    it('mounts appearance mode switch in the footer when delegate provides mode APIs', () => {
-        let mode: 'light' | 'dark' | 'system' = 'dark';
+    it('keeps the appearance mode switch out of the sidebar footer', () => {
         const sidebar = new MobileWorkHubSessionsSidebar({
             renderSessionList: () => undefined,
             onNewChat: () => undefined,
             onClose: () => undefined,
-            getAppearanceMode: () => mode,
-            setAppearanceMode: next => { mode = next; },
-            onAppearanceModeChanged: () => ({ dispose: () => undefined }),
         });
         document.body.append(sidebar.node);
-        const switchRoot = sidebar.node.querySelector('.theia-qaap-appearance-mode-switch');
-        expect(switchRoot).to.not.equal(null);
-        const light = switchRoot!.querySelector<HTMLButtonElement>('[data-mode="light"]');
-        expect(light).to.not.equal(null);
-        light!.click();
-        expect(mode).to.equal('light');
+        expect(sidebar.node.querySelector('.theia-qaap-appearance-mode-switch')).to.equal(null);
+        expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-btn')).to.not.equal(null);
     });
 
     it('syncs the embedded state when the viewport layout changes while open', () => {

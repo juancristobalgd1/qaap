@@ -7,9 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import type { QaapAppearanceMode } from '../common/qaap-appearance-mode';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
-import { createQaapAppearanceModeSwitch, type QaapAppearanceModeSwitchController } from './qaap-appearance-mode-switch';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
 import { installMobileVerticalTouchScroll } from './mobile-vertical-touch-scroll';
@@ -59,9 +57,6 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     rememberSessionListFingerprint?(listHost: HTMLElement): void;
     /** Bind pointer guard on the list host once (prevents click loss during refresh). */
     onSessionListHostReady?(listHost: HTMLElement): void;
-    getAppearanceMode?(): QaapAppearanceMode;
-    setAppearanceMode?(mode: QaapAppearanceMode): void;
-    onAppearanceModeChanged?(listener: (mode: QaapAppearanceMode) => void): Disposable;
 }
 
 /**
@@ -89,8 +84,6 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly resizeHandle: HTMLElement;
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
-    protected appearanceModeDispose: Disposable = Disposable.NULL;
-    protected appearanceModeSwitch: QaapAppearanceModeSwitchController | undefined;
     protected refreshListRaf = 0;
     protected refreshDeferTimer = 0;
     protected shellResizeRaf = 0;
@@ -153,7 +146,6 @@ export class MobileWorkHubSessionsSidebar {
             this.delegate.onAccountMenu?.(this.accountBtn);
         });
         footer.append(this.accountBtn);
-        this.mountAppearanceModeSwitch(footer);
         this.updateAccountAvatar();
         this.loadDeployedBuildSha();
 
@@ -258,7 +250,7 @@ export class MobileWorkHubSessionsSidebar {
 
     /**
      * Account label: `Name` or `Name (shortSha)` when a deployed build is known.
-     * The SHA stays muted inside the account button so the footer theme switch keeps the right edge.
+     * The SHA stays muted inside the account button.
      */
     protected syncAccountLabel(): void {
         const name = this.accountBtn.title.trim()
@@ -277,21 +269,6 @@ export class MobileWorkHubSessionsSidebar {
         buildEl.textContent = `(${build})`;
         buildEl.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
         this.accountLabel.append(buildEl);
-    }
-
-    protected mountAppearanceModeSwitch(footer: HTMLElement): void {
-        if (!this.delegate.getAppearanceMode || !this.delegate.setAppearanceMode) {
-            return;
-        }
-        this.appearanceModeDispose.dispose();
-        this.appearanceModeSwitch = createQaapAppearanceModeSwitch({
-            value: this.delegate.getAppearanceMode(),
-            onChange: mode => this.delegate.setAppearanceMode?.(mode),
-        });
-        footer.append(this.appearanceModeSwitch.root);
-        this.appearanceModeDispose = this.delegate.onAppearanceModeChanged?.(mode => {
-            this.appearanceModeSwitch?.setValue(mode);
-        }) ?? Disposable.NULL;
     }
 
     /**
