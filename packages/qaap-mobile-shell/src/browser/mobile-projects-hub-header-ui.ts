@@ -17,7 +17,10 @@ import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcri
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;
     headerProjectBtn: HTMLButtonElement;
+    headerProjectIconEl: HTMLSpanElement;
     headerProjectLabelEl: HTMLSpanElement;
+    headerProjectSepEl: HTMLSpanElement;
+    headerProjectConversationEl: HTMLSpanElement;
     headerNewChatBtn: HTMLButtonElement;
     headerOverflowMenuBtn: HTMLButtonElement;
     headerBackBtn: HTMLButtonElement;
@@ -160,11 +163,21 @@ export class MobileProjectsHubHeaderUi {
 
     syncHeaderProjectControl(showSessionsMenu: boolean): void {
         const project = this.resolveHeaderProject();
-        const sectionTitle = this.resolveHeaderProjectSectionTitle(project);
+        const conversationTitle = this.resolveHeaderProjectConversationTitle();
+        const projectName = project?.name?.trim() ?? '';
+        const sectionTitle = conversationTitle || projectName;
         const showProject = showSessionsMenu && !!project && sectionTitle.length > 0;
+        const showConversationCrumb = showProject && conversationTitle.length > 0;
         this.host.headerProjectBtn.hidden = !showProject;
         this.host.headerProjectBtn.setAttribute('aria-hidden', showProject ? 'false' : 'true');
-        this.host.headerProjectLabelEl.textContent = sectionTitle;
+        this.host.headerProjectBtn.classList.toggle('theia-mod-folder-switcher', showConversationCrumb);
+        this.host.headerProjectIconEl.classList.toggle('codicon-folder', showConversationCrumb);
+        this.host.headerProjectIconEl.classList.toggle('codicon-chevron-down', !showConversationCrumb);
+        this.host.headerProjectLabelEl.textContent = showConversationCrumb ? '' : projectName;
+        this.host.headerProjectLabelEl.hidden = showConversationCrumb;
+        this.host.headerProjectSepEl.hidden = !showConversationCrumb;
+        this.host.headerProjectConversationEl.hidden = !showConversationCrumb;
+        this.host.headerProjectConversationEl.textContent = conversationTitle;
         if (!showProject || !project) {
             return;
         }
@@ -188,17 +201,23 @@ export class MobileProjectsHubHeaderUi {
     }
 
     /**
+     * Conversation title when an inline session is open; otherwise empty so the
+     * header can fall back to the project name. The folder icon (not this text)
+     * opens the same project sheet as an empty conversation.
+     */
+    resolveHeaderProjectConversationTitle(): string {
+        if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummary) {
+            return this.host.transcriptOpenSummary.title?.trim() ?? '';
+        }
+        return '';
+    }
+
+    /**
      * Short section label next to the project switcher: conversation title when a session is open,
-     * otherwise the active project name. Clicking the control still opens the project switcher.
+     * otherwise the active project name.
      */
     resolveHeaderProjectSectionTitle(project: MobileProjectEntry | undefined): string {
-        if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummary) {
-            const conversationTitle = this.host.transcriptOpenSummary.title?.trim();
-            if (conversationTitle) {
-                return conversationTitle;
-            }
-        }
-        return project?.name?.trim() ?? '';
+        return this.resolveHeaderProjectConversationTitle() || (project?.name?.trim() ?? '');
     }
 
     resolveHeaderNewChatVisible(): boolean {

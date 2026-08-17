@@ -115,6 +115,25 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
         chrome.dispose();
     });
 
+    it('mounts a hidden folder crumb next to the header project button', () => {
+        stubMatchMedia(true);
+        const host = createHost();
+        const chrome = new MobileProjectsPanelChromeUi(host);
+        chrome.constructPanelShell();
+        expect(host.headerProjectIconEl.classList.contains('codicon-chevron-down')).to.equal(true);
+        expect(host.headerProjectSepEl.textContent).to.equal('/');
+        expect(host.headerProjectSepEl.hidden).to.equal(true);
+        expect(host.headerProjectConversationEl.hidden).to.equal(true);
+        expect(host.titleRow.contains(host.headerProjectBtn)).to.equal(true);
+        expect(host.titleRow.contains(host.headerProjectSepEl)).to.equal(true);
+        expect(host.titleRow.contains(host.headerProjectConversationEl)).to.equal(true);
+        let clicked = false;
+        host.onHeaderProjectClick = () => { clicked = true; };
+        host.headerProjectBtn.click();
+        expect(clicked).to.equal(true);
+        chrome.dispose();
+    });
+
     it('forwards IDE/Agents selection from the header switch', () => {
         stubMatchMedia(true);
         const host = createHost();

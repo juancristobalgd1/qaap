@@ -11741,6 +11741,50 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   text-align: left;
 }
 
+.theia-mobile-projects-header-project-label[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-projects-header-project.theia-mod-folder-switcher {
+  flex: 0 0 auto;
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.theia-mobile-projects-header-project-sep {
+  flex: 0 0 auto;
+  padding: 0 2px 0 4px;
+  color: color-mix(in srgb, var(--theia-foreground) 42%, transparent);
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  user-select: none;
+}
+
+.theia-mobile-projects-header-project-conversation {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--theia-ui-font-family, sans-serif);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-projects-header-project-sep[hidden],
+.theia-mobile-projects-header-project-conversation[hidden] {
+  display: none !important;
+}
+
 /* Narrow header: ☰ + conversation title + + + ⋮ + surface picker compete for width.
    Let the title shrink first so action buttons stay tappable and fully visible. */
 @media (max-width: 767px) {
@@ -11756,7 +11800,15 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
     max-width: 100%;
   }
 
-  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-label {
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project.theia-mod-folder-switcher {
+    flex: 0 0 auto;
+    width: 32px;
+    min-width: 32px;
+    max-width: 32px;
+  }
+
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-label,
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-conversation {
     flex: 1 1 auto;
     min-width: 0;
   }

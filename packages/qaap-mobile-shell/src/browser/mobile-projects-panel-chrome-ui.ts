@@ -28,7 +28,10 @@ export interface MobileProjectsPanelChromeHost {
     headerBackBtn: HTMLButtonElement;
     sessionsMenuBtn: HTMLButtonElement;
     headerProjectBtn: HTMLButtonElement;
+    headerProjectIconEl: HTMLSpanElement;
     headerProjectLabelEl: HTMLSpanElement;
+    headerProjectSepEl: HTMLSpanElement;
+    headerProjectConversationEl: HTMLSpanElement;
     headerNewChatBtn: HTMLButtonElement;
     headerOverflowMenuBtn: HTMLButtonElement;
     titleEl: HTMLHeadingElement;
@@ -125,17 +128,25 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerProjectBtn.setAttribute('aria-haspopup', 'dialog');
         this.host.headerProjectBtn.title = nls.localize('qaap/mobileProjects/headerProject', 'Switch project');
         this.host.headerProjectBtn.setAttribute('aria-label', this.host.headerProjectBtn.title);
-        const headerProjectIcon = document.createElement('span');
-        headerProjectIcon.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
-        headerProjectIcon.setAttribute('aria-hidden', 'true');
+        this.host.headerProjectIconEl = document.createElement('span');
+        this.host.headerProjectIconEl.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
+        this.host.headerProjectIconEl.setAttribute('aria-hidden', 'true');
         this.host.headerProjectLabelEl = document.createElement('span');
         this.host.headerProjectLabelEl.className = 'theia-mobile-projects-header-project-label';
-        this.host.headerProjectBtn.append(this.host.headerProjectLabelEl, headerProjectIcon);
+        this.host.headerProjectBtn.append(this.host.headerProjectLabelEl, this.host.headerProjectIconEl);
         this.host.headerProjectBtn.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
             this.host.onHeaderProjectClick(this.host.headerProjectBtn);
         });
+        this.host.headerProjectSepEl = document.createElement('span');
+        this.host.headerProjectSepEl.className = 'theia-mobile-projects-header-project-sep';
+        this.host.headerProjectSepEl.setAttribute('aria-hidden', 'true');
+        this.host.headerProjectSepEl.textContent = '/';
+        this.host.headerProjectSepEl.hidden = true;
+        this.host.headerProjectConversationEl = document.createElement('span');
+        this.host.headerProjectConversationEl.className = 'theia-mobile-projects-header-project-conversation';
+        this.host.headerProjectConversationEl.hidden = true;
         this.host.titleEl = document.createElement('h1');
         this.host.titleEl.className = 'theia-mobile-projects-title';
         this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/title', 'Work Hub');
@@ -172,6 +183,8 @@ export class MobileProjectsPanelChromeUi {
         this.host.titleRow.append(
             this.host.sessionsMenuBtn,
             this.host.headerProjectBtn,
+            this.host.headerProjectSepEl,
+            this.host.headerProjectConversationEl,
             this.host.headerBackBtn,
             this.host.titleEl,
             this.host.titleAttentionEl,
