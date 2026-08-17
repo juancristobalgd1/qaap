@@ -9,6 +9,7 @@ import {
     isQaapPreviewId,
     normalizeQaapPreviewProjectId,
     qaapPreviewProjectIdMatches,
+    qaapPreviewFileUriMatchesProjectName,
     resolveQaapPreviewIdentity,
 } from './qaap-preview-identity';
 import {
@@ -74,6 +75,9 @@ describe('qaap-preview-identity', () => {
         expect(qaapPreviewProjectIdMatches(canonical, 'ws:file:///workspace/repos/users/alice/acme/other')).to.equal(false);
         expect(qaapPreviewProjectIdMatches('github:acme/site', 'github:acme/site')).to.equal(true);
         expect(qaapPreviewProjectIdMatches('github:acme/site', canonical)).to.equal(false);
+        expect(qaapPreviewFileUriMatchesProjectName(canonical, 'site')).to.equal(true);
+        expect(qaapPreviewFileUriMatchesProjectName(canonical, 'other')).to.equal(false);
+        expect(qaapPreviewFileUriMatchesProjectName('github:acme/site', 'site')).to.equal(false);
     });
 
     it('builds and parses the identity-scoped proxy without exposing a port', () => {

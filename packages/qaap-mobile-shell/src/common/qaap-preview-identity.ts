@@ -175,3 +175,29 @@ export function qaapPreviewProjectIdMatches(
     return projectCandidates.some(candidate => candidate !== undefined
         && normalizeQaapPreviewProjectId(candidate) === normalizedPreviewId);
 }
+
+/**
+ * Skip-auth / local clones are often addressed as `github:owner/name` in Work Hub while the
+ * preview registry stores `file:///…/owner/name`. Accept a file-URI claim whose last path
+ * segment is the hub project name so Preview can mount the process that was just started.
+ */
+export function qaapPreviewFileUriMatchesProjectName(
+    previewProjectId: string | undefined,
+    projectName: string | undefined,
+): boolean {
+    const name = projectName?.trim().toLowerCase();
+    if (!previewProjectId || !name) {
+        return false;
+    }
+    const normalized = normalizeQaapPreviewProjectId(previewProjectId);
+    if (!/^file:/i.test(normalized)) {
+        return false;
+    }
+    try {
+        const path = new URL(normalized).pathname.replace(/\/+$/, '');
+        const base = path.split('/').filter(Boolean).pop()?.toLowerCase();
+        return base === name;
+    } catch {
+        return false;
+    }
+}
