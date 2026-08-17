@@ -28,6 +28,10 @@ export function formatModelFlagsForAgent(agentId: string, binding: QaapQaiqModel
     if (normalized === 'codex' || normalized === 'grok') {
         return `-m ${shellQuote(binding.modelId)}`;
     }
+    if (normalized === 'hermes') {
+        // Hermes providers are `auto` / `openrouter` / `nous`, not QAIQ BYOK ids.
+        return `--model ${shellQuote(binding.modelId)}`;
+    }
     if (normalized === 'antigravity' || normalized === 'gemini') {
         // agy reads the model from ~/.gemini/antigravity-cli/settings.json (see qaap-antigravity-settings).
         return '';

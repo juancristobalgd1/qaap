@@ -16,7 +16,8 @@ browser tab is closed. The server auto-detects these CLIs on `PATH`:
 - `opencode` -> `opencode run --format json --dangerously-skip-permissions {prompt}`
   (JSON events are parsed live like QAIQ: tool calls in the activity timeline, assistant text as the main answer; older formatted logs are still parsed on replay)
 - `goose` -> `goose run --no-session -t {prompt}`
-- `hermes` -> `hermes chat -q {prompt}`
+- `hermes` -> `hermes chat {model_flags} -q {prompt}`
+  (`{model_flags}` is `--model <org/model>` from the Hermes native catalog)
 - `openclaw` -> `openclaw agent --local --message {prompt}`
 - `cursor` (`cursor-agent` on PATH) -> `cursor-agent -p --force {prompt}`
 - `antigravity` -> `antigravity -p {prompt}`

@@ -30,7 +30,7 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(agentUsesNativeModelCatalog('shell')).to.equal(false);
         expect(agentUsesNativeModelCatalog('cursor')).to.equal(false);
         expect(agentUsesNativeModelCatalog('goose')).to.equal(false);
-        expect(agentUsesNativeModelCatalog('hermes')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('hermes')).to.equal(true);
     });
 
     it('parses CLI model lines', () => {
@@ -52,6 +52,7 @@ describe('qaap-agent-native-model-catalog', () => {
             'mistral-large-latest',
             'qwen2.5-coder:7b',
         ]);
+        expect(listStaticNativeAgentModels('hermes').map(m => m.modelId)).to.include('anthropic/claude-fable-5');
         expect(listStaticNativeAgentModels('unknown-agent')).to.deep.equal([]);
     });
 

@@ -35,6 +35,12 @@ describe('formatModelFlagsForAgent', () => {
         });
         expect(formatModelFlagsForAgent('codex', binding)).to.equal('-m o4-mini');
         expect(formatModelFlagsForAgent('opencode', binding)).to.equal('--model o4-mini');
+        expect(formatModelFlagsForAgent('hermes', {
+            provider: 'anthropic',
+            vendor: 'anthropic',
+            modelId: 'anthropic/claude-fable-5',
+            contextWindow: 128_000,
+        })).to.equal('--model anthropic/claude-fable-5');
     });
 
     it('leaves antigravity model flags empty (settings.json override instead)', () => {
