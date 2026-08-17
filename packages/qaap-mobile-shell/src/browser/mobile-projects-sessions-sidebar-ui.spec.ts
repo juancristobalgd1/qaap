@@ -458,6 +458,62 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(refreshForce).to.deep.equal({ force: true });
     });
 
+    it('does not render the inline Clear failed runs control in the session list', () => {
+        const project = { id: 'proj-1', name: 'Mockup', status: 'working' } as MobileProjectEntry;
+        const conversations = [
+            {
+                id: 'f1',
+                title: 'Failed',
+                status: 'failed',
+                createdAt: 10,
+                updatedAt: 10,
+                messageCount: 1,
+                agentId: 'qaiq',
+                cwd: '/repo',
+                source: 'agent',
+            },
+            {
+                id: 'ok',
+                title: 'Ok',
+                status: 'idle',
+                createdAt: 20,
+                updatedAt: 20,
+                messageCount: 1,
+                agentId: 'qaiq',
+                cwd: '/repo',
+                source: 'agent',
+            },
+        ];
+        const host = {
+            conversationIndexUi: {
+                countFailedTasks: () => 1,
+                activeInfoForProject: () => undefined,
+                summaryToTaskView: (summary: { id: string; title: string }) => ({
+                    id: summary.id,
+                    title: summary.title,
+                    command: '',
+                    cwd: '/repo',
+                    state: 'failed',
+                    createdAt: 0,
+                }),
+                vpsTasksForProject: () => conversations.filter(c => c.status === 'failed'),
+            },
+            projectRowsUi: {
+                createTaskItem: (_project: MobileProjectEntry, task: { id: string }) => {
+                    const el = document.createElement('div');
+                    el.dataset.qaapConversationId = task.id;
+                    return el;
+                },
+            },
+            ensureOverlayUi: () => undefined,
+        } as unknown as MobileProjectsSessionsSidebarHost;
+        const ui = new MobileProjectsSessionsSidebarUi(host);
+        const listHost = document.createElement('div');
+        ui.appendSessionsSidebarConversationItems(listHost, project, conversations as never, () => undefined, true);
+        expect(listHost.querySelector('.theia-mobile-work-hub-sessions-sidebar-clear-failed')).to.equal(null);
+        expect(listHost.querySelector('.theia-mobile-work-hub-sessions-sidebar-clear-failed-mode-footer')).to.equal(null);
+    });
+
     it('bypasses failed-duplicate collapse while a project is in clear mode', () => {
         const project = { id: 'proj-1', name: 'Mockup', status: 'working' } as MobileProjectEntry;
         const conversations = [
