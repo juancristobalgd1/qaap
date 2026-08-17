@@ -301,6 +301,8 @@ export async function discoverProjectDevPreviewUrlExtracted(ctx: any, project: M
 export function beginTranscriptDevPreviewRequestExtracted(ctx: any, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
         ctx.clearPreviewRuntimeForConversation(ctx.previewScopeId(summary));
         ctx.stopTranscriptPreviewTabProbe();
+        ctx.host.transcriptPreviewRequestPending = true;
+        ctx.host.transcriptPreviewRequestRunning = true;
         const cleared = { ...project, previewUrl: undefined };
         ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === cleared.id
             ? cleared

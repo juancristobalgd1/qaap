@@ -271,13 +271,21 @@ export async function fetchCurrentProjectClaimUrlExtracted(ctx: any, project: Mo
             project.uri?.toString(),
             project.id,
         ], ctx.previewScopeId());
-        if (!current?.ready || !current.previewUrl) {
+        const fallback = (!current?.ready || !current.previewUrl)
+            ? await fetchQaapCurrentDevPreview([
+                cwdUri,
+                project.uri?.toString(),
+                project.id,
+            ])
+            : undefined;
+        const claim = current?.ready && current.previewUrl ? current : fallback;
+        if (!claim?.ready || !claim.previewUrl) {
             return undefined;
         }
         if (ctx.bootstrapAppliesToProject(project)) {
-            ctx.host.projectBootstrap?.adoptSupersedingPreviewClaim(current);
+            ctx.host.projectBootstrap?.adoptSupersedingPreviewClaim(claim);
         }
-        return normalizePreviewUrlForSameOrigin(current.previewUrl);
+        return normalizePreviewUrlForSameOrigin(claim.previewUrl);
 }
 
 export async function reconcileSupersededProjectPreviewUrlExtracted(ctx: any, project: MobileProjectEntry,

@@ -432,10 +432,14 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
         skipConversationPortProbe: true,
     });
     if (!readyUrl) {
+        void ctx.host.transcriptSurfacesUi?.discoverAndMountTranscriptPreviewIfReady?.(project, summary);
+        return;
+    }
+    if (typeof ctx.host.transcriptSurfacesUi?.adoptReadyTranscriptPreview === 'function') {
+        ctx.host.transcriptSurfacesUi.adoptReadyTranscriptPreview(project, summary, readyUrl);
         return;
     }
     // `renderPreviewTab` reads `host.projects`, not the object passed to selectTranscriptTab.
-    // Record the ready URL on the hub entry before remounting Preview or the iframe stays empty.
     const refreshed = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
     const readyProject = { ...refreshed, previewUrl: readyUrl };
     ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === refreshed.id
