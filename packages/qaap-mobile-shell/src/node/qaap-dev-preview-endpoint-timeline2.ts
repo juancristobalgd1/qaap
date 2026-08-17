@@ -167,6 +167,7 @@ export function rewriteDevPreviewBodyExtracted(ctx: any, body: string,
         // history-base inject cannot hide the prefix; pin BASE_URL to the proxy path instead.
         const rewritten = body
             .replace(/("BASE_URL"\s*:\s*")\/"/g, `$1${prefixPath}/"`)
+            .replace(/('BASE_URL'\s*:\s*')\/'/g, `$1${prefixPath}/'`)
             .replace(/\b(src|href|action)=("|')\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1=$2${prefix}/`)
             .replace(/\burl\(\s*(["']?)\/(?!\/|qaap-(?:dev|preview)\/)/g, `url($1${prefix}/`)
             .replace(/(\bimport\s*(?:\(|[^"'`]*from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
