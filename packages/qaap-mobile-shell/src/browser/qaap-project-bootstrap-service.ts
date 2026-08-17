@@ -288,6 +288,11 @@ export class QaapProjectBootstrapService {
     /** Project selected in Work Hub; hosted `/workspace` is never a valid substitute. */
     protected activeProjectId: string | undefined;
     protected activeWorkspaceRoot: URI | undefined;
+    /**
+     * Work Hub project root pinned by {@link refreshFromProjectRoot}. While set, Theia workspace
+     * change events must not rewrite preview identity back to the currently open IDE folder.
+     */
+    protected hubPinnedWorkspaceRoot: URI | undefined;
     protected activePreviewClaim: {
         readonly previewId: string;
         readonly previewUrl: string;

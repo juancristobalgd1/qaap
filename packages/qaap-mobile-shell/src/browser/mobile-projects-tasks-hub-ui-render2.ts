@@ -179,6 +179,14 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: any): HTMLElement
             label.textContent = nls.localize(action.labelKey, action.labelDefault);
             btn.append(iconWrap, label);
             bindStickyComposerControlClick(btn, () => {
+                if (action.id === 'run-app') {
+                    const project = ctx.host.transcriptOpenProject ?? ctx.host.transcriptComposerProject;
+                    const summary = ctx.host.transcriptOpenSummary ?? ctx.host.transcriptComposerSummary;
+                    if (project && summary) {
+                        void ctx.host.transcriptStickyComposerUi.launchComposerDevPreview(project, summary);
+                        return;
+                    }
+                }
                 ctx.applyComposerQuickActionPrompt(nls.localize(action.promptKey, action.promptDefault));
             });
             container.append(btn);

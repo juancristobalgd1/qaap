@@ -84,6 +84,7 @@ import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
 import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
 import {
     previewProjectId as previewProjectIdHelper,
+    resolvePreviewClaimWorkspaceRoot,
     normalizeDevUrl as normalizeDevUrlHelper,
     extractPortFromInUseMessage as extractPortFromInUseMessageHelper,
     normalizeRestoredPhase as normalizeRestoredPhaseHelper,
@@ -252,6 +253,7 @@ export async function refreshFromProjectRootExtracted(ctx: any, root: string | U
             ? `ws:${resource.toString()}`
             : projectId;
         ctx.activeWorkspaceRoot = resource;
+        ctx.hubPinnedWorkspaceRoot = resource;
         await ctx.refreshFromRoot(resource);
 }
 
@@ -366,8 +368,8 @@ export function buildDevSpawnPlanExtracted(ctx: any, plan: {
 
 export function reserveActivePreviewExtracted(ctx: any, port: number, cwd: URI, osProcessId?: number): Promise<QaapPreviewPortClaimResult> {
         const processId = ctx.activePreviewRunId;
-        const workspaceRoot = ctx.activeWorkspaceRoot ?? ctx._descriptor?.rootUri ?? cwd;
-        if (!processId) {
+        const workspaceRoot = resolvePreviewClaimWorkspaceRoot(ctx, cwd);
+        if (!processId || !workspaceRoot) {
             return Promise.resolve({ kind: 'error' });
         }
         return ctx.previewPortClaimService.claim(port, {

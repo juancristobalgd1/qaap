@@ -84,6 +84,7 @@ import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
 import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
 import {
     previewProjectId as previewProjectIdHelper,
+    shouldIgnoreWorkspaceRefreshForHubPin,
     normalizeDevUrl as normalizeDevUrlHelper,
     extractPortFromInUseMessage as extractPortFromInUseMessageHelper,
     normalizeRestoredPhase as normalizeRestoredPhaseHelper,
@@ -355,6 +356,7 @@ export function skipExtracted(ctx: any): void {
 }
 
 export function resetExtracted(ctx: any): void {
+        ctx.hubPinnedWorkspaceRoot = undefined;
         if (ctx._descriptor) {
             ctx.persistPhase(ctx._descriptor.nodeModulesPresent ? 'ready-to-run' : 'detected');
         }
@@ -431,6 +433,10 @@ export function scheduleRefreshFromCurrentWorkspaceExtracted(ctx: any): void {
 export async function refreshFromCurrentWorkspaceExtracted(ctx: any): Promise<void> {
         const roots = await ctx.workspaceService.roots;
         const first = roots[0];
+        const pinned = ctx.hubPinnedWorkspaceRoot?.toString();
+        if (shouldIgnoreWorkspaceRefreshForHubPin(pinned, first?.resource.toString())) {
+            return;
+        }
         ctx.activeProjectId = first ? `ws:${first.resource.toString()}` : undefined;
         ctx.activeWorkspaceRoot = first?.resource;
         await ctx.refreshFromRoot(first?.resource);
