@@ -10,6 +10,7 @@ import {
     appendTraceCheckpointEvent,
     appendTraceRunCancelledEvent,
     appendTraceVerificationWarningEvent,
+    isPlaceholderAgentContent,
     syncSettledTraceEventsOnMessage,
 } from './qaap-transcript-trace-lifecycle';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
@@ -108,6 +109,13 @@ describe('qaap-transcript-trace-lifecycle', () => {
             traceEvents: [{ type: 'assistant_text', id: 't1', content: 'hi', status: 'completed' }],
         }))).to.equal(true);
         expect(agentMessageHasStructuredTrace(agentMessage())).to.equal(false);
+    });
+
+    it('isPlaceholderAgentContent treats empty and ellipsis content as replayable', () => {
+        expect(isPlaceholderAgentContent(undefined)).to.equal(true);
+        expect(isPlaceholderAgentContent('')).to.equal(true);
+        expect(isPlaceholderAgentContent('…')).to.equal(true);
+        expect(isPlaceholderAgentContent('Done.')).to.equal(false);
     });
 
     it('syncSettledTraceEventsOnMessage clears streaming tail states', () => {
