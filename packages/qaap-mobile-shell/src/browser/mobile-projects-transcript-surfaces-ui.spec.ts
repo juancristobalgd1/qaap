@@ -215,6 +215,28 @@ describe('MobileProjectsTranscriptSurfacesUi — syncHeaderPreviewRunButton', ()
     });
 });
 
+describe('MobileProjectsTranscriptSurfacesUi — beginTranscriptDevPreviewRequest', () => {
+
+    afterEach(() => {
+        document.body.replaceChildren();
+    });
+
+    it('clears a user Stop latch so Run app can remount Preview', () => {
+        const project = sampleProject();
+        const summary = sampleSummary();
+        const { host } = buildSyncHeaderPreviewHost({ activeTab: 'preview' });
+        (host as unknown as { projects: MobileProjectEntry[] }).projects = [project];
+        host.transcriptPreviewSuppressedByUser = true;
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+
+        ui.beginTranscriptDevPreviewRequest(project, summary);
+
+        expect(host.transcriptPreviewSuppressedByUser).to.equal(false);
+        expect(host.transcriptPreviewRequestPending).to.equal(true);
+        expect(host.transcriptPreviewRequestRunning).to.equal(true);
+    });
+});
+
 describe('MobileProjectsTranscriptSurfacesUi — monorepo preview picker', () => {
 
     afterEach(() => {

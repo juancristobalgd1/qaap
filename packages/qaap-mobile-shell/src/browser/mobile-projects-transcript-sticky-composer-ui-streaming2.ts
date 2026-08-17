@@ -422,6 +422,9 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
     }
     // Clear any stale preview state for this section and switch to the Preview tab so the
     // user sees the loading surface immediately while the dev server starts.
+    // A previous Stop left the Preview tab on the empty URL chrome. Clear that latch before
+    // starting a new managed launch so Run app / Re-Run can remount the iframe.
+    ctx.host.transcriptPreviewSuppressedByUser = false;
     ctx.host.beginTranscriptDevPreviewRequest(project, summary);
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
     await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
