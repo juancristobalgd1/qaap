@@ -4,11 +4,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-// mobile-workbench.css was split into 8 partials (cascade order preserved).
-// Boot-critical partials load statically; surface-specific partials lazy-load
-// on activation to reduce initial CSS payload on mobile (~515 KB saved).
+// mobile-workbench.css was split into boot-critical and lazy partials
+// (cascade order preserved). Boot-critical partials load statically;
+// surface-specific partials lazy-load on activation to reduce initial CSS
+// payload on mobile. Open-repo styles are boot-critical: the drawer opens
+// from landing/FAB and its previous home (pr-review) is not imported.
 import '../../src/browser/style/mobile-workbench-base.css';
 import '../../src/browser/style/mobile-workbench-projects.css';
+import '../../src/browser/style/mobile-workbench-open-repo.css';
 import '../../src/browser/style/mobile-workbench-work-hub.css';
 import '../../src/browser/style/mobile-workbench-chrome.css';
 import '../../src/browser/style/mobile-workbench-ide-chrome.css';
