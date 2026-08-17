@@ -6,6 +6,10 @@
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import {
+    formatTranscriptGpuLayerTransform,
+    TRANSCRIPT_GPU_LAYER_CLASS,
+} from '../common/qaap-transcript-gpu-compositor';
+import {
     buildVirtualListOffsets,
     resolveVirtualListVisibleRange,
 } from '../common/qaap-transcript-virtual-list-math';
@@ -46,6 +50,9 @@ export interface TranscriptVirtualListOptions {
  * Scroll frames are O(log n): prefix offsets are cached and rebuilt only when a
  * size actually changes, and row remeasurement (forced layout reads) runs only
  * when rows were just mounted or content reflowed — never on plain scrolling.
+ *
+ * Window/footer offsets use a GPU compositor translate (`translate3d`) so
+ * scrolling does not invalidate paint of the mounted rows.
  */
 export class TranscriptVirtualList implements Disposable {
     protected readonly defaultItemHeight: number;
@@ -93,10 +100,10 @@ export class TranscriptVirtualList implements Disposable {
         this.spacer.className = 'theia-transcript-virtual-spacer';
 
         this.window = document.createElement('div');
-        this.window.className = 'theia-transcript-virtual-window';
+        this.window.className = `theia-transcript-virtual-window ${TRANSCRIPT_GPU_LAYER_CLASS}`;
 
         this.footerHost = document.createElement('div');
-        this.footerHost.className = 'theia-transcript-virtual-footer';
+        this.footerHost.className = `theia-transcript-virtual-footer ${TRANSCRIPT_GPU_LAYER_CLASS}`;
 
         this.spacer.append(this.window, this.footerHost);
         this.root.append(this.spacer);
@@ -362,8 +369,8 @@ export class TranscriptVirtualList implements Disposable {
             this.offsets,
             this.overscanPx,
         );
-        this.window.style.transform = `translateY(${range.windowOffset}px)`;
-        this.footerHost.style.transform = `translateY(${range.totalHeight}px)`;
+        this.window.style.transform = formatTranscriptGpuLayerTransform(range.windowOffset);
+        this.footerHost.style.transform = formatTranscriptGpuLayerTransform(range.totalHeight);
 
         let mountedNew = false;
         const nextMounted = new Set<number>();

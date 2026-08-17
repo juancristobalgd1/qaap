@@ -24,6 +24,25 @@
   display: contents;
 }
 
+/*
+ * Frozen prefix stays `display: contents` so paragraph margins collapse at the
+ * tail boundary. Isolate paint on closed prose blocks so a tail innerHTML tick
+ * does not repaint the settled prefix. Skip overflow hosts and cards whose
+ * shadow / horizontal scroll would clip under `contain: paint`.
+ */
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > p,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > ul,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > ol,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > h1,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > h2,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > h3,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > h4,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > h5,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > h6,
+.theia-mobile-agent-transcript-content.theia-mod-streaming-incremental-markdown .theia-transcript-stream-frozen > blockquote {
+  contain: layout style paint;
+}
+
 .theia-mobile-agent-transcript-content.theia-mod-streaming-hybrid .theia-transcript-stream-plain-preview {
   color: inherit;
   font-family: inherit;

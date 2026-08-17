@@ -7,6 +7,7 @@ export * from '../common/qaap-prefers-reduced-motion';
 export * from '../common/qaap-structured-transcript-agents';
 export * from '../common/qaap-transcript-agent-types';
 export * from '../common/qaap-transcript-follow-up-queue';
+export * from '../common/qaap-transcript-gpu-compositor';
 export * from '../common/qaap-transcript-incremental-update';
 export * from '../common/qaap-transcript-project-entry';
 export * from '../common/qaap-transcript-scroll-compact';

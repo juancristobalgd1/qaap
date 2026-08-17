@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
+import { formatTranscriptGpuLayerTransform, TRANSCRIPT_GPU_LAYER_CLASS } from '../common/qaap-transcript-gpu-compositor';
 import { TranscriptVirtualList } from './qaap-transcript-virtual-list';
 
 describe('TranscriptVirtualList follow-tail after spacer thrash', () => {
@@ -178,6 +179,31 @@ describe('TranscriptVirtualList follow-tail after spacer thrash', () => {
             flushRaf();
         }
         expect(reasserts).to.equal(afterContent);
+        list.dispose();
+    });
+
+    it('positions the window and footer on a GPU compositor layer', () => {
+        const list = new TranscriptVirtualList({
+            scrollHost: host,
+            defaultItemHeight: 200,
+            renderItem: index => {
+                const row = document.createElement('div');
+                row.textContent = `row-${index}`;
+                return row;
+            },
+        });
+        list.setItemCount(8);
+        flushRaf();
+        const windowEl = host.querySelector<HTMLElement>('.theia-transcript-virtual-window');
+        const footerEl = host.querySelector<HTMLElement>('.theia-transcript-virtual-footer');
+        expect(windowEl?.classList.contains(TRANSCRIPT_GPU_LAYER_CLASS)).to.equal(true);
+        expect(footerEl?.classList.contains(TRANSCRIPT_GPU_LAYER_CLASS)).to.equal(true);
+        expect(windowEl?.style.transform).to.equal(formatTranscriptGpuLayerTransform(0));
+        expect(footerEl?.style.transform).to.equal(formatTranscriptGpuLayerTransform(8 * 200));
+        host.scrollTop = 400;
+        host.dispatchEvent(new window.Event('scroll'));
+        flushRaf();
+        expect(windowEl?.style.transform).to.match(/^translate3d\(0, \d+px, 0\)$/);
         list.dispose();
     });
 

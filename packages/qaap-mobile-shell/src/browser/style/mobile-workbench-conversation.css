@@ -261,7 +261,14 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /*
+   * One compositor layer for the mounted window — not per-row. `contain: paint`
+   * is omitted so row shadows / focus rings are not clipped at the window edge.
+   */
+  contain: layout style;
   will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 .theia-transcript-virtual-footer {
@@ -272,6 +279,10 @@ body:not(:has(.theia-mobile-projects.theia-mod-visible)):not(:has(.theia-mobile-
   display: flex;
   flex-direction: column;
   gap: 10px;
+  contain: layout style;
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
 /* Execution-view tab strip (icon-only on phones, icon + label when width allows). */
