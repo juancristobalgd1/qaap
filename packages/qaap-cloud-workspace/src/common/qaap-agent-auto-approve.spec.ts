@@ -62,6 +62,7 @@ describe('qaap-agent-auto-approve', () => {
         const already = "claude --dangerously-skip-permissions -p 'hi'";
         expect(applyAutoApproveToCommand(already, 'claude')).to.equal(already);
         expect(commandHasAutoApproveFlags(already)).to.equal(true);
+        expect(commandHasAutoApproveFlags("hermes --yolo --ignore-user-config chat -Q -q 'hi'")).to.equal(true);
     });
 
     it('applyAutoApproveToCommand leaves grok --always-approve unchanged', () => {

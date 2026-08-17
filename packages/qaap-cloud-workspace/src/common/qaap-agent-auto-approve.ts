@@ -52,8 +52,10 @@ export function commandHasAutoApproveFlags(command: string): boolean {
         || /--yes-always\b/.test(command)
         || /--always-approve\b/.test(command)
         || /\b--force\b/.test(command)
-        || /\b--yolo\b/.test(command)
-        || /\b-yolo\b/.test(command)
+        // `--yolo` cannot use a leading `\b`: `-` is a non-word char, so `\b--yolo`
+        // never matches `hermes --yolo …` and would inject a duplicate flag.
+        || /(?:^|\s)--yolo(?:\s|$)/.test(command)
+        || /(?:^|\s)-yolo(?:\s|$)/.test(command)
         || /--approval-mode(?:=|\s+)yolo\b/.test(command)
         || /--allow-all\b/.test(command)
         || /--autopilot\b/.test(command);
