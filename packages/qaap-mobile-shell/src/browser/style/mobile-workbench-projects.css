@@ -115,8 +115,7 @@
   max-width: calc(50% - 70px);
 }
 
-@media (max-width: 767px),
-(pointer: coarse) {
+@media (max-width: 767px) {
   .theia-mobile-projects-header-ide-agents-switch {
     display: none !important;
   }

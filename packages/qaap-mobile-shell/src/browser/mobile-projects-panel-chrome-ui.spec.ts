@@ -33,7 +33,9 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
 
     function stubMatchMedia(desktop: boolean): void {
         window.matchMedia = (query: string): MediaQueryList => ({
-            matches: desktop && query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
+            matches: query.includes('max-width: 767px')
+                ? !desktop
+                : desktop && query === QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
             media: query,
             onchange: null,
             addListener: () => undefined,

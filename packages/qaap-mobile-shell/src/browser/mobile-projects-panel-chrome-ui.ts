@@ -11,11 +11,9 @@ import {
     installMobilePullToRefresh,
     installMobileSheetDragDismiss,
 } from './mobile-sheet-gestures';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileSnackbar } from './mobile-snackbar';
-import {
-    QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
-    isDesktopSessionsSidebarLayout,
-} from './mobile-work-hub-sessions-sidebar';
+import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import {
     createQaapViewModeSwitch,
     type MobileViewToggleId,
@@ -341,7 +339,7 @@ export class MobileProjectsPanelChromeUi {
     }
 
     syncHeaderIdeAgentsSwitch(): void {
-        const visible = isDesktopSessionsSidebarLayout()
+        const visible = !matchesMobileNarrowViewport()
             && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
         this.host.headerIdeAgentsSwitchHost.hidden = !visible;
         this.host.headerIdeAgentsSwitchHost.style.display = visible ? '' : 'none';
