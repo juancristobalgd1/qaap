@@ -11,7 +11,7 @@ import { QaapPackageManager } from './qaap-project-bootstrap-types';
  * servers (Vite, Next, esbuild, …) live there. We force a development install.
  */
 export function buildBootstrapInstallCommand(pm: QaapPackageManager): string {
-    const env = 'NODE_ENV=development';
+    const env = 'NODE_ENV=development HUSKY=0 CI=true';
     switch (pm) {
         case 'native':
             // Native/custom preview descriptors are already runnable. This is a portable no-op

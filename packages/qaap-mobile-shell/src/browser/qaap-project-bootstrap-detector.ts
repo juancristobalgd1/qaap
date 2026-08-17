@@ -37,6 +37,7 @@ import {
 
 interface PackageJsonShape {
     name?: unknown;
+    bin?: unknown;
     scripts?: Record<string, unknown>;
     packageManager?: unknown;
     dependencies?: Record<string, unknown>;
@@ -52,6 +53,9 @@ const MAX_SCAFFOLD_SUBFOLDER_APPS = 16;
 
 /** Directories skipped when scanning for orphan scaffold projects under the workspace root. */
 const SCAFFOLD_SUBFOLDER_SKIP = new Set(['node_modules', '.git', '.qaap', 'dist', 'build', 'out']);
+
+/** Extra `index.html` folders nested under {@link STATIC_ROOT_CANDIDATE_DIRS} (e.g. `docs/demo`). */
+const NESTED_STATIC_INDEX_SEGMENTS = ['demo', 'public', 'dist'] as const;
 
 /** Fallback directories scanned when no explicit workspaces config exists ("implicit" layout). */
 const IMPLICIT_MONOREPO_DIRS = ['apps', 'packages', 'examples', 'sites', 'services', 'artifacts'];
@@ -394,6 +398,14 @@ export class QaapProjectBootstrapDetector {
         for (const dir of STATIC_ROOT_CANDIDATE_DIRS) {
             if (await this.fileService.exists(rootUri.resolve(dir).resolve(STATIC_INDEX_FILE))) {
                 return dir;
+            }
+        }
+        for (const dir of STATIC_ROOT_CANDIDATE_DIRS) {
+            for (const nested of NESTED_STATIC_INDEX_SEGMENTS) {
+                const rel = `${dir}/${nested}`;
+                if (await this.fileService.exists(rootUri.resolve(rel).resolve(STATIC_INDEX_FILE))) {
+                    return rel;
+                }
             }
         }
         return undefined;
@@ -916,6 +928,9 @@ export class QaapProjectBootstrapDetector {
                 return { kind, expectedPort: validExplicitPort ?? port };
             }
         }
+        if (this.isJsonServerPackage(pkg, allDeps, scriptText)) {
+            return { kind: 'node-generic', expectedPort: QAAP_THEIA_DEV_PORT };
+        }
         if ('@theia/core' in allDeps || '@theia/cli' in allDeps) {
             return { kind: 'node-generic', expectedPort: QAAP_THEIA_DEV_PORT };
         }
@@ -924,5 +939,22 @@ export class QaapProjectBootstrapDetector {
             return { kind: 'node-generic', expectedPort: QAAP_THEIA_DEV_PORT };
         }
         return { kind: 'node-generic' };
+    }
+
+    protected isJsonServerPackage(
+        pkg: PackageJsonShape,
+        allDeps: Record<string, unknown>,
+        scriptText: string,
+    ): boolean {
+        if (typeof pkg.name === 'string' && pkg.name.trim().toLowerCase() === 'json-server') {
+            return true;
+        }
+        if ('json-server' in allDeps) {
+            return true;
+        }
+        if (pkg.bin && typeof pkg.bin === 'object' && pkg.bin !== null && 'json-server' in pkg.bin) {
+            return true;
+        }
+        return /\bjson-server\b/i.test(scriptText);
     }
 }
