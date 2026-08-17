@@ -67,8 +67,14 @@ export function normalizeOpenRouterModelSlug(raw: string): string {
 }
 
 export function isExcludedOpenRouterModelSlug(raw: string): boolean {
-    const slug = normalizeOpenRouterModelSlug(raw);
-    return !!slug && OPENROUTER_EXCLUDED_MODEL_SLUGS.has(slug);
+    const trimmed = raw.trim();
+    if (!trimmed) {
+        return false;
+    }
+    const slug = normalizeOpenRouterModelSlug(trimmed);
+    // `openrouter/elephant-alpha` is a model slug whose org is `openrouter`. Normalizing
+    // Theia ids (`openrouter/org/model`) would strip that to `elephant-alpha`, so match both.
+    return OPENROUTER_EXCLUDED_MODEL_SLUGS.has(trimmed) || OPENROUTER_EXCLUDED_MODEL_SLUGS.has(slug);
 }
 
 /** Drops excluded slugs from preference lists and curated fallbacks. */
