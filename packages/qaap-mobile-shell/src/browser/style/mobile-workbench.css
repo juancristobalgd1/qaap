@@ -30722,7 +30722,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   }
 
   .theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-body {
-    padding: 8px 10px 10px;
+    padding: 12px 14px 14px;
   }
 }
 
@@ -30832,10 +30832,13 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
   margin: 0 !important;
   margin-inline: 0 !important;
   padding: 4px 0 6px;
-  padding-inline: 0 !important;
   background: transparent;
   border: none !important;
   border-left: none !important;
+}
+
+.theia-mobile-agent-shell-window.theia-mod-turn-failure:not([open]) .theia-mobile-agent-shell-body {
+  padding-inline: 0 !important;
 }
 
 .theia-mobile-agent-shell-window.theia-mod-turn-failure .theia-mobile-agent-shell-body::after {
@@ -30847,7 +30850,7 @@ body.qaap-theme-light .qaap-composer-improve-btn.theia-mod-busy {
 }
 
 .theia-mobile-agent-shell-window.theia-mod-turn-failure[open] .theia-mobile-agent-shell-body {
-  padding: 8px 10px 10px;
+  padding: 12px 14px 14px;
 }
 
 .theia-mobile-agent-transcript-segments>.theia-mobile-agent-shell-window.theia-mod-turn-failure {
