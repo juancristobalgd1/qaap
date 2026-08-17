@@ -153,13 +153,20 @@ export function rewriteDevPreviewBodyExtracted(ctx: any, body: string,
         targetPort: number,
         publicPrefix: string = `${QAAP_DEV_PREVIEW_PREFIX}/${targetPort}`,): string {
         const prefix = publicPrefix;
+        const prefixPath = prefix.replace(/\/+$/, '');
         // NEVER rewrite arbitrary JS string literals: a broad `"/..."` rule corrupted client-side
         // route tables (TanStack/React-Router route paths are absolute-path strings, and route ids
         // concatenate parent+child, compounding the prefix once per tree level — observed live as
         // routeIds like `/qaap-preview/<id>/qaap-preview/<id>/…/_authenticated`, which made every
         // routed SPA render blank under the proxy). Only rewrite positions that are URLs by
         // construction: markup attributes, CSS url(), module specifiers, and fetch() calls.
+        //
+        // Exception: Vite inlines `import.meta.env = {"BASE_URL": "/"}`. vue-router's
+        // `createWebHistory(BASE_URL)` then treats `/qaap-preview/<id>/` as an unknown route
+        // (vitesse-lite "Not Found"). Location.pathname is unforgeable in Chromium, so the
+        // history-base inject cannot hide the prefix; pin BASE_URL to the proxy path instead.
         const rewritten = body
+            .replace(/("BASE_URL"\s*:\s*")\/"/g, `$1${prefixPath}/"`)
             .replace(/\b(src|href|action)=("|')\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1=$2${prefix}/`)
             .replace(/\burl\(\s*(["']?)\/(?!\/|qaap-(?:dev|preview)\/)/g, `url($1${prefix}/`)
             .replace(/(\bimport\s*(?:\(|[^"'`]*from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
