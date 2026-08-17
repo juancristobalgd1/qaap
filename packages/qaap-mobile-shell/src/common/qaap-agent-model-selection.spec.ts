@@ -65,6 +65,18 @@ describe('qaap-agent-model-selection', () => {
         expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)).to.be.undefined;
     });
 
+    it('rejects excluded OpenRouter slugs stored under a native Hermes vendor', () => {
+        const cwd = '/repo/hermes-stale';
+        const bad = {
+            provider: 'openai' as const,
+            vendor: 'nvidia',
+            modelId: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+        };
+        expect(isStoredAgentModelUsable(bad)).to.be.false;
+        writeStoredAgentModel(cwd, 'hermes', bad);
+        expect(readStoredAgentModel(cwd, 'hermes')).to.be.undefined;
+    });
+
     it('rejects confirmed tool-less models and clears stale localStorage', () => {
         const cwd = '/repo/tool-less';
         const bad = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'tencent/hy3:free' };

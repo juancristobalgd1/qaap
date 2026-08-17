@@ -9,7 +9,8 @@ import { qaiqModelSupportsToolCalls } from './qaap-agent-tool-support';
 
 /**
  * Curated Hermes picker slugs (OpenRouter-style `org/model`).
- * Keep in sync with the Hermes agent model-catalog.json `providers.openrouter.models` list.
+ * Keep in sync with the Hermes agent model-catalog.json `providers.openrouter.models` list,
+ * except OpenRouter `:free` / router slugs that currently 404 (`No endpoints found`).
  * https://hermes-agent.nousresearch.com/docs/api/model-catalog.json
  */
 const HERMES_NATIVE_MODEL_IDS: readonly string[] = [
@@ -45,12 +46,6 @@ const HERMES_NATIVE_MODEL_IDS: readonly string[] = [
     'stepfun/step-3.7-flash',
     'nvidia/nemotron-3-super-120b-a12b',
     'sakana/fugu-ultra',
-    'openrouter/pareto-code',
-    'openrouter/elephant-alpha',
-    'poolside/laguna-m.1:free',
-    'nvidia/nemotron-3-super-120b-a12b:free',
-    'nvidia/nemotron-3-ultra-550b-a55b:free',
-    'inclusionai/ring-2.6-1t:free',
 ];
 
 const HERMES_MODEL_LABELS: Readonly<Record<string, string>> = {
@@ -86,12 +81,6 @@ const HERMES_MODEL_LABELS: Readonly<Record<string, string>> = {
     'stepfun/step-3.7-flash': 'Step 3.7 Flash',
     'nvidia/nemotron-3-super-120b-a12b': 'Nemotron 3 Super 120B',
     'sakana/fugu-ultra': 'Fugu Ultra',
-    'openrouter/pareto-code': 'Pareto Code',
-    'openrouter/elephant-alpha': 'Elephant Alpha',
-    'poolside/laguna-m.1:free': 'Laguna M.1 (Free)',
-    'nvidia/nemotron-3-super-120b-a12b:free': 'Nemotron 3 Super 120B (Free)',
-    'nvidia/nemotron-3-ultra-550b-a55b:free': 'Nemotron 3 Ultra 550B (Free)',
-    'inclusionai/ring-2.6-1t:free': 'Ring 2.6 1T (Free)',
 };
 
 function hermesProviderForOrg(org: string): QaapQaiqModelOption['provider'] {

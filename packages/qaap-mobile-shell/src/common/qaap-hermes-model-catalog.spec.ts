@@ -20,6 +20,10 @@ describe('listHermesNativeModels', () => {
         expect(ids[0]).to.equal('anthropic/claude-fable-5');
         expect(ids).to.not.include('tencent/hy3');
         expect(ids).to.not.include('tencent/hy3:free');
+        expect(ids).to.not.include('poolside/laguna-m.1:free');
+        expect(ids).to.not.include('nvidia/nemotron-3-ultra-550b-a55b:free');
+        expect(ids).to.not.include('openrouter/elephant-alpha');
+        expect(ids.some(id => id.endsWith(':free'))).to.equal(false);
         expect(models.every(model => model.label.trim().length > 0)).to.equal(true);
         expect(models.find(model => model.modelId === 'anthropic/claude-fable-5')).to.include({
             provider: 'anthropic',
@@ -35,6 +39,8 @@ describe('listHermesNativeModels', () => {
     it('drops excluded and tool-less OpenRouter slugs', () => {
         expect(hermesNativeModelOption('tencent/hy3:free')).to.equal(undefined);
         expect(hermesNativeModelOption('deepseek/deepseek-v4-flash:free')).to.equal(undefined);
+        expect(hermesNativeModelOption('poolside/laguna-m.1:free')).to.equal(undefined);
+        expect(hermesNativeModelOption('nvidia/nemotron-3-ultra-550b-a55b:free')).to.equal(undefined);
         expect(hermesNativeModelOption('anthropic/claude-sonnet-5')?.modelId).to.equal('anthropic/claude-sonnet-5');
     });
 });

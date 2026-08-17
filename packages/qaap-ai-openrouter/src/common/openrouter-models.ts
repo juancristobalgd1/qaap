@@ -27,6 +27,12 @@ export const OPENROUTER_EXCLUDED_MODEL_SLUGS: ReadonlySet<string> = new Set([
     // Hunyuan free endpoint accepts `tools` but emits tool-call args as plain text — unusable for Agent.
     'tencent/hy3:free',
     'tencent/hy3',
+    // Hermes catalog copies that 404 on OpenRouter (`No endpoints found`) as of 2026-08-17.
+    'poolside/laguna-m.1:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'inclusionai/ring-2.6-1t:free',
+    'openrouter/elephant-alpha',
+    'openrouter/pareto-code',
 ]);
 
 export const OPENROUTER_DEFAULT_FREE_MODELS: readonly string[] = [

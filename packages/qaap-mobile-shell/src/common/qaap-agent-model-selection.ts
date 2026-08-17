@@ -86,8 +86,10 @@ export function isStoredAgentModelUsable(model: QaapAgentModelSelection | undefi
     if (qaiqModelSupportsToolCalls(model.modelId) === false) {
         return false;
     }
-    if (model.vendor === 'openrouter') {
-        return !isExcludedOpenRouterModelSlug(model.modelId);
+    // Hermes (and other native catalogs) store the org as vendor (`nvidia`, `poolside`),
+    // not `openrouter` — still drop slugs OpenRouter no longer serves.
+    if (isExcludedOpenRouterModelSlug(model.modelId)) {
+        return false;
     }
     return true;
 }

@@ -25,4 +25,15 @@ describe('openrouter-models', () => {
             'moonshotai/kimi-k2.6:free',
         ])).to.deep.equal(['moonshotai/kimi-k2.6:free']);
     });
+
+    it('excludes Hermes catalog slugs that 404 with no OpenRouter endpoints', () => {
+        expect(isExcludedOpenRouterModelSlug('poolside/laguna-m.1:free')).to.be.true;
+        expect(isExcludedOpenRouterModelSlug('nvidia/nemotron-3-ultra-550b-a55b:free')).to.be.true;
+        expect(isExcludedOpenRouterModelSlug('openrouter/elephant-alpha')).to.be.true;
+        expect(filterOpenRouterModelSlugs([
+            'poolside/laguna-m.1:free',
+            'nvidia/nemotron-3-ultra-550b-a55b:free',
+            'moonshotai/kimi-k2.6:free',
+        ])).to.deep.equal(['moonshotai/kimi-k2.6:free']);
+    });
 });
