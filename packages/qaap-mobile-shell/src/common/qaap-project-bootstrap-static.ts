@@ -63,6 +63,7 @@ export const STATIC_SERVER_SCRIPT = [
     'http.createServer((req,res)=>{',
     'const u=decodeURIComponent((req.url||"/").split("?")[0]);',
     'const alts=[u];',
+    'if(entryDir && (u==="/"||u==="/index.html")){alts.push(entryDir+"/",entryDir+"/index.html");}',
     'if(stripSeg && u.indexOf("/"+stripSeg+"/")===0){alts.push(u.slice(stripSeg.length+1));}',
     'const finishMiss=()=>{',
     'const ext=p.extname(u).toLowerCase();',
@@ -102,8 +103,14 @@ export function nestedStaticUrlFallbacks(urlPath: string, entryPath: string): st
     const entryDir = (entryPath || '/').replace(/\/+$/g, '');
     const stripSeg = entryDir.split('/').filter(Boolean)[0];
     const alts = [url];
+    if (entryDir && (url === '/' || url === '/index.html')) {
+        alts.push(`${entryDir}/`, `${entryDir}/index.html`);
+    }
     if (stripSeg && url.startsWith(`/${stripSeg}/`)) {
-        alts.push(url.slice(stripSeg.length + 1));
+        const stripped = url.slice(stripSeg.length + 1);
+        if (!alts.includes(stripped)) {
+            alts.push(stripped);
+        }
     }
     return alts;
 }

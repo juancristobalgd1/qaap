@@ -75,5 +75,9 @@ describe('qaap-preview-url-utils', () => {
             'http://127.0.0.1:5173/profile',
             claim,
         )).to.equal('http://localhost:3000/qaap-preview/live-execution/profile');
+        expect(rebasePreviewUrlToIdentityClaim(
+            'http://127.0.0.1:8080/docs/demo/',
+            claim,
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/docs/demo/');
     });
 });

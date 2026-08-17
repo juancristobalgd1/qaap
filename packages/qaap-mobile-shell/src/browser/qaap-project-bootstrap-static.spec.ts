@@ -58,6 +58,11 @@ describe('qaap-project-bootstrap-static', () => {
                 '/docs/lib/marked.esm.js',
                 '/lib/marked.esm.js',
             ]);
+            expect(nestedStaticUrlFallbacks('/', '/docs/demo/')).to.deep.equal([
+                '/',
+                '/docs/demo/',
+                '/docs/demo/index.html',
+            ]);
             expect(shouldServeNestedStaticFromWorkspaceRoot('docs/demo')).to.equal(true);
             expect(shouldServeNestedStaticFromWorkspaceRoot('public')).to.equal(false);
         });

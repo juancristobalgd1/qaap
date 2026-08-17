@@ -136,7 +136,9 @@ export function scanForDevUrlExtracted(ctx: any, data: string): void {
             if (isReservedIdePort(effectivePort)) {
                 continue;
             }
-            ctx.recordForwardedPort(effectivePort, toDevPreviewUrl(effectivePort));
+            // Keep the logged pathname (`/docs/demo/`) so identity preview opens the nested
+            // static entry instead of `/qaap-preview/<id>/` → backend `/` → "Not found".
+            ctx.recordForwardedPort(effectivePort, url);
         }
 }
 
@@ -179,7 +181,7 @@ export function recordForwardedPortExtracted(ctx: any, port: number,
         const claimed = ctx.claimDevPreviewPort(port);
         const isPrimary = ctx._forwardedPorts.length === 0;
         const isolatedUrl = ctx.activePreviewClaim?.port === port
-            ? ctx.activePreviewClaim.previewUrl
+            ? rebasePreviewUrlToIdentityClaim(url, ctx.activePreviewClaim.previewUrl)
             : url;
         const next: QaapForwardedPort = {
             port,
