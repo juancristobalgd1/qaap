@@ -207,6 +207,44 @@ describe('TranscriptVirtualList follow-tail after spacer thrash', () => {
         list.dispose();
     });
 
+    it('windows a long thread and keeps GPU translates while scrolling', () => {
+        const list = new TranscriptVirtualList({
+            scrollHost: host,
+            defaultItemHeight: 200,
+            renderItem: index => {
+                const row = document.createElement('div');
+                row.textContent = `row-${index}`;
+                return row;
+            },
+        });
+        list.setItemCount(80);
+        flushRaf();
+        const windowEl = host.querySelector<HTMLElement>('.theia-transcript-virtual-window');
+        const footerEl = host.querySelector<HTMLElement>('.theia-transcript-virtual-footer');
+        expect(windowEl).to.not.equal(undefined);
+        expect(host.querySelectorAll('[data-virtual-index]').length).to.be.greaterThan(0);
+        expect(host.querySelectorAll('[data-virtual-index]').length).to.be.lessThan(80);
+
+        for (const top of [0, 800, 4200, 12000]) {
+            host.scrollTop = top;
+            host.dispatchEvent(new window.Event('scroll'));
+            flushRaf();
+            expect(windowEl?.style.transform).to.match(/^translate3d\(0, \d+px, 0\)$/);
+            expect(windowEl?.style.transform).to.not.include('translateY(');
+            expect(footerEl?.style.transform).to.equal(formatTranscriptGpuLayerTransform(80 * 200));
+            const rows = [...(windowEl?.children ?? [])] as HTMLElement[];
+            expect(rows.length).to.be.greaterThan(0);
+            expect(rows.every(row => /^row-\d+$/.test(row.textContent ?? ''))).to.equal(true);
+        }
+
+        list.scrollToEnd();
+        host.dispatchEvent(new window.Event('scroll'));
+        flushRaf();
+        expect(host.scrollTop).to.equal(Math.max(0, host.scrollHeight - host.clientHeight));
+        expect(windowEl?.style.transform).to.match(/^translate3d\(0, \d+px, 0\)$/);
+        list.dispose();
+    });
+
     it('requestMeasureImmediate schedules an update without waiting for the throttle window', () => {
         const list = new TranscriptVirtualList({
             scrollHost: host,
