@@ -151,7 +151,7 @@ describe('qaap-project-bootstrap-port', () => {
                 sibling: string;
             };
             expect(result.app.port).to.equal('5182');
-            expect(result.app.argv).to.deep.equal(['--port', '5182', '--strictPort']);
+            expect(result.app.argv).to.deep.equal(['--port', '5182', '--strictPort', '--host', '127.0.0.1']);
             expect(result.sibling).to.equal('8787');
         } finally {
             rmSync(directory, { recursive: true, force: true });
@@ -176,7 +176,32 @@ describe('qaap-project-bootstrap-port', () => {
             const result = JSON.parse(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })) as {
                 argv: string[];
             };
-            expect(result.argv).to.deep.equal(['--port', '5182', '--strictPort']);
+            expect(result.argv).to.deep.equal(['--port', '5182', '--strictPort', '--host', '127.0.0.1']);
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
+
+    it('strips vite --open so in-IDE preview does not launch a browser or exit 1', function (): void {
+        if (process.platform === 'win32') {
+            this.skip();
+        }
+        const directory = mkdtempSync(join(tmpdir(), 'qaap-preview-port-'));
+        const vite = join(directory, 'vite');
+        const runner = join(directory, 'runner-open.cjs');
+        try {
+            writeFileSync(vite, "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }));");
+            writeFileSync(runner, [
+                "const { execFileSync } = require('child_process');",
+                `const app = execFileSync(process.execPath, [${JSON.stringify(vite)}, '--port', '3333', '--open'], { encoding: 'utf8' });`,
+                "process.stdout.write(app);",
+            ].join('\n'));
+            const command = wrapDevCommandForPort(`node ${JSON.stringify(runner)}`, 3333, 'node-vite');
+            const result = JSON.parse(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })) as {
+                argv: string[];
+            };
+            expect(result.argv).to.deep.equal(['--port', '3333', '--strictPort', '--host', '127.0.0.1']);
+            expect(result.argv).to.not.include('--open');
         } finally {
             rmSync(directory, { recursive: true, force: true });
         }

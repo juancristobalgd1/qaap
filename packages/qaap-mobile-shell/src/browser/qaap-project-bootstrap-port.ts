@@ -172,9 +172,13 @@ const FORCE_FRAMEWORK_PREVIEW_PORT_SOURCE = [
         + "e=(a[1]||'').replaceAll('\\\\','/').split('/').pop()||'',"
         + "hasPort=a.some(v=>v==='--port'||v==='-p'||v.startsWith('--port=')),"
         + "hasStrict=a.some(v=>v==='--strictPort'||v.startsWith('--strictPort=')),"
+        + "hasHost=a.some(v=>v==='--host'||v.startsWith('--host=')),"
         + 'isVite=/^(vite|vite\\.js|astro|astro\\.js)$/.test(e)',
-    'if(p){if(isVite){if(!hasPort){a.push(\'--port\',p)}if(!hasStrict){a.push(\'--strictPort\')}}'
-        + 'else if(!hasPort){if(/^(next|next\\.js)$/.test(e)){a.push(\'-p\',p)}'
+    'if(p){if(isVite){'
+        + "for(let i=a.length-1;i>=2;i--){if(a[i]==='--open'||String(a[i]).startsWith('--open='))a.splice(i,1)}"
+        + 'if(!hasPort){a.push(\'--port\',p)}if(!hasStrict){a.push(\'--strictPort\')}'
+        + 'if(!hasHost){a.push(\'--host\',\'127.0.0.1\')}'
+        + '}else if(!hasPort){if(/^(next|next\\.js)$/.test(e)){a.push(\'-p\',p)}'
         + 'else if(/^(remix|remix\\.js)$/.test(e)){a.push(\'--port\',p)}}}',
 ].join(';');
 
