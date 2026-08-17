@@ -129,6 +129,7 @@ import { QaapTurnSettleNotifyContribution } from './qaap-turn-settle-notify-cont
 import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from './qaap-copilot-owner-binding';
+import { QaapUserAiSettingsSyncContribution } from './qaap-user-ai-settings-sync';
 import { QaapMobileAppPreferenceContribution } from './qaap-mobile-app-preferences';
 import { CopilotAuthService } from '@theia/ai-copilot/src/common/copilot-auth-service';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
@@ -378,4 +379,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
         return binding;
     }).inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapCopilotOwnerBinding);
+    bind(QaapUserAiSettingsSyncContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapUserAiSettingsSyncContribution);
 });

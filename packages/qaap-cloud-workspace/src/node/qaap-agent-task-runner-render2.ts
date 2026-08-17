@@ -31,6 +31,7 @@ import {
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { usesSharedAiSettingsFallback } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
     QAAP_BUILTIN_AGENT_DEFINITIONS,
@@ -495,13 +496,10 @@ export function warmForCwdExtracted(ctx: any, cwd: string): QaapAgentWarmResult 
         };
 }
 
-export function listQaiqModelsExtracted(ctx: any): QaapQaiqModelOption[] {
-        if (!ctx.preferenceService) {
-            return [];
-        }
+export function listQaiqModelsExtracted(ctx: any, ownerLogin?: string): QaapQaiqModelOption[] {
         return listQaiqModelsFromPreferences(
-            key => ctx.preferenceService!.get(key),
-            key => process.env[key],
+            ctx.preferenceReaderForOwner(ownerLogin),
+            usesSharedAiSettingsFallback(ownerLogin) ? (key: string) => process.env[key] : () => undefined,
         );
 }
 

@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { isExcludedOpenRouterModelSlug } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
+import { qaapUserScopedStorageKey } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS, NATIVE_MODEL_PICKER_AGENT_IDS } from './qaap-builtin-agents';
 import {
     hashString,
@@ -52,9 +53,47 @@ export function agentSupportsModelPicker(agentId: string | undefined): boolean {
     return agentUsesSettingsModelCatalog(normalized) || agentUsesNativeModelCatalog(normalized);
 }
 
-export function scopedAgentModelStorageKey(cwd: string, agentId: string): string {
+export function scopedAgentModelStorageKey(cwd: string, agentId: string, userLogin?: string): string {
     const agent = migrateLegacyBackendAgentId(agentId) ?? agentId;
-    return `${AGENT_MODEL_STORAGE_PREFIX}.${hashString(cwd)}.${agent}`;
+    return qaapUserScopedStorageKey(
+        `${AGENT_MODEL_STORAGE_PREFIX}.${hashString(cwd)}.${agent}`,
+        userLogin ?? resolveAgentModelStorageLogin(),
+    );
+}
+
+let agentModelStorageLogin: string | undefined;
+
+/** Bind the signed-in login so model picks never cross tenants on a shared origin. */
+export function setAgentModelStorageUserLogin(login: string | undefined): void {
+    agentModelStorageLogin = login?.trim() || undefined;
+}
+
+function resolveAgentModelStorageLogin(): string | undefined {
+    if (agentModelStorageLogin) {
+        return agentModelStorageLogin;
+    }
+    if (typeof window === 'undefined' || !window.localStorage) {
+        return undefined;
+    }
+    try {
+        for (let i = 0; i < window.localStorage.length; i++) {
+            const key = window.localStorage.key(i);
+            if (!key?.includes('qaap.auth.user')) {
+                continue;
+            }
+            const raw = window.localStorage.getItem(key);
+            if (!raw) {
+                continue;
+            }
+            const parsed = JSON.parse(raw) as { login?: unknown };
+            if (typeof parsed?.login === 'string' && parsed.login.trim()) {
+                return parsed.login;
+            }
+        }
+    } catch {
+        return undefined;
+    }
+    return undefined;
 }
 
 function parseStoredModel(raw: string | null | undefined): QaapAgentModelSelection | undefined {
@@ -119,9 +158,12 @@ export function readStoredAgentModel(cwd: string | undefined, agentId: string | 
 }
 
 function readLegacyQaiqModel(cwd: string): QaapAgentModelSelection | undefined {
-    const scopedKey = `${SELECTED_QAIQ_MODEL_STORAGE_KEY}.${hashString(cwd)}`;
+    const login = resolveAgentModelStorageLogin();
+    const scopedKey = qaapUserScopedStorageKey(`${SELECTED_QAIQ_MODEL_STORAGE_KEY}.${hashString(cwd)}`, login);
     const scopedRaw = window.localStorage.getItem(scopedKey);
-    const globalRaw = window.localStorage.getItem(SELECTED_QAIQ_MODEL_STORAGE_KEY);
+    const globalRaw = login
+        ? undefined
+        : window.localStorage.getItem(SELECTED_QAIQ_MODEL_STORAGE_KEY);
     const raw = scopedRaw ?? globalRaw ?? undefined;
     const model = parseStoredModel(raw);
     if (!model && raw) {
@@ -153,8 +195,14 @@ export function writeStoredAgentModel(
         const serialized = JSON.stringify(payload);
         window.localStorage.setItem(scopedAgentModelStorageKey(cwd, agent), serialized);
         if (agent === QAIQ_AGENT_ID) {
-            window.localStorage.setItem(`${SELECTED_QAIQ_MODEL_STORAGE_KEY}.${hashString(cwd)}`, serialized);
-            window.localStorage.setItem(SELECTED_QAIQ_MODEL_STORAGE_KEY, serialized);
+            const login = resolveAgentModelStorageLogin();
+            window.localStorage.setItem(
+                qaapUserScopedStorageKey(`${SELECTED_QAIQ_MODEL_STORAGE_KEY}.${hashString(cwd)}`, login),
+                serialized,
+            );
+            if (!login) {
+                window.localStorage.setItem(SELECTED_QAIQ_MODEL_STORAGE_KEY, serialized);
+            }
         }
     } catch {
         /* localStorage unavailable */

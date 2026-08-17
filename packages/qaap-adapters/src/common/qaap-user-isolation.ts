@@ -69,6 +69,24 @@ export function safeUserIdSegment(login: string): string {
     return safe || '_unknown';
 }
 
+/**
+ * Local skip-auth / anonymous buckets may still read the shared `~/.theia/settings.json`.
+ * Authenticated GitHub/GitLab logins must never fall back to that file — it is one backend
+ * process and would leak User A's API keys into User B's agent spawn.
+ */
+export function usesSharedAiSettingsFallback(ownerLogin: string | undefined): boolean {
+    const login = ownerLogin?.trim();
+    if (!login) {
+        return true;
+    }
+    return login === QAAP_SKIP_AUTH_USER_LOGIN || login === QAAP_ANONYMOUS_USER_LOGIN;
+}
+
+/** Per-user AI/BYOK settings: `{home}/.qaap/users/{login}/settings.json`. */
+export function resolveUserSettingsFilePath(userLogin: string, homeDir: string = os.homedir()): string {
+    return path.join(homeDir, '.qaap', 'users', safeUserIdSegment(userLogin), 'settings.json');
+}
+
 /** Per-user workspace root: `{reposRoot}/users/{login}/`. */
 export function resolveUserReposRoot(reposRoot: string, userLogin: string): string {
     return path.join(reposRoot, QAAP_USER_REPOS_SEGMENT, safeUserIdSegment(userLogin));

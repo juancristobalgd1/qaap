@@ -159,6 +159,34 @@ export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[]
 /** Schema default — must not count as a user-configured Ollama endpoint. */
 export const OLLAMA_DEFAULT_HOST = 'http://localhost:11434';
 
+const EXTRA_AI_SETTINGS_PREF_KEYS = [
+    QAAP_CUSTOM_OPENAI_ENDPOINTS_PREF,
+    QAAP_CUSTOM_OPENAI_MODEL_PREF,
+    QAAP_CUSTOM_OPENAI_BASE_URL_PREF,
+    QAAP_CUSTOM_OPENAI_API_KEY_PREF,
+    'ai-features.languageModelAliases',
+] as const;
+
+/** Preference keys persisted per authenticated user (API keys, model lists, aliases). */
+export function listQaapAiSettingsPrefKeys(): string[] {
+    const keys = new Set<string>();
+    for (const provider of QAAP_QAIQ_BYOK_PROVIDERS) {
+        keys.add(provider.credentialPref);
+        for (const pref of provider.modelListPrefs) {
+            keys.add(pref);
+        }
+        for (const mapping of provider.credentialEnv ?? []) {
+            if (mapping.pref) {
+                keys.add(mapping.pref);
+            }
+        }
+    }
+    for (const pref of EXTRA_AI_SETTINGS_PREF_KEYS) {
+        keys.add(pref);
+    }
+    return [...keys];
+}
+
 const VENDOR_LOOKUP = buildVendorLookup(QAAP_QAIQ_BYOK_PROVIDERS);
 
 function buildVendorLookup(

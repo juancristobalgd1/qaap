@@ -13,6 +13,7 @@ import {
     pickDefaultAgentModel,
     readStoredAgentModel,
     resolveAgentModelForSubmit,
+    setAgentModelStorageUserLogin,
     writeStoredAgentModel,
 } from './qaap-agent-model-selection';
 import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
@@ -22,6 +23,7 @@ describe('qaap-agent-model-selection', () => {
 
     beforeEach(() => {
         storage.clear();
+        setAgentModelStorageUserLogin(undefined);
         (global as unknown as { window: Window }).window = {
             localStorage: {
                 getItem: (key: string) => storage.get(key) ?? null,
@@ -129,5 +131,20 @@ describe('qaap-agent-model-selection', () => {
             { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' },
         ]);
         expect(again?.modelId).to.equal('opencode/claude-sonnet-4-6');
+    });
+
+    it('scopes stored model picks per authenticated user', () => {
+        const cwd = '/workspace/repos/users/alice/acme/app';
+        const modelA = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'openai/gpt-4o-mini' };
+        const modelB = { provider: 'openai' as const, vendor: 'openrouter', modelId: 'google/gemma-4-31b-it:free' };
+        setAgentModelStorageUserLogin('alice');
+        writeStoredAgentModel(cwd, QAIQ_AGENT_ID, modelA);
+        expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)?.modelId).to.equal(modelA.modelId);
+        setAgentModelStorageUserLogin('bob');
+        expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)).to.be.undefined;
+        writeStoredAgentModel(cwd, QAIQ_AGENT_ID, modelB);
+        expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)?.modelId).to.equal(modelB.modelId);
+        setAgentModelStorageUserLogin('alice');
+        expect(readStoredAgentModel(cwd, QAIQ_AGENT_ID)?.modelId).to.equal(modelA.modelId);
     });
 });

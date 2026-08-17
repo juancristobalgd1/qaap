@@ -12,7 +12,12 @@ import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import {
+    resolveUserSettingsFilePath,
+    usesSharedAiSettingsFallback,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { listQaapAiSettingsPrefKeys } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+import type { QaapPreferenceReader } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
@@ -357,29 +362,87 @@ export function appendBoundedCommandOutput(current: string, chunk: string, maxCh
 // ─── User settings ───────────────────────────────────────────────────────────
 
 /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
- *  When ownerLogin is provided, prefers the per-user settings file; falls back to the shared
- *  ~/.theia/settings.json so single-user VPS deployments keep working with Settings → AI. */
-export function readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
+ *  Authenticated `ownerLogin` reads ONLY `~/.qaap/users/{login}/settings.json` — never the shared
+ *  `~/.theia/settings.json`, which would leak User A's BYOK keys into User B's spawn.
+ *  Skip-auth / anonymous still fall back to the shared file for local single-user VPS. */
+export function readUserSettingsFromDisk(ownerLogin?: string, homeDir: string = os.homedir()): Record<string, unknown> {
     try {
+        const sharedSettingsPath = path.join(homeDir, '.theia', 'settings.json');
         const userSettingsPath = ownerLogin?.trim()
-            ? path.join(os.homedir(), '.qaap', 'users', safeUserIdSegment(ownerLogin), 'settings.json')
+            ? resolveUserSettingsFilePath(ownerLogin, homeDir)
             : undefined;
-        const sharedSettingsPath = path.join(os.homedir(), '.theia', 'settings.json');
-        const settingsPath = userSettingsPath && fs.existsSync(userSettingsPath)
-            ? userSettingsPath
-            : sharedSettingsPath;
+        let settingsPath = sharedSettingsPath;
+        if (userSettingsPath) {
+            if (fs.existsSync(userSettingsPath)) {
+                settingsPath = userSettingsPath;
+            } else if (!usesSharedAiSettingsFallback(ownerLogin)) {
+                return {};
+            }
+        }
         if (!fs.existsSync(settingsPath)) {
             return {};
         }
-        const raw = fs.readFileSync(settingsPath, 'utf8');
-        if (!raw.trim()) {
-            return {};
-        }
-        return JSON.parse(raw) as Record<string, unknown>;
+        return parseSettingsJsonFile(settingsPath);
     } catch (error) {
         console.warn('[qaap-agent-tasks] failed to read user settings from disk:', error instanceof Error ? error.message : String(error));
         return {};
     }
+}
+
+export function parseSettingsJsonFile(settingsPath: string): Record<string, unknown> {
+    const raw = fs.readFileSync(settingsPath, 'utf8');
+    if (!raw.trim()) {
+        return {};
+    }
+    return JSON.parse(raw) as Record<string, unknown>;
+}
+
+export function filterAiSettings(settings: Record<string, unknown>): Record<string, unknown> {
+    const allowed = new Set(listQaapAiSettingsPrefKeys());
+    const filtered: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(settings)) {
+        if (allowed.has(key) && value !== undefined) {
+            filtered[key] = value;
+        }
+    }
+    return filtered;
+}
+
+/** Merge AI preference keys into the per-user settings file. Unknown keys are ignored. */
+export function writeUserSettingsToDisk(
+    ownerLogin: string,
+    patch: Record<string, unknown>,
+    homeDir: string = os.homedir(),
+): Record<string, unknown> {
+    const filePath = resolveUserSettingsFilePath(ownerLogin, homeDir);
+    const current = fs.existsSync(filePath) ? parseSettingsJsonFile(filePath) : {};
+    const next = { ...current, ...filterAiSettings(patch) };
+    for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined && key in next) {
+            delete next[key];
+        }
+    }
+    const dir = path.dirname(filePath);
+    const tmpPath = `${filePath}.${process.pid}.tmp`;
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tmpPath, `${JSON.stringify(next, undefined, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(tmpPath, filePath);
+    try { fs.chmodSync(filePath, 0o600); } catch { /* best-effort */ }
+    return filterAiSettings(next);
+}
+
+export function preferenceReaderForOwner(ctx: any, ownerLogin?: string): QaapPreferenceReader {
+    const diskSettings = ctx.readUserSettingsFromDisk(ownerLogin);
+    if (!usesSharedAiSettingsFallback(ownerLogin)) {
+        return (key: string): unknown => diskSettings[key];
+    }
+    return (key: string): unknown => {
+        const fromPref = ctx.preferenceService?.get(key);
+        if (fromPref !== undefined && fromPref !== null && fromPref !== '') {
+            return fromPref;
+        }
+        return diskSettings[key];
+    };
 }
 
 // ─── Provider env stripping ──────────────────────────────────────────────────

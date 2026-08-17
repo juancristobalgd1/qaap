@@ -29,6 +29,7 @@ import {
 } from '../common/qaap-agent-task';
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
+import type { QaapPreferenceReader } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -60,7 +61,7 @@ import {
     noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
     changedSensitiveFiles as changedSensitiveFilesHelper,
 } from './qaap-agent-task-runner-utils';
-import { parseCustomAgent as parseCustomAgentHelper, maxConcurrentAgents as maxConcurrentAgentsHelper, maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper, buildRepoTree as buildRepoTreeHelper, buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper, readGitStatusSnapshot as readGitStatusSnapshotHelper, captureWorktreeStatus as captureWorktreeStatusHelper, captureWorktreeFingerprint as captureWorktreeFingerprintHelper, resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper, appendBoundedCommandOutput as appendBoundedCommandOutputHelper, readUserSettingsFromDisk as readUserSettingsFromDiskHelper, stripSharedProviderEnv as stripSharedProviderEnvHelper, } from './qaap-agent-task-runner-utils2';
+import { parseCustomAgent as parseCustomAgentHelper, maxConcurrentAgents as maxConcurrentAgentsHelper, maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper, buildRepoTree as buildRepoTreeHelper, buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper, readGitStatusSnapshot as readGitStatusSnapshotHelper, captureWorktreeStatus as captureWorktreeStatusHelper, captureWorktreeFingerprint as captureWorktreeFingerprintHelper, resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper, appendBoundedCommandOutput as appendBoundedCommandOutputHelper, readUserSettingsFromDisk as readUserSettingsFromDiskHelper, preferenceReaderForOwner as preferenceReaderForOwnerHelper, stripSharedProviderEnv as stripSharedProviderEnvHelper, } from './qaap-agent-task-runner-utils2';
 import {
     readRelevantFiles as readRelevantFilesHelper,
     reapAgentProcessGroupAfterExit as reapAgentProcessGroupAfterExitHelper,
@@ -355,8 +356,8 @@ export class QaapAgentTaskRunner {
         return probeAgentBinOnceHelper(agentId, resolveBin, this.probedAgentBins);
     }
 
-    listQaiqModels(): QaapQaiqModelOption[] {
-        return listQaiqModelsExtracted(this);
+    listQaiqModels(ownerLogin?: string): QaapQaiqModelOption[] {
+        return listQaiqModelsExtracted(this, ownerLogin);
     }
 
     listModelsForAgent(agentId: string | undefined): QaapQaiqModelOption[] {
@@ -493,16 +494,16 @@ export class QaapAgentTaskRunner {
         return resolveQaiqProviderFlagsExtracted(this);
     }
 
-    protected resolveQaapQaiqBinding(): QaapQaiqModelBinding | undefined {
-        return resolveQaapQaiqBindingExtracted(this);
+    protected resolveQaapQaiqBinding(ownerLogin?: string): QaapQaiqModelBinding | undefined {
+        return resolveQaapQaiqBindingExtracted(this, ownerLogin);
     }
 
     protected resolveAgentBindingForTask(task: QaapAgentTask): QaapQaiqModelBinding | undefined {
         return resolveAgentBindingForTaskExtracted(this, task);
     }
 
-    protected normalizeAgentBinding(binding: QaapQaiqModelBinding): QaapQaiqModelBinding {
-        return normalizeAgentBindingExtracted(this, binding);
+    protected normalizeAgentBinding(binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding {
+        return normalizeAgentBindingExtracted(this, binding, ownerLogin);
     }
 
     protected previewProviderEnv(): NodeJS.ProcessEnv {
@@ -798,10 +799,13 @@ export class QaapAgentTaskRunner {
     }
 
     /** Fallback when the backend PreferenceService has no User provider (common in VPS containers).
-     *  When ownerLogin is provided, prefers the per-user settings file; falls back to the shared
-     *  ~/.theia/settings.json so single-user VPS deployments keep working with Settings → AI. */
+     *  Authenticated ownerLogin reads only the per-user settings file. */
     protected readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown> {
         return readUserSettingsFromDiskHelper(ownerLogin);
+    }
+
+    protected preferenceReaderForOwner(ownerLogin?: string): QaapPreferenceReader {
+        return preferenceReaderForOwnerHelper(this, ownerLogin);
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map OpenRouter prefs when needed. */

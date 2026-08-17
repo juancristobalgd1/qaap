@@ -300,7 +300,7 @@ export function buildChildEnvExtracted(ctx: any, task: QaapAgentTask): NodeJS.Pr
         const binding = ctx.resolveAgentBindingForTask(task);
         if (binding) {
             applyQaapQaiqModelEnv(env, binding);
-            applyQaapQaiqCredentialEnv(env, binding, key => ctx.preferenceService?.get(key));
+            applyQaapQaiqCredentialEnv(env, binding, ctx.preferenceReaderForOwner(task.ownerLogin));
         }
         if (usesQaiqSettingsCatalog) {
             ctx.applyQaiqProviderEnv(env, task.command, binding);
@@ -377,18 +377,12 @@ export function applyQaiqProviderEnvExtracted(ctx: any, env: NodeJS.ProcessEnv, 
 }
 
 export function applyProviderPreferenceEnvExtracted(ctx: any, env: NodeJS.ProcessEnv, ownerLogin?: string): void {
-        const diskSettings = ctx.readUserSettingsFromDisk(ownerLogin);
+        const readPref = ctx.preferenceReaderForOwner(ownerLogin);
         for (const mapping of AGENT_ENV_PREFS) {
             if (env[mapping.env]?.trim()) {
                 continue;
             }
-            let value = ctx.preferenceService?.get<string>(mapping.pref);
-            if (typeof value !== 'string' || !value.trim()) {
-                const diskValue = diskSettings[mapping.pref];
-                if (typeof diskValue === 'string' && diskValue.trim()) {
-                    value = diskValue.trim();
-                }
-            }
+            const value = readPref(mapping.pref);
             if (typeof value === 'string' && value.trim()) {
                 env[mapping.env] = value.trim();
             }

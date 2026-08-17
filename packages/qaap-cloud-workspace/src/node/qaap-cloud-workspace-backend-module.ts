@@ -21,6 +21,7 @@ import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
 import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoint';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
+import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
@@ -145,6 +146,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapWorktreeGcContribution);
     bind(QaapAgentTaskEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapAgentTaskEndpoint);
+    bind(QaapUserAiSettingsEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapUserAiSettingsEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
     // Headless server-side visual evidence — subscribes to the store on startup, so it must be
     // instantiated eagerly via the contribution provider (singletons are otherwise lazy).
