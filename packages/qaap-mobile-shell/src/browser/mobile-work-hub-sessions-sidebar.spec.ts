@@ -523,4 +523,19 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         sidebar.hide();
         expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(false);
     });
+
+    it('keeps the IDE/Agents switch out of the sidebar header', () => {
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        const head = sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-head');
+        expect(head).to.not.equal(null);
+        expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-view-switch')).to.equal(null);
+        expect(head!.querySelector('.theia-qaap-segmented-bar')).to.equal(null);
+        expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-brand')).to.not.equal(null);
+        expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-close')).to.not.equal(null);
+    });
 });

@@ -78,12 +78,52 @@
 }
 
 .theia-mobile-projects-header-main {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   width: 100%;
   min-width: 0;
+}
+
+/* Centered IDE/Agents switch — same absolute center as the classic IDE top bar. */
+.theia-mobile-projects-header-ide-agents-switch {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 124px;
+  min-width: 0;
+  height: 100%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch {
+  pointer-events: auto;
+}
+
+.theia-mobile-projects-header-ide-agents-switch[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block {
+  max-width: calc(50% - 70px);
+}
+
+@media (max-width: 767px),
+(pointer: coarse) {
+  .theia-mobile-projects-header-ide-agents-switch {
+    display: none !important;
+  }
+}
+
+body.theia-mobile-mod-desktop-ide .theia-mobile-projects-header-ide-agents-switch {
+  display: none !important;
 }
 
 .theia-mobile-projects-search-toggle.theia-mod-active {

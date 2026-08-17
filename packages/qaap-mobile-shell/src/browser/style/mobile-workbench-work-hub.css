@@ -9148,6 +9148,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-inline-active .theia-mobile-projects-header-main,
 .theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-header-main,
 .theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header-main {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;

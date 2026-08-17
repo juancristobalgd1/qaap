@@ -17,11 +17,6 @@ import { MobileHaptics } from './mobile-haptics';
 import { hashString } from '../common/qaap-agent-task-client';
 import { setQaapClientErrorBuild } from '../common/qaap-client-error-report';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import {
-    createQaapViewModeSwitch,
-    type MobileViewToggleId,
-} from './qaap-workbench-account-menu';
-import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -52,8 +47,6 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onClose(): void;
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
-    getViewMode?(): MobileViewToggleId;
-    onViewModeChange?(id: MobileViewToggleId): void;
     onSearch?: () => void;
     onStartNewProject?: () => void;
     isEmbedded?: () => boolean;
@@ -86,8 +79,6 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly panel: HTMLElement;
     protected readonly leftEdgeZone: HTMLElement;
     protected readonly closeBtn: HTMLButtonElement;
-    protected readonly viewModeSwitchHost: HTMLElement;
-    protected readonly viewModeSwitch: QaapSegmentedFieldController<MobileViewToggleId>;
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly accountLabel: HTMLSpanElement;
@@ -129,13 +120,6 @@ export class MobileWorkHubSessionsSidebar {
         brand.className = 'theia-mobile-work-hub-sessions-sidebar-brand';
         brand.textContent = FrontendApplicationConfigProvider.get().applicationName?.trim()
             || nls.localize('qaap/mobileProjects/title', 'Work Hub');
-        this.viewModeSwitchHost = document.createElement('div');
-        this.viewModeSwitchHost.className = 'theia-mobile-work-hub-sessions-sidebar-view-switch';
-        this.viewModeSwitch = createQaapViewModeSwitch({
-            activeId: this.delegate.getViewMode?.() ?? 'agent',
-            onSelect: id => this.delegate.onViewModeChange?.(id),
-        });
-        this.viewModeSwitchHost.append(this.viewModeSwitch.root);
         this.closeBtn = document.createElement('button');
         this.closeBtn.type = 'button';
         this.closeBtn.className = 'theia-mobile-work-hub-sessions-sidebar-close codicon codicon-chevron-left';
@@ -149,8 +133,7 @@ export class MobileWorkHubSessionsSidebar {
             }
             this.hide();
         });
-        head.append(brand, this.viewModeSwitchHost, this.closeBtn);
-        this.syncViewModeSwitch();
+        head.append(brand, this.closeBtn);
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
@@ -240,7 +223,6 @@ export class MobileWorkHubSessionsSidebar {
      */
     syncEmbeddedState(embedded: boolean): void {
         this.root.classList.toggle('theia-mod-embedded', embedded);
-        this.syncViewModeSwitch();
         if (!this.visible) {
             return;
         }
@@ -257,7 +239,6 @@ export class MobileWorkHubSessionsSidebar {
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
         this.syncEmbeddedState(this.delegate.isEmbedded?.() === true);
-        this.syncViewModeSwitch();
         void this.root.offsetWidth;
         this.root.classList.add('theia-mod-visible');
         document.addEventListener('keydown', this.onKeyDown, true);
@@ -273,17 +254,6 @@ export class MobileWorkHubSessionsSidebar {
     updateAccountAvatar(): void {
         renderQaapAccountAvatarVisual(this.accountAvatar, { titleTarget: this.accountBtn });
         this.syncAccountLabel();
-    }
-
-    protected syncViewModeSwitch(): void {
-        const desktop = !matchesMobileNarrowViewport()
-            && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
-        this.viewModeSwitchHost.hidden = !desktop;
-        this.viewModeSwitchHost.style.display = desktop ? '' : 'none';
-        this.viewModeSwitchHost.setAttribute('aria-hidden', desktop ? 'false' : 'true');
-        if (desktop) {
-            this.viewModeSwitch.setValue(this.delegate.getViewMode?.() ?? 'agent');
-        }
     }
 
     /**
