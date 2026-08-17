@@ -29,7 +29,7 @@ export function formatModelFlagsForAgent(agentId: string, binding: QaapQaiqModel
         return `-m ${shellQuote(binding.modelId)}`;
     }
     if (normalized === 'hermes') {
-        // Hermes providers are `auto` / `openrouter` / `nous`, not QAIQ BYOK ids.
+        // Top-level `hermes --model <org/model>` (the template already pins `--provider openrouter`).
         return `--model ${shellQuote(binding.modelId)}`;
     }
     if (normalized === 'antigravity' || normalized === 'gemini') {

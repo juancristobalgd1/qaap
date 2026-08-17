@@ -90,5 +90,9 @@ describe('qaap-agent-auto-approve', () => {
             .to.equal("copilot --autopilot --yolo --max-autopilot-continues 20 -p 'hi'");
         expect(applyAutoApproveToCommand("qwen -p 'hi'", 'qwen'))
             .to.equal("qwen -p --approval-mode yolo 'hi'");
+        expect(applyAutoApproveToCommand("hermes chat -q 'hi'", 'hermes'))
+            .to.equal("hermes --yolo chat -q 'hi'");
+        expect(applyAutoApproveToCommand("hermes --yolo --ignore-user-config chat -Q -q 'hi'", 'hermes'))
+            .to.equal("hermes --yolo --ignore-user-config chat -Q -q 'hi'");
     });
 });

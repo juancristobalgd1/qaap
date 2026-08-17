@@ -88,6 +88,9 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
     if (id === 'opencode') {
         return injectAfterPattern(command, /\bopencode(?:\s+run)?\b/, '--dangerously-skip-permissions');
     }
+    if (id === 'hermes') {
+        return injectAfterExecutable(command, 'hermes', '--yolo');
+    }
     if (id === 'cursor') {
         return injectAfterExecutable(command, 'cursor-agent', '-p --force');
     }
@@ -118,6 +121,9 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
     }
     if (/^opencode(?:\s+run)?\b/.test(leading)) {
         return injectAfterPattern(command, /\bopencode(?:\s+run)?\b/, '--dangerously-skip-permissions');
+    }
+    if (/^hermes\b/.test(leading)) {
+        return injectAfterExecutable(command, 'hermes', '--yolo');
     }
     if (/^cursor-agent\b/.test(leading)) {
         return injectAfterExecutable(command, 'cursor-agent', '-p --force');

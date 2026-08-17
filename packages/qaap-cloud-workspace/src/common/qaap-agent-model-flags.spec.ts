@@ -36,6 +36,12 @@ describe('formatModelFlagsForAgent', () => {
         expect(formatModelFlagsForAgent('codex', binding)).to.equal('-m o4-mini');
         expect(formatModelFlagsForAgent('opencode', binding)).to.equal('--model o4-mini');
         expect(formatModelFlagsForAgent('hermes', {
+            provider: 'openai',
+            vendor: 'unknown',
+            modelId: 'xiaomi/mimo-v2.5-pro',
+            contextWindow: 128_000,
+        })).to.equal('--model xiaomi/mimo-v2.5-pro');
+        expect(formatModelFlagsForAgent('hermes', {
             provider: 'anthropic',
             vendor: 'anthropic',
             modelId: 'anthropic/claude-fable-5',

@@ -102,7 +102,7 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
             // picker must not inherit the user's QAIQ Settings catalog.
             return listOpenClaudeNativeModels();
         case 'hermes':
-            // Hermes uses OpenRouter-style slugs (`org/model`) via `hermes chat --model`.
+            // Hermes uses OpenRouter-style slugs (`org/model`) via top-level `hermes --model`.
             return listHermesNativeModels();
         case 'copilot':
             // Keep in sync with Copilot CLI model IDs (v1.0.70+ GPT-5.6; Sonnet 5 / Opus 4.8).

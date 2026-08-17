@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveQaapCodexTemplate } from './qaap-builtin-agents';
+import { QAAP_BUILTIN_AGENT_DEFINITIONS, resolveQaapCodexTemplate } from './qaap-builtin-agents';
 
 describe('qaap-builtin-agents', () => {
 
@@ -16,5 +16,12 @@ describe('qaap-builtin-agents', () => {
     it('uses quiet top-level mode with --json for old Codex CLI help output', () => {
         expect(resolveQaapCodexTemplate('Usage\n  $ codex [options] <prompt>\n\nOptions\n  -q, --quiet'))
             .to.equal('codex -q --json {model_flags} {prompt}');
+    });
+
+    it('pins Hermes model flags before chat and ignores a stale user config.yaml', () => {
+        const hermes = QAAP_BUILTIN_AGENT_DEFINITIONS.find(definition => definition.id === 'hermes');
+        expect(hermes?.template).to.equal(
+            'hermes --yolo --ignore-user-config --provider openrouter {model_flags} chat -Q -q {prompt}',
+        );
     });
 });
