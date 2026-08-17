@@ -107,6 +107,7 @@ import {
 import {
     appendTracePreviewFailureEvent,
     agentMessageHasStructuredTrace,
+    isPlaceholderAgentContent,
     syncSettledTraceEventsOnMessage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
 import { backfillConversationTraceEvents, materializeConversationForApiWithChanges, materializeAgentMessageForApi, preferTraceFirstAgentMessageStorage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
@@ -223,7 +224,10 @@ export function applyAccumulatorStructuredOutputExtracted(ctx: any, taskId: stri
 export function backfillAgentMessageFromStructuredLogExtracted(ctx: any, message: QaapAgentMessage,
     agentId: string,
     log: string,): QaapAgentMessage {
-    if (message.role !== 'agent' || agentMessageHasStructuredTrace(message) || message.content?.trim()) {
+    if (message.role !== 'agent'
+        || agentMessageHasStructuredTrace(message)
+        || (message.segments?.length ?? 0) > 0
+        || !isPlaceholderAgentContent(message.content)) {
         return message;
     }
     const parsed = ctx.parseStructuredLog(agentId, log);
@@ -420,7 +424,22 @@ export async function applyTaskOutcomeExtracted(ctx: any, ref: QaapConversationT
             const backfilled = log
                 ? ctx.backfillAgentMessageFromStructuredLog(message, turnAgentId, log)
                 : message;
-            return materializeAgentMessageForApi(syncSettledTraceEventsOnMessage(backfilled));
+            let settled = backfilled;
+            if (log && usesAgUiCliTranscriptStream(turnAgentId)
+                && !agentMessageHasStructuredTrace(settled)
+                && (settled.segments?.length ?? 0) === 0) {
+                const replayed = buildAgentMessageFromAgUiStructuredLog(
+                    turnAgentId, message.id, message.createdAt, log,
+                );
+                if (replayed?.traceEvents?.length) {
+                    settled = materializeAgentMessageForApi({
+                        ...settled,
+                        content: replayed.content || settled.content,
+                        traceEvents: replayed.traceEvents,
+                    });
+                }
+            }
+            return materializeAgentMessageForApi(syncSettledTraceEventsOnMessage(settled));
         });
         withReply = {
             ...withUsageBaseline,

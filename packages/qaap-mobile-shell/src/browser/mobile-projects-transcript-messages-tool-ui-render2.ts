@@ -6,7 +6,7 @@ import {
     extractAgentAuthLoginChallenge,
     type QaapAgentAuthLoginChallenge,
 } from '../common/qaap-agent-auth-login';
-import { detectAgentFailureKind, formatStoredAgentFailureMessage } from '../common/qaap-agent-failure-message';
+import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage } from '../common/qaap-agent-failure-message';
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
@@ -97,8 +97,23 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
             readonly onOpenAgentSignIn?: () => void | Promise<void>;
             readonly agentLabel?: string;
             readonly agentId?: string;
+            readonly agentMessage?: {
+                readonly role?: string;
+                readonly content?: string;
+                readonly error?: string;
+                readonly segments?: unknown;
+                readonly traceEvents?: unknown;
+            };
         },): HTMLElement {
-        const formatted = formatStoredAgentFailureMessage(error);
+        const persisted = formatStoredAgentFailureMessage(error);
+        const resolved = resolveAgentTurnFailureMessage(technicalContent, {
+            state: 'failed',
+            agentMessage: options?.agentMessage,
+        });
+        const generic = localizeGenericAgentFailureMessage('failed');
+        const formatted = resolved && resolved !== generic
+            ? resolved
+            : (persisted || resolved || generic);
         const authSample = [error, technicalContent].filter(Boolean).join('\n');
         const failureKind = detectAgentFailureKind(authSample);
         const extractedChallenge = extractAgentAuthLoginChallenge(authSample, { agentId: options?.agentId });
@@ -127,6 +142,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
 
         const summary = document.createElement('summary');
         summary.className = 'theia-mobile-agent-shell-head';
+        summary.setAttribute('aria-label', nls.localize('qaap/mobileProjects/showFailureDetails', 'Show details'));
         const chevron = document.createElement('span');
         chevron.className = 'theia-mobile-agent-shell-chevron codicon codicon-chevron-right';
         chevron.setAttribute('aria-hidden', 'true');

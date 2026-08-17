@@ -47,6 +47,8 @@ import { readQaapGithubOAuthConfig } from './qaap-github-oauth-config';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
+import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
+import { evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -74,6 +76,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     @inject(WorkspaceServer)
     protected readonly workspaceServer: WorkspaceServer;
 
+    @inject(QaapDevPreviewPortRegistry)
+    protected readonly portRegistry: QaapDevPreviewPortRegistry;
+
     configure(app: Application): void {
         app.use(json());
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
@@ -87,6 +92,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         // POST, not GET: opening clones/pulls to disk, and SameSite=Lax only shields non-GET
         // requests from cross-site initiation (a top-level GET navigation would send the cookie).
         app.post(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo/open`, (req, res) => this.handleOpenGithubRepository(req, res));
+        app.delete(`${QAAP_GITHUB_API_PATH}/repositories/:owner/:repo`, (req, res) => {
+            void this.handleDeleteGithubRepository(req, res);
+        });
         app.get(`${QAAP_GITHUB_API_PATH}/pull-requests`, (req, res) => this.handleGithubPullRequests(req, res));
         app.post(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, (req, res) => this.handleMergeGithubPullRequest(req, res));
         app.get(`${QAAP_GITHUB_API_PATH}/project-sessions`, (req, res) => this.handleProjectSessions(req, res));
@@ -293,9 +301,14 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     protected handleAuthConfig(_req: Request, res: Response): void {
         const build = process.env.QAAP_BUILD_SHA?.trim();
+        const readiness = evaluateQaapProductionAuthReadiness();
         res.json({
-            githubOAuth: !!readQaapGithubOAuthConfig(),
+            githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
+            productionRuntime: readiness.productionRuntime,
+            oauthConfigured: readiness.oauthConfigured,
+            agentUidPerUser: readiness.agentUidPerUser,
+            ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
             // Deployed-build identity (short git SHA, baked into the image at build time).
             // Public by design: the repo is public, and this is the one signal that ends
             // "which build am I actually on?" during deploys — the post-deploy gate asserts
@@ -499,6 +512,64 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to prepare repository workspace';
             res.status(502).json({ error: message });
+        }
+    }
+
+    /**
+     * Remove the authenticated user's on-disk clone of `owner/repo` from this VPS.
+     * Does not delete the GitHub remote. Cross-tenant isolation is path-based: the
+     * target is always `{reposRoot}/users/{callerLogin}/{owner}/{repo}`.
+     */
+    protected async handleDeleteGithubRepository(req: Request, res: Response): Promise<void> {
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'unauthorized') {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const login = this.auth.resolveUserLogin(auth);
+        if (!login) {
+            res.status(401).json({ error: 'Not signed in' });
+            return;
+        }
+        const owner = this.cleanGithubPathSegment(req.params.owner);
+        const repoName = this.cleanGithubPathSegment(req.params.repo);
+        if (!owner || !repoName) {
+            res.status(400).json({ error: 'Invalid repository path' });
+            return;
+        }
+        const target = resolveRepositoryWorkspacePath(this.reposRoot, login, owner, repoName);
+        if (!isPathUnderUserWorkspace(target, this.reposRoot, login)) {
+            this.auth.logSecurityEvent('ownership_denied', {
+                action: 'delete_repository',
+                userLogin: login,
+                owner,
+                repo: repoName,
+            });
+            res.status(403).json({ error: 'Forbidden' });
+            return;
+        }
+        try {
+            this.releasePreviewsForWorkspace(login, target);
+            if (await this.pathExists(target)) {
+                await fs.rm(target, { recursive: true, force: true });
+            }
+            this.projectSessions.deleteForUser(login, `github:${owner}/${repoName}`);
+            res.json({ deleted: true, owner, repo: repoName });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to remove repository workspace';
+            res.status(502).json({ error: message });
+        }
+    }
+
+    protected releasePreviewsForWorkspace(login: string, workspacePath: string): void {
+        const records = this.portRegistry?.listForOwnerUnderRoot(login, workspacePath) ?? [];
+        for (const record of records) {
+            const pid = record.osProcessId;
+            if (typeof pid === 'number' && pid > 1) {
+                try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
+                try { process.kill(-pid, 'SIGTERM'); } catch { /* already gone */ }
+            }
+            this.portRegistry.releasePreview(record.previewId, login);
         }
     }
 

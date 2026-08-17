@@ -49,11 +49,13 @@ describe('MobileProjectsProjectActionsUi', () => {
                 loadProjects: async () => [kept],
             },
             cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
             delegate: {},
             render: () => { renders++; },
         } as unknown as MobileProjectsProjectActionsHost;
 
         const completion = new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+        await Promise.resolve();
 
         expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['kept']);
         expect(renders).to.equal(1);
@@ -73,6 +75,7 @@ describe('MobileProjectsProjectActionsUi', () => {
                 removeProject: async () => { throw new Error('storage unavailable'); },
             },
             cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
             delegate: {},
             messageService: { error: (message: string) => { errors.push(message); } },
             render: () => undefined,
@@ -97,6 +100,7 @@ describe('MobileProjectsProjectActionsUi', () => {
                 loadProjects: async () => [kept],
             },
             cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => true,
             delegate: {},
             render: () => undefined,
             conversationIndexUi: {
@@ -112,6 +116,28 @@ describe('MobileProjectsProjectActionsUi', () => {
         expect(released).to.deep.equal(['task-a', 'task-b']);
     });
 
+    it('does not remove a project when the user cancels confirmation', async () => {
+        const removed = project('removed');
+        const kept = project('kept');
+        let removeCalled = false;
+        const host = {
+            projects: [removed, kept],
+            projectsService: {
+                canRemove: () => true,
+                removeProject: async () => { removeCalled = true; return true; },
+            },
+            cardMenuUi: { closeCardMenu: () => undefined },
+            confirmRemoveProject: async () => false,
+            delegate: {},
+            render: () => undefined,
+        } as unknown as MobileProjectsProjectActionsHost;
+
+        await new MobileProjectsProjectActionsUi(host).onRemoveProject(removed);
+
+        expect(removeCalled).to.equal(false);
+        expect(host.projects.map(candidate => candidate.id)).to.deep.equal(['removed', 'kept']);
+    });
+
     it('resolveFailedTasksToClear keeps only the selected failed ids when provided', () => {
         const { resolveFailedTasksToClear } = require('./mobile-projects-project-actions-ui') as typeof import('./mobile-projects-project-actions-ui');
         const failed = [
@@ -120,5 +146,19 @@ describe('MobileProjectsProjectActionsUi', () => {
         ] as any[];
         expect(resolveFailedTasksToClear(failed, ['delete-me']).map((row: { id: string }) => row.id)).to.deep.equal(['delete-me']);
         expect(resolveFailedTasksToClear(failed).map((row: { id: string }) => row.id)).to.deep.equal(['keep-failed', 'delete-me']);
+    });
+});
+
+describe('MobileProjectsService.canRemove', () => {
+    it('allows removing a GitHub clone that is not the active workspace', () => {
+        const { MobileProjectsService } = require('./mobile-projects-service') as typeof import('./mobile-projects-service');
+        const service = Object.create(MobileProjectsService.prototype) as InstanceType<typeof MobileProjectsService>;
+        const github = {
+            ...project('github:acme/app'),
+            github: { owner: 'acme', name: 'app', fullName: 'acme/app', htmlUrl: 'https://github.com/acme/app', private: false },
+            isCurrent: false,
+        };
+        expect(service.canRemove(github)).to.equal(true);
+        expect(service.canRemove({ ...github, isCurrent: true })).to.equal(false);
     });
 });

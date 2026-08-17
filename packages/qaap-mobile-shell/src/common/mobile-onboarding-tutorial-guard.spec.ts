@@ -69,18 +69,18 @@ describe('mobile-onboarding-tutorial-guard', () => {
     it('shouldDeferMobileOnboardingTutorial is true while transcript tail is streaming', () => {
         const root = document.createElement('div');
         root.innerHTML = `
-            <div class="theia-mobile-agent-transcript-root theia-mod-visible">
+            <div class="theia-mobile-projects theia-mod-agents-hub-inline-active theia-mod-visible">
                 <div class="theia-mobile-agent-transcript-msg theia-mod-streaming"></div>
             </div>
         `;
         expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(true);
     });
 
-    it('shouldDeferMobileOnboardingTutorial ignores persistent failed session markers', () => {
+    it('shouldDeferMobileOnboardingTutorial ignores persistent failed session markers on the hub', () => {
         // Old failed sessions live in the hub indefinitely; they must not defer the tour forever.
         const root = document.createElement('div');
         root.innerHTML = `
-            <div class="theia-mobile-agent-transcript-root theia-mod-visible">
+            <div class="theia-mobile-projects theia-mod-visible">
                 <div class="theia-mobile-projects-active-chat-chip theia-mod-failed"></div>
                 <div class="theia-mobile-projects-row-glyph theia-mod-failed"></div>
             </div>
@@ -88,10 +88,20 @@ describe('mobile-onboarding-tutorial-guard', () => {
         expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(false);
     });
 
-    it('shouldDeferMobileOnboardingTutorial still defers while a session row is running', () => {
+    it('shouldDeferMobileOnboardingTutorial is true when a transcript surface is open', () => {
         const root = document.createElement('div');
         root.innerHTML = `
             <div class="theia-mobile-agent-transcript-root theia-mod-visible">
+                <div class="theia-mobile-agent-transcript-msg theia-mod-agent"></div>
+            </div>
+        `;
+        expect(shouldDeferMobileOnboardingTutorial(root)).to.equal(true);
+    });
+
+    it('shouldDeferMobileOnboardingTutorial still defers while a session row is running', () => {
+        const root = document.createElement('div');
+        root.innerHTML = `
+            <div class="theia-mobile-projects theia-mod-agents-hub-inline-active theia-mod-visible">
                 <div class="theia-mobile-projects-row-glyph theia-mod-running"></div>
             </div>
         `;

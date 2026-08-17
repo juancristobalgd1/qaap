@@ -106,6 +106,9 @@ export function isConversationWorking(conv: QaapAgentConversationDTO | undefined
     if (!conv) {
         return renderStreaming;
     }
+    if (conv.status === 'failed') {
+        return false;
+    }
     return hasUnfinishedAgentWork(conv) || conv.status === 'streaming' || conv.status === 'settled';
 }
 

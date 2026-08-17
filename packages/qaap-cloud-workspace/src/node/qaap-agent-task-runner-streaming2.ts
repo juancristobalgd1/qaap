@@ -483,7 +483,7 @@ export function resolveQaiqProviderFlagsExtracted(ctx: any): string {
         const env = ctx.previewProviderEnv();
         const binding = ctx.resolveQaapQaiqBinding();
         if (binding && vendorHasByokCredential(
-            key => ctx.preferenceService?.get(key),
+            ctx.preferenceReaderForOwner(undefined),
             binding.vendor,
             key => env[key],
         )) {
@@ -492,33 +492,27 @@ export function resolveQaiqProviderFlagsExtracted(ctx: any): string {
         return ctx.resolveQaiqProviderFlagsFromEnv(env);
 }
 
-export function resolveQaapQaiqBindingExtracted(ctx: any): QaapQaiqModelBinding | undefined {
-        if (!ctx.preferenceService) {
-            return undefined;
-        }
-        return resolveQaapQaiqModelBinding(key => ctx.preferenceService!.get(key));
+export function resolveQaapQaiqBindingExtracted(ctx: any, ownerLogin?: string): QaapQaiqModelBinding | undefined {
+        return resolveQaapQaiqModelBinding(ctx.preferenceReaderForOwner(ownerLogin));
 }
 
 export function resolveAgentBindingForTaskExtracted(ctx: any, task: QaapAgentTask): QaapQaiqModelBinding | undefined {
         const selected = resolveTaskAgentModel(task);
         if (selected?.provider && selected.modelId?.trim()) {
-            return ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(selected));
+            return ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(selected), task.ownerLogin);
         }
         // OpenClaude is a QAIQ-protocol runner, not a QAIQ Settings runner. Without this guard a
         // task with no explicit OpenClaude model would receive QAIQ's alias/provider binding.
         if (agentUsesSettingsModelCatalog(task.agentId)
             || (!task.agentId && /\bqaiq\b/.test(task.command) && !/\bopenclaude\b/.test(task.command))) {
-            const binding = ctx.resolveQaapQaiqBinding();
-            return binding ? ctx.normalizeAgentBinding(binding) : undefined;
+            const binding = ctx.resolveQaapQaiqBinding(task.ownerLogin);
+            return binding ? ctx.normalizeAgentBinding(binding, task.ownerLogin) : undefined;
         }
         return undefined;
 }
 
-export function normalizeAgentBindingExtracted(ctx: any, binding: QaapQaiqModelBinding): QaapQaiqModelBinding {
-        if (!ctx.preferenceService) {
-            return binding;
-        }
-        return normalizeQaiqModelBinding(binding, key => ctx.preferenceService!.get(key));
+export function normalizeAgentBindingExtracted(ctx: any, binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding {
+        return normalizeQaiqModelBinding(binding, ctx.preferenceReaderForOwner(ownerLogin));
 }
 
 export function previewProviderEnvExtracted(ctx: any): NodeJS.ProcessEnv {

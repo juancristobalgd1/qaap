@@ -45,6 +45,7 @@ export type QaapSecurityEventAction =
     | 'open_repository'
     | 'clone_repository'
     | 'create_repository'
+    | 'delete_repository'
     | 'merge_pull_request'
     | 'list_pull_requests'
     | 'project_session'

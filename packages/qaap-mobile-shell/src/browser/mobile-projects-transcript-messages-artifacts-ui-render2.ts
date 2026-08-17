@@ -276,9 +276,15 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: any, segments: Qa
             const canRetry = conv?.status === 'failed' && !!ctx.host.retryOpenFailedConversationTask;
             const provenance = ctx.resolveTurnProvenance(conv, undefined);
             const agentId = provenance.turnAgentId ?? conv?.agentId;
+            const failureMessage = {
+                role: 'agent' as const,
+                content: '',
+                error,
+                segments,
+            };
             body.append(ctx.toolUi.createTranscriptAgentFailureDialog(
                 error,
-                resolveAgentTurnFailureTechnicalContent({ role: 'agent', content: '', segments }),
+                resolveAgentTurnFailureTechnicalContent(failureMessage),
                 {
                     failedToolName: failedTool?.name,
                     onRetry: canRetry ? () => ctx.host.retryOpenFailedConversationTask?.() : undefined,
@@ -289,6 +295,7 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: any, segments: Qa
                         ? () => ctx.host.openAgentSignInTerminal?.(agentId)
                         : undefined,
                     agentId,
+                    agentMessage: failureMessage,
                 },
             ));
         }

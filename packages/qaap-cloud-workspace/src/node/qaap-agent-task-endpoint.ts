@@ -98,7 +98,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 agentConfigured: this.runner.isAgentConfigured(),
                 agents: this.runner.listAgents(),
                 defaultAgent: this.runner.defaultAgent(),
-                qaiqModels: this.runner.listQaiqModels(),
+                qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
             } satisfies QaapAgentTaskListResponse);
         });
         // Cross-project dashboard feed — `/all` and `/stream` are static segments routed before
@@ -115,7 +115,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 agentConfigured: this.runner.isAgentConfigured(),
                 agents: this.runner.listAgents(),
                 defaultAgent: this.runner.defaultAgent(),
-                qaiqModels: this.runner.listQaiqModels(),
+                qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
             } satisfies QaapAgentTaskAllResponse);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/stream`, (req, res) => {

@@ -497,9 +497,6 @@ export function applyTaskOutputExtracted(ctx: any, taskId: string,
             content = filtered;
             segments = undefined;
         }
-        if (!content && (!segments || segments.length === 0)) {
-            return;
-        }
         const existingAgentMessage = ref.agentMessageId
             ? conv.messages.find(message => message.id === ref.agentMessageId)
             : undefined;
@@ -508,6 +505,9 @@ export function applyTaskOutputExtracted(ctx: any, taskId: string,
             : usesSegmentStream && segments?.length
                 ? mergeSegmentTraceEvents(existingAgentMessage?.traceEvents, segments)
                 : undefined;
+        if (!content && (!segments || segments.length === 0) && !(traceEvents?.length)) {
+            return;
+        }
         let agentMessageId = ref.agentMessageId;
         let messages: QaapAgentMessage[];
         if (!agentMessageId) {

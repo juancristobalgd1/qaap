@@ -752,14 +752,14 @@ export function applyAccumulatorStructuredOutput(
     }
     const segments = [...stream.getSegments()];
     const content = stream.getDisplayText();
-    if (!content && segments.length === 0) {
-        return;
-    }
     const now = Date.now();
     const existingAgentMessage = ref.agentMessageId
         ? conv.messages.find(message => message.id === ref.agentMessageId)
         : undefined;
     const traceEvents = mergeAccumulatorTraceEvents(existingAgentMessage?.traceEvents, stream);
+    if (!content && segments.length === 0 && traceEvents.length === 0) {
+        return;
+    }
     let agentMessageId = ref.agentMessageId;
     let messages: QaapAgentMessage[];
     if (!agentMessageId) {

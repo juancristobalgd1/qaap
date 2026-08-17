@@ -15,8 +15,11 @@ import { QaapGithubInboxHub } from './qaap-github-inbox-hub';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
+import { QaapProductionBootGuardContribution } from './qaap-production-boot-guard';
 
 export default new ContainerModule(bind => {
+    bind(QaapProductionBootGuardContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapProductionBootGuardContribution);
     bind(QaapGithubSessionStore).toSelf().inSingletonScope();
     bind(QaapGithubAuthGuard).toSelf().inSingletonScope();
     bind(QaapGithubInboxHub).toSelf().inSingletonScope();

@@ -12,6 +12,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
     cloneQaapGithubRepository,
     createQaapGithubRepository,
+    deleteQaapGithubRepository,
     fetchQaapAuthConfig,
     fetchQaapGithubRepositories,
     fetchQaapProjectSessions,
@@ -129,6 +130,13 @@ export async function duplicateProjectExtracted(ctx: any, project: MobileProject
 export async function removeProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<boolean> {
         if (!ctx.canRemove(project)) {
             return false;
+        }
+        if (project.github) {
+            await deleteQaapGithubRepository(project.github.owner, project.github.name);
+            if (project.uri) {
+                await ctx.workspaceService.removeRecentWorkspace(project.uri.toString());
+            }
+            return true;
         }
         if (project.id.startsWith('custom:')) {
             const custom = ctx.readCustomProjects().filter(p => p.id !== project.id);

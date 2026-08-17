@@ -152,6 +152,15 @@ export function agentMessageHasStructuredTrace(message: QaapAgentMessageDTO | un
     return (message.traceEvents?.length ?? 0) > 0;
 }
 
+/** Streaming placeholder used when an agent row exists but has no display text yet. */
+export const PLACEHOLDER_AGENT_CONTENT = '…';
+
+/** True when agent `content` is empty or the streaming placeholder — safe to replay the turn log. */
+export function isPlaceholderAgentContent(content: string | undefined): boolean {
+    const trimmed = content?.trim();
+    return !trimmed || trimmed === PLACEHOLDER_AGENT_CONTENT;
+}
+
 /** Mark segment-derived trace rows as settled (completed) after a turn finishes or is interrupted. */
 export function syncSettledTraceEventsOnMessage(message: QaapAgentMessageDTO): QaapAgentMessageDTO {
     return backfillAgentMessageTraceEvents(message).message;

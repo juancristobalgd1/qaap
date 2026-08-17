@@ -11556,6 +11556,10 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   z-index: 2;
 }
 
+.theia-mobile-agent-transcript-root .theia-mobile-agent-log-title-wrap {
+  pointer-events: none;
+}
+
 .theia-mobile-agent-transcript-root .theia-mobile-agent-log-title-wrap>h2 {
   pointer-events: none;
 }
@@ -11564,6 +11568,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 .theia-mobile-agent-transcript-root .theia-mobile-agent-log-title-row .theia-mobile-agent-log-title-menu {
   position: relative;
   z-index: 2;
+  pointer-events: auto;
 }
 
 .theia-mobile-projects-title-block.theia-mod-with-back .theia-mobile-projects-subtitle {
@@ -16598,6 +16603,17 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
 body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #theia-top-panel>#theia\:workbench-right-controls {
   display: flex !important;
   visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* Workbench "Back to Work Hub" must win hit-testing over the full-screen transcript header (QA-007). */
+body.theia-mobile-mod-desktop-ide:has(.theia-mobile-agent-transcript-root.theia-mod-visible) #theia-top-panel {
+  position: relative;
+  z-index: 20;
+}
+
+body.theia-mobile-mod-desktop-ide:has(.theia-mobile-agent-transcript-root.theia-mod-visible) #theia-top-panel>#theia\:workbench-history-nav {
+  z-index: 21;
   pointer-events: auto !important;
 }
 

@@ -8771,6 +8771,10 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   z-index: 2;
 }
 
+.theia-mobile-agent-transcript-root .theia-mobile-agent-log-title-wrap {
+  pointer-events: none;
+}
+
 .theia-mobile-agent-transcript-root .theia-mobile-agent-log-title-wrap>h2 {
   pointer-events: none;
 }
@@ -8779,6 +8783,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 .theia-mobile-agent-transcript-root .theia-mobile-agent-log-title-row .theia-mobile-agent-log-title-menu {
   position: relative;
   z-index: 2;
+  pointer-events: auto;
 }
 
 .theia-mobile-projects-title-block.theia-mod-with-back .theia-mobile-projects-subtitle {
