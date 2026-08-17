@@ -11,6 +11,7 @@ import {
     type EmbeddedAgentPreviewChrome,
 } from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -84,12 +85,19 @@ import {
 } from './mobile-projects-transcript-surfaces-helpers';
 
 export async function requestTranscriptPreviewExtracted(ctx: any, project: MobileProjectEntry,
-        summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },): Promise<void> {
         if (ctx.host.transcriptPreviewRequestRunning) {
             return;
         }
         ctx.host.transcriptPreviewSuppressedByUser = false;
         const launchGeneration = ++ctx.previewLaunchGeneration;
+        const allowAgentFallback = options?.allowAgentFallback !== false;
+        if (options?.revealPreviewTab) {
+            ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
+            ctx.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab?.('preview');
+            ctx.host.executionSurfaceTabsUi.selectTranscriptTab?.('preview', project, summary);
+        }
         MobileSnackbar.show(
             nls.localize('qaap/mobileProjects/previewStarting', 'Levantando preview…'),
             { duration: 2200 },
@@ -97,14 +105,6 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
         // Keep the header play control mounted across the whole request lifecycle.
         ctx.syncHeaderPreviewRunButton(project, summary);
         const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
-        if (latestProject.previewUrl && ctx.host.onResumePreview) {
-            if (launchGeneration !== ctx.previewLaunchGeneration || ctx.host.transcriptPreviewSuppressedByUser) {
-                return;
-            }
-            await ctx.host.onResumePreview(latestProject);
-            ctx.syncHeaderPreviewRunButton(project, summary);
-            return;
-        }
 
         const bootstrap = ctx.host.projectBootstrap;
         // Old sessions can carry a corrupt cwd (e.g. the bare `/workspace` container root from an
@@ -125,9 +125,7 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
         if (bootstrap && projectRoot) {
             // A runnable project does not need an agent to decide how to start it. Detect first,
             // ask which app to run when this is a monorepo, and use the managed terminal directly.
-            // Agent troubleshooting remains the fallback only when that launch cannot get ready.
-            ctx.host.transcriptPreviewRequestRunning = true;
-            ctx.host.transcriptPreviewRequestPending = true;
+            ctx.beginTranscriptDevPreviewRequest(latestProject, summary);
             ctx.updateTranscriptPreviewRunButtonState();
             await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
             const detected = bootstrap.getStateSnapshot();
@@ -160,6 +158,40 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
                 ctx.adoptReadyTranscriptPreview(project, summary, readyUrl);
                 return;
             }
+            if (detected.descriptor) {
+                const failure = bootstrap.getStateSnapshot?.();
+                MobileSnackbar.show(
+                    failure?.error
+                        ?? nls.localize(
+                            'qaap/mobileProjects/previewDidNotStart',
+                            'Preview did not start. Check the Dev terminal and retry.',
+                        ),
+                    { kind: 'warning' },
+                );
+                void ctx.discoverAndMountTranscriptPreviewIfReady(project, summary);
+                ctx.host.transcriptPreviewRequestRunning = false;
+                ctx.host.transcriptPreviewRequestPending = false;
+                ctx.syncHeaderPreviewRunButton(project, summary);
+                return;
+            }
+            if (!allowAgentFallback) {
+                MobileSnackbar.show(
+                    nls.localize(
+                        'qaap/mobileProjects/previewNoRunnableApp',
+                        'No runnable app was detected in this project. Ask the agent to generate one, then retry.',
+                    ),
+                    { kind: 'warning' },
+                );
+                ctx.host.transcriptPreviewRequestRunning = false;
+                ctx.host.transcriptPreviewRequestPending = false;
+                ctx.syncHeaderPreviewRunButton(project, summary);
+                return;
+            }
+        } else if (!allowAgentFallback) {
+            ctx.host.transcriptPreviewRequestRunning = false;
+            ctx.host.transcriptPreviewRequestPending = false;
+            ctx.syncHeaderPreviewRunButton(project, summary);
+            return;
         }
 
         const message = nls.localize(
@@ -224,19 +256,25 @@ export function adoptReadyTranscriptPreviewExtracted(ctx: any, project: MobilePr
         // ALWAYS record the ready URL, even when the user stayed on the Chat view. Recording only
         // on Preview meant a chat-dwelling user never got an actionable "Open preview" pill.
         const refreshed = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
-        const readyProject = { ...refreshed, previewUrl: readyUrl };
+        const effectiveUrl = resolveTranscriptPreviewOpenUrl({
+            candidateUrl: readyUrl,
+            project: refreshed,
+            bootstrap: ctx.host.projectBootstrap,
+            appliesToProject: ctx.bootstrapAppliesToProject(refreshed),
+        });
+        const readyProject = { ...refreshed, previewUrl: effectiveUrl };
         ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === refreshed.id
             ? readyProject
             : candidate);
         if (ctx.host.transcriptOpenProject?.id === readyProject.id) {
             ctx.host.transcriptOpenProject = readyProject;
         }
-        void ctx.host.projectsService.recordProjectPreviewUrl(readyProject, readyUrl);
+        void ctx.host.projectsService.recordProjectPreviewUrl(readyProject, effectiveUrl);
         ctx.host.transcriptPreviewRequestRunning = false;
         ctx.host.transcriptPreviewRequestPending = false;
         const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
         if (ctx.matchesActivePreviewSummary(summary) || previewTabActive) {
-            ctx.stageTranscriptPreviewReadyUrl(ctx.previewScopeId(summary), readyUrl);
+            ctx.stageTranscriptPreviewReadyUrl(ctx.previewScopeId(summary), effectiveUrl);
             if (previewTabActive) {
                 ctx.renderPreviewTab(readyProject, summary);
             } else {

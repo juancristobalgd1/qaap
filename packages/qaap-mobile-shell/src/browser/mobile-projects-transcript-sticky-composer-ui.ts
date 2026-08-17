@@ -277,6 +277,11 @@ export interface MobileProjectsTranscriptStickyComposerHost {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): void;
+    requestTranscriptPreview?(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean },
+    ): Promise<void>;
 }
 
 /** Transcript overlay sticky composer: mount, prefs, follow-up queue, and submit wiring. */

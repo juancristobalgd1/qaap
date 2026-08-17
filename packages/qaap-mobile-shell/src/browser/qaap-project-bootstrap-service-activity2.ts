@@ -13,8 +13,9 @@ import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/b
 import {
     parsePreviewIdentityPath,
     parsePreviewProxyPath,
-    rebasePreviewUrlToIdentityClaim,
+    resolveEffectivePreviewUrl,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
+import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
@@ -95,7 +96,7 @@ import { DEV_PORT_RECOVERY_MAX_ATTEMPTS, PORT_IN_USE_REGEX, RESTORED_PREVIEW_TER
 export async function failDevRunExtracted(ctx: any, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
         runId: number,): Promise<void> {
-        if (runId !== ctx.devRunGeneration) {
+        if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
             return;
         }
         if (ctx._phase !== 'starting' && ctx._phase !== 'running') {
@@ -113,6 +114,9 @@ export async function failDevRunExtracted(ctx: any, message: string,
             ?? plan.expectedPort;
         if (!portConflict) {
             const attached = await ctx.tryAttachToExistingServer(ctx.collectProbePorts(plan));
+            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+                return;
+            }
             if (attached || ctx._previewUrl) {
                 ctx._error = undefined;
                 ctx._portConflictDetected = false;
@@ -135,6 +139,9 @@ export async function failDevRunExtracted(ctx: any, message: string,
                 await ctx.startDevServer({ ...plan }, descriptor);
                 return;
             }
+        }
+        if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+            return;
         }
         ctx._needsInstall = terminalOutputNeedsInstall(ctx.devOutputTail);
         const diagnosedError = nextLock
@@ -228,9 +235,15 @@ export async function openPreviewExtracted(ctx: any, url: string,
             await ctx.claimDevPreviewPort(targetPortForClaim);
         }
         const activeClaim = ctx.activePreviewClaim;
-        const targetUrl = activeClaim && activeClaim.port === targetPortForClaim
-            ? rebasePreviewUrlToIdentityClaim(url, activeClaim.previewUrl)
-            : url;
+        const nestedEntry = staticEntryPathFromDevCommand(ctx._descriptor?.devCommand);
+        const targetUrl = resolveEffectivePreviewUrl({
+            candidateUrl: url,
+            identityUrl: activeClaim && activeClaim.port === targetPortForClaim
+                ? activeClaim.previewUrl
+                : undefined,
+            nestedEntry,
+            rememberedUrls: [ctx._previewUrl],
+        });
         if (options?.auto && !ctx.mayAutoOpenPreviewNow()) {
             // Stage instead of navigating: record the ready URL and flip to `running` so the
             // transcript listener offers the "Open preview" pill; the user performs navigation.
@@ -428,7 +441,10 @@ export function watchAttachedDevTerminalExtracted(ctx: any, terminal: TerminalWi
             }
         });
         const onWidgetClose = terminal.onTerminalDidClose(() => {
-            if (runId === ctx.devRunGeneration) {
+            if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
+                return;
+            }
+            if (ctx._phase === 'starting' || ctx._phase === 'running') {
                 void ctx.failDevRun(nls.localize(
                     'qaap/projectBootstrap/devServerTabClosed',
                     'Dev server tab closed.',

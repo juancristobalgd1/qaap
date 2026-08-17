@@ -6,6 +6,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { QaapProjectBootstrapService } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-service';
+import { qaapBootstrapFailureKind } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-types';
 
 /** Must match mobile-shell push contribution event names. */
 const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';
@@ -23,10 +24,16 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         void this.registerWebPushSubscription();
         this.bootstrap.onStateChange(state => {
             if (state.phase === 'install-failed' || state.phase === 'run-failed') {
+                const kind = qaapBootstrapFailureKind(state.phase, state.error);
+                if (!kind || kind === 'cancelled') {
+                    return;
+                }
                 void sendQaapPushNotify({
-                    title: 'Build failed',
-                    body: state.error ?? 'Check the terminal output and retry.',
-                    tag: 'qaap-build-failed',
+                    title: kind === 'install' ? 'Build failed' : 'Preview failed',
+                    body: state.error ?? (kind === 'install'
+                        ? 'Check the terminal output and retry.'
+                        : 'Check the Dev terminal and retry.'),
+                    tag: kind === 'install' ? 'qaap-build-failed' : 'qaap-preview-failed',
                 });
             }
         });
@@ -41,11 +48,15 @@ export class QaapWebPushContribution implements FrontendApplicationContribution 
         window.removeEventListener(QAAP_AGENT_CONFIRMATION_NEEDED_EVENT, this.onConfirmationNeeded);
     }
 
-    protected readonly onBootstrapFailed = (): void => {
+    protected readonly onBootstrapFailed = (event: Event): void => {
+        const detail = (event as CustomEvent<{ error?: string; kind?: 'install' | 'preview' }>).detail;
+        const kind = detail?.kind === 'preview' ? 'preview' : 'install';
         void sendQaapPushNotify({
-            title: 'Build failed',
-            body: 'Check the terminal output and retry.',
-            tag: 'qaap-build-failed',
+            title: kind === 'install' ? 'Build failed' : 'Preview failed',
+            body: detail?.error ?? (kind === 'install'
+                ? 'Check the terminal output and retry.'
+                : 'Check the Dev terminal and retry.'),
+            tag: kind === 'install' ? 'qaap-build-failed' : 'qaap-preview-failed',
         });
     };
 

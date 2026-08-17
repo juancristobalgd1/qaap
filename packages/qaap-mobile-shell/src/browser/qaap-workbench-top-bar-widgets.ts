@@ -206,7 +206,7 @@ export class QaapWorkbenchHistoryNavWidget extends Widget {
     }
 
     protected updateEnabledStates(): void {
-        const showDashboard = false;
+        const showDashboard = peekPreferDesktopIde();
         this.dashboardBtn.hidden = !showDashboard;
         this.dashboardBtn.style.display = showDashboard ? '' : 'none';
         this.dashboardBtn.setAttribute('aria-hidden', showDashboard ? 'false' : 'true');

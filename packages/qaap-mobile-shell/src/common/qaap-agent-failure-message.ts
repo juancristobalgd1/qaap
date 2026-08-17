@@ -19,7 +19,8 @@ export type QaapAgentFailureKind =
     | 'tool_unsupported'
     | 'auth'
     | 'timeout'
-    | 'network';
+    | 'network'
+    | 'cli_missing';
 
 export type QaapAgentTurnFailureState = 'failed' | 'interrupted' | 'cancelled';
 
@@ -85,6 +86,17 @@ const TIMEOUT_PATTERNS: readonly RegExp[] = [
     /\btimed\s+out\b/i,
     /\bETIMEDOUT\b/,
     /\bdeadline\s+exceeded\b/i,
+];
+
+const CLI_MISSING_PATTERNS: readonly RegExp[] = [
+    /\bcommand\s+not\s+found:\s*(qaiq|openclaude)\b/i,
+    /\b(qaiq|openclaude):\s*(?:command\s+)?not\s+found\b/i,
+    /\bENOENT[^\n]*(?:\/|\s)(qaiq|openclaude)\b/i,
+    /\bspawn\s+(?:qaiq|openclaude)\s+ENOENT\b/i,
+    /\b(?:qaiq|openclaude)\b[^\n]*\bis\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command\b/i,
+    /\b(?:qaiq|openclaude)\b[^\n]*\bno\s+such\s+file\s+or\s+directory\b/i,
+    /\bno\s+such\s+file\s+or\s+directory[^\n]*(qaiq|openclaude)\b/i,
+    /\bcannot\s+find\s+(?:the\s+)?(?:qaiq|openclaude)\s+(?:binary|executable|command)\b/i,
 ];
 
 const NETWORK_PATTERNS: readonly RegExp[] = [
@@ -183,6 +195,9 @@ export function detectAgentFailureKind(log: string | undefined): QaapAgentFailur
     if (!sample) {
         return undefined;
     }
+    if (matchesAny(sample, CLI_MISSING_PATTERNS)) {
+        return 'cli_missing';
+    }
     if (matchesAny(sample, QUOTA_PATTERNS)) {
         return 'quota';
     }
@@ -244,6 +259,11 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind): string 
                 'qaap/agentFailure/network',
                 'The agent could not reach the model provider. Check your connection and try again.',
             );
+        case 'cli_missing':
+            return nls.localize(
+                'qaap/agentFailure/cliMissing',
+                'This workspace does not have the agent CLI (qaiq or openclaude). Pick another agent, or install the CLI in the environment.',
+            );
     }
 }
 
@@ -288,6 +308,10 @@ export function formatStoredAgentFailureMessage(error: string | undefined): stri
         const state = legacy[1].toLowerCase() as QaapAgentTurnFailureState;
         const exitCode = legacy[2] ? Number(legacy[2]) : undefined;
         return localizeGenericAgentFailureMessage(state, exitCode);
+    }
+    const kind = detectAgentFailureKind(trimmed);
+    if (kind) {
+        return localizeAgentFailureMessage(kind);
     }
     return trimmed;
 }

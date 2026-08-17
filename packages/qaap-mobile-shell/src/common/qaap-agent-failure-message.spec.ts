@@ -56,6 +56,21 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('tool_unsupported');
     });
 
+    it('detectAgentFailureKind recognizes a missing agent CLI as setup, not a crash', () => {
+        expect(detectAgentFailureKind('stderr\nError: command not found: qaiq\n'))
+            .to.equal('cli_missing');
+        expect(detectAgentFailureKind('openclaude: command not found'))
+            .to.equal('cli_missing');
+        expect(detectAgentFailureKind('spawn qaiq ENOENT'))
+            .to.equal('cli_missing');
+        expect(detectAgentFailureKind('\'qaiq\' is not recognized as an internal or external command'))
+            .to.equal('cli_missing');
+        expect(detectAgentFailureKind('bash: /usr/local/bin/openclaude: No such file or directory'))
+            .to.equal('cli_missing');
+        expect(detectAgentFailureKind('Cannot find the qaiq executable'))
+            .to.equal('cli_missing');
+    });
+
     it('detectAgentFailureKind recognizes auth, timeout, and network failures', () => {
         expect(detectAgentFailureKind('invalid_api_key'))
             .to.equal('auth');
@@ -95,12 +110,13 @@ describe('qaap-agent-failure-message', () => {
         expect(friendly).to.equal(localizeAgentFailureMessage('model_unavailable'));
     });
 
-    it('resolveAgentTurnFailureMessage prefers log hints over generic failed copy', () => {
+    it('resolveAgentTurnFailureMessage maps a missing agent CLI to setup copy', () => {
         const friendly = resolveAgentTurnFailureMessage(
             'stderr\nError: command not found: qaiq\n',
             { state: 'failed', exitCode: 1 },
         );
-        expect(friendly).to.contain('command not found: qaiq');
+        expect(friendly).to.equal(localizeAgentFailureMessage('cli_missing'));
+        expect(friendly).to.not.contain('command not found');
     });
 
     it('resolveAgentTurnFailureMessage returns humanized copy when the log is empty', () => {
@@ -115,6 +131,11 @@ describe('qaap-agent-failure-message', () => {
             .to.equal(localizeGenericAgentFailureMessage('failed', 1));
         expect(formatStoredAgentFailureMessage('Agent interrupted.'))
             .to.equal(localizeGenericAgentFailureMessage('interrupted'));
+    });
+
+    it('formatStoredAgentFailureMessage maps a missing agent CLI to setup copy', () => {
+        expect(formatStoredAgentFailureMessage('Error: command not found: qaiq'))
+            .to.equal(localizeAgentFailureMessage('cli_missing'));
     });
 
     it('extractLastFailedToolFromMessage returns the last tool with error output', () => {
@@ -180,8 +201,7 @@ describe('qaap-agent-failure-message', () => {
                 }],
             },
         });
-        expect(friendly).to.contain('Bash');
-        expect(friendly).to.contain('command not found: qaiq');
+        expect(friendly).to.equal(localizeAgentFailureMessage('cli_missing'));
     });
 
     it('resolveAgentTurnFailureTechnicalContent prefers failed tool stderr', () => {

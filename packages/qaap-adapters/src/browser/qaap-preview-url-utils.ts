@@ -74,6 +74,10 @@ export function normalizePreviewUrlForSameOrigin(url: string, publicOrigin?: str
             return parsed.toString();
         }
 
+        if (parsePreviewIdentityPath(parsed.pathname)) {
+            return parsed.toString();
+        }
+
         if (!LOCAL_DEV_HOSTS.has(parsed.hostname)) {
             return trimmed;
         }
@@ -164,6 +168,117 @@ export function rebasePreviewUrlToIdentityClaim(sourceUrl: string, claimedPrevie
         return claimed.toString();
     } catch {
         return claimedPreviewUrl;
+    }
+}
+
+function normalizeNestedPreviewPath(nestedPath: string): string | undefined {
+    const trimmed = nestedPath.trim();
+    if (!trimmed || trimmed === '/') {
+        return undefined;
+    }
+    const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    return withSlash.endsWith('/') ? withSlash : `${withSlash}/`;
+}
+
+/** App path under a preview identity, `/qaap-dev/:port`, or a direct localhost URL. */
+export function previewAppPathFromUrl(url: string | undefined): string | undefined {
+    const trimmed = url?.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    try {
+        const parsed = new URL(trimmed);
+        const identity = parsePreviewIdentityPath(parsed.pathname);
+        if (identity) {
+            return identity.targetPath && identity.targetPath !== '/' ? identity.targetPath : undefined;
+        }
+        const proxy = parsePreviewProxyPath(parsed.pathname);
+        if (proxy) {
+            return proxy.targetPath && proxy.targetPath !== '/' ? proxy.targetPath : undefined;
+        }
+        if (parsed.pathname && parsed.pathname !== '/') {
+            return parsed.pathname.endsWith('/') ? parsed.pathname : `${parsed.pathname}/`;
+        }
+        return undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Single open-URL for Preview: rebase onto the live identity, then pin a nested static
+ * entry (`/docs/demo/`) when the claim still points at `/`. Call this at every mount,
+ * remount, and claim fetch — not only at bootstrap `openPreview`.
+ */
+export function resolveEffectivePreviewUrl(options: {
+    readonly candidateUrl: string;
+    readonly identityUrl?: string;
+    readonly nestedEntry?: string;
+    readonly rememberedUrls?: readonly (string | undefined)[];
+}): string {
+    const candidate = options.candidateUrl.trim();
+    const identity = options.identityUrl?.trim();
+    const rememberedPath = (options.rememberedUrls ?? [])
+        .map(previewAppPathFromUrl)
+        .find((path): path is string => !!path);
+    const nested = previewAppPathFromUrl(candidate)
+        ?? rememberedPath
+        ?? options.nestedEntry;
+    let next = candidate || identity || '';
+    if (!next) {
+        return next;
+    }
+    if (identity) {
+        try {
+            if (parsePreviewIdentityPath(new URL(identity).pathname)) {
+                next = rebasePreviewUrlToIdentityClaim(next, identity);
+            }
+        } catch {
+            /* keep next */
+        }
+    }
+    if (nested) {
+        next = applyNestedPathToPreviewUrl(next, nested);
+    }
+    return normalizePreviewUrlForSameOrigin(next);
+}
+
+/**
+ * When a nested static demo (e.g. `/docs/demo/`) is served from the workspace root, identity
+ * claims still advertise `/qaap-preview/:id/`. Opening that root hits backend `/` → "Not found".
+ * If the preview URL has no app path yet, pin the nested entry so relative `../css` / `../js`
+ * resolve under the identity prefix.
+ */
+export function applyNestedPathToPreviewUrl(previewUrl: string, nestedPath: string): string {
+    const nested = normalizeNestedPreviewPath(nestedPath);
+    if (!nested) {
+        return previewUrl;
+    }
+    try {
+        const parsed = new URL(previewUrl);
+        const identity = parsePreviewIdentityPath(parsed.pathname);
+        if (identity) {
+            if (identity.targetPath && identity.targetPath !== '/') {
+                return previewUrl;
+            }
+            parsed.pathname = `${QAAP_IDENTITY_PREVIEW_PATH_PREFIX}/${encodeURIComponent(identity.previewId)}${nested}`;
+            return parsed.toString();
+        }
+        const proxy = parsePreviewProxyPath(parsed.pathname);
+        if (proxy) {
+            if (proxy.targetPath && proxy.targetPath !== '/') {
+                return previewUrl;
+            }
+            parsed.pathname = `${QAAP_DEV_PREVIEW_PATH_PREFIX}/${proxy.port}${nested}`;
+            return parsed.toString();
+        }
+        if (!parsed.pathname || parsed.pathname === '/') {
+            parsed.pathname = nested;
+            return parsed.toString();
+        }
+        return previewUrl;
+    } catch {
+        return previewUrl;
     }
 }
 

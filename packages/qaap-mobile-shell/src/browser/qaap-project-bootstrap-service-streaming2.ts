@@ -288,7 +288,9 @@ export async function startDevServerExtracted(ctx: any, plan: { command: string;
             // only fires when the *widget* is disposed). We filter by terminalId so a parallel
             // install terminal exiting doesn't accidentally flip the dev phase.
             const onProcessExit = ctx.terminalWatcher.onTerminalExit(event => {
-                if (event.terminalId !== terminal.terminalId || runId !== ctx.devRunGeneration) {
+                if (event.terminalId !== terminal.terminalId
+                    || runId !== ctx.devRunGeneration
+                    || ctx.devRunCancelledByUser) {
                     return;
                 }
                 if (ctx._phase === 'starting' || ctx._phase === 'running') {
@@ -300,7 +302,7 @@ export async function startDevServerExtracted(ctx: any, plan: { command: string;
                 }
             });
             const onWidgetClose = terminal.onTerminalDidClose(() => {
-                if (runId !== ctx.devRunGeneration) {
+                if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
                     return;
                 }
                 if (ctx._phase === 'starting' || ctx._phase === 'running') {
@@ -331,6 +333,7 @@ export async function startDevServerExtracted(ctx: any, plan: { command: string;
 }
 
 export function cancelActivePreviewLaunchExtracted(ctx: any): void {
+        ctx.devRunCancelledByUser = true;
         ctx.devRunGeneration++;
         ctx.installGeneration++;
         ctx.releaseActivePreview();

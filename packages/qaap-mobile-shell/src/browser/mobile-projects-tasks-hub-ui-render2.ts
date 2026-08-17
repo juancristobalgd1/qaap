@@ -22,6 +22,7 @@ import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
+import { MobileSnackbar } from './mobile-snackbar';
 import {
     closeWorkingAgentsPopover,
     dismissWorkingAgentsExpandForStopAll,
@@ -180,12 +181,21 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: any): HTMLElement
             btn.append(iconWrap, label);
             bindStickyComposerControlClick(btn, () => {
                 if (action.id === 'run-app') {
-                    const project = ctx.host.transcriptOpenProject ?? ctx.host.transcriptComposerProject;
-                    const summary = ctx.host.transcriptOpenSummary ?? ctx.host.transcriptComposerSummary;
+                    const project = ctx.host.transcriptOpenProject
+                        ?? ctx.host.transcriptComposerProject
+                        ?? ctx.host.resolveShellProject?.();
+                    const summary = ctx.host.transcriptOpenSummary
+                        ?? ctx.host.transcriptComposerSummary
+                        ?? (project ? ctx.host.resolveShellSummary?.(project) : undefined);
                     if (project && summary) {
                         void ctx.host.transcriptStickyComposerUi.launchComposerDevPreview(project, summary);
                         return;
                     }
+                    MobileSnackbar.show(nls.localize(
+                        'qaap/mobileProjects/previewRootUnresolved',
+                        'Could not resolve this project\'s folder — open the project and retry.',
+                    ), { kind: 'warning' });
+                    return;
                 }
                 ctx.applyComposerQuickActionPrompt(nls.localize(action.promptKey, action.promptDefault));
             });

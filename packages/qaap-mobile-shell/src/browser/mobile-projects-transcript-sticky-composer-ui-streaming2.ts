@@ -406,6 +406,15 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, projec
 
 export async function launchComposerDevPreviewExtracted(ctx: any, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    if (typeof ctx.host.requestTranscriptPreview === 'function') {
+        // Same launcher as header Play: managed bootstrap, nested identity URL, Stop latch.
+        // Never fall through to an LLM prompt from Run app.
+        await ctx.host.requestTranscriptPreview(project, summary, {
+            revealPreviewTab: true,
+            allowAgentFallback: false,
+        });
+        return;
+    }
     const bootstrap = ctx.host.projectBootstrap;
     if (!bootstrap) {
         return;
@@ -420,8 +429,7 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
         ), { kind: 'warning' });
         return;
     }
-    // Clear any stale preview state for this section and switch to the Preview tab so the
-    // user sees the loading surface immediately while the dev server starts.
+    ctx.host.transcriptPreviewSuppressedByUser = false;
     ctx.host.beginTranscriptDevPreviewRequest(project, summary);
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', project, summary);
     await bootstrap.refreshFromProjectRoot(projectRoot, project.id);
@@ -432,10 +440,13 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
         skipConversationPortProbe: true,
     });
     if (!readyUrl) {
+        void ctx.host.transcriptSurfacesUi?.discoverAndMountTranscriptPreviewIfReady?.(project, summary);
         return;
     }
-    // `renderPreviewTab` reads `host.projects`, not the object passed to selectTranscriptTab.
-    // Record the ready URL on the hub entry before remounting Preview or the iframe stays empty.
+    if (typeof ctx.host.transcriptSurfacesUi?.adoptReadyTranscriptPreview === 'function') {
+        ctx.host.transcriptSurfacesUi.adoptReadyTranscriptPreview(project, summary, readyUrl);
+        return;
+    }
     const refreshed = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
     const readyProject = { ...refreshed, previewUrl: readyUrl };
     ctx.host.projects = ctx.host.projects.map(candidate => candidate.id === refreshed.id

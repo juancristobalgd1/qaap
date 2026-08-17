@@ -26,6 +26,7 @@ import {
     STATIC_INSTALL_COMMAND,
     STATIC_ROOT_CANDIDATE_DIRS,
     buildStaticServeCommand,
+    shouldServeNestedStaticFromWorkspaceRoot,
 } from './qaap-project-bootstrap-static';
 import { formatMissingBootstrapProjectHint } from '../common/qaap-project-bootstrap-scaffold-plan';
 import {
@@ -157,7 +158,13 @@ export class QaapProjectBootstrapDetector {
         if (!devCommand && apps.length === 0) {
             const staticSite = await this.detectStaticSite(rootUri);
             if (staticSite) {
-                return { ...staticSite, name };
+                return this.decorateLibraryStaticSite(staticSite, {
+                    name,
+                    packageManager,
+                    installCommand,
+                    nodeModulesPresent,
+                    scripts,
+                });
             }
             const native = await this.detectNativeProject(rootUri);
             if (native) {
@@ -388,12 +395,67 @@ export class QaapProjectBootstrapDetector {
     }
 
     /**
+     * Library repos (marked, etc.) often have a `build` script and a nested `docs/demo` but no
+     * `dev`/`start`. Serve from the workspace root so `/lib/*.js` resolves, and run the lightest
+     * available build so that file exists after install.
+     */
+    protected decorateLibraryStaticSite(
+        staticSite: QaapProjectDescriptor,
+        options: {
+            readonly name: string;
+            readonly packageManager: QaapPackageManager;
+            readonly installCommand: string;
+            readonly nodeModulesPresent: boolean;
+            readonly scripts: Record<string, unknown>;
+        },
+    ): QaapProjectDescriptor {
+        const serveCommand = staticSite.devCommand ?? '';
+        const nested = /QAAP_STATIC_ENTRY="\/[^"]+\//.test(serveCommand)
+            || shouldServeNestedStaticFromWorkspaceRoot(
+                serveCommand.match(/QAAP_STATIC_ENTRY="([^"]+)"/)?.[1]?.replace(/^\/|\/$/g, '') ?? '',
+            );
+        const buildScript = this.pickLibraryStaticBuildScript(options.scripts);
+        const buildPrefix = nested && buildScript
+            ? `${this.buildRunCommand(options.packageManager, buildScript)} && `
+            : '';
+        return {
+            ...staticSite,
+            name: options.name,
+            packageManager: options.packageManager,
+            installCommand: options.installCommand,
+            nodeModulesPresent: nested && buildScript ? options.nodeModulesPresent : true,
+            devCommand: buildPrefix + serveCommand,
+            devCommandLabel: staticSite.devCommandLabel,
+        };
+    }
+
+    protected pickLibraryStaticBuildScript(scripts: Record<string, unknown>): string | undefined {
+        if (typeof scripts['build:esbuild'] === 'string') {
+            return 'build:esbuild';
+        }
+        if (typeof scripts.build === 'string') {
+            return 'build';
+        }
+        return undefined;
+    }
+
+    /**
      * Returns the directory (relative to the workspace root) that holds `index.html`, or `undefined`
      * when the workspace is not a servable static site. `'.'` means the root itself.
+     *
+     * Nested library demos (`docs/demo`) are preferred over a parent `docs/index.html` so we serve
+     * the interactive demo from the workspace root instead of chrooting into a docs homepage.
      */
     protected async findStaticRoot(rootUri: URI): Promise<string | undefined> {
         if (await this.fileService.exists(rootUri.resolve(STATIC_INDEX_FILE))) {
             return '.';
+        }
+        const docsDir = 'docs';
+        for (const nested of NESTED_STATIC_INDEX_SEGMENTS) {
+            const rel = `${docsDir}/${nested}`;
+            if (await this.fileService.exists(rootUri.resolve(rel).resolve(STATIC_INDEX_FILE))) {
+                return rel;
+            }
         }
         for (const dir of STATIC_ROOT_CANDIDATE_DIRS) {
             if (await this.fileService.exists(rootUri.resolve(dir).resolve(STATIC_INDEX_FILE))) {
@@ -401,6 +463,9 @@ export class QaapProjectBootstrapDetector {
             }
         }
         for (const dir of STATIC_ROOT_CANDIDATE_DIRS) {
+            if (dir === docsDir) {
+                continue;
+            }
             for (const nested of NESTED_STATIC_INDEX_SEGMENTS) {
                 const rel = `${dir}/${nested}`;
                 if (await this.fileService.exists(rootUri.resolve(rel).resolve(STATIC_INDEX_FILE))) {

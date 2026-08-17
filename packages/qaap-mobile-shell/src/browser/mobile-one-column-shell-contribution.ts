@@ -746,8 +746,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return openDesktopIdeExtracted(this);
     }
 
-    protected async prepareDesktopIdeWorkspaceFromHub(): Promise<boolean> {
-        return prepareDesktopIdeWorkspaceFromHubExtracted(this);
+    protected async prepareDesktopIdeWorkspaceFromHub(selectedProjectId?: string): Promise<boolean> {
+        return prepareDesktopIdeWorkspaceFromHubExtracted(this, selectedProjectId);
     }
 
     /** Top-bar «Back to Work Hub» from mobile desktop-IDE mode — restore the Agents execution shell. */

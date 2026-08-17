@@ -4,7 +4,12 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { buildStaticServeCommand } from './qaap-project-bootstrap-static';
+import {
+    buildStaticServeCommand,
+    nestedStaticUrlFallbacks,
+    shouldServeNestedStaticFromWorkspaceRoot,
+    staticEntryPathFromDevCommand,
+} from './qaap-project-bootstrap-static';
 
 describe('qaap-project-bootstrap-static', () => {
 
@@ -12,7 +17,7 @@ describe('qaap-project-bootstrap-static', () => {
 
         it('serves the workspace root when given "."', () => {
             const cmd = buildStaticServeCommand('.');
-            expect(cmd).to.match(/^QAAP_STATIC_ROOT="\." node -e '/);
+            expect(cmd).to.match(/^QAAP_STATIC_ROOT="\." QAAP_STATIC_ENTRY="\/" node -e '/);
             expect(cmd).to.include('http.createServer');
             expect(cmd.endsWith("'")).to.equal(true);
         });
@@ -25,12 +30,46 @@ describe('qaap-project-bootstrap-static', () => {
             expect(buildStaticServeCommand('public')).to.include('QAAP_STATIC_ROOT="public"');
         });
 
+        it('serves nested demo folders from the workspace root with an entry path', () => {
+            const cmd = buildStaticServeCommand('docs/demo');
+            expect(cmd).to.include('QAAP_STATIC_ROOT="."');
+            expect(cmd).to.include('QAAP_STATIC_ENTRY="/docs/demo/"');
+            expect(cmd).to.include('docs/demo');
+        });
+
         it('reads the port from the PORT env var so the bootstrap port wrapper can inject it', () => {
             expect(buildStaticServeCommand('.')).to.include('process.env.PORT');
         });
 
         it('binds to loopback so the same-origin dev preview proxy can reach it', () => {
             expect(buildStaticServeCommand('.')).to.include('"127.0.0.1"');
+        });
+
+        it('does not SPA-fallback missing JS/CSS to index.html', () => {
+            const cmd = buildStaticServeCommand('.');
+            expect(cmd).to.include('ext!==".html"');
+            expect(cmd).to.include('Not found');
+        });
+
+        it('retries nested demo library paths at the workspace root', () => {
+            const cmd = buildStaticServeCommand('docs/demo');
+            expect(cmd).to.include('stripSeg');
+            expect(cmd).to.include('writeHead(302');
+            expect(cmd).to.include('alts.push');
+            expect(staticEntryPathFromDevCommand(cmd)).to.equal('/docs/demo/');
+            expect(staticEntryPathFromDevCommand(buildStaticServeCommand('.'))).to.equal(undefined);
+            expect(staticEntryPathFromDevCommand('npm run dev')).to.equal(undefined);
+            expect(nestedStaticUrlFallbacks('/docs/lib/marked.esm.js', '/docs/demo/')).to.deep.equal([
+                '/docs/lib/marked.esm.js',
+                '/lib/marked.esm.js',
+            ]);
+            expect(nestedStaticUrlFallbacks('/', '/docs/demo/')).to.deep.equal([
+                '/',
+                '/docs/demo/',
+                '/docs/demo/index.html',
+            ]);
+            expect(shouldServeNestedStaticFromWorkspaceRoot('docs/demo')).to.equal(true);
+            expect(shouldServeNestedStaticFromWorkspaceRoot('public')).to.equal(false);
         });
 
         it('prints a localhost URL the dev-output scanner can detect', () => {

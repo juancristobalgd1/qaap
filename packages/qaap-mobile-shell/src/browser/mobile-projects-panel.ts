@@ -1650,6 +1650,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.shouldUseAgentsHubLanding();
     }
 
+    getAgentsHubSelectedProjectId(): string | undefined {
+        return this.agentsHubSelectedProjectId;
+    }
+
     resolveShellProject(): MobileProjectEntry | undefined {
         return this.resolveAgentsHubShellProject();
     }
@@ -1841,6 +1845,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected beginTranscriptDevPreviewRequest(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
         beginTranscriptDevPreviewRequestExtracted(this, project, summary);
+    }
+
+    protected async requestTranscriptPreview(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean },
+    ): Promise<void> {
+        return this.transcriptSurfacesUi.requestTranscriptPreview(project, summary, options);
     }
 
     protected stageTranscriptPreviewReadyUrl(readyUrl: string): void {
