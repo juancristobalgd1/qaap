@@ -19,7 +19,13 @@ bad() { echo "  FAIL $*" >&2; fail=$((fail + 1)); }
 echo "Qaap launch readiness — ${BASE}"
 
 TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
+HEALTH_TMP="$(mktemp)"
+trap 'rm -f "$TMP" "$HEALTH_TMP"' EXIT
+if curl -fsS --max-time 8 "${BASE}/qaap/api/health" >"$HEALTH_TMP" 2>/dev/null; then
+    ok "GET /qaap/api/health"
+else
+    echo "  WARN GET /qaap/api/health failed (pre-health image is OK once; auth/config is required)"
+fi
 if ! curl -fsS --max-time 8 "${BASE}/qaap/api/auth/config" >"$TMP"; then
     echo "  FAIL cannot GET ${BASE}/qaap/api/auth/config" >&2
     exit 1

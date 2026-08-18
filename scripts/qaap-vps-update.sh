@@ -196,6 +196,9 @@ for _ in $(seq 1 60); do
         if [[ "$SX_HEALTH" == "unhealthy" ]]; then
             echo "[qaap-vps-update] WARNING: searxng is unhealthy — @qaiq web search will fail (docker compose logs searxng)" >&2
         fi
+        echo "[qaap-vps-update] running launch gate (backup cron + isolation snapshot)..."
+        chmod +x "$REPO_DIR/scripts/qaap-vps-launch-gate.sh" "$REPO_DIR/scripts/qaap-vps-ensure-backup-cron.sh" || true
+        "$REPO_DIR/scripts/qaap-vps-launch-gate.sh"
         exit 0
     fi
     sleep 5
