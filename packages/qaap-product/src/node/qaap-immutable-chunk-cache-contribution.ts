@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import * as path from 'path';
+import * as fs from 'fs';
 import { injectable } from '@theia/core/shared/inversify';
 import * as express from '@theia/core/shared/express';
 import { BackendApplicationServer, BackendApplicationPath } from '@theia/core/lib/node';
@@ -23,7 +24,17 @@ export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
 
 /** Directory of standalone Terms / Privacy HTML served at `/legal/*`. */
 export function resolveQaapLegalPagesDir(): string {
-    return path.resolve(__dirname, '../../resources/legal');
+    const candidates = [
+        // Copied next to the frontend bundle (the backend webpack bundle's `__dirname` is not the package).
+        path.join(BackendApplicationPath, 'lib', 'frontend', 'legal'),
+        path.resolve(__dirname, '../../resources/legal'),
+    ];
+    for (const candidate of candidates) {
+        if (fs.existsSync(path.join(candidate, 'terms.html'))) {
+            return candidate;
+        }
+    }
+    return candidates[candidates.length - 1];
 }
 
 /**
