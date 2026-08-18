@@ -65,20 +65,25 @@ export interface MobileProjectsPanelChromeHost {
     hubView: import('./mobile-projects-types').MobileProjectsHubView;
 }
 
-/** Folder + truncated name + chevron for the Work Hub header project switcher. */
+/** Folder + optional `|` + truncated name + chevron for the Work Hub header project switcher. */
 export function mountHeaderProjectButtonContents(
     button: HTMLButtonElement,
     labelEl: HTMLSpanElement,
-): { readonly folder: HTMLSpanElement; readonly chevron: HTMLSpanElement } {
+): { readonly folder: HTMLSpanElement; readonly separator: HTMLSpanElement; readonly chevron: HTMLSpanElement } {
     const folder = document.createElement('span');
     folder.className = 'theia-mobile-projects-header-project-folder codicon codicon-folder';
     folder.setAttribute('aria-hidden', 'true');
+    const separator = document.createElement('span');
+    separator.className = 'theia-mobile-projects-header-project-separator';
+    separator.setAttribute('aria-hidden', 'true');
+    separator.hidden = true;
+    separator.textContent = '|';
     labelEl.className = 'theia-mobile-projects-header-project-label';
     const chevron = document.createElement('span');
     chevron.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
     chevron.setAttribute('aria-hidden', 'true');
-    button.append(folder, labelEl, chevron);
-    return { folder, chevron };
+    button.append(folder, separator, labelEl, chevron);
+    return { folder, separator, chevron };
 }
 
 export class MobileProjectsPanelChromeUi {

@@ -241,6 +241,11 @@ describe('MobileProjectsHubHeaderUi', () => {
 
             expect(host.headerProjectBtn.hidden).to.equal(false);
             expect(host.headerProjectLabelEl.textContent).to.equal('Corrige aislamiento de pre');
+            expect(host.headerProjectBtn.classList.contains('theia-mod-conversation-title')).to.equal(true);
+            const separator = host.headerProjectBtn.querySelector('.theia-mobile-projects-header-project-separator');
+            expect(separator).to.not.equal(null);
+            expect((separator as HTMLElement).hidden).to.equal(false);
+            expect(separator!.textContent).to.equal('|');
             expect(host.headerProjectBtn.getAttribute('aria-label')).to.contain('Mockup');
         });
 
@@ -257,7 +262,11 @@ describe('MobileProjectsHubHeaderUi', () => {
 
             expect(host.headerProjectBtn.hidden).to.equal(false);
             expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
+            expect(host.headerProjectBtn.classList.contains('theia-mod-conversation-title')).to.equal(false);
             expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
+            const landingSeparator = host.headerProjectBtn.querySelector('.theia-mobile-projects-header-project-separator');
+            expect(landingSeparator).to.not.equal(null);
+            expect((landingSeparator as HTMLElement).hidden).to.equal(true);
             expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
         });
 

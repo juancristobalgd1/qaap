@@ -162,9 +162,15 @@ export class MobileProjectsHubHeaderUi {
         const project = this.resolveHeaderProject();
         const sectionTitle = this.resolveHeaderProjectSectionTitle(project);
         const showProject = showSessionsMenu && !!project && sectionTitle.length > 0;
+        const showConversationSeparator = showProject && this.headerProjectShowsConversationTitle();
         this.host.headerProjectBtn.hidden = !showProject;
         this.host.headerProjectBtn.setAttribute('aria-hidden', showProject ? 'false' : 'true');
+        this.host.headerProjectBtn.classList.toggle('theia-mod-conversation-title', showConversationSeparator);
         this.host.headerProjectLabelEl.textContent = sectionTitle;
+        const separator = this.host.headerProjectBtn.querySelector('.theia-mobile-projects-header-project-separator');
+        if (separator instanceof HTMLElement) {
+            separator.hidden = !showConversationSeparator;
+        }
         if (!showProject || !project) {
             return;
         }
@@ -192,13 +198,15 @@ export class MobileProjectsHubHeaderUi {
      * otherwise the active project name. Clicking the control still opens the project switcher.
      */
     resolveHeaderProjectSectionTitle(project: MobileProjectEntry | undefined): string {
-        if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummary) {
-            const conversationTitle = this.host.transcriptOpenSummary.title?.trim();
-            if (conversationTitle) {
-                return conversationTitle;
-            }
+        if (this.headerProjectShowsConversationTitle()) {
+            return this.host.transcriptOpenSummary?.title?.trim() ?? '';
         }
         return project?.name?.trim() ?? '';
+    }
+
+    /** Folder glyph stands for the project; `|` splits it from the open conversation title. */
+    headerProjectShowsConversationTitle(): boolean {
+        return !!(this.host.agentsHubInlineActive && this.host.transcriptOpenSummary?.title?.trim());
     }
 
     resolveHeaderNewChatVisible(): boolean {

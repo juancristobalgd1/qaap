@@ -19,11 +19,13 @@ describe('mountHeaderProjectButtonContents', () => {
         const button = document.createElement('button');
         const label = document.createElement('span');
         label.textContent = 'sample-files1';
-        const { folder, chevron } = mountHeaderProjectButtonContents(button, label);
+        const { folder, separator, chevron } = mountHeaderProjectButtonContents(button, label);
 
         expect(folder.classList.contains('codicon-folder')).to.equal(true);
+        expect(separator.textContent).to.equal('|');
+        expect(separator.hidden).to.equal(true);
         expect(chevron.classList.contains('codicon-chevron-down')).to.equal(true);
-        expect(Array.from(button.childNodes)).to.deep.equal([folder, label, chevron]);
+        expect(Array.from(button.childNodes)).to.deep.equal([folder, separator, label, chevron]);
         expect(label.className).to.equal('theia-mobile-projects-header-project-label');
     });
 });
