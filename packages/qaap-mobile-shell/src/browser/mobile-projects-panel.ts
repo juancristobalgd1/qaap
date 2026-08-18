@@ -73,7 +73,9 @@ import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import {
     buildQaapAccountMenuEntries,
+    qaapAccountMenuAppearanceFromService,
     toggleQaapAccountMenu,
+    type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -336,7 +338,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerBackBtn: HTMLButtonElement;
     protected readonly sessionsMenuBtn: HTMLButtonElement;
     protected readonly headerProjectBtn: HTMLButtonElement;
+    protected readonly headerProjectIconEl: HTMLSpanElement;
     protected readonly headerProjectLabelEl: HTMLSpanElement;
+    protected readonly headerProjectSepEl: HTMLSpanElement;
+    protected readonly headerProjectConversationEl: HTMLSpanElement;
     protected readonly headerNewChatBtn: HTMLButtonElement;
     protected readonly headerOverflowMenuBtn: HTMLButtonElement;
     protected readonly newFabBtn: HTMLButtonElement;
@@ -346,6 +351,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerPreviewRunHost: HTMLElement;
     protected readonly headerFilesMoreHost: HTMLElement;
     protected readonly headerViewModeSwitchHost: HTMLElement;
+    protected readonly headerIdeAgentsSwitchHost: HTMLElement;
     protected readonly headerExecutionTabsHost: HTMLElement;
     protected headerSurfacePicker?: QaapSegmentedFieldController<MobileBottomButtonId>;
     protected headerIdeViewPickerBtn: HTMLButtonElement | undefined;
@@ -617,6 +623,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
                 section: QAAP_WORK_HUB_GETTING_STARTED,
                 onCatalogAction: action => { void this.runCatalogAction(action); },
             },
+            {
+                appearance: qaapAccountMenuAppearanceFromService(this.appearanceModeService),
+            },
         );
     };
 
@@ -831,6 +840,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected renderHeader(): void {
         this.hubHeaderUi.renderHeader();
         this.syncHeaderIdeViewPicker();
+        this.panelChromeUi.syncHeaderIdeAgentsSwitch();
     }
 
     /** Agents hub: account lives in the sessions sidebar Settings control, not the header. */
@@ -1182,6 +1192,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected syncHeaderIdeViewPicker(): void {
         syncHeaderIdeViewPickerExtracted(this);
+    }
+
+    protected onHeaderViewModeChange(id: MobileViewToggleId): void {
+        this.sessionsSidebarUi.onSessionsSidebarViewModeChange(id);
     }
 
     protected createHeaderIdeViewIcon(icon: string): HTMLElement {
@@ -1736,6 +1750,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected syncDesktopWorkHubLayout(): void {
         this.sessionsSidebar?.syncDesktopLayout();
+        this.panelChromeUi.syncHeaderIdeAgentsSwitch();
     }
 
     /** Reconcile the open sessions sidebar when the window crosses the mobile breakpoint. */

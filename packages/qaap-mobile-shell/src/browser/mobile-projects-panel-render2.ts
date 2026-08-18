@@ -450,6 +450,7 @@ export function disposeExtracted(ctx: any): void {
     ctx.hubListRenderScheduler.dispose();
     ctx.agentsHubEmptySurfaceGuardDispose.dispose();
     ctx.agentsHubEmptySurfaceGuardDispose = Disposable.NULL;
+    ctx.panelChromeUi.dispose();
     ctx.panelLifecycleUi.dispose();
 }
 

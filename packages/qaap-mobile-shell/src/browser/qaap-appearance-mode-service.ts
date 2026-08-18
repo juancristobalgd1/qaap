@@ -23,7 +23,7 @@ import {
 } from '../common/qaap-appearance-mode';
 
 /**
- * Light / Dark / System control for the Work Hub sessions sidebar.
+ * Light / Dark / System control for the avatar account menu.
  *
  * Light and Dark navigate the remembered theme pair (preferred light theme ↔
  * preferred dark theme). Picking a color theme elsewhere updates the matching

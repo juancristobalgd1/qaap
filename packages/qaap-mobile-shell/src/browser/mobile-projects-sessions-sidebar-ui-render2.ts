@@ -115,19 +115,8 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
             },
             storageScope: () => ctx.host.projectsService.getCurrentWorkspaceCwd(),
             onAccountMenu: anchor => { ctx.onSessionsSidebarAccountClick(anchor); },
-            getViewMode: () => ctx.host.composerHeaderUi.resolveActiveViewToggleId(),
-            onViewModeChange: id => { ctx.onSessionsSidebarViewModeChange(id); },
             onSearch: () => { void ctx.openSessionsSidebarSearch(); },
             isEmbedded: () => (!isDesktopSessionsSidebarLayout() || document.body.classList.contains('theia-mobile-mod-desktop-ide')) && ctx.host.sessionsSidebarContainer?.() !== undefined,
-            getAppearanceMode: ctx.host.appearanceModeService
-                ? () => ctx.host.appearanceModeService!.getMode()
-                : undefined,
-            setAppearanceMode: ctx.host.appearanceModeService
-                ? mode => ctx.host.appearanceModeService!.setMode(mode)
-                : undefined,
-            onAppearanceModeChanged: ctx.host.appearanceModeService
-                ? listener => ctx.host.appearanceModeService!.onDidChangeMode(listener)
-                : undefined,
         });
     }
     const useBodyGrid = isDesktopSessionsSidebarLayout()

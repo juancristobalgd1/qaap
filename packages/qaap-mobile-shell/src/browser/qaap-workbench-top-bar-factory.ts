@@ -16,6 +16,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsService } from './mobile-projects-service';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 import {
     QaapWorkbenchHistoryNavWidget,
     QaapWorkbenchMenuButtonWidget,
@@ -54,6 +55,9 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
     @inject(ContextKeyService)
     protected readonly contextKeyService: ContextKeyService;
 
+    @inject(QaapAppearanceModeService)
+    protected readonly appearanceModeService: QaapAppearanceModeService;
+
     createLeadingTopBarWidget(commands: CommandRegistry, shell: ApplicationShell): Widget {
         return new QaapWorkbenchNavControlsWidget(this.projectsService, this.workspaceService, this.projectSwitcher, shell);
     }
@@ -63,7 +67,15 @@ export class QaapWorkbenchTopBarFactory implements WorkbenchTopBarFactory {
             new QaapWorkbenchHistoryNavWidget(commands, this.workspaceService),
             new QaapWorkbenchMenuButtonWidget(commands, this.menuFactory, this.menuProvider, this.contextKeyService),
             new QaapWorkbenchViewModeCenterWidget(commands, this.workspaceService),
-            new QaapWorkbenchRightControlsWidget(commands, shell, this.terminalService, this.miniBrowserOpenHandler, this.projectBootstrap, this.workspaceService),
+            new QaapWorkbenchRightControlsWidget(
+                commands,
+                shell,
+                this.terminalService,
+                this.miniBrowserOpenHandler,
+                this.projectBootstrap,
+                this.workspaceService,
+                this.appearanceModeService,
+            ),
         ];
     }
 }

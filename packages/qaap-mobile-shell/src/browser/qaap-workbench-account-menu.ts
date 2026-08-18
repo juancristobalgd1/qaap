@@ -4,10 +4,13 @@
 // *****************************************************************************
 
 import { CommandRegistry, nls } from '@theia/core/lib/common';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '../common/mobile-work-hub-catalog';
+import type { QaapAppearanceMode } from '../common/qaap-appearance-mode';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
 import { QAAP_MESSAGE_CIRCLE_ICON_CLASS } from '../common/qaap-scm-changes-icon';
+import { createQaapAppearanceModeSwitch } from './qaap-appearance-mode-switch';
 import { createSegmentedField, type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 
 export const QAAP_AUTH_SIGN_IN_GITHUB_COMMAND = 'qaap.auth.signInGithub';
@@ -64,6 +67,12 @@ export interface QaapAccountMenuGettingStartedOptions {
     readonly onCatalogAction: (action: WorkHubCatalogAction) => void;
 }
 
+export interface QaapAccountMenuAppearanceOptions {
+    getMode(): QaapAppearanceMode;
+    setMode(mode: QaapAppearanceMode): void;
+    onDidChangeMode?(listener: (mode: QaapAppearanceMode) => void): Disposable;
+}
+
 export interface QaapAccountMenuOpenOptions {
     /** Prefer opening above the anchor (e.g. sessions sidebar footer). */
     readonly placement?: 'below' | 'above';
@@ -71,6 +80,23 @@ export interface QaapAccountMenuOpenOptions {
     readonly anchorGap?: number;
     /** Invoked when the user picks a menu item or catalog card (before dismiss). */
     readonly onMenuAction?: () => void;
+    /** Light / Dark / System switch shown in the avatar menu. */
+    readonly appearance?: QaapAccountMenuAppearanceOptions;
+}
+
+export function qaapAccountMenuAppearanceFromService(service?: {
+    getMode(): QaapAppearanceMode;
+    setMode(mode: QaapAppearanceMode): void;
+    onDidChangeMode(listener: (mode: QaapAppearanceMode) => void): Disposable;
+}): QaapAccountMenuAppearanceOptions | undefined {
+    if (!service) {
+        return undefined;
+    }
+    return {
+        getMode: () => service.getMode(),
+        setMode: mode => service.setMode(mode),
+        onDidChangeMode: listener => service.onDidChangeMode(listener),
+    };
 }
 
 let activeMenu: HTMLElement | undefined;
@@ -279,7 +305,10 @@ export function openQaapAccountMenu(
         panel.appendChild(item);
     }
 
+    const appearanceDispose = appendAccountMenuAppearance(panel, openOptions?.appearance);
+
     if (!panel.childElementCount) {
+        appearanceDispose.dispose();
         return;
     }
 
@@ -331,6 +360,7 @@ export function openQaapAccountMenu(
     };
 
     const dismiss = (): void => {
+        appearanceDispose.dispose();
         document.removeEventListener('pointerdown', onPointerDown, true);
         document.removeEventListener('keydown', onKeyDown, true);
         panel.remove();
@@ -355,6 +385,30 @@ export function openQaapAccountMenu(
         document.addEventListener('keydown', onKeyDown, true);
         panel.focus();
     });
+}
+
+function appendAccountMenuAppearance(
+    panel: HTMLElement,
+    appearance: QaapAccountMenuAppearanceOptions | undefined,
+): Disposable {
+    if (!appearance) {
+        return Disposable.NULL;
+    }
+    if (panel.childElementCount > 0) {
+        const sep = document.createElement('div');
+        sep.className = 'theia-qaap-account-menu-separator';
+        sep.setAttribute('role', 'separator');
+        panel.appendChild(sep);
+    }
+    const row = document.createElement('div');
+    row.className = 'theia-qaap-account-menu-appearance';
+    const control = createQaapAppearanceModeSwitch({
+        value: appearance.getMode(),
+        onChange: mode => appearance.setMode(mode),
+    });
+    row.append(control.root);
+    panel.appendChild(row);
+    return appearance.onDidChangeMode?.(mode => control.setValue(mode)) ?? Disposable.NULL;
 }
 
 function createAccountMenuGettingStartedBlock(

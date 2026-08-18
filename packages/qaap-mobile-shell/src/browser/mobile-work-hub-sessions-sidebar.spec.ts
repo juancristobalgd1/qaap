@@ -107,23 +107,15 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(isDesktopSessionsSidebarLayout()).to.equal(true);
     });
 
-    it('mounts appearance mode switch in the footer when delegate provides mode APIs', () => {
-        let mode: 'light' | 'dark' | 'system' = 'dark';
+    it('keeps the appearance mode switch out of the sidebar footer', () => {
         const sidebar = new MobileWorkHubSessionsSidebar({
             renderSessionList: () => undefined,
             onNewChat: () => undefined,
             onClose: () => undefined,
-            getAppearanceMode: () => mode,
-            setAppearanceMode: next => { mode = next; },
-            onAppearanceModeChanged: () => ({ dispose: () => undefined }),
         });
         document.body.append(sidebar.node);
-        const switchRoot = sidebar.node.querySelector('.theia-qaap-appearance-mode-switch');
-        expect(switchRoot).to.not.equal(null);
-        const light = switchRoot!.querySelector<HTMLButtonElement>('[data-mode="light"]');
-        expect(light).to.not.equal(null);
-        light!.click();
-        expect(mode).to.equal('light');
+        expect(sidebar.node.querySelector('.theia-qaap-appearance-mode-switch')).to.equal(null);
+        expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-btn')).to.not.equal(null);
     });
 
     it('syncs the embedded state when the viewport layout changes while open', () => {
@@ -522,5 +514,20 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         embedded = true;
         sidebar.hide();
         expect(document.body.classList.contains(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS)).to.equal(false);
+    });
+
+    it('keeps the IDE/Agents switch out of the sidebar header', () => {
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+        const head = sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-head');
+        expect(head).to.not.equal(null);
+        expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-view-switch')).to.equal(null);
+        expect(head!.querySelector('.theia-qaap-segmented-bar')).to.equal(null);
+        expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-brand')).to.not.equal(null);
+        expect(head!.querySelector('.theia-mobile-work-hub-sessions-sidebar-close')).to.not.equal(null);
     });
 });

@@ -286,8 +286,7 @@ body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
   min-width: 0;
 }
 
-/* IDE/Agents surface switch. It lives in the IDE top bar, while Work Hub uses the
-   equivalent control beside its brand in the sessions sidebar. */
+/* IDE/Agents surface switch. The IDE top bar and Work Hub header share this control. */
 .theia-workbench-view-mode-switch {
   box-sizing: border-box;
   display: inline-flex;

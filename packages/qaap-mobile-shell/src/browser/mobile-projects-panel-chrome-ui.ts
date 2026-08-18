@@ -11,7 +11,14 @@ import {
     installMobilePullToRefresh,
     installMobileSheetDragDismiss,
 } from './mobile-sheet-gestures';
+import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileSnackbar } from './mobile-snackbar';
+import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
+import {
+    createQaapViewModeSwitch,
+    type MobileViewToggleId,
+} from './qaap-workbench-account-menu';
+import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 /** Panel surface for DOM shell construction and sheet gestures. */
 export interface MobileProjectsPanelChromeHost {
     homeMode: boolean;
@@ -21,7 +28,10 @@ export interface MobileProjectsPanelChromeHost {
     headerBackBtn: HTMLButtonElement;
     sessionsMenuBtn: HTMLButtonElement;
     headerProjectBtn: HTMLButtonElement;
+    headerProjectIconEl: HTMLSpanElement;
     headerProjectLabelEl: HTMLSpanElement;
+    headerProjectSepEl: HTMLSpanElement;
+    headerProjectConversationEl: HTMLSpanElement;
     headerNewChatBtn: HTMLButtonElement;
     headerOverflowMenuBtn: HTMLButtonElement;
     titleEl: HTMLHeadingElement;
@@ -30,6 +40,7 @@ export interface MobileProjectsPanelChromeHost {
     headerPreviewRunHost: HTMLElement;
     headerFilesMoreHost: HTMLElement;
     headerViewModeSwitchHost: HTMLElement;
+    headerIdeAgentsSwitchHost: HTMLElement;
     headerExecutionTabsHost: HTMLElement;
     subtitleEl: HTMLElement;
     accountBtn: HTMLButtonElement;
@@ -57,6 +68,7 @@ export interface MobileProjectsPanelChromeHost {
     onNewClick(): Promise<void>;
     onTitleTap(): void;
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
+    onHeaderViewModeChange(id: MobileViewToggleId): void;
     updateAccountAvatar(): void;
     hide(): void;
     refreshInboxPullRequests(projects?: import('./mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
@@ -66,6 +78,9 @@ export interface MobileProjectsPanelChromeHost {
 }
 
 export class MobileProjectsPanelChromeUi {
+    protected headerIdeAgentsSwitch: QaapSegmentedFieldController<MobileViewToggleId> | undefined;
+    protected headerIdeAgentsSwitchMediaDispose: Disposable = Disposable.NULL;
+
     constructor(protected readonly host: MobileProjectsPanelChromeHost) { }
 
     constructPanelShell(): HTMLElement {
@@ -113,17 +128,25 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerProjectBtn.setAttribute('aria-haspopup', 'dialog');
         this.host.headerProjectBtn.title = nls.localize('qaap/mobileProjects/headerProject', 'Switch project');
         this.host.headerProjectBtn.setAttribute('aria-label', this.host.headerProjectBtn.title);
-        const headerProjectIcon = document.createElement('span');
-        headerProjectIcon.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
-        headerProjectIcon.setAttribute('aria-hidden', 'true');
+        this.host.headerProjectIconEl = document.createElement('span');
+        this.host.headerProjectIconEl.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
+        this.host.headerProjectIconEl.setAttribute('aria-hidden', 'true');
         this.host.headerProjectLabelEl = document.createElement('span');
         this.host.headerProjectLabelEl.className = 'theia-mobile-projects-header-project-label';
-        this.host.headerProjectBtn.append(this.host.headerProjectLabelEl, headerProjectIcon);
+        this.host.headerProjectBtn.append(this.host.headerProjectLabelEl, this.host.headerProjectIconEl);
         this.host.headerProjectBtn.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
             this.host.onHeaderProjectClick(this.host.headerProjectBtn);
         });
+        this.host.headerProjectSepEl = document.createElement('span');
+        this.host.headerProjectSepEl.className = 'theia-mobile-projects-header-project-sep';
+        this.host.headerProjectSepEl.setAttribute('aria-hidden', 'true');
+        this.host.headerProjectSepEl.textContent = '/';
+        this.host.headerProjectSepEl.hidden = true;
+        this.host.headerProjectConversationEl = document.createElement('span');
+        this.host.headerProjectConversationEl.className = 'theia-mobile-projects-header-project-conversation';
+        this.host.headerProjectConversationEl.hidden = true;
         this.host.titleEl = document.createElement('h1');
         this.host.titleEl.className = 'theia-mobile-projects-title';
         this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/title', 'Work Hub');
@@ -142,6 +165,16 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerViewModeSwitchHost = document.createElement('div');
         this.host.headerViewModeSwitchHost.className = 'theia-mobile-projects-header-view-mode-switch';
         this.host.headerViewModeSwitchHost.hidden = true;
+        this.host.headerIdeAgentsSwitchHost = document.createElement('div');
+        this.host.headerIdeAgentsSwitchHost.className = 'theia-mobile-projects-header-ide-agents-switch';
+        this.headerIdeAgentsSwitch = createQaapViewModeSwitch({
+            activeId: this.host.composerHeaderUi.resolveActiveViewToggleId(),
+            onSelect: id => this.host.onHeaderViewModeChange(id),
+        });
+        const headerIdeAgentsSwitchInner = document.createElement('span');
+        headerIdeAgentsSwitchInner.className = 'theia-workbench-view-mode-switch';
+        headerIdeAgentsSwitchInner.append(this.headerIdeAgentsSwitch.root);
+        this.host.headerIdeAgentsSwitchHost.append(headerIdeAgentsSwitchInner);
         this.host.headerExecutionTabsHost = document.createElement('div');
         this.host.headerExecutionTabsHost.className = 'theia-mobile-projects-header-execution-tabs';
         this.host.headerExecutionTabsHost.hidden = true;
@@ -150,6 +183,8 @@ export class MobileProjectsPanelChromeUi {
         this.host.titleRow.append(
             this.host.sessionsMenuBtn,
             this.host.headerProjectBtn,
+            this.host.headerProjectSepEl,
+            this.host.headerProjectConversationEl,
             this.host.headerBackBtn,
             this.host.titleEl,
             this.host.titleAttentionEl,
@@ -227,8 +262,14 @@ export class MobileProjectsPanelChromeUi {
             this.host.searchToggleBtn,
             this.host.accountBtn,
         );
-        headerMainRow.append(this.host.titleBlock, this.host.headerExecutionCluster, actions);
+        headerMainRow.append(
+            this.host.titleBlock,
+            this.host.headerIdeAgentsSwitchHost,
+            this.host.headerExecutionCluster,
+            actions,
+        );
         header.append(headerMainRow);
+        this.syncHeaderIdeAgentsSwitch();
 
         this.host.filtersHost = document.createElement('div');
         this.host.filtersHost.className = 'theia-mobile-projects-filters-host';
@@ -281,6 +322,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.titleBlock.addEventListener('click', () => this.host.onTitleTap());
         window.addEventListener('qaap-auth-session-changed', onAuthSessionChanged);
         this.host.updateAccountAvatar();
+        this.installHeaderIdeAgentsSwitchMediaListener();
 
         if (!this.host.homeMode) {
             this.host.dragDismissDispose = installMobileSheetDragDismiss({
@@ -307,5 +349,33 @@ export class MobileProjectsPanelChromeUi {
                 );
             },
         });
+    }
+
+    syncHeaderIdeAgentsSwitch(): void {
+        const visible = !matchesMobileNarrowViewport()
+            && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
+        this.host.headerIdeAgentsSwitchHost.hidden = !visible;
+        this.host.headerIdeAgentsSwitchHost.style.display = visible ? '' : 'none';
+        this.host.headerIdeAgentsSwitchHost.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        if (visible) {
+            this.headerIdeAgentsSwitch?.setValue(this.host.composerHeaderUi.resolveActiveViewToggleId());
+        }
+    }
+
+    dispose(): void {
+        this.headerIdeAgentsSwitchMediaDispose.dispose();
+        this.headerIdeAgentsSwitchMediaDispose = Disposable.NULL;
+    }
+
+    protected installHeaderIdeAgentsSwitchMediaListener(): void {
+        this.headerIdeAgentsSwitchMediaDispose.dispose();
+        this.headerIdeAgentsSwitchMediaDispose = Disposable.NULL;
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+            return;
+        }
+        const mq = window.matchMedia(QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY);
+        const onChange = (): void => this.syncHeaderIdeAgentsSwitch();
+        mq.addEventListener('change', onChange);
+        this.headerIdeAgentsSwitchMediaDispose = Disposable.create(() => mq.removeEventListener('change', onChange));
     }
 }

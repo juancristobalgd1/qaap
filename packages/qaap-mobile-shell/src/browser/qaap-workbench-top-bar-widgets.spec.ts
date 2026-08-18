@@ -60,4 +60,26 @@ describe('qaap-workbench-top-bar-widgets', () => {
         expect(shouldShowMobileIdeHeaderViews()).to.equal(false);
         document.body.classList.remove('theia-mobile-mod-desktop-ide');
     });
+
+    it('does not mount a Back to Work Hub button in the IDE history nav', () => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { Event } = require('@theia/core/lib/common');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { QaapWorkbenchHistoryNavWidget } = require('./qaap-workbench-top-bar-widgets');
+        const commands = {
+            onDidExecuteCommand: Event.None,
+            onCommandsChanged: Event.None,
+            isEnabled: () => false,
+            executeCommand: async () => undefined,
+        };
+        const workspaceService = {
+            onWorkspaceChanged: Event.None,
+            onWorkspaceLocationChanged: Event.None,
+        };
+        const widget = new QaapWorkbenchHistoryNavWidget(commands, workspaceService);
+        expect(widget.node.querySelector('.theia-workbench-projects-return-nav-btn')).to.equal(null);
+        expect(widget.node.querySelector('.theia-workbench-dashboard-nav-btn')).to.equal(null);
+        expect(widget.node.querySelectorAll('.theia-workbench-history-nav-btn')).to.have.length(2);
+        widget.dispose();
+    });
 });

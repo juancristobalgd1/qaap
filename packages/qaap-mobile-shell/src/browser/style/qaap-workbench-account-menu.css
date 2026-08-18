@@ -185,6 +185,75 @@ body.theia-mobile-mod-landing .theia-qaap-account-menu {
   background: var(--theia-menu-separatorBackground, var(--theia-contrastBorder));
 }
 
+.theia-qaap-account-menu-appearance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px 8px;
+}
+
+/* Light / Dark / System pill — same control that used to live in the sidebar footer. */
+.theia-qaap-appearance-mode-switch {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-qaap-appearance-mode-switch-option {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: color-mix(in srgb, var(--theia-foreground) 45%, transparent);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.theia-qaap-appearance-mode-switch-option:hover {
+  color: color-mix(in srgb, var(--theia-foreground) 70%, transparent);
+}
+
+.theia-qaap-appearance-mode-switch-option.theia-mod-selected {
+  background: color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  color: var(--theia-foreground);
+}
+
+.theia-qaap-appearance-mode-switch-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .theia-qaap-appearance-mode-switch {
+    padding: 2px;
+  }
+
+  .theia-qaap-appearance-mode-switch-option {
+    width: 26px;
+    height: 26px;
+  }
+
+  .theia-qaap-appearance-mode-switch-icon {
+    width: 14px;
+    height: 14px;
+  }
+}
+
 .theia-workbench-right-controls .theia-workbench-nav-btn.theia-workbench-account-btn {
   box-sizing: border-box;
   width: 28px;

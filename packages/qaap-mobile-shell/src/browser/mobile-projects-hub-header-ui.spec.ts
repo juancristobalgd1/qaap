@@ -43,12 +43,22 @@ describe('MobileProjectsHubHeaderUi', () => {
         const shellProject = options?.shellProject;
         const activeTab = options?.activeTab ?? 'messages';
         const headerProjectBtn = document.createElement('button');
+        const headerProjectIconEl = document.createElement('span');
+        headerProjectIconEl.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
         const headerProjectLabelEl = document.createElement('span');
-        headerProjectBtn.append(headerProjectLabelEl);
+        headerProjectBtn.append(headerProjectLabelEl, headerProjectIconEl);
+        const headerProjectSepEl = document.createElement('span');
+        headerProjectSepEl.textContent = '/';
+        headerProjectSepEl.hidden = true;
+        const headerProjectConversationEl = document.createElement('span');
+        headerProjectConversationEl.hidden = true;
         return {
             sessionsMenuBtn: document.createElement('button'),
             headerProjectBtn,
+            headerProjectIconEl,
             headerProjectLabelEl,
+            headerProjectSepEl,
+            headerProjectConversationEl,
             headerNewChatBtn: document.createElement('button'),
             headerOverflowMenuBtn: document.createElement('button'),
             headerBackBtn: document.createElement('button'),
@@ -218,7 +228,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerNewChatBtn.getAttribute('aria-hidden')).to.equal('false');
         });
 
-        it('shows the header project control with the conversation title beside the switcher', () => {
+        it('shows a folder crumb and conversation title when a session is open', () => {
             const p = project('mockup', 'Mockup');
             const summary = {
                 id: 'test-id',
@@ -239,7 +249,13 @@ describe('MobileProjectsHubHeaderUi', () => {
             new MobileProjectsHubHeaderUi(host).renderHeader();
 
             expect(host.headerProjectBtn.hidden).to.equal(false);
-            expect(host.headerProjectLabelEl.textContent).to.equal('Corrige aislamiento de pre');
+            expect(host.headerProjectBtn.classList.contains('theia-mod-folder-switcher')).to.equal(true);
+            expect(host.headerProjectIconEl.classList.contains('codicon-folder')).to.equal(true);
+            expect(host.headerProjectLabelEl.hidden).to.equal(true);
+            expect(host.headerProjectSepEl.hidden).to.equal(false);
+            expect(host.headerProjectSepEl.textContent).to.equal('/');
+            expect(host.headerProjectConversationEl.hidden).to.equal(false);
+            expect(host.headerProjectConversationEl.textContent).to.equal('Corrige aislamiento de pre');
             expect(host.headerProjectBtn.getAttribute('aria-label')).to.contain('Mockup');
         });
 
@@ -255,7 +271,12 @@ describe('MobileProjectsHubHeaderUi', () => {
             new MobileProjectsHubHeaderUi(host).renderHeader();
 
             expect(host.headerProjectBtn.hidden).to.equal(false);
+            expect(host.headerProjectBtn.classList.contains('theia-mod-folder-switcher')).to.equal(false);
+            expect(host.headerProjectIconEl.classList.contains('codicon-chevron-down')).to.equal(true);
+            expect(host.headerProjectLabelEl.hidden).to.equal(false);
             expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
+            expect(host.headerProjectSepEl.hidden).to.equal(true);
+            expect(host.headerProjectConversationEl.hidden).to.equal(true);
         });
 
         it('keeps titles visible on non-Agents surfaces', () => {

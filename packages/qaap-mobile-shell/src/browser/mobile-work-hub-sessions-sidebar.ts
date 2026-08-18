@@ -7,9 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import type { QaapAppearanceMode } from '../common/qaap-appearance-mode';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
-import { createQaapAppearanceModeSwitch, type QaapAppearanceModeSwitchController } from './qaap-appearance-mode-switch';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
 import { installMobileVerticalTouchScroll } from './mobile-vertical-touch-scroll';
@@ -17,11 +15,6 @@ import { MobileHaptics } from './mobile-haptics';
 import { hashString } from '../common/qaap-agent-task-client';
 import { setQaapClientErrorBuild } from '../common/qaap-client-error-report';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import {
-    createQaapViewModeSwitch,
-    type MobileViewToggleId,
-} from './qaap-workbench-account-menu';
-import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';
 
@@ -52,8 +45,6 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onClose(): void;
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
-    getViewMode?(): MobileViewToggleId;
-    onViewModeChange?(id: MobileViewToggleId): void;
     onSearch?: () => void;
     onStartNewProject?: () => void;
     isEmbedded?: () => boolean;
@@ -66,9 +57,6 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     rememberSessionListFingerprint?(listHost: HTMLElement): void;
     /** Bind pointer guard on the list host once (prevents click loss during refresh). */
     onSessionListHostReady?(listHost: HTMLElement): void;
-    getAppearanceMode?(): QaapAppearanceMode;
-    setAppearanceMode?(mode: QaapAppearanceMode): void;
-    onAppearanceModeChanged?(listener: (mode: QaapAppearanceMode) => void): Disposable;
 }
 
 /**
@@ -86,8 +74,6 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly panel: HTMLElement;
     protected readonly leftEdgeZone: HTMLElement;
     protected readonly closeBtn: HTMLButtonElement;
-    protected readonly viewModeSwitchHost: HTMLElement;
-    protected readonly viewModeSwitch: QaapSegmentedFieldController<MobileViewToggleId>;
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly accountLabel: HTMLSpanElement;
@@ -98,8 +84,6 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly resizeHandle: HTMLElement;
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
-    protected appearanceModeDispose: Disposable = Disposable.NULL;
-    protected appearanceModeSwitch: QaapAppearanceModeSwitchController | undefined;
     protected refreshListRaf = 0;
     protected refreshDeferTimer = 0;
     protected shellResizeRaf = 0;
@@ -129,13 +113,6 @@ export class MobileWorkHubSessionsSidebar {
         brand.className = 'theia-mobile-work-hub-sessions-sidebar-brand';
         brand.textContent = FrontendApplicationConfigProvider.get().applicationName?.trim()
             || nls.localize('qaap/mobileProjects/title', 'Work Hub');
-        this.viewModeSwitchHost = document.createElement('div');
-        this.viewModeSwitchHost.className = 'theia-mobile-work-hub-sessions-sidebar-view-switch';
-        this.viewModeSwitch = createQaapViewModeSwitch({
-            activeId: this.delegate.getViewMode?.() ?? 'agent',
-            onSelect: id => this.delegate.onViewModeChange?.(id),
-        });
-        this.viewModeSwitchHost.append(this.viewModeSwitch.root);
         this.closeBtn = document.createElement('button');
         this.closeBtn.type = 'button';
         this.closeBtn.className = 'theia-mobile-work-hub-sessions-sidebar-close codicon codicon-chevron-left';
@@ -149,8 +126,7 @@ export class MobileWorkHubSessionsSidebar {
             }
             this.hide();
         });
-        head.append(brand, this.viewModeSwitchHost, this.closeBtn);
-        this.syncViewModeSwitch();
+        head.append(brand, this.closeBtn);
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
@@ -170,7 +146,6 @@ export class MobileWorkHubSessionsSidebar {
             this.delegate.onAccountMenu?.(this.accountBtn);
         });
         footer.append(this.accountBtn);
-        this.mountAppearanceModeSwitch(footer);
         this.updateAccountAvatar();
         this.loadDeployedBuildSha();
 
@@ -240,7 +215,6 @@ export class MobileWorkHubSessionsSidebar {
      */
     syncEmbeddedState(embedded: boolean): void {
         this.root.classList.toggle('theia-mod-embedded', embedded);
-        this.syncViewModeSwitch();
         if (!this.visible) {
             return;
         }
@@ -257,7 +231,6 @@ export class MobileWorkHubSessionsSidebar {
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
         this.syncEmbeddedState(this.delegate.isEmbedded?.() === true);
-        this.syncViewModeSwitch();
         void this.root.offsetWidth;
         this.root.classList.add('theia-mod-visible');
         document.addEventListener('keydown', this.onKeyDown, true);
@@ -275,20 +248,9 @@ export class MobileWorkHubSessionsSidebar {
         this.syncAccountLabel();
     }
 
-    protected syncViewModeSwitch(): void {
-        const desktop = !matchesMobileNarrowViewport()
-            && !document.body.classList.contains('theia-mobile-mod-desktop-ide');
-        this.viewModeSwitchHost.hidden = !desktop;
-        this.viewModeSwitchHost.style.display = desktop ? '' : 'none';
-        this.viewModeSwitchHost.setAttribute('aria-hidden', desktop ? 'false' : 'true');
-        if (desktop) {
-            this.viewModeSwitch.setValue(this.delegate.getViewMode?.() ?? 'agent');
-        }
-    }
-
     /**
      * Account label: `Name` or `Name (shortSha)` when a deployed build is known.
-     * The SHA stays muted inside the account button so the footer theme switch keeps the right edge.
+     * The SHA stays muted inside the account button.
      */
     protected syncAccountLabel(): void {
         const name = this.accountBtn.title.trim()
@@ -307,21 +269,6 @@ export class MobileWorkHubSessionsSidebar {
         buildEl.textContent = `(${build})`;
         buildEl.title = nls.localize('qaap/sessionsSidebar/deployedBuild', 'Deployed build {0}', build);
         this.accountLabel.append(buildEl);
-    }
-
-    protected mountAppearanceModeSwitch(footer: HTMLElement): void {
-        if (!this.delegate.getAppearanceMode || !this.delegate.setAppearanceMode) {
-            return;
-        }
-        this.appearanceModeDispose.dispose();
-        this.appearanceModeSwitch = createQaapAppearanceModeSwitch({
-            value: this.delegate.getAppearanceMode(),
-            onChange: mode => this.delegate.setAppearanceMode?.(mode),
-        });
-        footer.append(this.appearanceModeSwitch.root);
-        this.appearanceModeDispose = this.delegate.onAppearanceModeChanged?.(mode => {
-            this.appearanceModeSwitch?.setValue(mode);
-        }) ?? Disposable.NULL;
     }
 
     /**
