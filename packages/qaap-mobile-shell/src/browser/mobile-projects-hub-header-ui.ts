@@ -16,8 +16,10 @@ import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcri
 
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;
+    headerProjectCluster: HTMLElement;
     headerProjectBtn: HTMLButtonElement;
     headerProjectLabelEl: HTMLSpanElement;
+    headerConversationsBtn: HTMLButtonElement;
     headerNewChatBtn: HTMLButtonElement;
     headerOverflowMenuBtn: HTMLButtonElement;
     headerBackBtn: HTMLButtonElement;
@@ -163,11 +165,11 @@ export class MobileProjectsHubHeaderUi {
         const sectionTitle = this.resolveHeaderProjectSectionTitle(project);
         const showProject = showSessionsMenu && !!project && sectionTitle.length > 0;
         const showConversationSeparator = showProject && this.headerProjectShowsConversationTitle();
-        this.host.headerProjectBtn.hidden = !showProject;
-        this.host.headerProjectBtn.setAttribute('aria-hidden', showProject ? 'false' : 'true');
-        this.host.headerProjectBtn.classList.toggle('theia-mod-conversation-title', showConversationSeparator);
+        this.host.headerProjectCluster.hidden = !showProject;
+        this.host.headerProjectCluster.setAttribute('aria-hidden', showProject ? 'false' : 'true');
+        this.host.headerProjectCluster.classList.toggle('theia-mod-conversation-title', showConversationSeparator);
         this.host.headerProjectLabelEl.textContent = sectionTitle;
-        const separator = this.host.headerProjectBtn.querySelector('.theia-mobile-projects-header-project-separator');
+        const separator = this.host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
         if (separator instanceof HTMLElement) {
             separator.hidden = !showConversationSeparator;
         }
@@ -177,6 +179,9 @@ export class MobileProjectsHubHeaderUi {
         const aria = nls.localize('qaap/composerWorkspace/projectAria', 'Project: {0}', project.name);
         this.host.headerProjectBtn.title = aria;
         this.host.headerProjectBtn.setAttribute('aria-label', aria);
+        const conversationsAria = nls.localize('qaap/sessionsSidebar/open', 'Open session history');
+        this.host.headerConversationsBtn.title = conversationsAria;
+        this.host.headerConversationsBtn.setAttribute('aria-label', conversationsAria);
     }
 
     resolveHeaderProject(): MobileProjectEntry | undefined {

@@ -335,8 +335,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly titleAttentionEl: HTMLSpanElement;
     protected readonly headerBackBtn: HTMLButtonElement;
     protected readonly sessionsMenuBtn: HTMLButtonElement;
+    protected readonly headerProjectCluster: HTMLElement;
     protected readonly headerProjectBtn: HTMLButtonElement;
     protected readonly headerProjectLabelEl: HTMLSpanElement;
+    protected readonly headerConversationsBtn: HTMLButtonElement;
     protected readonly headerNewChatBtn: HTMLButtonElement;
     protected readonly headerOverflowMenuBtn: HTMLButtonElement;
     protected readonly newFabBtn: HTMLButtonElement;

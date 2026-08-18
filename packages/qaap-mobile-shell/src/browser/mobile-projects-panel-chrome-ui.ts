@@ -20,8 +20,10 @@ export interface MobileProjectsPanelChromeHost {
     titleRow: HTMLElement;
     headerBackBtn: HTMLButtonElement;
     sessionsMenuBtn: HTMLButtonElement;
+    headerProjectCluster: HTMLElement;
     headerProjectBtn: HTMLButtonElement;
     headerProjectLabelEl: HTMLSpanElement;
+    headerConversationsBtn: HTMLButtonElement;
     headerNewChatBtn: HTMLButtonElement;
     headerOverflowMenuBtn: HTMLButtonElement;
     titleEl: HTMLHeadingElement;
@@ -65,25 +67,44 @@ export interface MobileProjectsPanelChromeHost {
     hubView: import('./mobile-projects-types').MobileProjectsHubView;
 }
 
-/** Folder + optional `|` + truncated name + chevron for the Work Hub header project switcher. */
+/**
+ * Work Hub header project cluster:
+ * `[folder][project chevron] [|] [title][conversations chevron]`.
+ * Two sibling buttons so the project sheet and sessions sidebar stay independent.
+ */
 export function mountHeaderProjectButtonContents(
-    button: HTMLButtonElement,
+    cluster: HTMLElement,
+    switcher: HTMLButtonElement,
+    conversations: HTMLButtonElement,
     labelEl: HTMLSpanElement,
-): { readonly folder: HTMLSpanElement; readonly separator: HTMLSpanElement; readonly chevron: HTMLSpanElement } {
+): {
+    readonly folder: HTMLSpanElement;
+    readonly separator: HTMLSpanElement;
+    readonly projectChevron: HTMLSpanElement;
+    readonly conversationsChevron: HTMLSpanElement;
+} {
     const folder = document.createElement('span');
     folder.className = 'theia-mobile-projects-header-project-folder codicon codicon-folder';
     folder.setAttribute('aria-hidden', 'true');
+    const projectChevron = document.createElement('span');
+    projectChevron.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
+    projectChevron.setAttribute('aria-hidden', 'true');
+    switcher.append(folder, projectChevron);
+
     const separator = document.createElement('span');
     separator.className = 'theia-mobile-projects-header-project-separator';
     separator.setAttribute('aria-hidden', 'true');
     separator.hidden = true;
     separator.textContent = '|';
+
     labelEl.className = 'theia-mobile-projects-header-project-label';
-    const chevron = document.createElement('span');
-    chevron.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
-    chevron.setAttribute('aria-hidden', 'true');
-    button.append(folder, separator, labelEl, chevron);
-    return { folder, separator, chevron };
+    const conversationsChevron = document.createElement('span');
+    conversationsChevron.className = 'theia-mobile-projects-header-project-icon theia-mobile-projects-header-conversations-icon codicon codicon-chevron-down';
+    conversationsChevron.setAttribute('aria-hidden', 'true');
+    conversations.append(labelEl, conversationsChevron);
+
+    cluster.append(switcher, separator, conversations);
+    return { folder, separator, projectChevron, conversationsChevron };
 }
 
 export class MobileProjectsPanelChromeUi {
@@ -126,20 +147,38 @@ export class MobileProjectsPanelChromeUi {
             ev.stopPropagation();
             this.host.openWorkHubSessionsSidebar();
         });
+        this.host.headerProjectCluster = document.createElement('div');
+        this.host.headerProjectCluster.className = 'theia-mobile-projects-header-project';
+        this.host.headerProjectCluster.hidden = true;
+        this.host.headerProjectCluster.setAttribute('aria-hidden', 'true');
         this.host.headerProjectBtn = document.createElement('button');
         this.host.headerProjectBtn.type = 'button';
-        this.host.headerProjectBtn.className = 'theia-mobile-projects-header-project';
-        this.host.headerProjectBtn.hidden = true;
-        this.host.headerProjectBtn.setAttribute('aria-hidden', 'true');
+        this.host.headerProjectBtn.className = 'theia-mobile-projects-header-project-switcher';
         this.host.headerProjectBtn.setAttribute('aria-haspopup', 'dialog');
         this.host.headerProjectBtn.title = nls.localize('qaap/mobileProjects/headerProject', 'Switch project');
         this.host.headerProjectBtn.setAttribute('aria-label', this.host.headerProjectBtn.title);
+        this.host.headerConversationsBtn = document.createElement('button');
+        this.host.headerConversationsBtn.type = 'button';
+        this.host.headerConversationsBtn.className = 'theia-mobile-projects-header-conversations';
+        this.host.headerConversationsBtn.setAttribute('aria-haspopup', 'dialog');
+        this.host.headerConversationsBtn.title = nls.localize('qaap/sessionsSidebar/open', 'Open session history');
+        this.host.headerConversationsBtn.setAttribute('aria-label', this.host.headerConversationsBtn.title);
         this.host.headerProjectLabelEl = document.createElement('span');
-        mountHeaderProjectButtonContents(this.host.headerProjectBtn, this.host.headerProjectLabelEl);
+        mountHeaderProjectButtonContents(
+            this.host.headerProjectCluster,
+            this.host.headerProjectBtn,
+            this.host.headerConversationsBtn,
+            this.host.headerProjectLabelEl,
+        );
         this.host.headerProjectBtn.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
             this.host.onHeaderProjectClick(this.host.headerProjectBtn);
+        });
+        this.host.headerConversationsBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            this.host.openWorkHubSessionsSidebar();
         });
         this.host.titleEl = document.createElement('h1');
         this.host.titleEl.className = 'theia-mobile-projects-title';
@@ -166,7 +205,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.subtitleEl.className = this.host.homeMode ? 'theia-mobile-projects-subtitle' : 'theia-mobile-projects-meta';
         this.host.titleRow.append(
             this.host.sessionsMenuBtn,
-            this.host.headerProjectBtn,
+            this.host.headerProjectCluster,
             this.host.headerBackBtn,
             this.host.titleEl,
             this.host.titleAttentionEl,
