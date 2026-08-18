@@ -580,11 +580,6 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     margin-left: auto;
   }
 
-  .theia-workbench-history-nav-group .theia-workbench-dashboard-nav-btn.theia-mod-toggled {
-    color: var(--theia-focusBorder);
-    background: color-mix(in srgb, var(--theia-focusBorder) 14%, transparent);
-  }
-
   .theia-workbench-history-nav-group .theia-workbench-history-nav-btn {
     align-self: center;
     width: clamp(36px, var(--theia-private-menubar-height, 40px), 100%);
@@ -16666,7 +16661,7 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
   pointer-events: auto !important;
 }
 
-/* Workbench "Back to Work Hub" must win hit-testing over the full-screen transcript header (QA-007). */
+/* Workbench history nav must win hit-testing over the full-screen transcript header (QA-007). */
 body.theia-mobile-mod-desktop-ide:has(.theia-mobile-agent-transcript-root.theia-mod-visible) #theia-top-panel {
   position: relative;
   z-index: 20;

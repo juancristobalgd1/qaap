@@ -750,7 +750,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return prepareDesktopIdeWorkspaceFromHubExtracted(this, selectedProjectId);
     }
 
-    /** Top-bar «Back to Work Hub» from mobile desktop-IDE mode — restore the Agents execution shell. */
+    /** IDE | Agents switch from classic IDE — restore the Agents execution shell. */
     protected returnToAgentsFromDesktopIde(): void {
         this.ideFallback?.returnToAgentsFromDesktopIde();
     }

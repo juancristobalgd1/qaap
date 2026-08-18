@@ -99,7 +99,7 @@ export class MobileShellIdeFallbackController {
         });
     }
 
-    /** Top-bar «Back to Work Hub» from mobile desktop-IDE mode — restore the Agents execution shell. */
+    /** IDE | Agents switch from classic IDE — restore the Agents execution shell. */
     returnToAgentsFromDesktopIde(): void {
         this.host.cancelAgentsBootstrap();
         clearPreferDesktopIde();

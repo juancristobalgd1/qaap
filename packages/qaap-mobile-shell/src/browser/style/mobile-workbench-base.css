@@ -590,11 +590,6 @@ body.theia-mod-mobile-ai-chat-fullwidth #theia-right-content-panel .theia-sidepa
     margin-left: auto;
   }
 
-  .theia-workbench-history-nav-group .theia-workbench-dashboard-nav-btn.theia-mod-toggled {
-    color: var(--theia-focusBorder);
-    background: color-mix(in srgb, var(--theia-focusBorder) 14%, transparent);
-  }
-
   .theia-workbench-history-nav-group .theia-workbench-history-nav-btn {
     align-self: center;
     width: clamp(36px, var(--theia-private-menubar-height, 40px), 100%);
