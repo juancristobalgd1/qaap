@@ -6,6 +6,7 @@
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
 import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './mobile-projects-hub-header-ui';
+import { mountHeaderProjectButtonContents } from './mobile-projects-panel-chrome-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 describe('MobileProjectsHubHeaderUi', () => {
@@ -44,7 +45,7 @@ describe('MobileProjectsHubHeaderUi', () => {
         const activeTab = options?.activeTab ?? 'messages';
         const headerProjectBtn = document.createElement('button');
         const headerProjectLabelEl = document.createElement('span');
-        headerProjectBtn.append(headerProjectLabelEl);
+        mountHeaderProjectButtonContents(headerProjectBtn, headerProjectLabelEl);
         return {
             sessionsMenuBtn: document.createElement('button'),
             headerProjectBtn,
@@ -256,6 +257,8 @@ describe('MobileProjectsHubHeaderUi', () => {
 
             expect(host.headerProjectBtn.hidden).to.equal(false);
             expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
+            expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
+            expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
         });
 
         it('keeps titles visible on non-Agents surfaces', () => {

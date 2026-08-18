@@ -65,6 +65,22 @@ export interface MobileProjectsPanelChromeHost {
     hubView: import('./mobile-projects-types').MobileProjectsHubView;
 }
 
+/** Folder + truncated name + chevron for the Work Hub header project switcher. */
+export function mountHeaderProjectButtonContents(
+    button: HTMLButtonElement,
+    labelEl: HTMLSpanElement,
+): { readonly folder: HTMLSpanElement; readonly chevron: HTMLSpanElement } {
+    const folder = document.createElement('span');
+    folder.className = 'theia-mobile-projects-header-project-folder codicon codicon-folder';
+    folder.setAttribute('aria-hidden', 'true');
+    labelEl.className = 'theia-mobile-projects-header-project-label';
+    const chevron = document.createElement('span');
+    chevron.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
+    chevron.setAttribute('aria-hidden', 'true');
+    button.append(folder, labelEl, chevron);
+    return { folder, chevron };
+}
+
 export class MobileProjectsPanelChromeUi {
     constructor(protected readonly host: MobileProjectsPanelChromeHost) { }
 
@@ -113,12 +129,8 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerProjectBtn.setAttribute('aria-haspopup', 'dialog');
         this.host.headerProjectBtn.title = nls.localize('qaap/mobileProjects/headerProject', 'Switch project');
         this.host.headerProjectBtn.setAttribute('aria-label', this.host.headerProjectBtn.title);
-        const headerProjectIcon = document.createElement('span');
-        headerProjectIcon.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
-        headerProjectIcon.setAttribute('aria-hidden', 'true');
         this.host.headerProjectLabelEl = document.createElement('span');
-        this.host.headerProjectLabelEl.className = 'theia-mobile-projects-header-project-label';
-        this.host.headerProjectBtn.append(this.host.headerProjectLabelEl, headerProjectIcon);
+        mountHeaderProjectButtonContents(this.host.headerProjectBtn, this.host.headerProjectLabelEl);
         this.host.headerProjectBtn.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
