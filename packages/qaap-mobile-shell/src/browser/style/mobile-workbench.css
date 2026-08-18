@@ -2490,11 +2490,13 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
 }
 
 .theia-mobile-projects-header-execution-cluster {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
   min-width: 0;
+  margin-left: auto;
 }
 
 .theia-mobile-projects-header-preview-run {
@@ -11971,9 +11973,10 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 
 /* Agents hub shell — keep surface picker on the title row; title ellipsizes instead of clipping tabs. */
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster {
-  flex: 0 0 auto;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  flex-shrink: 1;
   gap: 0;
+  margin-left: auto;
 }
 
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-tabs {
@@ -11994,6 +11997,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   align-self: center;
   position: relative;
   z-index: 3;
+  margin-left: auto;
 }
 
 .theia-mobile-projects.theia-mod-project-detail .theia-mobile-projects-header-main>.theia-mobile-projects-header-execution-cluster>.theia-mobile-projects-header-execution-tabs,

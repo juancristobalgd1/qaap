@@ -115,9 +115,20 @@
   max-width: calc(50% - 70px);
 }
 
+.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
+  margin-left: auto;
+  max-width: calc(50% - 70px);
+  justify-content: flex-end;
+}
+
 @media (max-width: 767px) {
   .theia-mobile-projects-header-ide-agents-switch {
     display: none !important;
+  }
+
+  .theia-mobile-projects-header-execution-cluster {
+    margin-left: auto;
+    max-width: none;
   }
 }
 
@@ -156,11 +167,13 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-projects-header-ide-agents-switc
 }
 
 .theia-mobile-projects-header-execution-cluster {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0;
   min-width: 0;
+  margin-left: auto;
 }
 
 /*
