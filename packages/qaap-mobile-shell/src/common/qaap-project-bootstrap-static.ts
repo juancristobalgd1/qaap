@@ -35,7 +35,43 @@ export const STATIC_ROOT_CANDIDATE_DIRS: readonly string[] = [
     'src',
     'app',
     'docs',
+    'html',
+    'static',
+    'pages',
+    'web',
+    'frontend',
+    'landing',
+    'client',
 ];
+
+/** Directories skipped when scanning first-level folders for a plain `index.html`. */
+export const STATIC_ROOT_SCAN_SKIP = new Set(['node_modules', '.git', '.qaap']);
+
+const STATIC_HTML_FILE_RE = /\.html?$/i;
+const STATIC_FILE_ENTRY_RE = /\.[a-zA-Z0-9]+$/;
+
+/** True when `name` is a servable HTML file (`index.html`, `home.htm`, …). */
+export function isStaticHtmlFileName(name: string | undefined): boolean {
+    const base = name?.trim().split(/[\\/]/).pop() ?? '';
+    return !!base && !base.startsWith('.') && STATIC_HTML_FILE_RE.test(base);
+}
+
+/**
+ * True when a shell command is the inline Qaap static server or a common one-shot static host
+ * (`python -m http.server`, `npx serve`). Used so HTML-only sessions auto-open Preview the same
+ * way Vite/`npm run dev` sessions do.
+ */
+export function isQaapStaticBootstrapCommand(command: string | undefined): boolean {
+    const text = command?.trim();
+    if (!text) {
+        return false;
+    }
+    return /\bQAAP_STATIC_(?:ROOT|ENTRY)\b/.test(text)
+        || /\bStatic dev server running at\b/.test(text)
+        || /\bpython3?\s+-m\s+http\.server\b/i.test(text)
+        || /\bnpx\s+(?:--yes\s+)?(?:serve|http-server|live-server)\b/i.test(text)
+        || /\b(?:http-server|live-server)\b/i.test(text);
+}
 
 /** No-op install command for static sites (there is nothing to install). */
 export const STATIC_INSTALL_COMMAND = 'echo "Static site: no dependencies to install."';
@@ -52,6 +88,7 @@ export const STATIC_SERVER_SCRIPT = [
     'const entryRaw=process.env.QAAP_STATIC_ENTRY||"/";',
     'const entry=entryRaw.charAt(0)==="/" ? entryRaw : "/"+entryRaw;',
     'const entryDir=entry.replace(/\\/+$/,"")||"";',
+    'const entryIsFile=/\\.[A-Za-z0-9]+$/.test(entryDir);',
     'const stripSeg=entryDir.split("/").filter(Boolean)[0];',
     'const port=Number(process.env.PORT)||8080;',
     'const T={".html":"text/html",".htm":"text/html",".js":"text/javascript",".mjs":"text/javascript",',
@@ -62,7 +99,7 @@ export const STATIC_SERVER_SCRIPT = [
     'const send=(res,code,type,body)=>{res.writeHead(code,{"content-type":type});res.end(body);};',
     'http.createServer((req,res)=>{',
     'const u=decodeURIComponent((req.url||"/").split("?")[0]);',
-    'if(entryDir && (u==="/"||u==="/index.html")){res.writeHead(302,{Location:entryDir+"/"});res.end();return;}',
+    'if(entryDir && (u==="/"||u==="/index.html")){res.writeHead(302,{Location:entryIsFile?entryDir:entryDir+"/"});res.end();return;}',
     'const alts=[u];',
     'if(entryDir && (u==="/"||u==="/index.html")){alts.push(entryDir+"/",entryDir+"/index.html");}',
     'if(stripSeg && u.indexOf("/"+stripSeg+"/")===0){alts.push(u.slice(stripSeg.length+1));}',
@@ -101,6 +138,9 @@ export function staticEntryPathFromDevCommand(devCommand: string | undefined): s
     if (!entry || entry === '/') {
         return undefined;
     }
+    if (STATIC_FILE_ENTRY_RE.test(entry)) {
+        return entry;
+    }
     return entry.endsWith('/') ? entry : `${entry}/`;
 }
 
@@ -130,13 +170,16 @@ export function nestedStaticUrlFallbacks(urlPath: string, entryPath: string): st
  * Builds the shell command that serves `relDir` (relative to the workspace root) over HTTP.
  * The port is injected by the bootstrap port wrapper via the `PORT` env var.
  */
-export function buildStaticServeCommand(relDir: string): string {
+export function buildStaticServeCommand(relDir: string, entryFile?: string): string {
     const raw = relDir && relDir.length > 0 ? relDir : '.';
     const nested = shouldServeNestedStaticFromWorkspaceRoot(raw);
     const dir = nested ? '.' : raw;
-    const entry = nested
-        ? `/${raw.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')}/`
-        : '/';
+    const fileEntry = entryFile?.trim().replace(/\\/g, '/').replace(/^\/+/, '');
+    const entry = fileEntry
+        ? `/${fileEntry}`
+        : nested
+            ? `/${raw.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')}/`
+            : '/';
     const escapedDir = dir.replace(/"/g, '\\"');
     const escapedEntry = entry.replace(/"/g, '\\"');
     return `QAAP_STATIC_ROOT="${escapedDir}" QAAP_STATIC_ENTRY="${escapedEntry}" node -e '${STATIC_SERVER_SCRIPT}'`;

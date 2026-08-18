@@ -52,27 +52,32 @@ class MockFileService {
         const parentKey = uri.toString().replace(/\/?$/, '/');
         const children: FileStat[] = [];
         const seen = new Set<string>();
-        for (const dir of this.directories) {
-            if (!dir.startsWith(parentKey) || dir.slice(0, -1) === parentKey.slice(0, -1)) {
-                continue;
-            }
-            const rel = dir.slice(parentKey.length);
-            if (!rel || rel.includes('/')) {
-                continue;
-            }
-            if (seen.has(rel)) {
-                continue;
+        const pushChild = (rel: string, isDirectory: boolean): void => {
+            if (!rel || rel.includes('/') || seen.has(rel)) {
+                return;
             }
             seen.add(rel);
             children.push({
                 resource: new URI(`${parentKey}${rel}`),
                 name: rel,
-                isDirectory: true,
-                isFile: false,
+                isDirectory,
+                isFile: !isDirectory,
                 isSymbolicLink: false,
                 isReadonly: false,
                 size: 0,
             });
+        };
+        for (const dir of this.directories) {
+            if (!dir.startsWith(parentKey) || dir.slice(0, -1) === parentKey.slice(0, -1)) {
+                continue;
+            }
+            pushChild(dir.slice(parentKey.length), true);
+        }
+        for (const file of this.files.keys()) {
+            if (!file.startsWith(parentKey)) {
+                continue;
+            }
+            pushChild(file.slice(parentKey.length), false);
         }
         return {
             resource: uri,
@@ -299,6 +304,57 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
 
         const descriptor = await detector.detect(URI.fromFilePath('/ws'));
         expect(descriptor!.kind).to.equal('static');
+    });
+
+    it('serves a hand-written HTML site in an arbitrary first-level folder', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/campaign');
+        mock.addFile('/ws/campaign/index.html', '<!doctype html><title>Campaign</title>');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('static');
+        expect(descriptor!.expectedPort).to.equal(8080);
+        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ROOT="campaign"');
+        expect(descriptor!.devCommandLabel).to.include('campaign/index.html');
+    });
+
+    it('serves a lone HTML file at the workspace root when index.html is missing', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/game.html', '<!doctype html><title>Snake</title>');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('static');
+        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ROOT="."');
+        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ENTRY="/game.html"');
+        expect(descriptor!.devCommandLabel).to.include('game.html');
+    });
+
+    it('classifies a seeded static package.json as a static preview on :8080', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'landing',
+            scripts: {
+                dev: 'QAAP_STATIC_ROOT="." QAAP_STATIC_ENTRY="/" node -e "http.createServer()"',
+            },
+        }));
+        mock.addFile('/ws/index.html', '<!doctype html><title>Landing</title>');
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('static');
+        expect(descriptor!.expectedPort).to.equal(8080);
+        expect(descriptor!.devCommand).to.match(/npm run dev/);
     });
 
     it('lists scaffold candidates for diagnostics when nothing is selected yet', async () => {

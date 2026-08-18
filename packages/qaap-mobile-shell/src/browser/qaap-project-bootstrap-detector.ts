@@ -25,7 +25,10 @@ import {
     STATIC_INDEX_FILE,
     STATIC_INSTALL_COMMAND,
     STATIC_ROOT_CANDIDATE_DIRS,
+    STATIC_ROOT_SCAN_SKIP,
     buildStaticServeCommand,
+    isQaapStaticBootstrapCommand,
+    isStaticHtmlFileName,
     shouldServeNestedStaticFromWorkspaceRoot,
 } from './qaap-project-bootstrap-static';
 import { formatMissingBootstrapProjectHint } from '../common/qaap-project-bootstrap-scaffold-plan';
@@ -372,12 +375,15 @@ export class QaapProjectBootstrapDetector {
      * so the rest of the bootstrap pipeline (auto-run banner, AI tools, preview) works unchanged.
      */
     protected async detectStaticSite(rootUri: URI): Promise<QaapProjectDescriptor | undefined> {
-        const staticRootRel = await this.findStaticRoot(rootUri);
-        if (staticRootRel === undefined) {
+        const found = await this.findStaticSiteRoot(rootUri);
+        if (!found) {
             return undefined;
         }
-        const devCommand = buildStaticServeCommand(staticRootRel);
-        const label = staticRootRel === '.' ? 'index.html' : `${staticRootRel}/index.html`;
+        const { relDir, entryFile } = found;
+        const devCommand = buildStaticServeCommand(relDir, entryFile);
+        const label = entryFile
+            ? (relDir === '.' ? entryFile : `${relDir}/${entryFile}`)
+            : (relDir === '.' ? 'index.html' : `${relDir}/index.html`);
         return {
             rootUri,
             name: rootUri.path.base || 'static-site',
@@ -445,6 +451,8 @@ export class QaapProjectBootstrapDetector {
      *
      * Nested library demos (`docs/demo`) are preferred over a parent `docs/index.html` so we serve
      * the interactive demo from the workspace root instead of chrooting into a docs homepage.
+     * After conventional folders, any direct child with `index.html` is accepted (`landing/`,
+     * `frontend/`, …) so hand-written HTML is previewable without a `package.json`.
      */
     protected async findStaticRoot(rootUri: URI): Promise<string | undefined> {
         if (await this.fileService.exists(rootUri.resolve(STATIC_INDEX_FILE))) {
@@ -473,7 +481,71 @@ export class QaapProjectBootstrapDetector {
                 }
             }
         }
+        return this.findStaticRootInChildFolders(rootUri);
+    }
+
+    /**
+     * Locates a servable static site: an `index.html` folder, or a lone HTML file at the workspace
+     * root (`game.html`, `home.htm`) when no index exists.
+     */
+    protected async findStaticSiteRoot(rootUri: URI): Promise<{ relDir: string; entryFile?: string } | undefined> {
+        const relDir = await this.findStaticRoot(rootUri);
+        if (relDir !== undefined) {
+            return { relDir };
+        }
+        const entryFile = await this.findRootHtmlFile(rootUri);
+        if (!entryFile) {
+            return undefined;
+        }
+        return { relDir: '.', entryFile };
+    }
+
+    protected async findStaticRootInChildFolders(rootUri: URI): Promise<string | undefined> {
+        try {
+            const stat = await this.fileService.resolve(rootUri);
+            let scanned = 0;
+            for (const child of stat.children ?? []) {
+                if (!child.isDirectory || child.name.startsWith('.') || STATIC_ROOT_SCAN_SKIP.has(child.name)) {
+                    continue;
+                }
+                if (scanned >= MAX_SCAFFOLD_SUBFOLDER_APPS) {
+                    break;
+                }
+                scanned += 1;
+                if (await this.fileService.exists(child.resource.resolve(STATIC_INDEX_FILE))) {
+                    return child.name;
+                }
+            }
+        } catch {
+            return undefined;
+        }
         return undefined;
+    }
+
+    protected async findRootHtmlFile(rootUri: URI): Promise<string | undefined> {
+        try {
+            const stat = await this.fileService.resolve(rootUri);
+            const htmlFiles = (stat.children ?? [])
+                .filter(child => child.isFile && isStaticHtmlFileName(child.name))
+                .map(child => child.name)
+                .sort((left, right) => {
+                    const rank = (name: string): number => {
+                        const lower = name.toLowerCase();
+                        if (lower === 'index.html') {
+                            return 0;
+                        }
+                        if (lower === 'index.htm') {
+                            return 1;
+                        }
+                        return 2;
+                    };
+                    const byRank = rank(left) - rank(right);
+                    return byRank !== 0 ? byRank : left.localeCompare(right);
+                });
+            return htmlFiles[0];
+        } catch {
+            return undefined;
+        }
     }
 
     /**
@@ -992,6 +1064,9 @@ export class QaapProjectBootstrapDetector {
             if (pattern.test(scriptText)) {
                 return { kind, expectedPort: validExplicitPort ?? port };
             }
+        }
+        if (isQaapStaticBootstrapCommand(scriptText)) {
+            return { kind: 'static', expectedPort: validExplicitPort ?? QAAP_STATIC_DEV_PORT };
         }
         if (this.isJsonServerPackage(pkg, allDeps, scriptText)) {
             return { kind: 'node-generic', expectedPort: QAAP_THEIA_DEV_PORT };

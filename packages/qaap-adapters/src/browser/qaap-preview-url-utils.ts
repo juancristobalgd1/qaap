@@ -177,6 +177,9 @@ function normalizeNestedPreviewPath(nestedPath: string): string | undefined {
         return undefined;
     }
     const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+    if (/\.[a-zA-Z0-9]+$/.test(withSlash.replace(/\/+$/, ''))) {
+        return withSlash.replace(/\/+$/, '');
+    }
     return withSlash.endsWith('/') ? withSlash : `${withSlash}/`;
 }
 

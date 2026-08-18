@@ -59,6 +59,8 @@ describe('qaap-project-bootstrap-static', () => {
             expect(staticEntryPathFromDevCommand(cmd)).to.equal('/docs/demo/');
             expect(staticEntryPathFromDevCommand(buildStaticServeCommand('.'))).to.equal(undefined);
             expect(staticEntryPathFromDevCommand('npm run dev')).to.equal(undefined);
+            expect(staticEntryPathFromDevCommand(buildStaticServeCommand('.', 'game.html'))).to.equal('/game.html');
+            expect(buildStaticServeCommand('.', 'game.html')).to.include('entryIsFile');
             expect(nestedStaticUrlFallbacks('/docs/lib/marked.esm.js', '/docs/demo/')).to.deep.equal([
                 '/docs/lib/marked.esm.js',
                 '/lib/marked.esm.js',

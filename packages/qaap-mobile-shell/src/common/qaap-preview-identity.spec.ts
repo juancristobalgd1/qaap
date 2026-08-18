@@ -10,6 +10,7 @@ import {
     normalizeQaapPreviewProjectId,
     qaapPreviewProjectIdMatches,
     qaapPreviewFileUriMatchesProjectName,
+    claimedPreviewCoordinatesMatchProject,
     resolveQaapPreviewIdentity,
 } from './qaap-preview-identity';
 import {
@@ -78,6 +79,26 @@ describe('qaap-preview-identity', () => {
         expect(qaapPreviewFileUriMatchesProjectName(canonical, 'site')).to.equal(true);
         expect(qaapPreviewFileUriMatchesProjectName(canonical, 'other')).to.equal(false);
         expect(qaapPreviewFileUriMatchesProjectName('github:acme/site', 'site')).to.equal(false);
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: canonical,
+            projectId: `ws:${canonical}`,
+            projectName: 'Landing',
+        })).to.equal(true);
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: canonical,
+            projectId: 'other-project',
+            projectName: 'site',
+        })).to.equal(true);
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: canonical,
+            projectId: 'other-project',
+            projectName: 'Landing',
+        })).to.equal(false);
+        expect(claimedPreviewCoordinatesMatchProject({
+            probeProjectId: undefined,
+            projectId: canonical,
+            projectName: 'site',
+        })).to.equal(false);
     });
 
     it('builds and parses the identity-scoped proxy without exposing a port', () => {

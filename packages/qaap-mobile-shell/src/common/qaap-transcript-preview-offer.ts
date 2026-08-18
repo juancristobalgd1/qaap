@@ -5,6 +5,7 @@
 
 import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import { buildQaapDevPreviewUrl, parseQaapDevPreviewPort, resolveDevPreviewPublicOrigin } from './qaap-dev-preview';
+import { isQaapStaticBootstrapCommand } from './qaap-project-bootstrap-static';
 import { resolveQaapTranscriptTrace, resolveAgentMessageSegments } from './qaap-transcript-trace-model';
 
 const DEV_SERVER_COMMAND_RE = /\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\b(?:vite|next\s+dev|nuxt\s+dev|astro\s+dev|remix\s+dev)\b|\bnpx\s+vite\b|\bnpx\s+next\b/i;
@@ -113,7 +114,11 @@ export function findTranscriptPreviewPortHint(conv: QaapAgentConversationDTO): n
 }
 
 export function isLikelyDevServerShellCommand(command: string | undefined): boolean {
-    return !!command?.trim() && DEV_SERVER_COMMAND_RE.test(command);
+    const text = command?.trim();
+    if (!text) {
+        return false;
+    }
+    return DEV_SERVER_COMMAND_RE.test(text) || isQaapStaticBootstrapCommand(text);
 }
 
 export function isShellToolName(name: string | undefined): boolean {
