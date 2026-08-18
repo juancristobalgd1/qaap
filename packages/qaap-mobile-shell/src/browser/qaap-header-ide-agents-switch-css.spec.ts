@@ -49,5 +49,6 @@ describe('header IDE/Agents switch CSS', () => {
         expect(workHubCss).to.match(
             /\.theia-mobile-projects\.theia-mod-agents-hub-shell-active\s+\.theia-mobile-projects-header-execution-cluster\s*\{[^}]*margin-left:\s*auto/s,
         );
+        expect(projectsCss).to.include('.theia-mobile-projects-header-actions:not(:has(> :not([hidden])))');
     });
 });

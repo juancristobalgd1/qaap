@@ -358,6 +358,10 @@ body.theia-mobile-mod-desktop-ide .theia-mobile-projects-header-ide-agents-switc
   gap: 8px;
 }
 
+.theia-mobile-projects-header-actions:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
 .theia-mobile-projects-header-surface-picker {
   flex-shrink: 0;
 }
