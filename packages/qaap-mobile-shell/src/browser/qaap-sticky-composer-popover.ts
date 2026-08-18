@@ -36,7 +36,8 @@ export function isStickyComposerAnnotationPopoverAnchor(anchor?: HTMLElement): a
 /** Work Hub header project control — always open as a top-anchored popover. */
 export function isWorkHubHeaderProjectPopoverAnchor(anchor?: HTMLElement): anchor is HTMLElement {
     return anchor instanceof HTMLElement
-        && anchor.classList.contains('theia-mobile-projects-header-project');
+        && (anchor.classList.contains('theia-mobile-projects-header-project-switcher')
+            || anchor.classList.contains('theia-mobile-projects-header-project'));
 }
 
 /** Codex-style model capability control — always open as a small anchored popover. */

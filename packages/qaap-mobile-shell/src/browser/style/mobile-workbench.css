@@ -11685,7 +11685,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   z-index: 1;
 }
 
-/* Header project control: folder + truncated repo name (composer project sheet).
+/* Header project cluster: folder+chevron (project sheet) | title+chevron (sessions sidebar).
    Hug content width so short names don't leave a wide empty hover hit area;
    still shrink + ellipsis when the title row is tight. */
 .theia-mobile-projects-header-project {
@@ -11698,35 +11698,102 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   max-width: 100%;
   height: 32px;
   margin: 0;
-  padding: 0 2px 0 0;
+  padding: 0;
   border: none;
-  border-radius: 8px;
   background: transparent;
   color: var(--theia-foreground);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
 }
 
 .theia-mobile-projects-header-project[hidden] {
   display: none !important;
 }
 
-.theia-mobile-projects-header-project:hover,
-.theia-mobile-projects-header-project:focus-visible {
+.theia-mobile-projects-header-project-switcher,
+.theia-mobile-projects-header-conversations {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  margin: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.theia-mobile-projects-header-project-switcher {
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 0 4px 0 6px;
+}
+
+.theia-mobile-projects-header-conversations {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 8px;
+  padding: 0 4px 0 6px;
+}
+
+.theia-mobile-projects-header-project-switcher:hover,
+.theia-mobile-projects-header-project-switcher:focus-visible,
+.theia-mobile-projects-header-conversations:hover,
+.theia-mobile-projects-header-conversations:focus-visible {
   background: var(--theia-toolbar-hoverBackground);
   outline: none;
 }
 
-.theia-mobile-projects-header-project:active {
+.theia-mobile-projects-header-project-switcher:active,
+.theia-mobile-projects-header-conversations:active {
   background: color-mix(in srgb, var(--theia-toolbar-hoverBackground, rgba(127, 127, 127, 0.14)) 175%, transparent);
 }
 
+.theia-mobile-projects-header-project-folder,
 .theia-mobile-projects-header-project-icon {
   flex: 0 0 auto;
   font-size: 16px;
   line-height: 1;
   opacity: 0.92;
+}
+
+.theia-mobile-projects-header-project-icon {
+  font-size: 14px;
+  opacity: 0.72;
+}
+
+.theia-mobile-projects-header-project-separator {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  box-sizing: border-box;
+  width: auto !important;
+  min-width: 8px !important;
+  max-width: none !important;
+  height: 16px;
+  margin: 0;
+  padding: 0 1px;
+  overflow: visible !important;
+  border: none;
+  background: transparent;
+  color: var(--theia-foreground);
+  font-family: var(--theia-ui-font-family, sans-serif) !important;
+  font-size: 15px !important;
+  font-weight: 400;
+  line-height: 16px !important;
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+}
+
+.theia-mobile-projects-header-project-separator[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-projects-header-project.theia-mod-conversation-title {
+  gap: 8px;
 }
 
 .theia-mobile-projects-header-project-label {
@@ -11801,15 +11868,12 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
     max-width: 100%;
   }
 
-  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project.theia-mod-folder-switcher {
-    flex: 0 0 auto;
-    width: 32px;
-    min-width: 32px;
-    max-width: 32px;
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-conversations {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
-  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-label,
-  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-conversation {
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project-label {
     flex: 1 1 auto;
     min-width: 0;
   }

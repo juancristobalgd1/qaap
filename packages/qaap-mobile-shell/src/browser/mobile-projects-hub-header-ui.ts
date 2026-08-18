@@ -16,11 +16,10 @@ import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcri
 
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;
+    headerProjectCluster: HTMLElement;
     headerProjectBtn: HTMLButtonElement;
-    headerProjectIconEl: HTMLSpanElement;
     headerProjectLabelEl: HTMLSpanElement;
-    headerProjectSepEl: HTMLSpanElement;
-    headerProjectConversationEl: HTMLSpanElement;
+    headerConversationsBtn: HTMLButtonElement;
     headerNewChatBtn: HTMLButtonElement;
     headerOverflowMenuBtn: HTMLButtonElement;
     headerBackBtn: HTMLButtonElement;
@@ -167,23 +166,24 @@ export class MobileProjectsHubHeaderUi {
         const projectName = project?.name?.trim() ?? '';
         const sectionTitle = conversationTitle || projectName;
         const showProject = showSessionsMenu && !!project && sectionTitle.length > 0;
-        const showConversationCrumb = showProject && conversationTitle.length > 0;
-        this.host.headerProjectBtn.hidden = !showProject;
-        this.host.headerProjectBtn.setAttribute('aria-hidden', showProject ? 'false' : 'true');
-        this.host.headerProjectBtn.classList.toggle('theia-mod-folder-switcher', showConversationCrumb);
-        this.host.headerProjectIconEl.classList.toggle('codicon-folder', showConversationCrumb);
-        this.host.headerProjectIconEl.classList.toggle('codicon-chevron-down', !showConversationCrumb);
-        this.host.headerProjectLabelEl.textContent = showConversationCrumb ? '' : projectName;
-        this.host.headerProjectLabelEl.hidden = showConversationCrumb;
-        this.host.headerProjectSepEl.hidden = !showConversationCrumb;
-        this.host.headerProjectConversationEl.hidden = !showConversationCrumb;
-        this.host.headerProjectConversationEl.textContent = conversationTitle;
+        const showConversationSeparator = showProject && this.headerProjectShowsConversationTitle();
+        this.host.headerProjectCluster.hidden = !showProject;
+        this.host.headerProjectCluster.setAttribute('aria-hidden', showProject ? 'false' : 'true');
+        this.host.headerProjectCluster.classList.toggle('theia-mod-conversation-title', showConversationSeparator);
+        this.host.headerProjectLabelEl.textContent = sectionTitle;
+        const separator = this.host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
+        if (separator instanceof HTMLElement) {
+            separator.hidden = !showConversationSeparator;
+        }
         if (!showProject || !project) {
             return;
         }
         const aria = nls.localize('qaap/composerWorkspace/projectAria', 'Project: {0}', project.name);
         this.host.headerProjectBtn.title = aria;
         this.host.headerProjectBtn.setAttribute('aria-label', aria);
+        const conversationsAria = nls.localize('qaap/sessionsSidebar/open', 'Open session history');
+        this.host.headerConversationsBtn.title = conversationsAria;
+        this.host.headerConversationsBtn.setAttribute('aria-label', conversationsAria);
     }
 
     resolveHeaderProject(): MobileProjectEntry | undefined {
@@ -217,7 +217,15 @@ export class MobileProjectsHubHeaderUi {
      * otherwise the active project name.
      */
     resolveHeaderProjectSectionTitle(project: MobileProjectEntry | undefined): string {
-        return this.resolveHeaderProjectConversationTitle() || (project?.name?.trim() ?? '');
+        if (this.headerProjectShowsConversationTitle()) {
+            return this.host.transcriptOpenSummary?.title?.trim() ?? '';
+        }
+        return project?.name?.trim() ?? '';
+    }
+
+    /** Folder glyph stands for the project; `|` splits it from the open conversation title. */
+    headerProjectShowsConversationTitle(): boolean {
+        return !!(this.host.agentsHubInlineActive && this.host.transcriptOpenSummary?.title?.trim());
     }
 
     resolveHeaderNewChatVisible(): boolean {

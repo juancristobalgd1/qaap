@@ -6,6 +6,7 @@
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
 import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './mobile-projects-hub-header-ui';
+import { mountHeaderProjectButtonContents } from './mobile-projects-panel-chrome-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 describe('MobileProjectsHubHeaderUi', () => {
@@ -42,23 +43,19 @@ describe('MobileProjectsHubHeaderUi', () => {
     }): MobileProjectsHubHeaderHost {
         const shellProject = options?.shellProject;
         const activeTab = options?.activeTab ?? 'messages';
+        const headerProjectCluster = document.createElement('div');
         const headerProjectBtn = document.createElement('button');
-        const headerProjectIconEl = document.createElement('span');
-        headerProjectIconEl.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
+        const headerConversationsBtn = document.createElement('button');
         const headerProjectLabelEl = document.createElement('span');
-        headerProjectBtn.append(headerProjectLabelEl, headerProjectIconEl);
-        const headerProjectSepEl = document.createElement('span');
-        headerProjectSepEl.textContent = '/';
-        headerProjectSepEl.hidden = true;
-        const headerProjectConversationEl = document.createElement('span');
-        headerProjectConversationEl.hidden = true;
+        mountHeaderProjectButtonContents(
+            headerProjectCluster, headerProjectBtn, headerConversationsBtn, headerProjectLabelEl,
+        );
         return {
             sessionsMenuBtn: document.createElement('button'),
+            headerProjectCluster,
             headerProjectBtn,
-            headerProjectIconEl,
             headerProjectLabelEl,
-            headerProjectSepEl,
-            headerProjectConversationEl,
+            headerConversationsBtn,
             headerNewChatBtn: document.createElement('button'),
             headerOverflowMenuBtn: document.createElement('button'),
             headerBackBtn: document.createElement('button'),
@@ -248,15 +245,17 @@ describe('MobileProjectsHubHeaderUi', () => {
 
             new MobileProjectsHubHeaderUi(host).renderHeader();
 
-            expect(host.headerProjectBtn.hidden).to.equal(false);
-            expect(host.headerProjectBtn.classList.contains('theia-mod-folder-switcher')).to.equal(true);
-            expect(host.headerProjectIconEl.classList.contains('codicon-folder')).to.equal(true);
-            expect(host.headerProjectLabelEl.hidden).to.equal(true);
-            expect(host.headerProjectSepEl.hidden).to.equal(false);
-            expect(host.headerProjectSepEl.textContent).to.equal('/');
-            expect(host.headerProjectConversationEl.hidden).to.equal(false);
-            expect(host.headerProjectConversationEl.textContent).to.equal('Corrige aislamiento de pre');
+            expect(host.headerProjectCluster.hidden).to.equal(false);
+            expect(host.headerProjectLabelEl.textContent).to.equal('Corrige aislamiento de pre');
+            expect(host.headerProjectCluster.classList.contains('theia-mod-conversation-title')).to.equal(true);
+            const separator = host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
+            expect(separator).to.not.equal(null);
+            expect((separator as HTMLElement).hidden).to.equal(false);
+            expect(separator!.textContent).to.equal('|');
             expect(host.headerProjectBtn.getAttribute('aria-label')).to.contain('Mockup');
+            expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
+            expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
+            expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
         });
 
         it('shows the active project name in the header project control on Agents landing', () => {
@@ -270,13 +269,15 @@ describe('MobileProjectsHubHeaderUi', () => {
 
             new MobileProjectsHubHeaderUi(host).renderHeader();
 
-            expect(host.headerProjectBtn.hidden).to.equal(false);
-            expect(host.headerProjectBtn.classList.contains('theia-mod-folder-switcher')).to.equal(false);
-            expect(host.headerProjectIconEl.classList.contains('codicon-chevron-down')).to.equal(true);
-            expect(host.headerProjectLabelEl.hidden).to.equal(false);
+            expect(host.headerProjectCluster.hidden).to.equal(false);
             expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
-            expect(host.headerProjectSepEl.hidden).to.equal(true);
-            expect(host.headerProjectConversationEl.hidden).to.equal(true);
+            expect(host.headerProjectCluster.classList.contains('theia-mod-conversation-title')).to.equal(false);
+            expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
+            const landingSeparator = host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
+            expect(landingSeparator).to.not.equal(null);
+            expect((landingSeparator as HTMLElement).hidden).to.equal(true);
+            expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
+            expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
         });
 
         it('keeps titles visible on non-Agents surfaces', () => {

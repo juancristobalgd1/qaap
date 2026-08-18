@@ -48,8 +48,10 @@ describe('qaap-sticky-composer-popover', () => {
     });
 
     it('forces popover mode for Work Hub header project anchors on narrow viewports', () => {
-        const anchor = document.createElement('button');
-        anchor.className = 'theia-mobile-projects-header-project';
+        const cluster = document.createElement('button');
+        cluster.className = 'theia-mobile-projects-header-project';
+        const switcher = document.createElement('button');
+        switcher.className = 'theia-mobile-projects-header-project-switcher';
         const matchMedia = window.matchMedia;
         window.matchMedia = ((query: string) => ({
             matches: String(query).includes('max-width'),
@@ -62,7 +64,8 @@ describe('qaap-sticky-composer-popover', () => {
             dispatchEvent: () => false,
         })) as typeof window.matchMedia;
         expect(shouldUseStickyComposerPopover(document.createElement('button'))).to.equal(false);
-        expect(shouldUseStickyComposerPopover(anchor)).to.equal(true);
+        expect(shouldUseStickyComposerPopover(cluster)).to.equal(true);
+        expect(shouldUseStickyComposerPopover(switcher)).to.equal(true);
         window.matchMedia = matchMedia;
     });
 

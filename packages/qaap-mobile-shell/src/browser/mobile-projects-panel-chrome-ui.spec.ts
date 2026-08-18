@@ -9,6 +9,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import {
     MobileProjectsPanelChromeUi,
+    mountHeaderProjectButtonContents,
     type MobileProjectsPanelChromeHost,
 } from './mobile-projects-panel-chrome-ui';
 import type { MobileViewToggleId } from './qaap-workbench-account-menu';
@@ -115,18 +116,17 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
         chrome.dispose();
     });
 
-    it('mounts a hidden folder crumb next to the header project button', () => {
+    it('mounts the header project cluster with folder and conversations chevrons', () => {
         stubMatchMedia(true);
         const host = createHost();
         const chrome = new MobileProjectsPanelChromeUi(host);
         chrome.constructPanelShell();
-        expect(host.headerProjectIconEl.classList.contains('codicon-chevron-down')).to.equal(true);
-        expect(host.headerProjectSepEl.textContent).to.equal('/');
-        expect(host.headerProjectSepEl.hidden).to.equal(true);
-        expect(host.headerProjectConversationEl.hidden).to.equal(true);
-        expect(host.titleRow.contains(host.headerProjectBtn)).to.equal(true);
-        expect(host.titleRow.contains(host.headerProjectSepEl)).to.equal(true);
-        expect(host.titleRow.contains(host.headerProjectConversationEl)).to.equal(true);
+        expect(host.titleRow.contains(host.headerProjectCluster)).to.equal(true);
+        expect(host.headerProjectCluster.contains(host.headerProjectBtn)).to.equal(true);
+        expect(host.headerProjectCluster.contains(host.headerConversationsBtn)).to.equal(true);
+        expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
+        expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
+        expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
         let clicked = false;
         host.onHeaderProjectClick = () => { clicked = true; };
         host.headerProjectBtn.click();
@@ -144,5 +144,36 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
         ide!.click();
         expect(host.selectedView).to.equal('editor');
         chrome.dispose();
+    });
+});
+
+describe('mountHeaderProjectButtonContents', () => {
+
+    beforeEach(() => {
+        if (typeof document === 'undefined') {
+            enableJSDOM();
+        }
+    });
+
+    it('puts the project chevron beside the folder and a conversations chevron after the title', () => {
+        const cluster = document.createElement('div');
+        const switcher = document.createElement('button');
+        const conversations = document.createElement('button');
+        const label = document.createElement('span');
+        label.textContent = 'sample-files1';
+        const { folder, separator, projectChevron, conversationsChevron } = mountHeaderProjectButtonContents(
+            cluster, switcher, conversations, label,
+        );
+
+        expect(folder.classList.contains('codicon-folder')).to.equal(true);
+        expect(separator.textContent).to.equal('|');
+        expect(separator.hidden).to.equal(true);
+        expect(projectChevron.classList.contains('codicon-chevron-down')).to.equal(true);
+        expect(conversationsChevron.classList.contains('codicon-chevron-down')).to.equal(true);
+        expect(conversationsChevron.classList.contains('theia-mobile-projects-header-conversations-icon')).to.equal(true);
+        expect(Array.from(cluster.childNodes)).to.deep.equal([switcher, separator, conversations]);
+        expect(Array.from(switcher.childNodes)).to.deep.equal([folder, projectChevron]);
+        expect(Array.from(conversations.childNodes)).to.deep.equal([label, conversationsChevron]);
+        expect(label.className).to.equal('theia-mobile-projects-header-project-label');
     });
 });
