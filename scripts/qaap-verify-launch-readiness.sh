@@ -68,6 +68,14 @@ else
     ok "uid-per-user flag is ${CFG_UID_PER_USER}"
 fi
 
+for page in terms privacy; do
+    if curl -fsS --max-time 8 "${BASE}/legal/${page}.html" | grep -q '<h1>'; then
+        ok "GET /legal/${page}.html"
+    else
+        bad "GET /legal/${page}.html is missing or empty — login terms/privacy must resolve"
+    fi
+done
+
 if [[ -f "${ENV_FILE}" ]]; then
     if grep -E 'QAAP_GITHUB_CLIENT_ID=your-dev-oauth' "${ENV_FILE}" >/dev/null 2>&1; then
         bad "${ENV_FILE} still has the placeholder OAuth client id"

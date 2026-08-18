@@ -21,8 +21,14 @@ export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
     return HASHED_CHUNK_FILE_PATTERN.test(path.posix.basename(filePath.replace(/\\/g, '/')));
 }
 
+/** Directory of standalone Terms / Privacy HTML served at `/legal/*`. */
+export function resolveQaapLegalPagesDir(): string {
+    return path.resolve(__dirname, '../../resources/legal');
+}
+
 /**
- * Serves `lib/frontend` with long-term caching for hashed, content-addressed chunks.
+ * Serves `lib/frontend` with long-term caching for hashed, content-addressed chunks,
+ * and the packaged `/legal/*` Terms of Use and Privacy Notice (no bundle required).
  *
  * The generated `src-gen/backend/server.js` only binds its default static server when no
  * {@link BackendApplicationServer} is bound yet (`if (!container.isBound(...))`), so this binding
@@ -35,6 +41,14 @@ export function qaapIsImmutableHashedChunkPath(filePath: string): boolean {
 export class QaapFrontendStaticServer implements BackendApplicationServer {
 
     configure(app: express.Application): void {
+        const legalDir = resolveQaapLegalPagesDir();
+        app.use('/legal', express.static(legalDir, {
+            index: false,
+            setHeaders: res => {
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+            },
+        }));
         const frontendDir = path.join(BackendApplicationPath, 'lib', 'frontend');
         app.use(express.static(frontendDir, {
             setHeaders: (res, filePath) => this.setStaticHeaders(res, filePath, frontendDir),

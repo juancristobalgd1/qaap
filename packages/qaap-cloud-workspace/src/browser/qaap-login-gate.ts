@@ -67,7 +67,7 @@ export function presentQaapLoginGate(): void {
   </div>
   <p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>
   <footer class="qaap-login-footer">
-    By continuing you agree to the <a href="#" data-qaap-link="terms">terms</a> &amp; <a href="#" data-qaap-link="privacy">privacy</a>.
+    By continuing you agree to the <a href="/legal/terms.html">terms</a> &amp; <a href="/legal/privacy.html">privacy</a>.
     <br/>${escapeHtml(appName)} never reads your repos without permission.
   </footer>
 </div>`;
@@ -107,12 +107,6 @@ export function presentQaapLoginGate(): void {
         } else if (!event.shiftKey && document.activeElement === last) {
             event.preventDefault();
             first.focus();
-        }
-    });
-
-    host.addEventListener('click', event => {
-        if ((event.target as HTMLElement | null)?.closest('[data-qaap-link]')) {
-            event.preventDefault();
         }
     });
 

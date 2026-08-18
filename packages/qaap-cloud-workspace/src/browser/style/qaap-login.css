@@ -201,6 +201,12 @@ body.qaap-login-active .theia-preload {
     text-decoration: underline;
 }
 
+.qaap-login-footer a:focus-visible {
+    outline: 2px solid var(--qaap-login-link);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
 @keyframes qaap-login-pulse {
     0% {
         transform: scale(1);

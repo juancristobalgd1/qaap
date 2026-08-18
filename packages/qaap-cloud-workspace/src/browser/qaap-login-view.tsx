@@ -101,9 +101,9 @@ export const QaapLoginView: React.FC<QaapLoginViewProps> = ({ appName, loading, 
         <p className='qaap-login-status' role='status' aria-live='polite' aria-atomic={true}>{status ?? ''}</p>
 
         <footer className='qaap-login-footer'>
-            By continuing you agree to the <a href='#' onClick={e => e.preventDefault()}>terms</a>
+            By continuing you agree to the <a href='/legal/terms.html'>terms</a>
             {' '}&amp;{' '}
-            <a href='#' onClick={e => e.preventDefault()}>privacy</a>.
+            <a href='/legal/privacy.html'>privacy</a>.
             <br />
             {appName} never reads your repos without permission.
         </footer>

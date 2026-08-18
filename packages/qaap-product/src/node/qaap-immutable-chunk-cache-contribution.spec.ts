@@ -4,7 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { qaapIsImmutableHashedChunkPath } from './qaap-immutable-chunk-cache-contribution';
+import * as fs from 'fs';
+import * as path from 'path';
+import { qaapIsImmutableHashedChunkPath, resolveQaapLegalPagesDir } from './qaap-immutable-chunk-cache-contribution';
 
 describe('qaap-immutable-chunk-cache-contribution patterns', () => {
 
@@ -40,6 +42,14 @@ describe('qaap-immutable-chunk-cache-contribution patterns', () => {
         for (const sample of samples) {
             expect(qaapIsImmutableHashedChunkPath(sample), sample).to.equal(false);
         }
+    });
+
+    it('resolves packaged legal HTML from the qaap-product resources tree', () => {
+        const legalDir = resolveQaapLegalPagesDir();
+        expect(path.basename(legalDir)).to.equal('legal');
+        expect(fs.existsSync(path.join(legalDir, 'terms.html'))).to.equal(true);
+        expect(fs.existsSync(path.join(legalDir, 'privacy.html'))).to.equal(true);
+        expect(fs.existsSync(path.join(legalDir, 'legal.css'))).to.equal(true);
     });
 
 });

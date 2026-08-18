@@ -352,6 +352,7 @@
             '.qaap-login-status{min-height:1.45em;margin:10px 0 0;font-size:12px;line-height:1.45;text-align:center;color:var(--qaap-muted)}',
             '.qaap-login-footer{margin-top:20px;font-size:11.5px;line-height:1.5;text-align:center;color:var(--qaap-muted)}',
             '.qaap-login-footer a{color:var(--qaap-link);text-decoration:none}',
+            '.qaap-login-footer a:focus-visible{outline:2px solid var(--qaap-link);outline-offset:2px;border-radius:2px}',
             '@media(prefers-reduced-motion:reduce){.qaap-login-btn{transition:none}.qaap-login-btn:active{transform:none}.qaap-login-spinner{animation:none}}'
         ].join('');
         document.head.appendChild(style);
@@ -381,7 +382,7 @@
             '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span><span class="qaap-login-btn-label">Sign in with GitHub</span></button>' +
             '</div>' +
             '<p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>' +
-            '<footer class="qaap-login-footer">By continuing you agree to the terms &amp; privacy.</footer>' +
+            '<footer class="qaap-login-footer">By continuing you agree to the <a href="/legal/terms.html">terms</a> &amp; <a href="/legal/privacy.html">privacy</a>.</footer>' +
             '</div>';
 
         document.body.appendChild(host);

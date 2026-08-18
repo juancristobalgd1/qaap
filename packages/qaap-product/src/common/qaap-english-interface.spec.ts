@@ -21,6 +21,8 @@ describe('Qaap English interface bootstrap', () => {
         expect(bundleLoad).to.be.greaterThan(localeWrite);
         expect(gate).to.include("document.documentElement.setAttribute('lang', 'en')");
         expect(gate).to.include('Sign in with GitHub');
+        expect(gate).to.include('href="/legal/terms.html"');
+        expect(gate).to.include('href="/legal/privacy.html"');
         expect(gate).to.not.include('Iniciar con GitHub');
         expect(gate).to.not.include('Reintentar');
     });

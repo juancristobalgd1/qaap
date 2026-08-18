@@ -51,7 +51,8 @@
   },
   "files": [
     "lib",
-    "src"
+    "src",
+    "resources"
   ],
   "scripts": {
     "build": "theiaext build",
