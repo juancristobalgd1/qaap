@@ -80,6 +80,13 @@ describe('MobileProjectsHubHeaderUi', () => {
             composerHeaderUi: {
                 resolveStickyComposerProject: (projects: MobileProjectEntry[]) => projects[0],
             } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'],
+            conversationIndexUi: {
+                conversationsForProject: () => [],
+            },
+            cardMenuUi: {
+                buildConversationMenu: () => document.createElement('div'),
+                toggleCardMenu: () => undefined,
+            },
             hubQueryUi: {} as MobileProjectsHubHeaderHost['hubQueryUi'],
             projectNavigationUi: {} as MobileProjectsHubHeaderHost['projectNavigationUi'],
             transcriptHeaderUi: {} as MobileProjectsHubHeaderHost['transcriptHeaderUi'],
@@ -256,6 +263,8 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
             expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
             expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
+            expect(host.headerConversationsBtn.getAttribute('aria-label')).to.equal('Task options');
+            expect(host.headerConversationsBtn.getAttribute('aria-haspopup')).to.equal('menu');
         });
 
         it('shows the active project name in the header project control on Agents landing', () => {
@@ -278,6 +287,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect((landingSeparator as HTMLElement).hidden).to.equal(true);
             expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
             expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
+            expect(host.headerConversationsBtn.getAttribute('aria-label')).to.equal('Task options');
         });
 
         it('keeps titles visible on non-Agents surfaces', () => {
@@ -310,5 +320,77 @@ describe('MobileProjectsHubHeaderUi', () => {
             activeTab: 'terminal',
         }));
         expect(terminalUi.resolveHeaderOverflowMenuVisible()).to.equal(false);
+    });
+
+    describe('header conversation task menu', () => {
+        const summary = {
+            id: 'conv-1',
+            title: 'Find and fix a bug',
+            status: 'failed',
+        } as MobileProjectsHubHeaderHost['transcriptOpenSummary'];
+
+        it('targets the open conversation when an inline session is active', () => {
+            const p = project('mockup', 'Mockup');
+            const host = createHost({ agentsHubInlineActive: true, transcriptOpenProject: p });
+            host.transcriptOpenSummary = summary;
+            host.conversationIndexUi = {
+                conversationsForProject: () => [{ id: 'other' } as never],
+            };
+            const target = new MobileProjectsHubHeaderUi(host).resolveHeaderConversationMenuTarget();
+            expect(target?.project).to.equal(p);
+            expect(target?.summary).to.equal(summary);
+        });
+
+        it('targets the latest project conversation on Agents landing', () => {
+            const p = project('mockup', 'Mockup');
+            const host = createHost();
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.conversationIndexUi = {
+                conversationsForProject: () => [summary as never],
+            };
+            const target = new MobileProjectsHubHeaderUi(host).resolveHeaderConversationMenuTarget();
+            expect(target?.project.id).to.equal('mockup');
+            expect(target?.summary.id).to.equal('conv-1');
+        });
+
+        it('does not open a menu when the project has no conversations', () => {
+            const p = project('mockup', 'Mockup');
+            let toggled = 0;
+            const host = createHost();
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.cardMenuUi = {
+                buildConversationMenu: () => document.createElement('div'),
+                toggleCardMenu: () => { toggled += 1; },
+            };
+            new MobileProjectsHubHeaderUi(host).openHeaderConversationMenu(host.headerConversationsBtn);
+            expect(toggled).to.equal(0);
+        });
+
+        it('opens the sidebar conversation menu from the header chevron', () => {
+            const p = project('mockup', 'Mockup');
+            const menu = document.createElement('div');
+            let builtFor: { id: string } | undefined;
+            let toggledAnchor: HTMLButtonElement | undefined;
+            const host = createHost();
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.conversationIndexUi = {
+                conversationsForProject: () => [summary as never],
+            };
+            host.cardMenuUi = {
+                buildConversationMenu: (_project, next) => {
+                    builtFor = next;
+                    return menu;
+                },
+                toggleCardMenu: (_card, _menu, menuBtn) => {
+                    toggledAnchor = menuBtn;
+                },
+            };
+            new MobileProjectsHubHeaderUi(host).openHeaderConversationMenu(host.headerConversationsBtn);
+            expect(builtFor?.id).to.equal('conv-1');
+            expect(toggledAnchor).to.equal(host.headerConversationsBtn);
+        });
     });
 });
