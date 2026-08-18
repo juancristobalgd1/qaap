@@ -92,3 +92,9 @@ echo "[qaap-backup] wrote $ARCHIVE ($SIZE, 0600)"
 # Rotate: keep the newest $KEEP archives.
 ls -1t "$BACKUP_DIR"/qaap-*.tar.gz 2>/dev/null | tail -n "+$((KEEP + 1))" | xargs -r rm -f
 echo "[qaap-backup] retained $(ls -1 "$BACKUP_DIR"/qaap-*.tar.gz 2>/dev/null | wc -l | tr -d ' ') archive(s) (keep=$KEEP)"
+
+OFFSITE="${REPO_DIR}/scripts/qaap-vps-backup-offsite.sh"
+if [[ -f "$OFFSITE" ]]; then
+    export QAAP_BACKUP_ARCHIVE="$ARCHIVE"
+    bash "$OFFSITE"
+fi

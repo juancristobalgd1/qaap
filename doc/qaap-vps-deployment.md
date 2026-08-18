@@ -357,8 +357,17 @@ To restore a single user's repo or one JSON store, extract selectively with
 `tar xzf … -C / workspace/repos/users/<login>` etc.
 
 > **Local tars do not survive disk loss.** Pair them with the provider's snapshot feature (Hetzner
-> backups ≈ 20% of the server price) or sync `/var/backups/qaap` offsite (rclone/restic to any
-> object storage).
+> backups ≈ 20% of the server price) **or** configure an encrypted offsite copy. After each nightly
+> backup the host runs `scripts/qaap-vps-backup-offsite.sh`, which no-ops until you create
+> `/opt/qaap/.env.backup` with `QAAP_BACKUP_OFFSITE_CMD`. Encrypt the archive (`gpg` / `age`) and
+> copy **only** the ciphertext (rclone/restic). Never upload the plaintext `.tar.gz` — it contains
+> OAuth sessions and API keys.
+>
+> Example `/opt/qaap/.env.backup` (chmod 600):
+>
+> ```bash
+> QAAP_BACKUP_OFFSITE_CMD='gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file /root/.qaap-backup-passphrase --output "${QAAP_BACKUP_ARCHIVE}.gpg" "$QAAP_BACKUP_ARCHIVE" && rclone copy "${QAAP_BACKUP_ARCHIVE}.gpg" remote:qaap-backups && rm -f "${QAAP_BACKUP_ARCHIVE}.gpg"'
+> ```
 
 ## Related docs
 
