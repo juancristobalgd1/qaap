@@ -145,3 +145,30 @@ describe('MobileProjectsCardMenuUi.buildConversationMenu', () => {
         expect(priority?.querySelector('.codicon-star-empty')).to.equal(null);
     });
 });
+
+describe('MobileProjectsCardMenuUi.toggleCardMenu', () => {
+    it('closes when the same anchor is clicked with a new menu instance', () => {
+        window.requestAnimationFrame = ((callback: FrameRequestCallback): number => {
+            callback(0);
+            return 1;
+        }) as typeof window.requestAnimationFrame;
+        const root = document.createElement('div');
+        document.body.appendChild(root);
+        const host = {
+            root,
+            scroll: root,
+            sessionsSidebar: undefined,
+        } as unknown as MobileProjectsCardMenuHost;
+        const ui = new MobileProjectsCardMenuUi(host);
+        const card = document.createElement('div');
+        const btn = document.createElement('button');
+        root.append(card, btn);
+        const menu1 = document.createElement('div');
+        ui.toggleCardMenu(card, menu1, btn);
+        expect(menu1.classList.contains('theia-mod-open')).to.equal(true);
+        const menu2 = document.createElement('div');
+        ui.toggleCardMenu(card, menu2, btn);
+        expect(menu1.classList.contains('theia-mod-open')).to.equal(false);
+        expect(menu2.classList.contains('theia-mod-open')).to.equal(false);
+    });
+});

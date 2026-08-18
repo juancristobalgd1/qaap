@@ -40,6 +40,13 @@ export interface MobileProjectsHubHeaderHost {
     shouldUseAgentsHubLanding(): boolean;
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
+    cardMenuUi: {
+        buildConversationMenu(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): HTMLElement;
+        toggleCardMenu(card: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void;
+    };
+    conversationIndexUi: {
+        conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
+    };
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
@@ -179,9 +186,40 @@ export class MobileProjectsHubHeaderUi {
         const aria = nls.localize('qaap/composerWorkspace/projectAria', 'Project: {0}', project.name);
         this.host.headerProjectBtn.title = aria;
         this.host.headerProjectBtn.setAttribute('aria-label', aria);
-        const conversationsAria = nls.localize('qaap/sessionsSidebar/open', 'Open session history');
+        const conversationsAria = nls.localize('qaap/mobileProjects/taskMenu', 'Task options');
         this.host.headerConversationsBtn.title = conversationsAria;
         this.host.headerConversationsBtn.setAttribute('aria-label', conversationsAria);
+        this.host.headerConversationsBtn.setAttribute('aria-haspopup', 'menu');
+    }
+
+    resolveHeaderConversationMenuTarget(): {
+        project: MobileProjectEntry;
+        summary: QaapAgentConversationSummaryDTO;
+    } | undefined {
+        if (this.host.agentsHubInlineActive && this.host.transcriptOpenProject && this.host.transcriptOpenSummary) {
+            return {
+                project: this.host.transcriptOpenProject,
+                summary: this.host.transcriptOpenSummary,
+            };
+        }
+        const project = this.resolveHeaderProject();
+        if (!project) {
+            return undefined;
+        }
+        const summary = this.host.conversationIndexUi.conversationsForProject(project)[0];
+        if (!summary) {
+            return undefined;
+        }
+        return { project, summary };
+    }
+
+    openHeaderConversationMenu(anchor: HTMLButtonElement): void {
+        const target = this.resolveHeaderConversationMenuTarget();
+        if (!target) {
+            return;
+        }
+        const menu = this.host.cardMenuUi.buildConversationMenu(target.project, target.summary);
+        this.host.cardMenuUi.toggleCardMenu(this.host.headerProjectCluster, menu, anchor);
     }
 
     resolveHeaderProject(): MobileProjectEntry | undefined {

@@ -1182,6 +1182,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         onHeaderProjectClickExtracted(this, anchor);
     }
 
+    protected onHeaderConversationsClick(anchor: HTMLButtonElement): void {
+        this.hubHeaderUi.openHeaderConversationMenu(anchor);
+    }
+
     protected syncHeaderIdeViewPicker(): void {
         syncHeaderIdeViewPickerExtracted(this);
     }

@@ -53,6 +53,7 @@ export interface MobileProjectsPanelChromeHost {
     handleHeaderBackClick(): void;
     openWorkHubSessionsSidebar(): void;
     onHeaderProjectClick(anchor: HTMLButtonElement): void;
+    onHeaderConversationsClick(anchor: HTMLButtonElement): void;
     onHeaderNewChatClick(): Promise<void>;
     onHeaderOverflowMenuClick(event: MouseEvent): void;
     workHubSearchUi: import('./mobile-projects-work-hub-search-ui').MobileProjectsWorkHubSearchUi;
@@ -70,7 +71,7 @@ export interface MobileProjectsPanelChromeHost {
 /**
  * Work Hub header project cluster:
  * `[folder][project chevron] [|] [title][conversations chevron]`.
- * Two sibling buttons so the project sheet and sessions sidebar stay independent.
+ * Two sibling buttons so the project sheet and the task-options menu stay independent.
  */
 export function mountHeaderProjectButtonContents(
     cluster: HTMLElement,
@@ -160,8 +161,9 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerConversationsBtn = document.createElement('button');
         this.host.headerConversationsBtn.type = 'button';
         this.host.headerConversationsBtn.className = 'theia-mobile-projects-header-conversations';
-        this.host.headerConversationsBtn.setAttribute('aria-haspopup', 'dialog');
-        this.host.headerConversationsBtn.title = nls.localize('qaap/sessionsSidebar/open', 'Open session history');
+        this.host.headerConversationsBtn.setAttribute('aria-haspopup', 'menu');
+        this.host.headerConversationsBtn.setAttribute('aria-expanded', 'false');
+        this.host.headerConversationsBtn.title = nls.localize('qaap/mobileProjects/taskMenu', 'Task options');
         this.host.headerConversationsBtn.setAttribute('aria-label', this.host.headerConversationsBtn.title);
         this.host.headerProjectLabelEl = document.createElement('span');
         mountHeaderProjectButtonContents(
@@ -178,7 +180,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerConversationsBtn.addEventListener('click', ev => {
             ev.preventDefault();
             ev.stopPropagation();
-            this.host.openWorkHubSessionsSidebar();
+            this.host.onHeaderConversationsClick(this.host.headerConversationsBtn);
         });
         this.host.titleEl = document.createElement('h1');
         this.host.titleEl.className = 'theia-mobile-projects-title';

@@ -415,7 +415,7 @@ export class MobileProjectsCardMenuUi {
     }
 
     toggleCardMenu(card: HTMLElement, menu: HTMLElement, menuBtn: HTMLButtonElement): void {
-        if (this.openMenu === menu) {
+        if (this.openMenu && (this.openMenu === menu || this.openMenuAnchor === menuBtn)) {
             this.closeCardMenu();
             return;
         }
