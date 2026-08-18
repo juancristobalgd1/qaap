@@ -8950,13 +8950,20 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 }
 
 .theia-mobile-projects-header-project-separator {
+  display: inline-block;
   flex: 0 0 auto;
-  margin: 0 -2px;
+  align-self: center;
+  width: 1px;
+  min-width: 1px;
+  height: 14px;
+  margin: 0 2px;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  background: currentColor;
   color: var(--theia-descriptionForeground, var(--theia-foreground));
-  font-family: var(--theia-ui-font-family, sans-serif);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1;
+  font-size: 0;
+  line-height: 0;
   opacity: 0.55;
   pointer-events: none;
   user-select: none;
@@ -8967,7 +8974,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 }
 
 .theia-mobile-projects-header-project.theia-mod-conversation-title {
-  gap: 6px;
+  gap: 8px;
 }
 
 .theia-mobile-projects-header-project-label {
