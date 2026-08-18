@@ -2646,6 +2646,10 @@ body.theia-mobile-mod-desktop-ide #theia-app-shell.theia-mod-mobile-one-column #
   gap: 8px;
 }
 
+.theia-mobile-projects-header-actions:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
 .theia-mobile-projects-header-surface-picker {
   flex-shrink: 0;
 }
