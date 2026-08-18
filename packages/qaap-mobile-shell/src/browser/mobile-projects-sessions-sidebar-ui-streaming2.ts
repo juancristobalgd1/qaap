@@ -321,11 +321,8 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
             bypassLimit,
         );
         if (visible.length === 0 && partitioned.variantRuns.size === 0) {
-            const failedCount = ctx.host.conversationIndexUi.countFailedTasks(project);
-            if (failedCount > 0) {
-                listHost.append(clearMode
-                    ? ctx.createSessionsSidebarClearFailedModeFooter(project)
-                    : ctx.createSessionsSidebarClearFailedControl(project, failedCount));
+            if (clearMode) {
+                listHost.append(ctx.createSessionsSidebarClearFailedModeFooter(project));
             }
             return;
         }
@@ -399,11 +396,8 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
                 }
             }
         }
-        const failedCount = ctx.host.conversationIndexUi.countFailedTasks(project);
-        if (failedCount > 0) {
-            listHost.append(clearMode
-                ? ctx.createSessionsSidebarClearFailedModeFooter(project)
-                : ctx.createSessionsSidebarClearFailedControl(project, failedCount));
+        if (clearMode) {
+            listHost.append(ctx.createSessionsSidebarClearFailedModeFooter(project));
         }
         if (bypassLimit) {
             return;

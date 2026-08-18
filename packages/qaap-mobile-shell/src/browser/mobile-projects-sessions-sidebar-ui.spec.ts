@@ -432,30 +432,66 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
         expect(hostEl.textContent).to.include('No agent sessions yet');
     });
 
-    it('Clear failed runs enters clear mode instead of deleting immediately', () => {
+    it('does not render Clear failed runs in the sessions sidebar conversation list', () => {
         const project = { id: 'proj-1', name: 'Mockup', status: 'working' } as MobileProjectEntry;
-        const failed = [
-            { id: 'f1', status: 'failed', title: 'A', cwd: '/r', source: 'agent' },
-            { id: 'f2', status: 'failed', title: 'A', cwd: '/r', source: 'agent' },
+        const conversations = [
+            {
+                id: 'ok',
+                title: 'Working task',
+                status: 'idle',
+                createdAt: 40,
+                updatedAt: 40,
+                messageCount: 1,
+                agentId: 'qaiq',
+                cwd: '/repo',
+                source: 'agent',
+            },
+            {
+                id: 'f1',
+                title: 'Failed task',
+                status: 'failed',
+                createdAt: 10,
+                updatedAt: 10,
+                messageCount: 1,
+                agentId: 'qaiq',
+                cwd: '/repo',
+                source: 'agent',
+            },
         ];
-        let refreshForce: { force?: boolean } | undefined;
         const host = {
             conversationIndexUi: {
-                vpsTasksForProject: () => failed,
-                countFailedTasks: () => failed.length,
+                countFailedTasks: () => 1,
+                activeInfoForProject: () => undefined,
+                summaryToTaskView: (summary: { id: string; title: string }) => ({
+                    id: summary.id,
+                    title: summary.title,
+                    command: '',
+                    cwd: '/repo',
+                    state: 'failed',
+                    createdAt: 0,
+                }),
+                vpsTasksForProject: () => conversations.filter(c => c.status === 'failed'),
             },
-            sessionsSidebar: {
-                refreshList: (options?: { force?: boolean }) => { refreshForce = options; },
+            projectRowsUi: {
+                createTaskItem: (
+                    _project: MobileProjectEntry,
+                    _task: { id: string },
+                    _active: unknown,
+                    summary: { id: string },
+                ) => {
+                    const el = document.createElement('div');
+                    el.dataset.qaapConversationId = summary.id;
+                    return el;
+                },
             },
+            ensureOverlayUi: () => undefined,
         } as unknown as MobileProjectsSessionsSidebarHost;
         const ui = new MobileProjectsSessionsSidebarUi(host);
-        const button = ui.createSessionsSidebarClearFailedControl(project, failed.length);
+        const listHost = document.createElement('div');
+        ui.appendSessionsSidebarConversationItems(listHost, project, conversations as never, () => undefined, true);
 
-        button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-
-        expect(ui.clearFailedModeProjectId).to.equal(project.id);
-        expect([...ui.selectedFailedConversationIds].sort()).to.deep.equal(['f1', 'f2']);
-        expect(refreshForce).to.deep.equal({ force: true });
+        expect(listHost.querySelector('.theia-mobile-work-hub-sessions-sidebar-clear-failed')).to.equal(null);
+        expect(listHost.querySelector('.theia-mobile-work-hub-sessions-sidebar-clear-failed-mode-footer')).to.equal(null);
     });
 
     it('bypasses failed-duplicate collapse while a project is in clear mode', () => {
