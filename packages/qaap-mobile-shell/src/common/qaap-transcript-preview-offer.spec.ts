@@ -54,6 +54,11 @@ describe('qaap-transcript-preview-offer', () => {
         expect(isLikelyDevServerShellCommand('pnpm dev')).to.equal(true);
         expect(isLikelyDevServerShellCommand('npm run start')).to.equal(true);
         expect(isLikelyDevServerShellCommand('pnpm install')).to.equal(false);
+        expect(isLikelyDevServerShellCommand('QAAP_STATIC_ROOT="." QAAP_STATIC_ENTRY="/" node -e "http.createServer()"'))
+            .to.equal(true);
+        expect(isLikelyDevServerShellCommand('python3 -m http.server 8080')).to.equal(true);
+        expect(isLikelyDevServerShellCommand('npx serve .')).to.equal(true);
+        expect(isLikelyDevServerShellCommand('node scripts/build.js')).to.equal(false);
     });
 
     it('messageRequestsDevPreview matches run-app landing prompt', () => {

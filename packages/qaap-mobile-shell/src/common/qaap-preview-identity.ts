@@ -177,6 +177,30 @@ export function qaapPreviewProjectIdMatches(
 }
 
 /**
+ * True when a live preview claim (identity or `/qaap-dev/:port`) belongs to this Work Hub project.
+ * Prefer this over HTML `<title>` matching: vanilla `index.html` pages often use "Document",
+ * "Landing", or no title at all, which would otherwise hide a healthy static preview.
+ */
+export function claimedPreviewCoordinatesMatchProject(options: {
+    readonly probeProjectId: string | undefined;
+    readonly projectId: string;
+    readonly projectUri?: string;
+    readonly cwdUri?: string;
+    readonly projectName?: string;
+}): boolean {
+    const probeProjectId = options.probeProjectId?.trim();
+    if (!probeProjectId) {
+        return false;
+    }
+    return qaapPreviewProjectIdMatches(
+        probeProjectId,
+        options.projectId,
+        options.projectUri,
+        options.cwdUri,
+    ) || qaapPreviewFileUriMatchesProjectName(probeProjectId, options.projectName);
+}
+
+/**
  * Skip-auth / local clones are often addressed as `github:owner/name` in Work Hub while the
  * preview registry stores `file:///…/owner/name`. Accept a file-URI claim whose last path
  * segment is the hub project name so Preview can mount the process that was just started.

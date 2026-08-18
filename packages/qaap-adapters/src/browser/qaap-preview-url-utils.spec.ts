@@ -90,6 +90,10 @@ describe('qaap-preview-url-utils', () => {
             '/docs/demo/',
         )).to.equal('http://localhost:3000/qaap-preview/live-execution/docs/demo/');
         expect(applyNestedPathToPreviewUrl(
+            'http://localhost:3000/qaap-preview/live-execution/',
+            '/game.html',
+        )).to.equal('http://localhost:3000/qaap-preview/live-execution/game.html');
+        expect(applyNestedPathToPreviewUrl(
             'http://localhost:3000/qaap-dev/8080/',
             'docs/demo',
         )).to.equal('http://localhost:3000/qaap-dev/8080/docs/demo/');

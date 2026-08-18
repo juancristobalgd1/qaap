@@ -35,6 +35,7 @@ import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityP
 import {
     findQaapIdentityPreviewUrl,
     isLocalQaapPreviewOrigin,
+    parseQaapDevPreviewRequestPath,
     parseQaapIdentityPreviewRequestPath,
     resolveDevPreviewPublicOrigin,
 } from '../common/qaap-dev-preview';
@@ -44,9 +45,8 @@ import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
 import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
 import {
     buildQaapPreviewId,
+    claimedPreviewCoordinatesMatchProject,
     normalizeQaapPreviewConversationId,
-    qaapPreviewProjectIdMatches,
-    qaapPreviewFileUriMatchesProjectName,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
 import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
@@ -230,6 +230,21 @@ export async function previewUrlMatchesProjectExtracted(ctx: any, previewUrl: st
         try {
             const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
             const parsed = new URL(normalized, window.location.href);
+            const cwd = ctx.host.projectsService.getProjectCwd(project)
+                ?? ctx.host.preparedCwdByProjectId.get(project.id);
+            let cwdUri: string | undefined;
+            try {
+                cwdUri = cwd ? FileUri.create(cwd).toString() : undefined;
+            } catch {
+                cwdUri = undefined;
+            }
+            const claimMatches = (probeProjectId: string | undefined): boolean => claimedPreviewCoordinatesMatchProject({
+                probeProjectId,
+                projectId: project.id,
+                projectUri: project.uri?.toString(),
+                cwdUri,
+                projectName: project.name,
+            });
             const identityPath = parseQaapIdentityPreviewRequestPath(parsed.pathname);
             if (identityPath) {
                 const probe = await probeQaapIdentityPreview(identityPath.previewId);
@@ -237,23 +252,17 @@ export async function previewUrlMatchesProjectExtracted(ctx: any, previewUrl: st
                     return false;
                 }
                 if (probe.projectId) {
-                    const cwd = ctx.host.projectsService.getProjectCwd(project)
-                        ?? ctx.host.preparedCwdByProjectId.get(project.id);
-                    let cwdUri: string | undefined;
-                    try {
-                        cwdUri = cwd ? FileUri.create(cwd).toString() : undefined;
-                    } catch {
-                        cwdUri = undefined;
-                    }
-                    return qaapPreviewProjectIdMatches(
-                        probe.projectId,
-                        project.id,
-                        project.uri?.toString(),
-                        cwdUri,
-                    ) || qaapPreviewFileUriMatchesProjectName(probe.projectId, project.name);
+                    return claimMatches(probe.projectId);
                 }
                 // Legacy identity links predate project coordinates in the probe response. Keep
                 // title matching only for that migration path, never as the primary identity.
+            }
+            const portPath = parseQaapDevPreviewRequestPath(parsed.pathname);
+            if (portPath) {
+                const probe = await probeQaapDevPreviewPort(portPath.port);
+                if (probe.ready && probe.projectId) {
+                    return claimMatches(probe.projectId);
+                }
             }
             // Hosted multi-tenant origins must never accept a preview by HTML title — two Vite apps
             // both titled "Vite App" would cross-mount across projects of the same user.
