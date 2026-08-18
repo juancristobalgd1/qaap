@@ -110,7 +110,7 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     if (failedDuplicateCount > 0) {
         const dupHint = nls.localize(
             'qaap/sessionsSidebar/failedDuplicatesHint',
-            '{0} older failed runs with this title are hidden — delete them from the task menu',
+            '{0} older failed runs with this title are hidden',
             String(failedDuplicateCount),
         );
         taskTitle.title = dupHint;
