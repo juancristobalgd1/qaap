@@ -210,4 +210,22 @@ describe('QaapGithubOauthEndpoint.handleDeleteGithubRepository', () => {
         }).handleDeleteGithubRepository({ params: { owner: '../etc', repo: 'hello' } }, res);
         expect(res.statusCode).to.equal(400);
     });
+
+    it('returns 401 and does not delete when the caller is not signed in', async () => {
+        const aliceClone = path.join(reposRoot, 'users', login, 'octocat', 'hello');
+        fs.mkdirSync(path.join(aliceClone, '.git'), { recursive: true });
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => ({ kind: 'unauthorized' }),
+                resolveUserLogin: () => undefined,
+                logSecurityEvent: () => undefined,
+            },
+        });
+        const res = makeRes();
+        await (endpoint as unknown as {
+            handleDeleteGithubRepository(req: { params: { owner: string; repo: string } }, response: typeof res): Promise<void>;
+        }).handleDeleteGithubRepository({ params: { owner: 'octocat', repo: 'hello' } }, res);
+        expect(res.statusCode).to.equal(401);
+        expect(fs.existsSync(aliceClone)).to.equal(true);
+    });
 });

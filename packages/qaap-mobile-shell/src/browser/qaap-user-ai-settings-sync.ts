@@ -14,12 +14,21 @@ import {
 import { listQaapAiSettingsPrefKeys } from '../common/qaap-qaiq-byok-provider-registry';
 import { setAgentModelStorageUserLogin } from '../common/qaap-agent-model-selection';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import {
+    applyAiSettingsOverlay,
+    collectAiSettingsForPersist,
+    overlayPrefGet,
+    shouldInterceptSharedUserAiPrefWrites,
+} from '../common/qaap-user-ai-settings-overlay';
 
 const PUSH_DEBOUNCE_MS = 250;
 
 /**
  * Mirrors Settings → AI Features into `~/.qaap/users/{login}/settings.json` so each
  * authenticated tenant's API keys and model lists are the spawn source of truth.
+ *
+ * Authenticated tenants never write those keys into Theia's process-wide User
+ * `settings.json` (one backend would otherwise show User A's keys in User B's UI).
  */
 @injectable()
 export class QaapUserAiSettingsSyncContribution implements FrontendApplicationContribution {
@@ -28,18 +37,53 @@ export class QaapUserAiSettingsSyncContribution implements FrontendApplicationCo
     protected readonly preferenceService: PreferenceService;
 
     protected applyingRemote = false;
+    protected interceptInstalled = false;
     protected pushTimer: ReturnType<typeof setTimeout> | undefined;
     protected readonly aiPrefKeys = new Set(listQaapAiSettingsPrefKeys());
+    protected readonly overlay = new Map<string, unknown>();
+    protected originalGet: PreferenceService['get'] | undefined;
+    protected originalSet: PreferenceService['set'] | undefined;
 
     onStart(): void {
         setAgentModelStorageUserLogin(readQaapAuthUser()?.login);
+        this.installPreferenceInterceptor();
         void this.hydrateFromServer();
         this.preferenceService.onPreferenceChanged(event => {
             if (this.applyingRemote || !this.aiPrefKeys.has(event.preferenceName)) {
                 return;
             }
+            if (this.shouldInterceptWrites()) {
+                return;
+            }
             this.schedulePush();
         });
+    }
+
+    protected shouldInterceptWrites(): boolean {
+        return shouldInterceptSharedUserAiPrefWrites(readQaapAuthUser()?.login);
+    }
+
+    protected installPreferenceInterceptor(): void {
+        if (this.interceptInstalled) {
+            return;
+        }
+        this.interceptInstalled = true;
+        const service = this.preferenceService;
+        const originalGet = service.get.bind(service) as PreferenceService['get'];
+        const originalSet = service.set.bind(service) as PreferenceService['set'];
+        this.originalGet = originalGet;
+        this.originalSet = originalSet;
+        service.get = ((preferenceName: string, defaultValue?: unknown, resourceUri?: string) =>
+            overlayPrefGet(this.overlay, preferenceName, () => originalGet(preferenceName, defaultValue, resourceUri))
+        ) as PreferenceService['get'];
+        service.set = async (preferenceName, value, scope, resourceUri) => {
+            if (this.shouldInterceptWrites() && this.aiPrefKeys.has(preferenceName)) {
+                this.overlay.set(preferenceName, value);
+                this.schedulePush();
+                return;
+            }
+            return originalSet(preferenceName, value, scope, resourceUri);
+        };
     }
 
     protected async hydrateFromServer(): Promise<void> {
@@ -47,6 +91,10 @@ export class QaapUserAiSettingsSyncContribution implements FrontendApplicationCo
             const settings = await fetchQaapUserAiSettings();
             const keys = Object.keys(settings);
             if (keys.length === 0) {
+                return;
+            }
+            if (this.shouldInterceptWrites()) {
+                applyAiSettingsOverlay(this.overlay, settings, name => this.aiPrefKeys.has(name));
                 return;
             }
             this.applyingRemote = true;
@@ -73,13 +121,10 @@ export class QaapUserAiSettingsSyncContribution implements FrontendApplicationCo
     }
 
     protected async pushToServer(): Promise<void> {
-        const settings: Record<string, unknown> = {};
-        for (const key of this.aiPrefKeys) {
-            const value = this.preferenceService.get(key);
-            if (value !== undefined) {
-                settings[key] = value;
-            }
-        }
+        const fallback = (key: string): unknown => this.originalGet
+            ? this.originalGet(key)
+            : this.preferenceService.get(key);
+        const settings = collectAiSettingsForPersist(this.overlay, this.aiPrefKeys, fallback);
         try {
             await putQaapUserAiSettings(settings);
         } catch (error) {

@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
+import { evaluateQaapProductionAuthReadiness, buildQaapLaunchHealthPayload } from './qaap-production-auth-readiness';
 
 describe('evaluateQaapProductionAuthReadiness', () => {
 
@@ -81,5 +81,39 @@ describe('evaluateQaapProductionAuthReadiness', () => {
             QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION: '1',
         });
         expect(result.ready).to.equal(true);
+    });
+});
+
+describe('buildQaapLaunchHealthPayload', () => {
+
+    it('exposes liveness flags without secrets', () => {
+        const readiness = evaluateQaapProductionAuthReadiness({
+            NODE_ENV: 'production',
+            QAAP_GITHUB_CLIENT_ID: 'client',
+            QAAP_GITHUB_CLIENT_SECRET: 'secret',
+            QAAP_OAUTH_PUBLIC_URL: 'https://qaap.example',
+        });
+        const payload = buildQaapLaunchHealthPayload(readiness, {
+            skipAuth: false,
+            build: 'abc123def456',
+        });
+        expect(payload).to.deep.equal({
+            ok: true,
+            ready: true,
+            productionRuntime: true,
+            skipAuth: false,
+            oauthConfigured: true,
+            agentUidPerUser: true,
+            build: 'abc123def456',
+        });
+        expect(JSON.stringify(payload)).to.not.match(/secret|client/i);
+    });
+
+    it('omits build when the image did not bake a SHA', () => {
+        const readiness = evaluateQaapProductionAuthReadiness({ NODE_ENV: 'development' });
+        const payload = buildQaapLaunchHealthPayload(readiness, { skipAuth: true, build: '  ' });
+        expect(payload.build).to.equal(undefined);
+        expect(payload.ok).to.equal(true);
+        expect(payload.skipAuth).to.equal(true);
     });
 });

@@ -16,6 +16,7 @@ import {
     QAAP_AUTH_API_PATH,
     QAAP_AUTH_SESSION_COOKIE,
     QAAP_GITHUB_API_PATH,
+    QAAP_HEALTH_API_PATH,
     QAAP_GITHUB_OAUTH_CALLBACK_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
     type QaapGithubCreateRepositoryRequest,
@@ -48,7 +49,7 @@ import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
-import { evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
+import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -83,6 +84,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         app.use(json());
         app.get(QAAP_GITHUB_OAUTH_START_PATH, (req, res) => this.handleOAuthStart(req, res));
         app.get(QAAP_GITHUB_OAUTH_CALLBACK_PATH, (req, res) => this.handleOAuthCallback(req, res));
+        app.get(QAAP_HEALTH_API_PATH, (req, res) => this.handleHealth(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/config`, (req, res) => this.handleAuthConfig(req, res));
         app.get(`${QAAP_AUTH_API_PATH}/session`, (req, res) => this.handleAuthSession(req, res));
         app.post(`${QAAP_AUTH_API_PATH}/signout`, (req, res) => this.handleSignOut(req, res));
@@ -297,6 +299,14 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             console.error('[qaap-oauth] Token exchange or user fetch failed:', message);
             this.redirectAfterOAuth(res, config.publicUrl, false, message);
         }
+    }
+
+    protected handleHealth(_req: Request, res: Response): void {
+        const readiness = evaluateQaapProductionAuthReadiness();
+        res.json(buildQaapLaunchHealthPayload(readiness, {
+            skipAuth: this.auth.isSkipAuthEnabled(),
+            build: process.env.QAAP_BUILD_SHA,
+        }));
     }
 
     protected handleAuthConfig(_req: Request, res: Response): void {

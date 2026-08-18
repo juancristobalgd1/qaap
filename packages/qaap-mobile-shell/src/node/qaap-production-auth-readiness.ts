@@ -72,3 +72,29 @@ export function evaluateQaapProductionAuthReadiness(
         ready: true,
     };
 }
+
+export interface QaapLaunchHealthPayload {
+    readonly ok: true;
+    readonly ready: boolean;
+    readonly productionRuntime: boolean;
+    readonly skipAuth: boolean;
+    readonly oauthConfigured: boolean;
+    readonly agentUidPerUser: boolean;
+    readonly build?: string;
+}
+
+export function buildQaapLaunchHealthPayload(
+    readiness: QaapProductionAuthReadiness,
+    options: { readonly skipAuth?: boolean; readonly build?: string } = {},
+): QaapLaunchHealthPayload {
+    const build = options.build?.trim();
+    return {
+        ok: true,
+        ready: readiness.ready,
+        productionRuntime: readiness.productionRuntime,
+        skipAuth: options.skipAuth ?? readiness.skipAuth,
+        oauthConfigured: readiness.oauthConfigured,
+        agentUidPerUser: readiness.agentUidPerUser,
+        ...(build ? { build } : {}),
+    };
+}

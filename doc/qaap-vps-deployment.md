@@ -332,11 +332,10 @@ agent run, or an operator mistake loses every user's repositories and sessions**
 | `qaap-auth-data` | `/root/.qaap` | OAuth sessions, agent-task index/logs, conversations, helper tokens |
 | `qaap-theia-user` | `/root/.theia` | per-user settings, incl. Settings → AI API keys |
 
-**Install the nightly backup (one-time, as root on the VPS):**
+**Install the nightly backup** (the VPS launch gate does this on every deploy; one-time manual equivalent):
 
 ```bash
-echo '17 3 * * * root /opt/qaap/scripts/qaap-vps-backup.sh >> /var/log/qaap-backup.log 2>&1' \
-  > /etc/cron.d/qaap-backup
+/opt/qaap/scripts/qaap-vps-ensure-backup-cron.sh
 /opt/qaap/scripts/qaap-vps-backup.sh   # run once now and check the output
 ```
 

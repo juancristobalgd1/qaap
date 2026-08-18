@@ -282,6 +282,8 @@ jobs:
         with:
           sparse-checkout: |
             scripts/qaap-vps-normalize-public-url.sh
+            scripts/qaap-verify-launch-readiness.sh
+            scripts/qaap-verify-auth-api-gate.sh
           sparse-checkout-cone-mode: false
 
       - name: Verify public endpoint
@@ -299,6 +301,10 @@ jobs:
           for attempt in $(seq 1 24); do
             if curl -fsS -o /dev/null "$QAAP_VPS_PUBLIC_URL"; then
               echo "OK: $QAAP_VPS_PUBLIC_URL"
+              chmod +x ./scripts/qaap-verify-launch-readiness.sh ./scripts/qaap-verify-auth-api-gate.sh
+              QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" QAAP_ENV_FILE=/nonexistent.env \
+                ./scripts/qaap-verify-launch-readiness.sh
+              QAAP_BASE_URL="$QAAP_VPS_PUBLIC_URL" ./scripts/qaap-verify-auth-api-gate.sh
               exit 0
             fi
             echo "waiting for $QAAP_VPS_PUBLIC_URL ($attempt/24)..."

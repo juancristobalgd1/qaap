@@ -94,7 +94,10 @@ Current state of these paths:
 > green PASSED is the gate.
 >
 > Before the first public boot, also run `scripts/qaap-verify-launch-readiness.sh`
-> against the live origin. A production runtime without GitHub OAuth now **exits on
+> and `scripts/qaap-verify-auth-api-gate.sh` against the live origin. Every VPS
+> deploy now runs `scripts/qaap-vps-launch-gate.sh` (nightly backup cron + uid-per-user
+> snapshot; multi-tenant isolation when two logins already exist in the registry).
+> A production runtime without GitHub OAuth now **exits on
 > startup** unless `QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION` is set.
 
 ## Dependency audit notes
