@@ -237,6 +237,8 @@ describe('MobileProjectsHubHeaderUi', () => {
             const summary = {
                 id: 'test-id',
                 title: 'Corrige aislamiento de pre',
+                messageCount: 2,
+                status: 'settled',
             } as MobileProjectsHubHeaderHost['transcriptOpenSummary'];
             const host = createRenderableHost({
                 agentsHubInlineActive: true,
@@ -255,6 +257,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerProjectCluster.hidden).to.equal(false);
             expect(host.headerProjectLabelEl.textContent).to.equal('Corrige aislamiento de pre');
             expect(host.headerProjectCluster.classList.contains('theia-mod-conversation-title')).to.equal(true);
+            expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(false);
             const separator = host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
             expect(separator).to.not.equal(null);
             expect((separator as HTMLElement).hidden).to.equal(false);
@@ -262,6 +265,9 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerProjectBtn.getAttribute('aria-label')).to.contain('Mockup');
             expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
             expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
+            expect(host.headerProjectBtn.contains(host.headerProjectLabelEl)).to.equal(false);
+            expect(host.headerConversationsBtn.hidden).to.equal(false);
+            expect(host.headerConversationsBtn.contains(host.headerProjectLabelEl)).to.equal(true);
             expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
             expect(host.headerConversationsBtn.getAttribute('aria-label')).to.equal('Task options');
             expect(host.headerConversationsBtn.getAttribute('aria-haspopup')).to.equal('menu');
@@ -281,13 +287,96 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerProjectCluster.hidden).to.equal(false);
             expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
             expect(host.headerProjectCluster.classList.contains('theia-mod-conversation-title')).to.equal(false);
+            expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
+            expect(host.headerProjectBtn.contains(host.headerProjectLabelEl)).to.equal(true);
             expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
             const landingSeparator = host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
             expect(landingSeparator).to.not.equal(null);
             expect((landingSeparator as HTMLElement).hidden).to.equal(true);
             expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
-            expect(host.headerConversationsBtn.querySelector('.theia-mobile-projects-header-conversations-icon')).to.not.equal(null);
-            expect(host.headerConversationsBtn.getAttribute('aria-label')).to.equal('Task options');
+            expect(host.headerConversationsBtn.hidden).to.equal(true);
+            expect(Array.from(host.headerProjectBtn.childNodes).map(node => (node as HTMLElement).className)).to.deep.equal([
+                'theia-mobile-projects-header-project-folder codicon codicon-folder',
+                'theia-mobile-projects-header-project-label',
+                'theia-mobile-projects-header-project-icon theia-mobile-projects-header-project-switcher-icon codicon codicon-chevron-down',
+            ]);
+        });
+
+        it('keeps the compact project control for an idle Agents landing conversation', () => {
+            const p = project('sample-files1', 'sample-files1');
+            const host = createRenderableHost({
+                agentsHubInlineActive: true,
+                transcriptOpenProject: p,
+                transcriptOpenSummary: {
+                    id: '__qaap_agents_hub_idle__',
+                    title: '',
+                    messageCount: 0,
+                    status: 'idle',
+                } as MobileProjectsHubHeaderHost['transcriptOpenSummary'],
+            });
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.composerHeaderUi = {
+                resolveStickyComposerProject: () => p,
+            } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'];
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.headerProjectLabelEl.textContent).to.equal('sample-files1');
+            expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
+            expect(host.headerProjectBtn.contains(host.headerProjectLabelEl)).to.equal(true);
+            expect(host.headerConversationsBtn.hidden).to.equal(true);
+        });
+
+        it('keeps the compact project control for a pending new chat', () => {
+            const p = project('mockup', 'Mockup');
+            const host = createRenderableHost({
+                agentsHubInlineActive: true,
+                transcriptOpenProject: p,
+                transcriptOpenSummary: {
+                    id: 'pending-new-chat-mockup-1',
+                    title: 'New agent',
+                    messageCount: 0,
+                    status: 'idle',
+                } as MobileProjectsHubHeaderHost['transcriptOpenSummary'],
+            });
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.composerHeaderUi = {
+                resolveStickyComposerProject: () => p,
+            } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'];
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
+            expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
+            expect(host.headerProjectCluster.classList.contains('theia-mod-conversation-title')).to.equal(false);
+            expect(host.headerConversationsBtn.hidden).to.equal(true);
+        });
+
+        it('keeps the compact project control when the open chat has no messages yet', () => {
+            const p = project('mockup', 'Mockup');
+            const host = createRenderableHost({
+                agentsHubInlineActive: true,
+                transcriptOpenProject: p,
+                transcriptOpenSummary: {
+                    id: 'empty-open',
+                    title: 'New agent',
+                    messageCount: 0,
+                    status: 'idle',
+                } as MobileProjectsHubHeaderHost['transcriptOpenSummary'],
+            });
+            host.projects = [p];
+            host.resolveHomePinnedProject = () => p;
+            host.composerHeaderUi = {
+                resolveStickyComposerProject: () => p,
+            } as unknown as MobileProjectsHubHeaderHost['composerHeaderUi'];
+
+            new MobileProjectsHubHeaderUi(host).renderHeader();
+
+            expect(host.headerProjectLabelEl.textContent).to.equal('Mockup');
+            expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
+            expect(host.headerConversationsBtn.hidden).to.equal(true);
         });
 
         it('keeps titles visible on non-Agents surfaces', () => {

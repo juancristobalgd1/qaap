@@ -79,8 +79,8 @@ export interface MobileProjectsPanelChromeHost {
 
 /**
  * Work Hub header project cluster:
- * `[folder][project chevron] [|] [title][conversations chevron]`.
- * Two sibling buttons so the project sheet and the task-options menu stay independent.
+ * compact empty/new chat: `[folder][project name][chevron]` (one button → repo sheet);
+ * open conversation: `[folder][project chevron] [|] [title][task chevron]`.
  */
 export function mountHeaderProjectButtonContents(
     cluster: HTMLElement,
@@ -97,7 +97,7 @@ export function mountHeaderProjectButtonContents(
     folder.className = 'theia-mobile-projects-header-project-folder codicon codicon-folder';
     folder.setAttribute('aria-hidden', 'true');
     const projectChevron = document.createElement('span');
-    projectChevron.className = 'theia-mobile-projects-header-project-icon codicon codicon-chevron-down';
+    projectChevron.className = 'theia-mobile-projects-header-project-icon theia-mobile-projects-header-project-switcher-icon codicon codicon-chevron-down';
     projectChevron.setAttribute('aria-hidden', 'true');
     switcher.append(folder, projectChevron);
 
@@ -115,6 +115,37 @@ export function mountHeaderProjectButtonContents(
 
     cluster.append(switcher, separator, conversations);
     return { folder, separator, projectChevron, conversationsChevron };
+}
+
+/**
+ * Compact empty/new chat puts the project name on the switcher so a single chevron
+ * opens the add-repositories sheet. An open conversation restores the dual-button layout.
+ */
+export function layoutHeaderProjectClusterContents(
+    switcher: HTMLButtonElement,
+    conversations: HTMLButtonElement,
+    labelEl: HTMLSpanElement,
+    compact: boolean,
+): void {
+    const folder = switcher.querySelector('.theia-mobile-projects-header-project-folder');
+    const projectChevron = switcher.querySelector('.theia-mobile-projects-header-project-switcher-icon');
+    const conversationsChevron = conversations.querySelector('.theia-mobile-projects-header-conversations-icon');
+    if (compact) {
+        if (folder instanceof HTMLElement && projectChevron instanceof HTMLElement) {
+            switcher.append(folder, labelEl, projectChevron);
+        } else {
+            switcher.append(labelEl);
+        }
+        return;
+    }
+    if (folder instanceof HTMLElement && projectChevron instanceof HTMLElement) {
+        switcher.append(folder, projectChevron);
+    }
+    if (conversationsChevron instanceof HTMLElement) {
+        conversations.append(labelEl, conversationsChevron);
+    } else {
+        conversations.append(labelEl);
+    }
 }
 
 export class MobileProjectsPanelChromeUi {

@@ -8899,7 +8899,9 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   z-index: 1;
 }
 
-/* Header project cluster: folder+chevron (project sheet) | title+chevron (sessions sidebar).
+/* Header project cluster:
+   compact empty/new chat → folder + project name + one chevron (repo sheet);
+   open conversation → folder+chevron | title+chevron (task menu).
    Hug content width so short names don't leave a wide empty hover hit area;
    still shrink + ellipsis when the title row is tight. */
 .theia-mobile-projects-header-project {
@@ -8948,6 +8950,21 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   min-width: 0;
   gap: 8px;
   padding: 0 4px 0 6px;
+}
+
+.theia-mobile-projects-header-conversations[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-projects-header-project.theia-mod-compact-project {
+  gap: 0;
+}
+
+.theia-mobile-projects-header-project.theia-mod-compact-project .theia-mobile-projects-header-project-switcher {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  gap: 8px;
 }
 
 .theia-mobile-projects-header-project-switcher:hover,

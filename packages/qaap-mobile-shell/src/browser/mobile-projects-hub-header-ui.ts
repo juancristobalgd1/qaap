@@ -8,11 +8,14 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 import { scrollElementTo } from '../common/qaap-prefers-reduced-motion';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
+import { layoutHeaderProjectClusterContents } from './mobile-projects-panel-chrome-ui';
 
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;
@@ -33,6 +36,7 @@ export interface MobileProjectsHubHeaderHost {
     agentsHubShellActive: boolean;
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
+    transcriptLastConv?: QaapAgentConversationDTO | undefined;
     projects: MobileProjectEntry[];
 
     isProjectDetailView(): boolean;
@@ -169,19 +173,29 @@ export class MobileProjectsHubHeaderUi {
 
     syncHeaderProjectControl(showSessionsMenu: boolean): void {
         const project = this.resolveHeaderProject();
+        const compact = this.shouldUseCompactHeaderProjectControl();
         const conversationTitle = this.resolveHeaderProjectConversationTitle();
         const projectName = project?.name?.trim() ?? '';
-        const sectionTitle = conversationTitle || projectName;
+        const sectionTitle = compact ? projectName : (conversationTitle || projectName);
         const showProject = showSessionsMenu && !!project && sectionTitle.length > 0;
-        const showConversationSeparator = showProject && this.headerProjectShowsConversationTitle();
+        const showConversationSeparator = showProject && !compact && this.headerProjectShowsConversationTitle();
         this.host.headerProjectCluster.hidden = !showProject;
         this.host.headerProjectCluster.setAttribute('aria-hidden', showProject ? 'false' : 'true');
         this.host.headerProjectCluster.classList.toggle('theia-mod-conversation-title', showConversationSeparator);
+        this.host.headerProjectCluster.classList.toggle('theia-mod-compact-project', showProject && compact);
         this.host.headerProjectLabelEl.textContent = sectionTitle;
+        layoutHeaderProjectClusterContents(
+            this.host.headerProjectBtn,
+            this.host.headerConversationsBtn,
+            this.host.headerProjectLabelEl,
+            showProject && compact,
+        );
         const separator = this.host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
         if (separator instanceof HTMLElement) {
             separator.hidden = !showConversationSeparator;
         }
+        this.host.headerConversationsBtn.hidden = !showProject || compact;
+        this.host.headerConversationsBtn.setAttribute('aria-hidden', (!showProject || compact) ? 'true' : 'false');
         if (!showProject || !project) {
             return;
         }
@@ -192,6 +206,36 @@ export class MobileProjectsHubHeaderUi {
         this.host.headerConversationsBtn.title = conversationsAria;
         this.host.headerConversationsBtn.setAttribute('aria-label', conversationsAria);
         this.host.headerConversationsBtn.setAttribute('aria-haspopup', 'menu');
+    }
+
+    /**
+     * Empty landing, idle placeholder, pending new chat, or a conversation with
+     * no messages yet: folder + project name + one chevron to the repo sheet.
+     */
+    shouldUseCompactHeaderProjectControl(): boolean {
+        if (!this.host.agentsHubInlineActive) {
+            return true;
+        }
+        const summary = this.host.transcriptOpenSummary;
+        if (!summary) {
+            return true;
+        }
+        if (isAgentsHubIdleConversationSummary(summary)) {
+            return true;
+        }
+        if (summary.id.startsWith('pending-new-chat-')) {
+            return true;
+        }
+        const cached = this.host.transcriptLastConv?.id === summary.id
+            ? this.host.transcriptLastConv
+            : undefined;
+        if (cached) {
+            return shouldShowTranscriptEmptyQuickActions(cached, cached);
+        }
+        if (typeof summary.messageCount === 'number') {
+            return summary.messageCount === 0 && summary.status !== 'streaming';
+        }
+        return !summary.title?.trim();
     }
 
     resolveHeaderConversationMenuTarget(): {
@@ -240,10 +284,13 @@ export class MobileProjectsHubHeaderUi {
 
     /**
      * Conversation title when an inline session is open; otherwise empty so the
-     * header can fall back to the project name. The folder icon (not this text)
-     * opens the same project sheet as an empty conversation.
+     * header can fall back to the project name. Compact empty/new chats keep the
+     * project name on the switcher so one chevron opens the repo sheet.
      */
     resolveHeaderProjectConversationTitle(): string {
+        if (this.shouldUseCompactHeaderProjectControl()) {
+            return '';
+        }
         if (this.host.agentsHubInlineActive && this.host.transcriptOpenSummary) {
             return this.host.transcriptOpenSummary.title?.trim() ?? '';
         }
@@ -263,7 +310,8 @@ export class MobileProjectsHubHeaderUi {
 
     /** Folder glyph stands for the project; `|` splits it from the open conversation title. */
     headerProjectShowsConversationTitle(): boolean {
-        return !!(this.host.agentsHubInlineActive && this.host.transcriptOpenSummary?.title?.trim());
+        return !this.shouldUseCompactHeaderProjectControl()
+            && !!(this.host.agentsHubInlineActive && this.host.transcriptOpenSummary?.title?.trim());
     }
 
     resolveHeaderNewChatVisible(): boolean {

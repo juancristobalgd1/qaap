@@ -10,6 +10,7 @@ import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-ses
 import {
     MobileProjectsPanelChromeUi,
     mountHeaderProjectButtonContents,
+    layoutHeaderProjectClusterContents,
     type MobileProjectsPanelChromeHost,
 } from './mobile-projects-panel-chrome-ui';
 import type { MobileViewToggleId } from './qaap-workbench-account-menu';
@@ -175,5 +176,25 @@ describe('mountHeaderProjectButtonContents', () => {
         expect(Array.from(switcher.childNodes)).to.deep.equal([folder, projectChevron]);
         expect(Array.from(conversations.childNodes)).to.deep.equal([label, conversationsChevron]);
         expect(label.className).to.equal('theia-mobile-projects-header-project-label');
+        expect(projectChevron.classList.contains('theia-mobile-projects-header-project-switcher-icon')).to.equal(true);
+    });
+
+    it('moves the project name onto the switcher in compact empty-chat layout', () => {
+        const cluster = document.createElement('div');
+        const switcher = document.createElement('button');
+        const conversations = document.createElement('button');
+        const label = document.createElement('span');
+        label.textContent = 'sample-files1';
+        const { folder, projectChevron, conversationsChevron } = mountHeaderProjectButtonContents(
+            cluster, switcher, conversations, label,
+        );
+
+        layoutHeaderProjectClusterContents(switcher, conversations, label, true);
+        expect(Array.from(switcher.childNodes)).to.deep.equal([folder, label, projectChevron]);
+        expect(Array.from(conversations.childNodes)).to.deep.equal([conversationsChevron]);
+
+        layoutHeaderProjectClusterContents(switcher, conversations, label, false);
+        expect(Array.from(switcher.childNodes)).to.deep.equal([folder, projectChevron]);
+        expect(Array.from(conversations.childNodes)).to.deep.equal([label, conversationsChevron]);
     });
 });
