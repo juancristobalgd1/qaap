@@ -36,6 +36,7 @@ import {
 } from '../common/qaap-work-hub-team';
 import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import { MobileProjectsService } from './mobile-projects-service';
+import { confirmRemoveProjectDialog } from './mobile-projects-remove-confirm';
 import {
     isAgentsHubExecutionSurfacePainted,
 } from '../common/qaap-agents-hub-landing';
@@ -1920,6 +1921,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     releasePreviewForConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
         releasePreviewForConversationExtracted(this, project, summary);
+    }
+
+    protected confirmRemoveProject(project: MobileProjectEntry): Promise<boolean | undefined> {
+        return confirmRemoveProjectDialog(project);
     }
 
     protected detachTranscriptWorkspaceSurfacesFromSheet(): void {

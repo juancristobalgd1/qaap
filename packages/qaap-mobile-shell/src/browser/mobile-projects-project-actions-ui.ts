@@ -11,6 +11,7 @@ import { deleteConversation, isFailedRunSummary, type QaapAgentConversationSumma
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import { confirmRemoveProjectDialog } from './mobile-projects-remove-confirm';
 
 /** Resolve which failed summaries to delete (all, or an explicit id subset). */
 export function resolveFailedTasksToClear(
@@ -175,22 +176,7 @@ export class MobileProjectsProjectActionsUi {
 
         const confirmed = this.host.confirmRemoveProject
             ? await this.host.confirmRemoveProject(project)
-            : await new ConfirmDialog({
-                title: project.github
-                    ? nls.localize('qaap/mobileProjects/removeFromVps', 'Remove from this VPS')
-                    : nls.localize('qaap/mobileProjects/remove', 'Remove'),
-                msg: project.github
-                    ? nls.localize(
-                        'qaap/mobileProjects/removeGithubConfirm',
-                        'Remove {0} from this VPS? This deletes the local clone, its tasks, and previews. The GitHub repository is not deleted.',
-                        project.github.fullName || `${project.github.owner}/${project.github.name}`,
-                    )
-                    : nls.localize(
-                        'qaap/mobileProjects/removeConfirm',
-                        'Remove {0} from Projects? This cannot be undone.',
-                        project.name,
-                    ),
-            }).open();
+            : await confirmRemoveProjectDialog(project);
         if (!confirmed) {
             return;
         }

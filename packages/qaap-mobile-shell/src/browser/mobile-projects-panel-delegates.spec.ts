@@ -96,6 +96,7 @@ describe('mobile-projects-panel host delegates', () => {
         'renderTranscriptInlineApproval',
         'onResumePreview',
         'selectSessionsSidebarProject',
+        'confirmRemoveProject',
     ] as const;
 
     for (const method of REQUIRED_PANEL_DELEGATES) {
