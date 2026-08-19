@@ -10,6 +10,8 @@ import * as path from 'path';
 
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const VITE_FIXTURE = path.join(path.resolve(__dirname, '../../src/tests/resources'), 'qaap-vite-fixture');
+/** Same copy as `QAAP_AGENTS_HUB_QUICK_ACTIONS` `run-app` promptDefault. */
+const RUN_APP_PROMPT_TEXT = 'Figure out how to build and run this project locally. Start the dev server, confirm it boots cleanly, and report the URL plus any setup steps I should know.';
 const RUN_APP_PROMPT = /figure out how to build and run/i;
 
 async function dismissMobileTutorial(page: import('@playwright/test').Page): Promise<void> {
@@ -29,10 +31,12 @@ test.describe('@qaap-mobile agent auto-continue after exploration stop', () => {
         await app.waitForShellAndInitialized();
         await dismissMobileTutorial(app.page);
 
-        await expect(app.page.locator('.theia-mobile-projects-sticky-composer-input')).toBeVisible({ timeout: 60_000 });
+        const composer = app.page.locator('.theia-mobile-projects:visible .theia-mobile-projects-sticky-composer-input').first();
+        await expect(composer).toBeVisible({ timeout: 60_000 });
 
-        await app.page.locator('.theia-mobile-agent-transcript-empty-action').filter({ hasText: /Run app/i }).click();
-        const composer = app.page.locator('.theia-mobile-projects-sticky-composer-input');
+        // Run app on the empty transcript launches managed preview (no LLM prompt).
+        // Auto-continue still applies when the user sends the run-app task text.
+        await composer.fill(RUN_APP_PROMPT_TEXT);
         await expect(composer).toHaveValue(RUN_APP_PROMPT);
         await app.page.getByRole('button', { name: /^send$|^create$/i }).click();
 
