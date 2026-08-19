@@ -137,6 +137,37 @@ export QAAP_VPS_SSH_KEY_FILE=~/.ssh/qaap-vps-deploy
 ./scripts/qaap-vps-remote-update.sh
 ```
 
+### Lost the laptop SSH key (Hetzner Console)
+
+The Cloud Agent cannot SSH to the VPS. If you are not on the machine that holds
+`~/.ssh/qaap-vps-deploy` (for example a Windows laptop with only `known_hosts`),
+do **not** try password SSH — the box is `publickey` only. Use the provider console:
+
+1. Hetzner Cloud → the server → **Console**.
+2. On the guest, as root, append a **new** public key (do not replace GitHub Actions'
+   deploy key):
+
+```bash
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+# paste the single line from the laptop public key file
+echo 'ssh-ed25519 AAAA… comment' >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+```
+
+3. On Windows (PowerShell), generate a key if none exists, then connect:
+
+```powershell
+if (-not (Test-Path "$env:USERPROFILE\.ssh\id_ed25519")) {
+  ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\id_ed25519" -N ""
+}
+Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" root@178.105.136.93
+```
+
+Offsite backup (`/opt/qaap/.env.backup`) still has to run **on the VPS** after that
+shell is open. Local tars in `/var/backups/qaap` do not survive disk loss.
+
 ## What the image includes
 
 The runtime stage of `Dockerfile` installs:
@@ -361,7 +392,8 @@ To restore a single user's repo or one JSON store, extract selectively with
 > backup the host runs `scripts/qaap-vps-backup-offsite.sh`, which no-ops until you create
 > `/opt/qaap/.env.backup` with `QAAP_BACKUP_OFFSITE_CMD`. Encrypt the archive (`gpg` / `age`) and
 > copy **only** the ciphertext (rclone/restic). Never upload the plaintext `.tar.gz` — it contains
-> OAuth sessions and API keys.
+> OAuth sessions and API keys. If you cannot SSH from your usual laptop, use
+> [Lost the laptop SSH key (Hetzner Console)](#lost-the-laptop-ssh-key-hetzner-console).
 >
 > Example `/opt/qaap/.env.backup` (chmod 600):
 >
