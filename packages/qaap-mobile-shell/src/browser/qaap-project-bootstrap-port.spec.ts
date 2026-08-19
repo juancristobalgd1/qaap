@@ -42,22 +42,31 @@ describe('qaap-project-bootstrap-port', () => {
     });
 
     it('wrapDevCommandForPort uses PORT= for CRA-style stacks', () => {
-        const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra');
+        const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra', false);
         expect(command).to.include('QAAP_PREVIEW_PORT=3001 PORT=3001');
         expect(command).to.include('--import=data:text/javascript;base64,');
         expect(command).to.match(/npm run dev$/);
     });
 
     it('wrapDevCommandForPort forces NODE_ENV=development so production hosts do not poison vite dev', () => {
-        const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra');
+        const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra', false);
         expect(command).to.include('NODE_ENV=development ');
     });
 
     it('wrapDevCommandForPort sets PORT and --port for Vite (overrides Docker IDE PORT)', () => {
-        const command = wrapDevCommandForPort('npm run dev', 5174, 'node-vite');
+        const command = wrapDevCommandForPort('npm run dev', 5174, 'node-vite', false);
         expect(command).to.include('QAAP_PREVIEW_PORT=5174 PORT=5174');
         expect(command).to.match(/npm run dev -- --port 5174 --strictPort$/);
         expect(command).to.include('--strictPort');
+    });
+
+    it('wrapDevCommandForPort uses cmd.exe SET prefixes on a Windows workspace host', () => {
+        const command = wrapDevCommandForPort('npm run dev', 3001, 'node-cra', true);
+        expect(command).to.include('set "QAAP_PREVIEW_PORT=3001"');
+        expect(command).to.include('set "PORT=3001"');
+        expect(command).to.include('set "NODE_ENV=development"');
+        expect(command).to.not.include('QAAP_PREVIEW_PORT=3001 PORT=3001');
+        expect(command).to.match(/npm run dev$/);
     });
 
     it('wrapDevCommandForPort skips the `--` separator for pnpm (it forwards args literally)', () => {
