@@ -245,9 +245,19 @@ export async function handleCurrentProjectPreviewExtracted(ctx: any, req: Reques
             res.status(404).json({ ready: false, previewUrl: '' } satisfies QaapDevPreviewProbeResponse);
             return;
         }
+        const conversationId = isQaapProcessPreviewIdentity(record)
+            ? normalizeQaapPreviewConversationId(record.conversationId)
+            : undefined;
         const ready = await ctx.probeLocalDevServer(record.port);
         if (ready) {
             ctx.portRegistry.touchPreview(record.previewId, login);
+            console.info('[qaap-preview] current claim', {
+                projectId: record.projectId,
+                conversationId,
+                previewId: record.previewId,
+                port: record.port,
+                conversationFilter,
+            });
             res.json({
                 ready: true,
                 readiness: 'transport_ready',
@@ -255,6 +265,7 @@ export async function handleCurrentProjectPreviewExtracted(ctx: any, req: Reques
                 previewId: record.previewId,
                 projectId: record.projectId,
                 port: record.port,
+                ...(conversationId ? { conversationId } : {}),
                 ...(isQaapProcessPreviewIdentity(record) ? {
                     workspaceId: record.workspaceId,
                     processId: record.processId,
@@ -274,6 +285,7 @@ export async function handleCurrentProjectPreviewExtracted(ctx: any, req: Reques
             previewId: record.previewId,
             projectId: record.projectId,
             port: record.port,
+            ...(conversationId ? { conversationId } : {}),
             ...(isQaapProcessPreviewIdentity(record) ? {
                 workspaceId: record.workspaceId,
                 processId: record.processId,

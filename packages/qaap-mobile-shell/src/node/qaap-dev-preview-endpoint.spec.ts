@@ -1067,11 +1067,23 @@ describe('QaapDevPreviewEndpoint', () => {
             get: () => 'localhost:3000',
         });
 
+        const currentReqForConversation = (conversationId: string, ...projectIds: string[]): unknown => ({
+            query: {
+                projectId: projectIds.length === 1 ? projectIds[0] : projectIds,
+                conversationId,
+            },
+            headers: {},
+            protocol: 'http',
+            get: () => 'localhost:3000',
+        });
+
         const makeJsonRes = (): { record: { code: number; body?: {
-            ready?: boolean; readiness?: string; previewId?: string; previewUrl?: string; port?: number
+            ready?: boolean; readiness?: string; previewId?: string; previewUrl?: string; port?: number;
+            conversationId?: string;
         } } } => {
             const record: { code: number; body?: {
-                ready?: boolean; readiness?: string; previewId?: string; previewUrl?: string; port?: number
+                ready?: boolean; readiness?: string; previewId?: string; previewUrl?: string; port?: number;
+                conversationId?: string;
             } } = { code: 200 };
             const res = {
                 record,
@@ -1187,6 +1199,34 @@ describe('QaapDevPreviewEndpoint', () => {
             expect(res.record.body?.ready).to.equal(false);
             expect(res.record.body?.previewUrl).to.equal('');
             expect(registry.get(record.previewId)).to.equal(undefined);
+        });
+
+        it('returns the matching section when two conversations of the same project are live', async () => {
+            const { QaapDevPreviewPortRegistry: Registry } = await import('./qaap-dev-preview-port-registry');
+            const registry = new Registry();
+            const sectionA = registerProcessPreview(registry, 'run-a', 4177, 'alice', 'conversation-a');
+            const sectionB = registerProcessPreview(registry, 'run-b', 4178, 'alice', 'conversation-b');
+            const previews = (registry as unknown as { previews: Map<string, QaapDevPreviewRecord> }).previews;
+            previews.set(sectionA.previewId, {
+                ...sectionA,
+                claimedAt: sectionA.claimedAt - 60_000,
+                touchedAt: sectionA.touchedAt - 60_000,
+            });
+
+            const ep = new CurrentTestEndpoint();
+            ep.setCurrentFakes('alice', registry);
+
+            const unscoped = makeJsonRes();
+            await ep.exposeHandleCurrent(currentReq(projectRoot), unscoped);
+            expect(unscoped.record.body?.previewId).to.equal(sectionB.previewId);
+            expect(unscoped.record.body?.conversationId).to.equal('conversation-b');
+
+            const scoped = makeJsonRes();
+            await ep.exposeHandleCurrent(currentReqForConversation('conversation-a', projectRoot), scoped);
+            expect(scoped.record.code).to.equal(200);
+            expect(scoped.record.body?.previewId).to.equal(sectionA.previewId);
+            expect(scoped.record.body?.conversationId).to.equal('conversation-a');
+            expect(scoped.record.body?.previewUrl).to.contain(`/qaap-preview/${sectionA.previewId}`);
         });
     });
 

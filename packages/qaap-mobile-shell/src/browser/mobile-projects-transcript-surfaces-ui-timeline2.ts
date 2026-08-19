@@ -32,6 +32,7 @@ import {
     resolveReadyTranscriptPreviewUrlFromProbe,
 } from '../common/qaap-transcript-preview-offer';
 import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { pickScopedPreviewClaim } from './qaap-preview-claim-scope';
 import {
     findQaapIdentityPreviewUrl,
     isLocalQaapPreviewOrigin,
@@ -267,19 +268,14 @@ export async function fetchCurrentProjectClaimUrlExtracted(ctx: any, project: Mo
             cwdUri = undefined;
         }
         // Scope to the open section so this surface never adopts another section's live claim.
+        // Do not fall back to unscoped `/api/current`: that returns the newest project claim,
+        // which can belong to a sibling section of the same project.
         const current = await fetchQaapCurrentDevPreview([
             cwdUri,
             project.uri?.toString(),
             project.id,
         ], ctx.previewScopeId());
-        const fallback = (!current?.ready || !current.previewUrl)
-            ? await fetchQaapCurrentDevPreview([
-                cwdUri,
-                project.uri?.toString(),
-                project.id,
-            ])
-            : undefined;
-        const claim = current?.ready && current.previewUrl ? current : fallback;
+        const claim = pickScopedPreviewClaim(current, ctx.previewScopeId());
         if (!claim?.ready || !claim.previewUrl) {
             return undefined;
         }

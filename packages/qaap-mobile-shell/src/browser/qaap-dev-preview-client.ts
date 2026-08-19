@@ -131,6 +131,7 @@ export async function fetchQaapCurrentDevPreview(
             projectId: typeof body.projectId === 'string' ? body.projectId : undefined,
             processId: typeof body.processId === 'string' ? body.processId : undefined,
             port: typeof body.port === 'number' ? body.port : undefined,
+            conversationId: typeof body.conversationId === 'string' ? body.conversationId : undefined,
         };
     } catch {
         return undefined;

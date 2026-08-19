@@ -18,6 +18,36 @@ export interface QaapPreviewWidgetKey {
     readonly projectId: string;
 }
 
+/** True when `value` can key a project-scoped preview widget. */
+export function isQaapPreviewWidgetKey(value: unknown): value is QaapPreviewWidgetKey {
+    const candidate = value as Partial<QaapPreviewWidgetKey> | undefined;
+    return typeof candidate?.workspaceId === 'string' && candidate.workspaceId.trim().length > 0
+        && typeof candidate?.projectId === 'string' && candidate.projectId.trim().length > 0;
+}
+
+/** Builds a widget key from probe/claim coordinates. Missing parts ⇒ no key (legacy tab). */
+export function qaapPreviewWidgetKeyFromCoordinates(
+    workspaceId: string | undefined,
+    projectId: string | undefined,
+): QaapPreviewWidgetKey | undefined {
+    const workspace = workspaceId?.trim();
+    const project = projectId?.trim();
+    if (!workspace || !project) {
+        return undefined;
+    }
+    return { workspaceId: workspace, projectId: project };
+}
+
+/** Picks a {@link QaapPreviewWidgetKey} out of command args (ignores URLs and other values). */
+export function coerceQaapPreviewWidgetKey(args: readonly unknown[]): QaapPreviewWidgetKey | undefined {
+    for (const arg of args) {
+        if (isQaapPreviewWidgetKey(arg)) {
+            return qaapPreviewWidgetKeyFromCoordinates(arg.workspaceId, arg.projectId);
+        }
+    }
+    return undefined;
+}
+
 /**
  * Same scheme as `MiniBrowserOpenHandler.PREVIEW_URI` (keep in sync). Referenced as a literal so
  * this module stays DOM-free and usable from node-side specs.
@@ -43,7 +73,8 @@ function digest(value: string): string {
  *
  * Without a key this returns the legacy {@link MiniBrowserOpenHandler.PREVIEW_URI}, so callers that
  * have no project context (the empty preview tab, the toolbar "Open URL") keep their current
- * single-tab behavior and the local single-project flow is unchanged.
+ * single-tab behavior. Work Hub / bootstrap **must** pass a key: `mini-browser.openUrl` without
+ * one still lands on the shared singleton tab.
  */
 export function qaapPreviewWidgetUri(key?: QaapPreviewWidgetKey): URI {
     if (!key) {

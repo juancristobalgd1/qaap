@@ -17,6 +17,7 @@ import {
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
+import { qaapPreviewWidgetKeyFromCoordinates } from '@theia/qaap-adapters/lib/browser/qaap-preview-widget-uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
@@ -204,13 +205,41 @@ export function previewWidgetKeyExtracted(ctx: any): QaapPreviewWidgetKey | unde
 }
 
 export async function openPreviewWidgetExtracted(ctx: any, url: string): Promise<void> {
-        const key = ctx.previewWidgetKey();
+        let key = ctx.previewWidgetKey();
+        if (!key) {
+            key = await resolvePreviewWidgetKeyFromUrl(url);
+        }
         const handler = ctx.miniBrowser as Partial<QaapProjectPreviewOpener>;
         if (key && typeof handler.openProjectPreview === 'function') {
+            console.info('[qaap-preview] open project widget', {
+                workspaceId: key.workspaceId,
+                projectId: key.projectId,
+                url,
+            });
             await handler.openProjectPreview(url, key);
             return;
         }
+        console.info('[qaap-preview] open legacy widget (no project key)', { url });
         await ctx.miniBrowser.openPreview(url);
+}
+
+async function resolvePreviewWidgetKeyFromUrl(url: string): Promise<QaapPreviewWidgetKey | undefined> {
+        try {
+            const parsed = new URL(url, resolveDevPreviewPublicOrigin());
+            const identity = parsePreviewIdentityPath(parsed.pathname);
+            if (identity) {
+                const probe = await probeQaapIdentityPreview(identity.previewId);
+                return qaapPreviewWidgetKeyFromCoordinates(probe.workspaceId, probe.projectId);
+            }
+            const proxy = parsePreviewProxyPath(parsed.pathname);
+            if (proxy) {
+                const probe = await probeQaapDevPreviewPort(proxy.port);
+                return qaapPreviewWidgetKeyFromCoordinates(probe.workspaceId, probe.projectId);
+            }
+        } catch {
+            return undefined;
+        }
+        return undefined;
 }
 
 export async function openPreviewExtracted(ctx: any, url: string,

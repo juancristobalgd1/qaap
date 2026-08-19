@@ -41,6 +41,8 @@ export interface QaapDevPreviewProbeResponse {
     readonly processId?: string;
     /** Reserved port of the claim. Only owner-scoped responses (claim/current) include it. */
     readonly port?: number;
+    /** Work Hub section that owns this claim. Present on `/api/current` when the registry has it. */
+    readonly conversationId?: string;
 }
 
 const MIN_DEV_PORT = 1024;

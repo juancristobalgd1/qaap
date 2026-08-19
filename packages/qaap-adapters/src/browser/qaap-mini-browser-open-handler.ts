@@ -18,7 +18,12 @@ import { MiniBrowserOpenerOptions } from '@theia/mini-browser/lib/browser/mini-b
 import { formatMiniBrowserNavigateError, normalizeMiniBrowserOpenUrl } from '@theia/mini-browser/lib/browser/mini-browser-url-utils';
 import { isMiniBrowserPreviewPlaceholderUrl } from './qaap-mini-browser-defaults';
 import { QaapMiniBrowser } from './qaap-mini-browser';
-import { isQaapPreviewWidgetUri, QaapPreviewWidgetKey, qaapPreviewWidgetUri } from './qaap-preview-widget-uri';
+import {
+    coerceQaapPreviewWidgetKey,
+    isQaapPreviewWidgetUri,
+    QaapPreviewWidgetKey,
+    qaapPreviewWidgetUri,
+} from './qaap-preview-widget-uri';
 
 /**
  * Qaap mobile / URL preview behavior for mini-browser open handler.
@@ -65,7 +70,10 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
             isVisible: widget => !!this.getSourceUri(widget)
         });
         commands.registerHandler(MiniBrowserCommands.OPEN_URL.id, {
-            execute: (...args: unknown[]) => this.openUrl(this.coerceUrlCommandArg(args))
+            execute: (...args: unknown[]) => this.openUrl(
+                this.coerceUrlCommandArg(args),
+                coerceQaapPreviewWidgetKey(args),
+            )
         });
     }
 
@@ -86,13 +94,13 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
         return undefined;
     }
 
-    protected override async openUrl(urlFromCommand?: string): Promise<void> {
+    protected override async openUrl(urlFromCommand?: string, key?: QaapPreviewWidgetKey): Promise<void> {
         const url = urlFromCommand ? normalizeMiniBrowserOpenUrl(urlFromCommand) : '';
         if (!url) {
             await this.openEmptyPreview();
             return;
         }
-        await this.openPreviewForProduct(url);
+        await this.openPreviewForProduct(url, key);
     }
 
     protected override async options(
@@ -161,6 +169,13 @@ export class QaapMiniBrowserOpenHandler extends MiniBrowserOpenHandler {
         }
         const props = await this.getOpenPreviewProps(mapped);
         const uri = qaapPreviewWidgetUri(key);
+        console.info('[qaap-preview] open widget', {
+            keyed: !!key,
+            workspaceId: key?.workspaceId,
+            projectId: key?.projectId,
+            widgetUri: uri.toString(),
+            startPage: mapped,
+        });
         await this.closePreviewIfNeedsFreshAttach(props.widgetOptions?.area ?? this.previewArea(), uri);
         if (key) {
             await this.closeLegacyPreviewWidget();
