@@ -40,4 +40,13 @@ describe('Qaap legal pages', () => {
         expect(gate).to.include(`href="${QAAP_LEGAL_PRIVACY_HREF}"`);
         expect(gate).to.not.include('data-qaap-link');
     });
+
+    it('copies legal pages in the production frontend static sync', () => {
+        const sync = fs.readFileSync(
+            path.resolve(__dirname, '../../../../examples/browser/scripts/copy-frontend-static.mjs'),
+            'utf8',
+        );
+        expect(sync).to.include("resources', 'legal'");
+        expect(sync).to.include("libFrontend, 'legal'");
+    });
 });

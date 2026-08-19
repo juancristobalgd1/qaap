@@ -63,8 +63,12 @@ try {
     const qaapRoot = path.dirname(resolvePackagePath('@theia/qaap-product', root));
     const gate = path.join(qaapRoot, 'resources', 'qaap-login-gate.js');
     copyIfExists(gate, path.join(libFrontend, 'qaap-login-gate.js'));
+    const legal = path.join(qaapRoot, 'resources', 'legal');
+    if (fs.existsSync(legal)) {
+        fs.cpSync(legal, path.join(libFrontend, 'legal'), { recursive: true });
+    }
 } catch {
-    console.warn('[qaap] @theia/qaap-product not found — skipping qaap-login-gate.js');
+    console.warn('[qaap] @theia/qaap-product not found — skipping qaap-login-gate.js / legal pages');
 }
 
 const media = path.join(root, 'media');

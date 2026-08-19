@@ -27,6 +27,20 @@ else
     bad "could not install nightly backup cron"
 fi
 
+BACKUP_DIR="${QAAP_BACKUP_DIR:-/var/backups/qaap}"
+if compgen -G "${BACKUP_DIR}/qaap-*.tar.gz" >/dev/null; then
+    ok "local backup archives exist in ${BACKUP_DIR}"
+else
+    bad "no local backup archives in ${BACKUP_DIR}"
+fi
+
+OFFSITE_ENV="${QAAP_BACKUP_OFFSITE_ENV:-/opt/qaap/.env.backup}"
+if [[ -n "${QAAP_BACKUP_OFFSITE_CMD:-}" || -f "$OFFSITE_ENV" ]]; then
+    ok "offsite backup command is configured"
+else
+    echo "  WARN no ${OFFSITE_ENV} — local tars do not survive disk loss (see doc/qaap-vps-deployment.md)"
+fi
+
 dexec() { docker compose exec -T "$SVC" sh -c "$1"; }
 
 if dexec 'id' | grep -q 'uid=0(root)'; then
