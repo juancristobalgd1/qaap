@@ -49,4 +49,13 @@ describe('Qaap login gate accessibility contract', () => {
         expect(css).to.include('cursor: not-allowed');
         expect(css).to.match(/\.qaap-login-btn\[aria-busy="true"\][\s\S]*cursor:\s*wait/);
     });
+
+    it('does not advertise GitLab OAuth that is not implemented', () => {
+        const view = read('browser/qaap-login-view.tsx');
+        const gate = fs.readFileSync(path.resolve(sourceRoot, '../../qaap-product/resources/qaap-login-gate.js'), 'utf8');
+        expect(view).to.not.include('qaap-login-gitlab');
+        expect(view).to.not.include('Continue with GitLab');
+        expect(gate).to.not.include('qaap-login-gitlab');
+        expect(gate).to.not.include('GITLAB_SVG');
+    });
 });

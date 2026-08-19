@@ -4,9 +4,9 @@
 // *****************************************************************************
 
 import * as React from '@theia/core/shared/react';
-import { QAAP_LOGIN_GITHUB_SVG, QAAP_LOGIN_GITLAB_SVG } from './qaap-login-icons';
+import { QAAP_LOGIN_GITHUB_SVG } from './qaap-login-icons';
 
-export type QaapLoginProvider = 'github' | 'gitlab';
+export type QaapLoginProvider = 'github';
 
 export interface QaapLoginViewProps {
     appName: string;
@@ -28,10 +28,6 @@ function getApplicationIconUrl(): string {
 
 const GitHubIcon: React.FC = () => (
     <span className='qaap-login-btn-icon-slot' dangerouslySetInnerHTML={{ __html: QAAP_LOGIN_GITHUB_SVG }} />
-);
-
-const GitLabIcon: React.FC = () => (
-    <span className='qaap-login-btn-icon-slot' dangerouslySetInnerHTML={{ __html: QAAP_LOGIN_GITLAB_SVG }} />
 );
 
 export const QaapLoginView: React.FC<QaapLoginViewProps> = ({ appName, loading, onSignIn, status }) => (
@@ -73,27 +69,6 @@ export const QaapLoginView: React.FC<QaapLoginViewProps> = ({ appName, loading, 
                 )}
                 <span className='qaap-login-btn-label'>
                     {loading === 'github' ? 'Authorizing…' : 'Continue with GitHub'}
-                </span>
-            </button>
-
-            <button
-                type='button'
-                id='qaap-login-gitlab'
-                className={`qaap-login-btn qaap-login-btn--secondary${loading === 'gitlab' ? ' qaap-login-btn--loading' : ''}`}
-                disabled={loading !== undefined}
-                aria-label='Continue with GitLab'
-                aria-busy={loading === 'gitlab'}
-                onClick={() => onSignIn('gitlab')}
-            >
-                {loading === 'gitlab' ? (
-                    <span className='qaap-login-btn-icon-slot'>
-                        <span className='qaap-login-spinner' aria-hidden={true} />
-                    </span>
-                ) : (
-                    <GitLabIcon />
-                )}
-                <span className='qaap-login-btn-label'>
-                    {loading === 'gitlab' ? 'Authorizing…' : 'Continue with GitLab'}
                 </span>
             </button>
         </div>
