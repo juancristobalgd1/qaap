@@ -22,9 +22,9 @@ jobs:
     name: Delete superseded failed runs
     if: github.repository == 'juancristobalgd1/qaap'
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Delete or cancel listed runs
+      - name: Delete listed runs
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -32,37 +32,36 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const deleteIds = [
-              // CI/CD — superseded Windows / lint failures
-              32266439823, 32265275466, 32265269132, 32259076966,
-              32255109798, 32253689239, 32200328120, 32199980119,
-              32198920560, 32198404086,
-              // Playwright @qaap-mobile — same SHAs, auto-continue cascade
-              32259076919, 32255109796, 32253689100, 32200328100,
-              32199980189, 32198920414, 32198404028,
-              // set-milestone 403 (permissions now granted)
-              32259328968, 32259079040, 32200329411,
-            ];
-            const cancelIds = [
-              32266439921, // Playwright Tests on superseded SHA
+              32182661505, 32136494576, 32134091216, 32125704067, 32097599975,
+              32096519815, 32095848423, 32095041988, 32094350448, 32092999271,
+              32092535266, 32091046532, 32090060814, 32088231086, 32086575689,
+              32085779001, 32085763341, 32083331458, 32082360996, 32081298909,
+              32079782393, 32079060085, 32077317084, 32076726499, 32075744353,
+              32074494410, 32072047106, 32071919204, 32070686106, 32069629797,
+              32068450611, 32068069864, 32064971758, 32064082307, 32063845808,
+              32062607449, 32062510074, 32055092411, 32049770892, 32039159266,
+              32036244143, 32035879997, 32035031066, 32034119366, 32025967248,
+              32022349523, 32021901025, 32019288521, 32018119917, 32016420757,
+              32182661511, 32136494584, 32134091113, 32125703977, 32097599912,
+              32096519824, 32095848355, 32095042037, 32094350745, 32092999272,
+              32092535276, 32091046394, 32090060597, 32088231187, 32086575524,
+              32085778912, 32085763343, 32083331461, 32082360961, 32081298871,
+              32079782518, 32079060067, 32077317070, 32076726545, 32075744401,
+              32074494430, 32072047088, 32071919174, 32070686116, 32069629120,
+              32068450603, 32068069884, 32064971863, 32064082165, 32063845991,
+              32062607453, 32062510055, 32055092436, 32049770896, 32039159272,
+              32036243917, 32035879987, 32035031271, 32034119466, 32025967258,
+              32022349335, 32021901036, 32019288653, 32018119903, 32016420761,
+              32182664705, 32134093555, 32097601157, 32097601201, 32097601512,
+              32097601546, 32097601644, 32097601565, 32072049573, 32071924697,
+              32064975488, 32049774382, 32025969511, 31955221486, 31949872310,
+              31949872464, 31949872448, 31942615005, 31916322793, 31914487326,
+              31902073042, 31880546745, 31877679441, 31877568405, 31852253546,
+              31847993304, 31847992648, 31847779237, 31600260441,
             ];
             const skippedThisRun = Number(process.env.GITHUB_RUN_ID);
             let deleted = 0;
-            let cancelled = 0;
             let skipped = 0;
-            for (const run_id of cancelIds) {
-              if (run_id === skippedThisRun) {
-                skipped += 1;
-                continue;
-              }
-              try {
-                await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id });
-                cancelled += 1;
-                console.log(`cancelled ${run_id}`);
-              } catch (error) {
-                skipped += 1;
-                console.log(`skip cancel ${run_id}: ${error.status || error.message}`);
-              }
-            }
             for (const run_id of deleteIds) {
               if (run_id === skippedThisRun) {
                 skipped += 1;
@@ -77,4 +76,4 @@ jobs:
                 console.log(`skip delete ${run_id}: ${error.status || error.message}`);
               }
             }
-            console.log(`done deleted=${deleted} cancelled=${cancelled} skipped=${skipped}`);
+            console.log(`done deleted=${deleted} skipped=${skipped}`);
