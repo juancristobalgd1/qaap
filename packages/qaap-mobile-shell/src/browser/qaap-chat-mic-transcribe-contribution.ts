@@ -16,6 +16,7 @@ import {
     shouldClearInterimOnRecognitionRestart,
     splitSpeechRecognitionTranscript,
     trailingSpaceForDictationBaseline,
+    qaapChatMicUnavailableMessage,
 } from './qaap-chat-mic-dictation';
 
 /**
@@ -41,7 +42,7 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
     protected observer: MutationObserver | undefined;
 
     onStart(): void {
-        if (typeof document === 'undefined' || !this.isSpeechRecognitionSupported()) {
+        if (typeof document === 'undefined') {
             return;
         }
         const sweep = (root: ParentNode): void => {
@@ -98,6 +99,10 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
             return;
         }
         const button = this.buildButton();
+        if (!this.activateMicButton(button)) {
+            this.placeMicBeforeSend(toolbar, button);
+            return;
+        }
         this.wireRecognition(button, chatInput);
         this.placeMicBeforeSend(toolbar, button);
     }
@@ -141,7 +146,9 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         }
         const button = this.buildButton();
         button.classList.add('qaap-chat-mic-btn-sticky');
-        this.wireInlineRecognition(button, field);
+        if (this.activateMicButton(button)) {
+            this.wireInlineRecognition(button, field);
+        }
         this.placeMicBeforeSend(row, button);
     }
 
@@ -189,7 +196,9 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         if (useInlinePadding) {
             wrap.classList.add('qaap-has-mic');
         }
-        this.wireInlineRecognition(button, input);
+        if (this.activateMicButton(button)) {
+            this.wireInlineRecognition(button, input);
+        }
         const sendHost = wrap.querySelector<HTMLElement>(QaapChatMicTranscribeContribution.STICKY_CONTROLS_SELECTOR) ?? wrap;
         this.placeMicBeforeSend(sendHost, button);
     }
@@ -207,6 +216,20 @@ export class QaapChatMicTranscribeContribution implements FrontendApplicationCon
         icon.setAttribute('aria-hidden', 'true');
         button.appendChild(icon);
         return button;
+    }
+
+    /** False when the browser has no SpeechRecognition — button stays visible and disabled. */
+    protected activateMicButton(button: HTMLButtonElement): boolean {
+        if (this.isSpeechRecognitionSupported()) {
+            return true;
+        }
+        const label = qaapChatMicUnavailableMessage();
+        button.disabled = true;
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        button.setAttribute('aria-disabled', 'true');
+        button.classList.add('qaap-chat-mic-btn-unavailable');
+        return false;
     }
 
     protected wireRecognition(button: HTMLButtonElement, chatInput: HTMLElement): void {

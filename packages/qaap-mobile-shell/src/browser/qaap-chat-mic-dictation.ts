@@ -9,6 +9,16 @@
  * and then re-appending the same phrase (duplicated transcriptions).
  */
 
+import { nls } from '@theia/core/lib/common/nls';
+
+/** Same copy as the preview annotation mic — Chrome / Edge only. */
+export function qaapChatMicUnavailableMessage(): string {
+    return nls.localize(
+        'qaap/preview/annotationMicUnavailable',
+        'Voice dictation is not available in this browser.',
+    );
+}
+
 export interface SpeechRecognitionResultLike {
     readonly isFinal?: boolean;
     readonly length?: number;

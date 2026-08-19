@@ -8,6 +8,7 @@ import {
     advanceDictationBaseline,
     composeDictationFieldValue,
     normalizeRestartedDictationSession,
+    qaapChatMicUnavailableMessage,
     shouldClearInterimOnRecognitionRestart,
     splitSpeechRecognitionTranscript,
     trailingSpaceForDictationBaseline,
@@ -70,5 +71,9 @@ describe('qaap-chat-mic-dictation', () => {
         if (shouldClearInterimOnRecognitionRestart('')) {
             expect.fail('must not clear interim-only sessions');
         }
+    });
+
+    it('explains that dictation needs Chrome or Edge', () => {
+        expect(qaapChatMicUnavailableMessage()).to.include('not available in this browser');
     });
 });

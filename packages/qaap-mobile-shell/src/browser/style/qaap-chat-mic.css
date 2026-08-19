@@ -23,6 +23,18 @@
     animation: qaap-chat-mic-pulse 1.2s ease-in-out infinite;
 }
 
+.qaap-chat-mic-btn:disabled,
+.qaap-chat-mic-btn-unavailable {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.qaap-chat-mic-btn-inline:disabled:hover,
+.qaap-chat-mic-btn-sticky:disabled:hover {
+    color: var(--theia-descriptionForeground);
+    opacity: 0.45;
+}
+
 @keyframes qaap-chat-mic-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50%      { opacity: 0.55; transform: scale(1.1); }
