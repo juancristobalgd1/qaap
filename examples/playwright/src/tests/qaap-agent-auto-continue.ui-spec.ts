@@ -11,7 +11,8 @@ import * as path from 'path';
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 const VITE_FIXTURE = path.join(path.resolve(__dirname, '../../src/tests/resources'), 'qaap-vite-fixture');
 /** Same copy as `QAAP_AGENTS_HUB_QUICK_ACTIONS` `run-app` promptDefault. */
-const RUN_APP_PROMPT_TEXT = 'Figure out how to build and run this project locally. Start the dev server, confirm it boots cleanly, and report the URL plus any setup steps I should know.';
+const RUN_APP_PROMPT_TEXT = 'Figure out how to build and run this project locally. '
+    + 'Start the dev server, confirm it boots cleanly, and report the URL plus any setup steps I should know.';
 const RUN_APP_PROMPT = /figure out how to build and run/i;
 
 async function dismissMobileTutorial(page: import('@playwright/test').Page): Promise<void> {
