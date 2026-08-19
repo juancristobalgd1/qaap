@@ -1,0 +1,80 @@
+# One-shot: delete superseded failed Actions runs that predate the green CI/CD
+# on f13f6f573 (Windows port-wrap / auto-continue / CRLF). The cloud-agent token
+# cannot DELETE runs (403); GITHUB_TOKEN with actions:write can.
+#
+# Safe to remove this workflow after it succeeds once.
+name: Qaap delete superseded failed runs
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/qaap-delete-superseded-failed-runs.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  delete:
+    name: Delete superseded failed runs
+    if: github.repository == 'juancristobalgd1/qaap'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Delete or cancel listed runs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const deleteIds = [
+              // CI/CD — superseded Windows / lint failures
+              32266439823, 32265275466, 32265269132, 32259076966,
+              32255109798, 32253689239, 32200328120, 32199980119,
+              32198920560, 32198404086,
+              // Playwright @qaap-mobile — same SHAs, auto-continue cascade
+              32259076919, 32255109796, 32253689100, 32200328100,
+              32199980189, 32198920414, 32198404028,
+              // set-milestone 403 (permissions now granted)
+              32259328968, 32259079040, 32200329411,
+            ];
+            const cancelIds = [
+              32266439921, // Playwright Tests on superseded SHA
+            ];
+            const skippedThisRun = Number(process.env.GITHUB_RUN_ID);
+            let deleted = 0;
+            let cancelled = 0;
+            let skipped = 0;
+            for (const run_id of cancelIds) {
+              if (run_id === skippedThisRun) {
+                skipped += 1;
+                continue;
+              }
+              try {
+                await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id });
+                cancelled += 1;
+                console.log(`cancelled ${run_id}`);
+              } catch (error) {
+                skipped += 1;
+                console.log(`skip cancel ${run_id}: ${error.status || error.message}`);
+              }
+            }
+            for (const run_id of deleteIds) {
+              if (run_id === skippedThisRun) {
+                skipped += 1;
+                continue;
+              }
+              try {
+                await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id });
+                deleted += 1;
+                console.log(`deleted ${run_id}`);
+              } catch (error) {
+                skipped += 1;
+                console.log(`skip delete ${run_id}: ${error.status || error.message}`);
+              }
+            }
+            console.log(`done deleted=${deleted} cancelled=${cancelled} skipped=${skipped}`);
