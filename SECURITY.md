@@ -97,7 +97,10 @@ Current state of these paths:
 > and `scripts/qaap-verify-auth-api-gate.sh` against the live origin (the launch probe now also
 > requires `/legal/terms.html` and `/legal/privacy.html`). Every VPS
 > deploy now runs `scripts/qaap-vps-launch-gate.sh` (nightly backup cron + uid-per-user
-> snapshot; multi-tenant isolation when two logins already exist in the registry).
+> snapshot). If two GitHub logins already exist, the gate *reports* multi-tenant isolation;
+> a failed check is a **WARN**, not a deploy blocker — extra unused logins must not stop a
+> single-user public boot. Inviting a second **real** user still requires a green
+> `scripts/qaap-verify-multitenant.sh`.
 > Configure encrypted offsite copies via `/opt/qaap/.env.backup` — local tars do not survive disk loss.
 > A production runtime without GitHub OAuth now **exits on
 > startup** unless `QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION` is set.
