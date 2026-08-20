@@ -68,6 +68,7 @@ import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/brows
 import { MobileSnackbar } from './mobile-snackbar';
 import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
+import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubAiConfigurationSheet } from './mobile-work-hub-ai-configuration-sheet';
 import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
@@ -344,6 +345,18 @@ export async function openWorkHubPreferencesSheetExtracted(ctx: any, query?: str
         }));
     }
     await ctx.workHubPreferencesSheet.show(query);
+}
+
+export async function openWorkHubBillingSheetExtracted(ctx: any): Promise<void> {
+    if (!ctx.workHubBillingSheet) {
+        ctx.workHubBillingSheet = new MobileWorkHubBillingSheet();
+        document.body.appendChild(ctx.workHubBillingSheet.node);
+        ctx.toDispose.push(Disposable.create(() => {
+            ctx.workHubBillingSheet?.dispose();
+            ctx.workHubBillingSheet = undefined;
+        }));
+    }
+    await ctx.workHubBillingSheet.show();
 }
 
 export async function openWorkHubAiConfigurationSheetExtracted(ctx: any, tabId?: string): Promise<void> {

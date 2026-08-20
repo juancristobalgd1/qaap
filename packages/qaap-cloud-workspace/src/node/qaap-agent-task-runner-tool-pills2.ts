@@ -30,6 +30,7 @@ import {
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
+import { billableAgentDurationMs } from '../common/qaap-billing-agent-runtime';
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
@@ -427,6 +428,10 @@ export function finishTaskExtracted(ctx: any, id: string, state: QaapAgentTaskSt
         const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now() };
         ctx.tasks.set(id, finished);
         void ctx.persist();
+        const durationMs = billableAgentDurationMs(finished);
+        if (durationMs > 0 && finished.ownerLogin && ctx.billingStore) {
+            void ctx.billingStore.debitRuntime(finished.ownerLogin, durationMs).catch(() => undefined);
+        }
         // 'completed'/'failed'/'interrupted' map to 'completed' for subscribers; 'cancelled' stays distinct.
         ctx.onDidChangeTaskEmitter.fire({
             type: state === 'cancelled' ? 'cancelled' : 'completed',

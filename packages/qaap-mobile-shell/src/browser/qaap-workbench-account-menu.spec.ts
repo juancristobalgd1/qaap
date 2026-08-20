@@ -45,6 +45,26 @@ describe('buildQaapAccountMenuEntries', () => {
             expect(found).to.equal(true);
         });
 
+        it('includes Billing when openBilling is provided', () => {
+            const withBilling = buildQaapAccountMenuEntries(true, {
+                openBilling: () => undefined,
+            });
+            const found = withBilling.some(e => e.kind === 'action' && e.label === 'Billing');
+            expect(found).to.equal(true);
+        });
+
+        it('opens Settings via run when openSettings is provided', () => {
+            let opened = false;
+            const withSheet = buildQaapAccountMenuEntries(true, {
+                openSettings: () => { opened = true; },
+            });
+            const settings = withSheet.find(e => e.kind === 'action' && e.label === 'Settings');
+            expect(settings?.run).to.be.a('function');
+            expect(settings?.commandId).to.equal(undefined);
+            void settings?.run?.();
+            expect(opened).to.equal(true);
+        });
+
         it('separators only appear between non-empty groups', () => {
             // No consecutive separators
             for (let i = 0; i < entries.length - 1; i++) {
@@ -64,6 +84,22 @@ describe('buildQaapAccountMenuEntries', () => {
             expect(actions).to.deep.equal([
                 'Command Palette…',
                 'Settings',
+                'Extensions',
+                'Keyboard Shortcuts',
+                'Sign Out',
+            ]);
+        });
+
+        it('places Billing after Settings when provided', () => {
+            const withBilling = buildQaapAccountMenuEntries(true, {
+                openSettings: () => undefined,
+                openBilling: () => undefined,
+            });
+            const actions = withBilling.filter(e => e.kind === 'action').map(e => e.label);
+            expect(actions).to.deep.equal([
+                'Command Palette…',
+                'Settings',
+                'Billing',
                 'Extensions',
                 'Keyboard Shortcuts',
                 'Sign Out',

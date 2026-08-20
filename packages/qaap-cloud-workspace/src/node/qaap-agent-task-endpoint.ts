@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
@@ -19,6 +19,7 @@ import {
 import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
+import { QaapBillingStore } from './qaap-billing-store';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -64,17 +65,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
 
+    @inject(QaapBillingStore) @optional()
+    protected readonly billingStore: QaapBillingStore | undefined;
+
     configure(app: Application): void {
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
-            if (!this.requireAuth(req, res)) {
-                return;
-            }
-            const agent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
-            if (!agent) {
-                res.status(400).json({ error: '"agent" query parameter is required.' });
-                return;
-            }
-            res.json({ agent, models: this.runner.listModelsForAgent(agent) });
+            void this.handleListAgentModels(req, res);
         });
         // Static `/cli-updates` segments must register before `/:id` below.
         app.get(`${QAAP_AGENT_TASK_API_PATH}/cli-updates`, (req, res) => {
@@ -155,7 +151,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             void this.handleImprovePrompt(req, res);
         });
         app.post(QAAP_AGENT_TASK_API_PATH, (req, res) => {
-            this.handleCreate(req, res);
+            void this.handleCreate(req, res);
         });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/:id`, (req, res) => {
             void this.handleDetail(req, res);
@@ -258,6 +254,27 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         });
     }
 
+    protected async handleListAgentModels(req: Request, res: Response): Promise<void> {
+        const ctx = this.requireAuth(req, res);
+        if (!ctx) {
+            return;
+        }
+        const agent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
+        if (!agent) {
+            res.status(400).json({ error: '"agent" query parameter is required.' });
+            return;
+        }
+        const login = this.auth.resolveUserLogin(ctx);
+        if (this.billingStore && login) {
+            try {
+                await this.billingStore.getOrCreateAccount(login);
+            } catch {
+                // Fail closed in the picker: cold/missing entitlements hide hosted models.
+            }
+        }
+        res.json({ agent, models: this.runner.listModelsForAgent(agent, login) });
+    }
+
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
         if (!this.requireAuth(req, res)) {
             return;
@@ -335,7 +352,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
     }
 
-    protected handleCreate(req: Request, res: Response): void {
+    protected async handleCreate(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as Partial<QaapCreateAgentTaskRequest>;
         if (typeof body.cwd !== 'string' || (typeof body.command !== 'string' && typeof body.prompt !== 'string')) {
             res.status(400).json({ error: '"cwd" and one of "command" or "prompt" are required.' });
@@ -382,7 +399,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             cwd = resolved.cwd;
-            ownerLogin = undefined;
+            ownerLogin = ctx.userLogin;
             parentId = helperOwner ? body.parentId : undefined;
         } else if (helperOwner) {
             // Helper-CLI callback authenticated purely by its per-user token.
@@ -399,6 +416,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
+            if (ownerLogin && this.billingStore) {
+                try {
+                    await this.billingStore.getOrCreateAccount(ownerLogin);
+                } catch {
+                    // Peek stays on Starter until the store recovers.
+                }
+            }
             const task = this.runner.create({
                 command: body.command,
                 prompt: body.prompt,

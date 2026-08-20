@@ -129,7 +129,50 @@ export function buildMobileViewToggleEntries(activeId: MobileViewToggleId): Qaap
     ];
 }
 
-export function buildQaapAccountMenuEntries(signedIn: boolean = true): QaapAccountMenuEntry[] {
+export interface QaapAccountMenuEntriesOptions {
+    /**
+     * Work Hub: open Settings in the overlay sheet (IDE main-area preferences stay hidden).
+     * When omitted, falls back to {@link CommonCommands.OPEN_PREFERENCES}.
+     */
+    readonly openSettings?: () => void | Promise<void>;
+    /** Work Hub / Settings: open the Billing sheet. */
+    readonly openBilling?: () => void | Promise<void>;
+}
+
+function settingsMenuEntry(options?: QaapAccountMenuEntriesOptions): QaapAccountMenuEntry {
+    if (options?.openSettings) {
+        return {
+            kind: 'action',
+            label: nls.localize('qaap/accountMenu/settings', 'Settings'),
+            iconClass: 'codicon-settings-gear',
+            run: () => options.openSettings?.(),
+        };
+    }
+    return {
+        kind: 'action',
+        label: nls.localize('qaap/accountMenu/settings', 'Settings'),
+        iconClass: 'codicon-settings-gear',
+        commandId: CommonCommands.OPEN_PREFERENCES.id,
+    };
+}
+
+function billingMenuEntry(options?: QaapAccountMenuEntriesOptions): QaapAccountMenuEntry | undefined {
+    if (!options?.openBilling) {
+        return undefined;
+    }
+    return {
+        kind: 'action',
+        label: nls.localize('qaap/accountMenu/billing', 'Billing'),
+        iconClass: 'codicon-credit-card',
+        run: () => options.openBilling?.(),
+    };
+}
+
+export function buildQaapAccountMenuEntries(
+    signedIn: boolean = true,
+    options?: QaapAccountMenuEntriesOptions,
+): QaapAccountMenuEntry[] {
+    const billing = billingMenuEntry(options);
     if (!signedIn) {
         return [
             {
@@ -138,11 +181,8 @@ export function buildQaapAccountMenuEntries(signedIn: boolean = true): QaapAccou
                 commandId: QAAP_AUTH_SIGN_IN_GITHUB_COMMAND,
             },
             { kind: 'separator' },
-            {
-                kind: 'action',
-                label: nls.localize('qaap/accountMenu/settings', 'Settings'),
-                commandId: CommonCommands.OPEN_PREFERENCES.id,
-            },
+            settingsMenuEntry(options),
+            ...(billing ? [billing] : []),
         ];
     }
     return [
@@ -152,11 +192,8 @@ export function buildQaapAccountMenuEntries(signedIn: boolean = true): QaapAccou
             commandId: WORKBENCH_SHOW_COMMANDS,
         },
         { kind: 'separator' },
-        {
-            kind: 'action',
-            label: nls.localize('qaap/accountMenu/settings', 'Settings'),
-            commandId: CommonCommands.OPEN_PREFERENCES.id,
-        },
+        settingsMenuEntry(options),
+        ...(billing ? [billing] : []),
         {
             kind: 'action',
             label: nls.localize('qaap/accountMenu/extensions', 'Extensions'),

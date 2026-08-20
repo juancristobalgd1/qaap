@@ -48,6 +48,7 @@ export function applyPanelOptions(self: any, options: MobileProjectsPanelOptions
     self.commitMessageAi = options.commitMessageAi;
     self.composerPromptImprover = options.composerPromptImprover;
     self.openPreferencesSheet = options.openPreferencesSheet;
+    self.openBillingSheet = options.openBillingSheet;
     self.openAiConfigurationSheet = options.openAiConfigurationSheet;
     self.headerOverflowMenuGroups = options.headerOverflowMenuGroups;
     self.sessionsSidebarContainer = options.sessionsSidebarContainer ?? (() => self.shouldEmbedSessionsSidebarInPanel() ? self.root : undefined);

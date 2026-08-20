@@ -7,6 +7,12 @@ export const QAAP_AUTH_API_PATH = '/qaap/api/auth';
 export const QAAP_GITHUB_API_PATH = '/qaap/api/github';
 /** Per-user AI/BYOK settings (`~/.qaap/users/{login}/settings.json`). */
 export const QAAP_USER_SETTINGS_API_PATH = '/qaap/api/user-settings';
+/** Signed-in billing entitlements + Codex hosted credit wallet. */
+export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
+/** Create a Stripe Checkout session for Pro / Team monthly subscription. */
+export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
+/** Dev-only plan activate when Stripe keys are not configured. */
+export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
 /** Unauthenticated liveness/readiness probe for monitors and VPS deploy gates. */
 export const QAAP_HEALTH_API_PATH = '/qaap/api/health';
 export const QAAP_GITHUB_OAUTH_START_PATH = '/qaap/oauth/github/start';

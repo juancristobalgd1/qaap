@@ -49,6 +49,7 @@ describe('mobile-projects-panel-factory', () => {
             onEnterWorkHubConversation: () => { delegateCalls.push('onEnterWorkHubConversation'); },
             onExitActiveTranscript: () => { delegateCalls.push('onExitActiveTranscript'); },
             openWorkHubPreferencesSheet: async () => { delegateCalls.push('openWorkHubPreferencesSheet'); },
+            openWorkHubBillingSheet: async () => { delegateCalls.push('openWorkHubBillingSheet'); },
             openWorkHubAiConfigurationSheet: async () => { delegateCalls.push('openWorkHubAiConfigurationSheet'); },
         };
         const deps = {

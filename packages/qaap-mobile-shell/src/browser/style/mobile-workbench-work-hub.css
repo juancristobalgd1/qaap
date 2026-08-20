@@ -11670,6 +11670,374 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
 }
 
 /*-----------------------------------------------------------------------------
+| Work Hub Billing (plan / agent runtime / Codex credits).
+|-----------------------------------------------------------------------------*/
+
+.theia-mobile-work-hub-billing-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior-y: contain;
+  padding: 18px 0 calc(28px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+}
+
+.theia-mobile-work-hub-billing-status {
+  margin: 24px 16px;
+  color: var(--theia-descriptionForeground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.theia-mobile-work-hub-billing-intro {
+  padding: 4px 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theia-mobile-work-hub-billing-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-billing-headline {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-billing-subhead {
+  margin: 0;
+  max-width: 34em;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-billing-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.theia-mobile-work-hub-billing-slider-section {
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.theia-mobile-work-hub-billing-plan-slider {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 20px;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  padding: 4px 20px 8px;
+  scrollbar-width: none;
+}
+
+.theia-mobile-work-hub-billing-plan-slider::-webkit-scrollbar {
+  display: none;
+}
+
+.theia-mobile-work-hub-billing-plan-slide {
+  position: relative;
+  flex: 0 0 min(78vw, 280px);
+  scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  min-height: 210px;
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+  background:
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-sideBar-background)) 88%, transparent),
+      var(--theia-editor-background));
+  color: var(--theia-foreground);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 18%, transparent);
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.theia-mobile-work-hub-billing-plan-slide:hover {
+  border-color: color-mix(in srgb, var(--theia-focusBorder, #4c8bf5) 55%, transparent);
+}
+
+.theia-mobile-work-hub-billing-plan-slide.theia-mod-selected {
+  border-color: var(--theia-focusBorder, #4c8bf5);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--theia-focusBorder, #4c8bf5) 55%, transparent),
+    0 14px 32px color-mix(in srgb, #000 24%, transparent);
+  transform: translateY(-2px);
+}
+
+.theia-mobile-work-hub-billing-plan-slide.theia-mod-featured {
+  background:
+    linear-gradient(165deg,
+      color-mix(in srgb, var(--theia-focusBorder, #4c8bf5) 16%, var(--theia-editor-background)),
+      var(--theia-editor-background));
+}
+
+.theia-mobile-work-hub-billing-plan-slide-top {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 64px;
+}
+
+.theia-mobile-work-hub-billing-plan-name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.theia-mobile-work-hub-billing-plan-tagline {
+  font-size: 12px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-billing-plan-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.theia-mobile-work-hub-billing-plan-amount {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.theia-mobile-work-hub-billing-plan-currency {
+  font-size: 13px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-billing-plan-preview {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 5px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-billing-plan-badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--theia-badge-foreground, #fff);
+  background: var(--theia-badge-background, var(--theia-focusBorder, #4c8bf5));
+}
+
+.theia-mobile-work-hub-billing-plan-badge.theia-mod-popular {
+  background: color-mix(in srgb, var(--theia-focusBorder, #4c8bf5) 80%, #111);
+}
+
+.theia-mobile-work-hub-billing-plan-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.theia-mobile-work-hub-billing-plan-dot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theia-foreground) 22%, transparent);
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-billing-plan-dot.theia-mod-active {
+  width: 18px;
+  background: var(--theia-focusBorder, #4c8bf5);
+}
+
+.theia-mobile-work-hub-billing-detail {
+  margin: 18px 20px 0;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  background: color-mix(in srgb, var(--theia-editorWidget-background, var(--theia-sideBar-background)) 70%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.theia-mobile-work-hub-billing-detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theia-mobile-work-hub-billing-detail-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.theia-mobile-work-hub-billing-detail-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-billing-detail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.theia-mobile-work-hub-billing-detail-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.theia-mobile-work-hub-billing-detail-list .codicon {
+  margin-top: 1px;
+  color: var(--theia-focusBorder, #4c8bf5);
+  font-size: 14px;
+}
+
+.theia-mobile-work-hub-billing-meters {
+  display: grid;
+  gap: 10px;
+}
+
+.theia-mobile-work-hub-billing-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+  background: var(--theia-editor-background);
+}
+
+.theia-mobile-work-hub-billing-meter.theia-mod-warning {
+  border-color: var(--theia-inputValidation-warningBorder, #cca700);
+}
+
+.theia-mobile-work-hub-billing-meter-label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-billing-meter-value {
+  font-size: 14px;
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-billing-meter-track {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--theia-scrollbarSlider-background, rgba(128, 128, 128, 0.25));
+}
+
+.theia-mobile-work-hub-billing-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--theia-focusBorder, #4c8bf5), color-mix(in srgb, var(--theia-focusBorder, #4c8bf5) 55%, #fff));
+}
+
+.theia-mobile-work-hub-billing-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--theia-inputValidation-warningForeground, var(--theia-foreground));
+  background: var(--theia-inputValidation-warningBackground, rgba(204, 167, 0, 0.16));
+  border: 1px solid var(--theia-inputValidation-warningBorder, #cca700);
+}
+
+.theia-mobile-work-hub-billing-cta-host {
+  margin: 16px 20px 0;
+}
+
+.theia-mobile-work-hub-billing-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.theia-mobile-work-hub-billing-cta-btn {
+  appearance: none;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
+  background: color-mix(in srgb, var(--theia-foreground) 6%, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-billing-cta-btn.theia-mod-primary {
+  border-color: transparent;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--theia-button-background, #0e639c) 92%, #fff),
+    var(--theia-button-background, #0e639c));
+  color: var(--theia-button-foreground, #fff);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--theia-button-background, #0e639c) 35%, transparent);
+}
+
+.theia-mobile-work-hub-billing-cta-btn.theia-mod-current,
+.theia-mobile-work-hub-billing-cta-btn:disabled {
+  opacity: 0.72;
+  cursor: default;
+  box-shadow: none;
+}
+
+.theia-mobile-work-hub-billing-cta-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--theia-descriptionForeground);
+}
+
+/*-----------------------------------------------------------------------------
 | Work Hub embedded AI Configuration (agents / MCP / prompts from account menu).
 |-----------------------------------------------------------------------------*/
 

@@ -575,6 +575,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly commitMessageAi: MobileProjectsPanelOptions['commitMessageAi'];
     protected readonly composerPromptImprover: MobileProjectsPanelOptions['composerPromptImprover'];
     protected readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
+    protected readonly openBillingSheet: MobileProjectsPanelOptions['openBillingSheet'];
     protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
     protected readonly headerOverflowMenuGroups: MobileProjectsPanelOptions['headerOverflowMenuGroups'];
     protected readonly sessionsSidebarContainer: MobileProjectsPanelOptions['sessionsSidebarContainer'];
@@ -618,7 +619,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         toggleQaapAccountMenu(
             this.accountBtn,
             this.commands,
-            buildQaapAccountMenuEntries(readQaapSignedIn()),
+            buildQaapAccountMenuEntries(readQaapSignedIn(), {
+                openSettings: () => this.openPreferencesSheet?.(),
+                openBilling: () => this.openBillingSheet?.(),
+            }),
             {
                 section: QAAP_WORK_HUB_GETTING_STARTED,
                 onCatalogAction: action => { void this.runCatalogAction(action); },

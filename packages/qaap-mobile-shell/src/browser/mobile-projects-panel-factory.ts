@@ -78,6 +78,7 @@ export interface MobileProjectsPanelFactoryDelegate {
     onEnterWorkHubConversation(): void;
     onExitActiveTranscript(): void;
     openWorkHubPreferencesSheet(query?: string): Promise<void>;
+    openWorkHubBillingSheet(): Promise<void>;
     openWorkHubAiConfigurationSheet(tabId?: string): Promise<void>;
 }
 
@@ -314,6 +315,7 @@ export class MobileProjectsPanelFactory {
                 commitMessageAi: deps.commitMessageAi,
                 composerPromptImprover: deps.composerPromptImprover,
                 openPreferencesSheet: query => delegate.openWorkHubPreferencesSheet(query),
+                openBillingSheet: () => delegate.openWorkHubBillingSheet(),
                 openAiConfigurationSheet: tabId => delegate.openWorkHubAiConfigurationSheet(tabId),
                 projectBootstrap: deps.projectBootstrap,
                 agUiFrontendTools: deps.agUiFrontendTools,

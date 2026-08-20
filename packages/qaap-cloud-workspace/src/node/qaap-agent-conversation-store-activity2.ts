@@ -38,6 +38,7 @@ import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
@@ -280,6 +281,22 @@ export async function applyTaskOutcomeExtracted(ctx: any, ref: QaapConversationT
     const usageFinalized = ctx.finalizeTurnContextUsage(convSnapshot, task.id, turnAgentId);
     ctx.agentStreamByTaskId.delete(task.id);
     ctx.agUiStreamByTaskId.delete(task.id);
+    if (
+        task.ownerLogin
+        && ctx.billingStore
+        && usageFinalized.contextUsage
+        && !usageFinalized.contextUsageEstimated
+    ) {
+        const modelId = task.agentModel?.modelId ?? task.qaiqModel?.modelId;
+        if (isHostedCodexUsage(turnAgentId, modelId)) {
+            void ctx.billingStore.debitHostedUsage(
+                task.ownerLogin,
+                modelId!,
+                usageFinalized.contextUsage.inputTokens,
+                usageFinalized.contextUsage.outputTokens,
+            ).catch(() => undefined);
+        }
+    }
     const conv = ctx.conversations.get(conversationId);
     if (!conv) {
         return resolveChatTurnOutcome(task.state);

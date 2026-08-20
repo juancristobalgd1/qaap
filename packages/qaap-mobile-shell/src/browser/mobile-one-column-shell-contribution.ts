@@ -83,6 +83,7 @@ import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/brows
 import { MobileSnackbar } from './mobile-snackbar';
 import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
+import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubAiConfigurationSheet } from './mobile-work-hub-ai-configuration-sheet';
 import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
@@ -172,7 +173,7 @@ import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobi
 import { activateMainPreviewWidgetExtracted, bootstrapMobilePreviewInBackgroundExtracted, ensureMobilePreviewEditorVisibleExtracted, ensureWelcomeInMainAreaExtracted, openMobilePreviewInMainExtracted, relocatePreviewToMainIfNeededExtracted, toggleMobilePreviewExtracted } from './mobile-one-column-shell-contribution-activity2';
 import { ensureWorkHubSurfaceMountedAfterReadyExtracted, initBottomBarControllerExtracted, initHubNavigationControllerExtracted, initIdeFallbackControllerExtracted, initLandingControllerExtracted, initOverlayControllerExtracted, initProjectsPanelFactoryExtracted, initPullRequestPanelControllerExtracted, initSideSheetControllerExtracted, initTranscriptChromeControllerExtracted, initWorkHubBootstrapControllerExtracted, onStartExtracted, patchWorkHubBootstrapLandingHostExtracted, setTrackedProjectsPanelExtracted, syncOverlayEdgeSwipeZonesExtracted } from './mobile-one-column-shell-contribution-render2';
 import { armAgentsSurfaceWatchdogExtracted, armBootGuardSafetyTimeoutExtracted, armLayoutRecoveryGuardExtracted, ensureDesktopSidePanelSizesExtracted, ensureDesktopWorkHubSessionsSidebarOpenExtracted, ensureMainContentAfterWorkspaceReloadExtracted, ensureOverlayElementsExtracted, enterMobileLayoutExtracted, forceCenterColumnFullWidthExtracted, hasLayoutRecoveryBeenAttemptedExtracted, hideProjectsPanelExtracted, isWorkHubSurfacePresentInDomExtracted, leaveMobileLayoutExtracted, markLayoutRecoveryAttemptedExtracted, onDidInitializeLayoutExtracted, onStopExtracted, recoverEmptyAgentsSurfaceExtracted, refreshProjectsCountExtracted, requestFullShellRelayoutExtracted, restoreDesktopSplitLayoutExtracted, runLayoutRecoveryGuardExtracted, setSidePanelSizeExtracted, shouldActivateMobileLayoutExtracted, teardownMobileUiExtracted } from './mobile-one-column-shell-contribution-streaming2';
-import { activateMobileIdeHeaderViewExtracted, closeStaleMainPreviewWidgetExtracted, enforceWorkHubSurfaceIsolationExtracted, executeAndDismissExtracted, findPreviewWidgetExtracted, getActivePreviewWidgetExtracted, isMobileExploreSheetVisibleExtracted, mountSideSheetWidgetExtracted, onCurrentProjectActivatedExtracted, onProjectsPanelOpenExtracted, onProjectsPanelOpenInIdeExtracted, openAgentTaskComposerExtracted, openConversationInWorkHubExtracted, openDesktopIdeExtracted, openProjectScopedDiffViewExtracted, openWorkHubAiConfigurationSheetExtracted, openWorkHubPreferencesSheetExtracted, prepareDesktopIdeWorkspaceFromHubExtracted, prepareSideSheetOpenExtracted, refreshWorkbenchTopBarExtracted, registerCommandsExtracted, relayoutMainPreviewWidgetsExtracted, resolveCurrentProjectForAgentExtracted, resolveMobileIdeHeaderViewIdExtracted, toggleMobileAgentSheetExtracted, toggleMobileExploreSheetExtracted, toggleProjectsPanelExtracted } from './mobile-one-column-shell-contribution-timeline2';
+import { activateMobileIdeHeaderViewExtracted, closeStaleMainPreviewWidgetExtracted, enforceWorkHubSurfaceIsolationExtracted, executeAndDismissExtracted, findPreviewWidgetExtracted, getActivePreviewWidgetExtracted, isMobileExploreSheetVisibleExtracted, mountSideSheetWidgetExtracted, onCurrentProjectActivatedExtracted, onProjectsPanelOpenExtracted, onProjectsPanelOpenInIdeExtracted, openAgentTaskComposerExtracted, openConversationInWorkHubExtracted, openDesktopIdeExtracted, openProjectScopedDiffViewExtracted, openWorkHubAiConfigurationSheetExtracted, openWorkHubBillingSheetExtracted, openWorkHubPreferencesSheetExtracted, prepareDesktopIdeWorkspaceFromHubExtracted, prepareSideSheetOpenExtracted, refreshWorkbenchTopBarExtracted, registerCommandsExtracted, relayoutMainPreviewWidgetsExtracted, resolveCurrentProjectForAgentExtracted, resolveMobileIdeHeaderViewIdExtracted, toggleMobileAgentSheetExtracted, toggleMobileExploreSheetExtracted, toggleProjectsPanelExtracted } from './mobile-one-column-shell-contribution-timeline2';
 
 export const GETTING_STARTED_WIDGET_COMMAND = 'getting.started.widget';
 
@@ -367,6 +368,7 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     protected projectsPanelTrack: Disposable | undefined;
     protected agentTaskComposer: MobileAgentTaskComposer | undefined;
     protected workHubPreferencesSheet: MobileWorkHubPreferencesSheet | undefined;
+    protected workHubBillingSheet: MobileWorkHubBillingSheet | undefined;
     protected workHubAiConfigurationSheet: MobileWorkHubAiConfigurationSheet | undefined;
     protected projectsCount = 0;
     protected landing!: MobileShellLandingController;
@@ -778,6 +780,10 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
 
     protected async openWorkHubPreferencesSheet(query?: string): Promise<void> {
         return openWorkHubPreferencesSheetExtracted(this, query);
+    }
+
+    protected async openWorkHubBillingSheet(): Promise<void> {
+        return openWorkHubBillingSheetExtracted(this);
     }
 
     protected async openWorkHubAiConfigurationSheet(tabId?: string): Promise<void> {

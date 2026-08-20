@@ -889,6 +889,9 @@ export function postUserMessageExtracted(ctx: any, id: string,
     }
     let task: QaapAgentTask | undefined;
     try {
+        if (next.ownerLogin && ctx.billingStore?.getOrCreateAccount) {
+            void ctx.billingStore.getOrCreateAccount(next.ownerLogin).catch(() => undefined);
+        }
         task = ctx.taskRunner.create(
             ctx.buildTaskCreateRequest(next, turnAgentId, latencyMarks, userMessage.id),
             next.ownerLogin,

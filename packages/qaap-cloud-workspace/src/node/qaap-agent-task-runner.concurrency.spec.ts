@@ -93,6 +93,67 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         expect(tasks.get(a3.id)?.state).to.equal('running');
     });
 
+    it('uses the signed-in plan concurrent cap when billing peek is warm', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, import('../common/qaap-agent-task').QaapAgentTask>();
+        const queuedCreateRequests = new Map<string, import('../common/qaap-agent-task').QaapCreateAgentTaskRequest>();
+        Object.assign(runner, {
+            tasks,
+            queuedCreateRequests,
+            processes: new Map(),
+            onDidChangeTaskEmitter: { fire: () => undefined },
+            maxConcurrentAgents: () => 16,
+            maxConcurrentAgentsPerUser: () => 8,
+            countRunningTasks: () => [...tasks.values()].filter(task => task.state === 'running').length,
+            resolveAgentModelForRequest: () => undefined,
+            isDirectory: () => true,
+            persist: async () => undefined,
+            spawnProcessWhenReady: async () => undefined,
+            billingStore: {
+                maxConcurrentAgentsForOwner: (login: string | undefined) => login === 'alice' ? 4 : 2,
+                getOrCreateAccount: async () => undefined,
+            },
+        });
+
+        const request = { prompt: 'do work', cwd: '/repo' };
+        expect(runner.create(request, 'alice').state).to.equal('running');
+        expect(runner.create(request, 'alice').state).to.equal('running');
+        expect(runner.create(request, 'alice').state).to.equal('running');
+        expect(runner.create(request, 'alice').state).to.equal('running');
+        expect(runner.create(request, 'alice').state).to.equal('queued');
+        expect(runner.create(request, 'bob').state).to.equal('running');
+        expect(runner.create(request, 'bob').state).to.equal('running');
+        expect(runner.create(request, 'bob').state).to.equal('queued');
+    });
+
+    it('treats Alice and alice as the same concurrent-agent owner', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, import('../common/qaap-agent-task').QaapAgentTask>();
+        const queuedCreateRequests = new Map<string, import('../common/qaap-agent-task').QaapCreateAgentTaskRequest>();
+        Object.assign(runner, {
+            tasks,
+            queuedCreateRequests,
+            processes: new Map(),
+            onDidChangeTaskEmitter: { fire: () => undefined },
+            maxConcurrentAgents: () => 16,
+            maxConcurrentAgentsPerUser: () => 2,
+            countRunningTasks: () => [...tasks.values()].filter(task => task.state === 'running').length,
+            resolveAgentModelForRequest: () => undefined,
+            isDirectory: () => true,
+            persist: async () => undefined,
+            spawnProcessWhenReady: async () => undefined,
+            billingStore: {
+                maxConcurrentAgentsForOwner: () => 2,
+                getOrCreateAccount: async () => undefined,
+            },
+        });
+
+        const request = { prompt: 'do work', cwd: '/repo' };
+        expect(runner.create(request, 'Alice').state).to.equal('running');
+        expect(runner.create(request, 'alice').state).to.equal('running');
+        expect(runner.create(request, 'ALICE').state).to.equal('queued');
+    });
+
     it('restores a queued request and can execute it after a backend restart', () => {
         const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
         const tasks = new Map<string, import('../common/qaap-agent-task').QaapAgentTask>();

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
@@ -34,6 +34,7 @@ import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qa
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
+import { QaapBillingStore } from './qaap-billing-store';
 import { QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION } from './qaap-agent-conversation-store-constants';
 import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import {
@@ -69,6 +70,9 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    @inject(QaapBillingStore) @optional()
+    protected readonly billingStore: QaapBillingStore | undefined;
 
     /**
      * Idempotency guard for conversation creation: `${ownerLogin}:${clientRequestId}` → the id of the
@@ -420,7 +424,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             this.auth.denyForbidden(res, req, 'agent_conversation', { cwd: body.cwd });
             return;
         }
-        const ownerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+        const ownerLogin = this.auth.resolveUserLogin(ctx);
         // Idempotency: if this exact client submit (same clientRequestId) already produced a
         // conversation, return it instead of creating a duplicate + a second worktree/task.
         const clientRequestId = typeof (req.body as { clientRequestId?: unknown }).clientRequestId === 'string'
@@ -451,7 +455,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             let baseCwd: string | undefined;
             let worktreeBranch: string | undefined;
             if (body.worktree === true) {
-                const worktreeOwnerLogin = ctx.kind === 'authenticated' ? ctx.userLogin : undefined;
+                const worktreeOwnerLogin = this.auth.resolveUserLogin(ctx);
                 const worktree = await this.worktrees.create(cwd, worktreeOwnerLogin);
                 baseCwd = cwd;
                 cwd = worktree.worktreePath;
@@ -459,6 +463,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             }
             const approvalPolicyId = typeof body.approvalPolicyId === 'string' ? body.approvalPolicyId.trim() : undefined;
             const toolApprovalRules = parseRequestToolApprovalRules(body.toolApprovalRules, approvalPolicyId);
+            await this.warmBilling(ownerLogin);
             const conv = this.store.create({
                 cwd,
                 ...(baseCwd ? { parallelBaseCwd: baseCwd } : {}),
@@ -600,6 +605,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
                     ? body.deliveryMode
                     : QAAP_DEFAULT_DELIVERY_MODE;
             const parent = this.store.get(req.params.id);
+            const ctx = this.auth.authenticate(req);
+            await this.warmBilling(this.auth.resolveUserLogin(ctx) ?? parent?.ownerLogin);
             if (deliveryMode === 'parallel' && parent && this.conversationHasLiveRun(req.params.id, parent)) {
                 const spawned = await this.spawnIsolatedParallelConversation(parent, {
                     content,
@@ -1037,6 +1044,17 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         };
         req.on('close', cleanup);
         res.on('close', cleanup);
+    }
+
+    protected async warmBilling(login: string | undefined): Promise<void> {
+        if (!login || !this.billingStore) {
+            return;
+        }
+        try {
+            await this.billingStore.getOrCreateAccount(login);
+        } catch {
+            // Peek stays on Starter until the store recovers.
+        }
     }
 
     protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {

@@ -4,6 +4,14 @@
 // *****************************************************************************
 
 export const QAAP_CLOUD_API_PATH = '/qaap/api/cloud';
+/** Signed-in billing entitlements + Codex hosted credit wallet. */
+export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
+/** Create a Stripe Checkout session for Pro / Team monthly subscription. */
+export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
+/** Stripe webhook (raw body) for subscription lifecycle. */
+export const QAAP_BILLING_WEBHOOK_API_PATH = '/qaap/api/billing/webhook';
+/** Dev-only plan activate when Stripe keys are not configured. */
+export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
 
 /**
  * Default CDP endpoint AppTester's `chrome-devtools-mcp` MCP server connects to. Must point at a

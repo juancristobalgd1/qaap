@@ -37,6 +37,7 @@ import { type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
 import { type QaapQaiqModelBinding } from '../common/qaap-qaiq-model-binding';
 import { type QaapNativeModelRoutingTable } from '../common/qaap-agent-native-model-routing';
 import { QaapWebPushService } from './qaap-web-push-service';
+import { QaapBillingStore } from './qaap-billing-store';
 import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
 import { QaapAgentHealthTracker } from './qaap-agent-health';
 import {
@@ -137,6 +138,9 @@ export class QaapAgentTaskRunner {
 
     @inject(QaapWebPushService)
     protected readonly webPush: QaapWebPushService;
+
+    @inject(QaapBillingStore) @optional()
+    protected readonly billingStore: QaapBillingStore | undefined;
 
     @inject(PreferenceService) @optional()
     protected readonly preferenceService: PreferenceService | undefined;
@@ -360,8 +364,8 @@ export class QaapAgentTaskRunner {
         return listQaiqModelsExtracted(this, ownerLogin);
     }
 
-    listModelsForAgent(agentId: string | undefined): QaapQaiqModelOption[] {
-        return listModelsForAgentExtracted(this, agentId);
+    listModelsForAgent(agentId: string | undefined, ownerLogin?: string): QaapQaiqModelOption[] {
+        return listModelsForAgentExtracted(this, agentId, ownerLogin);
     }
 
     defaultAgent(): string {

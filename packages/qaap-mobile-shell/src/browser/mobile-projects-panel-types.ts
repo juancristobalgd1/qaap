@@ -134,6 +134,8 @@ export interface MobileProjectsPanelOptions {
     composerPromptImprover?: import('./qaap-composer-prompt-improver').QaapComposerPromptImprover;
     /** Opens AI / Settings preferences inside the Work Hub instead of the IDE main area. */
     openPreferencesSheet?: (query?: string) => Promise<void>;
+    /** Opens Billing (plan, runtime, Codex credits) inside the Work Hub overlay. */
+    openBillingSheet?: () => Promise<void>;
     /** Opens AI Configuration (agents, MCP, prompts) inside the Work Hub overlay. */
     openAiConfigurationSheet?: (tabId?: string) => Promise<void>;
     /** Extra header overflow menu groups for embedding surfaces such as the IDE AI Chat slot. */

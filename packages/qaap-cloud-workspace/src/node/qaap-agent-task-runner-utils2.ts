@@ -39,9 +39,10 @@ export const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: st
     { env: 'OPENROUTER_API_KEY', pref: 'openrouter-api-key' },
     { env: 'NVIDIA_API_KEY', pref: 'nvidia-api-key' },
 ];
-export const DEFAULT_MAX_CONCURRENT_AGENTS = 4;
+export const DEFAULT_MAX_CONCURRENT_AGENTS = 16;
 export const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
-export const DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER = 2;
+/** Ceiling for one user; plan entitlements (Starter 2 / Pro 4 / Team 8) are the real limiter. */
+export const DEFAULT_MAX_CONCURRENT_AGENTS_PER_USER = 8;
 export const MAX_CONCURRENT_AGENTS_PER_USER_ENV = 'QAAP_MAX_CONCURRENT_AGENTS_PER_USER';
 
 // ─── Fingerprint constants ───────────────────────────────────────────────────

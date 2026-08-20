@@ -48,6 +48,7 @@ import type { MobileProjectsHubView } from './mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
 import { MobileWorkHubAiConfigurationSheet } from './mobile-work-hub-ai-configuration-sheet';
+import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
@@ -152,6 +153,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
 
     protected workHubPanel: MobileProjectsPanel | undefined;
     protected preferencesSheet: MobileWorkHubPreferencesSheet | undefined;
+    protected billingSheet: MobileWorkHubBillingSheet | undefined;
     protected aiConfigurationSheet: MobileWorkHubAiConfigurationSheet | undefined;
     protected toolbarMenuButton: HTMLButtonElement | undefined;
     protected toolbarMenu: HTMLElement | undefined;
@@ -251,6 +253,7 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
                 onEnterWorkHubConversation: () => undefined,
                 onExitActiveTranscript: () => undefined,
                 openWorkHubPreferencesSheet: query => this.openWorkHubPreferencesSheet(query),
+                openWorkHubBillingSheet: () => this.openWorkHubBillingSheet(),
                 openWorkHubAiConfigurationSheet: tabId => this.openWorkHubAiConfigurationSheet(tabId),
             },
             panelOptions: {
@@ -326,6 +329,19 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
             }));
         }
         await this.preferencesSheet.show(query);
+    }
+
+    protected async openWorkHubBillingSheet(): Promise<void> {
+        if (!this.billingSheet) {
+            this.billingSheet = new MobileWorkHubBillingSheet();
+            document.body.appendChild(this.billingSheet.node);
+            this.toDispose.push(Disposable.create(() => {
+                this.billingSheet?.dispose();
+                this.billingSheet?.node.parentElement?.removeChild(this.billingSheet.node);
+                this.billingSheet = undefined;
+            }));
+        }
+        await this.billingSheet.show();
     }
 
     protected async openWorkHubAiConfigurationSheet(tabId?: string): Promise<void> {

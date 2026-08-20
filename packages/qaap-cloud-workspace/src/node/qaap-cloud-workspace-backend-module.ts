@@ -22,6 +22,10 @@ import { QaapAgentConversationEndpoint } from './qaap-agent-conversation-endpoin
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskEndpoint } from './qaap-agent-task-endpoint';
 import { QaapUserAiSettingsEndpoint } from './qaap-user-ai-settings-endpoint';
+import { QaapBillingEndpoint } from './qaap-billing-endpoint';
+import { QaapBillingStore } from './qaap-billing-store';
+import { QaapBillingQuotaService } from './qaap-billing-quota-service';
+import { QaapBillingQuota } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorktreeGcContribution } from './qaap-worktree-gc';
@@ -148,6 +152,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(BackendApplicationContribution).toService(QaapAgentTaskEndpoint);
     bind(QaapUserAiSettingsEndpoint).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapUserAiSettingsEndpoint);
+    bind(QaapBillingStore).toSelf().inSingletonScope();
+    bind(QaapBillingQuotaService).toSelf().inSingletonScope();
+    bind(QaapBillingQuota).toService(QaapBillingQuotaService);
+    bind(QaapBillingEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapBillingEndpoint);
     bind(QaapAgentConversationStore).toSelf().inSingletonScope();
     // Headless server-side visual evidence — subscribes to the store on startup, so it must be
     // instantiated eagerly via the contribution provider (singletons are otherwise lazy).

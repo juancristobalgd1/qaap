@@ -9,6 +9,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapGithubOauthEndpoint } from './qaap-github-oauth-endpoint';
 import type { QaapProjectSessionSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { QaapPlanRepoLimitError } from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 
 describe('QaapGithubOauthEndpoint.enrichSessionWithWorkspaceUri', () => {
 
@@ -227,5 +228,32 @@ describe('QaapGithubOauthEndpoint.handleDeleteGithubRepository', () => {
         }).handleDeleteGithubRepository({ params: { owner: 'octocat', repo: 'hello' } }, res);
         expect(res.statusCode).to.equal(401);
         expect(fs.existsSync(aliceClone)).to.equal(true);
+    });
+});
+
+describe('QaapGithubOauthEndpoint plan repo limit', () => {
+
+    it('returns 403 plan_repo_limit with the human message', () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        const res: {
+            statusCode?: number;
+            body?: unknown;
+            status: (code: number) => { json: (b: unknown) => void };
+        } = {
+            status(code: number) {
+                res.statusCode = code;
+                return { json: (b: unknown) => { res.body = b; } };
+            },
+        };
+        const handled = (endpoint as unknown as {
+            respondBillingQuotaError(err: unknown, response: typeof res): boolean;
+        }).respondBillingQuotaError(new QaapPlanRepoLimitError('starter', 3), res);
+        expect(handled).to.equal(true);
+        expect(res.statusCode).to.equal(403);
+        expect(res.body).to.deep.include({
+            error: 'plan_repo_limit',
+            planId: 'starter',
+            limit: 3,
+        });
     });
 });

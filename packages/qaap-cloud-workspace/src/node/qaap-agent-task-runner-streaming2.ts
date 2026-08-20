@@ -218,6 +218,9 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         );
         const atCapacity = ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
             || ctx.ownerAtConcurrencyCap(ownerLogin);
+        if (ownerLogin && ctx.billingStore) {
+            void ctx.billingStore.getOrCreateAccount(ownerLogin).catch(() => undefined);
+        }
         const task: QaapAgentTask = {
             id,
             title: (request.title ?? '').trim() || prompt || rawCommand,
@@ -229,7 +232,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
             autoApprove,
             ...(request.readOnlyWorkspace ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
-            ...(ownerLogin ? { ownerLogin } : {}),
+            ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt || rawCommand);

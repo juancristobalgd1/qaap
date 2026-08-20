@@ -276,6 +276,7 @@ export function initProjectsPanelFactoryExtracted(ctx: any): void {
             onEnterWorkHubConversation: () => ctx.enforceWorkHubSurfaceIsolation(),
             onExitActiveTranscript: () => { void ctx.transcriptChrome.onExitActiveTranscript(); },
             openWorkHubPreferencesSheet: query => ctx.openWorkHubPreferencesSheet(query),
+            openWorkHubBillingSheet: () => ctx.openWorkHubBillingSheet(),
             openWorkHubAiConfigurationSheet: tabId => ctx.openWorkHubAiConfigurationSheet(tabId),
         },
         panelOptions: {

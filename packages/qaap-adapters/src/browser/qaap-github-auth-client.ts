@@ -5,6 +5,9 @@
 
 import {
     QAAP_AUTH_API_PATH,
+    QAAP_BILLING_API_PATH,
+    QAAP_BILLING_CHECKOUT_API_PATH,
+    QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_GITHUB_API_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
     QAAP_USER_SETTINGS_API_PATH,
@@ -143,8 +146,8 @@ export async function openQaapGithubRepository(owner: string, name: string): Pro
     // non-GET requests from cross-site initiation.
     const response = await fetch(url, qaapAuthenticatedFetchInit({ method: 'POST' }));
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to open GitHub repository (${response.status})`);
+        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(body.message || body.error || `Failed to open GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
@@ -166,8 +169,8 @@ export async function createQaapGithubRepository(request: QaapGithubCreateReposi
         body: JSON.stringify(request),
     }));
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to create GitHub repository (${response.status})`);
+        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(body.message || body.error || `Failed to create GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
@@ -180,8 +183,8 @@ export async function cloneQaapGithubRepository(repository: string): Promise<Qaa
         body: JSON.stringify(request),
     }));
     if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error || `Failed to clone GitHub repository (${response.status})`);
+        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(body.message || body.error || `Failed to clone GitHub repository (${response.status})`);
     }
     return response.json() as Promise<QaapGithubOpenRepositoryResponse>;
 }
@@ -193,6 +196,112 @@ export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>
     }
     const body = await response.json() as { settings?: Record<string, unknown> };
     return body.settings && typeof body.settings === 'object' ? body.settings : {};
+}
+
+/** Signed-in billing snapshot (plan, runtime/credits, catalog). */
+export interface QaapBillingApiResponse {
+    readonly account: {
+        readonly login: string;
+        readonly planId: string;
+        readonly includedRuntimeMinutesRemaining: number;
+        readonly purchasedRuntimeMinutes: number;
+        readonly includedCreditsRemaining: number;
+        readonly purchasedCredits: number;
+        readonly periodStart: string;
+        readonly updatedAt: string;
+    };
+    readonly entitlements: {
+        readonly planId: string;
+        readonly storageGb: number;
+        readonly maxActiveRepos: number;
+        readonly maxConcurrentAgents: number;
+        readonly hostedModels: boolean;
+        readonly runtimeFairUse: boolean;
+        readonly includedRuntimeHoursPerMonth: number;
+        readonly runtimeHoursRemaining: number;
+        readonly runtimeUsageRatio: number;
+        readonly runtimeWarning: boolean;
+        readonly canStartAgent: boolean;
+        readonly includedCreditsPerMonth: number;
+        readonly creditsRemaining: number;
+    };
+    readonly catalog: {
+        readonly plans: ReadonlyArray<{
+            readonly id: string;
+            readonly monthlyPriceEur: number;
+            readonly storageGb: number;
+            readonly maxActiveRepos: number;
+            readonly maxConcurrentAgents: number;
+            readonly includedRuntimeHoursPerMonth: number;
+            readonly runtimeFairUse: boolean;
+            readonly hostedModels: boolean;
+            readonly includedCreditsPerMonth: number;
+        }>;
+        readonly runtimePacks: ReadonlyArray<{
+            readonly monthlyPriceEur: number;
+            readonly qcu: number;
+            readonly bonusQcu?: number;
+        }>;
+        readonly hostedModels: ReadonlyArray<{
+            readonly modelId: string;
+            readonly label: string;
+            readonly role: string;
+            readonly creditsPerMillionInput: number;
+            readonly creditsPerMillionOutput: number;
+        }>;
+    };
+    readonly checkout?: {
+        readonly stripeEnabled: boolean;
+        readonly devActivateEnabled: boolean;
+        readonly payablePlanIds: ReadonlyArray<string>;
+    };
+}
+
+export async function fetchQaapBilling(): Promise<QaapBillingApiResponse | undefined> {
+    const response = await fetch(QAAP_BILLING_API_PATH, qaapAuthenticatedFetchInit());
+    if (!response.ok) {
+        return undefined;
+    }
+    return response.json() as Promise<QaapBillingApiResponse>;
+}
+
+export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise<{ url: string }> {
+    const response = await fetch(QAAP_BILLING_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId }),
+    }));
+    const body = await response.json().catch(() => ({})) as {
+        url?: string;
+        error?: string;
+        message?: string;
+        devActivateEnabled?: boolean;
+    };
+    if (!response.ok || !body.url) {
+        const error = new Error(body.message || body.error || `Checkout failed (${response.status})`) as Error & {
+            code?: string;
+            devActivateEnabled?: boolean;
+        };
+        error.code = body.error;
+        error.devActivateEnabled = body.devActivateEnabled;
+        throw error;
+    }
+    return { url: body.url };
+}
+
+export async function activateQaapBillingPlanDev(
+    planId: 'starter' | 'pro' | 'team',
+): Promise<QaapBillingApiResponse | undefined> {
+    const response = await fetch(QAAP_BILLING_DEV_ACTIVATE_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planId }),
+    }));
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || `Dev activate failed (${response.status})`);
+    }
+    return fetchQaapBilling();
 }
 
 export async function putQaapUserAiSettings(settings: Record<string, unknown>): Promise<Record<string, unknown>> {

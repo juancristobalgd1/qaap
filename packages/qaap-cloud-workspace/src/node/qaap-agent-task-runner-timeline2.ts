@@ -48,6 +48,7 @@ import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/com
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { listNativeAgentModels } from './qaap-agent-native-models';
+import { canStartNewAgentJob, hostedModelDenialReason, isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
 import {
     applyAgentApprovalPolicyToCommand,
@@ -302,6 +303,44 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
         // Do not resurrect a task that cancel() has already transitioned out of running.
         if (ctx.tasks.get(task.id)?.state !== 'running') {
             return;
+        }
+        if (task.ownerLogin && ctx.billingStore) {
+            try {
+                const account = await ctx.billingStore.getOrCreateAccount(task.ownerLogin);
+                if (!canStartNewAgentJob(account)) {
+                    fs.mkdirSync(STORE_DIR, { recursive: true });
+                    fs.writeFileSync(
+                        ctx.logPath(task.id),
+                        'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.\n',
+                        'utf8',
+                    );
+                    ctx.finishTask(task.id, 'failed', 1);
+                    return;
+                }
+                const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim());
+                const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
+                const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent) ?? request.agent ?? task.agentId;
+                const hostedDenial = isHostedCodexUsage(agentId, modelId)
+                    ? hostedModelDenialReason(account, modelId)
+                    : undefined;
+                if (hostedDenial) {
+                    fs.mkdirSync(STORE_DIR, { recursive: true });
+                    fs.writeFileSync(ctx.logPath(task.id), `${hostedDenial}\n`, 'utf8');
+                    ctx.finishTask(task.id, 'failed', 1);
+                    return;
+                }
+            } catch (error) {
+                // Fail closed for authenticated owners: a billing outage must not silently grant Pro quotas.
+                fs.mkdirSync(STORE_DIR, { recursive: true });
+                const message = error instanceof Error ? error.message : 'Billing check failed';
+                fs.writeFileSync(
+                    ctx.logPath(task.id),
+                    `Could not verify billing entitlements for this turn. ${message}\n`,
+                    'utf8',
+                );
+                ctx.finishTask(task.id, 'failed', 1);
+                return;
+            }
         }
         const markedTask = ctx.tasks.get(task.id) ?? task;
         const baseline = ctx.captureWorktreeBaseline(task.cwd);

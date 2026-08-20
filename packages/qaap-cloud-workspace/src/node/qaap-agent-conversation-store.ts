@@ -36,6 +36,7 @@ import { deriveConversationTitle } from '../common/qaap-conversation-title';
 import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapBillingStore } from './qaap-billing-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import { QaapConversationStreamMetricsCollector } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
@@ -108,6 +109,8 @@ export class QaapAgentConversationStore {
 
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner!: QaapAgentTaskRunner;
+    @inject(QaapBillingStore) @optional()
+    protected readonly billingStore: QaapBillingStore | undefined;
 
     @inject(QaapTenantSpawnService)
     protected readonly tenantSpawn!: QaapTenantSpawnService;

@@ -115,6 +115,7 @@
   .theia-mobile-work-hub-preferences-widget-host .preferences-editor-widget,
   .theia-mobile-work-hub-preferences-embed .settings-main-scroll-container,
   .theia-mobile-work-hub-preferences-embed .preferences-tree-widget,
+  .theia-mobile-work-hub-billing-scroll,
   .theia-mobile-work-hub-ai-config-embed .ai-configuration-list,
   .theia-mobile-work-hub-ai-config-embed .ai-configuration-detail,
   .theia-mobile-work-hub-ai-config-embed .ai-configuration-table-container,
@@ -258,6 +259,15 @@
 
   /* Sticky composer changes pill strip — horizontal swipe when actions overflow. */
   .theia-mobile-sticky-composer-changes-pill-row {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x !important;
+    overscroll-behavior-x: contain;
+  }
+
+  /* Billing plan picker — horizontal snap slider. */
+  .theia-mobile-work-hub-billing-plan-slider {
     overflow-x: auto !important;
     overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch;

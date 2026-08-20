@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { json } from 'body-parser';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
@@ -26,6 +26,10 @@ import {
     type QaapProjectSessionSummary,
     type QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import {
+    QaapBillingQuota,
+    QaapPlanRepoLimitError,
+} from '@theia/qaap-adapters/lib/common/qaap-billing-quota';
 import {
     QAAP_ANONYMOUS_USER_LOGIN,
     isPathUnderUserWorkspace,
@@ -79,6 +83,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     @inject(QaapDevPreviewPortRegistry)
     protected readonly portRegistry: QaapDevPreviewPortRegistry;
+
+    @inject(QaapBillingQuota) @optional()
+    protected readonly billingQuota: QaapBillingQuota | undefined;
 
     configure(app: Application): void {
         app.use(json());
@@ -520,6 +527,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 workspaceUri: FileUri.create(workspacePath).toString(),
             });
         } catch (err) {
+            if (this.respondBillingQuotaError(err, res)) {
+                return;
+            }
             const message = err instanceof Error ? err.message : 'Failed to prepare repository workspace';
             res.status(502).json({ error: message });
         }
@@ -601,6 +611,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
+            await this.assertBillingAllowsNewRepo(auth.userLogin);
             const repository = await createGithubRepository(stored.accessToken, {
                 name,
                 private: body.private ?? true,
@@ -613,6 +624,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 workspaceUri: FileUri.create(workspacePath).toString(),
             });
         } catch (err) {
+            if (this.respondBillingQuotaError(err, res)) {
+                return;
+            }
             const message = err instanceof Error ? err.message : 'Failed to create GitHub repository';
             res.status(502).json({ error: message });
         }
@@ -663,6 +677,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 workspaceUri: FileUri.create(workspacePath).toString(),
             });
         } catch (err) {
+            if (this.respondBillingQuotaError(err, res)) {
+                return;
+            }
             const message = err instanceof Error ? err.message : 'Failed to clone GitHub repository';
             res.status(502).json({ error: message });
         }
@@ -803,6 +820,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 throw new Error(`Workspace path already exists and is not a Git repository: ${target}`);
             }
         }
+        await this.assertBillingAllowsNewRepo(userLogin);
         await this.runGit(['clone', repository.cloneUrl, target], accessToken);
         try {
             await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken));
@@ -810,6 +828,58 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
         }
         return target;
+    }
+
+    /** Count on-disk git clones under the user's repos root (active repos for plan limits). */
+    protected async countActiveRepos(userLogin: string): Promise<number> {
+        const userRoot = resolveUserReposRoot(this.reposRoot, userLogin);
+        let owners: string[] = [];
+        try {
+            owners = await fs.readdir(userRoot);
+        } catch {
+            return 0;
+        }
+        let count = 0;
+        for (const owner of owners) {
+            const ownerPath = path.join(userRoot, owner);
+            let repos: string[] = [];
+            try {
+                const stat = await fs.stat(ownerPath);
+                if (!stat.isDirectory()) {
+                    continue;
+                }
+                repos = await fs.readdir(ownerPath);
+            } catch {
+                continue;
+            }
+            for (const repo of repos) {
+                if (await this.isGitRepository(path.join(ownerPath, repo))) {
+                    count += 1;
+                }
+            }
+        }
+        return count;
+    }
+
+    protected async assertBillingAllowsNewRepo(userLogin: string): Promise<void> {
+        if (!this.billingQuota) {
+            return;
+        }
+        const active = await this.countActiveRepos(userLogin);
+        await this.billingQuota.assertCanAddActiveRepo(userLogin, active);
+    }
+
+    protected respondBillingQuotaError(err: unknown, res: Response): boolean {
+        if (!(err instanceof QaapPlanRepoLimitError)) {
+            return false;
+        }
+        res.status(403).json({
+            error: 'plan_repo_limit',
+            planId: err.planId,
+            limit: err.limit,
+            message: err.message,
+        });
+        return true;
     }
 
     protected safePathSegment(value: string): string {

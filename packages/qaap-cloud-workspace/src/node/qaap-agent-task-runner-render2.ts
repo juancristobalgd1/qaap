@@ -47,6 +47,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
+import { filterModelsForHostedPlan } from '../common/qaap-billing-plans';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
@@ -403,9 +404,14 @@ export function countRunningTasksExtracted(ctx: any): number {
 }
 
 export function runningTaskCountForOwnerExtracted(ctx: any, ownerLogin: string): number {
+        const ownerKey = ownerLogin.trim().toLowerCase();
+        if (!ownerKey) {
+            return 0;
+        }
         let count = 0;
         for (const task of ctx.tasks.values()) {
-            if ((task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) && task.ownerLogin === ownerLogin) {
+            const taskOwner = typeof task.ownerLogin === 'string' ? task.ownerLogin.trim().toLowerCase() : '';
+            if ((task.state === 'running' || ctx.stoppingTaskIds?.has(task.id)) && taskOwner === ownerKey) {
                 count++;
             }
         }
@@ -417,7 +423,9 @@ export function ownerAtConcurrencyCapExtracted(ctx: any, ownerLogin: string | un
         if (!owner) {
             return false;
         }
-        return ctx.runningTaskCountForOwner(owner) >= ctx.maxConcurrentAgentsPerUser();
+        const cap = ctx.billingStore?.maxConcurrentAgentsForOwner?.(owner)
+            ?? ctx.maxConcurrentAgentsPerUser();
+        return ctx.runningTaskCountForOwner(owner) >= cap;
 }
 
 export function drainQueuedTasksExtracted(ctx: any): void {
@@ -503,12 +511,23 @@ export function listQaiqModelsExtracted(ctx: any, ownerLogin?: string): QaapQaiq
         );
 }
 
-export function listModelsForAgentExtracted(ctx: any, agentId: string | undefined): QaapQaiqModelOption[] {
+export function listModelsForAgentExtracted(
+        ctx: any,
+        agentId: string | undefined,
+        ownerLogin?: string,
+): QaapQaiqModelOption[] {
         const normalized = ctx.normalizeAgentId(agentId ?? '');
         if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
             return [];
         }
-        return listNativeAgentModels(normalized);
+        const models = listNativeAgentModels(normalized);
+        const owner = ownerLogin?.trim();
+        if (!owner) {
+            return models;
+        }
+        // Cold cache → treat as Starter (no hosted) so the picker never offers Pro-only models by default.
+        const hostedModelsAllowed = ctx.billingStore?.peekEntitlements?.(owner)?.hostedModels === true;
+        return filterModelsForHostedPlan(normalized, models, hostedModelsAllowed);
 }
 
 export function defaultAgentExtracted(ctx: any): string {

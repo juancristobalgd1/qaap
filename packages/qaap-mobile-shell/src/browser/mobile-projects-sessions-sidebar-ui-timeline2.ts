@@ -262,7 +262,10 @@ export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLBut
     toggleQaapAccountMenu(
         anchor,
         ctx.host.commands,
-        buildQaapAccountMenuEntries(readQaapSignedIn()),
+        buildQaapAccountMenuEntries(readQaapSignedIn(), {
+            openSettings: () => ctx.host.openPreferencesSheet?.(),
+            openBilling: () => ctx.host.openBillingSheet?.(),
+        }),
         {
             section: QAAP_WORK_HUB_GETTING_STARTED,
             onCatalogAction: action => { void ctx.host.runCatalogAction(action); },

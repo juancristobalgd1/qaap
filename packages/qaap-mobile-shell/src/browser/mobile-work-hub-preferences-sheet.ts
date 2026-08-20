@@ -17,6 +17,7 @@ export class MobileWorkHubPreferencesSheet {
 
     readonly node: HTMLElement;
     protected readonly widgetHost: HTMLElement;
+    protected readonly titleEl: HTMLElement;
     protected visible = false;
     protected preferencesWidget: PreferencesWidget | undefined;
     protected widgetHostResizeObserver: ResizeObserver | undefined;
@@ -63,7 +64,8 @@ export class MobileWorkHubPreferencesSheet {
 
         const title = document.createElement('h2');
         title.className = 'theia-mobile-work-hub-preferences-title';
-        title.textContent = nls.localize('theia/preferences/ai-features', 'AI Features');
+        title.textContent = nls.localize('qaap/accountMenu/settings', 'Settings');
+        this.titleEl = title;
 
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
@@ -91,6 +93,9 @@ export class MobileWorkHubPreferencesSheet {
         if (!this.node.parentElement) {
             document.body.appendChild(this.node);
         }
+        this.titleEl.textContent = typeof query === 'string' && query.trim().length > 0
+            ? nls.localize('theia/preferences/ai-features', 'AI Features')
+            : nls.localize('qaap/accountMenu/settings', 'Settings');
         this.attachWidget(widget);
         this.node.hidden = false;
         this.node.classList.add('theia-mod-visible');
