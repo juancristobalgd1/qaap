@@ -219,3 +219,39 @@ export function parseUnifiedDiff(patch: string): QaapGitHunk[] {
     }
     return hunks;
 }
+
+/** Exact message from {@link resolveRepositoryRoot} when `root` is missing/invalid. */
+export const QAAP_GIT_REVIEW_MISSING_ROOT_ERROR = 'Missing or invalid "root" query parameter.';
+
+/** Exact message when `root` exists but is not a git work tree. */
+export const QAAP_GIT_REVIEW_NOT_REPO_ERROR = 'The given root is not a git repository.';
+
+/**
+ * Pull `{ error }` out of a git-review HTTP body, or return trimmed plain text.
+ * Used so UI sheets never dump raw JSON into the composer.
+ */
+export function readQaapGitReviewErrorBody(text: string): string | undefined {
+    const trimmed = text.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+    try {
+        const parsed = JSON.parse(trimmed) as { error?: unknown };
+        if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+            return parsed.error.trim();
+        }
+    } catch {
+        /* plain text */
+    }
+    return trimmed;
+}
+
+/** True when the backend rejected the repository root path. */
+export function isQaapGitReviewMissingRootError(message: string | undefined): boolean {
+    return !!message && message.includes('Missing or invalid') && message.includes('root');
+}
+
+/** True when the path exists but is not a git work tree. */
+export function isQaapGitReviewNotRepoError(message: string | undefined): boolean {
+    return !!message && message.includes('not a git repository');
+}

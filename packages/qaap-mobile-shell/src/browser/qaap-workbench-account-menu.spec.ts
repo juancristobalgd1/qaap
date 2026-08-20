@@ -40,29 +40,27 @@ describe('buildQaapAccountMenuEntries', () => {
             expect(actions[0].commandId).to.equal('workbench.action.showCommands');
         });
 
-        it('includes Settings', () => {
+        it('includes Settings on the IDE menu', () => {
             const found = entries.some(e => e.kind === 'action' && e.label === 'Settings');
             expect(found).to.equal(true);
         });
 
         it('includes Billing when openBilling is provided', () => {
             const withBilling = buildQaapAccountMenuEntries(true, {
+                workHub: true,
                 openBilling: () => undefined,
             });
             const found = withBilling.some(e => e.kind === 'action' && e.label === 'Billing');
             expect(found).to.equal(true);
         });
 
-        it('opens Settings via run when openSettings is provided', () => {
-            let opened = false;
-            const withSheet = buildQaapAccountMenuEntries(true, {
-                openSettings: () => { opened = true; },
+        it('omits Settings on the Work Hub menu', () => {
+            const hub = buildQaapAccountMenuEntries(true, {
+                workHub: true,
+                openBilling: () => undefined,
             });
-            const settings = withSheet.find(e => e.kind === 'action' && e.label === 'Settings');
-            expect(settings?.run).to.be.a('function');
-            expect(settings?.commandId).to.equal(undefined);
-            void settings?.run?.();
-            expect(opened).to.equal(true);
+            const settings = hub.find(e => e.kind === 'action' && e.label === 'Settings');
+            expect(settings).to.equal(undefined);
         });
 
         it('separators only appear between non-empty groups', () => {
@@ -90,15 +88,14 @@ describe('buildQaapAccountMenuEntries', () => {
             ]);
         });
 
-        it('places Billing after Settings when provided', () => {
+        it('places Billing after Command Palette on Work Hub', () => {
             const withBilling = buildQaapAccountMenuEntries(true, {
-                openSettings: () => undefined,
+                workHub: true,
                 openBilling: () => undefined,
             });
             const actions = withBilling.filter(e => e.kind === 'action').map(e => e.label);
             expect(actions).to.deep.equal([
                 'Command Palette…',
-                'Settings',
                 'Billing',
                 'Sign Out',
             ]);
@@ -106,14 +103,14 @@ describe('buildQaapAccountMenuEntries', () => {
 
         it('omits Extensions and Keybindings on the Work Hub menu', () => {
             const hub = buildQaapAccountMenuEntries(true, {
-                openSettings: () => undefined,
+                workHub: true,
             });
             const labels = hub.filter(e => e.kind === 'action').map(e => e.label);
             expect(labels).to.not.include('Extensions');
             expect(labels).to.not.include('Keyboard Shortcuts');
+            expect(labels).to.not.include('Settings');
             expect(labels).to.deep.equal([
                 'Command Palette…',
-                'Settings',
                 'Sign Out',
             ]);
         });

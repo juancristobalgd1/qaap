@@ -131,23 +131,15 @@ export function buildMobileViewToggleEntries(activeId: MobileViewToggleId): Qaap
 
 export interface QaapAccountMenuEntriesOptions {
     /**
-     * Work Hub: open Settings in the overlay sheet (IDE main-area preferences stay hidden).
-     * When omitted, falls back to {@link CommonCommands.OPEN_PREFERENCES}.
+     * Work Hub surface marker: omit Settings / Extensions / Keybindings from the avatar menu.
+     * Settings stays available via Getting started / Command Palette sheets.
      */
-    readonly openSettings?: () => void | Promise<void>;
-    /** Work Hub / Settings: open the Billing sheet. */
+    readonly workHub?: boolean;
+    /** Work Hub: open the Billing sheet. */
     readonly openBilling?: () => void | Promise<void>;
 }
 
-function settingsMenuEntry(options?: QaapAccountMenuEntriesOptions): QaapAccountMenuEntry {
-    if (options?.openSettings) {
-        return {
-            kind: 'action',
-            label: nls.localize('qaap/accountMenu/settings', 'Settings'),
-            iconClass: 'codicon-settings-gear',
-            run: () => options.openSettings?.(),
-        };
-    }
+function settingsMenuEntry(): QaapAccountMenuEntry {
     return {
         kind: 'action',
         label: nls.localize('qaap/accountMenu/settings', 'Settings'),
@@ -172,10 +164,10 @@ export function buildQaapAccountMenuEntries(
     signedIn: boolean = true,
     options?: QaapAccountMenuEntriesOptions,
 ): QaapAccountMenuEntry[] {
+    const workHub = !!options?.workHub || !!options?.openBilling;
     const billing = billingMenuEntry(options);
-    // Work Hub passes openSettings (sheet). Extensions / Keybindings open IDE views
-    // behind the hub, so keep them for the classic IDE menu only.
-    const ideWorkbenchLinks: QaapAccountMenuEntry[] = options?.openSettings ? [] : [
+    // Extensions / Keybindings open IDE views behind the hub.
+    const ideWorkbenchLinks: QaapAccountMenuEntry[] = workHub ? [] : [
         {
             kind: 'action',
             label: nls.localize('qaap/accountMenu/extensions', 'Extensions'),
@@ -187,6 +179,7 @@ export function buildQaapAccountMenuEntries(
             commandId: WORKBENCH_OPEN_KEYBINDINGS,
         },
     ];
+    const settings: QaapAccountMenuEntry[] = workHub ? [] : [settingsMenuEntry()];
     if (!signedIn) {
         return [
             {
@@ -195,7 +188,7 @@ export function buildQaapAccountMenuEntries(
                 commandId: QAAP_AUTH_SIGN_IN_GITHUB_COMMAND,
             },
             { kind: 'separator' },
-            settingsMenuEntry(options),
+            ...settings,
             ...(billing ? [billing] : []),
         ];
     }
@@ -206,7 +199,7 @@ export function buildQaapAccountMenuEntries(
             commandId: WORKBENCH_SHOW_COMMANDS,
         },
         { kind: 'separator' },
-        settingsMenuEntry(options),
+        ...settings,
         ...(billing ? [billing] : []),
         ...ideWorkbenchLinks,
         { kind: 'separator' },

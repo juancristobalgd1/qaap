@@ -11658,16 +11658,16 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
   position: absolute;
   inset: 6px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--theia-toolbar-hoverBackground, rgba(127, 127, 127, 0.14)) 65%, transparent);
-  transition: background 0.1s ease;
+  background: transparent;
+  border: none;
 }
 
 .theia-mobile-projects-sessions-menu.theia-mobile-projects-header-back:hover::before {
-  background: var(--theia-toolbar-hoverBackground);
+  background: transparent;
 }
 
 .theia-mobile-projects-sessions-menu.theia-mobile-projects-header-back:active::before {
-  background: color-mix(in srgb, var(--theia-toolbar-hoverBackground, rgba(127, 127, 127, 0.14)) 175%, transparent);
+  background: transparent;
 }
 
 .theia-mobile-projects-sessions-menu.theia-mobile-projects-header-back:focus-visible {
@@ -11675,7 +11675,7 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 }
 
 .theia-mobile-projects-sessions-menu.theia-mobile-projects-header-back:focus-visible::before {
-  background: var(--theia-toolbar-hoverBackground);
+  background: transparent;
   outline: 0.5px solid var(--theia-focusBorder);
 }
 
@@ -14382,6 +14382,16 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   box-sizing: border-box;
 }
 
+.theia-mobile-work-hub-preferences-embed.theia-mod-ai-features-search-locked .settings-search-input {
+  opacity: 0.72;
+  cursor: not-allowed;
+  caret-color: transparent;
+}
+
+.theia-mobile-work-hub-preferences-embed.theia-mod-ai-features-search-locked .option-buttons .option {
+  display: none !important;
+}
+
 .theia-mobile-work-hub-preferences-embed .preferences-tree-widget {
   flex: 0 0 auto;
   max-height: min(30vh, 220px);
@@ -14594,6 +14604,17 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   overflow-x: hidden;
   border-right: none;
   border-bottom: var(--theia-border-width) solid var(--theia-widget-border);
+}
+
+.theia-qaap-ai-config-ide-agents-banner {
+  margin: 8px 10px 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--theia-input-border, rgba(128, 128, 128, 0.35));
+  background: color-mix(in srgb, var(--theia-editorInfo-foreground, #3794ff) 12%, transparent);
+  color: var(--theia-foreground);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .theia-mobile-work-hub-ai-config-embed .ai-configuration-detail,

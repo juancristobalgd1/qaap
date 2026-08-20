@@ -104,10 +104,11 @@ import {
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
 } from './qaap-workbench-account-menu';
 import {
-    QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB,
     QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND,
+    QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB,
     QAAP_WORK_HUB_AI_FEATURES_COMMAND,
 } from '../common/mobile-work-hub-catalog';
+import { resolveAiConfigurationTabArg } from '../common/qaap-ai-configuration-command-link';
 import {
     QAAP_WORK_HUB_NEW_AGENT_COMMAND,
     QAAP_WORK_HUB_OPEN_BILLING_COMMAND,
@@ -264,7 +265,9 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
         isVisible: () => !peekPreferDesktopIde(),
     });
     registry.registerHandler(QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND, {
-        execute: () => ctx.openWorkHubAiConfigurationSheet(QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB),
+        execute: (tabId?: unknown) => ctx.openWorkHubAiConfigurationSheet(
+            resolveAiConfigurationTabArg(tabId, QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB),
+        ),
         isEnabled: () => !peekPreferDesktopIde(),
         isVisible: () => !peekPreferDesktopIde(),
     });

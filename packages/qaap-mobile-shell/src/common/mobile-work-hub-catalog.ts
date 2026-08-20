@@ -11,6 +11,12 @@ export const QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND = 'aiConfiguration:open';
 export const QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB = 'ai-agent-configuration-container-widget';
 /** MCP servers tab — used by composer slash Tools (add-plugin / remove-plugin). */
 export const QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB = 'ai-mcp-configuration-container-widget';
+/** Skills tab — directories used by the Work Hub composer slash menu. */
+export const QAAP_WORK_HUB_AI_CONFIGURATION_SKILLS_TAB = 'ai-skills-configuration-widget';
+/** Model aliases tab — aliases consumed by QAIQ routing (`default/code`, etc.). */
+export const QAAP_WORK_HUB_AI_CONFIGURATION_MODEL_ALIASES_TAB = 'ai-model-aliases-configuration-widget';
+/** Default Work Hub entry: MCP is the primary day-to-day surface (VPS agents live in the composer). */
+export const QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB = QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB;
 
 export type WorkHubCatalogHubTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review';
 
@@ -57,19 +63,19 @@ export const QAAP_WORK_HUB_GETTING_STARTED: WorkHubCatalogSection = {
             id: 'workflow-ai-features',
             sectionId: 'start',
             title: 'AI Features',
-            subtitle: 'API keys, models, agents, and chat defaults.',
+            subtitle: 'API keys and models for QAIQ (OpenRouter, NVIDIA, Anthropic, and more).',
             iconClass: 'codicon-sparkle',
             action: { type: 'command', commandId: QAAP_WORK_HUB_AI_FEATURES_COMMAND },
-            searchText: 'ai features settings api keys models agents chat',
+            searchText: 'ai features settings api keys models openrouter nvidia anthropic byok qaiq',
         },
         {
             id: 'workflow-ai-configuration',
             sectionId: 'start',
             title: 'AI Configuration',
-            subtitle: 'Agents, prompts, MCP servers, and model aliases.',
+            subtitle: 'MCP, skills, and model aliases for Work Hub. Pick @qaiq / @codex in the composer.',
             iconClass: 'codicon-hubot',
             action: { type: 'command', commandId: QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND },
-            searchText: 'ai configuration agents variables mcp prompt fragments model aliases tools skills',
+            searchText: 'ai configuration mcp skills model aliases qaiq codex composer work hub',
         },
     ],
 };

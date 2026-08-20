@@ -620,7 +620,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             this.accountBtn,
             this.commands,
             buildQaapAccountMenuEntries(readQaapSignedIn(), {
-                openSettings: () => this.openPreferencesSheet?.(),
+                workHub: true,
                 openBilling: () => this.openBillingSheet?.(),
             }),
             {

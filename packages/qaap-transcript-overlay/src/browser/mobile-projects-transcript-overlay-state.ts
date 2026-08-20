@@ -98,6 +98,7 @@ export const TRANSCRIPT_OVERLAY_STATE_KEYS = [
     'transcriptHistoryLoading',
     'transcriptHistoryCommits',
     'transcriptHistoryBranch',
+    'transcriptHistoryError',
     'transcriptHistoryQuery',
     'transcriptHistoryRoot',
     'transcriptHistoryLoadGeneration',
@@ -204,6 +205,7 @@ export class TranscriptOverlayState {
     transcriptHistoryLoading = false;
     transcriptHistoryCommits: QaapGitHistoryCommit[] = [];
     transcriptHistoryBranch: string | undefined;
+    transcriptHistoryError: string | undefined;
     transcriptHistoryQuery = '';
     transcriptHistoryRoot: string | undefined;
     transcriptHistoryLoadGeneration = 0;

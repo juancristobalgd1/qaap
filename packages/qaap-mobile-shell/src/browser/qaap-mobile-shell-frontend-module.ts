@@ -155,6 +155,8 @@ import { QaapFileNavigatorContribution } from './qaap-file-navigator-contributio
 import { QaapNavigatorTabBarDecorator } from './qaap-navigator-tab-bar-decorator';
 import { createQaapFileNavigatorWidget } from './qaap-navigator-widget-factory';
 import { QaapVsxExtensionsMobileContribution } from './qaap-vsx-extensions-mobile-contribution';
+import { PreferenceLayoutProvider } from '@theia/preferences/lib/browser/util/preference-layout';
+import { QaapPreferenceLayoutProvider } from './qaap-preference-layout-provider';
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // In Work Hub mode, let native browser editing shortcuts (Cmd+V, Cmd+C,
     // Cmd+X, etc.) pass through to the focused element instead of being
@@ -165,6 +167,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     rebind(KeybindingRegistry).to(QaapKeybindingRegistry).inSingletonScope();
     // Work Hub command palette shows hub-relevant commands only; IDE keeps the full list.
     rebind(QuickCommandService).to(QaapQuickCommandService).inSingletonScope();
+    // AI Features Settings: prioritize Qaap BYOK providers; omit Theia leftover groups.
+    rebind(PreferenceLayoutProvider).to(QaapPreferenceLayoutProvider).inSingletonScope();
     rebind(ChatViewTreeWidget).toDynamicValue(ctx =>
         createQaapChatViewTreeWidget(ctx.container)
     );

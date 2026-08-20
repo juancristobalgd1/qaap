@@ -12,6 +12,15 @@ import { PreferencesWidget } from '@theia/preferences/lib/browser/views/preferen
 import { PreferencesSearchbarWidget } from '@theia/preferences/lib/browser/views/preference-searchbar-widget';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 
+/** Work Hub AI Features sheet scopes Settings to this search term. */
+export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
+
+const AI_FEATURES_SEARCH_LOCKED_CLASS = 'theia-mod-ai-features-search-locked';
+
+export function isWorkHubAiFeaturesPreferencesQuery(query?: string): boolean {
+    return typeof query === 'string' && query.trim().toLowerCase() === WORK_HUB_AI_FEATURES_PREFERENCES_QUERY;
+}
+
 /** Opens the same Settings widget as the IDE, embedded in the Work Hub overlay. */
 export class MobileWorkHubPreferencesSheet {
 
@@ -22,6 +31,11 @@ export class MobileWorkHubPreferencesSheet {
     protected preferencesWidget: PreferencesWidget | undefined;
     protected widgetHostResizeObserver: ResizeObserver | undefined;
     protected windowResizeListener: (() => void) | undefined;
+    /** When set, the embedded search bar stays pinned to this AI Features query. */
+    protected lockedAiFeaturesQuery: string | undefined;
+    protected searchLockObserver: MutationObserver | undefined;
+    protected searchLockListener: ((ev: Event) => void) | undefined;
+    protected searchLockTarget: HTMLElement | undefined;
 
     protected readonly onKeyDown = (ev: KeyboardEvent): void => {
         if (ev.key === 'Escape' && this.visible) {
@@ -93,7 +107,8 @@ export class MobileWorkHubPreferencesSheet {
         if (!this.node.parentElement) {
             document.body.appendChild(this.node);
         }
-        this.titleEl.textContent = typeof query === 'string' && query.trim().length > 0
+        const aiFeatures = isWorkHubAiFeaturesPreferencesQuery(query);
+        this.titleEl.textContent = aiFeatures
             ? nls.localize('theia/preferences/ai-features', 'AI Features')
             : nls.localize('qaap/accountMenu/settings', 'Settings');
         this.attachWidget(widget);
@@ -109,6 +124,11 @@ export class MobileWorkHubPreferencesSheet {
         await animationFrame(2);
         if (typeof query === 'string' && this.visible) {
             await this.applyPreferencesQuery(widget, query);
+            if (aiFeatures && this.visible) {
+                this.lockAiFeaturesSearch(widget, WORK_HUB_AI_FEATURES_PREFERENCES_QUERY);
+            }
+        } else {
+            this.unlockAiFeaturesSearch();
         }
         if (this.visible) {
             this.scheduleLayoutSync(widget);
@@ -124,6 +144,11 @@ export class MobileWorkHubPreferencesSheet {
             this.windowResizeListener = undefined;
         }
         this.unobserveWidgetHostResize();
+        const lockedWidget = this.lockedAiFeaturesQuery ? this.preferencesWidget : undefined;
+        this.unlockAiFeaturesSearch();
+        if (lockedWidget) {
+            void lockedWidget.setSearchTerm('');
+        }
         this.detachWidget();
         this.node.classList.remove('theia-mod-visible');
         this.node.hidden = true;
@@ -298,5 +323,110 @@ export class MobileWorkHubPreferencesSheet {
             await animationFrame();
         }
         return false;
+    }
+
+    /**
+     * Keep the AI Features filter pinned: users must not clear/edit search and land on IDE prefs.
+     * Avoid capture-phase preventDefault/stopPropagation — that blocks list pan/scroll.
+     * React re-renders of the searchbar can drop DOM attributes, so we re-apply via MutationObserver.
+     */
+    protected lockAiFeaturesSearch(widget: PreferencesWidget, query: string): void {
+        this.unlockAiFeaturesSearch();
+        this.lockedAiFeaturesQuery = query;
+        widget.node.classList.add(AI_FEATURES_SEARCH_LOCKED_CLASS);
+
+        let applying = false;
+        const applyLock = (): void => {
+            if (applying || !this.visible || this.lockedAiFeaturesQuery !== query) {
+                return;
+            }
+            applying = true;
+            try {
+                const searchId = PreferencesSearchbarWidget.SEARCHBAR_ID;
+                const input = widget.node.querySelector<HTMLInputElement>(`#${CSS.escape(searchId)}`);
+                if (!input) {
+                    return;
+                }
+                // readOnly (not disabled): disabled + capture listeners were blocking scroll/pan.
+                input.readOnly = true;
+                input.disabled = false;
+                input.setAttribute('aria-readonly', 'true');
+                input.tabIndex = -1;
+                input.title = nls.localize(
+                    'qaap/mobileWorkHubPreferences/aiFeaturesSearchLocked',
+                    'Search is fixed to AI Features in Work Hub',
+                );
+                if (input.value !== query) {
+                    input.value = query;
+                    void widget.setSearchTerm(query);
+                }
+                const clearBtn = input.closest('.settings-search-container')
+                    ?.querySelector<HTMLButtonElement>('button.option');
+                if (clearBtn) {
+                    clearBtn.disabled = true;
+                    clearBtn.tabIndex = -1;
+                    clearBtn.setAttribute('aria-hidden', 'true');
+                }
+            } finally {
+                applying = false;
+            }
+        };
+
+        // Restore the pinned query if anything still mutates the field (no preventDefault).
+        const onInput = (ev: Event): void => {
+            if (!this.lockedAiFeaturesQuery) {
+                return;
+            }
+            const target = ev.target;
+            if (!(target instanceof HTMLInputElement) || target.id !== PreferencesSearchbarWidget.SEARCHBAR_ID) {
+                return;
+            }
+            if (target.value !== query) {
+                target.value = query;
+                void widget.setSearchTerm(query);
+            }
+        };
+
+        this.searchLockListener = onInput;
+        this.searchLockTarget = widget.node;
+        widget.node.addEventListener('input', onInput, false);
+
+        applyLock();
+        if (typeof MutationObserver !== 'undefined') {
+            const host = widget.node.querySelector('.preferences-searchbar-widget') ?? widget.node;
+            this.searchLockObserver = new MutationObserver(() => applyLock());
+            this.searchLockObserver.observe(host, {
+                childList: true,
+                subtree: true,
+            });
+        }
+    }
+
+    protected unlockAiFeaturesSearch(): void {
+        const widget = this.preferencesWidget;
+        widget?.node.classList.remove(AI_FEATURES_SEARCH_LOCKED_CLASS);
+        this.searchLockObserver?.disconnect();
+        this.searchLockObserver = undefined;
+        if (this.searchLockListener && this.searchLockTarget) {
+            this.searchLockTarget.removeEventListener('input', this.searchLockListener, false);
+        }
+        this.searchLockListener = undefined;
+        this.searchLockTarget = undefined;
+        const searchId = PreferencesSearchbarWidget.SEARCHBAR_ID;
+        const input = widget?.node.querySelector<HTMLInputElement>(`#${CSS.escape(searchId)}`);
+        if (input) {
+            input.readOnly = false;
+            input.disabled = false;
+            input.tabIndex = 0;
+            input.removeAttribute('aria-readonly');
+            input.removeAttribute('title');
+            const clearBtn = input.closest('.settings-search-container')
+                ?.querySelector<HTMLButtonElement>('button.option');
+            if (clearBtn) {
+                clearBtn.removeAttribute('aria-hidden');
+                clearBtn.tabIndex = 0;
+            }
+        }
+        this.lockedAiFeaturesQuery = undefined;
     }
 }

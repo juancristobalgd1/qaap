@@ -22,6 +22,10 @@ import { QaapTerminalPreferenceContribution } from './qaap-terminal-preferences'
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
+import { AIAgentConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/agent-configuration-widget';
+import { AIConfigurationContainerWidget } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-widget';
+import { QaapAiAgentConfigurationWidget } from './qaap-ai-agent-configuration-widget';
+import { QaapAiConfigurationContainerWidget } from './qaap-ai-configuration-container-widget';
 import { DefaultSkillService, SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { QaapSkillService } from './qaap-skill-service';
 import { SkillPromptCoordinator } from '@theia/ai-core/lib/browser/skill-prompt-coordinator';
@@ -45,6 +49,12 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapCodexChatAgent).toSelf().inSingletonScope();
     rebind(CodexChatAgent).toService(QaapCodexChatAgent);
+
+    bind(QaapAiAgentConfigurationWidget).toSelf().inSingletonScope();
+    rebind(AIAgentConfigurationWidget).toService(QaapAiAgentConfigurationWidget);
+
+    bind(QaapAiConfigurationContainerWidget).toSelf().inSingletonScope();
+    rebind(AIConfigurationContainerWidget).toService(QaapAiConfigurationContainerWidget);
 
     bind(QaapSkillService).toSelf().inSingletonScope();
     rebind(DefaultSkillService).toService(QaapSkillService);

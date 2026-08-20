@@ -52,6 +52,8 @@ export interface MobileProjectsTranscriptSheetHost {
     transcriptHistoryPanelOpen: boolean;
     transcriptHistoryCommits: QaapGitHistoryCommit[];
     transcriptHistoryBranch: string | undefined;
+    /** Human-readable load failure for the history list. */
+    transcriptHistoryError: string | undefined;
     transcriptHistoryQuery: string;
     transcriptHistoryRoot: string | undefined;
     transcriptHistoryLoading: boolean;
@@ -208,6 +210,7 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptHistoryPanelOpen = false;
         this.host.transcriptHistoryCommits = [];
         this.host.transcriptHistoryBranch = undefined;
+        this.host.transcriptHistoryError = undefined;
         this.host.transcriptHistoryQuery = '';
         this.host.transcriptHistoryRoot = undefined;
         this.host.transcriptHistoryLoading = false;
@@ -353,6 +356,7 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptHistoryPanelOpen = false;
         this.host.transcriptHistoryCommits = [];
         this.host.transcriptHistoryBranch = undefined;
+        this.host.transcriptHistoryError = undefined;
         this.host.transcriptHistoryQuery = '';
         this.host.transcriptHistoryRoot = undefined;
         this.host.transcriptHistoryLoading = false;

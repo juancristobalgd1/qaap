@@ -9,7 +9,7 @@ import { animationFrame, UnsafeWidgetUtilities, Widget, WidgetManager } from '@t
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageLoop } from '@lumino/messaging';
 import { Widget as LuminoWidget } from '@lumino/widgets';
-import { QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB } from '../common/mobile-work-hub-catalog';
+import { QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB } from '../common/mobile-work-hub-catalog';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 
 /** Opens the AI Configuration view embedded in the Work Hub overlay. */
@@ -85,7 +85,7 @@ export class MobileWorkHubAiConfigurationSheet {
         return this.visible;
     }
 
-    async show(tabId: string = QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB): Promise<void> {
+    async show(tabId: string = QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB): Promise<void> {
         const widget = await this.widgetManager.getOrCreateWidget<AIConfigurationContainerWidget>(
             AIConfigurationContainerWidget.ID,
         );

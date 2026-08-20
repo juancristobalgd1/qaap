@@ -576,4 +576,62 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         expect(branches).to.deep.equal(['main', 'feature/old']);
         expect(document.body.textContent).to.contain('Could not delete branch');
     });
+
+    it('shows a human message when branches API rejects an invalid root', async () => {
+        const current = project('repo', 'Repo', true);
+        globalThis.fetch = (input) => {
+            const url = String(input);
+            if (url.includes('/branches')) {
+                return Promise.resolve(new Response(
+                    JSON.stringify({ error: 'Missing or invalid "root" query parameter.' }),
+                    { status: 400 },
+                ));
+            }
+            return Promise.reject(new Error(`unexpected fetch: ${url}`));
+        };
+        const host = createHost([current]);
+        host.preparedCwdByProjectId.set(current.id, '/tmp/missing-repo');
+        host.projectsService = {
+            getProjectCwd: () => '/tmp/missing-repo',
+            getCurrentWorkspaceBranch: () => 'main',
+            prepareProjectCwd: async () => undefined,
+            createGithubProject: async () => [current],
+        } as unknown as MobileProjectsStickyComposerWorkspaceHost['projectsService'];
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-sticky-composer-sheet-list';
+        document.body.append(list);
+        host.stickyComposerWorkspaceSheet = list;
+
+        await ui.loadComposerWorkspaceBranchSheet(current, list);
+
+        expect(list.textContent).to.contain('Open this project in the workspace to switch branches');
+        expect(list.textContent).to.not.contain('Missing or invalid');
+        expect(host.preparedCwdByProjectId.has(current.id)).to.equal(false);
+    });
+
+    it('tries prepareProjectCwd before giving up when no cwd is cached', async () => {
+        const current = project('repo', 'Repo', true);
+        let prepared = false;
+        globalThis.fetch = () => Promise.reject(new Error('fetch should not run'));
+        const host = createHost([current]);
+        host.projectsService = {
+            getProjectCwd: () => undefined,
+            getCurrentWorkspaceBranch: () => 'main',
+            prepareProjectCwd: async () => {
+                prepared = true;
+                return undefined;
+            },
+            createGithubProject: async () => [current],
+        } as unknown as MobileProjectsStickyComposerWorkspaceHost['projectsService'];
+        const ui = new MobileProjectsStickyComposerWorkspaceUi(host);
+        const list = document.createElement('div');
+        document.body.append(list);
+        host.stickyComposerWorkspaceSheet = list;
+
+        await ui.loadComposerWorkspaceBranchSheet(current, list);
+
+        expect(prepared).to.equal(true);
+        expect(list.textContent).to.contain('Open this project in the workspace to switch branches');
+    });
 });

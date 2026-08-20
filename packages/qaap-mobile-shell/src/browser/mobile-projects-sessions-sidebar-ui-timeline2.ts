@@ -263,7 +263,7 @@ export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLBut
         anchor,
         ctx.host.commands,
         buildQaapAccountMenuEntries(readQaapSignedIn(), {
-            openSettings: () => ctx.host.openPreferencesSheet?.(),
+            workHub: true,
             openBilling: () => ctx.host.openBillingSheet?.(),
         }),
         {

@@ -4,7 +4,13 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { QAAP_GIT_REVIEW_API_PATH, type QaapGitBranchesResponse } from '../common/qaap-git-review';
+import {
+    QAAP_GIT_REVIEW_API_PATH,
+    isQaapGitReviewMissingRootError,
+    isQaapGitReviewNotRepoError,
+    readQaapGitReviewErrorBody,
+    type QaapGitBranchesResponse,
+} from '../common/qaap-git-review';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
@@ -693,21 +699,71 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         empty.textContent = nls.localize('qaap/composerWorkspace/branchEmpty', 'No local branches found.');
         list.append(empty);
     }
+    protected resolveComposerWorkspaceBranchCwd(project: MobileProjectEntry): string | undefined {
+        return this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
+    }
+
+    protected async ensureComposerWorkspaceBranchCwd(project: MobileProjectEntry): Promise<string | undefined> {
+        const existing = this.resolveComposerWorkspaceBranchCwd(project);
+        if (existing) {
+            return existing;
+        }
+        const prepared = await this.host.projectsService.prepareProjectCwd(project);
+        if (prepared) {
+            this.host.preparedCwdByProjectId.set(project.id, prepared);
+        }
+        return prepared;
+    }
+
+    protected clearStaleComposerWorkspaceBranchCwd(project: MobileProjectEntry): void {
+        this.host.preparedCwdByProjectId.delete(project.id);
+    }
+
+    protected formatComposerWorkspaceBranchApiError(raw: string): string {
+        const message = readQaapGitReviewErrorBody(raw) ?? raw.trim();
+        if (isQaapGitReviewMissingRootError(message)) {
+            return nls.localize(
+                'qaap/composerWorkspace/branchUnavailable',
+                'Open this project in the workspace to switch branches.',
+            );
+        }
+        if (isQaapGitReviewNotRepoError(message)) {
+            return nls.localize(
+                'qaap/composerWorkspace/branchNotGitRepo',
+                'This project folder is not a git repository yet.',
+            );
+        }
+        if (!message || message.startsWith('{')) {
+            return nls.localize(
+                'qaap/composerWorkspace/branchLoadFailed',
+                'Could not load branches. Try opening the project again.',
+            );
+        }
+        return message;
+    }
+
+    protected showComposerWorkspaceBranchSheetMessage(list: HTMLElement, text: string): void {
+        list.replaceChildren();
+        const message = document.createElement('p');
+        message.className = 'theia-mobile-sticky-composer-sheet-loading';
+        message.textContent = text;
+        list.append(message);
+        this.finishComposerWorkspaceBranchSheetList(list);
+    }
+
     async loadComposerWorkspaceBranchSheet(
         project: MobileProjectEntry,
         list: HTMLElement,
     ): Promise<void> {
-        const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
+        const cwd = await this.ensureComposerWorkspaceBranchCwd(project);
         if (!cwd) {
-            list.replaceChildren();
-            const empty = document.createElement('p');
-            empty.className = 'theia-mobile-sticky-composer-sheet-loading';
-            empty.textContent = nls.localize(
-                'qaap/composerWorkspace/branchUnavailable',
-                'Open this project in the workspace to switch branches.',
+            this.showComposerWorkspaceBranchSheetMessage(
+                list,
+                nls.localize(
+                    'qaap/composerWorkspace/branchUnavailable',
+                    'Open this project in the workspace to switch branches.',
+                ),
             );
-            list.append(empty);
-            this.finishComposerWorkspaceBranchSheetList(list);
             return;
         }
         try {
@@ -717,7 +773,12 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 cache: 'no-store',
             });
             if (!response.ok) {
-                throw new Error(await response.text());
+                const raw = await response.text();
+                const parsed = readQaapGitReviewErrorBody(raw);
+                if (isQaapGitReviewMissingRootError(parsed)) {
+                    this.clearStaleComposerWorkspaceBranchCwd(project);
+                }
+                throw new Error(this.formatComposerWorkspaceBranchApiError(raw));
             }
             const payload = await response.json() as QaapGitBranchesResponse;
             if (this.host.stickyComposerWorkspaceSheet === undefined || !list.isConnected) {
@@ -738,12 +799,11 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             }
             this.finishComposerWorkspaceBranchSheetList(list);
         } catch (error) {
-            list.replaceChildren();
-            const failed = document.createElement('p');
-            failed.className = 'theia-mobile-sticky-composer-sheet-loading';
-            failed.textContent = error instanceof Error ? error.message : String(error);
-            list.append(failed);
-            this.finishComposerWorkspaceBranchSheetList(list);
+            const text = error instanceof Error ? error.message : String(error);
+            this.showComposerWorkspaceBranchSheetMessage(
+                list,
+                this.formatComposerWorkspaceBranchApiError(text),
+            );
         }
     }
     async checkoutComposerWorkspaceBranch(
@@ -762,7 +822,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 body: JSON.stringify({ root: cwd, branch }),
             });
             if (!response.ok) {
-                throw new Error(await response.text());
+                throw new Error(this.formatComposerWorkspaceBranchApiError(await response.text()));
             }
             const payload = await response.json() as { branch?: string };
             if (payload.branch) {
@@ -775,7 +835,8 @@ export class MobileProjectsStickyComposerWorkspaceUi {
                 { kind: 'success', duration: 1600 },
             );
         } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
+            const raw = error instanceof Error ? error.message : String(error);
+            const detail = this.formatComposerWorkspaceBranchApiError(raw);
             MobileSnackbar.show(
                 nls.localize('qaap/composerWorkspace/branchSwitchFailed', 'Could not switch branch: {0}', detail),
                 { kind: 'warning', duration: 2600 },

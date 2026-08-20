@@ -6,6 +6,9 @@
 import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_GIT_REVIEW_API_PATH,
+    isQaapGitReviewMissingRootError,
+    isQaapGitReviewNotRepoError,
+    readQaapGitReviewErrorBody,
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
 } from '../common/qaap-git-review';
@@ -18,6 +21,8 @@ export interface MobileProjectsTranscriptHistoryHost {
     transcriptHistoryLoading: boolean;
     transcriptHistoryCommits: QaapGitHistoryCommit[];
     transcriptHistoryBranch: string | undefined;
+    /** Human-readable load failure; never shown in the branch filter button. */
+    transcriptHistoryError: string | undefined;
     transcriptHistoryQuery: string;
     transcriptHistoryRoot: string | undefined;
     transcriptHistoryLoadGeneration: number;
@@ -66,6 +71,7 @@ export class MobileProjectsTranscriptHistoryUi {
         }
         const generation = ++this.host.transcriptHistoryLoadGeneration;
         this.host.transcriptHistoryLoading = true;
+        this.host.transcriptHistoryError = undefined;
         this.renderTranscriptHistoryPanel(panel, root);
         try {
             const params = new URLSearchParams({ root });
@@ -82,10 +88,13 @@ export class MobileProjectsTranscriptHistoryUi {
             }
             this.host.transcriptHistoryBranch = payload.branch;
             this.host.transcriptHistoryCommits = payload.commits;
+            this.host.transcriptHistoryError = undefined;
         } catch (error) {
             if (generation === this.host.transcriptHistoryLoadGeneration && panel.isConnected) {
                 this.host.transcriptHistoryCommits = [];
-                this.host.transcriptHistoryBranch = error instanceof Error ? error.message : String(error);
+                this.host.transcriptHistoryBranch = undefined;
+                const raw = error instanceof Error ? error.message : String(error);
+                this.host.transcriptHistoryError = this.formatTranscriptHistoryLoadError(raw);
             }
         } finally {
             if (generation === this.host.transcriptHistoryLoadGeneration && panel.isConnected) {
@@ -93,6 +102,29 @@ export class MobileProjectsTranscriptHistoryUi {
                 this.renderTranscriptHistoryPanel(panel, root);
             }
         }
+    }
+
+    protected formatTranscriptHistoryLoadError(raw: string): string {
+        const message = readQaapGitReviewErrorBody(raw) ?? raw.trim();
+        if (isQaapGitReviewMissingRootError(message)) {
+            return nls.localize(
+                'qaap/mobileProjects/historyUnavailable',
+                'Open this project in the workspace to view commit history.',
+            );
+        }
+        if (isQaapGitReviewNotRepoError(message)) {
+            return nls.localize(
+                'qaap/mobileProjects/historyNotGitRepo',
+                'This project folder is not a git repository yet.',
+            );
+        }
+        if (!message || message.startsWith('{')) {
+            return nls.localize(
+                'qaap/mobileProjects/historyLoadFailed',
+                'Could not load commit history. Try opening the project again.',
+            );
+        }
+        return message;
     }
 
     renderTranscriptHistoryPanel(panel: HTMLElement, root: string): void {
@@ -153,6 +185,8 @@ export class MobileProjectsTranscriptHistoryUi {
             : this.host.transcriptHistoryCommits;
         if (this.host.transcriptHistoryLoading) {
             list.append(this.createTranscriptHistoryNote(nls.localize('qaap/mobileProjects/historyLoading', 'Loading history...')));
+        } else if (this.host.transcriptHistoryError) {
+            list.append(this.createTranscriptHistoryNote(this.host.transcriptHistoryError));
         } else if (commits.length === 0) {
             list.append(this.createTranscriptHistoryNote(query
                 ? nls.localize('qaap/mobileProjects/historyNoMatches', 'No matching commits.')
