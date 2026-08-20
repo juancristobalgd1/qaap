@@ -173,6 +173,20 @@ export function buildQaapAccountMenuEntries(
     options?: QaapAccountMenuEntriesOptions,
 ): QaapAccountMenuEntry[] {
     const billing = billingMenuEntry(options);
+    // Work Hub passes openSettings (sheet). Extensions / Keybindings open IDE views
+    // behind the hub, so keep them for the classic IDE menu only.
+    const ideWorkbenchLinks: QaapAccountMenuEntry[] = options?.openSettings ? [] : [
+        {
+            kind: 'action',
+            label: nls.localize('qaap/accountMenu/extensions', 'Extensions'),
+            commandId: WORKBENCH_OPEN_EXTENSIONS,
+        },
+        {
+            kind: 'action',
+            label: nls.localize('qaap/accountMenu/keybindings', 'Keyboard Shortcuts'),
+            commandId: WORKBENCH_OPEN_KEYBINDINGS,
+        },
+    ];
     if (!signedIn) {
         return [
             {
@@ -194,16 +208,7 @@ export function buildQaapAccountMenuEntries(
         { kind: 'separator' },
         settingsMenuEntry(options),
         ...(billing ? [billing] : []),
-        {
-            kind: 'action',
-            label: nls.localize('qaap/accountMenu/extensions', 'Extensions'),
-            commandId: WORKBENCH_OPEN_EXTENSIONS,
-        },
-        {
-            kind: 'action',
-            label: nls.localize('qaap/accountMenu/keybindings', 'Keyboard Shortcuts'),
-            commandId: WORKBENCH_OPEN_KEYBINDINGS,
-        },
+        ...ideWorkbenchLinks,
         { kind: 'separator' },
         {
             kind: 'action',

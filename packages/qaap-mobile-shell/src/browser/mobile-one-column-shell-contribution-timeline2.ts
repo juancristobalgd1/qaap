@@ -103,6 +103,19 @@ import {
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
 } from './qaap-workbench-account-menu';
+import {
+    QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB,
+    QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND,
+    QAAP_WORK_HUB_AI_FEATURES_COMMAND,
+} from '../common/mobile-work-hub-catalog';
+import {
+    QAAP_WORK_HUB_NEW_AGENT_COMMAND,
+    QAAP_WORK_HUB_OPEN_BILLING_COMMAND,
+    QAAP_WORK_HUB_OPEN_REPOSITORY_COMMAND,
+    QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND,
+    QAAP_WORK_HUB_SEARCH_COMMAND,
+} from '../common/qaap-work-hub-command-palette';
+import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import { hasDesktopSessionsSidebarCollapsed } from './mobile-work-hub-sessions-sidebar';
 import { writeStoredComposerSurface } from '../common/qaap-composer-surface';
 import { resolveInitialLandingBodyClass } from './mobile-shell-landing-state';
@@ -176,7 +189,11 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
     registry.registerCommand({ id: 'qaap.mobile.openAgentOnTask' }, {
         execute: (project: MobileProjectEntry) => ctx.openAgentTaskComposer(project),
     });
-    registry.registerCommand({ id: 'qaap.mobile.toggleSessionsSidebar' }, {
+    registry.registerCommand({
+        id: 'qaap.mobile.toggleSessionsSidebar',
+        label: nls.localize('qaap/mobile/toggleSessionsSidebar', 'Toggle Sessions Sidebar'),
+        category: 'Work Hub',
+    }, {
         execute: () => ctx.toggleWorkHubSessionsSidebar(),
         isEnabled: () => ctx.mobileActive && ctx.workspaceService.opened,
         isVisible: () => matchesMobileOneColumnLayout() && ctx.workspaceService.opened,
@@ -188,6 +205,68 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
         execute: () => ctx.openMobileWorkHubLanding('tasks'),
         isEnabled: () => ctx.mobileActive,
         isVisible: () => matchesMobileOneColumnLayout(),
+    });
+    registry.registerCommand({
+        id: QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND,
+        label: nls.localize('qaap/accountMenu/settings', 'Settings'),
+        category: 'Work Hub',
+    }, {
+        execute: (query?: string) => ctx.openWorkHubPreferencesSheet(query),
+        isEnabled: () => !peekPreferDesktopIde(),
+        isVisible: () => !peekPreferDesktopIde(),
+    });
+    registry.registerCommand({
+        id: QAAP_WORK_HUB_OPEN_BILLING_COMMAND,
+        label: nls.localize('qaap/accountMenu/billing', 'Billing'),
+        category: 'Work Hub',
+    }, {
+        execute: () => ctx.openWorkHubBillingSheet(),
+        isEnabled: () => !peekPreferDesktopIde(),
+        isVisible: () => !peekPreferDesktopIde(),
+    });
+    registry.registerCommand({
+        id: QAAP_WORK_HUB_NEW_AGENT_COMMAND,
+        label: nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
+        category: 'Work Hub',
+    }, {
+        execute: () => ctx.projectsPanel?.startNewWorkHubAgent(),
+        isEnabled: () => !peekPreferDesktopIde() && !!ctx.projectsPanel,
+        isVisible: () => !peekPreferDesktopIde(),
+    });
+    registry.registerCommand({
+        id: QAAP_WORK_HUB_SEARCH_COMMAND,
+        label: nls.localize('qaap/workHub/search', 'Search Work Hub…'),
+        category: 'Work Hub',
+    }, {
+        execute: () => ctx.projectsPanel?.openWorkHubSearch(),
+        isEnabled: () => !peekPreferDesktopIde() && !!ctx.projectsPanel,
+        isVisible: () => !peekPreferDesktopIde(),
+    });
+    registry.registerCommand({
+        id: QAAP_WORK_HUB_OPEN_REPOSITORY_COMMAND,
+        label: nls.localize('qaap/mobileProjects/newRepository', 'Add repository'),
+        category: 'Work Hub',
+    }, {
+        execute: () => ctx.projectsPanel?.showOpenRepositoryDialog(),
+        isEnabled: () => !peekPreferDesktopIde() && !!ctx.projectsPanel,
+        isVisible: () => !peekPreferDesktopIde(),
+    });
+    // Prefer Work Hub sheets over IDE main-area widgets while the hub is active.
+    // registerHandler unshifts, so these win over upstream handlers when enabled.
+    registry.registerHandler(CommonCommands.OPEN_PREFERENCES.id, {
+        execute: () => ctx.openWorkHubPreferencesSheet(),
+        isEnabled: () => !peekPreferDesktopIde(),
+        isVisible: () => !peekPreferDesktopIde(),
+    });
+    registry.registerHandler(QAAP_WORK_HUB_AI_FEATURES_COMMAND, {
+        execute: () => ctx.openWorkHubPreferencesSheet('ai-features'),
+        isEnabled: () => !peekPreferDesktopIde(),
+        isVisible: () => !peekPreferDesktopIde(),
+    });
+    registry.registerHandler(QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND, {
+        execute: () => ctx.openWorkHubAiConfigurationSheet(QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB),
+        isEnabled: () => !peekPreferDesktopIde(),
+        isVisible: () => !peekPreferDesktopIde(),
     });
     // Register the surface-switch command unconditionally. Command contributions are registered
     // once, while the viewport can change later; registering it only during a non-narrow boot

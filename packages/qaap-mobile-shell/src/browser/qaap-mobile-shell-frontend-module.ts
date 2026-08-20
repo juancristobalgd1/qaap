@@ -58,9 +58,11 @@ import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service'
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
+import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { QaapKeybindingRegistry } from './qaap-keybinding-registry';
+import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from './qaap-build-freshness-contribution';
 import { QaapAgentCliUpdateContribution } from './qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
@@ -161,6 +163,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // The registry is shared by the application and every widget. Keeping the
     // Qaap override singleton preserves contributions registered during startup.
     rebind(KeybindingRegistry).to(QaapKeybindingRegistry).inSingletonScope();
+    // Work Hub command palette shows hub-relevant commands only; IDE keeps the full list.
+    rebind(QuickCommandService).to(QaapQuickCommandService).inSingletonScope();
     rebind(ChatViewTreeWidget).toDynamicValue(ctx =>
         createQaapChatViewTreeWidget(ctx.container)
     );

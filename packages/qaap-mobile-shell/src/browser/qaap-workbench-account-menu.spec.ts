@@ -100,8 +100,20 @@ describe('buildQaapAccountMenuEntries', () => {
                 'Command Palette…',
                 'Settings',
                 'Billing',
-                'Extensions',
-                'Keyboard Shortcuts',
+                'Sign Out',
+            ]);
+        });
+
+        it('omits Extensions and Keybindings on the Work Hub menu', () => {
+            const hub = buildQaapAccountMenuEntries(true, {
+                openSettings: () => undefined,
+            });
+            const labels = hub.filter(e => e.kind === 'action').map(e => e.label);
+            expect(labels).to.not.include('Extensions');
+            expect(labels).to.not.include('Keyboard Shortcuts');
+            expect(labels).to.deep.equal([
+                'Command Palette…',
+                'Settings',
                 'Sign Out',
             ]);
         });

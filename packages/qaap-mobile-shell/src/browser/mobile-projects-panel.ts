@@ -1440,6 +1440,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.onNewClick();
     }
 
+    /** Command palette / toolbar: start a new agent on the Work Hub surface. */
+    async startNewWorkHubAgent(): Promise<void> {
+        await this.sessionsSidebarUi.onWorkHubSessionsSidebarNewChat();
+    }
+
+    /** Command palette / chrome: open the Work Hub search quick-pick. */
+    openWorkHubSearch(): void {
+        this.workHubSearchUi.openWorkHubSearchQuickPick();
+    }
+
     async openProject(project: MobileProjectEntry): Promise<void> {
         await this.projectNavigationUi.openProject(project);
     }
