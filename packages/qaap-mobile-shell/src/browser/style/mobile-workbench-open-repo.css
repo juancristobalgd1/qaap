@@ -19,7 +19,7 @@
    partial is not imported at runtime. */
 
 /*-----------------------------------------------------------------------------
-| Mobile "Open GitHub repository" bottom drawer (over the projects panel).
+| Mobile "Open GitHub repository" centered modal (over the projects panel).
 |-----------------------------------------------------------------------------*/
 
 .theia-mobile-open-repo {
@@ -28,7 +28,10 @@
   z-index: 40;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  box-sizing: border-box;
   pointer-events: none;
 }
 
@@ -37,7 +40,7 @@
   pointer-events: auto;
 }
 
-/* Work Hub list: keep the drawer above the bottom navigation (host is on `body`). */
+/* Work Hub list: keep the modal above the bottom navigation (host is on `body`). */
 body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-projects .theia-mobile-open-repo {
   top: 0;
   right: 0;
@@ -74,15 +77,18 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   flex-direction: column;
   min-height: 0;
   max-height: min(88vh, 680px);
-  width: 100%;
+  width: min(440px, 100%);
   background: var(--theia-editor-background);
   color: var(--theia-foreground);
-  border-top: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.28));
-  border-radius: 16px 16px 0 0;
-  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.34);
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.28));
+  border-radius: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.36);
   padding-bottom: 0;
-  transform: translateY(100%);
-  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  opacity: 0;
+  transform: scale(0.96) translateY(8px);
+  transition:
+    opacity 220ms ease,
+    transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
   overflow: hidden;
 }
 
@@ -92,7 +98,8 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
 }
 
 .theia-mobile-open-repo.theia-mod-visible .theia-mobile-open-repo-sheet {
-  transform: translateY(0);
+  opacity: 1;
+  transform: scale(1) translateY(0);
 }
 
 .theia-mobile-open-repo.theia-mod-busy .theia-mobile-open-repo-sheet {
@@ -104,10 +111,6 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   .theia-mobile-open-repo-sheet {
     transition: none;
   }
-}
-
-.theia-mobile-open-repo-sheet>.theia-mobile-sheet-grabber {
-  flex-shrink: 0;
 }
 
 .theia-mobile-open-repo-panels {
@@ -123,7 +126,7 @@ body.theia-mobile-mod-landing.theia-mobile-mod-landing-hub-list .theia-mobile-pr
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
-  padding: 4px 16px 8px;
+  padding: 14px 16px 8px;
 }
 
 .theia-mobile-open-repo-title-wrap {

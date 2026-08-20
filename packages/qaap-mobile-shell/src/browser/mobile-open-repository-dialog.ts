@@ -3,14 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { syncQaapAuthSessionFromServer } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import {
-    createMobileSheetGrabber,
-    installMobileSheetDragDismiss,
-} from './mobile-sheet-gestures';
 import { MobileProjectEntry } from './mobile-projects-types';
 import { MobileProjectsService } from './mobile-projects-service';
 
@@ -24,7 +19,7 @@ export interface MobileOpenRepositoryDialogDelegate {
 const GITHUB_URL_OR_SLUG = /^(?:https?:\/\/(?:www\.)?github\.com\/)?([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:\/.*)?$/;
 
 /**
- * Bottom drawer that mirrors the vscode.dev "Open repository" picker.
+ * Centered modal that mirrors the vscode.dev "Open repository" picker.
  * Lists the signed-in user's GitHub repositories, supports filtering by
  * name, and accepts a public `owner/repo` or github.com URL.
  */
@@ -56,7 +51,6 @@ export class MobileOpenRepositoryDialog {
     protected loadError: string | undefined;
     protected query = '';
     protected activeTab: 'repositories' | 'clone' = 'repositories';
-    protected dragDismissDispose: Disposable = Disposable.NULL;
     protected readonly onKeyDown = (ev: KeyboardEvent): void => {
         if (ev.key === 'Escape' && this.visible) {
             ev.stopPropagation();
@@ -82,8 +76,6 @@ export class MobileOpenRepositoryDialog {
         const sheet = document.createElement('section');
         sheet.className = 'theia-mobile-open-repo-sheet';
 
-        const grabber = createMobileSheetGrabber();
-        sheet.append(grabber);
         sheet.append(this.createHeader());
         sheet.append(this.createDescription());
 
@@ -186,12 +178,6 @@ export class MobileOpenRepositoryDialog {
         this.setActiveTab('repositories');
 
         this.root.append(backdrop, sheet);
-
-        this.dragDismissDispose = installMobileSheetDragDismiss({
-            target: sheet,
-            grip: grabber,
-            onDismiss: () => this.hide(),
-        });
     }
 
     get node(): HTMLElement {
@@ -209,7 +195,7 @@ export class MobileOpenRepositoryDialog {
         this.visible = true;
         this.root.hidden = false;
         this.root.setAttribute('aria-hidden', 'false');
-        // Reflow before adding the visible class so the slide-in transition runs.
+        // Reflow before adding the visible class so the open transition runs.
         void this.root.offsetWidth;
         this.root.classList.add('theia-mod-visible');
         document.addEventListener('keydown', this.onKeyDown, true);
