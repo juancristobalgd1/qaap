@@ -438,6 +438,17 @@ docker compose up -d theia
 Use **test** keys (`sk_test_…`) first; switch to live when ready to charge real cards.
 `QAAP_BILLING_DEV_CHECKOUT` must stay unset on the public VPS.
 
+### Paid beta smoke (single user)
+
+After Stripe env is live and `docker compose up -d theia`:
+
+1. `QAAP_BASE_URL=https://<host> QAAP_ENV_FILE=/opt/qaap/.env ./scripts/qaap-verify-launch-readiness.sh`
+2. On the VPS: `./scripts/qaap-vps-launch-gate.sh` (Stripe incomplete → WARN; `QAAP_BILLING_DEV_CHECKOUT` → FAIL)
+3. Incognito → GitHub login → Work Hub avatar → **Billing**
+4. Upgrade **Pro** (test card `4242…`) → return URL `?qaapBilling=success` → sheet shows **CURRENT** Pro
+5. Stripe Dashboard → cancel subscription → reload Billing → Starter (needs webhook)
+6. Confirm `GET /qaap/api/billing` (while logged in) has `checkout.stripeEnabled: true`
+
 ## Related docs
 
 - [qaap-background-agents.md](./qaap-background-agents.md) — agent templates, `QAAP_AGENT_COMMANDS`, custom providers

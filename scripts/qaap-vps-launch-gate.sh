@@ -95,6 +95,30 @@ else
     ok "single-tenant box; isolation script deferred"
 fi
 
+# Paid-beta Stripe: WARN if incomplete; FAIL only when DEV_CHECKOUT is on.
+stripe_secret="$(dexec 'printf %s "${STRIPE_SECRET_KEY:-}"' || true)"
+stripe_pro="$(dexec 'printf %s "${STRIPE_PRICE_PRO_MONTHLY:-}"' || true)"
+stripe_team="$(dexec 'printf %s "${STRIPE_PRICE_TEAM_MONTHLY:-}"' || true)"
+stripe_wh="$(dexec 'printf %s "${STRIPE_WEBHOOK_SECRET:-}"' || true)"
+public_url="$(dexec 'printf %s "${QAAP_PUBLIC_URL:-}"' || true)"
+dev_checkout="$(dexec 'printf %s "${QAAP_BILLING_DEV_CHECKOUT:-}"' || true)"
+stripe_ready=0
+[[ -n "${stripe_secret}" ]] && stripe_ready=$((stripe_ready + 1))
+[[ -n "${stripe_pro}" ]] && stripe_ready=$((stripe_ready + 1))
+[[ -n "${stripe_team}" ]] && stripe_ready=$((stripe_ready + 1))
+[[ -n "${stripe_wh}" ]] && stripe_ready=$((stripe_ready + 1))
+[[ -n "${public_url}" ]] && stripe_ready=$((stripe_ready + 1))
+if [[ "${stripe_ready}" -eq 0 ]]; then
+    echo "  WARN Stripe unset in container — Work Hub Billing checkout disabled"
+elif [[ "${stripe_ready}" -lt 5 ]]; then
+    echo "  WARN Stripe partial in container (${stripe_ready}/5) — set STRIPE_* + QAAP_PUBLIC_URL (doc/qaap-vps-deployment.md)"
+else
+    ok "Stripe checkout + webhook env present in container"
+fi
+if [[ "${dev_checkout}" == "1" || "${dev_checkout}" == "true" ]]; then
+    bad "QAAP_BILLING_DEV_CHECKOUT is on — refuse paid beta on a public VPS"
+fi
+
 echo
 echo "${pass} passed, ${fail} failed"
 if [[ "${fail}" -gt 0 ]]; then
