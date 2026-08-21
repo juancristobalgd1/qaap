@@ -401,6 +401,43 @@ To restore a single user's repo or one JSON store, extract selectively with
 > QAAP_BACKUP_OFFSITE_CMD='gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file /root/.qaap-backup-passphrase --output "${QAAP_BACKUP_ARCHIVE}.gpg" "$QAAP_BACKUP_ARCHIVE" && rclone copy "${QAAP_BACKUP_ARCHIVE}.gpg" remote:qaap-backups && rm -f "${QAAP_BACKUP_ARCHIVE}.gpg"'
 > ```
 
+## Stripe billing
+
+Work Hub → Billing upgrades Pro / Team via Stripe Checkout. The backend needs these in
+`/opt/qaap/.env` (and a `docker compose up -d` so theia picks them up — they are mapped in
+`docker-compose.yml`):
+
+| Variable | Where to get it |
+|----------|-----------------|
+| `QAAP_PUBLIC_URL` | Same HTTPS origin as the IDE, e.g. `https://178.105.136.93.sslip.io` |
+| `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys (`sk_live_…` or `sk_test_…`) |
+| `STRIPE_PRICE_PRO_MONTHLY` | Price id for Pro (€29 / month recurring) |
+| `STRIPE_PRICE_TEAM_MONTHLY` | Price id for Team (€79 / month recurring) |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret (`whsec_…`) |
+
+### One-time Stripe Dashboard setup
+
+1. Create two **Products** (or one product with two prices):
+   - **Qaap Pro** — recurring monthly **€29** → copy `price_…` → `STRIPE_PRICE_PRO_MONTHLY`
+   - **Qaap Team** — recurring monthly **€79** → copy `price_…` → `STRIPE_PRICE_TEAM_MONTHLY`
+2. Developers → Webhooks → **Add endpoint**:
+   - URL: `https://<QAAP_PUBLIC_HOST>/qaap/api/billing/webhook`
+   - Events: `checkout.session.completed`, `customer.subscription.deleted`
+   - Copy the endpoint signing secret → `STRIPE_WEBHOOK_SECRET`
+3. On the VPS:
+
+```bash
+cd /opt/qaap
+# append the five vars to .env (chmod 600), then:
+docker compose up -d theia
+```
+
+4. Verify while logged in: `GET /qaap/api/billing` JSON has `checkout.stripeEnabled: true`.
+   Work Hub avatar / Billing → Upgrade Pro should redirect to Stripe Checkout.
+
+Use **test** keys (`sk_test_…`) first; switch to live when ready to charge real cards.
+`QAAP_BILLING_DEV_CHECKOUT` must stay unset on the public VPS.
+
 ## Related docs
 
 - [qaap-background-agents.md](./qaap-background-agents.md) — agent templates, `QAAP_AGENT_COMMANDS`, custom providers

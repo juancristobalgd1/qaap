@@ -130,6 +130,16 @@ services:
       # per-turn token + ripgrep cost — set QAAP_AGENT_RETRIEVAL=1 and measure. Default off.
       QAAP_AGENT_RETRIEVAL: ${QAAP_AGENT_RETRIEVAL:-}
       QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-local}
+      # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
+      # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.
+      # Public origin for Checkout success/cancel URLs (prefer the Caddy HTTPS host).
+      QAAP_PUBLIC_URL: ${QAAP_PUBLIC_URL:-}
+      QAAP_BILLING_DEFAULT_PLAN: ${QAAP_BILLING_DEFAULT_PLAN:-}
+      QAAP_BILLING_STORE_PATH: ${QAAP_BILLING_STORE_PATH:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_PRO_MONTHLY: ${STRIPE_PRICE_PRO_MONTHLY:-}
+      STRIPE_PRICE_TEAM_MONTHLY: ${STRIPE_PRICE_TEAM_MONTHLY:-}
       # BYOK / free-tier keys for @qaiq background jobs (also set in Settings → AI).
       # Explicit env vars here override empty preferences; see doc/qaap-vps-deployment.md.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
