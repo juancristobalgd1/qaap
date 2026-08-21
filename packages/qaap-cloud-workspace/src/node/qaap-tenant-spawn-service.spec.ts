@@ -191,6 +191,13 @@ describe('QaapTenantSpawnService.assertTenantCwdInProduction (B: fail-closed on 
         expect(() => svc.check('/workspace/repos/users/alice/octocat/hello')).to.not.throw();
     });
 
+    it('allows a Windows-mangled tenant cwd (FileUri.fsPath from a Windows browser)', () => {
+        process.env.NODE_ENV = 'production';
+        process.env.QAAP_AGENT_UID_PER_USER = '1';
+        const svc = new ProdRootService();
+        expect(() => svc.check('/\\workspace\\repos\\users\\alice\\octocat\\hello')).to.not.throw();
+    });
+
     it('is a no-op outside production (local dev unaffected)', () => {
         process.env.NODE_ENV = 'development';
         process.env.QAAP_AGENT_UID_PER_USER = '1';

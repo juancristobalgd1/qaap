@@ -468,7 +468,6 @@ export function renderHeaderOverflowMenuItemsExtracted(ctx: any, menu: HTMLEleme
         copyActiveConversationToClipboard: () => ctx.copyActiveConversationToClipboard(),
         isCopyConversationEnabled: () => ctx.isCopyConversationEnabled(),
         openAiConfigurationSheet: ctx.openAiConfigurationSheet,
-        openPreferencesSheet: ctx.openPreferencesSheet,
         appendHeaderOverflowSeparator: m => ctx.appendHeaderOverflowSeparator(m),
         headerOverflowMenuGroups: ctx.headerOverflowMenuGroups,
         isHeaderOverflowMenuItemVisible: i => ctx.isHeaderOverflowMenuItemVisible(i),

@@ -15,6 +15,8 @@ import { DefaultWorkspaceServer } from '@theia/workspace/lib/node/default-worksp
 import { IShellTerminalServer, IShellTerminalServerOptions } from '@theia/terminal/lib/common/shell-terminal-protocol';
 import { ShellProcess, getRootPath } from '@theia/terminal/lib/node/shell-process';
 import { parseArgs } from '@theia/process/lib/node/utils';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import { normalizeIsolationPath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapNodeFileUploadService } from './qaap-node-file-upload-service';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
@@ -228,7 +230,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             // execs setpriv, which execs the shell in the same TTY — signals/resize are preserved), and
             // point HOME/USER at the tenant home. No-op when uid-per-user is off / not root / cwd is
             // outside a tenant tree; throws (failing the terminal open) rather than leaking a root shell.
-            const cwd = getRootPath(options.rootURI);
+            //
+            // Windows browsers often send FileUri.fsPath as "/\workspace\repos\..." — normalize and
+            // rewrite rootURI so ShellProcess.getRootPath also gets a real Linux cwd for the PTY.
+            const cwd = normalizeIsolationPath(getRootPath(options.rootURI));
+            options.rootURI = FileUri.create(cwd).toString(true);
             const shell = options.shell || ShellProcess.getShellExecutablePath();
             const shellArgs = options.args === undefined
                 ? ShellProcess.getShellExecutableArgs()

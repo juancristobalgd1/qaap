@@ -6,7 +6,6 @@
 // Business-logic helpers extracted from MobileProjectsPanel (second pass).
 // These functions accept instance fields as parameters (dependency injection).
 
-import { FileUri } from '@theia/core/lib/common/file-uri';
 import { nls } from '@theia/core/lib/common/nls';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { URI } from '@theia/core/lib/common/uri';
@@ -28,6 +27,8 @@ import {
     type QaapAttachComposerImageAttachment,
 } from '../common/qaap-preview-feedback-context';
 import { resolvePreviewFeedbackSubmitTarget } from '../common/qaap-preview-feedback-submit-target';
+import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
+import { normalizeIsolationPath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
 
 export function projectOwnsActiveBootstrap(
@@ -44,9 +45,9 @@ export function projectOwnsActiveBootstrap(
     if (!cwd) {
         return false;
     }
-    const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    const normalize = (value: string): string => normalizeIsolationPath(value).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
     try {
-        return normalize(FileUri.fsPath(rootUri.toString())) === normalize(cwd);
+        return normalize(resolveWorkspaceHostFsPath(rootUri)) === normalize(cwd);
     } catch {
         return false;
     }
@@ -108,7 +109,6 @@ export interface RenderHeaderOverflowMenuItemsDeps {
     copyActiveConversationToClipboard(): Promise<void>;
     isCopyConversationEnabled(): boolean;
     openAiConfigurationSheet?: () => void;
-    openPreferencesSheet?: () => void;
     appendHeaderOverflowSeparator(menu: HTMLElement): void;
     headerOverflowMenuGroups?: () => MobileProjectsHeaderOverflowMenuItem[][];
     isHeaderOverflowMenuItemVisible(item: MobileProjectsHeaderOverflowMenuItem): boolean;
@@ -169,13 +169,7 @@ export function renderHeaderOverflowMenuItems(
             () => deps.openAiConfigurationSheet?.(),
         );
     }
-    if (deps.openPreferencesSheet) {
-        appendItem(
-            nls.localize('qaap/workHubToolbar/preferences', 'Preferences'),
-            'codicon-tools',
-            () => deps.openPreferencesSheet?.(),
-        );
-    }
+    // Preferences (full IDE settings) stay out of Work Hub overflow — use Open IDE / AI Settings.
     for (const group of deps.headerOverflowMenuGroups?.() ?? []) {
         const visibleItems = group.filter(item => deps.isHeaderOverflowMenuItemVisible(item));
         if (!visibleItems.length) {

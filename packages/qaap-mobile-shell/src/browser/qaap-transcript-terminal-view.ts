@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { FileUri } from '@theia/core/lib/common/file-uri';
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
@@ -14,6 +13,7 @@ import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget
 import type { TerminalBlock } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { resolveTranscriptWorkspaceRootUri } from './qaap-transcript-file-open';
+import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import type { TranscriptTerminalSurface } from './qaap-transcript-surface-types';
 import {
     restoreOrCreateTranscriptTerminal,
@@ -287,7 +287,7 @@ export function createTranscriptTerminalViewServices(
         resolveCwd: cwd => {
             const root = resolveTranscriptWorkspaceRootUri(cwd, workspaceService);
             if (root) {
-                return FileUri.fsPath(root.toString());
+                return resolveWorkspaceHostFsPath(root);
             }
             return cwd;
         },

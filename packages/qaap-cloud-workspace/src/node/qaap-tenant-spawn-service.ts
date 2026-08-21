@@ -8,6 +8,7 @@ import { ChildProcess, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+    normalizeIsolationPath,
     resolveQaapParallelRoot,
     resolveQaapReposRoot,
     resolveQaapWorktreesRoot,
@@ -63,6 +64,14 @@ export class QaapTenantSpawnService {
     protected setprivExecutable: string | undefined;
     /** Repositories whose complete working tree was repaired during this backend lifetime. */
     protected readonly ownershipPreparedRoots = new Set<string>();
+
+    /**
+     * Rewrite Windows-client / mixed-separator cwds to a real absolute path on this host before
+     * isolation checks, chown, and child_process/PTY spawn.
+     */
+    canonicalizeCwd(cwd: string): string {
+        return normalizeIsolationPath(cwd);
+    }
 
     protected getTenantUidRegistry(): QaapTenantUidRegistry {
         if (!this.tenantUidRegistry) {
@@ -142,6 +151,7 @@ export class QaapTenantSpawnService {
      * and still never root while 1001 is set.
      */
     resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
+        cwd = this.canonicalizeCwd(cwd);
         const isRoot = this.isBackendRoot();
         const tenant = resolvePerTenantSpawnIdentity({
             enabled: isTenantUidPerUserEnabled(process.env),
@@ -170,6 +180,7 @@ export class QaapTenantSpawnService {
 
     /** The writable HOME for a dropped process: a per-tenant home in uid-per-user mode, else the shared one. */
     resolveTenantHome(cwd: string): string {
+        cwd = this.canonicalizeCwd(cwd);
         if (isTenantUidPerUserEnabled(process.env)) {
             const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), cwd);
             if (target) {
@@ -191,6 +202,7 @@ export class QaapTenantSpawnService {
      * out and fails the spawn.
      */
     prepareTenantIsolation(cwd: string): void {
+        cwd = this.canonicalizeCwd(cwd);
         this.assertTenantCwdInProduction(cwd);
         this.ensureTenantRootIsolated(cwd);
         this.ensureTenantIdentityProvisioned(cwd);
@@ -236,11 +248,12 @@ export class QaapTenantSpawnService {
      * first (see {@link spawnPrepared}).
      */
     spawn(command: string, options: QaapTenantSpawnOptions): ChildProcess {
-        const identity = this.resolveSpawnIdentity(options.cwd);
+        const cwd = this.canonicalizeCwd(options.cwd);
+        const identity = this.resolveSpawnIdentity(cwd);
         this.assertDropIsComplete(identity);
         const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
         return this.launchProcess(invocation.file, invocation.args ? [...invocation.args] : [], {
-            cwd: options.cwd,
+            cwd,
             detached: options.detached ?? true,
             env: options.env,
             stdio: options.stdio,
@@ -295,9 +308,10 @@ export class QaapTenantSpawnService {
      * interleave latency marks and its own env/HOME wiring.
      */
     spawnPrepared(command: string, options: QaapTenantSpawnOptions): ChildProcess {
+        const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
-        this.prepareTenantIsolation(options.cwd);
-        return this.spawn(command, options);
+        this.prepareTenantIsolation(cwd);
+        return this.spawn(command, { ...options, cwd });
     }
 
     /**
@@ -313,12 +327,13 @@ export class QaapTenantSpawnService {
         args: readonly string[],
         options: { cwd: string; env: NodeJS.ProcessEnv; detached?: boolean },
     ): ChildProcess {
+        const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
-        this.prepareTenantIsolation(options.cwd);
-        const identity = this.resolveSpawnIdentity(options.cwd);
+        this.prepareTenantIsolation(cwd);
+        const identity = this.resolveSpawnIdentity(cwd);
         this.assertDropIsComplete(identity);
         const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean } = {
-            cwd: options.cwd,
+            cwd,
             env: options.env,
             detached: options.detached ?? false,
         };
@@ -339,6 +354,7 @@ export class QaapTenantSpawnService {
      * Without a writable HOME a dropped process inherits root's `/root`, which it cannot write.
      */
     tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
+        cwd = this.canonicalizeCwd(cwd);
         if (this.resolveSpawnIdentity(cwd).uid === undefined) {
             return {};
         }
@@ -356,7 +372,7 @@ export class QaapTenantSpawnService {
      * applies for `cwd`. No-op when no drop applies.
      */
     resolveProcessEnv(cwd: string, base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-        return { ...base, ...this.tenantHomeEnvOverlay(cwd) };
+        return { ...base, ...this.tenantHomeEnvOverlay(this.canonicalizeCwd(cwd)) };
     }
 
     /**
@@ -366,6 +382,7 @@ export class QaapTenantSpawnService {
      * No-op unless uid-per-user is on, the backend is root, and `cwd` resolves to a tenant tree.
      */
     provisionTenantDir(cwd: string, dir: string): void {
+        cwd = this.canonicalizeCwd(cwd);
         if (!this.isBackendRoot() || !isTenantUidPerUserEnabled(process.env)) {
             return;
         }
@@ -397,6 +414,7 @@ export class QaapTenantSpawnService {
      * `-c core.hooksPath=/dev/null` stays as belt-and-suspenders.
      */
     wrapGitForTenant(cwd: string, gitArgs: readonly string[]): { file: string; args: string[] } {
+        cwd = this.canonicalizeCwd(cwd);
         return this.wrapShellForTenant(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]);
     }
 
@@ -409,6 +427,7 @@ export class QaapTenantSpawnService {
      * provisions util-linux; a missing setpriv is a misconfiguration, not a reason to leak root).
      */
     wrapShellForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+        cwd = this.canonicalizeCwd(cwd);
         this.enforceIsolationPolicy();
         const identity = this.resolveSpawnIdentity(cwd);
         if (identity.uid === undefined) {

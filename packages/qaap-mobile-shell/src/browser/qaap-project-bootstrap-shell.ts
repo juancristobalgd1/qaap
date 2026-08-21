@@ -4,7 +4,9 @@
 // *****************************************************************************
 
 import { OS } from '@theia/core/lib/common/os';
+import { Path } from '@theia/core/lib/common/path';
 import URI from '@theia/core/lib/common/uri';
+import { normalizeIsolationPath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 export interface QaapManagedShellInvocation {
     readonly shellPath: string;
@@ -12,13 +14,16 @@ export interface QaapManagedShellInvocation {
 }
 
 /**
- * Filesystem path of a workspace URI on the **backend** OS.
+ * Filesystem path of a workspace URI on the **backend** OS (Linux, macOS, or Windows).
  *
- * Do not use `FileUri.fsPath` for managed preview spawns: that helper follows the browser OS, so a
- * Windows client talking to a Linux workspace host would spawn with `\home\ubuntu\...` and `cmd.exe`.
+ * Do not use `FileUri.fsPath` for managed preview/terminal cwds: that helper follows the browser OS,
+ * so a Windows client talking to a Linux/macOS workspace host would spawn with `\home\ubuntu\...`.
+ * Format + normalize for {@link OS.backend} so the string matches what the server expects.
  */
 export function resolveWorkspaceHostFsPath(cwd: URI): string {
-    return cwd.path.fsPath();
+    const backendWindows = OS.backend.isWindows === true;
+    const format = backendWindows ? Path.Format.Windows : Path.Format.Posix;
+    return normalizeIsolationPath(cwd.path.fsPath(format), backendWindows ? 'win32' : 'posix');
 }
 
 function defaultManagedShellPlatform(): string {

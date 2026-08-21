@@ -20,6 +20,7 @@ import type { ApplicationShell } from '@theia/core/lib/browser/shell/application
 import type { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import type { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
+import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import {
     type TranscriptFileDecoration,
     type TranscriptFileTreeEntry,
@@ -135,7 +136,7 @@ export function resolveTranscriptWorkspaceRootUri(cwd: string, workspaceService:
 /** Stable cache key for transcript Files/Terminal surfaces (one per project workspace). */
 export function resolveTranscriptWorkspaceKey(cwd: string, workspaceService: WorkspaceService): string | undefined {
     const root = resolveTranscriptWorkspaceRootUri(cwd, workspaceService);
-    const path = root ? FileUri.fsPath(root.toString()) : cwd.trim();
+    const path = root ? resolveWorkspaceHostFsPath(root) : cwd.trim();
     if (!path) {
         return undefined;
     }

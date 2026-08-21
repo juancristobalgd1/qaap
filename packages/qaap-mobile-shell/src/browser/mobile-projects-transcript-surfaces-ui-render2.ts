@@ -3,6 +3,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { FileUri } from '@theia/core/lib/common/file-uri';
+import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
@@ -222,7 +223,7 @@ export function bootstrapAppliesToProjectExtracted(ctx: any, project: MobileProj
     }
     const projectCwd = ctx.host.projectsService.getProjectCwd(project)
         ?? ctx.host.preparedCwdByProjectId.get(project.id);
-    const bootstrapRoot = FileUri.fsPath(bootstrap.descriptor.rootUri);
+    const bootstrapRoot = resolveWorkspaceHostFsPath(bootstrap.descriptor.rootUri);
     if (projectCwd) {
         return ctx.pathsEqual(projectCwd, bootstrapRoot);
     }

@@ -3,7 +3,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
-import { FileUri } from '@theia/core/lib/common/file-uri';
+import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
@@ -170,7 +170,7 @@ export function resolveComposerPreviewRuntimeExtracted(ctx: any, project: Mobile
         return {
             projectId: project.id,
             projectCwd: ctx.host.projectsService.getProjectCwd(project),
-            bootstrapRoot: descriptor ? FileUri.fsPath(descriptor.rootUri) : undefined,
+            bootstrapRoot: descriptor ? resolveWorkspaceHostFsPath(descriptor.rootUri) : undefined,
             dependenciesInstalled: descriptor?.nodeModulesPresent === true,
             phase: bootstrap?.phase ?? 'idle',
             previewUrl: bootstrap?.previewUrl,

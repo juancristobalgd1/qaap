@@ -48,7 +48,7 @@ describe('qaap-project-bootstrap-shell', () => {
         }
     });
 
-    it('keeps POSIX workspace paths on a Linux host (FileUri.fsPath follows the browser OS)', () => {
+    it('keeps POSIX workspace paths on a Linux/macOS host (FileUri.fsPath follows the browser OS)', () => {
         const previousBackendWindows = OS.backend.isWindows;
         OS.backend.isWindows = false;
         try {
@@ -60,6 +60,20 @@ describe('qaap-project-bootstrap-shell', () => {
             if (process.platform !== 'win32') {
                 expect(FileUri.fsPath(uri)).to.equal(resolveWorkspaceHostFsPath(uri));
             }
+        } finally {
+            OS.backend.isWindows = previousBackendWindows;
+        }
+    });
+
+    it('keeps Windows drive paths when the workspace host is Windows', () => {
+        const previousBackendWindows = OS.backend.isWindows;
+        OS.backend.isWindows = true;
+        try {
+            const uri = new URI('file:///c%3A/Users/me/.qaap/workspaces/users/alice/acme/site');
+            const resolved = resolveWorkspaceHostFsPath(uri);
+            expect(resolved.replace(/\//g, '\\').toLowerCase()).to.equal(
+                'c:\\users\\me\\.qaap\\workspaces\\users\\alice\\acme\\site',
+            );
         } finally {
             OS.backend.isWindows = previousBackendWindows;
         }
