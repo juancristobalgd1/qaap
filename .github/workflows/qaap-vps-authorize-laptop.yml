@@ -1,0 +1,55 @@
+# One-shot: authorize a laptop SSH pubkey on the VPS using the existing deploy key.
+# Does not rebuild the app. Safe to re-run (idempotent append).
+name: Qaap VPS authorize laptop SSH
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: Full ssh-ed25519 AAAA… line (public key only)
+        required: true
+        type: string
+
+jobs:
+  authorize:
+    name: Append pubkey to root authorized_keys
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.repository == 'juancristobalgd1/qaap'
+    steps:
+      - name: Skip when VPS secrets are missing
+        id: ready
+        run: |
+          if [ -z "${{ secrets.QAAP_VPS_HOST }}" ] || [ -z "${{ secrets.QAAP_VPS_SSH_KEY }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Missing QAAP_VPS_HOST / QAAP_VPS_SSH_KEY"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install laptop pubkey over SSH
+        if: steps.ready.outputs.configured == 'true'
+        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
+        env:
+          LAPTOP_PUBKEY: ${{ inputs.public_key }}
+        with:
+          host: ${{ secrets.QAAP_VPS_HOST }}
+          username: ${{ secrets.QAAP_VPS_USER }}
+          key: ${{ secrets.QAAP_VPS_SSH_KEY }}
+          port: ${{ secrets.QAAP_VPS_SSH_PORT }}
+          command_timeout: 2m
+          envs: LAPTOP_PUBKEY
+          script: |
+            set -euo pipefail
+            mkdir -p /root/.ssh
+            chmod 700 /root/.ssh
+            touch /root/.ssh/authorized_keys
+            chmod 600 /root/.ssh/authorized_keys
+            if grep -qxF "$LAPTOP_PUBKEY" /root/.ssh/authorized_keys; then
+              echo "Pubkey already present"
+            else
+              printf '%s\n' "$LAPTOP_PUBKEY" >> /root/.ssh/authorized_keys
+              echo "Pubkey appended"
+            fi
+            wc -l /root/.ssh/authorized_keys
+            grep -F 'qaap-vps-deploy' /root/.ssh/authorized_keys || true
