@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as path from 'path';
 import {
     normalizeIsolationPath,
     parseGithubFullNameFromWorkspacePath,
@@ -40,6 +41,19 @@ describe('normalizeIsolationPath (cross-OS)', () => {
         const normalized = normalizeIsolationPath('/\\workspace\\repos\\users\\alice\\o\\r', 'win32');
         expect(normalized.toLowerCase().replace(/\//g, '\\')).to.match(/^([a-z]:\\)?workspace\\repos\\users\\alice\\o\\r$/i);
         expect(normalized.startsWith('\\\\')).to.equal(false);
+    });
+
+    it('falls back when path.posix is null (browser webpack)', () => {
+        const descriptor = Object.getOwnPropertyDescriptor(path, 'posix');
+        Object.defineProperty(path, 'posix', { value: null, configurable: true, writable: true });
+        try {
+            expect(normalizeIsolationPath('/workspace\\repos\\users\\alice\\site', 'posix'))
+                .to.equal('/workspace/repos/users/alice/site');
+        } finally {
+            if (descriptor) {
+                Object.defineProperty(path, 'posix', descriptor);
+            }
+        }
     });
 });
 

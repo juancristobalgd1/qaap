@@ -11,6 +11,8 @@ export const QAAP_USER_SETTINGS_API_PATH = '/qaap/api/user-settings';
 export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
 /** Create a Stripe Checkout session for Pro / Team monthly subscription. */
 export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
+/** Confirm a completed Checkout session after Stripe redirects back (idempotent with webhook). */
+export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
 /** Dev-only plan activate when Stripe keys are not configured. */
 export const QAAP_BILLING_DEV_ACTIVATE_API_PATH = '/qaap/api/billing/dev-activate';
 /** Unauthenticated liveness/readiness probe for monitors and VPS deploy gates. */

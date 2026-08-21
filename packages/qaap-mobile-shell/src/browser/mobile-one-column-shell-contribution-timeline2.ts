@@ -429,7 +429,7 @@ export async function openWorkHubPreferencesSheetExtracted(ctx: any, query?: str
     await ctx.workHubPreferencesSheet.show(query);
 }
 
-export async function openWorkHubBillingSheetExtracted(ctx: any): Promise<void> {
+export async function openWorkHubBillingSheetExtracted(ctx: any, options?: { readonly afterCheckout?: boolean }): Promise<void> {
     if (!ctx.workHubBillingSheet) {
         ctx.workHubBillingSheet = new MobileWorkHubBillingSheet();
         document.body.appendChild(ctx.workHubBillingSheet.node);
@@ -438,7 +438,7 @@ export async function openWorkHubBillingSheetExtracted(ctx: any): Promise<void> 
             ctx.workHubBillingSheet = undefined;
         }));
     }
-    await ctx.workHubBillingSheet.show();
+    await ctx.workHubBillingSheet.show(options);
 }
 
 export async function openWorkHubAiConfigurationSheetExtracted(ctx: any, tabId?: string): Promise<void> {

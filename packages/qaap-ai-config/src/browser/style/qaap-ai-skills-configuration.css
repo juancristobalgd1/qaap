@@ -1,0 +1,141 @@
+/* Qaap Skills configuration — card list + enable toggles */
+
+.qaap-ai-skills-configuration .qaap-ai-skills-section-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skills-section-hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skills-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+    background: color-mix(in srgb, var(--theia-editor-background) 88%, var(--theia-foreground));
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card.theia-mod-disabled {
+    opacity: 0.72;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--theia-button-background, #0e639c) 18%, transparent);
+    color: var(--theia-button-background, #0e639c);
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--theia-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 999px;
+    color: var(--theia-descriptionForeground);
+    background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card-description {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--theia-descriptionForeground);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-card-open {
+    align-self: flex-start;
+    margin-top: 2px;
+    min-height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-toggle {
+    width: 40px;
+    height: 24px;
+    margin-top: 4px;
+    padding: 0;
+    border-radius: 99px;
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+    background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-toggle.theia-mod-on {
+    background: var(--theia-button-background, #0e639c);
+    border-color: transparent;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-toggle::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--theia-editor-background);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+    transition: transform 120ms ease;
+}
+
+.qaap-ai-skills-configuration .qaap-ai-skill-toggle.theia-mod-on::after {
+    transform: translateX(16px);
+}

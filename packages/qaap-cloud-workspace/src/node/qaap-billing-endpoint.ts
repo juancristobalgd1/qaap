@@ -11,6 +11,7 @@ import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-gith
 import {
     QAAP_BILLING_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,
+    QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH,
     QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_BILLING_WEBHOOK_API_PATH,
 } from '../common/qaap-cloud-api-types';
@@ -20,9 +21,11 @@ import {
     createSubscriptionCheckoutSession,
     extractCheckoutPlanAndLogin,
     isBillingDevActivateEnabled,
+    isCheckoutSessionPaid,
     isQaapPayablePlanId,
     isStripeBillingConfigured,
     resolveBillingPublicOrigin,
+    retrieveCheckoutSession,
     stripeCustomerIdFromSession,
     stripeSubscriptionIdFromSession,
     verifyStripeWebhookEvent,
@@ -50,16 +53,12 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         app.use(json());
         app.get(QAAP_BILLING_API_PATH, (req, res) => void this.handleGet(req, res));
         app.post(QAAP_BILLING_CHECKOUT_API_PATH, (req, res) => void this.handleCheckout(req, res));
+        app.post(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, (req, res) => void this.handleConfirmCheckout(req, res));
         app.post(QAAP_BILLING_DEV_ACTIVATE_API_PATH, (req, res) => void this.handleDevActivate(req, res));
     }
 
-    protected async handleGet(req: Request, res: Response): Promise<void> {
-        const login = this.requireLogin(req, res);
-        if (!login) {
-            return;
-        }
-        const account = await this.store.getOrCreateAccount(login);
-        res.json({
+    protected billingSnapshot(login: string, account: Awaited<ReturnType<QaapBillingStore['getOrCreateAccount']>>): object {
+        return {
             account,
             entitlements: entitlementsFor(account),
             catalog: {
@@ -72,7 +71,16 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
                 devActivateEnabled: !isStripeBillingConfigured() && isBillingDevActivateEnabled(),
                 payablePlanIds: ['pro', 'team'],
             },
-        });
+        };
+    }
+
+    protected async handleGet(req: Request, res: Response): Promise<void> {
+        const login = this.requireLogin(req, res);
+        if (!login) {
+            return;
+        }
+        const account = await this.store.getOrCreateAccount(login);
+        res.json(this.billingSnapshot(login, account));
     }
 
     protected async handleCheckout(req: Request, res: Response): Promise<void> {
@@ -109,6 +117,54 @@ export class QaapBillingEndpoint implements BackendApplicationContribution {
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Checkout failed';
             res.status(500).json({ error: 'checkout_failed', message });
+        }
+    }
+
+    /**
+     * After Stripe redirects to `?qaapBilling=success&session_id=…`, the browser confirms the
+     * session so entitlements update even if the webhook is delayed. Idempotent with the webhook.
+     */
+    protected async handleConfirmCheckout(req: Request, res: Response): Promise<void> {
+        const login = this.requireLogin(req, res);
+        if (!login) {
+            return;
+        }
+        if (!isStripeBillingConfigured()) {
+            res.status(503).json({ error: 'stripe_not_configured' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+        if (!sessionId) {
+            res.status(400).json({ error: 'sessionId_required' });
+            return;
+        }
+        try {
+            const session = await retrieveCheckoutSession(sessionId);
+            if (session.mode && session.mode !== 'subscription') {
+                res.status(400).json({ error: 'not_subscription_session' });
+                return;
+            }
+            if (!isCheckoutSessionPaid(session)) {
+                res.status(409).json({ error: 'checkout_not_complete', status: session.status, payment_status: session.payment_status });
+                return;
+            }
+            const extracted = extractCheckoutPlanAndLogin(session);
+            if (!extracted.login || extracted.login !== login) {
+                res.status(403).json({ error: 'session_login_mismatch' });
+                return;
+            }
+            if (!extracted.planId) {
+                res.status(400).json({ error: 'session_missing_plan' });
+                return;
+            }
+            const account = await this.store.setPlan(login, extracted.planId, {
+                customerId: stripeCustomerIdFromSession(session),
+                subscriptionId: stripeSubscriptionIdFromSession(session),
+            });
+            res.json(this.billingSnapshot(login, account));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'confirm_failed';
+            res.status(500).json({ error: 'confirm_failed', message });
         }
     }
 

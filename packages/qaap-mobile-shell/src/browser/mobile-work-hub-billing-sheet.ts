@@ -11,6 +11,7 @@ import {
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
+import { rememberQaapAccountBillingPlanId } from './qaap-workbench-account-menu';
 
 type BillingPlan = QaapBillingApiResponse['catalog']['plans'][number];
 
@@ -131,7 +132,7 @@ export class MobileWorkHubBillingSheet {
         return this.visible;
     }
 
-    async show(): Promise<void> {
+    async show(options?: { readonly afterCheckout?: boolean }): Promise<void> {
         if (!this.node.parentElement) {
             document.body.appendChild(this.node);
         }
@@ -151,9 +152,10 @@ export class MobileWorkHubBillingSheet {
             return;
         }
         this.data = data;
-        // Product default: Starter is pre-selected in the slider; current plan still shows a badge.
-        this.selectedPlanId = 'starter';
-        this.renderBilling(data);
+        // Focus the user's active plan so post-checkout (and revisits) show "Your current plan".
+        this.selectedPlanId = data.entitlements.planId || 'starter';
+        rememberQaapAccountBillingPlanId(this.selectedPlanId);
+        this.renderBilling(data, options?.afterCheckout === true);
         requestAnimationFrame(() => this.scrollSelectedPlanIntoView(true));
     }
 
@@ -193,7 +195,7 @@ export class MobileWorkHubBillingSheet {
         this.contentHost.append(status);
     }
 
-    protected renderBilling(data: QaapBillingApiResponse): void {
+    protected renderBilling(data: QaapBillingApiResponse, afterCheckout: boolean = false): void {
         this.contentHost.replaceChildren();
         const intro = document.createElement('section');
         intro.className = 'theia-mobile-work-hub-billing-intro';
@@ -202,13 +204,35 @@ export class MobileWorkHubBillingSheet {
         eyebrow.textContent = nls.localize('qaap/billing/eyebrow', 'Subscription');
         const headline = document.createElement('h3');
         headline.className = 'theia-mobile-work-hub-billing-headline';
-        headline.textContent = nls.localize('qaap/billing/headline', 'Pick a plan that matches how you ship');
+        const currentName = planDisplayName(data.entitlements.planId);
+        if (afterCheckout && data.entitlements.planId !== 'starter') {
+            headline.textContent = nls.localize(
+                'qaap/billing/headlineAfterCheckout',
+                'You are on {0}',
+                currentName,
+            );
+        } else {
+            headline.textContent = nls.localize('qaap/billing/headline', 'Pick a plan that matches how you ship');
+        }
         const sub = document.createElement('p');
         sub.className = 'theia-mobile-work-hub-billing-subhead';
-        sub.textContent = nls.localize(
-            'qaap/billing/subhead',
-            'Starter is selected by default. Swipe to compare Pro and Team, then subscribe monthly with Stripe.',
-        );
+        if (afterCheckout && data.entitlements.planId !== 'starter') {
+            sub.textContent = nls.localize(
+                'qaap/billing/subheadAfterCheckout',
+                'Payment confirmed. This is your current plan — allowances reset each billing period.',
+            );
+        } else if (data.entitlements.planId !== 'starter') {
+            sub.textContent = nls.localize(
+                'qaap/billing/subheadCurrent',
+                'Your current plan is {0}. Swipe to compare other plans.',
+                currentName,
+            );
+        } else {
+            sub.textContent = nls.localize(
+                'qaap/billing/subhead',
+                'Starter is selected by default. Swipe to compare Pro and Team, then subscribe monthly with Stripe.',
+            );
+        }
         intro.append(eyebrow, headline, sub);
 
         const sliderSection = document.createElement('section');

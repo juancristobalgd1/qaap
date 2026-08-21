@@ -137,6 +137,29 @@ export interface QaapAccountMenuEntriesOptions {
     readonly workHub?: boolean;
     /** Work Hub: open the Billing sheet. */
     readonly openBilling?: () => void | Promise<void>;
+    /** Active billing plan id (`starter` / `pro` / `team`) for the Billing menu label. */
+    readonly currentPlanId?: string;
+}
+
+/** Last known plan from Billing sheet / checkout return — used when menu opens without a fresh fetch. */
+let cachedAccountBillingPlanId: string | undefined;
+
+export function rememberQaapAccountBillingPlanId(planId: string | undefined): void {
+    cachedAccountBillingPlanId = planId?.trim() || undefined;
+}
+
+function billingPlanMenuLabel(planId: string | undefined): string {
+    const id = (planId || '').toLowerCase();
+    if (id === 'pro') {
+        return nls.localize('qaap/accountMenu/billingPro', 'Billing · Pro');
+    }
+    if (id === 'team') {
+        return nls.localize('qaap/accountMenu/billingTeam', 'Billing · Team');
+    }
+    if (id === 'starter') {
+        return nls.localize('qaap/accountMenu/billingStarter', 'Billing · Starter');
+    }
+    return nls.localize('qaap/accountMenu/billing', 'Billing');
 }
 
 function settingsMenuEntry(): QaapAccountMenuEntry {
@@ -154,7 +177,7 @@ function billingMenuEntry(options?: QaapAccountMenuEntriesOptions): QaapAccountM
     }
     return {
         kind: 'action',
-        label: nls.localize('qaap/accountMenu/billing', 'Billing'),
+        label: billingPlanMenuLabel(options.currentPlanId ?? cachedAccountBillingPlanId),
         iconClass: 'codicon-credit-card',
         run: () => options.openBilling?.(),
     };

@@ -545,7 +545,18 @@ export function onStartExtracted(ctx: any, _app: FrontendApplication): void {
     }
     // Root safety + last-resort recovery, wired off 'ready' so they run on EVERY boot regardless
     // of whether the layout was restored (empty or not) or freshly created. See below.
-    void ctx.frontendStateService.reachedState('ready').then(() => ctx.onFrontendReadyEnsureWorkHub());
+    void ctx.frontendStateService.reachedState('ready').then(async () => {
+        ctx.onFrontendReadyEnsureWorkHub();
+        try {
+            const { handleQaapBillingReturn } = await import('./qaap-billing-return');
+            const billingReturn = await handleQaapBillingReturn();
+            if (billingReturn.openBilling) {
+                await ctx.openWorkHubBillingSheet({ afterCheckout: true });
+            }
+        } catch (error) {
+            console.warn('[qaap-billing] return handler failed', error);
+        }
+    });
 }
 
 export function ensureWorkHubSurfaceMountedAfterReadyExtracted(ctx: any): void {

@@ -7,6 +7,7 @@ import {
     QAAP_AUTH_API_PATH,
     QAAP_BILLING_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,
+    QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH,
     QAAP_BILLING_DEV_ACTIVATE_API_PATH,
     QAAP_GITHUB_API_PATH,
     QAAP_GITHUB_OAUTH_START_PATH,
@@ -287,6 +288,20 @@ export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise
         throw error;
     }
     return { url: body.url };
+}
+
+/** Apply a paid Stripe Checkout session to the signed-in account (idempotent with the webhook). */
+export async function confirmQaapBillingCheckout(sessionId: string): Promise<QaapBillingApiResponse | undefined> {
+    const response = await fetch(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+    }));
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(body.message || body.error || `Confirm checkout failed (${response.status})`);
+    }
+    return response.json() as Promise<QaapBillingApiResponse>;
 }
 
 export async function activateQaapBillingPlanDev(

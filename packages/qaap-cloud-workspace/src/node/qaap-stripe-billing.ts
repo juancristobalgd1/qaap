@@ -75,7 +75,7 @@ export async function createSubscriptionCheckoutSession(options: {
     if (!secret || !priceId) {
         throw new Error(`Missing Stripe configuration for plan ${options.planId}`);
     }
-    const successUrl = `${options.origin}/?qaapBilling=success&plan=${options.planId}`;
+    const successUrl = `${options.origin}/?qaapBilling=success&plan=${options.planId}&session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${options.origin}/?qaapBilling=cancel`;
     const body = formBody({
         mode: 'subscription',
@@ -107,7 +107,10 @@ export async function createSubscriptionCheckoutSession(options: {
 }
 
 export interface QaapStripeCheckoutSessionObject {
+    readonly id?: string;
     readonly mode?: string;
+    readonly status?: string | null;
+    readonly payment_status?: string | null;
     readonly client_reference_id?: string | null;
     readonly customer?: string | { readonly id?: string } | null;
     readonly subscription?: string | { readonly id?: string } | null;
@@ -123,6 +126,32 @@ export interface QaapStripeEvent {
     readonly data: {
         readonly object: QaapStripeCheckoutSessionObject | QaapStripeSubscriptionObject;
     };
+}
+
+/** True when Checkout finished successfully enough to grant entitlements. */
+export function isCheckoutSessionPaid(session: QaapStripeCheckoutSessionObject): boolean {
+    return session.payment_status === 'paid' || session.status === 'complete';
+}
+
+/** Fetch a Checkout Session by id (server-side Stripe secret). */
+export async function retrieveCheckoutSession(sessionId: string): Promise<QaapStripeCheckoutSessionObject> {
+    const secret = process.env.STRIPE_SECRET_KEY?.trim();
+    if (!secret) {
+        throw new Error('Missing STRIPE_SECRET_KEY');
+    }
+    const id = sessionId.trim();
+    if (!id || !/^cs_[A-Za-z0-9_]+$/.test(id)) {
+        throw new Error('Invalid Checkout session id');
+    }
+    const response = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(id)}`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${secret}` },
+    });
+    const json = await response.json() as QaapStripeCheckoutSessionObject & { error?: { message?: string } };
+    if (!response.ok) {
+        throw new Error(json.error?.message || `Stripe session retrieve failed (${response.status})`);
+    }
+    return json;
 }
 
 export function verifyStripeWebhookEvent(

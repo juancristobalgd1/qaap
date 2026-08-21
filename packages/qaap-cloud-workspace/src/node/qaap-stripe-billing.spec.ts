@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import * as crypto from 'crypto';
 import {
     extractCheckoutPlanAndLogin,
+    isCheckoutSessionPaid,
     isQaapPayablePlanId,
     verifyStripeWebhookEvent,
 } from './qaap-stripe-billing';
@@ -25,6 +26,12 @@ describe('qaap-stripe-billing', () => {
         });
         expect(extracted.login).to.equal('alice');
         expect(extracted.planId).to.equal('pro');
+    });
+
+    it('treats paid or complete Checkout sessions as grantable', () => {
+        expect(isCheckoutSessionPaid({ payment_status: 'paid' })).to.equal(true);
+        expect(isCheckoutSessionPaid({ status: 'complete' })).to.equal(true);
+        expect(isCheckoutSessionPaid({ payment_status: 'unpaid', status: 'open' })).to.equal(false);
     });
 
     it('verifies a valid Stripe webhook signature', () => {

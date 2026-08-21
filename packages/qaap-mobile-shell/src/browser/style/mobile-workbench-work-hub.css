@@ -12094,6 +12094,16 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   flex-wrap: nowrap;
 }
 
+/* IDE Agents + Prompt Fragments (IDE) — keep in classic IDE, hide in Work Hub embed */
+.theia-mobile-work-hub-ai-config-embed .lm-TabBar-tab.qaap-work-hub-ide-only-tab {
+  display: none !important;
+}
+
+/* Theia Chat PromptFragment slash commands (Universal/Coder/…) — not used by Work Hub / menu */
+.theia-mobile-work-hub-ai-config-embed .ai-slash-commands-section {
+  display: none !important;
+}
+
 .theia-mobile-work-hub-ai-config-embed .ai-configuration-widget [role="tablist"] {
   overflow-x: auto;
   overflow-y: hidden;

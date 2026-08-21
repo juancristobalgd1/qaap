@@ -8,6 +8,8 @@ export const QAAP_CLOUD_API_PATH = '/qaap/api/cloud';
 export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
 /** Create a Stripe Checkout session for Pro / Team monthly subscription. */
 export const QAAP_BILLING_CHECKOUT_API_PATH = '/qaap/api/billing/checkout';
+/** Confirm a completed Checkout session after Stripe redirects back (idempotent with webhook). */
+export const QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH = '/qaap/api/billing/confirm-checkout';
 /** Stripe webhook (raw body) for subscription lifecycle. */
 export const QAAP_BILLING_WEBHOOK_API_PATH = '/qaap/api/billing/webhook';
 /** Dev-only plan activate when Stripe keys are not configured. */

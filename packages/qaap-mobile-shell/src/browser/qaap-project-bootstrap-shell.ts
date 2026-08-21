@@ -23,7 +23,13 @@ export interface QaapManagedShellInvocation {
 export function resolveWorkspaceHostFsPath(cwd: URI): string {
     const backendWindows = OS.backend.isWindows === true;
     const format = backendWindows ? Path.Format.Windows : Path.Format.Posix;
-    return normalizeIsolationPath(cwd.path.fsPath(format), backendWindows ? 'win32' : 'posix');
+    const raw = cwd.path.fsPath(format);
+    try {
+        return normalizeIsolationPath(raw, backendWindows ? 'win32' : 'posix');
+    } catch {
+        // Browser bundles may omit path.posix/win32; never block Files/Terminal on normalize.
+        return raw;
+    }
 }
 
 function defaultManagedShellPlatform(): string {

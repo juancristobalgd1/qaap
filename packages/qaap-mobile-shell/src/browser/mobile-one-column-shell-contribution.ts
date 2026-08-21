@@ -782,8 +782,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return openWorkHubPreferencesSheetExtracted(this, query);
     }
 
-    protected async openWorkHubBillingSheet(): Promise<void> {
-        return openWorkHubBillingSheetExtracted(this);
+    protected async openWorkHubBillingSheet(options?: { readonly afterCheckout?: boolean }): Promise<void> {
+        return openWorkHubBillingSheetExtracted(this, options);
     }
 
     protected async openWorkHubAiConfigurationSheet(tabId?: string): Promise<void> {

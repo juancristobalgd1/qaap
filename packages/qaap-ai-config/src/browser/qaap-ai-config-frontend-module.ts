@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import '../../src/browser/style/qaap-ai-model-options.css';
+import '../../src/browser/style/qaap-ai-skills-configuration.css';
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
@@ -19,13 +20,16 @@ import { QaapLaunchListProvider } from './qaap-launch-list-provider';
 import { ShellCommandPermissionService } from '@theia/ai-terminal/lib/browser/shell-command-permission-service';
 import { QaapShellCommandPermissionService } from './qaap-shell-command-permission-service';
 import { QaapTerminalPreferenceContribution } from './qaap-terminal-preferences';
+import { QaapSkillsPreferenceContribution } from './qaap-skills-preferences';
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
 import { AIAgentConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/agent-configuration-widget';
 import { AIConfigurationContainerWidget } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-widget';
+import { AISkillsConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/skills-configuration-widget';
 import { QaapAiAgentConfigurationWidget } from './qaap-ai-agent-configuration-widget';
 import { QaapAiConfigurationContainerWidget } from './qaap-ai-configuration-container-widget';
+import { QaapAiSkillsConfigurationWidget } from './qaap-ai-skills-configuration-widget';
 import { DefaultSkillService, SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { QaapSkillService } from './qaap-skill-service';
 import { SkillPromptCoordinator } from '@theia/ai-core/lib/browser/skill-prompt-coordinator';
@@ -56,6 +60,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapAiConfigurationContainerWidget).toSelf().inSingletonScope();
     rebind(AIConfigurationContainerWidget).toService(QaapAiConfigurationContainerWidget);
 
+    bind(QaapAiSkillsConfigurationWidget).toSelf();
+    rebind(AISkillsConfigurationWidget).toService(QaapAiSkillsConfigurationWidget);
+
     bind(QaapSkillService).toSelf().inSingletonScope();
     rebind(DefaultSkillService).toService(QaapSkillService);
     rebind(SkillService).toService(QaapSkillService);
@@ -68,6 +75,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapTerminalPreferenceContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapTerminalPreferenceContribution);
+
+    bind(QaapSkillsPreferenceContribution).toSelf().inSingletonScope();
+    bind(PreferenceContribution).toService(QaapSkillsPreferenceContribution);
 
     bind(QaapShellCommandPermissionService).toSelf().inSingletonScope();
     rebind(ShellCommandPermissionService).toService(QaapShellCommandPermissionService);

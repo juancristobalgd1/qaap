@@ -31,6 +31,8 @@ export const QAAP_HIDDEN_AI_FEATURES_PREF_KEYS: readonly string[] = [
     'ai-features.orchestrator.excludedAgents',
     'ai-features.agentMode.enabled',
     'ai-features.notifications.default',
+    // Managed in AI Configuration → Skills (card toggles), not Settings.
+    'ai-features.skills.disabledSkills',
 ];
 
 /**
@@ -48,11 +50,26 @@ export const QAAP_HIDDEN_AI_CONFIGURATION_AGENT_IDS: readonly string[] = [
     'ProjectInfo',
 ];
 
-/** AI Configuration tabs that only apply to Theia Chat, not Work Hub VPS. */
+/**
+ * AI Configuration tabs omitted from the shared container (Theia Chat–only).
+ * Never mounted in {@link QaapAiConfigurationContainerWidget}.
+ */
 export const QAAP_HIDDEN_AI_CONFIGURATION_TAB_IDS: readonly string[] = [
     'ai-variable-configuration-container-widget',
     'ai-token-usage-configuration-container-widget',
     'ai-tools-configuration-widget',
+];
+
+/**
+ * Tabs that remain available in classic IDE AI Configuration, but must not appear in the
+ * Work Hub overlay (agents/prompts are chosen in the composer / IDE chat only).
+ * Model Aliases stays visible in Work Hub (BYOK routing).
+ * Skills tab stays visible (SkillService / SKILL.md for composer `/`); only the embedded
+ * `.ai-slash-commands-section` (Theia PromptFragment commands) is CSS-hidden in Work Hub.
+ */
+export const QAAP_WORK_HUB_HIDDEN_AI_CONFIGURATION_TAB_IDS: readonly string[] = [
+    'ai-agent-configuration-container-widget', // labeled "IDE Agents"
+    'ai-prompt-fragments-configuration', // labeled "Prompt Fragments (IDE)"
 ];
 
 export function shouldHideQaapAiFeaturesPreference(key: string): boolean {
@@ -68,4 +85,10 @@ export function isQaapHiddenAiConfigurationAgent(agentId: string): boolean {
 
 export function isQaapHiddenAiConfigurationTab(tabId: string): boolean {
     return QAAP_HIDDEN_AI_CONFIGURATION_TAB_IDS.includes(tabId);
+}
+
+/** True when this tab must be hidden while AI Configuration is embedded in Work Hub. */
+export function isQaapWorkHubHiddenAiConfigurationTab(tabId: string): boolean {
+    return QAAP_WORK_HUB_HIDDEN_AI_CONFIGURATION_TAB_IDS.includes(tabId)
+        || isQaapHiddenAiConfigurationTab(tabId);
 }

@@ -15,7 +15,9 @@ import { ModelAliasesConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-co
 
 /**
  * Work Hub–oriented AI Configuration tabs:
- * MCP / Skills / Model Aliases are first-class; Agents + Prompt Fragments stay for IDE chat.
+ * MCP / Skills / Model Aliases are first-class for the hub.
+ * IDE Agents + Prompt Fragments stay mounted for classic IDE chat, but the Work Hub sheet
+ * hides those tabs via {@link isQaapWorkHubHiddenAiConfigurationTab}.
  * Omits Variables / Token Usage / Tools (Theia Chat–only; Work Hub uses composer approval).
  */
 @injectable()

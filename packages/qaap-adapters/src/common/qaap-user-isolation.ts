@@ -117,8 +117,131 @@ export function resolveIsolationPathHost(): IsolationPathHost {
     return process.platform === 'win32' ? 'win32' : 'posix';
 }
 
+/**
+ * Minimal path helpers when webpack/browserify leaves `path.posix` / `path.win32` as null
+ * (common in the browser bundle — calling `.resolve` then throws and empties Files/Terminal).
+ */
+function createIsolationPathApi(host: IsolationPathHost): path.PlatformPath {
+    const sep = host === 'win32' ? '\\' : '/';
+    const toForward = (value: string): string => value.replace(/\\/g, '/');
+    const isAbsolute = (value: string): boolean => {
+        const forward = toForward(value);
+        if (host === 'win32') {
+            return /^[A-Za-z]:\//.test(forward) || forward.startsWith('//') || forward.startsWith('/');
+        }
+        return forward.startsWith('/');
+    };
+    const collapse = (segments: string[], absolute: boolean): string[] => {
+        const out: string[] = [];
+        for (const segment of segments) {
+            if (!segment || segment === '.') {
+                continue;
+            }
+            if (segment === '..') {
+                if (out.length > 0 && out[out.length - 1] !== '..') {
+                    out.pop();
+                } else if (!absolute) {
+                    out.push('..');
+                }
+                continue;
+            }
+            out.push(segment);
+        }
+        return out;
+    };
+    const resolve = (...parts: string[]): string => {
+        let resolved = '';
+        for (const part of parts) {
+            if (!part) {
+                continue;
+            }
+            const forward = toForward(part);
+            if (isAbsolute(forward)) {
+                resolved = forward;
+            } else {
+                resolved = resolved ? `${resolved.replace(/\/+$/, '')}/${forward}` : forward;
+            }
+        }
+        if (!resolved) {
+            return host === 'win32' ? `.${sep}` : '.';
+        }
+        const drive = host === 'win32' ? resolved.match(/^([A-Za-z]:)(\/.*)?$/) : undefined;
+        const unc = host === 'win32' && resolved.startsWith('//');
+        let body = drive ? (drive[2] || '/') : resolved;
+        const absolute = host === 'posix'
+            ? body.startsWith('/')
+            : !!(drive || unc || body.startsWith('/'));
+        const segments = collapse(body.split('/'), absolute);
+        if (host === 'win32') {
+            if (drive) {
+                return `${drive[1]}${sep}${segments.join(sep)}`;
+            }
+            if (unc) {
+                return `${sep}${sep}${segments.join(sep)}`;
+            }
+            return segments.join(sep) || '.';
+        }
+        return absolute ? `/${segments.join('/')}` : (segments.join('/') || '.');
+    };
+    const join = (...parts: string[]): string => {
+        const filtered = parts.filter(part => !!part);
+        if (filtered.length === 0) {
+            return '.';
+        }
+        return resolve(filtered.map(toForward).join('/'));
+    };
+    const relative = (from: string, to: string): string => {
+        const fromResolved = toForward(resolve(from)).replace(/\/+$/, '') || '/';
+        const toResolved = toForward(resolve(to)).replace(/\/+$/, '') || '/';
+        if (host === 'win32') {
+            const fromDrive = fromResolved.slice(0, 2).toLowerCase();
+            const toDrive = toResolved.slice(0, 2).toLowerCase();
+            if (/^[a-z]:$/i.test(fromDrive) && /^[a-z]:$/i.test(toDrive) && fromDrive !== toDrive) {
+                return resolve(to);
+            }
+        }
+        const fromParts = fromResolved.split('/').filter(Boolean);
+        const toParts = toResolved.split('/').filter(Boolean);
+        let common = 0;
+        while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) {
+            common += 1;
+        }
+        const ups = fromParts.length - common;
+        const downs = toParts.slice(common);
+        const rel = [...Array(ups).fill('..'), ...downs].join('/');
+        return rel || '.';
+    };
+    return {
+        resolve,
+        join,
+        relative,
+        isAbsolute,
+        normalize: (value: string) => resolve(value),
+        sep,
+        delimiter: host === 'win32' ? ';' : ':',
+        basename: path.basename,
+        dirname: path.dirname,
+        extname: path.extname,
+        parse: path.parse,
+        format: path.format,
+        toNamespacedPath: (value: string) => value,
+        posix: path.posix ?? (undefined as unknown as path.PlatformPath),
+        win32: path.win32 ?? (undefined as unknown as path.PlatformPath),
+    } as path.PlatformPath;
+}
+
 function pathApiForHost(host: IsolationPathHost): path.PlatformPath {
-    return host === 'win32' ? path.win32 : path.posix;
+    const preferred = host === 'win32' ? path.win32 : path.posix;
+    // Browser webpack builds often set path.posix / path.win32 to null.
+    if (preferred && typeof preferred.resolve === 'function') {
+        return preferred;
+    }
+    if (typeof path.resolve === 'function'
+        && ((host === 'win32' && process.platform === 'win32')
+            || (host === 'posix' && process.platform !== 'win32'))) {
+        return path;
+    }
+    return createIsolationPathApi(host);
 }
 
 /** True when `targetPath` is inside the authenticated user's workspace tree. */

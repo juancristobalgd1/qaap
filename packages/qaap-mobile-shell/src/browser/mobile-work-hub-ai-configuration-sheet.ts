@@ -10,6 +10,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MessageLoop } from '@lumino/messaging';
 import { Widget as LuminoWidget } from '@lumino/widgets';
 import { QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB } from '../common/mobile-work-hub-catalog';
+import { isQaapWorkHubHiddenAiConfigurationTab } from '../common/qaap-ai-features-visibility';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 
 /** Opens the AI Configuration view embedded in the Work Hub overlay. */
@@ -106,7 +107,11 @@ export class MobileWorkHubAiConfigurationSheet {
         await animationFrame(2);
         if (this.visible) {
             await this.waitForAiConfigurationReady(widget);
-            this.aiConfigurationSelectionService.selectConfigurationTab(tabId);
+            this.setWorkHubIdeOnlyTabsHidden(widget, true);
+            const safeTab = isQaapWorkHubHiddenAiConfigurationTab(tabId)
+                ? QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB
+                : tabId;
+            this.aiConfigurationSelectionService.selectConfigurationTab(safeTab);
             await this.waitForAiConfigurationContent(widget);
             this.scheduleLayoutSync(widget);
         }
@@ -115,6 +120,9 @@ export class MobileWorkHubAiConfigurationSheet {
     hide(): void {
         if (!this.visible) {
             return;
+        }
+        if (this.configurationWidget) {
+            this.setWorkHubIdeOnlyTabsHidden(this.configurationWidget, false);
         }
         if (this.windowResizeListener) {
             window.removeEventListener('resize', this.windowResizeListener);
@@ -163,6 +171,7 @@ export class MobileWorkHubAiConfigurationSheet {
         if (!widget) {
             return;
         }
+        this.setWorkHubIdeOnlyTabsHidden(widget, false);
         this.clearMobileAiConfigurationLayout(widget);
         widget.node.classList.remove('theia-mobile-work-hub-ai-config-embed');
         widget.node.style.removeProperty('flex');
@@ -172,6 +181,31 @@ export class MobileWorkHubAiConfigurationSheet {
         if (widget.isAttached) {
             UnsafeWidgetUtilities.detach(widget);
         }
+    }
+
+    /**
+     * Hide IDE-only tabs (IDE Agents, Prompt Fragments) while the shared AI Configuration
+     * widget is embedded in Work Hub; restore them when the sheet closes so classic IDE keeps them.
+     */
+    protected setWorkHubIdeOnlyTabsHidden(container: AIConfigurationContainerWidget, hidden: boolean): void {
+        const hideClass = 'qaap-work-hub-ide-only-tab';
+        const dock = (container as unknown as {
+            dockpanel?: { widgets?: () => IterableIterator<Widget> | Widget[] };
+        }).dockpanel;
+        const widgets = dock?.widgets ? Array.from(dock.widgets()) : [];
+        for (const child of widgets) {
+            if (!isQaapWorkHubHiddenAiConfigurationTab(child.id)) {
+                continue;
+            }
+            const classes = child.title.className.split(/\s+/).filter(Boolean);
+            const has = classes.includes(hideClass);
+            if (hidden && !has) {
+                child.title.className = [...classes, hideClass].join(' ');
+            } else if (!hidden && has) {
+                child.title.className = classes.filter(name => name !== hideClass).join(' ');
+            }
+        }
+        container.update();
     }
 
     protected scheduleLayoutSync(widget: Widget, attempt = 0): void {

@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     isQaapHiddenAiConfigurationAgent,
     isQaapHiddenAiConfigurationTab,
+    isQaapWorkHubHiddenAiConfigurationTab,
     shouldHideQaapAiFeaturesPreference,
 } from './qaap-ai-features-visibility';
 
@@ -15,6 +16,7 @@ describe('qaap-ai-features-visibility', () => {
         expect(shouldHideQaapAiFeaturesPreference('ai-features.copilot.enabled')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.chat.defaultChatAgent')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.AiEnable.enableAI')).to.equal(true);
+        expect(shouldHideQaapAiFeaturesPreference('ai-features.skills.disabledSkills')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.vercelAi.openaiApiKey')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.llamafile.llamafiles')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.SCANOSS.apiKey')).to.equal(true);
@@ -44,5 +46,14 @@ describe('qaap-ai-features-visibility', () => {
         expect(isQaapHiddenAiConfigurationTab('ai-tools-configuration-widget')).to.equal(true);
         expect(isQaapHiddenAiConfigurationTab('ai-mcp-configuration-container-widget')).to.equal(false);
         expect(isQaapHiddenAiConfigurationTab('ai-skills-configuration-widget')).to.equal(false);
+    });
+
+    it('hides IDE Agents and Prompt Fragments only in the Work Hub sheet', () => {
+        expect(isQaapWorkHubHiddenAiConfigurationTab('ai-agent-configuration-container-widget')).to.equal(true);
+        expect(isQaapWorkHubHiddenAiConfigurationTab('ai-prompt-fragments-configuration')).to.equal(true);
+        // Model Aliases stays in Work Hub (BYOK routing).
+        expect(isQaapWorkHubHiddenAiConfigurationTab('ai-model-aliases-configuration-widget')).to.equal(false);
+        expect(isQaapWorkHubHiddenAiConfigurationTab('ai-mcp-configuration-container-widget')).to.equal(false);
+        expect(isQaapWorkHubHiddenAiConfigurationTab('ai-skills-configuration-widget')).to.equal(false);
     });
 });
