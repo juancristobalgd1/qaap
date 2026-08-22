@@ -46,7 +46,7 @@ function loadPinnedUpstreamBase() {
         return undefined;
     }
     const entries = fs.readFileSync(upstreamBasePath, 'utf8')
-        .split('\n')
+        .split(/\r?\n/)
         .map(line => line.replace(/#.*$/, '').trim())
         .filter(Boolean);
     if (entries.length !== 1 || !/^[0-9a-f]{40}$/i.test(entries[0])) {

@@ -147,7 +147,7 @@
     "rebuild:clean": "rimraf .browser_modules",
     "rebuild:browser": "cd examples/browser && npm run rebuild",
     "rebuild:electron": "cd examples/electron && npm run rebuild",
-    "start:browser": "node scripts/qaap-free-dev-port.js && cd examples/browser && QAAP_SKIP_AUTH=\"${QAAP_SKIP_AUTH:-1}\" npm run start -- --hostname=:: --port 3000",
+    "start:browser": "node scripts/qaap-free-dev-port.js && node scripts/qaap-start-browser.mjs",
     "start:browser-only": "cd examples/browser-only && npm run start",
     "start:electron": "cd examples/electron && npm run start",
     "test": "npm run -s test:theia && npm run -s electron test && npm run -s browser test",

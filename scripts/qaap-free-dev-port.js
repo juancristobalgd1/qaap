@@ -16,6 +16,21 @@ function sleep(ms) {
 }
 
 function listListenerPids() {
+    if (process.platform === 'win32') {
+        const probe = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8' });
+        if (probe.status !== 0 || !probe.stdout.trim()) {
+            return [];
+        }
+        return [...new Set(
+            probe.stdout
+                .split(/\r?\n/)
+                .map(line => line.trim().split(/\s+/))
+                .filter(parts => parts[0] === 'TCP' && parts[3] === 'LISTENING' && parts[1]?.endsWith(`:${PORT}`))
+                .map(parts => Number(parts[4]))
+                .filter(pid => Number.isFinite(pid) && pid > 0),
+        )];
+    }
+
     const probe = spawnSync('lsof', ['-nP', `-iTCP:${PORT}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' });
     if (probe.status !== 0 || !probe.stdout.trim()) {
         return [];
@@ -31,6 +46,15 @@ function listListenerPids() {
 
 function resolveCommand(pid) {
     try {
+        if (process.platform === 'win32') {
+            const probe = spawnSync('powershell.exe', [
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                `(Get-CimInstance Win32_Process -Filter \"ProcessId = ${pid}\").Name`,
+            ], { encoding: 'utf8' });
+            return probe.stdout?.trim() || 'unknown';
+        }
         return execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf8' }).trim() || 'unknown';
     } catch {
         return 'unknown';
@@ -38,6 +62,10 @@ function resolveCommand(pid) {
 }
 
 function terminate(pid) {
+    if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+        return;
+    }
     try {
         process.kill(pid, 'SIGTERM');
     } catch (error) {
@@ -65,8 +93,8 @@ function terminate(pid) {
 }
 
 function isStaleDevListener(command) {
-    const base = command.split('/').pop() ?? command;
-    return base === 'node' || base === 'electron';
+    const base = command.split(/[\\/]/).pop()?.toLowerCase() ?? command.toLowerCase();
+    return base === 'node' || base === 'node.exe' || base === 'electron' || base === 'electron.exe';
 }
 
 /**

@@ -70,6 +70,8 @@
   margin: 0;
   box-sizing: border-box;
   padding-inline-start: calc(var(--qaap-url-refresh-size) + var(--qaap-url-refresh-inset) + 2px);
+  border: none;
+  background: transparent;
 }
 
 .theia-mini-browser-toolbar .theia-mini-browser-url-field .theia-input {
