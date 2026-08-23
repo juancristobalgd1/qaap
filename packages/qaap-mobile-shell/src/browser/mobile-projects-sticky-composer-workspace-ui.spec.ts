@@ -188,7 +188,7 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
             '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Branch"] .codicon-git-branch',
         )).to.not.equal(null);
         expect(document.body.querySelector(
-            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Run in"] .codicon-device-desktop',
+            '.theia-mobile-composer-workspace-sheet-nav .theia-qaap-segmented-option[aria-label="Run in"] .codicon-repo',
         )).to.not.equal(null);
         expect(projectBtn?.getAttribute('aria-pressed')).to.equal('true');
         window.matchMedia = matchMedia;
@@ -253,7 +253,7 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         expect(runInHeader?.querySelector('.theia-mobile-sticky-composer-sheet-header-label')?.textContent?.trim())
             .to.equal('Run in');
         expect(runInHeader?.querySelector('.theia-mobile-sticky-composer-sheet-header-value')?.textContent?.trim())
-            .to.equal('Local');
+            .to.equal('Current workspace');
         window.matchMedia = matchMedia;
         anchor.remove();
     });
@@ -292,8 +292,8 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
         expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-label')?.textContent?.trim())
             .to.equal('Run in');
         expect(header?.querySelector('.theia-mobile-sticky-composer-sheet-header-value')?.textContent?.trim())
-            .to.equal('Local');
-        expect(header?.getAttribute('aria-label')).to.equal('Run in Local');
+            .to.equal('Current workspace');
+        expect(header?.getAttribute('aria-label')).to.equal('Run in Current workspace');
     });
 
     it('does not render header workspace nav for bottom-sheet project picker', () => {

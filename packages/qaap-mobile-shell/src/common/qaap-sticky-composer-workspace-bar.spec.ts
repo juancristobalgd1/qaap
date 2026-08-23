@@ -36,9 +36,9 @@ describe('qaap-sticky-composer-workspace-bar', () => {
         appendStickyComposerWorkspaceContextField(
             bar,
             createStickyComposerWorkspacePill({
-                iconClass: 'codicon-device-desktop',
-                label: 'Local',
-                ariaLabel: 'Run in: Local',
+                iconClass: 'codicon-repo',
+                label: 'Current workspace',
+                ariaLabel: 'Run in: Current workspace',
                 fieldKind: 'destination',
                 onClick: () => undefined,
             }),
@@ -59,9 +59,9 @@ describe('qaap-sticky-composer-workspace-bar', () => {
         appendStickyComposerWorkspaceContextField(
             bar,
             createStickyComposerWorkspacePill({
-                iconClass: 'codicon-device-desktop',
-                label: 'Local',
-                ariaLabel: 'Run in: Local',
+                iconClass: 'codicon-repo',
+                label: 'Current workspace',
+                ariaLabel: 'Run in: Current workspace',
                 fieldKind: 'destination',
                 onClick: () => undefined,
             }),
@@ -99,7 +99,7 @@ describe('qaap-sticky-composer-workspace-bar', () => {
         const projectBtn = nav.querySelector<HTMLButtonElement>('.theia-qaap-segmented-option[aria-label="Project"]');
         expect(projectBtn?.querySelector('.codicon-repo')).to.not.equal(null);
         const destinationBtn = nav.querySelector<HTMLButtonElement>('.theia-qaap-segmented-option[aria-label="Run in"]');
-        expect(destinationBtn?.querySelector('.codicon-device-desktop')).to.not.equal(null);
+        expect(destinationBtn?.querySelector('.codicon-repo')).to.not.equal(null);
         expect(destinationBtn?.querySelector('.codicon')?.getAttribute('aria-hidden')).to.equal('true');
         projectBtn?.click();
         expect(selected).to.equal('project');

@@ -80,7 +80,7 @@ export class MobileProjectsStickyComposerWorkspaceUi {
     private workspaceSheetAnchor: HTMLElement | undefined;
     private workspacePopoverCleanup: (() => void) | undefined;
     private workspacePopoverAlign: StickyComposerPopoverAlign = 'start';
-    /** Session-only "Run in" choice per project — resets to Local on reload. */
+    /** Session-only "Run in" choice per project — resets to the current workspace on reload. */
     private readonly workspaceDestinationByProjectId = new Map<string, QaapComposerWorkspaceDestination>();
     /** Prevents duplicate delete requests while an optimistic removal is in flight. */
     private readonly deletingComposerWorkspaceBranches = new Set<string>();
@@ -96,13 +96,13 @@ export class MobileProjectsStickyComposerWorkspaceUi {
     resolveComposerWorkspaceDestinationLabel(project: MobileProjectEntry): string {
         return this.resolveComposerWorkspaceDestination(project) === 'worktree'
             ? nls.localize('qaap/composerWorkspace/destinationWorktree', 'New Worktree')
-            : nls.localize('qaap/composerWorkspace/destinationLocal', 'Local');
+            : nls.localize('qaap/composerWorkspace/destinationCurrentWorkspace', 'Current workspace');
     }
 
     resolveComposerWorkspaceDestinationIconClass(project: MobileProjectEntry): string {
         return this.resolveComposerWorkspaceDestination(project) === 'worktree'
             ? 'codicon-repo-forked'
-            : 'codicon-device-desktop';
+            : 'codicon-repo';
     }
 
     closeComposerWorkspaceSheet(): void {
@@ -461,8 +461,8 @@ export class MobileProjectsStickyComposerWorkspaceUi {
         }> = [
             {
                 id: 'local',
-                iconClass: 'codicon-device-desktop',
-                label: nls.localize('qaap/composerWorkspace/destinationLocal', 'Local'),
+                iconClass: 'codicon-repo',
+                label: nls.localize('qaap/composerWorkspace/destinationCurrentWorkspace', 'Current workspace'),
             },
             {
                 id: 'worktree',

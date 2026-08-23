@@ -18,7 +18,7 @@ export type ComposerWorkspaceSheetNavKind = StickyComposerWorkspaceFieldKind;
 export function createComposerWorkspaceSheetNavGroup(options: {
     readonly active: ComposerWorkspaceSheetNavKind;
     readonly onSelect: (kind: ComposerWorkspaceSheetNavKind) => void;
-    /** Destination segment icon; defaults to local desktop when omitted. */
+    /** Destination segment icon; defaults to the current repository when omitted. */
     readonly destinationIconClass?: string;
 }): HTMLElement {
     const wrap = document.createElement('div');
@@ -32,7 +32,7 @@ export function createComposerWorkspaceSheetNavGroup(options: {
         nls.localize('qaap/composerWorkspace/sheetNavAria', 'Workspace context'),
     );
 
-    const destinationIconClass = options.destinationIconClass ?? 'codicon-device-desktop';
+    const destinationIconClass = options.destinationIconClass ?? 'codicon-repo';
 
     const segments: ReadonlyArray<{
         readonly id: ComposerWorkspaceSheetNavKind;
