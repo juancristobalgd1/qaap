@@ -110,9 +110,6 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                         <span className="qaap-harness-card-name">{definition.label}</span>
                         <span className="qaap-harness-card-bin">{definition.bin}</span>
                     </div>
-                    <p className="qaap-harness-card-description">
-                        {this.harnessDescription(definition.id)}
-                    </p>
                     <span className={`qaap-harness-card-status${available ? ' theia-mod-available' : ''}`}>
                         {status}
                     </span>
@@ -174,41 +171,6 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
         return available
             ? nls.localize('qaap/aiConfiguration/harnessAvailable', 'Available on this workspace')
             : nls.localize('qaap/aiConfiguration/harnessNotDetected', 'Not detected on this workspace');
-    }
-
-    protected harnessDescription(harnessId: string): string {
-        switch (harnessId) {
-            case 'qaiq':
-                return nls.localize('qaap/aiConfiguration/harnessQaiq', 'Qaap native agent runtime.');
-            case 'codex':
-                return nls.localize('qaap/aiConfiguration/harnessCodex', 'OpenAI Codex CLI for code changes and repository tasks.');
-            case 'claude':
-                return nls.localize('qaap/aiConfiguration/harnessClaude', 'Anthropic Claude Code CLI with structured tool output.');
-            case 'openclaude':
-                return nls.localize('qaap/aiConfiguration/harnessOpenClaude', 'OpenClaude-compatible agent runtime.');
-            case 'grok':
-                return nls.localize('qaap/aiConfiguration/harnessGrok', 'Grok Build CLI for autonomous coding tasks.');
-            case 'opencode':
-                return nls.localize('qaap/aiConfiguration/harnessOpenCode', 'OpenCode CLI with JSON transcript support.');
-            case 'goose':
-                return nls.localize('qaap/aiConfiguration/harnessGoose', 'Goose agent runtime for repository automation.');
-            case 'hermes':
-                return nls.localize('qaap/aiConfiguration/harnessHermes', 'Hermes coding agent backed by OpenRouter.');
-            case 'openclaw':
-                return nls.localize('qaap/aiConfiguration/harnessOpenClaw', 'OpenClaw local agent runtime.');
-            case 'cursor':
-                return nls.localize('qaap/aiConfiguration/harnessCursor', 'Cursor Agent CLI for autonomous coding.');
-            case 'antigravity':
-                return nls.localize('qaap/aiConfiguration/harnessAntigravity', 'Antigravity CLI, including the Gemini CLI entry point.');
-            case 'copilot':
-                return nls.localize('qaap/aiConfiguration/harnessCopilot', 'GitHub Copilot CLI for assisted coding tasks.');
-            case 'qwen':
-                return nls.localize('qaap/aiConfiguration/harnessQwen', 'Qwen Code CLI for repository work.');
-            case 'kimi':
-                return nls.localize('qaap/aiConfiguration/harnessKimi', 'Kimi CLI for coding-agent tasks.');
-            default:
-                return nls.localize('qaap/aiConfiguration/harnessGeneric', 'Supported coding-agent runtime.');
-        }
     }
 
     protected async toggleHarness(harnessId: string, enabled: boolean): Promise<void> {

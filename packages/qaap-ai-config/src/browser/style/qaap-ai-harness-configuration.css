@@ -140,17 +140,6 @@
     font-size: 10px;
 }
 
-.qaap-ai-harness-configuration .qaap-harness-card-description {
-    margin: 0;
-    color: var(--theia-descriptionForeground);
-    font-size: 12px;
-    line-height: 1.35;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
 .qaap-ai-harness-configuration .qaap-harness-card-status {
     display: inline-flex;
     align-items: center;
@@ -225,9 +214,9 @@
     }
 
     .qaap-ai-harness-configuration .qaap-harness-heading-row {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 6px;
+        align-items: center;
+        flex-direction: row;
+        gap: 10px;
     }
 
     .qaap-ai-harness-configuration .qaap-harness-card {
@@ -241,7 +230,4 @@
         height: 28px;
     }
 
-    .qaap-ai-harness-configuration .qaap-harness-card-description {
-        -webkit-line-clamp: 3;
-    }
 }
