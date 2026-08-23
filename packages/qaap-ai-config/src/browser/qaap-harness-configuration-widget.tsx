@@ -13,6 +13,7 @@ import {
     QAAP_HARNESS_DEFINITIONS,
     type QaapHarnessDefinition,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+import { resolveAgentBrand } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-branding';
 import {
     isQaapHarnessEnabled,
     QAAP_DISABLED_HARNESSES_PREF,
@@ -102,7 +103,7 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                 data-harness-id={definition.id}
             >
                 <div className="qaap-harness-card-icon" aria-hidden={true}>
-                    <span className={codicon('terminal')} />
+                    {this.renderHarnessBrand(definition.id)}
                 </div>
                 <div className="qaap-harness-card-body">
                     <div className="qaap-harness-card-title-row">
@@ -132,6 +133,34 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                     onClick={() => void this.toggleHarness(definition.id, !enabled)}
                 />
             </div>
+        );
+    }
+
+    protected renderHarnessBrand(harnessId: string): React.ReactNode {
+        const brand = resolveAgentBrand(harnessId);
+        if (!brand) {
+            return <span className={codicon('terminal')} />;
+        }
+        const iconClass = `theia-qaap-agent-brand-icon theia-mod-md theia-mod-tone-${brand.tone}`;
+        if (brand.svgLight && brand.svgDark) {
+            return (
+                <span className={`qaap-harness-brand-icon ${iconClass} theia-mod-theme-adaptive`}>
+                    <span
+                        className="theia-mod-agent-icon-for-light"
+                        dangerouslySetInnerHTML={{ __html: brand.svgLight }}
+                    />
+                    <span
+                        className="theia-mod-agent-icon-for-dark"
+                        dangerouslySetInnerHTML={{ __html: brand.svgDark }}
+                    />
+                </span>
+            );
+        }
+        return (
+            <span
+                className={`qaap-harness-brand-icon ${iconClass}`}
+                dangerouslySetInnerHTML={{ __html: brand.svg }}
+            />
         );
     }
 
