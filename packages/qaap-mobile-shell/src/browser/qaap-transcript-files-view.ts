@@ -1458,6 +1458,41 @@ export function mountTranscriptFilesView(
         },
     }));
 
+    const onSplitHandleKeyDown = (event: KeyboardEvent): void => {
+        if (!state.treeVisible) {
+            return;
+        }
+        const stacked = isTreeStacked();
+        const grows = stacked
+            ? event.key === 'ArrowUp'
+            : event.key === 'ArrowRight';
+        const shrinks = stacked
+            ? event.key === 'ArrowDown'
+            : event.key === 'ArrowLeft';
+        if (!grows && !shrinks) {
+            return;
+        }
+        const layoutRect = layout.getBoundingClientRect();
+        const treeRect = treePane.getBoundingClientRect();
+        const layoutSize = stacked ? layoutRect.height : layoutRect.width;
+        const measuredSize = stacked ? treeRect.height : treeRect.width;
+        const currentSize = stacked
+            ? (state.treePaneHeightPx ?? measuredSize)
+            : (state.treePaneWidthPx ?? measuredSize);
+        const step = event.shiftKey ? 32 : 16;
+        const delta = grows ? -step : step;
+        const nextSize = clampTranscriptFilesTreeSize(currentSize, delta, layoutSize);
+        if (stacked) {
+            state.treePaneHeightPx = nextSize;
+        } else {
+            state.treePaneWidthPx = nextSize;
+        }
+        event.preventDefault();
+        applyTreePaneSize();
+    };
+    splitHandle.addEventListener('keydown', onSplitHandleKeyDown);
+    disposables.push(Disposable.create(() => splitHandle.removeEventListener('keydown', onSplitHandleKeyDown)));
+
     const onMorePointerDown = (event: PointerEvent): void => {
         event.preventDefault();
         event.stopPropagation();

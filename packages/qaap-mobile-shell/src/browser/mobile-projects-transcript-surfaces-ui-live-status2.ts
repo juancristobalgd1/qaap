@@ -379,18 +379,30 @@ export function renderTranscriptTerminalDotsExtracted(ctx: any, workspaceKey: Tr
     }
     dots.replaceChildren();
     state.surfaces.forEach((surface, index) => {
-        const tab = document.createElement('button');
-        tab.type = 'button';
+        // Keep the close control as a sibling-level interactive element. A button
+        // nested in another button is invalid HTML and behaves inconsistently in
+        // Safari/WebKit, especially when switching terminal surfaces by touch.
+        const tab = document.createElement('div');
         tab.className = 'theia-mobile-transcript-terminal-tab';
+        tab.setAttribute('role', 'tab');
+        tab.tabIndex = 0;
         tab.classList.toggle('theia-mod-active', index === state.activeIndex);
+        tab.setAttribute('aria-selected', String(index === state.activeIndex));
         const title = ctx.resolveTranscriptTerminalTabTitle(surface, index);
         tab.title = title;
         tab.setAttribute('aria-label', title);
-        tab.addEventListener('click', () => {
+        const activate = (): void => {
             state.activeIndex = index;
             void ctx.persistTranscriptTerminalWorkspace(workspaceKey);
             ctx.renderTranscriptTerminalSlides(workspaceKey);
             ctx.renderTranscriptTerminalDots(workspaceKey);
+        };
+        tab.addEventListener('click', activate);
+        tab.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                activate();
+            }
         });
 
         const icon = document.createElement('span');
