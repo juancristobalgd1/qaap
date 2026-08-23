@@ -91,6 +91,21 @@ ensure_docker_pull_space() {
     fi
 }
 
+refresh_caddy() {
+    # Git replaces a checked-out bind-mounted file by inode. A running Caddy container can keep
+    # the old inode, so `docker compose up -d` may leave the previous Caddyfile active even though
+    # the repository contains the new one. Validate the fresh bind mount first, then recreate only
+    # Caddy. `--no-deps` is deliberate: a config refresh must never rebuild the Theia image.
+    if ! docker compose config --services | grep -Fxq caddy; then
+        return 0
+    fi
+
+    echo "[qaap-vps-update] validating Caddy configuration"
+    docker compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+    echo "[qaap-vps-update] recreating Caddy to refresh the bind-mounted configuration"
+    docker compose up -d --no-deps --force-recreate caddy
+}
+
 echo "[qaap-vps-update] repo: $REPO_DIR"
 echo "[qaap-vps-update] branch: $BRANCH"
 
@@ -154,6 +169,7 @@ else
     fi
     docker compose up -d
 fi
+refresh_caddy
 docker compose ps
 
 # Loopback :4873 only. Public HTTPS health is asserted by Actions against

@@ -133,13 +133,25 @@ export class GoogleLanguageModelsManagerImpl implements GoogleLanguageModelsMana
 
     /** Description overrides win over the values derived from /v1beta/models. */
     protected async resolveMetadata(description: GoogleModelDescription, apiKey: string | undefined): Promise<ResolvedModelMetadata> {
-        const info = await this.fetchModelInfo(description, apiKey);
+        // The Gemini API's optional models.get endpoint has returned 400/501 responses for
+        // otherwise valid model ids in some API configurations. Metadata is only an enhancement:
+        // model requests do not need it, and the model-id heuristic still exposes reasoning for
+        // Gemini 2.5/3. Keep production startup independent from that endpoint; operators can
+        // opt in when they need server-reported token limits.
+        const info = this.shouldFetchModelMetadata()
+            ? await this.fetchModelInfo(description, apiKey)
+            : undefined;
         const reasoningApi = description.reasoningApi ?? this.deriveReasoningApi(description.model, info);
         return {
             maxInputTokens: info?.inputTokenLimit,
             reasoningSupport: description.reasoningSupport ?? (reasoningApi ? GEMINI_REASONING_SUPPORT : undefined),
             reasoningApi
         };
+    }
+
+    protected shouldFetchModelMetadata(): boolean {
+        const setting = process.env.QAAP_GOOGLE_MODEL_METADATA?.trim().toLowerCase();
+        return setting === '1' || setting === 'true' || setting === 'yes';
     }
 
     protected async fetchModelInfo(modelDescription: GoogleModelDescription, apiKey: string | undefined): Promise<Model | undefined> {

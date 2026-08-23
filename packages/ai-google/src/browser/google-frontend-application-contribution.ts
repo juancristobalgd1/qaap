@@ -42,9 +42,9 @@ export class GoogleFrontendApplicationContribution implements FrontendApplicatio
             this.manager.setRetryDelayOnRateLimitError(this.preferenceService.get<number>(RETRY_DELAY_RATE_LIMIT, 60));
             this.manager.setRetryDelayOnOtherErrors(this.preferenceService.get<number>(RETRY_DELAY_OTHER_ERRORS, -1));
 
-            const models = this.preferenceService.get<string[]>(MODELS_PREF, []);
-            this.manager.createOrUpdateLanguageModels(...models.map(modelId => this.createGeminiModelDescription(modelId)));
-            this.prevModels = [...models];
+            const models = this.normalizeModelIds(this.preferenceService.get<string[]>(MODELS_PREF, []));
+            this.syncModels(...models.map(modelId => this.createGeminiModelDescription(modelId)));
+            this.prevModels = models;
 
             this.preferenceService.onPreferenceChanged(event => {
                 if (event.preferenceName === API_KEY_PREF) {
@@ -58,28 +58,42 @@ export class GoogleFrontendApplicationContribution implements FrontendApplicatio
                 } else if (event.preferenceName === RETRY_DELAY_OTHER_ERRORS) {
                     this.manager.setRetryDelayOnOtherErrors(this.preferenceService.get<number>(RETRY_DELAY_OTHER_ERRORS, -1));
                 } else if (event.preferenceName === MODELS_PREF) {
-                    this.handleModelChanges(this.preferenceService.get<string[]>(MODELS_PREF, []));
+                    this.handleModelChanges(this.normalizeModelIds(this.preferenceService.get<string[]>(MODELS_PREF, [])));
                 }
             });
         });
     }
 
+    protected normalizeModelIds(models: readonly string[]): string[] {
+        return [...new Set(models
+            .filter((model): model is string => typeof model === 'string')
+            .map(model => model.trim())
+            .filter(model => model.length > 0))];
+    }
+
+    protected syncModels(...models: GoogleModelDescription[]): void {
+        void this.manager.createOrUpdateLanguageModels(...models).catch(error => {
+            console.warn('Gemini model synchronization failed:', error);
+        });
+    }
+
     protected handleKeyChange(newApiKey: string | undefined): void {
         if (this.prevModels && this.prevModels.length > 0) {
-            this.manager.createOrUpdateLanguageModels(...this.prevModels.map(modelId => this.createGeminiModelDescription(modelId)));
+            this.syncModels(...this.prevModels.map(modelId => this.createGeminiModelDescription(modelId)));
         }
     }
 
     protected handleModelChanges(newModels: string[]): void {
+        const normalizedModels = this.normalizeModelIds(newModels);
         const oldModels = new Set(this.prevModels);
-        const updatedModels = new Set(newModels);
+        const updatedModels = new Set(normalizedModels);
 
         const modelsToRemove = [...oldModels].filter(model => !updatedModels.has(model));
         const modelsToAdd = [...updatedModels].filter(model => !oldModels.has(model));
 
         this.manager.removeLanguageModels(...modelsToRemove.map(model => `${GOOGLE_PROVIDER_ID}/${model}`));
-        this.manager.createOrUpdateLanguageModels(...modelsToAdd.map(modelId => this.createGeminiModelDescription(modelId)));
-        this.prevModels = newModels;
+        this.syncModels(...modelsToAdd.map(modelId => this.createGeminiModelDescription(modelId)));
+        this.prevModels = normalizedModels;
     }
 
     /** Reasoning capabilities are resolved by the backend from the Gemini /v1beta/models response. */

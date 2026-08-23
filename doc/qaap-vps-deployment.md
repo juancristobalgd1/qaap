@@ -211,6 +211,10 @@ Gemini:
 GEMINI_API_KEY=...
 ```
 
+Gemini model metadata probing is disabled by default. Generation and reasoning selection do not
+depend on the optional `models.get` endpoint. Set `QAAP_GOOGLE_MODEL_METADATA=1` only when you need
+server-reported token limits and have verified that the configured Google API supports that endpoint.
+
 ## Using `@qaiq` on the VPS
 
 1. Open or clone a project into `/workspace` (default Docker volume).

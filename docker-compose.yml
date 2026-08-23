@@ -148,6 +148,9 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      # Optional Gemini metadata probing. Keep disabled in production because the provider's
+      # models.get endpoint is not required for generation and may reject valid model ids.
+      QAAP_GOOGLE_MODEL_METADATA: ${QAAP_GOOGLE_MODEL_METADATA:-0}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
