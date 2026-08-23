@@ -4,5 +4,14 @@
 #   QAAP_OAUTH_PUBLIC_URL=https://178.105.136.93.sslip.io
 {$QAAP_PUBLIC_HOST:localhost} {
 	encode gzip
+	# Keep baseline browser hardening on local and public deployments.
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+	# HSTS is only emitted for non-local hosts so local HTTP development is not
+	# pinned to HTTPS by a previous browser visit.
+	@public not host localhost 127.0.0.1 ::1
+	header @public Strict-Transport-Security "max-age=31536000"
 	reverse_proxy theia:{$THEIA_PORT:4873}
 }
