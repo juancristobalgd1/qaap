@@ -64,10 +64,10 @@
 
 .qaap-ai-harness-configuration .qaap-harness-card {
     display: grid;
-    grid-template-columns: 32px minmax(0, 1fr) 40px;
+    grid-template-columns: 28px minmax(0, 1fr) 40px;
     align-items: start;
-    gap: 10px;
-    padding: 11px;
+    gap: 9px;
+    padding: 10px;
     border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
     border-radius: 12px;
     background: color-mix(in srgb, var(--theia-editor-background) 88%, var(--theia-foreground));
@@ -86,9 +86,9 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
     flex-shrink: 0;
     background: color-mix(in srgb, var(--theia-button-background, #0e639c) 18%, transparent);
     color: var(--theia-button-background, #0e639c);
@@ -110,21 +110,21 @@
 .qaap-ai-harness-configuration .qaap-harness-card-body {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
     min-width: 0;
 }
 
 .qaap-ai-harness-configuration .qaap-harness-card-title-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     min-width: 0;
 }
 
 .qaap-ai-harness-configuration .qaap-harness-card-name {
     overflow: hidden;
     color: var(--theia-foreground);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -132,12 +132,12 @@
 
 .qaap-ai-harness-configuration .qaap-harness-card-bin {
     flex-shrink: 0;
-    padding: 2px 6px;
+    padding: 1px 5px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
     color: var(--theia-descriptionForeground);
     font-family: var(--theia-code-font-family);
-    font-size: 10px;
+    font-size: 9px;
 }
 
 .qaap-ai-harness-configuration .qaap-harness-card-status {
@@ -220,14 +220,14 @@
     }
 
     .qaap-ai-harness-configuration .qaap-harness-card {
-        grid-template-columns: 28px minmax(0, 1fr) 40px;
-        gap: 9px;
-        padding: 10px;
+        grid-template-columns: 24px minmax(0, 1fr) 40px;
+        gap: 8px;
+        padding: 9px;
     }
 
     .qaap-ai-harness-configuration .qaap-harness-card-icon {
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
     }
 
 }
