@@ -317,9 +317,9 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                     ctx.finishTask(task.id, 'failed', 1);
                     return;
                 }
-                const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim());
+                const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim(), task.ownerLogin);
                 const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-                const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent) ?? request.agent ?? task.agentId;
+                const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent, task.ownerLogin) ?? request.agent ?? task.agentId;
                 const hostedDenial = isHostedCodexUsage(agentId, modelId)
                     ? hostedModelDenialReason(account, modelId)
                     : undefined;
@@ -359,7 +359,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
             try {
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
-                const agentModel = ctx.resolveAgentModelForRequest(request, prompt);
+                const agentModel = ctx.resolveAgentModelForRequest(request, prompt, task.ownerLogin);
                 const { command, stdinPrompt, agentId } = ctx.buildAgentCommand(
                     prompt,
                     request.agent,
@@ -372,6 +372,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                     request.toolApprovalRules,
                     request.userQuery,
                     task.readOnlyWorkspace,
+                    task.ownerLogin,
                 );
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {

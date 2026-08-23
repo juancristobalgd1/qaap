@@ -78,6 +78,11 @@ import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaa
 import { buildAgentVerificationFixPromptExtracted, captureWorktreeBaselineExtracted, detectEmptyAgentTurnForTaskExtracted, finishSuccessfulTaskAfterVerificationExtracted, hasEditedFilesForVerificationExtracted, releaseVerificationPassExtracted, resolveReviewerCandidatesExtracted, restoreBaselineSensitiveFilesExtracted, reviewSuccessfulAgentTaskExtracted, runAgentVerificationFixTurnExtracted, runVerificationScriptsExtracted, verifySuccessfulAgentTaskExtracted } from './qaap-agent-task-runner-activity2';
 import { appendAndFireOutputExtracted, applyHelperEnvExtracted, applyOpenAiVendorCompatEnvExtracted, applyProviderPreferenceEnvExtracted, applyQaiqProviderEnvExtracted, buildChildEnvExtracted, finishTaskExtracted, fireOutputExtracted, improveComposerPromptExtracted, markTaskBlockedExtracted, notifyCompletionExtracted, persistExtracted, readLogExtracted, runGenericCommandExtracted, spawnAgentCommandExtracted, summarizeVerificationFailureExtracted } from './qaap-agent-task-runner-tool-pills2';
 import { runOneShotCommandExtracted } from './qaap-agent-task-runner-live-status2';
+import {
+    isQaapHarnessEnabled,
+    QAAP_DISABLED_HARNESSES_PREF,
+    readDisabledHarnessIds,
+} from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 
@@ -348,8 +353,8 @@ export class QaapAgentTaskRunner {
     }
 
     /** Agents the UI can offer in its picker, in priority order. */
-    listAgents(): QaapAgentDescriptor[] {
-        return listAgentsHelper(this.detectedAgents);
+    listAgents(ownerLogin?: string): QaapAgentDescriptor[] {
+        return listAgentsHelper(this.detectedAgents).filter(agent => this.isAgentEnabled(agent.id, ownerLogin));
     }
 
     warmForCwd(cwd: string): QaapAgentWarmResult {
@@ -368,8 +373,13 @@ export class QaapAgentTaskRunner {
         return listModelsForAgentExtracted(this, agentId, ownerLogin);
     }
 
-    defaultAgent(): string {
-        return defaultAgentExtracted(this);
+    defaultAgent(ownerLogin?: string): string {
+        return defaultAgentExtracted(this, agentId => this.isAgentEnabled(agentId, ownerLogin));
+    }
+
+    isAgentEnabled(agentId: string, ownerLogin?: string): boolean {
+        const readPref = this.preferenceReaderForOwner(ownerLogin);
+        return isQaapHarnessEnabled(agentId, readDisabledHarnessIds(readPref(QAAP_DISABLED_HARNESSES_PREF)));
     }
 
     normalizeAgentId(token: string | undefined): string | undefined {
@@ -380,8 +390,8 @@ export class QaapAgentTaskRunner {
         return detailExtracted(this, id);
     }
 
-    protected resolveAgentModelForRequest(request: QaapCreateAgentTaskRequest, prompt: string,): QaapCreateAgentTaskQaiqModel | undefined {
-        return resolveAgentModelForRequestExtracted(this, request, prompt);
+    protected resolveAgentModelForRequest(request: QaapCreateAgentTaskRequest, prompt: string, ownerLogin?: string): QaapCreateAgentTaskQaiqModel | undefined {
+        return resolveAgentModelForRequestExtracted(this, request, prompt, ownerLogin);
     }
 
     protected nativeModelRoutingTable(): QaapNativeModelRoutingTable {
@@ -392,8 +402,8 @@ export class QaapAgentTaskRunner {
         return createExtracted(this, request, ownerLogin);
     }
 
-    protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean,): { command: string; stdinPrompt?: string; agentId: string } {
-        return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace);
+    protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; agentId: string } {
+        return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin);
     }
 
     protected readProjectInfo(cwd: string): string | undefined {
@@ -469,8 +479,8 @@ export class QaapAgentTaskRunner {
         return readResearchLedgerHelper(cwd);
     }
 
-    protected resolveAgentId(prompt: string, agentId: string | undefined): string {
-        return resolveAgentIdExtracted(this, prompt, agentId);
+    protected resolveAgentId(prompt: string, agentId: string | undefined, ownerLogin?: string): string {
+        return resolveAgentIdExtracted(this, prompt, agentId, ownerLogin);
     }
 
     protected extractLastAgentMention(prompt: string): string | undefined {

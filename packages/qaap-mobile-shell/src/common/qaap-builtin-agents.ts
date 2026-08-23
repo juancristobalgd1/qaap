@@ -41,6 +41,22 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
 
 export const QAAP_BUILTIN_AGENT_IDS = new Set(QAAP_BUILTIN_AGENT_DEFINITIONS.map(definition => definition.id));
 
+/**
+ * Every agent runtime that Qaap can use as a Work Hub harness, including the native Qaap
+ * runner. Keep this list derived from the task-runner catalog so the configuration UI and the
+ * backend cannot drift apart when a new CLI is added.
+ */
+export interface QaapHarnessDefinition {
+    readonly id: string;
+    readonly label: string;
+    readonly bin: string;
+}
+
+export const QAAP_HARNESS_DEFINITIONS: readonly QaapHarnessDefinition[] = [
+    { id: 'qaiq', label: 'QAIQ', bin: 'qaiq' },
+    ...QAAP_BUILTIN_AGENT_DEFINITIONS.map(({ id, label, bin }) => ({ id, label, bin })),
+];
+
 export const CURSOR_AGENT_ID = 'cursor';
 
 /** VPS agents detected on PATH but not offered in mobile/desktop agent pickers. */

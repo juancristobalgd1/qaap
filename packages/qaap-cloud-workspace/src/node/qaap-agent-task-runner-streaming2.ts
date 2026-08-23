@@ -158,8 +158,8 @@ import {
 } from './qaap-agent-task-runner-utils3';
 
 export function resolveAgentModelForRequestExtracted(ctx: any, request: QaapCreateAgentTaskRequest,
-        prompt: string,): QaapCreateAgentTaskQaiqModel | undefined {
-        const agentId = ctx.resolveAgentId(prompt, request.agent);
+        prompt: string, ownerLogin?: string,): QaapCreateAgentTaskQaiqModel | undefined {
+        const agentId = ctx.resolveAgentId(prompt, request.agent, ownerLogin);
         const readPref = (key: string): unknown => ctx.preferenceService?.get(key);
         // No preference guard here: only QAIQ's alias routing needs preferences, and the native-CLI
         // branch (claude & co.) must still route when none is available — the reader simply yields
@@ -210,6 +210,9 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         if (isQaapWorkspaceContainerPath(cwd)) {
             throw new Error(QAAP_CONTAINER_CWD_ERROR);
         }
+        if (prompt) {
+            ctx.resolveAgentId(prompt, request.agent, ownerLogin);
+        }
         const id = randomUUID();
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
@@ -235,7 +238,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
             ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
-                const agentModel = ctx.resolveAgentModelForRequest(request, prompt || rawCommand);
+                const agentModel = ctx.resolveAgentModelForRequest(request, prompt || rawCommand, ownerLogin);
                 return agentModel ? { agentModel, qaiqModel: agentModel } : {};
             })(),
         };
@@ -260,8 +263,9 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
         approvalPolicyId?: string,
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
         userQuery?: string,
-        readOnlyWorkspace?: boolean,): { command: string; stdinPrompt?: string; agentId: string } {
-        const id = ctx.resolveAgentId(prompt, agentId);
+        readOnlyWorkspace?: boolean,
+        ownerLogin?: string,): { command: string; stdinPrompt?: string; agentId: string } {
+        const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
         const runnerPrompt = ctx.stripLeadingAgentMention(prompt);
         if (id === SHELL_AGENT_ID) {
             return { command: runnerPrompt, agentId: id };
@@ -397,23 +401,29 @@ export function buildRepoMapExtracted(ctx: any, cwd: string): string | undefined
             : text;
 }
 
-export function resolveAgentIdExtracted(ctx: any, prompt: string, agentId: string | undefined): string {
+export function resolveAgentIdExtracted(ctx: any, prompt: string, agentId: string | undefined, ownerLogin?: string): string {
+        const ensureEnabled = (resolved: string): string => {
+            if (ctx.isAgentEnabled && !ctx.isAgentEnabled(resolved, ownerLogin)) {
+                throw new Error(`Agent "${resolved}" is disabled in Harness configuration.`);
+            }
+            return resolved;
+        };
         const explicit = ctx.normalizeAgentId(agentId);
         if (explicit) {
-            return explicit;
+            return ensureEnabled(explicit);
         }
         if (agentId?.trim()) {
             throw new Error(`Agent "${agentId.trim()}" is not available on this server.`);
         }
         const mentioned = ctx.extractLastAgentMention(prompt);
         if (mentioned) {
-            return mentioned;
+            return ensureEnabled(mentioned);
         }
         const unavailableMention = ctx.extractLastAgentMentionToken(prompt);
         if (unavailableMention) {
             throw new Error(`Agent "@${unavailableMention}" is not available on this server.`);
         }
-        return ctx.defaultAgent();
+        return ctx.defaultAgent(ownerLogin);
 }
 
 export function extractLastAgentMentionExtracted(ctx: any, prompt: string): string | undefined {

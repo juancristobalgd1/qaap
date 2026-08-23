@@ -530,13 +530,13 @@ export function listModelsForAgentExtracted(
         return filterModelsForHostedPlan(normalized, models, hostedModelsAllowed);
 }
 
-export function defaultAgentExtracted(ctx: any): string {
+export function defaultAgentExtracted(ctx: any, isAgentEnabled: (agentId: string) => boolean = () => true): string {
         const configured = ctx.normalizeAgentId(process.env.QAAP_DEFAULT_AGENT);
-        if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured)) {
+        if (configured && ctx.detectedAgents.has(configured) && !isUiHiddenVpsAgent(configured) && isAgentEnabled(configured)) {
             return configured;
         }
         for (const id of DEFAULT_AGENT_PREFERENCE) {
-            if (ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id)) {
+            if (ctx.detectedAgents.has(id) && !isUiHiddenVpsAgent(id) && isAgentEnabled(id)) {
                 return id;
             }
         }
@@ -544,6 +544,7 @@ export function defaultAgentExtracted(ctx: any): string {
             if (
                 !AGENT_CANDIDATES.some(builtIn => builtIn.id === candidate.id)
                 && !isUiHiddenVpsAgent(candidate.id)
+                && isAgentEnabled(candidate.id)
             ) {
                 return candidate.id;
             }

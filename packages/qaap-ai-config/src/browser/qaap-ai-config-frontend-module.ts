@@ -5,9 +5,10 @@
 
 import '../../src/browser/style/qaap-ai-model-options.css';
 import '../../src/browser/style/qaap-ai-skills-configuration.css';
+import '../../src/browser/style/qaap-ai-harness-configuration.css';
 
 import { ContainerModule } from '@theia/core/shared/inversify';
-import { FrontendApplicationContribution } from '@theia/core/lib/browser';
+import { FrontendApplicationContribution, WidgetFactory } from '@theia/core/lib/browser';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { QaapCoderPromptContribution } from './qaap-coder-prompt-contribution';
 import { QaapTasksBackgroundPromptContribution } from './qaap-tasks-background-prompt-contribution';
@@ -21,6 +22,8 @@ import { ShellCommandPermissionService } from '@theia/ai-terminal/lib/browser/sh
 import { QaapShellCommandPermissionService } from './qaap-shell-command-permission-service';
 import { QaapTerminalPreferenceContribution } from './qaap-terminal-preferences';
 import { QaapSkillsPreferenceContribution } from './qaap-skills-preferences';
+import { QaapHarnessPreferenceContribution } from './qaap-harness-preferences';
+import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-widget';
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
@@ -78,6 +81,17 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapSkillsPreferenceContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(QaapSkillsPreferenceContribution);
+
+    bind(QaapHarnessPreferenceContribution).toSelf().inSingletonScope();
+    bind(PreferenceContribution).toService(QaapHarnessPreferenceContribution);
+
+    bind(QaapHarnessConfigurationWidget).toSelf();
+    bind(WidgetFactory)
+        .toDynamicValue(ctx => ({
+            id: QaapHarnessConfigurationWidget.ID,
+            createWidget: () => ctx.container.get(QaapHarnessConfigurationWidget)
+        }))
+        .inSingletonScope();
 
     bind(QaapShellCommandPermissionService).toSelf().inSingletonScope();
     rebind(ShellCommandPermissionService).toService(QaapShellCommandPermissionService);

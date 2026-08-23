@@ -33,6 +33,8 @@ export const QAAP_HIDDEN_AI_FEATURES_PREF_KEYS: readonly string[] = [
     'ai-features.notifications.default',
     // Managed in AI Configuration → Skills (card toggles), not Settings.
     'ai-features.skills.disabledSkills',
+    // Managed in AI Configuration → Harness (runtime checks), not Settings.
+    'ai-features.harness.disabledAgents',
 ];
 
 /**

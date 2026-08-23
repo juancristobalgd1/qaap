@@ -12,6 +12,7 @@ import { AIConfigurationContainerWidget } from '@theia/ai-ide/lib/browser/ai-con
 import { AIPromptFragmentsConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/prompt-fragments-configuration-widget';
 import { AISkillsConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/skills-configuration-widget';
 import { ModelAliasesConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/model-aliases-configuration-widget';
+import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-widget';
 
 /**
  * Work Hub–oriented AI Configuration tabs:
@@ -23,6 +24,8 @@ import { ModelAliasesConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-co
 @injectable()
 export class QaapAiConfigurationContainerWidget extends AIConfigurationContainerWidget {
 
+    protected harnessWidget: QaapHarnessConfigurationWidget;
+
     protected override async initUI(): Promise<void> {
         const layout = (this.layout = new BoxLayout({ direction: 'top-to-bottom', spacing: 0 }));
         this.dockpanel = this.dockPanelFactory({
@@ -33,6 +36,7 @@ export class QaapAiConfigurationContainerWidget extends AIConfigurationContainer
         layout.addWidget(this.dockpanel);
         this.dockpanel.addClass('ai-configuration-widget');
 
+        this.harnessWidget = await this.widgetManager.getOrCreateWidget(QaapHarnessConfigurationWidget.ID);
         this.mcpWidget = await this.widgetManager.getOrCreateWidget(AIMCPConfigurationWidget.ID);
         this.skillsWidget = await this.widgetManager.getOrCreateWidget(AISkillsConfigurationWidget.ID);
         this.modelAliasesWidget = await this.widgetManager.getOrCreateWidget(ModelAliasesConfigurationWidget.ID);
@@ -40,7 +44,8 @@ export class QaapAiConfigurationContainerWidget extends AIConfigurationContainer
         this.promptFragmentsWidget = await this.widgetManager.getOrCreateWidget(AIPromptFragmentsConfigurationWidget.ID);
 
         // Work Hub-first order.
-        this.dockpanel.addWidget(this.mcpWidget);
+        this.dockpanel.addWidget(this.harnessWidget);
+        this.dockpanel.addWidget(this.mcpWidget, { mode: 'tab-after', ref: this.harnessWidget });
         this.dockpanel.addWidget(this.skillsWidget, { mode: 'tab-after', ref: this.mcpWidget });
         this.dockpanel.addWidget(this.modelAliasesWidget, { mode: 'tab-after', ref: this.skillsWidget });
         this.dockpanel.addWidget(this.agentsWidget, { mode: 'tab-after', ref: this.modelAliasesWidget });
@@ -57,7 +62,9 @@ export class QaapAiConfigurationContainerWidget extends AIConfigurationContainer
 
     protected override initListeners(): void {
         this.aiConfigurationSelectionService.onDidSelectConfiguration(widgetId => {
-            if (widgetId === AIMCPConfigurationWidget.ID) {
+            if (widgetId === QaapHarnessConfigurationWidget.ID) {
+                this.dockpanel.activateWidget(this.harnessWidget);
+            } else if (widgetId === AIMCPConfigurationWidget.ID) {
                 this.dockpanel.activateWidget(this.mcpWidget);
             } else if (widgetId === AISkillsConfigurationWidget.ID) {
                 this.dockpanel.activateWidget(this.skillsWidget);

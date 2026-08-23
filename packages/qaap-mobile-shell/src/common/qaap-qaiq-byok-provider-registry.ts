@@ -165,6 +165,7 @@ const EXTRA_AI_SETTINGS_PREF_KEYS = [
     QAAP_CUSTOM_OPENAI_BASE_URL_PREF,
     QAAP_CUSTOM_OPENAI_API_KEY_PREF,
     'ai-features.languageModelAliases',
+    'ai-features.harness.disabledAgents',
 ] as const;
 
 /** Preference keys persisted per authenticated user (API keys, model lists, aliases). */
