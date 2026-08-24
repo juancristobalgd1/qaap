@@ -25,12 +25,29 @@ import {
     type QaapProjectSessionUpsertRequest,
     type QaapProjectSessionSummary,
 } from '../common/qaap-github-api-types';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     clearQaapAuthSession,
     readQaapSignedIn,
     writeQaapAuthSession,
     type QaapAuthProvider,
 } from './qaap-auth-session';
+
+const QAAP_GITHUB_CLONE_TIMEOUT_MS = 120_000;
+
+async function fetchQaapWithTimeout(
+    input: RequestInfo | URL,
+    init: RequestInit,
+    timeoutMs: number,
+): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
+}
 
 /**
  * Send the HttpOnly session cookie — the ONLY session credential. The id itself is
@@ -178,11 +195,26 @@ export async function createQaapGithubRepository(request: QaapGithubCreateReposi
 
 export async function cloneQaapGithubRepository(repository: string): Promise<QaapGithubOpenRepositoryResponse> {
     const request: QaapGithubOpenRepositoryRequest = { repository };
-    const response = await fetch(`${QAAP_GITHUB_API_PATH}/repositories/open`, qaapAuthenticatedFetchInit({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
-    }));
+    let response: Response;
+    try {
+        response = await fetchQaapWithTimeout(
+            `${QAAP_GITHUB_API_PATH}/repositories/open`,
+            qaapAuthenticatedFetchInit({
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(request),
+            }),
+            QAAP_GITHUB_CLONE_TIMEOUT_MS,
+        );
+    } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+            throw new Error(nls.localize(
+                'qaap/githubClone/timedOut',
+                'Cloning the GitHub repository took too long. Check the URL and try again.'
+            ));
+        }
+        throw err;
+    }
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
         throw new Error(body.message || body.error || `Failed to clone GitHub repository (${response.status})`);

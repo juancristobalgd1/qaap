@@ -257,3 +257,111 @@ describe('QaapGithubOauthEndpoint plan repo limit', () => {
         });
     });
 });
+
+describe('QaapGithubOauthEndpoint clone-by-URL lookup', () => {
+
+    it('looks up a public repository directly even when the caller is authenticated', async () => {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        const calls: Array<{ accessToken: string | undefined; owner: string; name: string }> = [];
+        const repository = {
+            id: 1,
+            fullName: 'octocat/Hello-World',
+            owner: 'octocat',
+            name: 'Hello-World',
+            cloneUrl: 'https://github.com/octocat/Hello-World.git',
+            htmlUrl: 'https://github.com/octocat/Hello-World',
+            defaultBranch: 'main',
+            private: false,
+            updatedAt: new Date().toISOString(),
+        };
+        const res: {
+            statusCode?: number;
+            body?: unknown;
+            status: (code: number) => { json: (b: unknown) => void };
+            json: (b: unknown) => void;
+        } = {
+            status(code: number) {
+                res.statusCode = code;
+                return { json: (b: unknown) => { res.body = b; } };
+            },
+            json(b: unknown) {
+                res.statusCode = 200;
+                res.body = b;
+            },
+        };
+        Object.assign(endpoint, {
+            auth: {
+                authenticate: () => ({
+                    kind: 'authenticated',
+                    userLogin: 'alice',
+                    session: { accessToken: 'github-token' },
+                }),
+            },
+            fetchRepositoryForClone: async (accessToken: string | undefined, owner: string, name: string) => {
+                calls.push({ accessToken, owner, name });
+                return repository;
+            },
+            ensureRepositoryWorkspace: async () => 'C:\\workspace\\repos\\users\\alice\\octocat\\Hello-World',
+            rememberGithubCloneSession: () => undefined,
+        });
+
+        await (endpoint as unknown as {
+            handleCloneGithubRepository(
+                req: { body: { repository: string } },
+                response: typeof res,
+            ): Promise<void>;
+        }).handleCloneGithubRepository({ body: { repository: 'octocat/Hello-World' } }, res);
+
+        expect(res.statusCode).to.equal(200);
+        expect(calls).to.deep.equal([{
+            accessToken: 'github-token',
+            owner: 'octocat',
+            name: 'Hello-World',
+        }]);
+        expect(res.body).to.deep.include({ repository });
+    });
+});
+
+describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
+
+    it('removes a partial target when git clone fails', async () => {
+        const reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-clone-cleanup-'));
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, {
+            reposRoot,
+            runGit: async (args: string[]) => {
+                if (args[0] === 'clone') {
+                    const target = path.join(reposRoot, 'users', 'alice', 'octocat', 'Hello-World');
+                    fs.mkdirSync(target, { recursive: true });
+                    fs.writeFileSync(path.join(target, 'partial-pack'), 'incomplete');
+                }
+                throw new Error('Git operation timed out after 120 seconds');
+            },
+        });
+
+        try {
+            await (endpoint as unknown as {
+                ensureRepositoryWorkspace(
+                    repository: { owner: string; name: string; cloneUrl: string },
+                    accessToken: string | undefined,
+                    userLogin: string,
+                ): Promise<string>;
+            }).ensureRepositoryWorkspace(
+                {
+                    owner: 'octocat',
+                    name: 'Hello-World',
+                    cloneUrl: 'https://github.com/octocat/Hello-World.git',
+                },
+                undefined,
+                'alice',
+            );
+            expect.fail('Expected the clone to fail');
+        } catch (err) {
+            expect(err).to.be.instanceOf(Error);
+            expect((err as Error).message).to.contain('timed out');
+        }
+
+        expect(fs.existsSync(path.join(reposRoot, 'users', 'alice', 'octocat', 'Hello-World'))).to.equal(false);
+        fs.rmSync(reposRoot, { recursive: true, force: true });
+    });
+});

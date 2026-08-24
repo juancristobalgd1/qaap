@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/qaap-github-repository-input';
 import { syncQaapAuthSessionFromServer } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { MobileProjectEntry } from './mobile-projects-types';
@@ -15,8 +16,6 @@ export interface MobileOpenRepositoryDialogDelegate {
     /** Open / clone / create finished and the IDE workspace was switched. */
     onWorkspaceOpened?(): void;
 }
-
-const GITHUB_URL_OR_SLUG = /^(?:https?:\/\/(?:www\.)?github\.com\/)?([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:\/.*)?$/;
 
 /**
  * Centered modal that mirrors the vscode.dev "Open repository" picker.
@@ -490,7 +489,7 @@ export class MobileOpenRepositoryDialog {
             ));
             return;
         }
-        if (!GITHUB_URL_OR_SLUG.test(value)) {
+        if (!parseQaapGithubRepositoryInput(value)) {
             this.showPublicError(nls.localize(
                 'qaap/mobileOpenRepo/publicInvalid',
                 'Use the form owner/repo or a github.com URL.'
@@ -532,6 +531,7 @@ export class MobileOpenRepositoryDialog {
                 this.repositories = next;
                 this.renderList();
                 this.delegate.onProjectsChanged?.(next);
+                this.delegate.onWorkspaceOpened?.();
                 this.hide();
             }
         } finally {

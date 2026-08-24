@@ -275,7 +275,9 @@ export async function createGithubProjectExtracted(ctx: any): Promise<MobileProj
         );
         try {
             const result = await createQaapGithubRepository({ name, private: true });
-            ctx.registerGithubWorkspaceProject(result.repository, new URI(result.workspaceUri));
+            const workspaceUri = new URI(result.workspaceUri);
+            ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
+            ctx.openWorkspaceUri(workspaceUri);
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoCreated', 'Created {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }
@@ -318,7 +320,9 @@ export async function cloneGithubProjectByRepositoryExtracted(ctx: any, reposito
         );
         try {
             const result = await cloneQaapGithubRepository(trimmed);
-            ctx.registerGithubWorkspaceProject(result.repository, new URI(result.workspaceUri));
+            const workspaceUri = new URI(result.workspaceUri);
+            ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
+            ctx.openWorkspaceUri(workspaceUri);
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoCloned', 'Cloned {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }
@@ -390,7 +394,9 @@ export async function importGithubProjectExtracted(ctx: any, project: MobileProj
         );
         try {
             const result = await openQaapGithubRepository(project.github.owner, project.github.name);
-            ctx.registerGithubWorkspaceProject(result.repository, new URI(result.workspaceUri));
+            const workspaceUri = new URI(result.workspaceUri);
+            ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
+            ctx.openWorkspaceUri(workspaceUri);
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoImported', 'Imported {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }

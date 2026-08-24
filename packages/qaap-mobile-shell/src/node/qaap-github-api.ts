@@ -71,6 +71,23 @@ interface GithubMergePullResponse {
     sha?: string;
 }
 
+const GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchGithubRepositoryRequest(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS);
+    try {
+        return await fetch(input, { ...init, signal: controller.signal });
+    } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+            throw new Error('GitHub repository request timed out after 30 seconds');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
 export async function exchangeGithubCode(
     config: QaapGithubOAuthConfig,
     code: string
@@ -165,9 +182,10 @@ export async function fetchGithubRepositories(accessToken: string): Promise<Qaap
 }
 
 export async function fetchGithubRepository(accessToken: string | undefined, owner: string, name: string): Promise<QaapGithubRepositorySummary> {
-    const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, {
-        headers: githubHeaders(accessToken),
-    });
+    const response = await fetchGithubRepositoryRequest(
+        `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+        { headers: githubHeaders(accessToken) },
+    );
     if (!response.ok) {
         throw new Error(`GitHub repository API failed (${response.status})`);
     }

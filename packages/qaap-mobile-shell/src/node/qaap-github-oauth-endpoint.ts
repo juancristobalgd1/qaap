@@ -26,6 +26,7 @@ import {
     type QaapProjectSessionSummary,
     type QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/qaap-github-repository-input';
 import {
     QaapBillingQuota,
     QaapPlanRepoLimitError,
@@ -58,6 +59,7 @@ import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } fro
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
 const THEIA_EMPTY_WINDOW_HASH = '!empty';
+const GIT_OPERATION_TIMEOUT_MS = 120_000;
 
 /** Placeholder user returned by `/auth/session` when `QAAP_SKIP_AUTH` is enabled. */
 const SKIP_AUTH_DEV_USER = {
@@ -86,6 +88,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     @inject(QaapBillingQuota) @optional()
     protected readonly billingQuota: QaapBillingQuota | undefined;
+
+    /** A stalled network operation must release the clone request and its workspace lock. */
+    protected readonly gitOperationTimeoutMs = GIT_OPERATION_TIMEOUT_MS;
 
     configure(app: Application): void {
         app.use(json());
@@ -647,23 +652,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             if (auth.kind === 'authenticated') {
                 accessToken = auth.session.accessToken;
                 userLogin = auth.userLogin;
-                const accessible = await this.resolveAccessibleRepository(accessToken, parsed.owner, parsed.name);
-                if (!accessible) {
-                    this.auth.logSecurityEvent('ownership_denied', {
-                        action: 'clone_repository',
-                        userLogin,
-                        owner: parsed.owner,
-                        repo: parsed.name,
-                    });
-                    res.status(403).json({ error: 'Forbidden' });
-                    return;
-                }
-                repository = accessible;
+                // The clone-by-URL endpoint intentionally supports any public GitHub repository,
+                // not only repositories returned by /user/repos. GitHub still enforces private-repo
+                // access here because the request carries the authenticated user's token.
+                repository = await this.fetchRepositoryForClone(accessToken, parsed.owner, parsed.name);
             } else if (auth.kind === 'skip') {
                 userLogin = auth.userLogin;
-                repository = await fetchGithubRepository(undefined, parsed.owner, parsed.name);
+                repository = await this.fetchRepositoryForClone(undefined, parsed.owner, parsed.name);
             } else {
-                repository = await fetchGithubRepository(undefined, parsed.owner, parsed.name);
+                repository = await this.fetchRepositoryForClone(undefined, parsed.owner, parsed.name);
                 if (repository.private) {
                     res.status(401).json({ error: 'Sign in with GitHub to clone private repositories' });
                     return;
@@ -698,34 +695,15 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected parseGithubRepositoryInput(value: string): { owner: string; name: string } | undefined {
-        const trimmed = value.trim().replace(/\.git$/, '');
-        if (!trimmed) {
-            return undefined;
-        }
-        const sshMatch = /^git@github\.com:([^/]+)\/(.+)$/i.exec(trimmed);
-        if (sshMatch) {
-            return this.parseGithubRepositoryInput(`${sshMatch[1]}/${sshMatch[2]}`);
-        }
-        let candidate = trimmed;
-        try {
-            const url = new URL(trimmed);
-            if (url.hostname.toLowerCase() !== 'github.com') {
-                return undefined;
-            }
-            candidate = url.pathname.replace(/^\/+/, '');
-        } catch {
-            /* owner/name input */
-        }
-        const [owner, name, ...rest] = candidate.split('/').filter(Boolean);
-        if (rest.length > 0) {
-            return undefined;
-        }
-        const cleanOwner = this.cleanGithubPathSegment(owner);
-        const cleanName = this.cleanGithubPathSegment(name);
-        if (!cleanOwner || !cleanName) {
-            return undefined;
-        }
-        return { owner: cleanOwner, name: cleanName };
+        return parseQaapGithubRepositoryInput(value);
+    }
+
+    protected fetchRepositoryForClone(
+        accessToken: string | undefined,
+        owner: string,
+        name: string,
+    ): Promise<QaapGithubRepositorySummary> {
+        return fetchGithubRepository(accessToken, owner, name);
     }
 
     protected readonly reposRoot = resolveQaapReposRoot();
@@ -814,14 +792,30 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken);
             return target;
         }
+        let cloneTargetCreated = false;
         if (await this.pathExists(target)) {
             const entries = await fs.readdir(target);
             if (entries.length > 0) {
                 throw new Error(`Workspace path already exists and is not a Git repository: ${target}`);
             }
+            cloneTargetCreated = true;
+        } else {
+            cloneTargetCreated = true;
         }
         await this.assertBillingAllowsNewRepo(userLogin);
-        await this.runGit(['clone', repository.cloneUrl, target], accessToken);
+        try {
+            await this.runGit(['clone', repository.cloneUrl, target], accessToken);
+        } catch (err) {
+            if (cloneTargetCreated) {
+                await fs.rm(target, { recursive: true, force: true }).catch(cleanupErr => {
+                    console.warn(
+                        '[qaap-oauth] Failed to remove incomplete clone workspace:',
+                        cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+                    );
+                });
+            }
+            throw err;
+        }
         try {
             await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken));
         } catch (err) {
@@ -924,17 +918,37 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         return new Promise((resolve, reject) => {
             const child = spawn('git', gitArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
             let stderr = '';
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            const complete = (callback: () => void): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeout) {
+                    clearTimeout(timeout);
+                }
+                callback();
+            };
             child.stderr.on('data', chunk => {
                 stderr += String(chunk);
             });
-            child.on('error', reject);
+            child.on('error', err => complete(() => reject(err)));
             child.on('close', code => {
-                if (code === 0) {
-                    resolve();
-                } else {
-                    reject(new Error(stderr.trim() || `git exited with status ${code}`));
-                }
+                complete(() => {
+                    if (code === 0) {
+                        resolve();
+                    } else {
+                        reject(new Error(stderr.trim() || `git exited with status ${code}`));
+                    }
+                });
             });
+            timeout = setTimeout(() => {
+                complete(() => {
+                    child.kill();
+                    reject(new Error(`Git operation timed out after ${Math.ceil(this.gitOperationTimeoutMs / 1000)} seconds`));
+                });
+            }, this.gitOperationTimeoutMs);
         });
     }
 
