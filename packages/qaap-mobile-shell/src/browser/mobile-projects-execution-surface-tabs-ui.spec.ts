@@ -160,6 +160,39 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }
     });
 
+    it('restores the Chat layout class when a conversation selection bypasses tab activation', () => {
+        const root = document.createElement('div');
+        const chatHost = document.createElement('div');
+        const filesHost = document.createElement('div');
+        root.append(chatHost, filesHost);
+        document.body.append(root);
+        try {
+            const project = { id: 'p-layout', name: 'Layout' } as MobileProjectEntry;
+            const host = createHost({
+                root,
+                transcriptOpenProject: project,
+                transcriptChatHost: chatHost,
+                transcriptFilesHost: filesHost,
+            });
+            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+            // This is the path used while opening another conversation: the active surface is
+            // already set in the project map and only the shared visibility sync is called.
+            root.classList.add('theia-mod-project-surface-tools');
+            ui.showOnlyExecutionSurfaceTab('messages');
+            expect(root.classList.contains('theia-mod-project-surface-chat')).to.equal(true);
+            expect(root.classList.contains('theia-mod-project-surface-tools')).to.equal(false);
+            expect(chatHost.hidden).to.equal(false);
+            expect(filesHost.hidden).to.equal(true);
+
+            ui.showOnlyExecutionSurfaceTab('files');
+            expect(root.classList.contains('theia-mod-project-surface-chat')).to.equal(false);
+            expect(root.classList.contains('theia-mod-project-surface-tools')).to.equal(true);
+        } finally {
+            root.remove();
+        }
+    });
+
     it('commits Files synchronously, keeps Chat hidden, and restores Files after shell re-renders', async () => {
         const project: MobileProjectEntry = {
             id: 'p-files',

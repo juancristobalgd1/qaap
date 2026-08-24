@@ -193,6 +193,12 @@ export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     ctx.syncConnectedTranscriptSurfaceHosts();
     const activeSurface = tab === 'review' ? 'files' : tab;
     const showMessages = activeSurface === 'messages';
+    // Conversation selection and shell restoration call this shared visibility path directly,
+    // without going through activateExecutionSurfaceTab(). Keep the root layout mode in sync too;
+    // otherwise a previous Files/Preview/Terminal selection leaves the no-inset tools class on a
+    // newly selected Chat conversation and shifts both transcript and composer to the left.
+    ctx.host.root.classList.toggle('theia-mod-project-surface-chat', showMessages);
+    ctx.host.root.classList.toggle('theia-mod-project-surface-tools', !showMessages);
     // 'review' is merged into 'files' — show the files host for both.
     const showFiles = activeSurface === 'files';
     if (ctx.host.agentsHubInlineTranscriptRoot) {
