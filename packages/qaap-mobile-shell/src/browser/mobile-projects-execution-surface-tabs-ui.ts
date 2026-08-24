@@ -29,7 +29,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
-import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, directChildWithClassExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted, syncTranscriptTabStripExtracted } from './mobile-projects-execution-surface-tabs-ui-render2';
+import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, directChildWithClassExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted, syncTranscriptTabStripExtracted } from './mobile-projects-execution-surface-tabs-ui-render2';
 import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabStripExtracted, buildTranscriptTabStripExtracted, createExecutionSurfaceIconSelectExtracted, createTerminalAgentTuiSelectExtracted, executionSurfaceTabSpecsExtracted, executionTabOverflowMenuMinTopExtracted, openExecutionTabOverflowMenuExtracted, resolveExecutionTabOverflowMenuPortalExtracted, resolveTerminalAgentTuiActiveAgentIdExtracted, syncTerminalAgentTuiTriggerExtracted, syncTerminalAgentTuiTriggersInStripExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming2';
 import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline2';
 
@@ -157,6 +157,11 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
     showOnlyExecutionSurfaceTab(tab: TranscriptTab): void {
         showOnlyExecutionSurfaceTabExtracted(this, tab);
+    }
+
+    /** Restore the project-owned surface after a shell/header rebuild without changing its state. */
+    restoreActiveExecutionSurface(project: MobileProjectEntry, summary?: QaapAgentConversationSummaryDTO): void {
+        restoreActiveExecutionSurfaceExtracted(this, project, summary);
     }
 
     protected syncConnectedTranscriptSurfaceHosts(): void {

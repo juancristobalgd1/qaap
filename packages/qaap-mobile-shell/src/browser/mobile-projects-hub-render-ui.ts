@@ -77,6 +77,16 @@ export class MobileProjectsHubRenderUi {
         if (this.host.shouldUseAgentsHubLanding() && !this.isAgentsHubExecutionSurfacePainted()) {
             this.host.ensureAgentsHubExecutionShellRendered();
         }
+        const activeProject = this.host.agentsHubShellActive
+            ? this.host.resolveAgentsHubShellProject()
+            : this.host.isProjectDetailView()
+                ? this.host.projectNavigationUi.resolveSelectedProject()
+                : undefined;
+        if (activeProject) {
+            // Header/list renders are not navigation. Re-apply the project-owned surface so a
+            // Files mount or shell rebuild cannot silently restore Chat.
+            this.host.executionSurfaceTabsUi.restoreActiveExecutionSurface(activeProject);
+        }
         if (this.host.sessionsSidebar?.isVisible()) {
             this.host.sessionsSidebar.scheduleRefreshList();
         }

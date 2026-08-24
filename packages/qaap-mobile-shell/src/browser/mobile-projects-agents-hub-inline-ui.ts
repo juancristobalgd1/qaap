@@ -573,10 +573,7 @@ export class MobileProjectsAgentsHubInlineUi {
             && !projectChanged
             && this.host.transcriptOpenSummaryId === summary.id) {
             this.host.executionSurfaceTabsUi.refreshExecutionSurfaceTabStripState(existingStrip, activeTab);
-            this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
-            if (activeTab !== 'messages') {
-                this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
-            }
+            this.host.executionSurfaceTabsUi.restoreActiveExecutionSurface(project, summary);
             this.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
             this.host.transcriptSurfacesUi.syncHeaderPreviewRunButton(project, summary);
             this.host.root.classList.add('theia-mod-agents-hub-inline-active');
@@ -589,8 +586,7 @@ export class MobileProjectsAgentsHubInlineUi {
         this.host.agentsHubInlineTabStrip = tabStrip;
         this.host.transcriptTabStrip = tabStrip;
         this.host.executionSurfaceTabsUi.refreshExecutionSurfaceTabStripState(tabStrip, activeTab);
-        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
-        this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
+        this.host.executionSurfaceTabsUi.restoreActiveExecutionSurface(project, summary);
         this.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
         this.host.transcriptSurfacesUi.syncHeaderPreviewRunButton(project, summary);
         this.host.root.classList.add('theia-mod-agents-hub-inline-active');
@@ -767,6 +763,8 @@ export class MobileProjectsAgentsHubInlineUi {
     }
 
     closeAgentsHubSession(): void {
+        const closingProject = this.resolveAgentsHubShellProject();
+        closingProject && this.host.executionSurfaceTabsUi.setExecutionSurfaceTab?.(closingProject, 'messages');
         if (this.host.transcriptLastConv) {
             this.host.transcriptConversationCache.set(this.host.transcriptLastConv.id, this.host.transcriptLastConv);
         }

@@ -92,7 +92,6 @@ export function mountTranscriptExecutionHeaderExtracted(ctx: any, header: HTMLEl
     title.textContent = titleText;
     const back = ctx.host.appendTranscriptHeaderActions(header, title);
     ctx.host.transcriptHeaderSubtitle = undefined;
-    ctx.setExecutionSurfaceTab(project, 'messages');
     ctx.host.transcriptSurfacesUi.updateTranscriptHeader(project, summary);
     const activeTab = ctx.executionSurfaceTabForProject(project);
     const tabStrip = ctx.buildTranscriptTabStrip(project, summary);
@@ -102,6 +101,24 @@ export function mountTranscriptExecutionHeaderExtracted(ctx: any, header: HTMLEl
     }
     ctx.refreshExecutionSurfaceTabStripState(tabStrip, activeTab);
     return { back, tabStrip };
+}
+
+export function restoreActiveExecutionSurfaceExtracted(ctx: any, project: MobileProjectEntry,
+    summary?: QaapAgentConversationSummaryDTO,): void {
+    let activeTab = ctx.executionSurfaceTabForProject(project);
+    if (activeTab === 'review') {
+        // Changes is represented by the Files surface; normalize old in-memory state too.
+        activeTab = 'files';
+        ctx.host.executionSurfaceTabByProjectId.set(project.id, activeTab);
+    }
+    ctx.showOnlyExecutionSurfaceTab(activeTab);
+    const activeSummary = summary
+        ?? ctx.host.transcriptOpenSummary
+        ?? (ctx.host.agentsHubShellActive ? ctx.host.resolveAgentsHubShellSummary?.(project) : undefined);
+    if (activeSummary) {
+        ctx.mountExecutionSurfaceTabContent(project, activeSummary, activeTab);
+    }
+    ctx.syncExecutionSurfaceChrome(project);
 }
 
 export function replaceExecutionSurfaceTabStripExtracted(ctx: any, currentStrip: HTMLElement | undefined, nextStrip: HTMLElement): void {
@@ -129,6 +146,9 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     }
     const sameTab = ctx.executionSurfaceTabForProject(project) === tab;
     if (sameTab) {
+        // Persist even an explicit Chat selection; re-renders must not infer state from a
+        // missing map entry and silently choose a default later.
+        ctx.setExecutionSurfaceTab(project, tab);
         ctx.syncExecutionSurfaceChrome(project);
         if (tab === 'messages') {
             ctx.closeExecutionTabOverflowMenu();
@@ -171,9 +191,10 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
 
 export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTab): void {
     ctx.syncConnectedTranscriptSurfaceHosts();
-    const showMessages = tab === 'messages';
+    const activeSurface = tab === 'review' ? 'files' : tab;
+    const showMessages = activeSurface === 'messages';
     // 'review' is merged into 'files' — show the files host for both.
-    const showFiles = tab === 'files' || tab === 'review';
+    const showFiles = activeSurface === 'files';
     if (ctx.host.agentsHubInlineTranscriptRoot) {
         ctx.host.agentsHubInlineTranscriptRoot.hidden = !showMessages;
     }
@@ -187,21 +208,21 @@ export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
         ctx.host.transcriptReviewHost.hidden = true;
     }
     if (ctx.host.transcriptPreviewHost) {
-        ctx.host.transcriptPreviewHost.hidden = tab !== 'preview';
+        ctx.host.transcriptPreviewHost.hidden = activeSurface !== 'preview';
     }
     if (ctx.host.transcriptFilesHost) {
         ctx.host.transcriptFilesHost.hidden = !showFiles;
     }
     if (ctx.host.transcriptTerminalHost) {
-        ctx.host.transcriptTerminalHost.hidden = tab !== 'terminal';
+        ctx.host.transcriptTerminalHost.hidden = activeSurface !== 'terminal';
     }
     const targets = ctx.host.projectDetailSurfaceTargets;
     if (targets) {
         targets.chatHost.hidden = !showMessages;
         targets.reviewHost.hidden = true;
-        targets.previewHost.hidden = tab !== 'preview';
+        targets.previewHost.hidden = activeSurface !== 'preview';
         targets.filesHost.hidden = !showFiles;
-        targets.terminalHost.hidden = tab !== 'terminal';
+        targets.terminalHost.hidden = activeSurface !== 'terminal';
     }
     if (ctx.host.agentsHubShellActive) {
         ctx.host.stickyComposerHost.hidden = !showMessages;
@@ -230,10 +251,10 @@ export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
             ctx.host.stickyComposerSheetsUi?.closeStickyComposerSheets();
         }
     }
-    ctx.host.agentsHubInlineExecutionRoot?.setAttribute('data-active-surface', tab);
-    ctx.host.transcriptSheet?.querySelector('.theia-mobile-agent-log-sheet')?.setAttribute('data-active-surface', tab);
-    ctx.host.root.querySelector('.theia-mobile-projects-detail-surfaces-body')?.setAttribute('data-active-surface', tab);
-    if (tab !== 'preview') {
+    ctx.host.agentsHubInlineExecutionRoot?.setAttribute('data-active-surface', activeSurface);
+    ctx.host.transcriptSheet?.querySelector('.theia-mobile-agent-log-sheet')?.setAttribute('data-active-surface', activeSurface);
+    ctx.host.root.querySelector('.theia-mobile-projects-detail-surfaces-body')?.setAttribute('data-active-surface', activeSurface);
+    if (activeSurface !== 'preview') {
         ctx.host.transcriptSurfacesUi.suspendTranscriptPreviewIframe();
     }
 }

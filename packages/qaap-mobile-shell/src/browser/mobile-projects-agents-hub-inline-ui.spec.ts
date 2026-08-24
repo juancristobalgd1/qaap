@@ -330,6 +330,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 buildTranscriptTabStrip: () => document.createElement('div'),
                 refreshExecutionSurfaceTabStripState: () => undefined,
                 syncExecutionSurfaceChrome: () => undefined,
+                restoreActiveExecutionSurface: () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
             transcriptComposerUi: {
                 refreshTranscriptComposerAgents: async () => undefined,
@@ -414,6 +415,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 buildTranscriptTabStrip: () => document.createElement('div'),
                 refreshExecutionSurfaceTabStripState: () => undefined,
                 syncExecutionSurfaceChrome: () => undefined,
+                restoreActiveExecutionSurface: () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
             transcriptComposerUi: {
                 refreshTranscriptComposerAgents: async () => undefined,
@@ -511,6 +513,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                     buildTranscriptTabStrip: () => document.createElement('div'),
                     refreshExecutionSurfaceTabStripState: () => undefined,
                     syncExecutionSurfaceChrome: () => undefined,
+                    restoreActiveExecutionSurface: () => undefined,
                 } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
                 transcriptComposerUi: {
                     closeTranscriptComposerSheets: () => undefined,
@@ -608,6 +611,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
                 buildTranscriptTabStrip: () => document.createElement('div'),
                 refreshExecutionSurfaceTabStripState: () => undefined,
                 syncExecutionSurfaceChrome: () => undefined,
+                restoreActiveExecutionSurface: () => undefined,
             } as unknown as MobileProjectsAgentsHubInlineHost['executionSurfaceTabsUi'],
             transcriptComposerUi: {
                 refreshTranscriptComposerAgents: async () => undefined,

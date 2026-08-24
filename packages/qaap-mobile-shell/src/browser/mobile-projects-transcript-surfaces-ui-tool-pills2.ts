@@ -330,6 +330,18 @@ export function resolveProjectScopedWorkspaceKeyExtracted(ctx: any, project: Mob
     return resolveProjectScopedWorkspaceKeyHelper(project, resolvedPath, conversationId);
 }
 
+function renderTranscriptFilesUnavailableNote(ctx: any, host: HTMLElement): void {
+    ctx.detachTranscriptFilesFromHost();
+    host.replaceChildren();
+    const note = document.createElement('div');
+    note.className = 'theia-mobile-transcript-files-note';
+    note.textContent = nls.localize(
+        'qaap/mobileProjects/filesUnavailable',
+        'Open or clone this project to browse its files.',
+    );
+    host.append(note);
+}
+
 export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
     void ensureTranscriptSurfaceCss();
     const host = ctx.executionFilesHost();
@@ -359,15 +371,7 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
         });
     }
     if (!workspaceKey) {
-        ctx.detachTranscriptFilesFromHost();
-        host.replaceChildren();
-        const note = document.createElement('div');
-        note.className = 'theia-mobile-transcript-files-note';
-        note.textContent = nls.localize(
-            'qaap/mobileProjects/filesUnavailable',
-            'Open or clone this project to browse its files.',
-        );
-        host.append(note);
+        renderTranscriptFilesUnavailableNote(ctx, host);
         return;
     }
     if (ctx.host.transcriptFilesAttachedKey === workspaceKey && host.querySelector('.theia-mobile-transcript-files')) {
@@ -385,6 +389,7 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
     const cwd = ctx.resolveTranscriptProjectCwd(project, summary);
     const services = ctx.host.createTranscriptFilesViewServices?.();
     if (!cwd || !services) {
+        renderTranscriptFilesUnavailableNote(ctx, host);
         return;
     }
     const wrappedServices: TranscriptFilesViewServices = {

@@ -191,6 +191,39 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         expect(host.calls).to.include.members(['enter', 'schedule', 'placeholder', 'messages', 'mount-messages', 'prefetch']);
     });
 
+    it('reopens the same conversation on the saved Files surface and resets only on close', async () => {
+        const host = createHost() as MobileProjectsTranscriptSheetHost & { calls: string[] };
+        const sheet = document.createElement('div');
+        const chatHost = document.createElement('div');
+        const chatInputHost = document.createElement('div');
+        document.body.append(sheet);
+        host.transcriptSheet = sheet;
+        host.transcriptChatHost = chatHost;
+        host.transcriptChatInputHost = chatInputHost;
+        host.transcriptOpenSummaryId = 'conv-1';
+        host.transcriptOpenSummary = summary();
+        host.transcriptOpenProject = project();
+        let activeTab = 'files';
+        const shownTabs: string[] = [];
+        host.executionSurfaceTabsUi = {
+            executionSurfaceTabForProject: () => activeTab,
+            setExecutionSurfaceTab: (_project: MobileProjectEntry, tab: string) => { activeTab = tab; },
+            showOnlyExecutionSurfaceTab: (tab: string) => { shownTabs.push(tab); },
+            mountTranscriptSurfaceTab: () => undefined,
+            closeExecutionTabOverflowMenu: () => undefined,
+            navigateExecutionSurfaceBack: () => false,
+            syncHeaderExecutionTabStrip: () => undefined,
+        } as unknown as MobileProjectsTranscriptSheetHost['executionSurfaceTabsUi'];
+
+        const ui = new MobileProjectsTranscriptSheetUi(host, createWorkHub());
+        await ui.openTranscriptSheet(project(), summary());
+
+        expect(shownTabs).to.include('files');
+        expect(activeTab).to.equal('files');
+        ui.closeTranscriptSheet();
+        expect(activeTab).to.equal('messages');
+    });
+
     it('switches a mounted sheet to another conversation without closing the overlay', async () => {
         class TestSheetUi extends MobileProjectsTranscriptSheetUi {
             closeCalls = 0;

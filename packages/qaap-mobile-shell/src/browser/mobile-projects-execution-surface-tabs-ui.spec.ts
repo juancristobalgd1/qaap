@@ -160,6 +160,223 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }
     });
 
+    it('commits Files synchronously, keeps Chat hidden, and restores Files after shell re-renders', async () => {
+        const project: MobileProjectEntry = {
+            id: 'p-files',
+            name: 'Files project',
+            color: '#8EB5DC',
+            branch: 'main',
+            status: 'working',
+            task: '',
+            progress: 0,
+            agents: [],
+            lastActive: 'now',
+            tokens: '0',
+            cost: '$0',
+            pinned: false,
+            isCurrent: true,
+        };
+        const summary = {
+            id: 'conv-files',
+            cwd: '/tmp/files-project',
+            agentId: 'task',
+            title: 'Inspect files',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        const executionRoot = document.createElement('div');
+        executionRoot.className = 'theia-mobile-agents-hub-inline-execution';
+        const transcriptRoot = document.createElement('div');
+        transcriptRoot.className = 'theia-mobile-agents-hub-inline-transcript';
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        const filesHost = document.createElement('div');
+        filesHost.className = 'theia-mobile-transcript-files-host';
+        const previewHost = document.createElement('div');
+        previewHost.className = 'theia-mobile-transcript-preview-host';
+        const terminalHost = document.createElement('div');
+        terminalHost.className = 'theia-mobile-transcript-terminal-host';
+        transcriptRoot.append(chatHost);
+        executionRoot.append(transcriptRoot, filesHost, previewHost, terminalHost);
+        document.body.append(executionRoot);
+        try {
+            const host = createHost({
+                projects: [project],
+                agentsHubShellActive: true,
+                agentsHubInlineExecutionRoot: executionRoot,
+                agentsHubInlineTranscriptRoot: transcriptRoot,
+                transcriptOpenProject: project,
+                transcriptOpenSummary: summary,
+                transcriptChatHost: chatHost,
+                transcriptFilesHost: filesHost,
+                transcriptPreviewHost: previewHost,
+                transcriptTerminalHost: terminalHost,
+            });
+            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+            // The click path must commit the map before any asynchronous Files work begins.
+            ui.selectTranscriptTab('files', project, summary);
+            expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+            expect(executionRoot.getAttribute('data-active-surface')).to.equal('files');
+            expect(chatHost.hidden).to.equal(true);
+            expect(filesHost.hidden).to.equal(false);
+
+            // 0 ms and 500 ms are both covered, including the delayed Files mount boundary.
+            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+            ui.restoreActiveExecutionSurface(project, summary);
+            expect(executionRoot.getAttribute('data-active-surface')).to.equal('files');
+            expect(chatHost.hidden).to.equal(true);
+            expect(filesHost.hidden).to.equal(false);
+            await new Promise<void>(resolve => window.setTimeout(resolve, 500));
+            ui.restoreActiveExecutionSurface(project, summary);
+            expect(executionRoot.getAttribute('data-active-surface')).to.equal('files');
+            expect(chatHost.hidden).to.equal(true);
+            expect(filesHost.hidden).to.equal(false);
+        } finally {
+            executionRoot.remove();
+        }
+    });
+
+    it('keeps Files active while an asynchronous Files mount completes', async () => {
+        const project = { id: 'p-async', name: 'Async files' } as MobileProjectEntry;
+        const summary = {
+            id: 'conv-async',
+            cwd: '/tmp/async-files',
+            agentId: 'task',
+            title: 'Async files',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        const executionRoot = document.createElement('div');
+        executionRoot.className = 'theia-mobile-agents-hub-inline-execution';
+        const transcriptRoot = document.createElement('div');
+        transcriptRoot.className = 'theia-mobile-agents-hub-inline-transcript';
+        const chatHost = document.createElement('div');
+        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
+        const filesHost = document.createElement('div');
+        filesHost.className = 'theia-mobile-transcript-files-host';
+        transcriptRoot.append(chatHost);
+        executionRoot.append(transcriptRoot, filesHost);
+        document.body.append(executionRoot);
+        let finishMount!: () => void;
+        let mountRestoreScheduled = false;
+        const mountFinished = new Promise<void>(resolve => { finishMount = resolve; });
+        try {
+            const host = createHost({
+                projects: [project],
+                agentsHubShellActive: true,
+                agentsHubInlineExecutionRoot: executionRoot,
+                agentsHubInlineTranscriptRoot: transcriptRoot,
+                transcriptOpenProject: project,
+                transcriptOpenSummary: summary,
+                transcriptChatHost: chatHost,
+                transcriptFilesHost: filesHost,
+            });
+            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            host.transcriptSurfacesUi.ensureTranscriptFilesTab = () => {
+                if (!mountRestoreScheduled) {
+                    mountRestoreScheduled = true;
+                    void mountFinished.then(() => ui.restoreActiveExecutionSurface(project, summary));
+                }
+            };
+
+            ui.selectTranscriptTab('files', project, summary);
+            expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+            expect(chatHost.hidden).to.equal(true);
+            expect(filesHost.hidden).to.equal(false);
+            finishMount();
+            await mountFinished;
+            expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+            expect(executionRoot.getAttribute('data-active-surface')).to.equal('files');
+            expect(chatHost.hidden).to.equal(true);
+            expect(filesHost.hidden).to.equal(false);
+        } finally {
+            executionRoot.remove();
+        }
+    });
+
+    it('cycles Chat, Files, Preview, and Terminal without leaking visibility', () => {
+        const project = { id: 'p-cycle', name: 'Cycle' } as MobileProjectEntry;
+        const summary = {
+            id: 'conv-cycle',
+            cwd: '/tmp/cycle',
+            agentId: 'task',
+            title: 'Cycle',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        const root = document.createElement('div');
+        const chatHost = document.createElement('div');
+        const filesHost = document.createElement('div');
+        const previewHost = document.createElement('div');
+        const terminalHost = document.createElement('div');
+        root.append(chatHost, filesHost, previewHost, terminalHost);
+        document.body.append(root);
+        try {
+            const host = createHost({
+                root,
+                transcriptStickyComposerUi: {
+                    flushTranscriptComposerDraft: () => undefined,
+                    syncTranscriptComposerQuickActionsVisibility: () => undefined,
+                } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptStickyComposerUi'],
+                transcriptOpenProject: project,
+                transcriptOpenSummary: summary,
+                transcriptChatHost: chatHost,
+                transcriptFilesHost: filesHost,
+                transcriptPreviewHost: previewHost,
+                transcriptTerminalHost: terminalHost,
+            });
+            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const expected = [
+                ['messages', chatHost],
+                ['files', filesHost],
+                ['preview', previewHost],
+                ['terminal', terminalHost],
+                ['files', filesHost],
+                ['messages', chatHost],
+            ] as const;
+            for (const [tab, visibleHost] of expected) {
+                ui.selectTranscriptTab(tab, project, summary);
+                expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal(tab);
+                expect(visibleHost.hidden).to.equal(false);
+                for (const surfaceHost of [chatHost, filesHost, previewHost, terminalHost]) {
+                    if (surfaceHost !== visibleHost) {
+                        expect(surfaceHost.hidden).to.equal(true);
+                    }
+                }
+            }
+        } finally {
+            root.remove();
+        }
+    });
+
+    it('does not reset a saved Files surface when the transcript header is rebuilt', () => {
+        const project = { id: 'p-header', name: 'Header' } as MobileProjectEntry;
+        const summary = {
+            id: 'conv-header',
+            cwd: '/tmp/header',
+            agentId: 'task',
+            title: 'Header',
+            status: 'streaming' as const,
+            createdAt: 1,
+            updatedAt: 2,
+            messageCount: 1,
+        };
+        const host = createHost({ projects: [project] });
+        host.executionSurfaceTabByProjectId.set(project.id, 'files');
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+
+        ui.mountTranscriptExecutionHeader(document.createElement('header'), project, summary, 'Header');
+
+        expect(host.executionSurfaceTabByProjectId.get(project.id)).to.equal('files');
+    });
+
     it('keeps all execution tabs in the overflow menu while the agent is streaming', () => {
         const project: MobileProjectEntry = {
             id: 'p1',

@@ -162,6 +162,8 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.replacingTranscriptSheet = true;
         this.closeTranscriptSheet();
         this.host.replacingTranscriptSheet = false;
+        // Opening a conversation is an explicit navigation action: start it in Chat.
+        this.host.executionSurfaceTabsUi.setExecutionSurfaceTab?.(project, 'messages');
         this.host.delegate.onEnterActiveTranscript?.();
         const root = document.createElement('div');
         root.className = 'theia-mobile-agent-log theia-mobile-agent-transcript-root theia-mod-visible';
@@ -234,7 +236,9 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptComposerAgentModel = undefined;
         void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
         this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(chatInputHost, project, summary, chatHost);
-        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(
+            this.host.executionSurfaceTabsUi.executionSurfaceTabForProject?.(project) ?? 'messages',
+        );
         // Mount all tabs so they're available when switching views.
         // 'review' (Changes) is merged into the 'files' tab — no separate pre-mount.
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
@@ -258,6 +262,9 @@ export class MobileProjectsTranscriptSheetUi {
         }
         if (conversationChanged) {
             this.prepareMountedTranscriptSheetForSwitch();
+            // Selecting another conversation is an explicit navigation action: reset only this
+            // project's surface to Chat. Re-opening the same conversation must preserve Files.
+            this.host.executionSurfaceTabsUi.setExecutionSurfaceTab?.(project, 'messages');
             if (this.host.transcriptSheet) {
                 this.observeTranscriptComposerSize(this.host.transcriptSheet, chatInputHost);
             }
@@ -298,7 +305,8 @@ export class MobileProjectsTranscriptSheetUi {
             void this.host.transcriptComposerUi.refreshTranscriptComposerAgents(project);
             this.host.transcriptStickyComposerUi.mountTranscriptStickyComposer(chatInputHost, project, summary, chatHost);
         }
-        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
+        const activeTab = this.host.executionSurfaceTabsUi.executionSurfaceTabForProject?.(project) ?? 'messages';
+        this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'messages');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'preview');
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, 'files');
@@ -416,6 +424,8 @@ export class MobileProjectsTranscriptSheetUi {
     }
 
     closeTranscriptSheet(): void {
+        const closingProject = this.host.transcriptOpenProject;
+        closingProject && this.host.executionSurfaceTabsUi.setExecutionSurfaceTab?.(closingProject, 'messages');
         this.host.executionSurfaceTabsUi.closeExecutionTabOverflowMenu();
         this.host.closeParallelSheet();
         this.host.transcriptComposerUi.closeTranscriptComposerSheets();
@@ -562,4 +572,3 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptComposerSizeDispose = Disposable.create(() => observer.disconnect());
     }
 }
-
