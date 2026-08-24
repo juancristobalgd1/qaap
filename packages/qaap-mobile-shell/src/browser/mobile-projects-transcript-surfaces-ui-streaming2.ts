@@ -312,6 +312,7 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: any, host: HTMLElem
 
         chrome = mountEmbeddedAgentPreviewChrome(host, {
             url: normalized,
+            historyScope: project.id,
             messageService: ctx.host.messageService,
             clipboard: ctx.host.previewClipboard,
             previewSurfaces: ctx.host.previewSurfaceRegistry,

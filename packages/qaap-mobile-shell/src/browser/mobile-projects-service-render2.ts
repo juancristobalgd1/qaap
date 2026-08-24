@@ -62,6 +62,13 @@ import {
 import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { CUSTOM_PROJECTS_STORAGE_KEY, DISPLAY_NAMES_STORAGE_KEY, HIDDEN_PROJECT_IDS_STORAGE_KEY, PINNED_PROJECT_IDS_STORAGE_KEY } from './mobile-projects-service';
 
+function clearHiddenProjectIdExtracted(ctx: any, id: string): void {
+        const hiddenIds = ctx.readHiddenProjectIds();
+        if (hiddenIds.delete(id)) {
+            ctx.writeHiddenProjectIds(hiddenIds);
+        }
+}
+
 export function readHiddenProjectIdsExtracted(ctx: any): Set<string> {
         if (typeof localStorage === 'undefined') {
             return new Set();
@@ -145,6 +152,11 @@ export function workspacePathFromUriExtracted(ctx: any, uri: URI): string {
 }
 
 export function openWorkspaceUriExtracted(ctx: any, uri: URI): void {
+        const hiddenIds = ctx.readHiddenProjectIds();
+        const recentId = `recent:${uri.toString()}`;
+        if (hiddenIds.delete(recentId)) {
+            ctx.writeHiddenProjectIds(hiddenIds);
+        }
         ctx.touchWorkspaceActivity(uri);
         requestMobileProjectsPanelDismiss();
         markMobileProjectReadmeForOpen();
@@ -207,6 +219,7 @@ export async function openGithubProjectExtracted(ctx: any, project: MobileProjec
         try {
             const result = await openQaapGithubRepository(project.github.owner, project.github.name);
             const uri = new URI(result.workspaceUri);
+            clearHiddenProjectIdExtracted(ctx, `github:${result.repository.fullName}`);
             ctx.touchGithubRepositoryActivity(result.repository);
             if (newWindow) {
                 MobileSnackbar.dismiss();
@@ -391,6 +404,7 @@ export async function importGithubProjectExtracted(ctx: any, project: MobileProj
 }
 
 export function registerGithubWorkspaceProjectExtracted(ctx: any, repository: QaapGithubRepositorySummary, uri: URI): void {
+        clearHiddenProjectIdExtracted(ctx, `github:${repository.fullName}`);
         ctx.touchGithubRepositoryActivity(repository);
         const custom = ctx.readCustomProjects();
         const id = `custom:${uri.toString()}`;

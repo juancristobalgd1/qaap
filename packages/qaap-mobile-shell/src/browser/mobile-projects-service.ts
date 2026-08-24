@@ -11,6 +11,7 @@ import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
     cloneQaapGithubRepository,
@@ -77,6 +78,9 @@ export class MobileProjectsService {
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
 
     @inject(LabelProvider)
     protected readonly labelProvider: LabelProvider;

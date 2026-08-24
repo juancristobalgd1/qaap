@@ -645,6 +645,22 @@ export async function cancelAgentTask(id: string): Promise<void> {
     }
 }
 
+export async function deleteAgentTasksForCwd(cwd: string): Promise<number> {
+    const trimmed = cwd.trim();
+    if (!trimmed || isQaapWorkspaceContainerPath(trimmed)) {
+        return 0;
+    }
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/project?cwd=${encodeURIComponent(trimmed)}`, {
+        method: 'DELETE',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        throw new Error(response.statusText);
+    }
+    const body = await response.json() as { removed?: number };
+    return typeof body.removed === 'number' ? body.removed : 0;
+}
+
 export function hashString(value: string): string {
     let hash = 0;
     for (let i = 0; i < value.length; i++) {

@@ -8,6 +8,7 @@ export namespace QaapAgentPreviewChromeStyle {
     export const MOD_MINI_BROWSER = 'qaap-mod-mini-browser';
     export const MOD_EMBEDDED = 'qaap-mod-embedded';
     export const HISTORY_OPEN = 'qaap-mod-history-open';
+    export const HISTORY_POPOVER = 'qaap-mod-history-popover';
 
     export const HISTORY = 'qaap-agent-preview-history';
     export const HISTORY_BACKDROP = 'qaap-agent-preview-history-backdrop';
@@ -23,6 +24,8 @@ export namespace QaapAgentPreviewChromeStyle {
     export const HISTORY_ITEM = 'qaap-agent-preview-history-item';
     export const HISTORY_ITEM_ICON = 'qaap-agent-preview-history-item-icon';
     export const HISTORY_ITEM_LABEL = 'qaap-agent-preview-history-item-label';
+    export const HISTORY_WEB_SEARCH = 'qaap-agent-preview-history-web-search';
+    export const HISTORY_WEB_SEARCH_ICON = 'qaap-agent-preview-history-web-search-icon';
     export const HISTORY_EMPTY = 'qaap-agent-preview-history-empty';
 
     export const OVERFLOW_MENU = 'qaap-agent-preview-overflow-menu';
@@ -31,7 +34,6 @@ export namespace QaapAgentPreviewChromeStyle {
     export const OVERFLOW_TOGGLE = 'qaap-agent-preview-overflow-toggle';
     export const OVERFLOW_TOGGLE_SWITCH = 'qaap-agent-preview-overflow-toggle-switch';
 
-    export const TOOLBAR_HISTORY = 'qaap-agent-preview-toolbar-history';
     export const TOOLBAR_BACK = 'qaap-agent-preview-toolbar-back';
     export const TOOLBAR_FORWARD = 'qaap-agent-preview-toolbar-forward';
     export const TOOLBAR_OVERFLOW = 'qaap-agent-preview-toolbar-overflow';

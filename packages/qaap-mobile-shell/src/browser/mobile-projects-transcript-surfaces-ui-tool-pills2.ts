@@ -199,6 +199,7 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: any, host: HTMLElement
     };
     ctx.host.transcriptEmbeddedPreview = mountEmbeddedAgentPreviewChrome(host, {
         url: 'about:blank',
+        historyScope: project.id,
         messageService: ctx.host.messageService,
         clipboard: ctx.host.previewClipboard,
         previewSurfaces: ctx.host.previewSurfaceRegistry,

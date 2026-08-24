@@ -572,6 +572,7 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
             finishAntigravitySettings();
             logStream.end();
             ctx.processes.delete(task.id);
+            ctx.deletedTaskIds.delete(task.id);
             ctx.stdinInteractiveTasks.delete(task.id);
             ctx.stdinPrompts.delete(task.id);
             ctx.pendingQaiqControlRequests.delete(task.id);

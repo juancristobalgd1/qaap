@@ -22,6 +22,8 @@ export interface QaapPreviewHistoryEntry {
     readonly url: string;
     readonly title: string;
     readonly visitedAt: number;
+    /** Stable project/workspace identifier used to keep embedded preview history local to a project. */
+    readonly scope?: string;
 }
 
 export type QaapPreviewHistorySectionId = 'today' | 'last7' | 'last30';
@@ -58,7 +60,15 @@ export function faviconUrlForPreview(entryUrl: string): string | undefined {
     }
 }
 
-export function readPreviewBrowsingHistory(): QaapPreviewHistoryEntry[] {
+export function readPreviewBrowsingHistory(scope?: string): QaapPreviewHistoryEntry[] {
+    const entries = readAllPreviewBrowsingHistory();
+    const normalizedScope = normalizeHistoryScope(scope);
+    return normalizedScope === undefined
+        ? entries
+        : entries.filter(entry => entry.scope === normalizedScope);
+}
+
+function readAllPreviewBrowsingHistory(): QaapPreviewHistoryEntry[] {
     if (typeof window === 'undefined') {
         return [];
     }
@@ -93,27 +103,36 @@ export function writePreviewBrowsingHistory(entries: readonly QaapPreviewHistory
     }
 }
 
-export function recordPreviewBrowsingVisit(url: string, title?: string): QaapPreviewHistoryEntry[] {
+export function recordPreviewBrowsingVisit(url: string, title?: string, scope?: string): QaapPreviewHistoryEntry[] {
     const displayUrl = toPreviewHistoryDisplayUrl(url);
+    const normalizedScope = normalizeHistoryScope(scope);
     if (!displayUrl || displayUrl === 'about:blank') {
-        return readPreviewBrowsingHistory();
+        return readPreviewBrowsingHistory(normalizedScope);
     }
     const historyKey = canonicalPreviewHistoryKey(displayUrl);
     const now = Date.now();
     const nextTitle = title?.trim() || previewHistoryEntryLabel({ url: displayUrl, title: '', visitedAt: now });
-    const withoutDup = readPreviewBrowsingHistory().filter(
-        entry => canonicalPreviewHistoryKey(entry.url) !== historyKey,
+    const withoutDup = readPreviewBrowsingHistory().filter(entry =>
+        entry.scope !== normalizedScope || canonicalPreviewHistoryKey(entry.url) !== historyKey,
     );
+    const nextEntry: QaapPreviewHistoryEntry = normalizedScope
+        ? { url: displayUrl, title: nextTitle, visitedAt: now, scope: normalizedScope }
+        : { url: displayUrl, title: nextTitle, visitedAt: now };
     const next: QaapPreviewHistoryEntry[] = [
-        { url: displayUrl, title: nextTitle, visitedAt: now },
+        nextEntry,
         ...withoutDup,
     ].slice(0, MAX_ENTRIES);
     writePreviewBrowsingHistory(next);
     return next;
 }
 
-export function clearPreviewBrowsingHistory(): void {
-    writePreviewBrowsingHistory([]);
+export function clearPreviewBrowsingHistory(scope?: string): void {
+    const normalizedScope = normalizeHistoryScope(scope);
+    if (normalizedScope === undefined) {
+        writePreviewBrowsingHistory([]);
+        return;
+    }
+    writePreviewBrowsingHistory(readPreviewBrowsingHistory().filter(entry => entry.scope !== normalizedScope));
 }
 
 export function readPreviewBookmarkBarVisible(): boolean {
@@ -233,7 +252,7 @@ function normalizeHistoryEntry(value: unknown): QaapPreviewHistoryEntry | undefi
     if (!value || typeof value !== 'object') {
         return undefined;
     }
-    const record = value as { url?: unknown; title?: unknown; visitedAt?: unknown };
+    const record = value as { url?: unknown; title?: unknown; visitedAt?: unknown; scope?: unknown };
     if (typeof record.url !== 'string' || !record.url.trim()) {
         return undefined;
     }
@@ -241,5 +260,11 @@ function normalizeHistoryEntry(value: unknown): QaapPreviewHistoryEntry | undefi
         ? record.visitedAt
         : Date.now();
     const title = typeof record.title === 'string' ? record.title : '';
-    return { url: record.url.trim(), title, visitedAt };
+    const scope = typeof record.scope === 'string' ? normalizeHistoryScope(record.scope) : undefined;
+    return scope ? { url: record.url.trim(), title, visitedAt, scope } : { url: record.url.trim(), title, visitedAt };
+}
+
+function normalizeHistoryScope(scope?: string): string | undefined {
+    const normalized = scope?.trim();
+    return normalized || undefined;
 }

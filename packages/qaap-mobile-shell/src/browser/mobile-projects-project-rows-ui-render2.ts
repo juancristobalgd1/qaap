@@ -42,6 +42,7 @@ export function createSidebarStatusChipExtracted(ctx: any, visualStatus: QaapAge
 export function createRowExtracted(ctx: any, project: MobileProjectEntry): HTMLElement {
         const card = document.createElement('div');
         card.className = 'theia-mobile-projects-card';
+        card.dataset.qaapProjectId = project.id;
         card.style.setProperty('--qaap-mobile-project-accent', project.color);
         if (project.isCurrent) {
             card.classList.add('theia-mod-current');

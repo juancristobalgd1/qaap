@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import {
     clampPreviewHistoryPanelWidth,
+    clearPreviewBrowsingHistory,
     groupPreviewBrowsingHistory,
     previewHistoryEntryLabel,
     QAAP_PREVIEW_HISTORY_WIDTH_MIN_PX,
@@ -75,5 +76,17 @@ describe('qaap-preview-browsing-history', () => {
         expect(entries).to.have.length(1);
         expect(entries[0].url).to.equal('http://localhost:3001/');
         expect(entries[0].title).to.equal('App 3001 again');
+    });
+
+    it('keeps embedded preview history separate by project scope', () => {
+        recordPreviewBrowsingVisit('http://localhost:3000/project-a', 'Project A', 'project-a');
+        recordPreviewBrowsingVisit('http://localhost:3000/project-b', 'Project B', 'project-b');
+
+        expect(readPreviewBrowsingHistory('project-a').map(entry => entry.title)).to.deep.equal(['Project A']);
+        expect(readPreviewBrowsingHistory('project-b').map(entry => entry.title)).to.deep.equal(['Project B']);
+
+        clearPreviewBrowsingHistory('project-a');
+        expect(readPreviewBrowsingHistory('project-a')).to.have.length(0);
+        expect(readPreviewBrowsingHistory('project-b')).to.have.length(1);
     });
 });

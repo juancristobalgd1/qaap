@@ -316,7 +316,7 @@ export interface QaapAgentTaskAllResponse {
 
 /** Payload pushed over SSE when a task changes state. */
 export type QaapAgentTaskEvent =
-    | { readonly type: 'created' | 'completed' | 'cancelled'; readonly task: QaapAgentTask }
+    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted'; readonly task: QaapAgentTask }
     | { readonly type: 'output'; readonly task: QaapAgentTask; readonly chunk: string };
 
 /** True once the task has stopped and will not change state again. */

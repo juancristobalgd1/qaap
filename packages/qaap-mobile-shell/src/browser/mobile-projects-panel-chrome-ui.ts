@@ -80,7 +80,7 @@ export interface MobileProjectsPanelChromeHost {
 /**
  * Work Hub header project cluster:
  * compact empty/new chat: `[folder][project name][chevron]` (one button → repo sheet);
- * open conversation: `[folder][project chevron] [|] [title][task chevron]`.
+ * open conversation: `[folder][project chevron] [title][task chevron]`.
  */
 export function mountHeaderProjectButtonContents(
     cluster: HTMLElement,
@@ -89,7 +89,6 @@ export function mountHeaderProjectButtonContents(
     labelEl: HTMLSpanElement,
 ): {
     readonly folder: HTMLSpanElement;
-    readonly separator: HTMLSpanElement;
     readonly projectChevron: HTMLSpanElement;
     readonly conversationsChevron: HTMLSpanElement;
 } {
@@ -101,20 +100,14 @@ export function mountHeaderProjectButtonContents(
     projectChevron.setAttribute('aria-hidden', 'true');
     switcher.append(folder, projectChevron);
 
-    const separator = document.createElement('span');
-    separator.className = 'theia-mobile-projects-header-project-separator';
-    separator.setAttribute('aria-hidden', 'true');
-    separator.hidden = true;
-    separator.textContent = '|';
-
     labelEl.className = 'theia-mobile-projects-header-project-label';
     const conversationsChevron = document.createElement('span');
     conversationsChevron.className = 'theia-mobile-projects-header-project-icon theia-mobile-projects-header-conversations-icon codicon codicon-chevron-down';
     conversationsChevron.setAttribute('aria-hidden', 'true');
     conversations.append(labelEl, conversationsChevron);
 
-    cluster.append(switcher, separator, conversations);
-    return { folder, separator, projectChevron, conversationsChevron };
+    cluster.append(switcher, conversations);
+    return { folder, projectChevron, conversationsChevron };
 }
 
 /**

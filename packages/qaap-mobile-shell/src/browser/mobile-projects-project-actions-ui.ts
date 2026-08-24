@@ -8,6 +8,7 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { ChatService } from '@theia/ai-chat';
 import { deleteConversation, isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { deleteAgentTasksForCwd } from '../common/qaap-agent-task-client';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -54,6 +55,34 @@ export interface MobileProjectsProjectActionsHost {
 export class MobileProjectsProjectActionsUi {
 
     constructor(protected readonly host: MobileProjectsProjectActionsHost) { }
+
+    /** Animate every visible representation of a project before the list renderer removes it. */
+    protected animateProjectRemoval(project: MobileProjectEntry): { readonly started: boolean; readonly promise: Promise<void> } {
+        if (typeof document === 'undefined') {
+            return { started: false, promise: Promise.resolve() };
+        }
+        const cards = Array.from(document.querySelectorAll<HTMLElement>('.theia-mobile-projects-card'))
+            .filter(card => card.dataset.qaapProjectId === project.id);
+        if (cards.length === 0) {
+            return { started: false, promise: Promise.resolve() };
+        }
+
+        for (const card of cards) {
+            // Freeze the current height so the expanded card collapses smoothly instead of
+            // snapping when its body is removed.
+            card.style.maxHeight = `${Math.max(card.offsetHeight, 1)}px`;
+            card.style.overflow = 'hidden';
+            card.setAttribute('aria-busy', 'true');
+            card.classList.add('theia-mod-removing');
+        }
+
+        const reducedMotion = typeof matchMedia === 'function'
+            && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        return {
+            started: true,
+            promise: new Promise(resolve => window.setTimeout(resolve, reducedMotion ? 0 : 280)),
+        };
+    }
 
     async onRenameProject(project: MobileProjectEntry): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
@@ -182,8 +211,11 @@ export class MobileProjectsProjectActionsUi {
         }
 
         const previousProjects = this.host.projects;
+        const removalAnimation = this.animateProjectRemoval(project);
         this.host.projects = previousProjects.filter(candidate => candidate.id !== project.id);
-        this.host.render();
+        if (!removalAnimation.started) {
+            this.host.render();
+        }
         this.host.delegate.onProjectsChanged?.();
 
         // Release every section's embedded preview + backend dev-server claim owned by this
@@ -206,16 +238,23 @@ export class MobileProjectsProjectActionsUi {
                     this.host.conversations?.removeSnapshot(summary.id, summary.cwd, summary.source);
                 }
             }
+            const projectCwd = this.host.projectsService.getProjectCwd?.(project)
+                ?? projectConversations.map(summary => summary.cwd).find(Boolean);
+            if (projectCwd) {
+                await deleteAgentTasksForCwd(projectCwd);
+            }
             const removed = await this.host.projectsService.removeProject(project);
             if (!removed) {
                 throw new Error(nls.localize('qaap/mobileProjects/removeRejected', 'The project could not be removed.'));
             }
+            await removalAnimation.promise;
             // Reconcile with storage in the background after the optimistic paint. The service
             // keeps removed recent workspaces hidden even if its upstream list is momentarily stale.
             this.host.projects = await this.host.projectsService.loadProjects();
             this.host.render();
             this.host.delegate.onProjectsChanged?.();
         } catch (error) {
+            await removalAnimation.promise;
             this.host.projects = previousProjects;
             this.host.render();
             this.host.delegate.onProjectsChanged?.();

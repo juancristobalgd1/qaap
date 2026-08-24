@@ -32,10 +32,7 @@ import {
     groupPreviewBrowsingHistory,
     previewHistoryEntryLabel,
     readPreviewBrowsingHistory,
-    readPreviewHistoryPanelWidth,
     recordPreviewBrowsingVisit,
-    writePreviewHistoryPanelWidth,
-    clampPreviewHistoryPanelWidth,
     type QaapPreviewHistoryEntry,
 } from './qaap-preview-browsing-history';
 import { createPreviewEditButton } from './qaap-preview-edit-menu';
@@ -65,22 +62,26 @@ export interface QaapAgentPreviewChromeOptions {
     readonly clipboard?: ClipboardService;
     readonly messageService?: MessageService;
     readonly embedded?: boolean;
+    /** Optional project/workspace identifier for embedded, project-local browsing history. */
+    readonly historyScope?: string;
     /** Extra toast feedback (e.g. mobile snackbar). */
     readonly notify?: (message: string, kind?: 'info' | 'warn') => void;
 }
 
-/** Cursor-style preview chrome: browsing history drawer + overflow menu. */
+let previewHistoryListId = 0;
+
+/** Cursor-style preview chrome: address-bar history popover + overflow menu. */
 export class QaapAgentPreviewChromeController implements Disposable {
     protected readonly toDispose = new DisposableCollection();
     protected historyOpen = false;
+    protected historyPopoverAnchor: HTMLElement | undefined;
+    protected historyPopoverQuery = '';
+    protected historyComboboxInput: HTMLInputElement | undefined;
     protected historyRoot: HTMLElement | undefined;
     protected historyList: HTMLElement | undefined;
-    protected historySearchInput: HTMLInputElement | undefined;
     protected overflowMenu: HTMLElement | undefined;
     protected overflowMenuDispose: (() => void) | undefined;
-    protected historyButton: HTMLButtonElement | undefined;
     protected historyPanel: HTMLElement | undefined;
-    protected historyResizePointerId: number | undefined;
 
     constructor(
         protected readonly host: QaapAgentPreviewChromeHost,
@@ -93,28 +94,63 @@ export class QaapAgentPreviewChromeController implements Disposable {
         } else {
             root.classList.add(Style.MOD_MINI_BROWSER);
         }
-        this.ensureHistoryDrawer(root);
+        this.ensureHistoryPopover(root);
+        const onResize = (): void => {
+            if (this.historyOpen) {
+                this.positionHistoryPopover();
+            }
+        };
+        window.addEventListener('resize', onResize);
+        this.toDispose.push(Disposable.create(() => window.removeEventListener('resize', onResize)));
         this.toDispose.push(Disposable.create(() => {
-            root.classList.remove(Style.ROOT, Style.MOD_EMBEDDED, Style.MOD_MINI_BROWSER, Style.HISTORY_OPEN);
+            root.classList.remove(
+                Style.ROOT,
+                Style.MOD_EMBEDDED,
+                Style.MOD_MINI_BROWSER,
+                Style.HISTORY_OPEN,
+                Style.HISTORY_POPOVER,
+            );
             this.historyRoot?.remove();
             this.overflowMenu?.remove();
         }));
+    }
+
+    setHistoryCombobox(input: HTMLInputElement): void {
+        this.historyComboboxInput = input;
+        const list = this.historyList;
+        if (list && !list.id) {
+            list.id = `qaap-preview-history-list-${++previewHistoryListId}`;
+        }
+        input.setAttribute('aria-haspopup', 'listbox');
+        input.setAttribute('aria-expanded', String(this.historyOpen));
+        if (list?.id) {
+            input.setAttribute('aria-controls', list.id);
+        }
+    }
+
+    openHistoryPopover(anchor: HTMLElement): void {
+        this.historyPopoverAnchor = anchor;
+        this.historyPopoverQuery = '';
+        this.toggleHistory(true);
+    }
+
+    updateHistoryPopoverQuery(query: string): void {
+        this.historyPopoverQuery = query;
+        if (this.historyOpen) {
+            this.renderHistoryList();
+        }
     }
 
     dispose(): void {
         this.toDispose.dispose();
     }
 
-    /** Toolbar buttons for mini-browser (history + overflow). */
-    attachToolbarControls(toolbar: HTMLElement, beforeFirst?: HTMLElement): void {
-        const historyBtn = this.createToolbarIconButton(
-            nls.localize('qaap/preview/openHistory', 'Show browsing history'),
-            'history',
-            Style.TOOLBAR_HISTORY,
-        );
-        this.historyButton = historyBtn;
-        this.toDispose.push(addEventListener(historyBtn, 'click', () => this.toggleHistory()));
-
+    /** Toolbar buttons for mini-browser (reload + overflow). */
+    attachToolbarControls(
+        toolbar: HTMLElement,
+        beforeFirst?: HTMLElement,
+        reloadButton?: HTMLButtonElement,
+    ): void {
         const overflowBtn = this.createToolbarIconButton(
             nls.localize('qaap/preview/moreActions', 'More preview actions'),
             'kebab-vertical',
@@ -126,11 +162,16 @@ export class QaapAgentPreviewChromeController implements Disposable {
             this.toggleOverflowMenu(overflowBtn);
         }));
 
+        if (reloadButton) {
+            if (beforeFirst) {
+                toolbar.insertBefore(reloadButton, beforeFirst);
+            } else {
+                toolbar.insertBefore(reloadButton, toolbar.firstChild);
+            }
+        }
         if (beforeFirst) {
-            toolbar.insertBefore(historyBtn, beforeFirst);
             toolbar.appendChild(overflowBtn);
         } else {
-            toolbar.insertBefore(historyBtn, toolbar.firstChild);
             toolbar.appendChild(overflowBtn);
         }
     }
@@ -140,7 +181,7 @@ export class QaapAgentPreviewChromeController implements Disposable {
         if (!trimmed || trimmed === 'about:blank') {
             return;
         }
-        recordPreviewBrowsingVisit(trimmed, this.host.getPageTitle());
+        recordPreviewBrowsingVisit(trimmed, this.host.getPageTitle(), this.options.historyScope);
         if (this.historyOpen) {
             this.renderHistoryList();
         }
@@ -158,19 +199,28 @@ export class QaapAgentPreviewChromeController implements Disposable {
         this.historyOpen = open ?? !this.historyOpen;
         const root = this.host.getRoot();
         root.classList.toggle(Style.HISTORY_OPEN, this.historyOpen);
+        root.classList.toggle(Style.HISTORY_POPOVER, this.historyOpen);
+        this.historyComboboxInput?.setAttribute(
+            'aria-expanded',
+            String(this.historyOpen),
+        );
         if (this.historyRoot) {
             this.historyRoot.hidden = !this.historyOpen;
+            this.historyRoot.classList.toggle(Style.HISTORY_POPOVER, this.historyOpen);
+        }
+        if (this.historyPanel) {
+            if (this.historyOpen) {
+                this.positionHistoryPopover();
+            } else {
+                this.resetHistoryPopoverPosition();
+            }
         }
         if (this.historyOpen) {
-            if (this.historyPanel) {
-                this.applyHistoryPanelWidth(this.historyPanel);
-            }
             this.renderHistoryList();
-            this.historySearchInput?.focus();
         }
     }
 
-    protected ensureHistoryDrawer(root: HTMLElement): void {
+    protected ensureHistoryPopover(root: HTMLElement): void {
         const historyRoot = document.createElement('div');
         historyRoot.className = Style.HISTORY;
         historyRoot.hidden = true;
@@ -185,43 +235,17 @@ export class QaapAgentPreviewChromeController implements Disposable {
         panel.className = Style.HISTORY_PANEL;
         panel.setAttribute('role', 'navigation');
         panel.setAttribute('aria-label', nls.localize('qaap/preview/historyTitle', 'Browsing history'));
-        this.applyHistoryPanelWidth(panel);
 
         const panelBody = document.createElement('div');
         panelBody.className = Style.HISTORY_PANEL_BODY;
 
-        const searchWrapper = document.createElement('div');
-        searchWrapper.className = Style.HISTORY_SEARCH_WRAPPER;
-
-        const searchIcon = document.createElement('span');
-        searchIcon.className = `${Style.HISTORY_SEARCH_ICON} codicon codicon-search`;
-        searchIcon.setAttribute('aria-hidden', 'true');
-
-        const search = document.createElement('input');
-        search.type = 'search';
-        search.className = Style.HISTORY_SEARCH;
-        search.placeholder = nls.localize('qaap/preview/historySearch', 'Search');
-        search.spellcheck = false;
-        this.historySearchInput = search;
-        this.toDispose.push(addEventListener(search, 'input', () => this.renderHistoryList()));
-
-        searchWrapper.append(searchIcon, search);
-
         const list = document.createElement('div');
         list.className = 'qaap-agent-preview-history-list';
+        list.setAttribute('role', 'listbox');
         this.historyList = list;
 
-        panelBody.append(searchWrapper, list);
-
-        const resizeHandle = document.createElement('div');
-        resizeHandle.className = Style.HISTORY_RESIZE_HANDLE;
-        resizeHandle.setAttribute('role', 'separator');
-        resizeHandle.setAttribute('aria-orientation', 'vertical');
-        resizeHandle.setAttribute('aria-label', nls.localize('qaap/preview/resizeHistory', 'Resize browsing history panel'));
-        resizeHandle.tabIndex = 0;
-        this.installHistoryPanelResize(panel, resizeHandle);
-
-        panel.append(panelBody, resizeHandle);
+        panelBody.append(list);
+        panel.append(panelBody);
         this.toDispose.push(addEventListener(panel, 'pointerdown', (e: PointerEvent) => e.stopPropagation()));
         historyRoot.append(backdrop, panel);
         this.historyPanel = panel;
@@ -244,84 +268,38 @@ export class QaapAgentPreviewChromeController implements Disposable {
         this.toDispose.push(Disposable.create(() => window.removeEventListener('keydown', onKey)));
     }
 
-    protected historyPanelContainerWidth(): number | undefined {
-        const anchor = this.historyRoot?.parentElement;
-        return anchor?.clientWidth;
-    }
-
-    protected applyHistoryPanelWidth(panel: HTMLElement, widthPx?: number): void {
-        const containerWidth = this.historyPanelContainerWidth();
-        const width = widthPx !== undefined
-            ? clampPreviewHistoryPanelWidth(widthPx, containerWidth)
-            : readPreviewHistoryPanelWidth(containerWidth);
+    protected positionHistoryPopover(): void {
+        const anchor = this.historyPopoverAnchor;
+        const panel = this.historyPanel;
+        const container = this.historyRoot?.parentElement;
+        if (!anchor || !panel || !container) {
+            return;
+        }
+        const anchorRect = anchor.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const maxWidth = Math.max(0, containerRect.width - 16);
+        const width = Math.min(maxWidth, anchorRect.width);
+        const left = Math.max(8, Math.min(
+            anchorRect.left - containerRect.left,
+            containerRect.width - width - 8,
+        ));
+        const top = anchorRect.bottom - containerRect.top;
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
         panel.style.width = `${width}px`;
-        panel.style.maxWidth = 'none';
+        panel.style.maxWidth = `${maxWidth}px`;
     }
 
-    protected installHistoryPanelResize(panel: HTMLElement, handle: HTMLElement): void {
-        let dragStartX = 0;
-        let dragStartWidth = 0;
-
-        const stopDrag = (e: PointerEvent): void => {
-            if (this.historyResizePointerId === undefined || e.pointerId !== this.historyResizePointerId) {
-                return;
-            }
-            try {
-                handle.releasePointerCapture(e.pointerId);
-            } catch {
-                /* already released */
-            }
-            this.historyResizePointerId = undefined;
-            document.body.classList.remove(Style.HISTORY_RESIZING);
-            writePreviewHistoryPanelWidth(panel.getBoundingClientRect().width, this.historyPanelContainerWidth());
-        };
-
-        const onPointerMove = (e: PointerEvent): void => {
-            if (this.historyResizePointerId === undefined || e.pointerId !== this.historyResizePointerId) {
-                return;
-            }
-            const delta = e.clientX - dragStartX;
-            this.applyHistoryPanelWidth(panel, dragStartWidth + delta);
-        };
-
-        this.toDispose.push(addEventListener(handle, 'pointerdown', (e: PointerEvent) => {
-            if (e.button !== 0) {
-                return;
-            }
-            e.preventDefault();
-            e.stopPropagation();
-            dragStartX = e.clientX;
-            dragStartWidth = panel.getBoundingClientRect().width;
-            this.historyResizePointerId = e.pointerId;
-            handle.setPointerCapture(e.pointerId);
-            document.body.classList.add(Style.HISTORY_RESIZING);
-        }));
-        this.toDispose.push(addEventListener(handle, 'pointermove', onPointerMove));
-        this.toDispose.push(addEventListener(handle, 'pointerup', stopDrag));
-        this.toDispose.push(addEventListener(handle, 'pointercancel', stopDrag));
-        this.toDispose.push(addEventListener(handle, 'lostpointercapture', () => {
-            if (this.historyResizePointerId === undefined) {
-                return;
-            }
-            this.historyResizePointerId = undefined;
-            document.body.classList.remove(Style.HISTORY_RESIZING);
-            writePreviewHistoryPanelWidth(panel.getBoundingClientRect().width, this.historyPanelContainerWidth());
-        }));
-
-        this.toDispose.push(addEventListener(handle, 'keydown', (e: KeyboardEvent) => {
-            const step = e.shiftKey ? 32 : 16;
-            const containerWidth = this.historyPanelContainerWidth();
-            const current = panel.getBoundingClientRect().width;
-            if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                this.applyHistoryPanelWidth(panel, current + step);
-                writePreviewHistoryPanelWidth(panel.getBoundingClientRect().width, containerWidth);
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                this.applyHistoryPanelWidth(panel, current - step);
-                writePreviewHistoryPanelWidth(panel.getBoundingClientRect().width, containerWidth);
-            }
-        }));
+    protected resetHistoryPopoverPosition(): void {
+        if (!this.historyPanel) {
+            return;
+        }
+        this.historyPanel.style.removeProperty('top');
+        this.historyPanel.style.removeProperty('right');
+        this.historyPanel.style.removeProperty('bottom');
+        this.historyPanel.style.removeProperty('left');
+        this.historyPanel.style.removeProperty('width');
+        this.historyPanel.style.removeProperty('max-width');
     }
 
     protected renderHistoryList(): void {
@@ -329,8 +307,8 @@ export class QaapAgentPreviewChromeController implements Disposable {
             return;
         }
         this.historyRoot.hidden = !this.historyOpen;
-        const query = this.historySearchInput?.value.trim().toLowerCase() ?? '';
-        const entries = readPreviewBrowsingHistory().filter(entry => {
+        const query = this.historyPopoverQuery.trim().toLowerCase();
+        const entries = readPreviewBrowsingHistory(this.options.historyScope).filter(entry => {
             if (!query) {
                 return true;
             }
@@ -344,6 +322,9 @@ export class QaapAgentPreviewChromeController implements Disposable {
             empty.className = Style.HISTORY_EMPTY;
             empty.textContent = nls.localize('qaap/preview/historyEmpty', 'No pages visited yet.');
             this.historyList.append(empty);
+            if (query) {
+                this.historyList.append(this.createWebSearchItem(query));
+            }
             return;
         }
         for (const section of sections) {
@@ -358,12 +339,17 @@ export class QaapAgentPreviewChromeController implements Disposable {
             }
             this.historyList.append(sectionEl);
         }
+        if (query) {
+            this.historyList.append(this.createWebSearchItem(query));
+        }
     }
 
     protected createHistoryItem(entry: QaapPreviewHistoryEntry): HTMLElement {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = Style.HISTORY_ITEM;
+        btn.setAttribute('role', 'option');
+        btn.setAttribute('aria-label', previewHistoryEntryLabel(entry));
         const icon = document.createElement('img');
         icon.className = Style.HISTORY_ITEM_ICON;
         icon.alt = '';
@@ -380,6 +366,28 @@ export class QaapAgentPreviewChromeController implements Disposable {
         btn.append(icon, label);
         this.toDispose.push(addEventListener(btn, 'click', () => {
             void this.host.navigate(entry.url);
+            this.toggleHistory(false);
+        }));
+        return btn;
+    }
+
+    protected createWebSearchItem(query: string): HTMLElement {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `${Style.HISTORY_ITEM} ${Style.HISTORY_WEB_SEARCH}`;
+        btn.setAttribute('role', 'option');
+        const label = nls.localize('qaap/preview/searchWeb', 'Search the web');
+        btn.setAttribute('aria-label', `${label}: ${query}`);
+
+        const icon = document.createElement('span');
+        icon.className = `${Style.HISTORY_WEB_SEARCH_ICON} codicon codicon-search`;
+        icon.setAttribute('aria-hidden', 'true');
+        const text = document.createElement('span');
+        text.className = Style.HISTORY_ITEM_LABEL;
+        text.textContent = label;
+        btn.append(icon, text);
+        this.toDispose.push(addEventListener(btn, 'click', () => {
+            void this.host.navigate(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
             this.toggleHistory(false);
         }));
         return btn;
@@ -421,7 +429,7 @@ export class QaapAgentPreviewChromeController implements Disposable {
     }
 
     protected clearHistory(): void {
-        clearPreviewBrowsingHistory();
+        clearPreviewBrowsingHistory(this.options.historyScope);
         this.renderHistoryList();
         previewNotify(
             { messageService: this.options.messageService, notify: this.options.notify },
@@ -502,7 +510,6 @@ export function mountEmbeddedAgentPreviewChrome(
         'refresh',
         Style.TOOLBAR_REFRESH,
     );
-    urlField.append(refreshBtn);
 
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
@@ -598,7 +605,7 @@ export function mountEmbeddedAgentPreviewChrome(
 
     // Parent workbench under chrome before mounting annotate toolbar — otherwise
     // ensureAnnotateToolbar cannot resolve `.qaap-agent-preview-embedded-toolbar`.
-    // Order: Back, Forward, [history inserted before URL], URL field, Edit, Overflow.
+    // Order: Back, Forward, Reload, URL field, Edit, Overflow.
     toolbar.append(backBtn, forwardBtn, urlField, workbench);
     root.append(toolbar, body);
 
@@ -728,7 +735,7 @@ export function mountEmbeddedAgentPreviewChrome(
         embedded: true,
     });
     previewController = controller;
-    controller.attachToolbarControls(toolbar, urlField);
+    controller.attachToolbarControls(toolbar, urlField, refreshBtn);
     disposables.push(controller);
 
     disposables.push(addEventListener(backBtn, 'click', (e: MouseEvent) => {
@@ -764,7 +771,19 @@ export function mountEmbeddedAgentPreviewChrome(
     disposables.push(addEventListener(urlInput, 'keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
             void adapter.navigate(urlInput.value);
+            controller.toggleHistory(false);
         }
+    }));
+    controller.setHistoryCombobox(urlInput);
+    disposables.push(addEventListener(urlInput, 'input', () => {
+        controller.updateHistoryPopoverQuery(urlInput.value);
+    }));
+    disposables.push(addEventListener(urlInput, 'click', () => {
+        controller.openHistoryPopover(urlField);
+    }));
+    disposables.push(addEventListener(urlInput, 'blur', () => {
+        const caretPosition = urlInput.selectionEnd ?? urlInput.value.length;
+        urlInput.setSelectionRange(caretPosition, caretPosition);
     }));
     disposables.push(addEventListener(frame, 'load', () => {
         try {

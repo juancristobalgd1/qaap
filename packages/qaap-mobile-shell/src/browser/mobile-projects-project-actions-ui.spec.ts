@@ -4,6 +4,7 @@
 // ****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import URI from '@theia/core/lib/common/uri';
 import { expect } from 'chai';
 import type { MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -160,5 +161,40 @@ describe('MobileProjectsService.canRemove', () => {
         };
         expect(service.canRemove(github)).to.equal(true);
         expect(service.canRemove({ ...github, isCurrent: true })).to.equal(false);
+    });
+});
+
+describe('MobileProjectsService.removeProject', () => {
+    it('removes a custom project and its matching recent workspace', async () => {
+        const { removeProjectExtracted } = require('./mobile-projects-service-streaming2') as typeof import('./mobile-projects-service-streaming2');
+        const removedProject = {
+            ...project('custom:file:///workspace/laaaaa'),
+            uri: new URI('file:///workspace/laaaaa'),
+        };
+        let customProjects = [{ id: removedProject.id }];
+        let displayNames: Record<string, string> = { [removedProject.id]: 'laaaaa' };
+        let hiddenIds = new Set<string>();
+        const removedRecentWorkspaces: string[] = [];
+        const ctx = {
+            canRemove: () => true,
+            readCustomProjects: () => customProjects,
+            writeCustomProjects: (next: typeof customProjects) => { customProjects = next; },
+            readDisplayNames: () => displayNames,
+            writeDisplayNames: (next: Record<string, string>) => { displayNames = next; },
+            readHiddenProjectIds: () => hiddenIds,
+            writeHiddenProjectIds: (next: Set<string>) => { hiddenIds = next; },
+            workspaceService: {
+                removeRecentWorkspace: async (uri: string) => { removedRecentWorkspaces.push(uri); },
+            },
+        };
+
+        expect(await removeProjectExtracted(ctx, removedProject)).to.equal(true);
+        expect(customProjects).to.deep.equal([]);
+        expect(displayNames).to.deep.equal({});
+        expect(removedRecentWorkspaces).to.deep.equal(['file:///workspace/laaaaa']);
+        expect([...hiddenIds]).to.have.members([
+            removedProject.id,
+            'recent:file:///workspace/laaaaa',
+        ]);
     });
 });

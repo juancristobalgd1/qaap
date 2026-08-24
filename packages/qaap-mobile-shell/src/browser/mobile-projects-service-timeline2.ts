@@ -49,6 +49,7 @@ import {
     mergeSessionMaps,
     patchLocalProjectSession,
     readLocalProjectSessions,
+    removeStaleLocalGithubSessions,
     writeLocalProjectSessions,
 } from './mobile-projects-session-cache';
 import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
@@ -273,7 +274,10 @@ export async function loadSessionMapExtracted(ctx: any): Promise<Map<string, Qaa
         try {
             const remote = await fetchQaapProjectSessions();
             const remoteMap = new Map(remote.sessions.map(s => [s.repoKey, s]));
-            const merged = mergeSessionMaps(local, remoteMap);
+            // A server-side delete must also evict an older browser session row;
+            // otherwise the merge would resurrect the project on the next refresh.
+            const reconciledLocal = removeStaleLocalGithubSessions(local, remoteMap);
+            const merged = mergeSessionMaps(reconciledLocal, remoteMap);
             writeLocalProjectSessions(merged);
             return merged;
         } catch {

@@ -57,6 +57,40 @@ export function patchLocalProjectSession(patch: QaapProjectSessionSummary, userL
     writeLocalProjectSessions(map, userLogin);
 }
 
+/** Remove a project from the browser mirror after it has been deleted remotely. */
+export function removeLocalProjectSession(repoKey: string, userLogin?: string): void {
+    const map = readLocalProjectSessions(userLogin);
+    const normalizedRepoKey = repoKey.toLowerCase();
+    let changed = false;
+    for (const key of map.keys()) {
+        if (key.toLowerCase() === normalizedRepoKey) {
+            map.delete(key);
+            changed = true;
+        }
+    }
+    if (changed) {
+        writeLocalProjectSessions(map, userLogin);
+    }
+}
+
+/**
+ * Drop stale GitHub rows when the authenticated server has become the source
+ * of truth. Non-GitHub rows remain local because they are not server sessions.
+ */
+export function removeStaleLocalGithubSessions(
+    local: Map<string, QaapProjectSessionSummary>,
+    remote: Map<string, QaapProjectSessionSummary>,
+): Map<string, QaapProjectSessionSummary> {
+    const remoteKeys = new Set([...remote.keys()].map(key => key.toLowerCase()));
+    const reconciled = new Map(local);
+    for (const key of reconciled.keys()) {
+        if (key.toLowerCase().startsWith('github:') && !remoteKeys.has(key.toLowerCase())) {
+            reconciled.delete(key);
+        }
+    }
+    return reconciled;
+}
+
 export function mergeSessionMaps(
     ...sources: Array<Map<string, QaapProjectSessionSummary>>
 ): Map<string, QaapProjectSessionSummary> {

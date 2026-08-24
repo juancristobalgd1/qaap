@@ -238,6 +238,9 @@ export function runGenericCommandExtracted(ctx: any, command: string,
 }
 
 export function appendAndFireOutputExtracted(ctx: any, taskId: string, chunk: string): void {
+        if (ctx.deletedTaskIds?.has(taskId)) {
+            return;
+        }
         try {
             fs.appendFileSync(ctx.logPath(taskId), chunk, 'utf8');
         } catch {

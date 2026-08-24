@@ -583,3 +583,51 @@ export function cancelExtracted(ctx: any, id: string): QaapAgentTask | undefined
         }
         return task;
 }
+
+/** Remove every persisted task rooted in a project after the user confirms project deletion. */
+export function deleteForCwdExtracted(ctx: any, cwd: string): number {
+        const root = cwd.trim().replace(/\\+$/, '');
+        if (!root) {
+            return 0;
+        }
+        const ids = [...ctx.tasks.values()]
+            .filter((task: any) => task.cwd === root || task.cwd.startsWith(`${root}/`))
+            .map((task: any) => task.id);
+        for (const id of ids) {
+            const task = ctx.tasks.get(id);
+            if (!task) {
+                continue;
+            }
+            const hadProcess = ctx.processes.has(id);
+            if (task.state === 'running' || task.state === 'queued') {
+                ctx.cancel(id);
+            }
+            if (hadProcess) {
+                ctx.deletedTaskIds.add(id);
+            }
+            ctx.tasks.delete(id);
+            ctx.queuedCreateRequests.delete(id);
+            ctx.processes.delete(id);
+            ctx.stdinInteractiveTasks.delete(id);
+            ctx.stdinPrompts.delete(id);
+            ctx.pendingQaiqControlRequests.delete(id);
+            ctx.clearQueuedApprovalTimers(id);
+            ctx.qaiqStdioTasks.delete(id);
+            void fsp.rm(ctx.logPath(id), { force: true }).catch(() => undefined);
+            ctx.onDidChangeTaskEmitter.fire({ type: 'deleted', task });
+            if (!hadProcess) {
+                ctx.deletedTaskIds.delete(id);
+            }
+        }
+        for (const cache of [ctx.projectNameCache, ctx.projectInfoCache, ctx.agentInstructionsCache, ctx.repoMapCache]) {
+            for (const key of cache.keys()) {
+                if (key === root || key.startsWith(`${root}/`)) {
+                    cache.delete(key);
+                }
+            }
+        }
+        if (ids.length > 0) {
+            void ctx.persist();
+        }
+        return ids.length;
+}

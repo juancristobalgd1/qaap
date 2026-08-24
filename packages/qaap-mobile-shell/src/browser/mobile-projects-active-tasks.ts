@@ -84,7 +84,7 @@ interface SnapshotPayload {
 
 type WsServerMessage =
     | ({ readonly type: 'snapshot' } & SnapshotPayload)
-    | { readonly type: 'created' | 'completed' | 'cancelled'; readonly task: TaskEventPayload }
+    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted'; readonly task: TaskEventPayload }
     | { readonly type: 'output'; readonly task: TaskEventPayload; readonly chunk: string };
 
 /** Snapshot of what's running in one project. */
@@ -351,8 +351,20 @@ export class MobileProjectsActiveTasks {
         this.replaceActive(nextActive);
     }
 
-    protected applyEvent(type: 'created' | 'completed' | 'cancelled', task: TaskEventPayload): void {
+    protected applyEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted', task: TaskEventPayload): void {
         const cwd = normalizeCwd(task.cwd);
+        if (type === 'deleted') {
+            const list = [...(lookupByCwd(this.tasksByCwd, cwd) ?? [])].filter(entry => entry.id !== task.id);
+            if (list.length > 0) {
+                this.tasksByCwd.set(cwd, list);
+            } else {
+                this.tasksByCwd.delete(cwd);
+            }
+            this.logByTaskId.delete(task.id);
+            this.activeByCwd.delete(cwd);
+            this.scheduleDidChange();
+            return;
+        }
         this.upsertTaskList({ ...task, cwd });
         const current = lookupByCwd(this.activeByCwd, cwd);
         if (type === 'created') {

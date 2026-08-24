@@ -190,10 +190,6 @@ export class MobileProjectsHubHeaderUi {
             this.host.headerProjectLabelEl,
             showProject && compact,
         );
-        const separator = this.host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
-        if (separator instanceof HTMLElement) {
-            separator.hidden = !showConversationSeparator;
-        }
         this.host.headerConversationsBtn.hidden = !showProject || compact;
         this.host.headerConversationsBtn.setAttribute('aria-hidden', (!showProject || compact) ? 'true' : 'false');
         if (!showProject || !project) {

@@ -59,6 +59,9 @@
   min-width: 0;
   margin-inline: 4px;
   container-type: inline-size;
+  background: transparent !important;
+  border: none;
+  box-shadow: none;
 }
 
 .theia-mini-browser-toolbar .theia-mini-browser-url-field .theia-input,
@@ -69,12 +72,16 @@
   line-height: var(--theia-private-mini-browser-height);
   margin: 0;
   box-sizing: border-box;
-  padding-inline-start: calc(var(--qaap-url-refresh-size) + var(--qaap-url-refresh-inset) + 2px);
+  padding-inline-start: 6px;
   border: none;
-  background: transparent;
+  background: transparent !important;
 }
 
 .theia-mini-browser-toolbar .theia-mini-browser-url-field .theia-input {
+  padding-inline-end: 6px;
+}
+
+.theia-mini-browser-toolbar .theia-mini-browser-url-field:hover:not(:focus-within) .theia-input {
   padding-inline-end: calc(var(--qaap-url-go-width) + var(--qaap-url-go-inset) + var(--qaap-url-go-gap));
 }
 
@@ -129,6 +136,16 @@
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+.theia-mini-browser-url-field:hover:not(:focus-within) .theia-mini-browser-url-field-go {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
 }
 
 .theia-mini-browser-url-field .theia-mini-browser-url-field-go svg {
@@ -159,6 +176,16 @@
   .theia-mini-browser-toolbar .theia-mini-browser-url-field,
   .theia-mini-browser-toolbar-read-only .theia-mini-browser-url-field {
     --qaap-url-refresh-size: 32px;
+  }
+
+  .theia-mini-browser-url-field .theia-mini-browser-url-field-go {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .theia-mini-browser-toolbar .theia-mini-browser-url-field .theia-input {
+    padding-inline-end: calc(var(--qaap-url-go-width) + var(--qaap-url-go-inset) + var(--qaap-url-go-gap));
   }
 }
 

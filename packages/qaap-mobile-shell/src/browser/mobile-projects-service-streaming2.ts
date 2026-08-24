@@ -37,7 +37,7 @@ import {
 } from './mobile-projects-types';
 import { normalizeWorkHubViewId } from '../common/qaap-work-hub-surfaces';
 import { findProjectMatchingWorkspaceCwd } from '../common/qaap-composer-workspace-project';
-import { isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
+import { isUserRepositoryFilesystemPath, isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import {
     clearMobileProjectReadmeOpenRequest,
@@ -50,6 +50,7 @@ import {
     mergeSessionMaps,
     patchLocalProjectSession,
     readLocalProjectSessions,
+    removeLocalProjectSession,
     writeLocalProjectSessions,
 } from './mobile-projects-session-cache';
 import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
@@ -133,6 +134,10 @@ export async function removeProjectExtracted(ctx: any, project: MobileProjectEnt
         }
         if (project.github) {
             await deleteQaapGithubRepository(project.github.owner, project.github.name);
+            removeLocalProjectSession(`github:${project.github.fullName}`);
+            const hiddenIds = ctx.readHiddenProjectIds();
+            hiddenIds.add(project.id);
+            ctx.writeHiddenProjectIds(hiddenIds);
             if (project.uri) {
                 await ctx.workspaceService.removeRecentWorkspace(project.uri.toString());
             }
@@ -145,7 +150,14 @@ export async function removeProjectExtracted(ctx: any, project: MobileProjectEnt
             delete names[project.id];
             ctx.writeDisplayNames(names);
             const hiddenIds = ctx.readHiddenProjectIds();
-            hiddenIds.delete(project.id);
+            // A custom project can also be present in Theia's recent-workspace
+            // list. Remove both representations so the card cannot immediately
+            // reappear after the optimistic removal completes.
+            hiddenIds.add(project.id);
+            if (project.uri) {
+                await ctx.workspaceService.removeRecentWorkspace(project.uri.toString());
+                hiddenIds.add(`recent:${project.uri.toString()}`);
+            }
             ctx.writeHiddenProjectIds(hiddenIds);
             return true;
         }
@@ -327,6 +339,7 @@ export async function loadProjectsExtracted(ctx: any): Promise<MobileProjectEntr
         const seen = new Set<string>();
         const hiddenIds = ctx.readHiddenProjectIds();
         const pinnedIds = ctx.readPinnedProjectIds();
+        let staleRecentChanged = false;
 
         const current = ctx.workspaceService.workspace;
         if (current) {
@@ -363,6 +376,14 @@ export async function loadProjectsExtracted(ctx: any): Promise<MobileProjectEntr
                 if (seen.has(key)) {
                     continue;
                 }
+                const recentCwd = ctx.cwdFromFileUri(uri);
+                if (recentCwd && isUserRepositoryFilesystemPath(recentCwd)
+                    && ctx.fileService && !(await ctx.fileService.exists(uri))) {
+                    await ctx.workspaceService.removeRecentWorkspace(key);
+                    hiddenIds.add(`recent:${key}`);
+                    staleRecentChanged = true;
+                    continue;
+                }
                 const name = ctx.labelProvider.getName(uri);
                 const id = `recent:${key}`;
                 const candidate: MobileProjectEntry = {
@@ -386,6 +407,9 @@ export async function loadProjectsExtracted(ctx: any): Promise<MobileProjectEntr
                 }
                 seen.add(key);
                 entries.push(ctx.applySessionToEntry(candidate, sessionMap.get(`ws:${key}`)));
+            }
+            if (staleRecentChanged) {
+                ctx.writeHiddenProjectIds(hiddenIds);
             }
         } catch {
             /* recent list optional */

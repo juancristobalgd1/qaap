@@ -258,10 +258,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerProjectLabelEl.textContent).to.equal('Corrige aislamiento de pre');
             expect(host.headerProjectCluster.classList.contains('theia-mod-conversation-title')).to.equal(true);
             expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(false);
-            const separator = host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
-            expect(separator).to.not.equal(null);
-            expect((separator as HTMLElement).hidden).to.equal(false);
-            expect(separator!.textContent).to.equal('|');
+            expect(host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator')).to.equal(null);
             expect(host.headerProjectBtn.getAttribute('aria-label')).to.contain('Mockup');
             expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
             expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
@@ -290,9 +287,7 @@ describe('MobileProjectsHubHeaderUi', () => {
             expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
             expect(host.headerProjectBtn.contains(host.headerProjectLabelEl)).to.equal(true);
             expect(host.headerProjectBtn.querySelector('.codicon-folder')).to.not.equal(null);
-            const landingSeparator = host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator');
-            expect(landingSeparator).to.not.equal(null);
-            expect((landingSeparator as HTMLElement).hidden).to.equal(true);
+            expect(host.headerProjectCluster.querySelector('.theia-mobile-projects-header-project-separator')).to.equal(null);
             expect(host.headerProjectBtn.querySelector('.codicon-chevron-down')).to.not.equal(null);
             expect(host.headerConversationsBtn.hidden).to.equal(true);
             expect(Array.from(host.headerProjectBtn.childNodes).map(node => (node as HTMLElement).className)).to.deep.equal([
