@@ -270,6 +270,14 @@ jobs:
             printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USERNAME" --password-stdin
             cd "$REPO_DIR"
             git fetch origin
+            if [[ -n "$(git status --porcelain)" ]]; then
+              # A VPS can contain an operator's in-progress worktree edits. Preserve tracked and
+              # untracked changes before switching to the immutable deploy revision; never force
+              # checkout over them. The stash remains on the VPS for explicit recovery later.
+              STASH_NAME="qaap-deploy-preserve-${QAAP_DEPLOY_SHA:0:12}-$(date -u +%Y%m%dT%H%M%SZ)"
+              git stash push --include-untracked --message "$STASH_NAME"
+              echo "[qaap-vps] preserved dirty worktree in stash: $STASH_NAME"
+            fi
             git checkout --detach "$QAAP_DEPLOY_SHA"
             ./scripts/qaap-vps-update.sh \
               --branch "$QAAP_DEPLOY_BRANCH" \
