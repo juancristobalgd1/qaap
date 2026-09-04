@@ -1740,6 +1740,90 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   padding: 12px 12px 10px;
 }
 
+.theia-mobile-work-hub-home-getting-started {
+  padding: 12px 12px 8px;
+  border-color: color-mix(in srgb, var(--q-accent, var(--theia-button-background)) 24%, var(--q-line, transparent));
+}
+
+.theia-mobile-work-hub-home-setup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theia-mobile-work-hub-home-setup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 4px;
+}
+
+.theia-mobile-work-hub-home-setup-marker {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--q-accent-ink, var(--q-accent, var(--theia-button-background)));
+  background: color-mix(in srgb, var(--q-accent, var(--theia-button-background)) 12%, transparent);
+  font-size: 13px;
+}
+
+.theia-mobile-work-hub-home-setup-row.theia-mod-complete .theia-mobile-work-hub-home-setup-marker {
+  color: var(--q-success, var(--theia-testing-iconPassed, #3fb950));
+  background: color-mix(in srgb, var(--q-success, var(--theia-testing-iconPassed, #3fb950)) 14%, transparent);
+}
+
+.theia-mobile-work-hub-home-setup-body {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theia-mobile-work-hub-home-setup-title {
+  color: var(--qaap-ink, var(--q-text, var(--theia-foreground)));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.theia-mobile-work-hub-home-setup-row.theia-mod-complete .theia-mobile-work-hub-home-setup-title {
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+}
+
+.theia-mobile-work-hub-home-setup-hint {
+  overflow: hidden;
+  color: var(--qaap-muted, var(--q-muted, var(--theia-descriptionForeground)));
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-work-hub-home-setup-action {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--q-accent, var(--theia-button-background)) 34%, var(--q-line, transparent));
+  border-radius: var(--q-radius-pill, 99px);
+  background: transparent;
+  color: var(--q-accent-ink, var(--q-accent, var(--theia-button-background)));
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theia-mobile-work-hub-home-setup-action:active {
+  background: color-mix(in srgb, var(--q-accent, var(--theia-button-background)) 10%, transparent);
+}
+
 .theia-mobile-work-hub-home-shortcuts-panel .theia-mobile-work-hub-home-section-head {
   margin-bottom: 10px;
 }
@@ -9245,11 +9329,18 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 }
 
 /* Agents hub shell — keep surface picker on the title row; title ellipsizes instead of clipping tabs. */
-.theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster {
-  flex: 0 1 auto;
-  flex-shrink: 1;
+.theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header-execution-cluster,
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-header-execution-cluster {
+  /* The cluster contains fixed touch targets. Let the title shrink instead of
+     shrinking this flex item and overflowing its children. An overflowing
+     header makes the whole panel acquire horizontal scrollLeft, which shifts
+     the transcript and sticky composer off the left edge on narrow screens. */
+  flex: 0 0 auto;
+  flex-shrink: 0;
   gap: 0;
   margin-left: auto;
+  justify-content: flex-end;
 }
 
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-tabs {

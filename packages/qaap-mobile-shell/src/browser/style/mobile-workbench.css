@@ -12052,11 +12052,18 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
 }
 
 /* Agents hub shell — keep surface picker on the title row; title ellipsizes instead of clipping tabs. */
-.theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster {
-  flex: 0 1 auto;
-  flex-shrink: 1;
+.theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-cluster,
+.theia-mobile-projects.theia-mod-agents-hub-inline-active .theia-mobile-projects-header-execution-cluster,
+.qaap-work-hub-chat-view-widget .theia-mobile-projects-header-execution-cluster {
+  /* The cluster contains fixed touch targets. Let the title shrink instead of
+     shrinking this flex item and overflowing its children. An overflowing
+     header makes the whole panel acquire horizontal scrollLeft, which shifts
+     the transcript and sticky composer off the left edge on narrow screens. */
+  flex: 0 0 auto;
+  flex-shrink: 0;
   gap: 0;
   margin-left: auto;
+  justify-content: flex-end;
 }
 
 .theia-mobile-projects.theia-mod-agents-hub-shell-active .theia-mobile-projects-header-execution-tabs {

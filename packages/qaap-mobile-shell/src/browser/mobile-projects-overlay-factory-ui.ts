@@ -26,6 +26,7 @@ export interface MobileProjectsOverlayBundle {
 export interface MobileProjectsOverlayFactoryHost {
     overlayUi: MobileProjectsOverlayBundle | undefined;
     visible: boolean;
+    projects: MobileProjectEntry[];
     activeTasks: MobileProjectsActiveTasks | undefined;
     transcriptComposerProject: MobileProjectEntry | undefined;
     transcriptLastConv: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
@@ -150,6 +151,7 @@ export class MobileProjectsOverlayFactoryUi {
             team,
             teamHub,
             home: new MobileProjectsHomeUi({
+                getProject: projectId => this.host.projects.find(project => project.id === projectId),
                 getWorkspaceActivity: project => this.host.buildHomeWorkspaceActivity(project),
                 getWorkspaceStatus: project => this.host.getHomeWorkspaceStatus(project),
                 formatRelativeTime: updatedAt => this.host.formatHomeRelativeTime(updatedAt),

@@ -25,6 +25,10 @@ describe('header IDE/Agents switch CSS', () => {
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
         'utf8',
     );
+    const legacyWorkbenchCss = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench.css'),
+        'utf8',
+    );
 
     it('centers the Work Hub switch like the IDE top bar', () => {
         expect(projectsCss).to.match(
@@ -47,8 +51,16 @@ describe('header IDE/Agents switch CSS', () => {
             /\.theia-mobile-projects-header-main:has\(\.theia-mobile-projects-header-ide-agents-switch:not\(\[hidden\]\)\)\s+\.theia-mobile-projects-header-execution-cluster\s*\{[^}]*margin-left:\s*auto/s,
         );
         expect(workHubCss).to.match(
-            /\.theia-mobile-projects\.theia-mod-agents-hub-shell-active\s+\.theia-mobile-projects-header-execution-cluster\s*\{[^}]*margin-left:\s*auto/s,
+            /\.theia-mobile-projects\.theia-mod-agents-hub-shell-active\s+\.theia-mobile-projects-header-execution-cluster,[\s\S]*?\.qaap-work-hub-chat-view-widget\s+\.theia-mobile-projects-header-execution-cluster\s*\{[^}]*margin-left:\s*auto/s,
         );
         expect(projectsCss).to.include('.theia-mobile-projects-header-actions:not(:has(> :not([hidden])))');
+    });
+
+    it('keeps the execution cluster from creating page-level horizontal overflow', () => {
+        for (const css of [workHubCss, legacyWorkbenchCss]) {
+            expect(css).to.match(
+                /\.theia-mobile-projects\.theia-mod-agents-hub-shell-active\s+\.theia-mobile-projects-header-execution-cluster,[\s\S]*?\.qaap-work-hub-chat-view-widget\s+\.theia-mobile-projects-header-execution-cluster\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?flex-shrink:\s*0;[\s\S]*?justify-content:\s*flex-end;/,
+            );
+        }
     });
 });

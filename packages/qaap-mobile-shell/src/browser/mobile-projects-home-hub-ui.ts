@@ -92,6 +92,28 @@ export class MobileProjectsHomeHubUi {
             subtitle: item.summary ?? item.member.title,
             meta: item.member.projectName,
         }));
+
+        const approvalConversationIds = new Set(
+            approvals.flatMap(item => [item.approvalId, item.member.conversationId].filter(
+                (id): id is string => !!id,
+            )),
+        );
+        for (const item of this.host.missionControlHubUi.collectItems()) {
+            if (attentionItems.length >= 4 || item.lane !== 'needs-you' || item.hasPullRequest
+                || approvalConversationIds.has(item.conversationId)) {
+                continue;
+            }
+            attentionItems.push({
+                id: item.conversationId,
+                kind: 'task',
+                title: item.title,
+                subtitle: item.preview
+                    ?? (item.failureKind
+                        ? nls.localize('qaap/workHubHome/taskNeedsAttention', 'Task needs attention')
+                        : nls.localize('qaap/workHubHome/taskReadyToReview', 'Agent result ready to inspect')),
+                meta: item.projectName,
+            });
+        }
         if (this.host.inboxPullRequests.length > 0 && attentionItems.length < 4) {
             attentionItems.push({
                 id: 'open-pull-requests',
@@ -348,11 +370,14 @@ export class MobileProjectsHomeHubUi {
             this.host.selectHubLandingView('review');
             return;
         }
-        this.host.selectHubLandingView('repos');
+        this.host.selectHubLandingView('tasks');
     }
 
     async onHomeQuickAction(action: WorkHubHomeQuickActionId): Promise<void> {
         switch (action) {
+            case 'open-tasks':
+                this.host.selectHubLandingView('tasks');
+                return;
             case 'all-projects':
                 this.host.selectHubLandingView('repos');
                 return;

@@ -21,7 +21,7 @@ export interface WorkHubHomeRecentItem extends WorkHubHomeRecentSource {}
 
 export interface WorkHubHomeAttentionItem {
     readonly id: string;
-    readonly kind: 'approval' | 'pull-request';
+    readonly kind: 'approval' | 'pull-request' | 'task';
     readonly title: string;
     readonly subtitle: string;
     readonly meta?: string;

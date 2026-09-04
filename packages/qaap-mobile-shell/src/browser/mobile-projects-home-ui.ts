@@ -21,11 +21,12 @@ import { mobileProjectInitials } from './mobile-projects-types';
 
 export type WorkHubHomeNavigateTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review';
 
-export type WorkHubHomeQuickActionId = 'new-chat' | 'delegate-task' | 'all-projects' | 'open-review';
+export type WorkHubHomeQuickActionId = 'new-chat' | 'delegate-task' | 'all-projects' | 'open-review' | 'open-tasks';
 
 export type WorkHubWorkspaceStatus = 'idle' | 'running' | 'open';
 
 export interface MobileProjectsHomeUiDeps {
+    getProject(projectId: string): MobileProjectEntry | undefined;
     getWorkspaceActivity(project: MobileProjectEntry): string;
     getWorkspaceStatus(project: MobileProjectEntry): WorkHubWorkspaceStatus;
     formatRelativeTime(updatedAt: number): string;
@@ -53,6 +54,12 @@ export class MobileProjectsHomeUi {
             hint: 'Agent to branch',
         },
         {
+            action: 'open-tasks',
+            icon: 'codicon-list-unordered',
+            label: 'Activity',
+            hint: 'Tasks and approvals',
+        },
+        {
             action: 'open-review',
             icon: 'codicon-git-pull-request',
             label: 'PR review',
@@ -74,9 +81,113 @@ export class MobileProjectsHomeUi {
         root.className = 'theia-mobile-work-hub-home';
 
         root.append(this.createOverviewPanel(snapshot));
+        if (this.shouldShowGettingStarted(snapshot)) {
+            root.append(this.createGettingStartedPanel(snapshot));
+        }
+        root.append(this.createShortcutsPanel());
+        if (snapshot.attentionItems.length > 0) {
+            root.append(this.createAttentionPanel(snapshot.attentionItems));
+        }
+        root.append(
+            this.createWorkspacesPanel(
+                snapshot.pinnedProjectIds
+                    .map(id => this.deps.getProject(id))
+                    .filter((project): project is MobileProjectEntry => !!project),
+                snapshot.stats.projectCount,
+            ),
+        );
+        if (snapshot.recentItems.length > 0) {
+            root.append(this.createContinuePanel(snapshot.recentItems));
+        }
         root.append(this.createUsageSummaryPanel(snapshot.usageSummary));
 
         host.append(root);
+    }
+
+    protected shouldShowGettingStarted(snapshot: WorkHubHomeSnapshot): boolean {
+        const hasTask = snapshot.recentItems.some(item => item.surface === 'task')
+            || snapshot.stats.runningTasks > 0
+            || snapshot.stats.needsYou > 0;
+        return snapshot.stats.projectCount === 0 || !hasTask || snapshot.stats.openPullRequests === 0;
+    }
+
+    protected createGettingStartedPanel(snapshot: WorkHubHomeSnapshot): HTMLElement {
+        const panel = this.createPanel('theia-mobile-work-hub-home-getting-started');
+        panel.append(this.createSectionHead(
+            nls.localize('qaap/workHubHome/gettingStarted', 'Get started'),
+        ));
+
+        const hasRepository = snapshot.stats.projectCount > 0;
+        const hasTask = snapshot.recentItems.some(item => item.surface === 'task')
+            || snapshot.stats.runningTasks > 0
+            || snapshot.stats.needsYou > 0;
+        const hasReview = snapshot.stats.openPullRequests > 0;
+        const steps = [
+            {
+                complete: hasRepository,
+                title: nls.localize('qaap/workHubHome/setupRepository', 'Connect a repository'),
+                hint: hasRepository
+                    ? nls.localize('qaap/workHubHome/setupRepositoryDone', 'Repository ready')
+                    : nls.localize('qaap/workHubHome/setupRepositoryHint', 'Choose a GitHub repository to work on'),
+                action: hasRepository ? undefined : () => this.deps.onNavigate('repos'),
+                actionLabel: nls.localize('qaap/workHubHome/setupRepositoryAction', 'Add repository'),
+            },
+            {
+                complete: hasTask,
+                title: nls.localize('qaap/workHubHome/setupTask', 'Delegate a task'),
+                hint: hasTask
+                    ? nls.localize('qaap/workHubHome/setupTaskDone', 'Agent work is underway')
+                    : nls.localize('qaap/workHubHome/setupTaskHint', 'Ask an agent to make the first change'),
+                action: hasTask ? undefined : () => this.deps.onQuickAction('delegate-task'),
+                actionLabel: nls.localize('qaap/workHubHome/setupTaskAction', 'Delegate'),
+            },
+            {
+                complete: hasReview,
+                title: nls.localize('qaap/workHubHome/setupReview', 'Review the result'),
+                hint: hasReview
+                    ? nls.localize('qaap/workHubHome/setupReviewDone', 'A pull request is ready')
+                    : nls.localize('qaap/workHubHome/setupReviewHint', 'Inspect changes, tests, and the pull request'),
+                action: hasReview
+                    ? () => this.deps.onQuickAction('open-review')
+                    : () => this.deps.onQuickAction(hasTask ? 'open-tasks' : 'delegate-task'),
+                actionLabel: hasReview
+                    ? nls.localize('qaap/workHubHome/setupReviewAction', 'Review')
+                    : nls.localize('qaap/workHubHome/setupReviewPendingAction', 'View activity'),
+                showAction: hasReview,
+            },
+        ];
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-work-hub-home-setup-list';
+        for (const step of steps) {
+            const row = document.createElement('div');
+            row.className = 'theia-mobile-work-hub-home-setup-row';
+            row.classList.toggle('theia-mod-complete', step.complete);
+
+            const marker = document.createElement('span');
+            marker.className = `theia-mobile-work-hub-home-setup-marker codicon ${step.complete ? 'codicon-check' : 'codicon-circle-large-outline'}`;
+            marker.setAttribute('aria-hidden', 'true');
+            const body = document.createElement('span');
+            body.className = 'theia-mobile-work-hub-home-setup-body';
+            const title = document.createElement('span');
+            title.className = 'theia-mobile-work-hub-home-setup-title';
+            title.textContent = step.title;
+            const hint = document.createElement('span');
+            hint.className = 'theia-mobile-work-hub-home-setup-hint';
+            hint.textContent = step.hint;
+            body.append(title, hint);
+            row.append(marker, body);
+            if (step.action && (!step.complete || step.showAction)) {
+                const action = document.createElement('button');
+                action.type = 'button';
+                action.className = 'theia-mobile-work-hub-home-setup-action';
+                action.textContent = step.actionLabel;
+                action.addEventListener('click', step.action);
+                row.append(action);
+            }
+            list.append(row);
+        }
+        panel.append(list);
+        return panel;
     }
 
     protected createOverviewPanel(snapshot: WorkHubHomeSnapshot): HTMLElement {
