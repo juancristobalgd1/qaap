@@ -5,7 +5,7 @@
 
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
-import { buildConversationListMetrics } from './qaap-agent-conversation-list-metrics';
+import { buildConversationListMetrics, type QaapSidebarGitActionKind } from './qaap-agent-conversation-list-metrics';
 import {
     estimateConversationTokensFromMessages,
     type QaapAgentContextUsage,
@@ -103,6 +103,11 @@ export interface QaapAgentConversationSummaryDTO {
     readonly linkedPullRequest?: QaapLinkedPullRequest;
     /** Set when the thread ran `git` or is tied to a PR — used by the Work Hub inbox filter. */
     readonly hasGitOperation?: boolean;
+    /**
+     * Coarse last git workflow / CLI kind for sidebar glyphs
+     * (branch / commit / push / changes — PR lifecycle uses {@link linkedPullRequest}).
+     */
+    readonly lastGitActionKind?: QaapSidebarGitActionKind;
     readonly contextUsage?: QaapAgentContextUsage;
     readonly contextWindowSize?: number;
     readonly contextUsageEstimated?: boolean;
