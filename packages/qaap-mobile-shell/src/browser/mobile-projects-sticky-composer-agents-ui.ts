@@ -17,6 +17,7 @@ import {
     readStoredAgentModel,
     reconcileStickyComposerAgent,
     THEIA_CODER_AGENT_ID,
+    writeStoredAgent,
     type QaapAgentTaskAgentOption,
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
@@ -57,11 +58,14 @@ export class MobileProjectsStickyComposerAgentsUi {
 
     resolveStickyComposerPinnedAgentId(project: MobileProjectEntry): string {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
-        const pinned = this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd);
-        if (pinned && pinned !== 'task') {
-            return pinned;
-        }
-        return this.host.stickyComposerBackendAgents[0]?.id ?? QAAP_COMPOSER_DEFAULT_AGENT_ID;
+        // Always reconcile through the product default (QAIQ) so every user lands on QAIQ
+        // when nothing is pinned/stored — never the first arbitrary detected CLI.
+        return this.reconcileStickyComposerPinnedAgent(
+            this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
+            this.host.stickyComposerBackendAgents,
+            QAAP_COMPOSER_DEFAULT_AGENT_ID,
+            cwd,
+        );
     }
     resolveStickyComposerAgentLabel(project?: MobileProjectEntry): string {
         const pinned = this.host.stickyComposerPinnedAgentId;
@@ -160,7 +164,9 @@ export class MobileProjectsStickyComposerAgentsUi {
             const resolved = this.reconcileStickyComposerPinnedAgent(
                 this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
                 filteredAgents,
-                snapshot.defaultAgent,
+                // Prefer product default (QAIQ) over server defaultAgent so all users share
+                // the same first-run agent when QAIQ is installed.
+                QAAP_COMPOSER_DEFAULT_AGENT_ID,
                 cwd,
             );
             const agentChanged = this.host.stickyComposerPinnedAgentId !== resolved;
@@ -174,6 +180,10 @@ export class MobileProjectsStickyComposerAgentsUi {
             const seededModel = !hadModel && !!readStoredAgentModel(cwd, resolved);
             if (agentChanged || seededModel) {
                 this.host.stickyComposerRenderUi.renderStickyComposer();
+            }
+            // Persist the default so later surfaces that only read storage also see QAIQ.
+            if (cwd && !readStoredAgent(cwd) && resolved) {
+                writeStoredAgent(cwd, resolved);
             }
             return true;
         } catch {

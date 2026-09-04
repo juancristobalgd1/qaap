@@ -139,6 +139,8 @@ export interface MobileProjectsStickyComposerSheetsHost {
     stickyComposerWorkspaceUi: import('./mobile-projects-sticky-composer-workspace-ui').MobileProjectsStickyComposerWorkspaceUi;
     closeTranscriptComposerSheets(): void;
     openAgentSignInTerminal?(agentId?: string): void | Promise<void>;
+    /** Opens Work Hub preferences (e.g. `ai-features` for API keys). */
+    openPreferencesSheet?: (query?: string) => Promise<void>;
     agentsHubShellActive?: boolean;
     submitExternalComposerPrompt?(
         draft: string,
