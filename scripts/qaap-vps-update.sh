@@ -79,9 +79,8 @@ ensure_docker_pull_space() {
         return
     fi
 
-    echo "[qaap-vps-update] low Docker disk space; pruning unused build cache and images"
+    echo "[qaap-vps-update] low Docker disk space; pruning build cache only (retain rollback/migration images)"
     docker builder prune --all --force | tail -n 1
-    docker image prune --all --force | tail -n 1
 
     available_kb="$(df -Pk "$docker_root" | awk 'NR == 2 { print $4 }')"
     echo "[qaap-vps-update] Docker free space after prune: $((available_kb / 1024 / 1024)) GiB"
@@ -134,6 +133,9 @@ echo "[qaap-vps-update] commit: $BEFORE"
 # this from the environment for the QAAP_BUILD_SHA build arg.
 export QAAP_BUILD_SHA="$BEFORE"
 
+# Fail before replacing the old container if runtime state is still in its writable layer.
+node scripts/qaap-persist-runtime-state.mjs --check
+
 # Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
 # same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones
 # QAIQ in its own CACHE_BUST-keyed layer, so this only re-clones qaiq (not the whole toolchain).
@@ -157,15 +159,20 @@ else
     # Pin source builds to the exact upstream QAIQ commit. CI-built GHCR images already receive
     # this build arg in the publish job, so the pull path skips all build work on the VPS.
     QAIQ_REPO_URL="${QAIQ_REPO:-https://github.com/juancristobalgd1/qaiq.git}"
-    QAIQ_REF="${QAIQ_REF:-main}"
-    CACHE_BUST="$(git ls-remote "$QAIQ_REPO_URL" "$QAIQ_REF" 2>/dev/null | cut -f1)"
-    CACHE_BUST="${CACHE_BUST:-$(date +%s)}"
-    echo "[qaap-vps-update] qaiq: $QAIQ_REF @ ${CACHE_BUST:0:12}"
+    CACHE_BUST="${QAIQ_COMMIT:-$(sed -n 's/^ARG QAIQ_COMMIT=//p' Dockerfile | tr -d '\r')}"
+    if [[ -n "${QAIQ_REF:-}" ]]; then
+        CACHE_BUST="$(git ls-remote "$QAIQ_REPO_URL" "$QAIQ_REF" | cut -f1)"
+    fi
+    if [[ ! "$CACHE_BUST" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "[qaap-vps-update] cannot resolve an exact QAIQ commit; refusing an unpinned build" >&2
+        exit 1
+    fi
+    echo "[qaap-vps-update] qaiq pinned at ${CACHE_BUST:0:12}"
 
     if [[ "$NO_CACHE" -eq 1 ]]; then
-        docker compose build --no-cache --build-arg "CACHE_BUST=$CACHE_BUST" theia
+        docker compose build --no-cache --build-arg "QAIQ_COMMIT=$CACHE_BUST" --build-arg "CACHE_BUST=$CACHE_BUST" theia
     else
-        docker compose build --build-arg "CACHE_BUST=$CACHE_BUST" theia
+        docker compose build --build-arg "QAIQ_COMMIT=$CACHE_BUST" --build-arg "CACHE_BUST=$CACHE_BUST" theia
     fi
     docker compose up -d
 fi

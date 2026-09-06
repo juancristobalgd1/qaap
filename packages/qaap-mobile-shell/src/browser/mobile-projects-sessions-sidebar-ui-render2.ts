@@ -2,6 +2,7 @@
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { QuickPickItem } from '@theia/core/lib/browser';
 import {
@@ -73,6 +74,20 @@ export async function prepareSessionsSidebarDataExtracted(ctx: any): Promise<voi
 }
 
 export function mergeSessionsSidebarProjectsExtracted(ctx: any, projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
+    const merged = [...projects];
+    // The authenticated history can arrive before the repository catalog or workspace service.
+    // Keep those real sessions reachable instead of claiming there is no history.
+    for (const summary of ctx.host.conversations?.threadStore?.listAllSummaries?.() ?? []) {
+        if (!summary.cwd) { continue; }
+        const uri = FileUri.create(summary.cwd);
+        if (merged.some(project => project.uri?.toString().toLowerCase() === uri.toString().toLowerCase())) { continue; }
+        merged.push({
+            id: `ws:${uri.toString()}`, name: uri.path.base, uri,
+            color: 'var(--theia-descriptionForeground)', branch: '', status: 'idle',
+            task: '', progress: 0, agents: [], lastActive: '', tokens: '—', cost: '—', pinned: false, isCurrent: false
+        });
+    }
+    projects = merged;
     const current = ctx.host.projectsService.resolveCurrentWorkspaceProject(projects);
     if (!current) {
         return [...projects];

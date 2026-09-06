@@ -18,6 +18,8 @@ import {
 } from '../common/qaap-agent-task';
 import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
+import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapBillingStore } from './qaap-billing-store';
 import {
@@ -69,6 +71,12 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
     protected readonly billingStore: QaapBillingStore | undefined;
 
     configure(app: Application): void {
+        app.get(`${QAAP_AGENT_TASK_API_PATH}/storage-health`, (req, res) => {
+            this.handleStorageHealth(req, res);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/storage-retry`, (req, res) => {
+            void this.handleStorageRetry(req, res);
+        });
         app.get(`${QAAP_AGENT_TASK_API_PATH}/agent-models`, (req, res) => {
             void this.handleListAgentModels(req, res);
         });
@@ -368,6 +376,24 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
     }
 
+    protected handleStorageHealth(req: Request, res: Response): void {
+        if (!this.requireAuth(req, res)) {
+            return;
+        }
+        const health = this.runner.storageHealth();
+        res.set('Cache-Control', 'no-store');
+        res.status(health.ready ? 200 : 503).json(health);
+    }
+
+    protected async handleStorageRetry(req: Request, res: Response): Promise<void> {
+        if (!this.requireAuth(req, res)) {
+            return;
+        }
+        const health = await this.runner.retryStorage();
+        res.set('Cache-Control', 'no-store');
+        res.status(health.ready ? 200 : 503).json(health);
+    }
+
     protected async handleCreate(req: Request, res: Response): Promise<void> {
         const body = (req.body ?? {}) as Partial<QaapCreateAgentTaskRequest>;
         if (typeof body.cwd !== 'string' || (typeof body.command !== 'string' && typeof body.prompt !== 'string')) {
@@ -467,7 +493,8 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }, ownerLogin);
             res.status(201).json(task);
         } catch (error) {
-            res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+            const status = error instanceof QaapAgentStorageUnavailableError ? 503 : error instanceof QaapAgentQueueFullError ? 429 : 400;
+            res.status(status).json({ error: error instanceof Error ? error.message : String(error) });
         }
     }
 
@@ -485,7 +512,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
             return;
         }
-        res.json(detail);
+        res.set('Cache-Control', 'no-store');
+        res.json(req.query.verifySnapshot === '1'
+            ? { ...detail, workspaceSnapshot: this.runner.checkTaskWorkspaceSnapshot(detail) }
+            : detail);
     }
 
     /**

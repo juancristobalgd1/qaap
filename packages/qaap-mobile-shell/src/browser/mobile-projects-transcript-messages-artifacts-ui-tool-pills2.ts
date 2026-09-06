@@ -191,8 +191,10 @@ export function ensurePinnedTranscriptLiveStatusExtracted(ctx: any, conv: QaapAg
 
     const wantVisible = ctx.shouldShowPinnedTranscriptLiveStatus(conv);
     if (wantVisible) {
-        if (ctx.pinnedLiveStatusConvId !== conv.id) {
+        const turnKey = `${conv.id}:${resolveTranscriptTurnStartMs(conv.messages) ?? conv.createdAt}`;
+        if (ctx.pinnedLiveStatusTurnKey !== turnKey) {
             ctx.pinnedLiveStatusPeakTokens = 0;
+            ctx.pinnedLiveStatusTurnKey = turnKey;
         }
         ctx.pinnedLiveStatusConvId = conv.id;
         ctx.pinnedLiveStatusHoldUntil = Date.now() + 2_000;
@@ -280,7 +282,7 @@ export function ensurePinnedTranscriptLiveStatusExtracted(ctx: any, conv: QaapAg
         const streamChars = resolveTranscriptTurnStreamChars(latestConv.messages);
         const nextTokens = resolveTranscriptLiveStatusTokenCount({
             streamChars,
-            contextUsage: latestConv.contextUsage,
+            // Conversation usage may belong to the previous turn; estimate only current output.
         });
         ctx.pinnedLiveStatusPeakTokens = Math.max(ctx.pinnedLiveStatusPeakTokens, nextTokens);
         syncTranscriptLiveStatusElement(footer, {

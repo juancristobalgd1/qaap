@@ -55,6 +55,7 @@ import {
     readRepoMemory as readRepoMemoryHelper,
     readResearchLedger as readResearchLedgerHelper,
     isDirectory as isDirectoryHelper,
+    type QaapAgentStdinPrompt,
     resolveQaiqProviderFlagsFromEnv as resolveQaiqProviderFlagsFromEnvHelper,
     applyOpenRouterOpenAiCompatEnv as applyOpenRouterOpenAiCompatEnvHelper,
     applyNvidiaOpenAiCompatEnv as applyNvidiaOpenAiCompatEnvHelper,
@@ -167,8 +168,8 @@ export class QaapAgentTaskRunner {
     protected readonly stoppingTaskIds = new Set<string>();
     /** Tasks spawned with stdin piped for manual approval mode. */
     protected readonly stdinInteractiveTasks = new Set<string>();
-    /** Prompts to deliver over stdin for QAIQ stdio-approval runs (`--input-format stream-json`). */
-    protected readonly stdinPrompts = new Map<string, string>();
+    /** Prompts to deliver over stdin, either as plain CLI input or QAIQ `stream-json`. */
+    protected readonly stdinPrompts = new Map<string, QaapAgentStdinPrompt>();
     /** Unanswered `can_use_tool` control requests per task — the pause-and-wait approval queue. */
     protected readonly pendingQaiqControlRequests = new Map<string, QaapQaiqPendingControlRequest[]>();
     /** Grace timers (per task, per requestId) auto-denying queued approvals of auto-approve runs. */
@@ -196,6 +197,19 @@ export class QaapAgentTaskRunner {
     protected readonly queuedCreateRequests = new Map<string, QaapCreateAgentTaskRequest>();
     /** Serializes whole-index snapshots so an older, slower write can never overwrite a newer one. */
     protected persistChain: Promise<void> = Promise.resolve();
+    protected recoveryState: 'loading' | 'ready' | 'failed' = 'ready';
+    protected storageWriteFailed = false;
+
+    storageHealth(): { ready: boolean; recovery: 'loading' | 'ready' | 'failed'; writeFailed: boolean } {
+        const recovery = this.recoveryState ?? 'ready';
+        const writeFailed = this.storageWriteFailed === true;
+        return { ready: recovery === 'ready' && !writeFailed, recovery, writeFailed };
+    }
+
+    async retryStorage(): Promise<ReturnType<QaapAgentTaskRunner['storageHealth']>> {
+        await this.persist();
+        return this.storageHealth();
+    }
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
 
@@ -392,6 +406,17 @@ export class QaapAgentTaskRunner {
         return detailExtracted(this, id);
     }
 
+    checkTaskWorkspaceSnapshot(task: QaapAgentTask): 'current' | 'changed' | 'unknown' {
+        if (!task.worktreeBaselineFingerprint || !task.worktreeFinishedFingerprint) {
+            return 'unknown';
+        }
+        const current = this.captureWorktreeFingerprint(task.cwd);
+        if (!current) {
+            return 'unknown';
+        }
+        return current === task.worktreeFinishedFingerprint && current === task.worktreeBaselineFingerprint ? 'current' : 'changed';
+    }
+
     protected resolveAgentModelForRequest(request: QaapCreateAgentTaskRequest, prompt: string, ownerLogin?: string): QaapCreateAgentTaskQaiqModel | undefined {
         return resolveAgentModelForRequestExtracted(this, request, prompt, ownerLogin);
     }
@@ -404,7 +429,7 @@ export class QaapAgentTaskRunner {
         return createExtracted(this, request, ownerLogin);
     }
 
-    protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; agentId: string } {
+    protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string } {
         return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin);
     }
 
@@ -726,7 +751,7 @@ export class QaapAgentTaskRunner {
         return buildAgentVerificationFixPromptExtracted(this, failedCommand, failure, attempt);
     }
 
-    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly tailOutput?: boolean; readonly maxCaptureChars?: number; } = {},): Promise<QaapGenericCommandResult> {
+    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly tailOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; } = {},): Promise<QaapGenericCommandResult> {
         return runGenericCommandExtracted(this, command, cwd, env, taskId, timeoutMs, options);
     }
 
@@ -781,7 +806,7 @@ export class QaapAgentTaskRunner {
         return this.tenantSpawn.resolveSpawnIdentity(cwd);
     }
 
-    protected spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('pipe' | 'ignore')[]; }): ChildProcess {
+    protected spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('pipe' | 'ignore')[]; detached?: boolean; }): ChildProcess {
         return spawnAgentCommandExtracted(this, command, options);
     }
 

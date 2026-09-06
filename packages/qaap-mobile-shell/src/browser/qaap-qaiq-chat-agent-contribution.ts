@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { nls } from '@theia/core/lib/common/nls';
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { ChatAgent, ChatAgentLocation } from '@theia/ai-chat/lib/common/chat-agents';
@@ -139,7 +140,7 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
         const userPrompt = applyBackendInteractionModeToPrompt(withAttachments, request.request.modeId);
         if (!userPrompt) {
             request.response.response.addContent(new MarkdownChatResponseContentImpl(
-                'Please provide a prompt after `@qaiq`.'
+                nls.localize('qaap/agentFailure/qaiqNeedsPrompt', 'Please provide a prompt after `@qaiq`.')
             ));
             request.response.complete();
             return;
@@ -148,7 +149,7 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
         const cwd = roots[0]?.resource.path.toString();
         if (!cwd) {
             request.response.response.addContent(new MarkdownChatResponseContentImpl(
-                'No workspace root is open. Open a workspace/folder and retry.'
+                nls.localize('qaap/agentFailure/qaiqNoWorkspace', 'No workspace root is open. Open a workspace/folder and retry.')
             ));
             request.response.complete();
             return;
@@ -283,15 +284,21 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
                 cleanup();
                 if (state === 'failed') {
                     request.response.response.addContent(new ErrorChatResponseContentImpl(
-                        new Error('QAIQ task failed.')
+                        new Error(nls.localize('qaap/agentFailure/qaiqFailed', 'QAIQ task failed.'))
                     ));
                 } else if (state === 'interrupted') {
                     request.response.response.addContent(new ErrorChatResponseContentImpl(
-                        new Error('QAIQ task was interrupted (server restarted).')
+                        new Error(nls.localize(
+                            'qaap/agentFailure/qaiqInterrupted',
+                            'QAIQ task was interrupted (server restarted).',
+                        ))
                     ));
                 } else if (accumulator.getSegments().length === 0) {
                     request.response.response.addContent(new MarkdownChatResponseContentImpl(
-                        'Still running in background. Track it in **Jobs / Background tasks**.'
+                        nls.localize(
+                            'qaap/agentFailure/qaiqStillRunning',
+                            'Still running in background. Track it in **Jobs / Background tasks**.',
+                        )
                     ));
                 }
                 request.response.complete();
@@ -373,7 +380,11 @@ export class QaapQaiqChatAgentContribution implements FrontendApplicationContrib
         });
         if (!response.ok) {
             const detail = await response.text();
-            throw new Error(detail || `QAIQ task start failed (${response.status}).`);
+            throw new Error(detail || nls.localize(
+                'qaap/agentFailure/qaiqStartFailed',
+                'QAIQ task start failed ({0}).',
+                String(response.status),
+            ));
         }
         return response.json() as Promise<{ id: string }>;
     }

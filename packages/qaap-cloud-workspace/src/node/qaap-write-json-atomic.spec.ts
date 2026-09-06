@@ -5,8 +5,10 @@
 
 import { expect } from 'chai';
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import * as sinon from 'sinon';
 import { sweepOrphanedTempFiles, sweepOrphanedTempFilesSync, writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
 
 describe('qaap-write-json-atomic', () => {
@@ -18,6 +20,7 @@ describe('qaap-write-json-atomic', () => {
     });
 
     afterEach(() => {
+        sinon.restore();
         fs.rmSync(dir, { recursive: true, force: true });
     });
 
@@ -76,7 +79,55 @@ describe('qaap-write-json-atomic', () => {
         expect(leftoverTemps()).to.have.length(0);
     });
 
+    it('preserves the previous JSON when synchronous disk flush fails', () => {
+        const file = path.join(dir, 'state.json');
+        writeJsonAtomicSync(file, { version: 1 });
+        sinon.stub(fs, 'fsyncSync').throws(new Error('flush failed'));
+        expect(() => writeJsonAtomicSync(file, { version: 2 })).to.throw('flush failed');
+        expect(JSON.parse(fs.readFileSync(file, 'utf8'))).to.deep.equal({ version: 1 });
+        expect(leftoverTemps()).to.have.length(0);
+    });
+
+    it('preserves the previous JSON when asynchronous disk flush fails', async () => {
+        const file = path.join(dir, 'state.json');
+        await writeJsonAtomic(file, { version: 1 });
+        const open = fsp.open;
+        sinon.stub(fsp, 'open').callsFake(async (...args: Parameters<typeof fsp.open>) => {
+            const handle = await open(...args);
+            sinon.stub(handle, 'sync').rejects(new Error('flush failed'));
+            return handle;
+        });
+        let failure: unknown;
+        try {
+            await writeJsonAtomic(file, { version: 2 });
+        } catch (error) {
+            failure = error;
+        }
+        expect(failure).to.be.instanceOf(Error);
+        expect(JSON.parse(fs.readFileSync(file, 'utf8'))).to.deep.equal({ version: 1 });
+        expect(leftoverTemps()).to.have.length(0);
+    });
+
+    it('does not remove a temporary file owned by another writer after a name collision', async () => {
+        const file = path.join(dir, 'state.json');
+        const open = fsp.open;
+        let collision = '';
+        sinon.stub(fsp, 'open').callsFake(async (...args: Parameters<typeof fsp.open>) => {
+            collision = String(args[0]);
+            fs.writeFileSync(collision, 'other writer');
+            return open(...args);
+        });
+        try {
+            await writeJsonAtomic(file, {});
+            expect.fail('Exclusive creation must reject a collision');
+        } catch (error) {
+            expect((error as NodeJS.ErrnoException).code).to.equal('EEXIST');
+        }
+        expect(fs.readFileSync(collision, 'utf8')).to.equal('other writer');
+    });
+
     it('sweepOrphanedTempFiles deletes temp files from other PIDs but keeps current PID temps', async () => {
+        sinon.stub(process, 'kill').throws(Object.assign(new Error('No process'), { code: 'ESRCH' }));
         const file = path.join(dir, 'state.json');
         // Simulate orphaned temps from dead processes (different PIDs)
         fs.writeFileSync(`${file}.99999.1.tmp`, 'orphan-1');
@@ -93,6 +144,7 @@ describe('qaap-write-json-atomic', () => {
     });
 
     it('sweepOrphanedTempFilesSync deletes temp files from other PIDs', () => {
+        sinon.stub(process, 'kill').throws(Object.assign(new Error('No process'), { code: 'ESRCH' }));
         const file = path.join(dir, 'state.json');
         fs.writeFileSync(`${file}.99999.1.tmp`, 'orphan-1');
         fs.writeFileSync(`${file}.${process.pid}.1.tmp`, 'in-flight');
@@ -108,4 +160,32 @@ describe('qaap-write-json-atomic', () => {
         const file = path.join(dir, 'nonexistent', 'state.json');
         await sweepOrphanedTempFiles(file); // should not throw
     });
+
+    for (const sweep of [sweepOrphanedTempFiles, sweepOrphanedTempFilesSync]) {
+        it(`${sweep.name} preserves live writers and uncertain process ownership`, async () => {
+            const file = path.join(dir, 'state.json');
+            const kill = sinon.stub(process, 'kill');
+            kill.withArgs(12345, 0).returns(true);
+            kill.withArgs(12346, 0).throws(Object.assign(new Error('Permission denied'), { code: 'EPERM' }));
+            kill.withArgs(12347, 0).throws(Object.assign(new Error('Unknown failure'), { code: 'EINVAL' }));
+            for (const pid of [12345, 12346, 12347]) {
+                fs.writeFileSync(`${file}.${pid}.1.tmp`, 'keep');
+            }
+            await sweep(file);
+            expect(leftoverTemps()).to.have.length(3);
+            expect(kill.callCount).to.equal(3);
+        });
+
+        it(`${sweep.name} ignores unrelated and malformed filenames`, async () => {
+            const file = path.join(dir, 'state.json');
+            const kill = sinon.stub(process, 'kill');
+            const names = ['backup', '123.bad', '0.1', '-2.1', '123.1.extra', '999999999999999999.1'];
+            for (const name of names) {
+                fs.writeFileSync(`${file}.${name}.tmp`, 'keep');
+            }
+            await sweep(file);
+            expect(leftoverTemps()).to.have.length(names.length);
+            expect(kill.called).to.equal(false);
+        });
+    }
 });

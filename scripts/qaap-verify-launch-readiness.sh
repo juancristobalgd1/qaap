@@ -24,48 +24,18 @@ trap 'rm -f "$TMP" "$HEALTH_TMP"' EXIT
 if curl -fsS --max-time 8 "${BASE}/qaap/api/health" >"$HEALTH_TMP" 2>/dev/null; then
     ok "GET /qaap/api/health"
 else
-    echo "  WARN GET /qaap/api/health failed (pre-health image is OK once; auth/config is required)"
+    bad "GET /qaap/api/health failed — a release must expose health"
 fi
 if ! curl -fsS --max-time 8 "${BASE}/qaap/api/auth/config" >"$TMP"; then
     echo "  FAIL cannot GET ${BASE}/qaap/api/auth/config" >&2
     exit 1
 fi
 
-read -r CFG_SKIP CFG_OAUTH CFG_PROD CFG_UID_PER_USER CFG_BUILD < <(node -e '
-const fs = require("fs");
-const cfg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-const esc = (v) => String(v ?? "").replace(/[^A-Za-z0-9._+-]/g, "");
-process.stdout.write([
-    cfg.skipAuth ? "1" : "0",
-    (cfg.githubOAuth || cfg.oauthConfigured) ? "1" : "0",
-    cfg.productionRuntime ? "1" : "0",
-    cfg.agentUidPerUser ? "1" : "0",
-    esc(cfg.build) || "-",
-].join(" ") + "\n");
-' "$TMP")
-
-if [[ "${CFG_SKIP}" == "1" ]]; then
-    bad "skipAuth is true — production must keep GitHub login on"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if node "$SCRIPT_DIR/qaap-release-config-check.js" "$TMP" "$HEALTH_TMP"; then
+    ok "production configuration and health payloads"
 else
-    ok "skipAuth is false"
-fi
-
-if [[ "${CFG_OAUTH}" != "1" ]]; then
-    bad "GitHub OAuth is not configured (githubOAuth/oauthConfigured)"
-else
-    ok "GitHub OAuth is configured"
-fi
-
-if [[ "${CFG_BUILD}" != "-" && -n "${CFG_BUILD}" ]]; then
-    ok "build SHA ${CFG_BUILD}"
-else
-    echo "  WARN build SHA missing (QAAP_BUILD_SHA) — deploys cannot prove image identity"
-fi
-
-if [[ "${CFG_PROD}" == "1" && "${CFG_UID_PER_USER}" != "1" ]]; then
-    bad "productionRuntime without uid-per-user — do not invite a second tenant"
-else
-    ok "uid-per-user flag is ${CFG_UID_PER_USER}"
+    bad "production readiness or release identity is invalid"
 fi
 
 for page in terms privacy; do

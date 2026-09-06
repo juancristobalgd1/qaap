@@ -10,6 +10,7 @@ describe('isQaapUserCancelledPreviewError', () => {
 
     it('matches a managed preview stop', () => {
         expect(isQaapUserCancelledPreviewError('Dev server tab closed.')).to.equal(true);
+        expect(isQaapUserCancelledPreviewError('Preview stopped')).to.equal(true);
         expect(isQaapUserCancelledPreviewError('Vista previa detenida')).to.equal(true);
     });
 

@@ -46,7 +46,7 @@ export class QaapLoginPreloadContribution implements PreloadContribution {
             if (config.skipAuth) {
                 return;
             }
-            const ok = await syncQaapAuthSessionFromServer();
+            const ok = await syncQaapAuthSessionFromServer(config);
             if (!ok) {
                 // Server session gone (VPS container restart) — show login without blocking preload.
                 window.dispatchEvent(new Event(QAAP_REQUIRE_LOGIN_EVENT));
@@ -63,7 +63,7 @@ export class QaapLoginPreloadContribution implements PreloadContribution {
                 writeQaapAuthSession('gitlab', placeholderQaapAuthUser('gitlab'));
                 return;
             }
-            if (await syncQaapAuthSessionFromServer()) {
+            if (await syncQaapAuthSessionFromServer(config)) {
                 return;
             }
         } catch {

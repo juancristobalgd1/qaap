@@ -25,6 +25,16 @@ function agentMessage(partial: Partial<QaapAgentMessageDTO> & Pick<QaapAgentMess
 }
 
 describe('computeAgentMessageWireDelta', () => {
+    it('transports completion time and run state even when no text changes', () => {
+        const previous = toAgentMessageWireSnapshot({ id: 'a', role: 'agent', content: 'done', createdAt: 1, runActive: true });
+        const next = toAgentMessageWireSnapshot({ ...previous, runActive: undefined, runFinishedAt: 49_000 });
+        const delta = computeAgentMessageWireDelta(previous, next, 'codex');
+        expect(delta.kind).to.equal('replace');
+        if (delta.kind === 'replace') {
+            expect(delta.message.runFinishedAt).to.equal(49_000);
+            expect(delta.message.runActive).to.equal(undefined);
+        }
+    });
     it('starts a new agent row', () => {
         const next = agentMessage({ id: 'a1', content: 'Hi' });
         const delta = computeAgentMessageWireDelta(undefined, next, 'shell');

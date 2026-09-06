@@ -455,8 +455,10 @@ export async function runAgentVerificationFixTurnExtracted(ctx: any, task: QaapA
         }
         const prompt = ctx.buildAgentVerificationFixPrompt(failedCommand, failure, attempt);
         let command: string;
+        let stdinPrompt: string | undefined;
+        let stdinPromptMode: 'qaiq-stdio' | 'plain' | undefined;
         try {
-            ({ command } = ctx.buildAgentCommand(
+            ({ command, stdinPrompt, stdinPromptMode } = ctx.buildAgentCommand(
                 prompt,
                 agentId,
                 true,
@@ -474,6 +476,7 @@ export async function runAgentVerificationFixTurnExtracted(ctx: any, task: QaapA
         return ctx.runGenericCommand(command, task.cwd, env, task.id, remaining, {
             header: `\n[qaap] Verification failed. Starting ${agentId} fix attempt ${attempt}/${QAAP_AGENT_VERIFY_MAX_ATTEMPTS}.\n`,
             streamOutput: true,
+            ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),
         });
 }
 

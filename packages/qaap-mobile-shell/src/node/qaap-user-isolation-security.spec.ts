@@ -134,7 +134,8 @@ describe('qaap-github-auth-guard security', () => {
         it('403s a lexically-owned path that symlinks into another tenant', () => {
             // alice plants a symlink inside her own workspace pointing at bob's tree.
             const link = path.join(reposRoot, 'users', 'alice', 'evil');
-            fs.symlinkSync(path.join(reposRoot, 'users', 'bob', 'secret'), link);
+            // Junctions exercise the same realpath escape on Windows without elevation.
+            fs.symlinkSync(path.join(reposRoot, 'users', 'bob', 'secret'), link, process.platform === 'win32' ? 'junction' : 'dir');
             const { req, res, status } = fakeReqRes(aliceSession);
             // The path string still starts with alice's root (lexical check passes) — the guard must
             // still deny it because realpath lands in bob's tree.

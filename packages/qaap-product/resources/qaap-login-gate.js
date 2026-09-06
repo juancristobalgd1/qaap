@@ -1,6 +1,6 @@
 /**
  * Qaap sign-in gate — runs before bundle.js (injected via index.html).
- * Blocks IDE startup until GitHub is chosen.
+ * Keeps the login surface in front of the IDE while authentication is resolved.
  */
 (function () {
     'use strict';
@@ -98,7 +98,8 @@
     // Legacy key, purged on every sign-in write: the session id must never live in
     // localStorage (XSS could exfiltrate it) — the HttpOnly cookie is the only credential.
     var LEGACY_SESSION_ID_SUFFIX = 'qaap.auth.sessionId';
-    var AUTH_MS = 1200;
+    var AUTH_CONFIG_TIMEOUT_MS = 4000;
+    var AUTH_SESSION_TIMEOUT_MS = 6000;
 
     function storagePrefix() {
         var pathname = window.location.pathname || '/';
@@ -379,6 +380,8 @@
             '<div class="qaap-login-actions">' +
             '<button type="button" id="qaap-login-github" class="qaap-login-btn qaap-login-btn--primary">' +
             '<span class="qaap-login-btn-icon">' + GITHUB_SVG + '</span><span class="qaap-login-btn-label">Sign in with GitHub</span></button>' +
+            '<button type="button" id="qaap-login-local" class="qaap-login-btn qaap-login-btn--secondary" hidden>Continue in local mode</button>' +
+            '<button type="button" id="qaap-login-retry" class="qaap-login-btn qaap-login-btn--secondary" hidden>Retry connection</button>' +
             '</div>' +
             '<p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>' +
             '<footer class="qaap-login-footer">By continuing you agree to the <a href="/legal/terms.html">terms</a> &amp; <a href="/legal/privacy.html">privacy</a>.</footer>' +
@@ -421,6 +424,36 @@
             github.focus();
         }
 
+        var local = document.getElementById('qaap-login-local');
+        if (local) {
+            local.addEventListener('click', function (e) {
+                e.preventDefault();
+                local.disabled = true;
+                local.setAttribute('aria-busy', 'true');
+                writeSignedIn('gitlab', {
+                    provider: 'gitlab',
+                    login: 'dev',
+                    name: 'Dev User',
+                });
+                document.body.classList.remove('qaap-login-active');
+                host.remove();
+                loadBundle();
+            });
+        }
+
+        var retry = document.getElementById('qaap-login-retry');
+        if (retry) {
+            retry.addEventListener('click', function (e) {
+                e.preventDefault();
+                retry.disabled = true;
+                var status = host.querySelector('#qaap-login-status');
+                if (status) {
+                    status.textContent = 'Checking server connection…';
+                }
+                reflectGithubAvailability(host);
+            });
+        }
+
         host.addEventListener('keydown', function (event) {
             if (event.key !== 'Tab') {
                 return;
@@ -444,38 +477,93 @@
             }
         });
 
-        // If the server has no GitHub OAuth app configured, a click would land on a raw 503 page.
-        // Detect that and disable the button with an explanation instead (ONB-1).
+        // If the server has no GitHub OAuth app configured, or cannot be reached, keep the user
+        // on this page with an actionable explanation instead of sending them to a blank/timeout
+        // OAuth page (ONB-1).
         reflectGithubAvailability(host);
     }
 
+    function showGateAndLoadBundle() {
+        var render = function () {
+            if (!document.getElementById('qaap-login-host')) {
+                showGate();
+            }
+            // Keep the gate as the topmost element while the workbench finishes booting
+            // behind it, so auth latency does not become app-start latency.
+            loadBundle();
+        };
+        if (document.body) {
+            render();
+        } else {
+            document.addEventListener('DOMContentLoaded', render, { once: true });
+        }
+    }
+
     function reflectGithubAvailability(host) {
-        fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, 4000)
+        var button = host.querySelector('#qaap-login-github');
+        var local = host.querySelector('#qaap-login-local');
+        var retry = host.querySelector('#qaap-login-retry');
+        var status = host.querySelector('#qaap-login-status');
+        if (local) {
+            local.hidden = true;
+        }
+        if (retry) {
+            retry.hidden = true;
+            retry.disabled = false;
+        }
+        if (button) {
+            button.disabled = false;
+            button.removeAttribute('aria-disabled');
+            button.classList.remove('qaap-login-btn--unavailable');
+            var defaultLabel = button.querySelector('.qaap-login-btn-label');
+            if (defaultLabel) {
+                defaultLabel.textContent = 'Sign in with GitHub';
+            }
+        }
+        fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
             .then(function (res) { return res && res.ok ? res.json() : null; })
             .then(function (config) {
-                // Only disable when the server AFFIRMATIVELY reports no OAuth app. On a fetch
-                // error/timeout (config === null) leave the button enabled — a transient blip must
-                // never lock out a working login.
-                if (!config || config.githubOAuth === true || config.skipAuth === true) {
-                    return;
+                // Keep the user on this page when the server cannot affirmatively report its
+                // auth configuration. A retry is safer than navigating to a dead OAuth endpoint.
+                if (!config) {
+                    throw new Error('config');
                 }
-                var button = document.getElementById('qaap-login-github');
-                if (button) {
-                    button.disabled = true;
-                    button.setAttribute('aria-disabled', 'true');
-                    button.classList.add('qaap-login-btn--unavailable');
-                    var label = button.querySelector('.qaap-login-btn-label');
-                    if (label) {
-                        label.textContent = 'GitHub sign-in unavailable';
+                if (config.skipAuth === true && local) {
+                    local.hidden = false;
+                    if (status) {
+                        status.textContent = 'Local development mode is enabled on this server.';
                     }
                 }
-                var status = host.querySelector('#qaap-login-status');
-                if (status) {
-                    status.textContent = 'GitHub sign-in isn’t configured on this server yet. '
-                        + 'Ask the administrator to set the GitHub OAuth credentials or enable QAAP_SKIP_AUTH for local use.';
+                if (config.githubOAuth === true) {
+                    return;
                 }
+                setGithubUnavailable(host, config.skipAuth === true
+                    ? 'GitHub sign-in is unavailable. Continue in local mode or configure GitHub OAuth.'
+                    : 'GitHub sign-in isn’t configured on this server yet. Ask the administrator to set the GitHub OAuth credentials.');
             })
-            .catch(function () { /* config unknown (timeout/error) — leave the button enabled */ });
+            .catch(function () {
+                setGithubUnavailable(host, 'The Qaap server is not responding. Check the VPS, proxy, or firewall, then retry.');
+                if (retry) {
+                    retry.hidden = false;
+                }
+            });
+    }
+
+    function setGithubUnavailable(host, message) {
+        var button = host.querySelector('#qaap-login-github');
+        if (button) {
+            button.disabled = true;
+            button.setAttribute('aria-disabled', 'true');
+            button.classList.add('qaap-login-btn--unavailable');
+            var label = button.querySelector('.qaap-login-btn-label');
+            if (label) {
+                label.textContent = 'GitHub sign-in unavailable';
+            }
+        }
+        var status = host.querySelector('#qaap-login-status');
+        if (status) {
+            status.textContent = message;
+        }
     }
 
     if (window.location.search.indexOf('qaapLogout=1') !== -1) {
@@ -494,12 +582,25 @@
     }
 
     function fetchWithTimeout(url, options, timeoutMs) {
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        var requestOptions = options || {};
+        if (controller) {
+            requestOptions = Object.assign({}, requestOptions, { signal: controller.signal });
+        }
+        var timer;
         return Promise.race([
-            fetch(url, options),
+            fetch(url, requestOptions),
             new Promise(function (_resolve, reject) {
-                window.setTimeout(function () { reject(new Error('timeout')); }, timeoutMs);
+                timer = window.setTimeout(function () {
+                    if (controller) {
+                        controller.abort();
+                    }
+                    reject(new Error('timeout'));
+                }, timeoutMs);
             }),
-        ]);
+        ]).finally(function () {
+            window.clearTimeout(timer);
+        });
     }
 
     function resumeAfterOAuthOrSession() {
@@ -511,7 +612,7 @@
             } catch (e) { /* ignore */ }
         }
         if (window.location.search.indexOf('qaap_oauth=github') !== -1) {
-            fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, 12000)
+            fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, AUTH_SESSION_TIMEOUT_MS)
                 .then(function (response) {
                     if (!response.ok) {
                         throw new Error('session');
@@ -537,14 +638,14 @@
                 .catch(function () {
                     clearStaleAuthLocalStorage();
                     if (document.body) {
-                        showGate();
+                        showGateAndLoadBundle();
                     } else {
-                        document.addEventListener('DOMContentLoaded', showGate);
+                        document.addEventListener('DOMContentLoaded', showGateAndLoadBundle, { once: true });
                     }
                 });
             return;
         }
-        fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, 12000)
+        fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, AUTH_SESSION_TIMEOUT_MS)
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error('session');
@@ -562,37 +663,46 @@
             .catch(function (err) {
                 console.warn('[Qaap] session check failed, showing login gate', err && err.message);
                 if (document.body) {
-                    showGate();
+                    showGateAndLoadBundle();
                 } else {
-                    document.addEventListener('DOMContentLoaded', showGate);
+                    document.addEventListener('DOMContentLoaded', showGateAndLoadBundle, { once: true });
                 }
             });
     }
 
     function trySkipAuthDevMode() {
-        return fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, 8000)
+        return fetchWithTimeout('/qaap/api/auth/config', { credentials: 'include' }, AUTH_CONFIG_TIMEOUT_MS)
             .then(function (response) {
                 if (!response.ok) {
-                    throw new Error('config');
+                    return undefined;
                 }
                 return response.json();
             })
             .then(function (config) {
+                if (!config) {
+                    return undefined;
+                }
                 if (config && config.skipAuth) {
                     writeSignedIn('gitlab', {
                         provider: 'gitlab',
-                        login: 'gitlab-user',
-                        name: 'GitLab User',
+                        login: 'dev',
+                        name: 'Dev User',
                     });
                     loadBundle();
                     return true;
                 }
                 return false;
+            })
+            .catch(function () {
+                // A failed config probe is not evidence that another auth probe can help.
+                // Return an explicit unknown state so startup does not wait for a second
+                // timeout against the same unreachable VPS/proxy.
+                return undefined;
             });
     }
 
     function verifyStoredSessionThenLoad() {
-        fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, 12000)
+        fetchWithTimeout('/qaap/api/auth/session', { credentials: 'include' }, AUTH_SESSION_TIMEOUT_MS)
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error('session');
@@ -614,16 +724,16 @@
                 trySkipAuthDevMode().then(function (skipped) {
                     if (!skipped) {
                         if (document.body) {
-                            showGate();
+                            showGateAndLoadBundle();
                         } else {
-                            document.addEventListener('DOMContentLoaded', showGate);
+                            document.addEventListener('DOMContentLoaded', showGateAndLoadBundle, { once: true });
                         }
                     }
                 }).catch(function () {
                     if (document.body) {
-                        showGate();
+                        showGateAndLoadBundle();
                     } else {
-                        document.addEventListener('DOMContentLoaded', showGate);
+                        document.addEventListener('DOMContentLoaded', showGateAndLoadBundle, { once: true });
                     }
                 });
             });
@@ -654,13 +764,13 @@
         verifyStoredSessionThenLoad();
     } else {
         trySkipAuthDevMode().then(function (skipped) {
-            if (!skipped) {
+            if (skipped === false) {
                 resumeAfterOAuthOrSession();
-            } else {
+            } else if (skipped === true) {
                 speculativePreloadBundle();
+            } else {
+                showGateAndLoadBundle();
             }
-        }).catch(function () {
-            resumeAfterOAuthOrSession();
         });
     }
 })();

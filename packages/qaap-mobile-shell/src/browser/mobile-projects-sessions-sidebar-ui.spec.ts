@@ -5,6 +5,8 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import { renderWorkHubSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-streaming2';
+import { mergeSessionsSidebarProjectsExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
 
 enableJSDOM();
 
@@ -17,6 +19,26 @@ import {
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 describe('mobile-projects-sessions-sidebar-ui', () => {
+
+    it('shows authenticated history before the workspace catalog has loaded', () => {
+        const ctx = { host: {
+            conversations: { threadStore: { listAllSummaries: () => [{ cwd: '/repo/app' }, { cwd: '/repo/app' }] } },
+            projectsService: { resolveCurrentWorkspaceProject: () => undefined }
+        } };
+        const projects = mergeSessionsSidebarProjectsExtracted(ctx, []);
+        expect(projects).to.have.lengthOf(1);
+        expect(projects[0].name).to.equal('app');
+        expect(projects[0].uri?.scheme).to.equal('file');
+    });
+
+    it('distinguishes loading and connection failure from an empty history', () => {
+        for (const snapshotState of ['loading', 'error']) {
+            const host = document.createElement('div');
+            renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } }, host);
+            expect(host.textContent).not.to.contain('No agent sessions');
+            expect(host.querySelector('[role="status"]')).not.to.equal(null);
+        }
+    });
 
     let disableJSDOM: (() => void) | undefined;
 
@@ -131,6 +153,7 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
             },
             projectsService: {
                 getProjectCwd: () => '/Users/jc/qaap',
+                resolveCurrentWorkspaceProject: () => undefined,
             },
             conversations: {
                 prefetchDocuments: () => undefined,
@@ -396,6 +419,7 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
             },
             projectsService: {
                 getProjectCwd: () => '/Users/jc/qaap',
+                resolveCurrentWorkspaceProject: () => undefined,
             },
             conversations: {
                 prefetchDocuments: () => undefined,

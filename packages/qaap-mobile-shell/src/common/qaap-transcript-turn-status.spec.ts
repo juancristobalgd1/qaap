@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
 import {
+    resolveAgentMessageTiming,
     isAgentMessageVisuallySettled,
     isConversationTurnVisuallySettled,
     resolveTranscriptAgentExecutionState,
@@ -29,6 +30,17 @@ const conv = (partial: Partial<QaapAgentConversationDTO> = {}): QaapAgentConvers
 });
 
 describe('qaap-transcript-turn-status', () => {
+    it('retains historical duration while a later turn is running', () => {
+        const state = conv({ messages: [
+            { id: 'u1', role: 'user', content: 'test', createdAt: 1000 },
+            { id: 'a1', role: 'agent', content: 'done', createdAt: 2000, runUserMessageId: 'u1', runFinishedAt: 16000 },
+            { id: 'u2', role: 'user', content: 'wait', createdAt: 20000 },
+            { id: 'a2', role: 'agent', content: '', createdAt: 21000, runActive: true }
+        ] });
+        expect(resolveAgentMessageTiming(state, state.messages[1], 25000)).to.deep.equal({ isWorking: false, turnStartMs: 1000, elapsedMs: 15000 });
+        expect(resolveAgentMessageTiming(state, state.messages[3], 25000)).to.deep.equal({ isWorking: true, turnStartMs: 20000, elapsedMs: 5000 });
+        expect(resolveAgentMessageTiming({ ...state, status: 'idle', updatedAt: 26000 }, state.messages[3], 90000).isWorking).to.equal(false);
+    });
     it('isConversationTurnVisuallySettled is false while a tool is still running', () => {
         const streaming = conv({
             messages: [
@@ -119,7 +131,7 @@ describe('qaap-transcript-turn-status', () => {
         expect(isConversationTurnVisuallySettled(idle)).to.equal(true);
     });
 
-    it('resolveTranscriptEffectiveStatus keeps unfinished visible tools active even when backend reports idle', () => {
+    it('honors terminal backend status even when a tool trace was left unfinished', () => {
         const idleWithRunningTool = conv({
             status: 'idle',
             messages: [
@@ -140,8 +152,8 @@ describe('qaap-transcript-turn-status', () => {
             ],
         });
         expect(isConversationTurnVisuallySettled(idleWithRunningTool)).to.equal(false);
-        expect(resolveTranscriptEffectiveStatus(idleWithRunningTool)).to.equal('streaming');
-        expect(isTranscriptAgentTailStreaming(idleWithRunningTool)).to.equal(true);
+        expect(resolveTranscriptEffectiveStatus(idleWithRunningTool)).to.equal('idle');
+        expect(isTranscriptAgentTailStreaming(idleWithRunningTool)).to.equal(false);
     });
 
     it('isTranscriptAgentTailStreaming stops once the turn is visually settled', () => {
@@ -317,8 +329,8 @@ describe('qaap-transcript-turn-status', () => {
         expect(resolveTranscriptAgentExecutionState({ id: 'c1', status: 'idle' }, idleWithRunningTool))
             .to.deep.equal({ phase: 'ready', busy: false });
         expect(isTranscriptSummaryAgentWorking({ id: 'c1', status: 'idle' }, idleWithRunningTool)).to.equal(false);
-        // Rendering deliberately keeps the tail streaming (separation of concerns).
-        expect(resolveTranscriptEffectiveStatus(idleWithRunningTool)).to.equal('streaming');
+        // Terminal execution and transcript chrome agree, even with a stale trace.
+        expect(resolveTranscriptEffectiveStatus(idleWithRunningTool)).to.equal('idle');
     });
 
     it('resolveTranscriptEffectiveStatus keeps failed over unfinished trace work', () => {

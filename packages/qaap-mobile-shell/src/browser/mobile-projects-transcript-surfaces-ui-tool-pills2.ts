@@ -2,6 +2,7 @@
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
@@ -219,7 +220,7 @@ export function mountTranscriptEmptyPreviewExtracted(ctx: any, host: HTMLElement
     const input = ctx.host.transcriptEmbeddedPreview.root.querySelector<HTMLInputElement>('.theia-mini-browser-url-field input');
     if (input) {
         input.value = '';
-        input.placeholder = nls.localize('qaap/mobileProjects/previewUrlPlaceholder', 'Ingresa una URL');
+        input.placeholder = nls.localize('qaap/mobileProjects/previewUrlPlaceholder', 'Enter a URL');
     }
     // Play control lives in the Work Hub header (left of Change view). Keep the empty frame
     // chrome clear so the iframe URL field stays the only content affordance here.
@@ -437,6 +438,17 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
                     rootFsPath: cwd,
                     isActiveWorkspace: project.isCurrent,
                 });
+                ctx.host.diffReviewWidget.setCommitReadinessProvider(
+                    () => ({
+                        checksLoading: ctx.host.verifyChecksLoading,
+                        running: ctx.host.verifyRunning,
+                        results: ctx.host.verifyResults ?? [],
+                    }),
+                    () => {
+                        invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
+                        ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
+                    },
+                );
                 ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
                 ctx.host.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
                 ctx.host.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);

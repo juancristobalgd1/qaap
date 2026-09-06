@@ -333,11 +333,15 @@ export async function primeFromAllExtracted(ctx: any): Promise<void> {
             const groups = await listAllConversationGroups();
             ctx.applyConversationGroups(groups);
         } catch {
-            /* live feed will reconcile */
+            if (ctx.snapshotState !== 'ready') {
+                ctx.snapshotState = 'error';
+                ctx.emitConversationChange({ kind: 'snapshot' });
+            }
         }
 }
 
 export function applyConversationGroupsExtracted(ctx: any, groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,): void {
+        ctx.snapshotState = 'ready';
         ctx.threadStore.applySummarySnapshot(groups.map(group => ({
             ...group,
             conversations: group.conversations.filter(conversation => !ctx.deletedConversationIds.has(conversation.id)),

@@ -254,7 +254,9 @@ export class QaapTenantSpawnService {
         const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
         return this.launchProcess(invocation.file, invocation.args ? [...invocation.args] : [], {
             cwd,
-            detached: options.detached ?? true,
+            // Detached cmd.exe can exit successfully without delivering npm output on Windows.
+            // Unix still needs a process group for cancellation and descendant cleanup.
+            detached: options.detached ?? process.platform !== 'win32',
             env: options.env,
             stdio: options.stdio,
             ...invocation.options,

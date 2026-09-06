@@ -2,6 +2,7 @@
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import { MessageService } from '@theia/core/lib/common/message-service';
@@ -336,6 +337,16 @@ export async function mountProjectDetailReviewWidgetExtracted(ctx: any, project:
         rootFsPath: cwd,
         isActiveWorkspace: project.isCurrent,
     });
+    ctx.host.diffReviewWidget.setCommitReadinessProvider(
+        () => ({
+            checksLoading: ctx.host.verifyChecksLoading,
+            running: ctx.host.verifyRunning,
+            results: ctx.host.verifyResults ?? [],
+        }),
+        () => {
+            invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
+        },
+    );
 }
 
 export function executionSurfaceHostExtracted(ctx: any, transcriptHost: HTMLElement | undefined,

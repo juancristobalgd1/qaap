@@ -157,6 +157,7 @@ import {
 } from './qaap-agent-task-runner-utils3';
 
 export function initExtracted(ctx: any): void {
+        ctx.recoveryState = 'loading';
         ctx.detectAgents();
         ctx.ensureHelperCli();
         void ctx.restoreFromDisk();
@@ -324,6 +325,7 @@ export function detectCodexAgentExtracted(ctx: any): void {
             label: 'Codex',
             bin: 'codex',
             template: resolveQaapCodexTemplate(help),
+            codexSupportsApproveForMe: /\B--approve-for-me\b/.test(help),
         });
 }
 
@@ -355,20 +357,28 @@ export function readCustomAgentsExtracted(ctx: any): AgentCandidate[] {
 }
 
 export async function restoreFromDiskExtracted(ctx: any): Promise<void> {
+        ctx.recoveryState = 'loading';
         try {
             const raw = await fsp.readFile(INDEX_PATH, 'utf8');
             ctx.restorePersistedIndex(JSON.parse(raw));
+            ctx.recoveryState = 'ready';
             await ctx.persist();
             ctx.drainQueuedTasks();
         } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-                console.warn('[qaap-agent-tasks] failed to restore task index:', error);
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                ctx.recoveryState = 'ready';
+            } else {
+                ctx.recoveryState = 'failed';
+                console.warn('[qaap-agent-tasks] recovery failed; task creation and index writes are blocked.');
             }
         }
 }
 
 export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void {
         const legacy = Array.isArray(stored);
+        if (!legacy && (stored as Partial<PersistedAgentTaskIndex> | undefined)?.version !== 2) {
+            throw new Error('Unsupported persisted agent task index version.');
+        }
         const tasks = legacy
             ? stored as QaapAgentTask[]
             : (stored as Partial<PersistedAgentTaskIndex> | undefined)?.tasks;
@@ -382,11 +392,21 @@ export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void 
             if (!task?.id) {
                 continue;
             }
-            const queuedRequest = task.state === 'queued' ? queuedRequests[task.id] : undefined;
+            // JSON may be damaged or from an incompatible release. Never use inherited keys
+            // (e.g. __proto__) or execute a request associated with a different workspace.
+            const candidate = task.state === 'queued' && queuedRequests &&
+                Object.prototype.hasOwnProperty.call(queuedRequests, task.id) ? queuedRequests[task.id] : undefined;
+            const queuedRequest = candidate && typeof candidate === 'object' && !Array.isArray(candidate) &&
+                typeof candidate.cwd === 'string' && typeof task.cwd === 'string' &&
+                path.isAbsolute(candidate.cwd) && path.resolve(candidate.cwd) === path.resolve(task.cwd) &&
+                (candidate.prompt === undefined || typeof candidate.prompt === 'string') &&
+                (candidate.command === undefined || typeof candidate.command === 'string') &&
+                (candidate.prompt?.trim() || candidate.command?.trim())
+                ? candidate : undefined;
             const state = task.state === 'running' || (task.state === 'queued' && !queuedRequest)
                 ? 'interrupted' as const
                 : task.state;
-            ctx.tasks.set(task.id, { ...task, state });
+            ctx.tasks.set(task.id, { ...task, state, ...(state === 'interrupted' && task.state !== 'interrupted' ? { finishedAt: Date.now() } : {}) });
             if (state === 'queued' && queuedRequest) {
                 ctx.queuedCreateRequests.set(task.id, queuedRequest);
             }
@@ -429,6 +449,9 @@ export function ownerAtConcurrencyCapExtracted(ctx: any, ownerLogin: string | un
 }
 
 export function drainQueuedTasksExtracted(ctx: any): void {
+        if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed) {
+            return;
+        }
         while (ctx.countRunningTasks() < ctx.maxConcurrentAgents()) {
             // Skip queued tasks whose owner is already at their per-user cap so one busy user can't
             // block everyone behind them in the FIFO queue — promote the next eligible tenant instead.

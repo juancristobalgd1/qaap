@@ -8,6 +8,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapAuthSessionUser } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import { nls } from '@theia/core/lib/common';
+import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
 
 export interface QaapGithubStoredSession {
     accessToken: string;
@@ -51,6 +53,8 @@ export function resolveQaapAuthStorePath(): string {
 @injectable()
 export class QaapGithubSessionStore {
 
+    protected readonly betaAccess = new QaapBetaAccessPolicy();
+
     protected readonly sessions = new Map<string, QaapGithubStoredSession>();
     protected readonly oauthStates = new Map<string, number>();
     protected readonly storePath: string = resolveQaapAuthStorePath();
@@ -66,6 +70,9 @@ export class QaapGithubSessionStore {
     }
 
     createSession(data: QaapGithubStoredSession): string {
+        if (!this.betaAccess.allows(data.user.login)) {
+            throw new Error(nls.localize('qaap/beta/invitationRequired', 'This account is not invited to the Qaap beta.'));
+        }
         const id = crypto.randomUUID();
         this.sessions.set(id, data);
         this.schedulePersist();
@@ -76,17 +83,18 @@ export class QaapGithubSessionStore {
         if (!sessionId) {
             return undefined;
         }
-        return this.sessions.get(sessionId);
+        const session = this.sessions.get(sessionId);
+        return session && this.betaAccess.allows(session.user.login) ? session : undefined;
     }
 
     /** All persisted sessions — for server-side repository access resolution only. */
     listSessions(): QaapGithubStoredSession[] {
-        return [...this.sessions.values()];
+        return [...this.sessions.values()].filter(session => this.betaAccess.allows(session.user.login));
     }
 
     /** @deprecated Never use for request handling — leaks cross-tenant tokens. */
     getAnySession(): QaapGithubStoredSession | undefined {
-        return this.sessions.values().next().value;
+        return this.listSessions()[0];
     }
 
     deleteSession(sessionId: string | undefined): void {
@@ -104,6 +112,7 @@ export class QaapGithubSessionStore {
     }
 
     consumeOAuthState(state: string | undefined): boolean {
+        this.pruneOAuthStates();
         if (!state || !this.oauthStates.has(state)) {
             return false;
         }

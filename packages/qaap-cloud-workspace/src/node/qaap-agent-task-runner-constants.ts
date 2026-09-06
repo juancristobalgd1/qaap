@@ -12,6 +12,8 @@ export interface AgentCandidate {
     readonly bin?: string;
     /** Template applied to the user prompt; `{prompt}` is replaced with a shell-quoted value. */
     readonly template: string;
+    /** Whether this detected Codex CLI supports its current automatic approval flag. */
+    readonly codexSupportsApproveForMe?: boolean;
 }
 
 /** Built-in QAAP coding agent (fork of OpenClaude): https://github.com/juancristobalgd1/qaiq */

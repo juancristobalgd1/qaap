@@ -39,6 +39,22 @@ env:
   QAAP_DEPLOY_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || 'master' }}
 
 jobs:
+  resolve_source:
+    name: Resolve release commit once
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.repository == 'juancristobalgd1/qaap'
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Checkout requested revision
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || env.QAAP_DEPLOY_BRANCH }}
+      - name: Record immutable revision
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   # Pre-deploy smoke gate: build the browser app, boot it with the mock QAIQ agent, and run the
   # Rioja composer UI-flow eval — which now also asserts runtime shell health (the DI container
   # actually registered its commands). This catches runtime-only regressions that pass compile
@@ -47,13 +63,14 @@ jobs:
     name: Pre-deploy smoke gate
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    needs: resolve_source
     if: github.repository == 'juancristobalgd1/qaap' && github.event.inputs.skip_gate != 'true'
 
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ env.QAAP_DEPLOY_BRANCH }}
+          ref: ${{ needs.resolve_source.outputs.sha }}
 
       - name: Use Node.js 24.x
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
@@ -140,14 +157,14 @@ jobs:
     name: Publish immutable GHCR image
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: gate
+    needs: [resolve_source, gate]
     # Publish only after the gate passed, or after an explicit emergency skip. Failed gates never
     # produce a deployable image.
     if: >-
       always()
       && github.repository == 'juancristobalgd1/qaap'
-      && needs.gate.result != 'failure'
-      && needs.gate.result != 'cancelled'
+      && needs.resolve_source.result == 'success'
+      && (needs.gate.result == 'success' || (needs.gate.result == 'skipped' && github.event_name == 'workflow_dispatch' && inputs.skip_gate))
     permissions:
       contents: read
       packages: write
@@ -164,7 +181,7 @@ jobs:
       - name: Checkout deploy source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ env.QAAP_DEPLOY_BRANCH }}
+          ref: ${{ needs.resolve_source.outputs.sha }}
 
       - name: Resolve immutable source and image tag
         id: source
@@ -179,9 +196,9 @@ jobs:
         id: qaiq
         shell: bash
         run: |
-          QAIQ_SHA="$(git ls-remote https://github.com/juancristobalgd1/qaiq.git refs/heads/main | cut -f1)"
-          if [ -z "$QAIQ_SHA" ]; then
-            echo "Could not resolve QAIQ main" >&2
+          QAIQ_SHA="$(sed -n 's/^ARG QAIQ_COMMIT=//p' Dockerfile | tr -d '\r')"
+          if [[ ! "$QAIQ_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Dockerfile must pin an exact QAIQ commit" >&2
             exit 1
           fi
           echo "sha=$QAIQ_SHA" >> "$GITHUB_OUTPUT"
@@ -209,6 +226,7 @@ jobs:
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
           build-args: |
             QAAP_BUILD_SHA=${{ steps.source.outputs.short_sha }}
+            QAIQ_COMMIT=${{ steps.qaiq.outputs.sha }}
             CACHE_BUST=${{ steps.qaiq.outputs.sha }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           cache-from: type=gha,scope=qaap-production
@@ -219,11 +237,48 @@ jobs:
         shell: bash
         run: echo "ref=${{ steps.source.outputs.tag }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
 
+  verify_image:
+    name: Verify exact candidate image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: publish_image
+    if: always() && needs.publish_image.result == 'success'
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout candidate verification scripts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.publish_image.outputs.source_sha }}
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '24.x'
+      - name: Log in to GHCR for candidate pull
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Boot and verify the published digest
+        env:
+          QAAP_CANDIDATE_IMAGE: ${{ needs.publish_image.outputs.image }}
+          QAAP_CANDIDATE_SHA: ${{ needs.publish_image.outputs.source_sha }}
+        run: bash scripts/qaap-image-smoke.sh "$QAAP_CANDIDATE_IMAGE" "$QAAP_CANDIDATE_SHA"
+      - name: Upload candidate diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qaap-image-smoke
+          path: test-results/qaap-image-smoke/
+          if-no-files-found: warn
+
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    needs: [gate, publish_image]
+    needs: [gate, publish_image, verify_image]
     # Deploy when the gate passed, or when it was intentionally skipped via workflow_dispatch.
     # A failed/cancelled gate blocks the deploy.
     if: >-
@@ -232,20 +287,24 @@ jobs:
       && needs.gate.result != 'failure'
       && needs.gate.result != 'cancelled'
       && needs.publish_image.result == 'success'
+      && needs.verify_image.result == 'success'
     permissions:
       contents: read
       packages: read
 
     steps:
-      - name: Skip when VPS secrets are not configured
+      - name: Require VPS release configuration
         id: ready
+        env:
+          QAAP_VPS_HOST: ${{ secrets.QAAP_VPS_HOST }}
+          QAAP_VPS_SSH_KEY: ${{ secrets.QAAP_VPS_SSH_KEY }}
+          QAAP_VPS_PUBLIC_URL: ${{ secrets.QAAP_VPS_PUBLIC_URL }}
         run: |
-          if [ -z "${{ secrets.QAAP_VPS_HOST }}" ] || [ -z "${{ secrets.QAAP_VPS_SSH_KEY }}" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping VPS deploy: set QAAP_VPS_HOST and QAAP_VPS_SSH_KEY (see doc/qaap-vps-deployment.md)."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+          if [ -z "$QAAP_VPS_HOST" ] || [ -z "$QAAP_VPS_SSH_KEY" ] || [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
+            echo "::error::Configure QAAP_VPS_HOST, QAAP_VPS_SSH_KEY and QAAP_VPS_PUBLIC_URL before releasing."
+            exit 1
           fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Deploy over SSH
         if: steps.ready.outputs.configured == 'true'
@@ -288,9 +347,11 @@ jobs:
         if: steps.ready.outputs.configured == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          ref: ${{ needs.publish_image.outputs.source_sha }}
           sparse-checkout: |
             scripts/qaap-vps-normalize-public-url.sh
             scripts/qaap-verify-launch-readiness.sh
+            scripts/qaap-release-config-check.js
             scripts/qaap-verify-auth-api-gate.sh
           sparse-checkout-cone-mode: false
 
@@ -303,8 +364,8 @@ jobs:
           source ./scripts/qaap-vps-normalize-public-url.sh
           QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
           if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
-            echo "QAAP_VPS_PUBLIC_URL not set — skip HTTP check"
-            exit 0
+            echo "::error::QAAP_VPS_PUBLIC_URL is required to verify the release."
+            exit 1
           fi
           for attempt in $(seq 1 24); do
             if curl -fsS -o /dev/null "$QAAP_VPS_PUBLIC_URL"; then
@@ -335,13 +396,13 @@ jobs:
           source ./scripts/qaap-vps-normalize-public-url.sh
           QAAP_VPS_PUBLIC_URL="$(qaap_normalize_vps_public_url "$QAAP_VPS_PUBLIC_URL")"
           if [ -z "$QAAP_VPS_PUBLIC_URL" ]; then
-            echo "QAAP_VPS_PUBLIC_URL not set — skip build check"
-            exit 0
+            echo "::error::QAAP_VPS_PUBLIC_URL is required to verify the release."
+            exit 1
           fi
           DEPLOYED="$(curl -fsS "$QAAP_VPS_PUBLIC_URL/qaap/api/auth/config" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build") or "")')"
-          if [ -z "$DEPLOYED" ]; then
-            echo "::warning::Backend did not report a build SHA (pre-QAAP_BUILD_SHA image?) — skipping assertion this once."
-            exit 0
+          if [[ ! "$DEPLOYED" =~ ^[0-9a-f]{12}$ ]]; then
+            echo "::error::Backend must report the 12-character release SHA."
+            exit 1
           fi
           EXPECTED="${{ needs.publish_image.outputs.source_sha }}"
           echo "deployed=$DEPLOYED expected=$EXPECTED image=${{ needs.publish_image.outputs.image }}"

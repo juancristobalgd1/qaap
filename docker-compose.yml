@@ -23,11 +23,12 @@ services:
         QAAP_IDE_PORT: ${THEIA_PORT:-4873}
         # Set by scripts/qaap-vps-update.sh to the deployed commit's short SHA.
         QAAP_BUILD_SHA: ${QAAP_BUILD_SHA:-dev}
+        QAIQ_COMMIT: ${QAIQ_COMMIT:-1668998491d7265c754d94935b932cd9042f9b92}
         CODEX_CLI_VERSION: ${CODEX_CLI_VERSION:-0.144.5}
-        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
-        ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-latest}
-        OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-latest}
-        COPILOT_CLI_VERSION: ${COPILOT_CLI_VERSION:-latest}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.261}
+        ANTIGRAVITY_CLI_VERSION: ${ANTIGRAVITY_CLI_VERSION:-0.1.1}
+        OPENCODE_CLI_VERSION: ${OPENCODE_CLI_VERSION:-1.18.28}
+        COPILOT_CLI_VERSION: ${COPILOT_CLI_VERSION:-1.0.83}
     ports:
       # Not world-reachable. Public traffic should hit Caddy on :443.
       - "127.0.0.1:${THEIA_PORT:-4873}:${THEIA_PORT:-4873}"
@@ -48,6 +49,8 @@ services:
       # Example: https://178.105.136.93.sslip.io
       QAAP_OAUTH_PUBLIC_URL: ${QAAP_OAUTH_PUBLIC_URL:-}
       QAAP_SKIP_AUTH: ${QAAP_SKIP_AUTH:-false}
+      # Production denies admission until actual invited GitHub logins are configured.
+      QAAP_BETA_ALLOWED_LOGINS: ${QAAP_BETA_ALLOWED_LOGINS:-}
       # Production boot exits if OAuth is missing (NODE_ENV=production). Override only on a private box:
       QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION: ${QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION:-}
       QAAP_VAPID_PUBLIC_KEY: ${QAAP_VAPID_PUBLIC_KEY:-}
@@ -75,6 +78,8 @@ services:
       # raise via .env for the live event window (see doc/qaap-demo-rehearsal-checklist.md).
       QAAP_MAX_CONCURRENT_AGENTS: ${QAAP_MAX_CONCURRENT_AGENTS:-3}
       QAAP_MAX_CONCURRENT_AGENTS_PER_USER: ${QAAP_MAX_CONCURRENT_AGENTS_PER_USER:-3}
+      QAAP_MAX_QUEUED_AGENTS: ${QAAP_MAX_QUEUED_AGENTS:-100}
+      QAAP_MAX_QUEUED_AGENTS_PER_USER: ${QAAP_MAX_QUEUED_AGENTS_PER_USER:-20}
       QAAP_AGENT_VERIFY_MAX_CONCURRENT: ${QAAP_AGENT_VERIFY_MAX_CONCURRENT:-1}
       # Agent-independent job scheduler: global/per-user caps and isolated resource lanes.
       QAAP_JOB_MAX_CONCURRENT: ${QAAP_JOB_MAX_CONCURRENT:-4}
@@ -181,6 +186,11 @@ services:
       - qaap-auth-data:/root/.qaap
       # Persist Settings → AI keys and user preferences across rebuilds.
       - qaap-theia-user:/root/.theia
+      # Preserve absolute worktree paths used by Git and persisted conversations.
+      # Existing deployments MUST run qaap-persist-runtime-state.mjs --apply first.
+      - theia-worktrees:/tmp/qaap-worktrees
+      - theia-parallel:/tmp/qaap-parallel
+      - qaap-tenant-homes:/home/qaap-tenants
     restart: unless-stopped
     deploy:
       resources:
@@ -237,5 +247,8 @@ volumes:
   theia-workspace:
   qaap-auth-data:
   qaap-theia-user:
+  theia-worktrees:
+  theia-parallel:
+  qaap-tenant-homes:
   caddy_data:
   caddy_config:

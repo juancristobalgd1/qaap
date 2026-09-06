@@ -110,6 +110,26 @@ export function showAgentCliUpdateToast(
     root.append(actions);
 
     document.body.append(root);
+    // Updates remain available in settings; a passive boot notice must not cover
+    // the conversation indefinitely. Keep it while the user is interacting.
+    let dismissTimer: number | undefined;
+    const clearDismiss = (): void => {
+        if (dismissTimer !== undefined) {
+            window.clearTimeout(dismissTimer);
+            dismissTimer = undefined;
+        }
+    };
+    const scheduleDismiss = (): void => {
+        clearDismiss();
+        if (!root.classList.contains('qaap-mod-updating') && !root.contains(document.activeElement)) {
+            dismissTimer = window.setTimeout(() => handlers.onDismiss(), 8000);
+        }
+    };
+    root.addEventListener('pointerenter', clearDismiss);
+    root.addEventListener('pointerleave', scheduleDismiss);
+    root.addEventListener('focusin', clearDismiss);
+    root.addEventListener('focusout', scheduleDismiss);
+    scheduleDismiss();
 
     // The toast is mounted at body level, while the composer is a separate
     // fixed layer. Track the composer's top edge so the notification never
@@ -134,6 +154,7 @@ export function showAgentCliUpdateToast(
     return {
         root,
         setUpdating(updating: boolean): void {
+            clearDismiss();
             root.classList.toggle('qaap-mod-updating', updating);
             updateBtn.disabled = updating;
             // Cancel stays enabled so the user can dismiss even while an update is in flight.
@@ -142,6 +163,7 @@ export function showAgentCliUpdateToast(
                 : nls.localize('qaap/agentCliUpdate/update', 'Update');
         },
         dispose(): void {
+            clearDismiss();
             resizeObserver?.disconnect();
             window.removeEventListener('resize', updatePosition);
             root.remove();

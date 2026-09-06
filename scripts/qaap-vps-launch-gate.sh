@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # qaap-vps-launch-gate.sh — host-side production gate after docker compose is up.
 #
-# Run on the VPS from the repo root (root). Safe for a single-user box: isolation
-# verification runs when two tenant uids already exist, but a failed check is a WARN
-# (not a deploy blocker). Inviting a second real user still requires a green
-# `qaap-verify-multitenant.sh` — see SECURITY.md.
+# Run on the VPS from the repo root (root). This is a multi-user beta release gate:
+# two disposable invited accounts must exercise agent, worktree and parallel runs
+# first. Missing or failed isolation evidence blocks the release.
 #
 #   ./scripts/qaap-vps-launch-gate.sh
 set -euo pipefail
@@ -84,15 +83,10 @@ if [[ "$TENANT_COUNT" -ge 2 ]]; then
     if ./scripts/qaap-verify-multitenant.sh "$LOGIN_A" "$LOGIN_B"; then
         ok "multi-tenant isolation PASSED"
     else
-        echo "  WARN multi-tenant isolation not verified for ${LOGIN_A} / ${LOGIN_B}"
-        echo "       Extra GitHub logins in the uid registry are not a second-user launch."
-        echo "       Do not invite a real second user until this script PASSES (SECURITY.md)."
-        ok "single-user launch; isolation deferred"
+        bad "multi-tenant isolation failed for ${LOGIN_A} / ${LOGIN_B} — release blocked"
     fi
 else
-    echo "  WARN only ${TENANT_COUNT} tenant(s) on this box — run two disposable GitHub logins"
-    echo "       (agent + New Worktree + parallel) then re-run scripts/qaap-verify-multitenant.sh"
-    ok "single-tenant box; isolation script deferred"
+    bad "only ${TENANT_COUNT} tenant(s): exercise two disposable invited accounts (agent + New Worktree + parallel) before release"
 fi
 
 # Paid-beta Stripe: WARN if incomplete; FAIL only when DEV_CHECKOUT is on.

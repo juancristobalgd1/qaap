@@ -965,6 +965,26 @@
     font-weight: 500;
 }
 
+.qaap-agent-changes-verify-status {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--theia-descriptionForeground);
+}
+
+.qaap-agent-changes-verify-status.qaap-mod-ready {
+    color: var(--theia-charts-green, #3ba272);
+}
+
+.qaap-agent-changes-verify-status.qaap-mod-stale,
+.qaap-agent-changes-verify-status.qaap-mod-missing,
+.qaap-agent-changes-verify-status.qaap-mod-failing {
+    color: var(--theia-editorWarning-foreground, var(--theia-notificationsWarningIcon-foreground));
+}
+
 .qaap-agent-changes-summary-stats {
     flex: none;
     display: inline-flex;

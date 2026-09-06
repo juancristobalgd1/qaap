@@ -121,7 +121,9 @@ export function isQaapUserCancelledPreviewError(error?: string): boolean {
     if (!error) {
         return false;
     }
-    return /dev server tab closed/i.test(error) || /vista previa detenida/i.test(error);
+    return /dev server tab closed/i.test(error)
+        || /preview stopped/i.test(error)
+        || /vista previa detenida/i.test(error);
 }
 
 /** Distinguishes install failures (build) from a failed preview/dev-server start. */

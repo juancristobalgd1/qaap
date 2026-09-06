@@ -97,10 +97,14 @@ Current state of these paths:
 > and `scripts/qaap-verify-auth-api-gate.sh` against the live origin (the launch probe now also
 > requires `/legal/terms.html` and `/legal/privacy.html`). Every VPS
 > deploy now runs `scripts/qaap-vps-launch-gate.sh` (nightly backup cron + uid-per-user
-> snapshot). If two GitHub logins already exist, the gate *reports* multi-tenant isolation;
-> a failed check is a **WARN**, not a deploy blocker — extra unused logins must not stop a
-> single-user public boot. Inviting a second **real** user still requires a green
-> `scripts/qaap-verify-multitenant.sh`.
+> verification). A failed check or fewer than two provisioned test tenants now
+> **blocks the beta release**. Provision two disposable invited GitHub accounts
+> and exercise agent + New Worktree + parallel runs before declaring the release ready.
+> Production admission requires `QAAP_BETA_ALLOWED_LOGINS` (comma-separated GitHub
+> logins). Empty or malformed lists deny all users, including restored sessions.
+> Set the operator's login before deployment. Restart the backend after changing
+> the list so existing WebSocket connections are also closed; this admission list
+> does not cancel background jobs that were already running.
 > Configure encrypted offsite copies via `/opt/qaap/.env.backup` — local tars do not survive disk loss.
 > A production runtime without GitHub OAuth now **exits on
 > startup** unless `QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION` is set.

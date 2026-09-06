@@ -533,6 +533,7 @@ export function interruptStreamingTurnForRestartExtracted(ctx: any, conversation
 }
 
 export async function persistExtracted(ctx: any): Promise<void> {
+    ctx.persistChain = (ctx.persistChain ?? Promise.resolve()).catch(() => undefined).then(async () => {
         try {
             await fsp.mkdir(STORE_DIR, { recursive: true });
             await writeJsonAtomic(INDEX_PATH, [...ctx.conversations.values()]);
@@ -546,6 +547,8 @@ export async function persistExtracted(ctx: any): Promise<void> {
                 console.warn('[qaap-agent-conversation-store] failed to persist conversations:', error);
             }
         }
+    });
+    return ctx.persistChain;
 }
 
 export function captureCheckpointExtracted(ctx: any, cwd: string,

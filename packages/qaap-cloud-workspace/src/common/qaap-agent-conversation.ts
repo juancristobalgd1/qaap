@@ -155,6 +155,8 @@ export interface QaapAgentMessage {
      * anything else that must address one run) keys off this instead.
      */
     readonly runActive?: boolean;
+    /** Immutable end time for this agent turn, independent of later conversation updates. */
+    readonly runFinishedAt?: number;
     /**
      * When this user message was produced by batching multiple queued messages into a single
      * agent turn (delivery mode `'queue'` + optimization B), this holds the IDs of the original

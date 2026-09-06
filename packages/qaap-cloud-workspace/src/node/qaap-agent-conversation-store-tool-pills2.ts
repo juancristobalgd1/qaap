@@ -462,8 +462,8 @@ export function finalizeStreamingAgentMessageExtracted(ctx: any, conv: QaapAgent
             } else if (next.traceEvents?.length || next.segments?.length) {
                 next = syncSettledTraceEventsOnMessage(next);
             }
-            if (next.runActive) {
-                next = { ...next, runActive: undefined };
+            if (next.runActive || next.runFinishedAt === undefined) {
+                next = { ...next, runActive: undefined, runFinishedAt: next.runFinishedAt ?? Date.now() };
             }
             return next;
         });

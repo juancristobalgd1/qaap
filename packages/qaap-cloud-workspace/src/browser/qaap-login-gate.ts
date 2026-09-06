@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 import { fetchQaapAuthConfig, startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
+import { nls } from '@theia/core/lib/common/nls';
+import { placeholderQaapAuthUser, writeQaapAuthSession } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { QAAP_LOGIN_GITHUB_SVG } from './qaap-login-icons';
 import { readQaapSignedIn } from './qaap-login-storage';
 
@@ -64,6 +66,12 @@ export function presentQaapLoginGate(): void {
       <span class="qaap-login-btn-icon-slot" data-icon="github">${QAAP_LOGIN_GITHUB_SVG}</span>
       <span class="qaap-login-btn-label">Sign in with GitHub</span>
     </button>
+    <button type="button" id="qaap-login-local" class="qaap-login-btn qaap-login-btn--secondary" hidden>
+      ${nls.localize('qaap/auth/continueLocal', 'Continue in local mode')}
+    </button>
+    <button type="button" id="qaap-login-retry" class="qaap-login-btn qaap-login-btn--secondary" hidden>
+      ${nls.localize('qaap/auth/retryConnection', 'Retry connection')}
+    </button>
   </div>
   <p id="qaap-login-status" class="qaap-login-status" role="status" aria-live="polite" aria-atomic="true"></p>
   <footer class="qaap-login-footer">
@@ -86,6 +94,23 @@ export function presentQaapLoginGate(): void {
         };
         githubButton.addEventListener('click', handler);
     }
+
+    const localButton = host.querySelector<HTMLButtonElement>('#qaap-login-local');
+    localButton?.addEventListener('click', event => {
+        event.preventDefault();
+        continueInLocalMode(localButton);
+    });
+
+    const retryButton = host.querySelector<HTMLButtonElement>('#qaap-login-retry');
+    retryButton?.addEventListener('click', event => {
+        event.preventDefault();
+        retryButton.disabled = true;
+        const status = host.querySelector<HTMLElement>('#qaap-login-status');
+        if (status) {
+            status.textContent = nls.localize('qaap/auth/checkingServer', 'Checking server connection…');
+        }
+        void reflectGithubAvailability(host);
+    });
 
     host.addEventListener('keydown', event => {
         if (event.key !== 'Tab') {
@@ -110,8 +135,8 @@ export function presentQaapLoginGate(): void {
         }
     });
 
-    // If the server has no GitHub OAuth app configured, clicking would navigate to a 503 blank page.
-    // Detect that and disable the button with an explanation instead (see ONB-1).
+    // If the server has no GitHub OAuth app configured, or cannot be reached, keep the user on this
+    // page with an actionable explanation instead of navigating to a blank/timeout OAuth page.
     void reflectGithubAvailability(host);
     githubButton?.focus();
 }
@@ -136,22 +161,76 @@ function authorize(button: HTMLButtonElement): void {
 }
 
 /**
- * Reflect whether GitHub sign-in is actually usable. When the backend reports no OAuth app (and
- * skip-auth is off), disable the button and explain, so the user never lands on the raw 503 page.
+ * Reflect whether GitHub sign-in is actually usable. When OAuth is unavailable or the backend
+ * cannot be reached, keep the user on this page with a clear recovery action.
  */
 async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
-    let available = true;
+    const button = host.querySelector<HTMLButtonElement>('#qaap-login-github');
+    const localButton = host.querySelector<HTMLButtonElement>('#qaap-login-local');
+    const retryButton = host.querySelector<HTMLButtonElement>('#qaap-login-retry');
+    const status = host.querySelector<HTMLElement>('#qaap-login-status');
+    if (localButton) {
+        localButton.hidden = true;
+    }
+    if (retryButton) {
+        retryButton.hidden = true;
+        retryButton.disabled = false;
+    }
+    if (button) {
+        button.disabled = false;
+        button.removeAttribute('aria-disabled');
+        button.classList.remove('qaap-login-btn--unavailable');
+        const label = button.querySelector('.qaap-login-btn-label');
+        if (label) {
+            label.textContent = nls.localize('qaap/auth/signInWithGithub', 'Sign in with GitHub');
+        }
+    }
     try {
         const config = await fetchQaapAuthConfig();
-        available = config.githubOAuth === true || config.skipAuth === true;
+        if (config.skipAuth === true && localButton) {
+            localButton.hidden = false;
+            if (status) {
+                status.textContent = nls.localize(
+                    'qaap/auth/localModeAvailable',
+                    'Local development mode is enabled on this server.'
+                );
+            }
+        }
+        if (config.githubOAuth === true) {
+            return;
+        }
+        if (config.skipAuth === true) {
+            setGithubUnavailable(
+                host,
+                nls.localize(
+                    'qaap/auth/githubUnavailableLocalMode',
+                    'GitHub sign-in is unavailable. Continue in local mode or configure GitHub OAuth.'
+                )
+            );
+            return;
+        }
+        setGithubUnavailable(
+            host,
+            nls.localize(
+                'qaap/auth/githubUnavailable',
+                'GitHub sign-in isn’t configured on this server yet. Ask the administrator to set the GitHub OAuth credentials.'
+            )
+        );
     } catch {
-        // Config unknown (fetch error/timeout) — leave the button enabled; a transient blip must
-        // never lock out a working login.
-        return;
+        setGithubUnavailable(
+            host,
+            nls.localize(
+                'qaap/auth/serverUnavailable',
+                'The Qaap server is not responding. Check the VPS, proxy, or firewall, then retry.'
+            )
+        );
+        if (retryButton) {
+            retryButton.hidden = false;
+        }
     }
-    if (available) {
-        return;
-    }
+}
+
+function setGithubUnavailable(host: HTMLElement, message: string): void {
     const button = host.querySelector<HTMLButtonElement>('#qaap-login-github');
     if (button) {
         button.disabled = true;
@@ -159,14 +238,20 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
         button.classList.add('qaap-login-btn--unavailable');
         const label = button.querySelector('.qaap-login-btn-label');
         if (label) {
-            label.textContent = 'GitHub sign-in unavailable';
+            label.textContent = nls.localize('qaap/auth/githubUnavailableButton', 'GitHub sign-in unavailable');
         }
     }
     const status = host.querySelector<HTMLElement>('#qaap-login-status');
     if (status) {
-        status.textContent = 'GitHub sign-in isn’t configured on this server yet. '
-            + 'Ask the administrator to set the GitHub OAuth credentials or enable QAAP_SKIP_AUTH for local use.';
+        status.textContent = message;
     }
+}
+
+function continueInLocalMode(button: HTMLButtonElement): void {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    writeQaapAuthSession('gitlab', placeholderQaapAuthUser('gitlab'));
+    dismissQaapLoginGate();
 }
 
 function escapeHtml(value: string): string {

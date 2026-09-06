@@ -27,6 +27,13 @@ export const AGENT_INSTRUCTIONS_MAX_CHARS = 6000;
 export const REPO_MEMORY_MAX_CHARS = 2000;
 export const AGENT_INSTRUCTION_FILES: readonly string[] = ['CLAUDE.md', 'AGENTS.md', '.cursorrules'];
 
+export type QaapAgentStdinPromptMode = 'qaiq-stdio' | 'plain';
+
+export interface QaapAgentStdinPrompt {
+    readonly text: string;
+    readonly mode: QaapAgentStdinPromptMode;
+}
+
 // ─── Agent detection ─────────────────────────────────────────────────────────
 
 export function readCodexHelp(): string {
@@ -89,6 +96,11 @@ export function applyTemplate(template: string, prompt: string, vars: Record<str
 /** Template expansion for stdio-approval runs: the prompt is delivered over stdin, not argv. */
 export function applyTemplateWithoutPrompt(template: string, vars: Record<string, string> = {}): string {
     return applyTemplateVars(template.split('{prompt}').join(' '), vars);
+}
+
+/** Template expansion for CLIs such as Codex that read a prompt from stdin when given `-`. */
+export function applyTemplateWithStdinPrompt(template: string, vars: Record<string, string> = {}): string {
+    return applyTemplateVars(template.split('{prompt}').join('-'), vars);
 }
 
 export function truncateForPrompt(value: string, maxChars: number): string {
@@ -238,6 +250,18 @@ export function applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
     env.OPENAI_API_KEY = hfKey;
     env.OPENAI_BASE_URL = 'https://router.huggingface.co/v1';
     delete env.NVIDIA_NIM;
+}
+
+/** Prepend a directory without creating a duplicate case-variant PATH on Windows. */
+export function prependPathEntry(env: NodeJS.ProcessEnv, entry: string): void {
+    const pathKey = Object.keys(env).find(key => key.toLowerCase() === 'path') ?? 'PATH';
+    const existingPath = env[pathKey]?.trim();
+    env[pathKey] = existingPath ? `${entry}${path.delimiter}${existingPath}` : entry;
+    for (const key of Object.keys(env)) {
+        if (key !== pathKey && key.toLowerCase() === 'path') {
+            delete env[key];
+        }
+    }
 }
 
 // ─── Other pure helpers ──────────────────────────────────────────────────────

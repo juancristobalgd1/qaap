@@ -34,10 +34,8 @@ fi
 HEALTH_CODE="$(code_of GET /qaap/api/health)"
 if [[ "$HEALTH_CODE" == "200" ]]; then
     ok "GET /qaap/api/health → 200"
-elif [[ "$HEALTH_CODE" == "404" ]]; then
-    echo "  WARN GET /qaap/api/health → 404 (pre-health image; deploy this branch)"
 else
-    bad "GET /qaap/api/health → ${HEALTH_CODE} (expected 200 or 404 on old images)"
+    bad "GET /qaap/api/health → ${HEALTH_CODE} (expected 200)"
 fi
 
 expect_401() {

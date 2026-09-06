@@ -101,8 +101,8 @@ export function clearRunActive(
     }
     return {
         ...conv,
-        messages: conv.messages.map(message => message.id === agentMessageId && message.runActive
-            ? { ...message, runActive: undefined }
+        messages: conv.messages.map(message => message.id === agentMessageId && message.role === 'agent'
+            ? { ...message, runActive: undefined, runFinishedAt: message.runFinishedAt ?? Date.now() }
             : message),
     };
 }

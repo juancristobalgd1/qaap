@@ -19,6 +19,8 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('aria-live="polite"');
         expect(source).to.include('href="/legal/terms.html"');
         expect(source).to.include('href="/legal/privacy.html"');
+        expect(source).to.include('id="qaap-login-local"');
+        expect(source).to.include('id="qaap-login-retry"');
         expect(source).to.include("host.querySelectorAll<HTMLElement>(");
         expect(source).to.not.include("githubButton.addEventListener('keydown'");
         expect(source).to.not.include('data-qaap-link');
@@ -33,9 +35,16 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include("button.setAttribute('aria-busy', 'true')");
         expect(source).to.include('href="/legal/terms.html"');
         expect(source).to.include('href="/legal/privacy.html"');
+        expect(source).to.include('id="qaap-login-local"');
+        expect(source).to.include('id="qaap-login-retry"');
         expect(source).to.include('.qaap-login-footer a:focus-visible');
         expect(source).to.include('cursor:not-allowed');
         expect(source).to.include('.qaap-login-btn[aria-busy="true"]{cursor:wait}');
+        expect(source).to.include('var AUTH_CONFIG_TIMEOUT_MS = 4000');
+        expect(source).to.include('var AUTH_SESSION_TIMEOUT_MS = 6000');
+        expect(source).to.include('function showGateAndLoadBundle()');
+        expect(source).to.include('if (skipped === false)');
+        expect(source).to.include('return undefined;');
         expect(source).to.not.include('.qaap-login-btn:disabled{opacity:.85;cursor:wait}');
     });
 

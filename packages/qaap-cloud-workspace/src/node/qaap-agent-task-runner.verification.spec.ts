@@ -187,11 +187,15 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             if (!baseline.worktreeBaselineFingerprint || baseline.worktreeBaselineStatus === undefined) {
                 throw new Error('Expected a worktree baseline.');
             }
-            const task: QaapAgentTask = { ...TASK, cwd, ...baseline };
+              const task: QaapAgentTask = { ...TASK, cwd, ...baseline };
             expect(await runner.hasTaskEdits(task)).to.equal(false);
+            const checked = { ...task, worktreeFinishedFingerprint: baseline.worktreeBaselineFingerprint };
+            expect(runner.checkTaskWorkspaceSnapshot(checked)).to.equal('current');
+            expect(runner.checkTaskWorkspaceSnapshot(task)).to.equal('unknown');
 
             fs.writeFileSync(tracked, 'changed by task\n', 'utf8');
             expect(await runner.hasTaskEdits(task)).to.equal(true);
+            expect(runner.checkTaskWorkspaceSnapshot(checked)).to.equal('changed');
         } finally {
             fs.rmSync(cwd, { recursive: true, force: true });
         }

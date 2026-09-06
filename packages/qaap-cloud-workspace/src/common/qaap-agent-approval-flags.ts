@@ -33,6 +33,8 @@ export interface QaapAgentApprovalFlagOptions {
     readonly autoApprove?: boolean;
     readonly interactionModeId?: string;
     readonly toolApprovalRules?: QaapAgentToolApprovalRules;
+    /** Detected modern Codex CLI capability; older versions use the legacy approval flag. */
+    readonly codexSupportsApproveForMe?: boolean;
     /**
      * The turn must not modify its working directory (a workflow node with `isolation: 'cwd-readonly'`
      * — an explorer, a judge). Overrides every approval preset: an approval policy decides who says
@@ -154,7 +156,7 @@ export function applyAgentApprovalPolicyToCommand(
         return applyClaudeApprovalFlags(command, policyId, rules);
     }
     if (effectiveId === 'codex') {
-        return applyCodexApprovalFlags(command, policyId, rules);
+        return applyCodexApprovalFlags(command, policyId, rules, options.codexSupportsApproveForMe);
     }
     if (effectiveId === 'opencode') {
         return applyOpencodeApprovalFlags(command, policyId, rules);
@@ -282,13 +284,17 @@ function applyCodexApprovalFlags(
     command: string,
     policyId: QaapAgentApprovalPolicyId,
     rules: QaapAgentToolApprovalRules | undefined,
+    codexSupportsApproveForMe: boolean | undefined,
 ): string {
     let next = stripCodexApprovalFlags(command);
     if (policyId === 'full-access' || rules?.network) {
         return injectAfterExecutable(next, 'codex', '--dangerously-bypass-approvals-and-sandbox');
     }
     if (policyId === 'approve-for-me' && rules?.shell) {
-        return injectAfterExecutable(next, 'codex', '--sandbox workspace-write --ask-for-approval untrusted');
+        const flags = codexSupportsApproveForMe
+            ? '--approve-for-me'
+            : '--sandbox workspace-write --ask-for-approval untrusted';
+        return injectAfterExecutable(next, 'codex', flags);
     }
     if (policyId === 'approve-for-me') {
         return injectAfterExecutable(next, 'codex', '--full-auto');

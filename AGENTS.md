@@ -77,8 +77,8 @@ For browser/UI changes:
 ## Qaap product constraints
 
 - Work Hub is the default surface on a fresh browser tab.
-- Classic IDE should open only after an explicit in-runtime “Open IDE” action.
-- Be careful with persistence: do not introduce desktop-IDE preference persistence in `localStorage`, URL state, or restored layout unless the current product contract explicitly calls for it.
+- Preserve the user's active surface (IDE or ADE/Agents/Work Hub) across reload/F5 in the same tab. This is intentional product behavior, confirmed by the owner on 2026-09-05; do not reset IDE to ADE on reload.
+- Persist that explicit surface choice in `sessionStorage` for the current tab. A new tab without a stored choice defaults to Work Hub. Do not use `localStorage`, URL state or restored layout as the surface selector. See `.cursor/rules/work-hub-reload-default.mdc`.
 - Example apps should depend on `@theia/qaap-product` once so the Qaap product extensions are pulled transitively.
 - Keep mobile viewport behavior synchronized between TypeScript helpers and CSS breakpoints.
 - For nested scrollable mobile overlays, ensure flex children use `min-height: 0` with native overflow where needed.

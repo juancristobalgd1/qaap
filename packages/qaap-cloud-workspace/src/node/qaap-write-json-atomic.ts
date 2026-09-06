@@ -41,17 +41,35 @@ function serialize(value: unknown, options?: WriteJsonAtomicOptions): string {
 
 export async function writeJsonAtomic(filePath: string, value: unknown, options?: WriteJsonAtomicOptions): Promise<void> {
     const tmp = tempPathFor(filePath);
+    let created = false;
     try {
-        await fsp.writeFile(tmp, serialize(value, options), options?.mode !== undefined
-            ? { encoding: 'utf8', mode: options.mode }
-            : { encoding: 'utf8' });
+        const content = serialize(value, options);
+        const handle = await fsp.open(tmp, 'wx', options?.mode);
+        created = true;
+        try {
+            await handle.writeFile(content, 'utf8');
+            if (options?.mode !== undefined) {
+                await handle.chmod(options.mode);
+            }
+            await handle.sync();
+        } finally {
+            await handle.close();
+        }
         await fsp.rename(tmp, filePath);
-        if (options?.mode !== undefined) {
-            // rename preserves the temp mode, but umask may have loosened it on create — re-tighten.
-            await fsp.chmod(filePath, options.mode).catch(() => undefined);
+        // Linux requires syncing the directory to persist the replacement name as well.
+        // Windows does not support opening directories this way.
+        if (process.platform !== 'win32') {
+            const directory = await fsp.open(path.dirname(filePath), 'r');
+            try {
+                await directory.sync();
+            } finally {
+                await directory.close();
+            }
         }
     } catch (error) {
-        await fsp.rm(tmp, { force: true }).catch(() => undefined);
+        if (created) {
+            await fsp.rm(tmp, { force: true }).catch(() => undefined);
+        }
         throw error;
     }
 }
@@ -64,9 +82,8 @@ export async function writeJsonAtomic(filePath: string, value: unknown, options?
  * the temp file is never cleaned up — the `catch` block never runs. Over many backend restarts
  * these orphans accumulate unboundedly (observed: 90 GB across 1600+ files in ~/.qaap).
  *
- * This function scans the destination's directory for temp files belonging to *other* PIDs and
- * deletes them. Temp files from the current PID are left alone (a concurrent write may be in
- * flight). Safe to call on startup before the first read.
+ * Only files with the exact generated name and a confirmed dead PID are removed.
+ * Live processes and permission/inspection failures are left alone.
  */
 export async function sweepOrphanedTempFiles(filePath: string): Promise<void> {
     const dir = path.dirname(filePath);
@@ -79,16 +96,14 @@ export async function sweepOrphanedTempFiles(filePath: string): Promise<void> {
     } catch {
         return; // directory doesn't exist yet — nothing to sweep
     }
-    const myPid = `${process.pid}`;
     await Promise.all(entries.map(async entry => {
         if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) {
             return;
         }
         // entry pattern: {base}.{pid}.{counter}.tmp
         const middle = entry.slice(prefix.length, -suffix.length);
-        const pid = middle.split('.')[0];
-        if (pid === myPid) {
-            return; // could be an in-flight write from this process
+        if (!isConfirmedOrphan(middle)) {
+            return;
         }
         try {
             await fsp.unlink(path.join(dir, entry));
@@ -113,14 +128,12 @@ export function sweepOrphanedTempFilesSync(filePath: string): void {
     } catch {
         return;
     }
-    const myPid = `${process.pid}`;
     for (const entry of entries) {
         if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) {
             continue;
         }
         const middle = entry.slice(prefix.length, -suffix.length);
-        const pid = middle.split('.')[0];
-        if (pid === myPid) {
+        if (!isConfirmedOrphan(middle)) {
             continue;
         }
         try {
@@ -131,23 +144,53 @@ export function sweepOrphanedTempFilesSync(filePath: string): void {
     }
 }
 
+/** Signal zero checks existence without terminating or signalling the writer. */
+function isConfirmedOrphan(middle: string): boolean {
+    if (!/^[1-9]\d*\.\d+$/.test(middle)) {
+        return false;
+    }
+    const pid = Number(middle.split('.')[0]);
+    if (!Number.isSafeInteger(pid) || pid > 0x7fffffff || pid === process.pid) {
+        return false;
+    }
+    try {
+        process.kill(pid, 0);
+        return false;
+    } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'ESRCH';
+    }
+}
+
 export function writeJsonAtomicSync(filePath: string, value: unknown, options?: WriteJsonAtomicOptions): void {
     const tmp = tempPathFor(filePath);
+    let created = false;
     try {
-        fs.writeFileSync(tmp, serialize(value, options), options?.mode !== undefined
-            ? { encoding: 'utf8', mode: options.mode }
-            : { encoding: 'utf8' });
+        const content = serialize(value, options);
+        const fd = fs.openSync(tmp, 'wx', options?.mode);
+        created = true;
+        try {
+            fs.writeFileSync(fd, content, 'utf8');
+            if (options?.mode !== undefined) {
+                fs.fchmodSync(fd, options.mode);
+            }
+            fs.fsyncSync(fd);
+        } finally {
+            fs.closeSync(fd);
+        }
         fs.renameSync(tmp, filePath);
-        if (options?.mode !== undefined) {
+        if (process.platform !== 'win32') {
+            const directory = fs.openSync(path.dirname(filePath), 'r');
             try {
-                fs.chmodSync(filePath, options.mode);
-            } catch {
-                /* best-effort tighten; the write above already set the mode on create */
+                fs.fsyncSync(directory);
+            } finally {
+                fs.closeSync(directory);
             }
         }
     } catch (error) {
         try {
-            fs.rmSync(tmp, { force: true });
+            if (created) {
+                fs.rmSync(tmp, { force: true });
+            }
         } catch {
             /* temp may not exist */
         }

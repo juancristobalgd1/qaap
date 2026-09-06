@@ -87,6 +87,8 @@ export interface QaapAgentTask {
      * Absent on legacy tasks and when the working directory is not a readable Git repository.
      */
     readonly worktreeBaselineFingerprint?: string;
+    /** Snapshot at command completion; absent when the workspace cannot be fingerprinted. */
+    readonly worktreeFinishedFingerprint?: string;
     /**
      * Normalized `git status --porcelain` captured with {@link worktreeBaselineFingerprint}. Used as
      * a fail-closed fallback when the content fingerprint cannot be re-computed (budget exceeded,

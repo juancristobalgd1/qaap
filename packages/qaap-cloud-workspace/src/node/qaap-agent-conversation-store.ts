@@ -750,6 +750,7 @@ export class QaapAgentConversationStore {
 
     /** Throttle persist-failure warnings so a sustained disk error can't spam the log every 500ms. */
     protected persistFailureLoggedAtMs = 0;
+    protected persistChain: Promise<void> = Promise.resolve();
 
     protected async persist(): Promise<void> {
         return persistExtracted(this);

@@ -247,9 +247,9 @@ describe('qaap-sticky-composer-activity-stack', () => {
 
             const commitBtn = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-btn');
             expect(commitBtn).to.exist;
-            expect(commitBtn!.textContent).to.equal('Commit & Push');
+            expect(commitBtn!.textContent).to.equal('Commit');
             commitBtn!.click();
-            expect(actions).to.deep.equal(['commit-push']);
+            expect(actions).to.deep.equal(['commit']);
 
             const menuBtn = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu');
             const dropdown = host!.querySelector<HTMLElement>('.theia-mobile-sticky-composer-commit-dropdown');
@@ -263,11 +263,11 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(items.map(item => item.textContent)).to.deep.equal([
                 'Create Branch & Commit',
                 'Create Branch, Commit & Push',
-                'Commit',
+                'Commit & Push',
                 'Commit & Create PR',
             ]);
             items[0].click();
-            expect(actions).to.deep.equal(['commit-push', 'create-branch-commit']);
+            expect(actions).to.deep.equal(['commit', 'create-branch-commit']);
             expect(dropdown!.hidden).to.equal(true);
         });
 

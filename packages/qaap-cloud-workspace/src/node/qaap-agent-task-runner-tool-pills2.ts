@@ -123,6 +123,7 @@ import {
     applyOpenRouterOpenAiCompatEnv as applyOpenRouterOpenAiCompatEnvHelper,
     applyNvidiaOpenAiCompatEnv as applyNvidiaOpenAiCompatEnvHelper,
     applyHuggingfaceOpenAiCompatEnv as applyHuggingfaceOpenAiCompatEnvHelper,
+    prependPathEntry as prependPathEntryHelper,
     noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
     changedSensitiveFiles as changedSensitiveFilesHelper,
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
@@ -166,6 +167,8 @@ export function runGenericCommandExtracted(ctx: any, command: string,
             readonly tailOutput?: boolean;
             /** Bounds each captured stream in memory while retaining its most recent output. */
             readonly maxCaptureChars?: number;
+            /** Plain-text prompt to deliver over stdin instead of embedding it in the command. */
+            readonly stdinPrompt?: string;
         } = {},): Promise<QaapGenericCommandResult> {
         if (options.header) {
             ctx.appendAndFireOutput(taskId, options.header);
@@ -191,7 +194,8 @@ export function runGenericCommandExtracted(ctx: any, command: string,
                 child = ctx.spawnAgentCommand(command, {
                     cwd,
                     env,
-                    stdio: ['ignore', 'pipe', 'pipe'],
+                    stdio: options.stdinPrompt === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+                    detached: options.stdinPrompt === undefined ? undefined : false,
                 });
             } catch (error) {
                 stderr = error instanceof Error ? error.message : String(error);
@@ -199,6 +203,9 @@ export function runGenericCommandExtracted(ctx: any, command: string,
                 return;
             }
             ctx.processes.set(taskId, child);
+            if (options.stdinPrompt !== undefined) {
+                child.stdin?.end(options.stdinPrompt);
+            }
             let killTimer: NodeJS.Timeout | undefined;
             const timeout = setTimeout(() => {
                 timedOut = true;
@@ -274,6 +281,7 @@ export function spawnAgentCommandExtracted(ctx: any, command: string, options: {
         cwd: string;
         env: NodeJS.ProcessEnv;
         stdio: ('pipe' | 'ignore')[];
+        detached?: boolean;
     }): ChildProcess {
         return ctx.tenantSpawn.spawn(command, options);
 }
@@ -408,7 +416,7 @@ export function applyHelperEnvExtracted(ctx: any, env: NodeJS.ProcessEnv, ownerL
         if (autoApprove !== false) {
             env.QAAP_TASK_AUTO_APPROVE = '1';
         }
-        env.PATH = `${HELPER_BIN_DIR}${path.delimiter}${env.PATH ?? ''}`;
+        prependPathEntryHelper(env, HELPER_BIN_DIR);
         return true;
 }
 
@@ -428,7 +436,9 @@ export function finishTaskExtracted(ctx: any, id: string, state: QaapAgentTaskSt
         if (!task) {
             return undefined;
         }
-        const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now() };
+        const worktreeFinishedFingerprint = task.worktreeBaselineFingerprint && task.agentId === 'shell'
+            ? ctx.captureWorktreeFingerprint(task.cwd) : undefined;
+        const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now(), worktreeFinishedFingerprint };
         ctx.tasks.set(id, finished);
         void ctx.persist();
         const durationMs = billableAgentDurationMs(finished);
@@ -505,6 +515,9 @@ export async function readLogExtracted(ctx: any, id: string): Promise<string> {
 }
 
 export function persistExtracted(ctx: any): Promise<void> {
+        if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed') {
+            return Promise.resolve();
+        }
         const queuedRequests: Record<string, QaapCreateAgentTaskRequest> = {};
         for (const [taskId, request] of ctx.queuedCreateRequests) {
             if (ctx.tasks.get(taskId)?.state === 'queued') {
@@ -520,12 +533,21 @@ export function persistExtracted(ctx: any): Promise<void> {
         ctx.persistChain = previous
             .catch(() => undefined)
             .then(async () => {
+                if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed') {
+                    return;
+                }
                 await fsp.mkdir(STORE_DIR, { recursive: true, mode: STORE_DIR_MODE });
                 await fsp.chmod(STORE_DIR, STORE_DIR_MODE).catch(() => undefined);
                 await writeJsonAtomic(INDEX_PATH, index, { mode: STORE_FILE_MODE });
+                const wasFailed = ctx.storageWriteFailed;
+                ctx.storageWriteFailed = false;
+                if (wasFailed) {
+                    ctx.drainQueuedTasks();
+                }
             })
-            .catch(error => {
-                console.warn('[qaap-agent-tasks] failed to persist task index:', error);
+            .catch(() => {
+                ctx.storageWriteFailed = true;
+                console.warn('[qaap-agent-tasks] task storage write failed; new tasks and queue promotion are blocked.');
             });
         return ctx.persistChain;
 }

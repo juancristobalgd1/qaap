@@ -86,7 +86,7 @@ export class QaapLoginContribution implements FrontendApplicationContribution {
                 }
             } else {
                 // Reconcile localStorage with the backend (VPS/container restarts can drop server sessions).
-                await syncQaapAuthSessionFromServer();
+                await syncQaapAuthSessionFromServer(config);
             }
         } catch {
             if (this.shouldBypassLoginGate()) {

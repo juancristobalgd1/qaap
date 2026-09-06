@@ -132,6 +132,8 @@ export type QaapTranscriptTraceEventDTO =
     | { readonly type: 'checkpoint'; readonly id: string; readonly label: string; readonly commit: string; readonly capturedAt: number; readonly added?: number; readonly removed?: number };
 
 export interface QaapAgentMessageDTO {
+    readonly runActive?: boolean;
+    readonly runFinishedAt?: number;
     readonly id: string;
     readonly role: 'user' | 'agent';
     readonly content: string;

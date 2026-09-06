@@ -162,6 +162,7 @@ export interface QaapAgentMessageDTO {
     readonly runUserMessageId?: string;
     /** True while THIS agent message's run is still streaming (in-session multitasking). */
     readonly runActive?: boolean;
+    readonly runFinishedAt?: number;
     /** Client-only attachment previews for optimistic pending-user rows (never sent to VPS). */
     readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[];
 }

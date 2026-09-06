@@ -3038,6 +3038,12 @@ body>.theia-mobile-transcript-files-menu {
   border-top: none;
 }
 
+.theia-mobile-transcript-verify-evidence {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .theia-mobile-transcript-verify-dot {
   width: 9px;
   height: 9px;
@@ -9746,7 +9752,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host),
 .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-inline-active:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host),
 .theia-mobile-projects.theia-mod-sticky-composer:has(.theia-mobile-agent-transcript > .theia-mobile-agent-live-status):has(.theia-mobile-sticky-composer-changes-pill-host) {
-  --theia-mobile-transcript-composer-scroll-gap: calc(-1 * (var(--qaap-composer-pill-strip-height, 40px) + 8px));
+  --theia-mobile-transcript-composer-scroll-gap: 16px;
 }
 
 body.theia-mobile-mod-workhub-composer-header .theia-mobile-projects.theia-mod-sticky-composer.theia-mod-agents-hub-shell-active:has(.theia-mobile-projects-sticky-composer-card.theia-mod-codex)>.theia-mobile-projects-sticky-composer:not([hidden]),

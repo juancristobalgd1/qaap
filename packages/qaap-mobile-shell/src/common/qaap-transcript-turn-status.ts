@@ -8,6 +8,20 @@ import { hasActiveQaapTraceWork, resolveQaapTranscriptTrace } from './qaap-trans
 
 export type TranscriptAgentExecutionPhase = 'working' | 'finalizing' | 'ready' | 'failed';
 
+/** Resolve timing from the rendered message, never from a later conversation turn. */
+export function resolveAgentMessageTiming(conv: QaapAgentConversationDTO | undefined, message: QaapAgentMessageDTO | undefined, now = Date.now()): { isWorking: boolean; turnStartMs: number | undefined; elapsedMs: number | undefined } {
+    const index = conv?.messages.findIndex(item => item.id === message?.id) ?? -1;
+    const owner = conv?.messages.find(item => item.id === message?.runUserMessageId)
+        ?? conv?.messages.slice(0, index).reverse().find(item => item.role === 'user');
+    const turnStartMs = owner?.createdAt ?? message?.createdAt;
+    const nextUserAt = conv?.messages.slice(index + 1).find(item => item.role === 'user')?.createdAt;
+    const cancelledAt = message?.traceEvents?.find(event => event.type === 'run_cancelled')?.startedAt;
+    const isWorking = (conv?.status === 'streaming' || conv?.status === 'settled')
+        && cancelledAt === undefined && message?.runFinishedAt === undefined && nextUserAt === undefined;
+    const endAt = message?.runFinishedAt ?? cancelledAt ?? nextUserAt ?? conv?.updatedAt;
+    return { isWorking, turnStartMs, elapsedMs: turnStartMs === undefined ? undefined : Math.max(0, (isWorking ? now : endAt ?? turnStartMs) - turnStartMs) };
+}
+
 export interface TranscriptAgentExecutionState {
     readonly phase: TranscriptAgentExecutionPhase;
     readonly busy: boolean;
@@ -71,11 +85,11 @@ export function resolveTranscriptEffectiveStatus(
     if (conv.status === 'failed') {
         return 'failed';
     }
-    if (hasUnfinishedAgentWork(conv)) {
-        return 'streaming';
-    }
     if (conv.status !== 'streaming') {
         return conv.status;
+    }
+    if (hasUnfinishedAgentWork(conv)) {
+        return 'streaming';
     }
     // When the turn is visually settled but the backend task is still attached, return 'settled'
     // for transcript rendering only. Execution chrome must use resolveTranscriptAgentExecutionState.
@@ -109,8 +123,7 @@ export function resolveTranscriptAgentExecutionState(
         // and the Changes Accept/Discard menu) is NOT busy — even if the last message's trace still
         // looks unfinished. A flaky model can leave a tool_call 'pending' forever, which previously
         // wedged the turn in a permanent "working" state and disabled Accept/Discard. Rendering may
-        // still show the tail as streaming (resolveTranscriptEffectiveStatus) — that is a deliberate
-        // visual choice, not execution state.
+        // retain trace details, but must not restart timers or show an active turn.
         return { phase: 'ready', busy: false };
     }
     if (summary?.status === 'failed') {

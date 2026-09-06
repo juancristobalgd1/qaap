@@ -43,16 +43,13 @@ FROM node:22-bookworm-slim AS runtime
 # Connect the GHCR package to this repository and make the image provenance discoverable.
 LABEL org.opencontainers.image.source="https://github.com/juancristobalgd1/qaap"
 
-# QAIQ source. Default tracks `main`; the deploy script pins each build to the current main SHA via
-# CACHE_BUST (below) so builds are reproducible AND never frozen. Override the ref with
-# `--build-arg QAIQ_REF=<tag-or-branch>`.
+# Agent upgrades are explicit release changes. QAIQ_COMMIT below is also read by CI.
 ARG QAIQ_REPO=https://github.com/juancristobalgd1/qaiq.git
-ARG QAIQ_REF=main
 ARG CODEX_CLI_VERSION=0.144.5
-ARG CLAUDE_CODE_VERSION=latest
-ARG ANTIGRAVITY_CLI_VERSION=latest
-ARG OPENCODE_CLI_VERSION=latest
-ARG COPILOT_CLI_VERSION=latest
+ARG CLAUDE_CODE_VERSION=2.1.261
+ARG ANTIGRAVITY_CLI_VERSION=0.1.1
+ARG OPENCODE_CLI_VERSION=1.18.28
+ARG COPILOT_CLI_VERSION=1.0.83
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -85,14 +82,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && HOME=/opt/grok GROK_BIN_DIR=/opt/grok/bin bash -c 'curl -fsSL https://x.ai/cli/install.sh | bash' \
     && /opt/grok/bin/grok version
 
-# QAIQ builds in its OWN layer so a deploy can pull a fresh `main` (or a pinned ref) without
-# rebuilding the whole toolchain above, and so it is never silently frozen at the first build's
-# commit (the RUN above stays cached; only this layer re-runs). Cached by (QAIQ_REF, CACHE_BUST) —
-# the deploy script passes the current `main` SHA as CACHE_BUST, so it re-clones exactly when
-# upstream advances. Manual force: --build-arg CACHE_BUST=$(date +%s).
+# Fetch and verify the reviewed commit itself, rather than using its SHA only as a cache key.
 ARG CACHE_BUST=unpinned
-RUN git clone --depth 1 --branch "${QAIQ_REF}" "${QAIQ_REPO}" /opt/qaiq \
-    && cd /opt/qaiq && bun install && bun run build \
+ARG QAIQ_COMMIT=1668998491d7265c754d94935b932cd9042f9b92
+RUN test -n "${QAIQ_COMMIT}" \
+    && echo "${QAIQ_COMMIT}" | grep -Eq '^[0-9a-f]{40}$' \
+    && git init /opt/qaiq \
+    && cd /opt/qaiq \
+    && git remote add origin "${QAIQ_REPO}" \
+    && git fetch --depth 1 origin "${QAIQ_COMMIT}" \
+    && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${QAIQ_COMMIT}" \
+    && bun install --frozen-lockfile && bun run build \
     && ln -sf /opt/qaiq/bin/qaiq /usr/local/bin/qaiq \
     && ln -sf /opt/qaiq/bin/openclaude /usr/local/bin/openclaude \
     && qaiq --version \
@@ -128,6 +129,8 @@ RUN groupadd --gid 1001 qaap-agent \
     # the root backend creates the per-tenant subdirs at spawn. No-op when the flag is off.
     && mkdir -p /home/qaap-tenants \
     && chmod 0711 /home/qaap-tenants \
+    && mkdir -p /tmp/qaap-worktrees /tmp/qaap-parallel \
+    && chmod 0711 /tmp/qaap-worktrees /tmp/qaap-parallel \
     # The root backend runs git (status/stage/discard/commit/diff) on per-user repos that the agent
     # (uid 1001, or a per-tenant uid) owns after chown-on-spawn. Without this, git aborts every such
     # command with "detected dubious ownership", breaking the composer Accept/Discard/Commit and the

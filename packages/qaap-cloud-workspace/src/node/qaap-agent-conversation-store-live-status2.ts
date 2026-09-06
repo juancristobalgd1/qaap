@@ -293,6 +293,7 @@ export function applyAgUiTranscriptEventExtracted(ctx: any, conversationId: stri
         ...rebuilt,
         ...(runOwner ? { runUserMessageId: runOwner } : {}),
         ...(previousMessage?.runActive ? { runActive: true } : {}),
+        ...(previousMessage?.runFinishedAt !== undefined ? { runFinishedAt: previousMessage.runFinishedAt } : {}),
     };
     messages = messages.map(message => message.id === agentMessageId ? agentMessage : message);
     const next: QaapAgentConversation = {

@@ -61,6 +61,27 @@ class TestOwnershipRepairService extends QaapTenantSpawnService {
 const reposRoot = resolveQaapReposRoot();
 const tenantCwd = path.join(reposRoot, 'users', 'alice', 'octocat', 'hello');
 
+describe('Qaap command output capture', () => {
+    it('captures output and a failing exit status from a real shell command', async () => {
+        class LocalSpawn extends QaapTenantSpawnService {
+            override resolveSpawnIdentity(): {} { return {}; }
+            protected override isSetprivAvailable(): boolean { return false; }
+        }
+        const service = new LocalSpawn();
+        const child = service.spawn(`"${process.execPath}" -e "console.log('qaap-capture');process.exit(7)"`, {
+            cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe']
+        });
+        let output = '';
+        child.stdout?.on('data', chunk => { output += chunk; });
+        const code = await new Promise<number | null>((resolve, reject) => {
+            child.once('error', reject);
+            child.once('close', resolve);
+        });
+        expect(output).to.contain('qaap-capture');
+        expect(code).to.equal(7);
+    });
+});
+
 describe('QaapTenantSpawnService.prepareTenantIsolation', () => {
 
     it('repairs the complete working tree once even when the root directory was already tenant-owned', () => {
@@ -222,7 +243,7 @@ describe('QaapTenantSpawnService.wrapGitForTenant (mutating git over a tenant re
         expect(wrapped.file).to.equal('/usr/bin/setpriv');
         expect(wrapped.args).to.deep.equal([
             '--reuid', '20005', '--regid', '20005', '--clear-groups', '--',
-            'git', '-c', 'core.hooksPath=/dev/null', '-C', '/workspace/repos/users/alice/o/r',
+            'git', '-c', 'core.hooksPath=/dev/null', '-C', path.resolve('/workspace/repos/users/alice/o/r'),
             'worktree', 'add', '-b', 'b', '/wt', 'HEAD',
         ]);
     });
@@ -232,7 +253,7 @@ describe('QaapTenantSpawnService.wrapGitForTenant (mutating git over a tenant re
         svc.identity = {};
         const wrapped = svc.wrapGitForTenant('/repo', ['merge', '--no-ff', 'x']);
         expect(wrapped.file).to.equal('git');
-        expect(wrapped.args).to.deep.equal(['-c', 'core.hooksPath=/dev/null', '-C', '/repo', 'merge', '--no-ff', 'x']);
+        expect(wrapped.args).to.deep.equal(['-c', 'core.hooksPath=/dev/null', '-C', path.resolve('/repo'), 'merge', '--no-ff', 'x']);
     });
 });
 

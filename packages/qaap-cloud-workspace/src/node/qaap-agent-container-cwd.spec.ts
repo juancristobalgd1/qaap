@@ -21,6 +21,7 @@ describe('agent spawn refuses a workspace-container cwd', () => {
             tasks: new Map(),
             queuedCreateRequests: new Map(),
             processes: new Map(),
+            detectedAgents: new Map(),
             onDidChangeTaskEmitter: { fire: () => undefined },
             maxConcurrentAgents: () => 4,
             countRunningTasks: () => 0,

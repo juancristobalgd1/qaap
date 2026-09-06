@@ -5,8 +5,14 @@
 
 import { expect } from 'chai';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
+import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 
 class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
+    // Concurrency fixtures do not initialize provider discovery or spawn real agents.
+    protected override resolveAgentId(): string {
+        return 'qaiq';
+    }
+
     public exposeDrainQueuedTasks(): void {
         this.drainQueuedTasks();
     }
@@ -21,6 +27,48 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
 }
 
 describe('QaapAgentTaskRunner concurrency quota', () => {
+
+    it('rejects queue overflow without storing or spawning rejected requests', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, import('../common/qaap-agent-task').QaapAgentTask>();
+        const queuedCreateRequests = new Map();
+        let spawned = 0;
+        let persisted = 0;
+        let events = 0;
+        Object.assign(runner, {
+            tasks, queuedCreateRequests, processes: new Map(),
+            maxConcurrentAgents: () => 1,
+            ownerAtConcurrencyCap: () => false,
+            resolveAgentModelForRequest: () => undefined,
+            isDirectory: () => true,
+            persist: async () => { persisted++; },
+            spawnProcessWhenReady: async () => { spawned++; },
+            onDidChangeTaskEmitter: { fire: () => { events++; } }
+        });
+        const previous = process.env.QAAP_MAX_QUEUED_AGENTS;
+        process.env.QAAP_MAX_QUEUED_AGENTS = '1';
+        try {
+            const request = { command: 'echo test', cwd: '/repo' };
+            const first = runner.create(request, 'alice');
+            const queued = runner.create(request, 'alice');
+            expect(() => runner.create(request, 'bob')).to.throw(QaapAgentQueueFullError);
+            expect(tasks.size).to.equal(2);
+            expect(queuedCreateRequests.size).to.equal(1);
+            expect(spawned).to.equal(1);
+            expect(persisted).to.equal(2);
+            expect(events).to.equal(2);
+            tasks.set(first.id, { ...first, state: 'completed' });
+            runner.exposeDrainQueuedTasks();
+            expect(tasks.get(queued.id)?.state).to.equal('running');
+            expect(runner.create(request, 'bob').state).to.equal('queued');
+        } finally {
+            if (previous === undefined) {
+                delete process.env.QAAP_MAX_QUEUED_AGENTS;
+            } else {
+                process.env.QAAP_MAX_QUEUED_AGENTS = previous;
+            }
+        }
+    });
 
     it('queues new tasks when the running cap is reached and drains on completion', () => {
         const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
@@ -207,6 +255,46 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         }]);
 
         expect(tasks.get('legacy-queued')?.state).to.equal('interrupted');
+    });
+
+    it('never resumes malformed or mismatched persisted requests', () => {
+        for (const request of [true, [], {}, { cwd: '/repo', prompt: 42 },
+            { cwd: '/other', prompt: 'work' }, { cwd: 'relative', prompt: 'work' },
+            { cwd: '/repo', prompt: '   ' }, { cwd: '/repo', prompt: 'work', command: {} }]) {
+            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const tasks = new Map();
+            const queuedCreateRequests = new Map();
+            Object.assign(runner, { tasks, queuedCreateRequests });
+            runner.exposeRestorePersistedIndex({
+                version: 2,
+                tasks: [{ id: 'q', cwd: '/repo', state: 'queued' }],
+                queuedRequests: { q: request }
+            });
+            expect(tasks.get('q').state).to.equal('interrupted');
+            expect(queuedCreateRequests.size).to.equal(0);
+        }
+    });
+
+    it('does not mistake inherited object properties for saved requests', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map();
+        const queuedCreateRequests = new Map();
+        Object.assign(runner, { tasks, queuedCreateRequests });
+        runner.exposeRestorePersistedIndex({
+            version: 2,
+            tasks: [{ id: 'q', cwd: '/repo', state: 'queued' }],
+            queuedRequests: Object.create({ q: { cwd: '/repo', prompt: 'work' } })
+        });
+        expect(tasks.get('q').state).to.equal('interrupted');
+        expect(queuedCreateRequests.size).to.equal(0);
+    });
+
+    it('rejects unsupported index versions before changing task state', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map();
+        Object.assign(runner, { tasks, queuedCreateRequests: new Map() });
+        expect(() => runner.exposeRestorePersistedIndex({ version: 999, tasks: [] })).to.throw('Unsupported');
+        expect(tasks.size).to.equal(0);
     });
 
     it('queues the extra verification pass when the verification budget is full (REL-3)', async () => {

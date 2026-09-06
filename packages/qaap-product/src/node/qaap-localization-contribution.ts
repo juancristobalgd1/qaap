@@ -6,6 +6,7 @@
 import { injectable } from '@theia/core/shared/inversify';
 import { LocalizationContribution, LocalizationRegistry } from '@theia/core/lib/node/i18n/localization-contribution';
 import { QAAP_BRANDING_LOCALES, buildQaapBrandingOverlay } from './qaap-i18n-branding';
+import { QAAP_SPANISH_TRANSLATIONS } from '../common/qaap-spanish-translations';
 
 /** Merges Qaap-specific wording over core nls packs (registered after Theia). */
 @injectable()
@@ -15,7 +16,10 @@ export class QaapLocalizationContribution implements LocalizationContribution {
         for (const languageId of QAAP_BRANDING_LOCALES) {
             registry.registerLocalization({
                 languageId,
-                getTranslations: () => buildQaapBrandingOverlay(languageId)
+                getTranslations: async () => ({
+                    ...await buildQaapBrandingOverlay(languageId),
+                    ...(languageId === 'es' ? QAAP_SPANISH_TRANSLATIONS : {})
+                })
             });
         }
     }

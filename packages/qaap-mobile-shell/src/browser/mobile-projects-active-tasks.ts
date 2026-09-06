@@ -40,6 +40,7 @@ export type MobileProjectTaskVerification =
 
 /** Task row as shown in the mobile Projects panel (mirrors VPS agent-task API). */
 export interface MobileProjectTaskView {
+    readonly agentId?: string;
     readonly id: string;
     readonly title: string;
     readonly command: string;
@@ -54,6 +55,7 @@ export interface MobileProjectTaskView {
 }
 
 interface TaskEventPayload {
+    readonly agentId?: string;
     readonly id: string;
     readonly cwd: string;
     readonly state: string;
@@ -458,6 +460,7 @@ export function toTaskView(task: TaskEventPayload): MobileProjectTaskView {
     const command = task.command ?? task.title ?? '';
     return {
         id: task.id,
+        agentId: task.agentId,
         title: task.title || command.slice(0, 80) || 'Background task',
         command,
         cwd: normalizeCwd(task.cwd),

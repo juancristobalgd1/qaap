@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { SHELL_AGENT_ID, QAIQ_AGENT_ID, SHELL_AGENT_ID,QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS,REPO_MAP_MAX_CHARS } from './qaap-agent-task-runner';
 import { AGENT_STOP_GRACE_TIMEOUT_MS } from './qaap-agent-task-runner-constants';
+import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
+import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 // Extracted from qaap-agent-task-runner.ts
 
 import { Emitter, Event } from '@theia/core/lib/common/event';
@@ -113,6 +115,7 @@ import {
     shellQuote as shellQuoteHelper,
     applyTemplate as applyTemplateHelper,
     applyTemplateWithoutPrompt as applyTemplateWithoutPromptHelper,
+    applyTemplateWithStdinPrompt as applyTemplateWithStdinPromptHelper,
     truncateForPrompt as truncateForPromptHelper,
     truncateHead as truncateHeadHelper,
     loadProjectInfoFromDisk as loadProjectInfoFromDiskHelper,
@@ -195,6 +198,9 @@ export function nativeModelRoutingTableExtracted(ctx: any): QaapNativeModelRouti
 }
 
 export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
+        if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed) {
+            throw new QaapAgentStorageUnavailableError();
+        }
         const prompt = (request.prompt ?? '').trim();
         const rawCommand = (request.command ?? '').trim();
         if (!prompt && !rawCommand) {
@@ -210,9 +216,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         if (isQaapWorkspaceContainerPath(cwd)) {
             throw new Error(QAAP_CONTAINER_CWD_ERROR);
         }
-        if (prompt) {
-            ctx.resolveAgentId(prompt, request.agent, ownerLogin);
-        }
+        const resolvedAgentId = prompt ? ctx.resolveAgentId(prompt, request.agent, ownerLogin) : SHELL_AGENT_ID;
         const id = randomUUID();
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
@@ -221,11 +225,15 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         );
         const atCapacity = ctx.countRunningTasks() >= ctx.maxConcurrentAgents()
             || ctx.ownerAtConcurrencyCap(ownerLogin);
+        if (atCapacity) {
+            new QaapAgentQueuePolicy().assertCapacity(ctx.tasks.values(), ownerLogin);
+        }
         if (ownerLogin && ctx.billingStore) {
             void ctx.billingStore.getOrCreateAccount(ownerLogin).catch(() => undefined);
         }
         const task: QaapAgentTask = {
             id,
+            agentId: resolvedAgentId,
             title: (request.title ?? '').trim() || prompt || rawCommand,
             command: rawCommand || prompt,
             cwd,
@@ -264,7 +272,7 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
         userQuery?: string,
         readOnlyWorkspace?: boolean,
-        ownerLogin?: string,): { command: string; stdinPrompt?: string; agentId: string } {
+        ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string } {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
         const runnerPrompt = ctx.stripLeadingAgentMention(prompt);
         if (id === SHELL_AGENT_ID) {
@@ -315,6 +323,7 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
             interactionModeId,
             toolApprovalRules,
             readOnlyWorkspace,
+            codexSupportsApproveForMe: detected?.codexSupportsApproveForMe,
         };
         // A read-only turn is never routed through the interactive stdio approval flow: that flow
         // exists so a human can say yes to a write, and on a read-only turn there is no write to say
@@ -331,7 +340,9 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
             const vars = ctx.buildTemplateVars(id, agentModel, interaction);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
-                : ctx.applyTemplate(detected.template, agentPrompt, vars);
+                : id === 'codex' && detected.bin === 'codex' && detected.template.includes(' exec ') && detected.template.includes('{prompt}')
+                    ? applyTemplateWithStdinPromptHelper(detected.template, vars)
+                    : ctx.applyTemplate(detected.template, agentPrompt, vars);
         } else if (envTemplate) {
             const vars = ctx.buildTemplateVars(id, agentModel, interaction);
             command = useStdioApprovals
@@ -342,7 +353,15 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
         }
         command = applyAgentApprovalPolicyToCommand(command, approvalOptions);
         if (useStdioApprovals) {
-            return { command: `${command} ${QAIQ_STDIO_APPROVAL_FLAGS}`, stdinPrompt: agentPrompt, agentId: id };
+            return {
+                command: `${command} ${QAIQ_STDIO_APPROVAL_FLAGS}`,
+                stdinPrompt: agentPrompt,
+                stdinPromptMode: 'qaiq-stdio',
+                agentId: id,
+            };
+        }
+        if (id === 'codex' && detected?.bin === 'codex' && detected.template.includes(' exec ') && detected.template.includes('{prompt}')) {
+            return { command, stdinPrompt: agentPrompt, stdinPromptMode: 'plain', agentId: id };
         }
         return { command, agentId: id };
 }

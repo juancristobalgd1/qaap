@@ -8,9 +8,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+    applyTemplateWithStdinPrompt,
+    prependPathEntry,
     resolveQaiqEnvFallbackModel,
     resolveQaiqProviderFlagsFromEnv,
 } from './qaap-agent-task-runner-utils';
+import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2';
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 
 describe('resolveQaiqEnvFallbackModel', () => {
@@ -28,6 +31,73 @@ describe('resolveQaiqEnvFallbackModel', () => {
         expect(resolveQaiqProviderFlagsFromEnv({ OPENAI_API_KEY: 'sk' })).to.equal('--provider openai');
         expect(resolveQaiqProviderFlagsFromEnv({ OLLAMA_HOST: 'http://127.0.0.1:11434' }))
             .to.equal('--provider ollama --model qwen2.5-coder:7b');
+    });
+});
+
+describe('Codex prompt transport', () => {
+
+    it('uses the stdin marker without putting the prompt into argv', () => {
+        const prompt = 'A'.repeat(12_000);
+        const result = applyTemplateWithStdinPrompt(
+            'codex exec --json {model_flags} {prompt}',
+            { model_flags: '-m gpt-5.6-luna' },
+        );
+
+        expect(result).to.equal('codex exec --json -m gpt-5.6-luna -');
+        expect(result).not.to.contain(prompt);
+    });
+
+    it('returns long Codex task context separately from the command', () => {
+        const prompt = 'A'.repeat(12_000);
+        const ctx = {
+            resolveAgentId: () => 'codex',
+            stripLeadingAgentMention: (value: string) => value,
+            readAgentInstructions: () => undefined,
+            readRepoMap: () => undefined,
+            readRelevantFiles: () => undefined,
+            readGitStatusSnapshot: () => undefined,
+            readRepoMemory: () => undefined,
+            readResearchLedger: () => undefined,
+            readProjectInfo: () => undefined,
+            assertQaiqConfigured: () => undefined,
+            detectedAgents: new Map([['codex', {
+                id: 'codex',
+                label: 'Codex',
+                bin: 'codex',
+                template: 'codex exec --json {model_flags} {prompt}',
+            }]]),
+            buildTemplateVars: () => ({ model_flags: '-m gpt-5.6-luna' }),
+        };
+
+        const result = buildAgentCommandExtracted(
+            ctx,
+            prompt,
+            'codex',
+            true,
+            undefined,
+            process.cwd(),
+            undefined,
+            undefined,
+            'full-access',
+        );
+
+        expect(result.agentId).to.equal('codex');
+        expect(result.stdinPromptMode).to.equal('plain');
+        expect(result.stdinPrompt).to.contain(prompt);
+        expect(result.command).to.match(/\s-$/);
+        expect(result.command.length).to.be.lessThan(1_000);
+    });
+});
+
+describe('prependPathEntry', () => {
+
+    it('preserves Windows Path casing instead of creating a shadow PATH entry', () => {
+        const env: NodeJS.ProcessEnv = { Path: 'C:\\existing' };
+
+        prependPathEntry(env, 'C:\\helper-bin');
+
+        expect(env.Path).to.equal(`C:\\helper-bin${path.delimiter}C:\\existing`);
+        expect(env.PATH).to.equal(undefined);
     });
 });
 

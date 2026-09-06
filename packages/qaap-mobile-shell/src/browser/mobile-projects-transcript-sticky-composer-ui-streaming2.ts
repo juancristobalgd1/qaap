@@ -2,6 +2,8 @@
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
+import { evaluateVerifyCommitReadiness, invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
+import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
@@ -494,6 +496,17 @@ export async function runComposerCommitActionExtracted(ctx: any, project: Mobile
     if (!cwd || ctx.composerCommitBusy) {
         return;
     }
+    const readiness = evaluateVerifyCommitReadiness({
+        checksLoading: !!ctx.host.verifyChecksLoading,
+        running: !!ctx.host.verifyRunning,
+        results: ctx.host.verifyResults ?? [],
+    });
+    const allowed = await confirmVerifyCommitReadiness(readiness, {
+        onBlocked: message => MobileSnackbar.show(message, { kind: 'warning', duration: 2800 }),
+    });
+    if (!allowed) {
+        return;
+    }
     ctx.composerCommitBusy = true;
     ctx.refreshComposerActivityStack();
     try {
@@ -549,6 +562,8 @@ export async function runComposerCommitActionExtracted(ctx: any, project: Mobile
         }
         // `git add -A && git commit` leaves the tree clean — hide the Changes pill and the
         // commit buttons right away, then re-verify against the real working tree.
+        invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
+        ctx.host.diffReviewWidget?.update();
         ctx.composerActivityGitFilesByConversationId.set(summary.id, []);
         void ctx.syncComposerGitSnapshot(project, summary)
             .then(() => ctx.refreshComposerActivityStack())

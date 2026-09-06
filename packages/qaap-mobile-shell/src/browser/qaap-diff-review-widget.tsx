@@ -27,6 +27,13 @@ import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-dif
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapAsyncConcurrencyLimiter } from './qaap-async-concurrency-limiter';
 import {
+    evaluateVerifyCommitReadiness,
+    localizeVerifyCommitReadiness,
+    type EvaluateVerifyCommitReadinessInput,
+    type VerifyCommitReadiness,
+} from '../common/qaap-verify-commit-readiness';
+import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
+import {
     highlightTranscriptCodeInto,
     resolveTranscriptCodeLanguage,
     type TranscriptCodeLanguage,
@@ -54,8 +61,8 @@ const GIT_COMMIT_MENU_OPTIONS: QaapGitCommitMenuOption[] = [
         label: nls.localize('qaap/mobileProjects/createBranchCommitPush', 'Create Branch, Commit & Push'),
     },
     {
-        action: 'commit',
-        label: nls.localize('qaap/mobileProjects/commit', 'Commit'),
+        action: 'commit-push',
+        label: nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push'),
     },
     {
         action: 'commit-create-pr',
@@ -111,6 +118,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
 
     /** When set (Work Hub embed), overrides the SCM-selected repository. */
     protected repositoryContext: QaapDiffReviewRepositoryContext | undefined;
+
+    protected commitReadinessProvider: (() => EvaluateVerifyCommitReadinessInput) | undefined;
+    protected commitReadinessOnCommitted: (() => void) | undefined;
 
     protected rootUri: string | undefined;
     protected rootFsPath: string | undefined;
@@ -234,6 +244,22 @@ export class QaapDiffReviewWidget extends ReactWidget {
     setRepositoryContext(context: QaapDiffReviewRepositoryContext | undefined): void {
         this.repositoryContext = context;
         this.trackRepository();
+    }
+
+    setCommitReadinessProvider(
+        provider?: () => EvaluateVerifyCommitReadinessInput,
+        onCommitted?: () => void,
+    ): void {
+        this.commitReadinessProvider = provider;
+        this.commitReadinessOnCommitted = onCommitted;
+        this.update();
+    }
+
+    protected readCommitReadiness(): VerifyCommitReadiness | undefined {
+        if (!this.commitReadinessProvider) {
+            return undefined;
+        }
+        return evaluateVerifyCommitReadiness(this.commitReadinessProvider());
     }
 
     protected trackRepository(): void {
@@ -615,7 +641,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
         const summaryLabel = count === 1
             ? nls.localize('qaap/mobileProjects/uncommittedChangeOne', '1 Uncommitted Change')
             : nls.localize('qaap/mobileProjects/uncommittedChangeMany', '{0} Uncommitted Changes', String(count));
-        const bulkDisabled = !this.bulkActionsEnabled || this.runningBulkAction || count === 0;
+        const readiness = this.readCommitReadiness();
+        const checksBlockCommit = readiness?.blocksCommit === true;
+        const bulkDisabled = !this.bulkActionsEnabled || this.runningBulkAction || count === 0 || checksBlockCommit;
         return (
             <header className='qaap-agent-changes-toolbar'>
                 <div className='qaap-agent-changes-toolbar-primary'>
@@ -633,6 +661,19 @@ export class QaapDiffReviewWidget extends ReactWidget {
                 <div className='qaap-agent-changes-toolbar-secondary'>
                     <div className='qaap-agent-changes-summary'>
                         <span className='qaap-agent-changes-summary-label'>{summaryLabel}</span>
+                        <span className='qaap-agent-changes-summary-label'>
+                            {nls.localize('qaap/diff/stagingSummary', '{0} staged · {1} unstaged',
+                                String(this.files.filter(file => file.staged).length),
+                                String(this.files.filter(file => !file.staged).length))}
+                        </span>
+                        {readiness && readiness.level !== 'not_configured' && (
+                            <span
+                                className={`qaap-agent-changes-verify-status qaap-mod-${readiness.level}`}
+                                title={localizeVerifyCommitReadiness(readiness.level)}
+                            >
+                                {localizeVerifyCommitReadiness(readiness.level)}
+                            </span>
+                        )}
                         <span className='qaap-agent-changes-summary-stats'>
                             <span className='qaap-diff-add'>+{totals.adds}</span>
                             <span className='qaap-diff-del'>-{totals.dels}</span>
@@ -651,9 +692,9 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     type='button'
                     className='qaap-agent-changes-commit-btn'
                     disabled={disabled}
-                    onClick={() => { void this.runCommitAction('commit-push'); }}
+                    onClick={() => { void this.runCommitAction('commit'); }}
                 >
-                    {nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push')}
+                    {nls.localize('qaap/mobileProjects/commit', 'Commit')}
                 </button>
                 <div className='qaap-agent-changes-commit-menu-wrap'>
                     <button
@@ -745,6 +786,18 @@ export class QaapDiffReviewWidget extends ReactWidget {
         if (this.runningBulkAction || !this.bulkActionsEnabled || this.files.length === 0 || !this.rootFsPath) {
             return;
         }
+        const readiness = this.readCommitReadiness();
+        if (readiness) {
+            const allowed = await confirmVerifyCommitReadiness(readiness, {
+                onBlocked: message => {
+                    this.error = message;
+                    this.update();
+                },
+            });
+            if (!allowed) {
+                return;
+            }
+        }
         this.runningBulkAction = true;
         this.error = undefined;
         this.update();
@@ -798,6 +851,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     await this.openCreatePullRequest();
                 }
             }
+            this.commitReadinessOnCommitted?.();
             await this.refresh();
         } catch (error) {
             this.error = error instanceof Error ? error.message : String(error);

@@ -55,6 +55,7 @@ import { QaapGithubSessionStore } from './qaap-github-session-store';
 import { QaapProjectSessionStore } from './qaap-project-session-store';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { buildQaapLaunchHealthPayload, evaluateQaapProductionAuthReadiness } from './qaap-production-auth-readiness';
+import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
 
 const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
@@ -324,7 +325,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     protected handleAuthConfig(_req: Request, res: Response): void {
         const build = process.env.QAAP_BUILD_SHA?.trim();
         const readiness = evaluateQaapProductionAuthReadiness();
+        const betaAccess = new QaapBetaAccessPolicy();
         res.json({
+            betaAccessRequired: betaAccess.isRequired(),
+            betaAccessConfigured: betaAccess.isConfigured(),
             githubOAuth: readiness.oauthConfigured,
             skipAuth: this.auth.isSkipAuthEnabled(),
             productionRuntime: readiness.productionRuntime,

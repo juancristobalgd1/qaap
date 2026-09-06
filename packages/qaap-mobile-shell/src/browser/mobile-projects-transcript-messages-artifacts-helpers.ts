@@ -8,7 +8,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { hasUnfinishedAgentWork, shouldShowTranscriptLiveStatus } from '../common/qaap-transcript-turn-status';
+import { shouldShowTranscriptLiveStatus } from '../common/qaap-transcript-turn-status';
 import type { TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { destroyThinkingOrbIndicator, QAAP_THINKING_ORB_INDICATOR_CLASS } from './qaap-thinking-orb-indicator';
 import { isTranscriptAgentThinkingPhase, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
@@ -106,10 +106,7 @@ export function isConversationWorking(conv: QaapAgentConversationDTO | undefined
     if (!conv) {
         return renderStreaming;
     }
-    if (conv.status === 'failed') {
-        return false;
-    }
-    return hasUnfinishedAgentWork(conv) || conv.status === 'streaming' || conv.status === 'settled';
+    return conv.status === 'streaming' || conv.status === 'settled';
 }
 
 /**

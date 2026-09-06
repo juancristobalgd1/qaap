@@ -99,7 +99,7 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
             ctx.host.executionSurfaceTabsUi.selectTranscriptTab?.('preview', project, summary);
         }
         MobileSnackbar.show(
-            nls.localize('qaap/mobileProjects/previewStarting', 'Levantando preview…'),
+            nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'),
             { duration: 2200 },
         );
         // Keep the header play control mounted across the whole request lifecycle.

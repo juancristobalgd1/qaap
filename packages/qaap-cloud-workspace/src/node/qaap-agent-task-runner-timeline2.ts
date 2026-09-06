@@ -360,7 +360,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt, task.ownerLogin);
-                const { command, stdinPrompt, agentId } = ctx.buildAgentCommand(
+                const { command, stdinPrompt, stdinPromptMode, agentId } = ctx.buildAgentCommand(
                     prompt,
                     request.agent,
                     autoApprove,
@@ -376,7 +376,10 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 );
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_end');
                 if (stdinPrompt) {
-                    ctx.stdinPrompts.set(task.id, stdinPrompt);
+                    ctx.stdinPrompts.set(task.id, {
+                        text: stdinPrompt,
+                        mode: stdinPromptMode ?? 'qaiq-stdio',
+                    });
                 }
                 const commandTask = ctx.tasks.get(task.id) ?? task;
                 const next: QaapAgentTask = {
@@ -408,8 +411,11 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
 export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
         fs.mkdirSync(STORE_DIR, { recursive: true });
         const logStream = fs.createWriteStream(ctx.logPath(task.id), { flags: 'w' });
-        const stdioPrompt = ctx.stdinPrompts.get(task.id);
-        const stdinInteractive = task.autoApprove === false || stdioPrompt !== undefined;
+        const stdinPromptEntry = ctx.stdinPrompts.get(task.id);
+        const stdinPrompt = typeof stdinPromptEntry === 'string'
+            ? { text: stdinPromptEntry, mode: 'qaiq-stdio' }
+            : stdinPromptEntry;
+        const stdinInteractive = task.autoApprove === false || stdinPrompt !== undefined;
         const agentModel = resolveTaskAgentModel(task);
         const restoreAntigravitySettings = agentModel?.modelId?.trim()
             && isAntigravityCliCommand(task.command)
@@ -428,6 +434,9 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
                 cwd: task.cwd,
                 env: ctx.buildChildEnv(task),
                 stdio: stdinInteractive ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+                // On Windows, cmd.exe can keep a detached child waiting after its stdin is closed.
+                // Plain Codex stdin prompts therefore need a non-detached shell process.
+                detached: stdinPrompt?.mode === 'plain' ? false : undefined,
             });
             ctx.recordTaskLatencyMark(task.id, 'spawn_end');
         } catch (error) {
@@ -441,13 +450,18 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
         if (stdinInteractive) {
             ctx.stdinInteractiveTasks.add(task.id);
         }
-        if (stdioPrompt !== undefined) {
-            ctx.qaiqStdioTasks.add(task.id);
+        if (stdinPrompt !== undefined) {
             ctx.stdinPrompts.delete(task.id);
-            // stream-json input: the prompt travels over stdin, which stays open
-            // for control_responses until the end-of-turn `result` message.
             try {
-                child.stdin?.write(buildQaiqStdioPromptLine(stdioPrompt));
+                if (stdinPrompt.mode === 'plain') {
+                    // Codex reads the complete instruction from stdin when its prompt argument is `-`.
+                    child.stdin?.end(stdinPrompt.text);
+                } else {
+                    ctx.qaiqStdioTasks.add(task.id);
+                    // stream-json input: the prompt travels over stdin, which stays open
+                    // for control_responses until the end-of-turn `result` message.
+                    child.stdin?.write(buildQaiqStdioPromptLine(stdinPrompt.text));
+                }
             } catch (error) {
                 logStream.write(`\n[qaap] failed to write prompt to agent stdin: ${error instanceof Error ? error.message : String(error)}\n`);
             }
@@ -548,7 +562,7 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
             ctx.recordTaskLatencyMark(task.id, 'first_stdout_chunk');
             logStream.write(chunk);
             ctx.fireOutput(task.id, chunk);
-            if (stdioPrompt !== undefined) {
+            if (ctx.qaiqStdioTasks.has(task.id)) {
                 scanStdioApprovalChunk(chunk);
             }
         });

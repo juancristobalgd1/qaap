@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { resolveAgentMessageTiming } from '../common/qaap-transcript-turn-status';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -187,14 +188,13 @@ export function syncRowProcessAccordionExtracted(ctx: any, row: HTMLElement,
         if (!accordion) {
             return;
         }
-        const isWorking = ctx.isConversationWorking(conv, streaming);
-        const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
         // `row` represents one specific agent message, not necessarily the
         // conversation's last one -- resolve it via the row's message-id
         // attribute so a historical (already-settled) turn's accordion isn't
         // mislabeled as cancelled just because a later turn ended up
         // cancelled.
         const message = ctx.resolveTranscriptRowAgentMessage(row, conv);
+        const { isWorking, elapsedMs, turnStartMs } = resolveAgentMessageTiming(conv, message);
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
         const provenance = ctx.resolveTurnProvenance(conv, message);
         const segmentsBody = row.querySelector<HTMLElement>('.theia-mobile-agent-transcript-segments');
@@ -205,7 +205,7 @@ export function syncRowProcessAccordionExtracted(ctx: any, row: HTMLElement,
             isWorking,
             isError: ctx.isConversationError(conv),
             isCancelled: ctx.isAgentMessageCancelled(message),
-            elapsedMs: ctx.resolveConversationElapsedMs(conv),
+            elapsedMs,
             turnStartMs,
             activityVerb,
             onStopRun: ctx.resolveRunStopHandler(conv, message, isWorking),
@@ -213,7 +213,7 @@ export function syncRowProcessAccordionExtracted(ctx: any, row: HTMLElement,
             // AFTER appending the closing narrative + diff summary — that is
             // the one moment auto-collapse is allowed. Streaming syncs must
             // never collapse, even if the working flag flickers between tools.
-            settled: ctx.isConversationFinalResponseCommitted(conv, streaming),
+            settled: !isWorking,
         });
         // Re-ensure the slow-turn hint on every sync (runs on every streaming
         // tick): this is what lets the hint survive `accordion` being wholly

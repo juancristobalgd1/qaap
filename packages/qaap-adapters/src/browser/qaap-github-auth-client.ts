@@ -34,6 +34,7 @@ import {
 } from './qaap-auth-session';
 
 const QAAP_GITHUB_CLONE_TIMEOUT_MS = 120_000;
+const QAAP_AUTH_REQUEST_TIMEOUT_MS = 6000;
 
 async function fetchQaapWithTimeout(
     input: RequestInfo | URL,
@@ -63,7 +64,11 @@ export function qaapAuthenticatedFetchInit(extra?: RequestInit): RequestInit {
 export const QAAP_REQUIRE_LOGIN_EVENT = 'qaap-require-login';
 
 export async function fetchQaapAuthConfig(): Promise<QaapAuthConfigResponse> {
-    const response = await fetch(`${QAAP_AUTH_API_PATH}/config`, qaapAuthenticatedFetchInit());
+    const response = await fetchQaapWithTimeout(
+        `${QAAP_AUTH_API_PATH}/config`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_AUTH_REQUEST_TIMEOUT_MS,
+    );
     if (!response.ok) {
         return { githubOAuth: false };
     }
@@ -71,7 +76,11 @@ export async function fetchQaapAuthConfig(): Promise<QaapAuthConfigResponse> {
 }
 
 export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {
-    const response = await fetch(`${QAAP_AUTH_API_PATH}/session`, qaapAuthenticatedFetchInit());
+    const response = await fetchQaapWithTimeout(
+        `${QAAP_AUTH_API_PATH}/session`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_AUTH_REQUEST_TIMEOUT_MS,
+    );
     if (!response.ok) {
         return { signedIn: false };
     }
@@ -382,11 +391,11 @@ export async function signOutQaapAuth(): Promise<void> {
 }
 
 /** Apply server session to local storage; returns true when signed in. */
-export async function syncQaapAuthSessionFromServer(): Promise<boolean> {
-    const config = await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
+export async function syncQaapAuthSessionFromServer(config?: QaapAuthConfigResponse): Promise<boolean> {
+    const resolvedConfig = config ?? await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
     const session = await fetchQaapAuthSession();
     if (!session.signedIn || !session.user) {
-        if (!config.skipAuth) {
+        if (!resolvedConfig.skipAuth) {
             clearQaapAuthSession();
         }
         return false;

@@ -120,6 +120,8 @@ type ConversationServerEvent =
 @injectable()
 export class MobileProjectsConversations {
 
+    snapshotState: 'loading' | 'ready' | 'error' = 'loading';
+
     /** Canonical per-thread summaries + lazy documents (AG-UI MessagesSnapshot path). */
     readonly threadStore = new QaapThreadStore();
     /** Keeps stale HTTP/WS snapshots from resurrecting rows deleted optimistically. */

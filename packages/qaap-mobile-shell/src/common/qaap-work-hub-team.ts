@@ -10,6 +10,7 @@ export interface WorkHubTeamTaskInput {
     readonly id: string;
     readonly title: string;
     readonly command: string;
+    readonly agentId?: string;
     readonly cwd: string;
     readonly state: string;
     readonly createdAt: number;
@@ -119,14 +120,14 @@ export function collectAgentMembers(input: CollectAgentMembersInput): WorkHubTea
                 title: task.title,
                 projectName: basenameFromCwd(cwd),
                 cwd,
-                agentId: inferAgentIdFromCommand(task.command),
+                agentId: task.agentId ?? inferAgentIdFromCommand(task.command),
                 state: 'queued',
                 parentId: task.parentId,
                 childCount: 0,
                 createdAt: task.createdAt,
                 updatedAt: task.createdAt,
                 taskId: task.id,
-                command: task.command?.trim() || undefined,
+                command: task.agentId && task.agentId !== 'shell' ? undefined : task.command?.trim() || undefined,
                 activityLabel: resolveTaskMemberActivityLabel(task),
             });
             continue;
@@ -148,14 +149,14 @@ export function collectAgentMembers(input: CollectAgentMembersInput): WorkHubTea
             title: task.title,
             projectName: basenameFromCwd(task.cwd),
             cwd,
-            agentId: inferAgentIdFromCommand(task.command),
+            agentId: task.agentId ?? inferAgentIdFromCommand(task.command),
             state: task.state,
             parentId: task.parentId,
             childCount: 0,
             createdAt: task.createdAt,
             updatedAt: task.finishedAt ?? task.createdAt,
             taskId: task.id,
-            command: task.command?.trim() || undefined,
+            command: task.agentId && task.agentId !== 'shell' ? undefined : task.command?.trim() || undefined,
             activityLabel: resolveTaskMemberActivityLabel(task),
         });
     }

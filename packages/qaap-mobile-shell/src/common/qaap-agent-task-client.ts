@@ -106,11 +106,12 @@ export interface QaapAgentTaskDetailDTO {
     readonly exitCode?: number;
     readonly finishedAt?: number;
     readonly log: string;
+    readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
 }
 
 /** True once a task has stopped and will not change state again. */
 export function isAgentTaskFinished(state: string): boolean {
-    return state !== 'running';
+    return ['completed', 'completed_with_warnings', 'failed', 'cancelled', 'interrupted', 'blocked'].includes(state);
 }
 
 export type QaapCreateAgentTaskBody =
@@ -627,8 +628,8 @@ export async function createAgentTask(body: QaapCreateAgentTaskBody): Promise<Qa
     return response.json() as Promise<QaapAgentTaskCreated>;
 }
 
-export async function fetchAgentTaskDetail(id: string): Promise<QaapAgentTaskDetailDTO> {
-    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}`, { credentials: 'include' });
+export async function fetchAgentTaskDetail(id: string, verifySnapshot = false): Promise<QaapAgentTaskDetailDTO> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}${verifySnapshot ? '?verifySnapshot=1' : ''}`, { credentials: 'include' });
     if (!response.ok) {
         throw new Error(response.statusText);
     }

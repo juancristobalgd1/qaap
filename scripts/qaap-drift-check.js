@@ -12,7 +12,7 @@
  *   node scripts/qaap-drift-check.js
  *   QAAP_DIFF_BASE=upstream/master node scripts/qaap-drift-check.js
  *
- * Report only (always exit 0):
+ * Report only (drift exits 0; invalid Git input still exits 2):
  *   QAAP_DRIFT_CHECK_REPORT=1 node scripts/qaap-drift-check.js
  *
  * Known historical drift (outside allowlist) is listed in qaap-drift-baseline.txt.
@@ -22,18 +22,24 @@
 'use strict';
 
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
 const baselinePath = path.join(__dirname, 'qaap-drift-baseline.txt');
 const upstreamBasePath = path.join(__dirname, 'qaap-upstream-base.txt');
 
-function sh(cmd) {
+function git(args) {
+    return execFileSync('git', args, {
+        encoding: 'utf8', cwd: root, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 16 * 1024 * 1024,
+    });
+}
+
+function resolveCommit(ref) {
     try {
-        return execSync(cmd, { encoding: 'utf8', cwd: root, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`]).trim();
     } catch {
-        return '';
+        return undefined;
     }
 }
 
@@ -71,7 +77,7 @@ function resolveDiffBase() {
         'upstream/master',
     ];
     for (const candidate of candidates) {
-        if (sh(`git rev-parse --verify ${candidate}`)) {
+        if (resolveCommit(candidate)) {
             return candidate;
         }
     }
@@ -84,6 +90,11 @@ const base = resolveDiffBase();
 const ALLOWED = [
     /^packages\/qaap-/,
     /^scripts\/qaap-/,
+    // Existing Qaap Gemini startup policy: optional models.get probing is opt-in
+    // (QAAP_GOOGLE_MODEL_METADATA); normalize configured ids and handle rejected
+    // model synchronization. Keep these exact seams until extracted into qaap-ai-config.
+    /^packages\/ai-google\/src\/browser\/google-frontend-application-contribution\.ts$/,
+    /^packages\/ai-google\/src\/node\/google-language-models-manager-impl(?:\.spec)?\.ts$/,
     // ESLint 8 compatibility: @typescript-eslint 8 removed formatting rules that
     // were still referenced by the shared config and inline suppressions in these
     // upstream files. Keep the migration allowlisted until upstream adopts the same
@@ -422,13 +433,21 @@ function loadBaseline() {
     return set;
 }
 
-if (!sh(`git rev-parse --verify ${base}`)) {
+const baseCommit = resolveCommit(base);
+if (!baseCommit) {
     console.error(`[qaap-drift-check] Base ref "${base}" not found. Fetch upstream or set QAAP_DIFF_BASE.`);
     process.exit(2);
 }
 
 /** @type {string[]} */
-const files = sh(`git diff --name-only ${base} --`).split('\n').filter(Boolean);
+let files;
+try {
+    files = git(['diff', '--name-only', '-z', '--no-ext-diff', baseCommit, '--']).split('\0').filter(Boolean);
+} catch (error) {
+    console.error(`[qaap-drift-check] Git diff failed against "${base}". No drift result is available.`);
+    console.error(String(error.stderr || error.message).trim());
+    process.exit(2);
+}
 
 /** @type {string[]} */
 const violations = files.filter(f => !isAllowed(f));

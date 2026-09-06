@@ -67,3 +67,29 @@ jobs:
 
       - name: Run qaap:drift-check
         run: npm run qaap:drift-check
+
+      - name: Verify drift guard failure modes
+        run: node --test scripts/qaap-drift-check.test.js
+
+      - name: Verify beta release gate decisions
+        run: bash scripts/qaap-launch-gate.test.sh
+
+      - name: Verify release readiness payload validation
+        run: node --test scripts/qaap-release-config-check.test.js
+
+      - name: Verify candidate image gate orchestration
+        run: bash scripts/qaap-image-smoke.test.sh
+
+      - name: Use Python with safe tar extraction filters
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Verify backup restore safety and integrity
+        run: python3 scripts/qaap-backup-restore-check.test.py
+
+      - name: Verify backup publication and retention
+        run: bash scripts/qaap-vps-backup.test.sh
+
+      - name: Verify runtime state migration safeguards
+        run: node --test scripts/qaap-persist-runtime-state.test.mjs scripts/qaap-runtime-state-copy.test.js

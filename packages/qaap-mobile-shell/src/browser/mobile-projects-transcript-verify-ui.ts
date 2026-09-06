@@ -15,6 +15,10 @@ import {
     resolveStoredAgentModelForSubmit,
     type QaapAgentTaskDetailDTO,
 } from '../common/qaap-agent-task-client';
+import {
+    evaluateVerifyCommitReadiness,
+    type EvaluateVerifyCommitReadinessInput,
+} from '../common/qaap-verify-commit-readiness';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
@@ -26,10 +30,13 @@ interface VerifyCheck {
 
 interface VerifyCheckResult {
     readonly check: VerifyCheck;
-    state: 'idle' | 'running' | 'ok' | 'fail';
+    state: 'idle' | 'checking' | 'running' | 'ok' | 'fail';
     durationMs?: number;
     exitCode?: number;
     logTail?: string;
+    taskId?: string;
+    finishedAt?: number;
+    workspaceSnapshot?: 'current' | 'changed' | 'unknown';
 }
 
 // One auto-fix attempt: if a single agent pass doesn't turn the check green, stop and let the user
@@ -49,6 +56,8 @@ export interface MobileProjectsTranscriptVerifyHost {
     verifyResults: VerifyCheckResult[];
     resolveVerifyChecks: ((cwd: string) => Promise<VerifyCheck[]>) | undefined;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
+    /** Refresh the Changes commit badge when check evidence changes. */
+    diffReviewWidget?: { update(): void } | undefined;
 }
 
 /** Verify checks UI, run loop, and auto-verify after agent turns. */
@@ -59,6 +68,9 @@ export class MobileProjectsTranscriptVerifyUi {
      * compact control while the outer `renderChecksSection` is still building the same host.
      */
     protected checksRenderDepth = 0;
+    protected checksLoadGeneration = 0;
+    protected freshnessTimer: number | undefined;
+    protected verificationSummaryId: string | undefined;
 
     constructor(protected readonly host: MobileProjectsTranscriptVerifyHost) { }
 
@@ -72,13 +84,15 @@ export class MobileProjectsTranscriptVerifyUi {
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
     ): Promise<VerifyCheck[]> {
-        if (this.host.verifyChecksCwd === cwd && !this.host.verifyChecksLoading && this.host.verifyResults.length > 0) {
+        if (this.verificationSummaryId === summary.id && this.host.verifyChecksCwd === cwd && !this.host.verifyChecksLoading && this.host.verifyResults.length > 0) {
             return this.host.verifyResults.map(result => result.check);
         }
-        if (this.host.verifyChecksCwd === cwd && this.host.verifyChecksLoading) {
+        if (this.verificationSummaryId === summary.id && this.host.verifyChecksCwd === cwd && this.host.verifyChecksLoading) {
             return this.host.verifyResults.map(result => result.check);
         }
 
+        const generation = ++this.checksLoadGeneration;
+        this.verificationSummaryId = summary.id;
         this.host.verifyChecksCwd = cwd;
         this.host.verifyChecksLoading = true;
         this.host.verifyResults = [];
@@ -93,7 +107,22 @@ export class MobileProjectsTranscriptVerifyUi {
             }
         }
 
+        if (generation !== this.checksLoadGeneration) {
+            return [];
+        }
         this.host.verifyResults = checks.map(check => ({ check, state: 'idle' as const }));
+        try {
+            const stored: unknown = JSON.parse(localStorage.getItem(this.resultsStorageKey(summary)) ?? '[]');
+            if (Array.isArray(stored)) {
+                for (const result of this.host.verifyResults) {
+                    const entry = stored.slice(0, 16).find(item => item?.command === result.check.command && typeof item?.taskId === 'string');
+                    if (entry) {
+                        result.taskId = entry.taskId;
+                        result.state = 'checking';
+                    }
+                }
+            }
+        } catch { /* Invalid or unavailable local cache is not evidence. */ }
         this.host.verifyChecksLoading = false;
         if (this.host.transcriptOpenSummaryId === summary.id) {
             this.refreshTranscriptChecksViews(project, summary);
@@ -131,6 +160,15 @@ export class MobileProjectsTranscriptVerifyUi {
         if (this.host.transcriptReviewChecksHost) {
             this.renderChecksSection(this.host.transcriptReviewChecksHost, project, summary, { embedded: true });
         }
+        this.host.diffReviewWidget?.update();
+    }
+
+    getCommitReadinessInput(): EvaluateVerifyCommitReadinessInput {
+        return {
+            checksLoading: this.host.verifyChecksLoading,
+            running: this.host.verifyRunning,
+            results: this.host.verifyResults,
+        };
     }
 
     transcriptChecksChipLabel(
@@ -138,7 +176,10 @@ export class MobileProjectsTranscriptVerifyUi {
         checksReady: boolean,
         checksAvailable: boolean,
     ): { text: string; fail: boolean } {
-        if (this.host.verifyRunning) {
+        if (this.host.verifyResults.some(result => result.state === 'checking')) {
+            return { text: nls.localize('qaap/verify/checkingStatus', 'Checking task status…'), fail: false };
+        }
+        if (this.host.verifyRunning || this.host.verifyResults.some(result => result.state === 'running' || result.state === 'checking')) {
             return { text: nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…'), fail: false };
         }
         if (this.host.verifyChecksLoading) {
@@ -151,7 +192,14 @@ export class MobileProjectsTranscriptVerifyUi {
             };
         }
         if (checksReady && !checksAvailable) {
-            return { text: nls.localize('qaap/mobileProjects/checksUnavailable', 'No checks'), fail: false };
+            return { text: nls.localize('qaap/mobileProjects/checksNotConfigured', 'No automated checks configured'), fail: false };
+        }
+        const readiness = evaluateVerifyCommitReadiness(this.getCommitReadinessInput());
+        if (readiness.level === 'ready') {
+            return { text: nls.localize('qaap/verify/commitReady', 'Checks match the current files'), fail: false };
+        }
+        if (readiness.level === 'stale') {
+            return { text: nls.localize('qaap/verify/changedFiles', 'Files changed — run checks again'), fail: false };
         }
         const first = this.host.verifyResults[0]?.check.label;
         if (first) {
@@ -185,7 +233,7 @@ export class MobileProjectsTranscriptVerifyUi {
         }
         this.checksRenderDepth += 1;
         try {
-            if (this.host.verifyChecksCwd !== summary.cwd && !this.host.verifyChecksLoading) {
+            if (this.host.verifyChecksCwd !== summary.cwd || this.verificationSummaryId !== summary.id) {
                 void this.loadVerifyChecks(summary.cwd, project, summary);
             }
             const failed = this.host.verifyResults.filter(r => r.state === 'fail').length;
@@ -218,7 +266,7 @@ export class MobileProjectsTranscriptVerifyUi {
                 const runBtn = document.createElement('button');
                 runBtn.type = 'button';
                 runBtn.className = 'theia-mobile-transcript-verify-run theia-mod-embedded';
-                runBtn.disabled = this.host.verifyRunning || this.host.verifyChecksLoading || !checksAvailable;
+                runBtn.disabled = this.host.verifyRunning || this.host.verifyResults.some(result => result.state === 'running' || result.state === 'checking') || this.host.verifyChecksLoading || !checksAvailable;
                 runBtn.textContent = this.host.verifyRunning
                     ? nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…')
                     : nls.localize('qaap/mobileProjects/verifyRun', 'Run checks');
@@ -261,7 +309,7 @@ export class MobileProjectsTranscriptVerifyUi {
                 runChip.className = 'theia-mobile-transcript-checks-run-chip';
                 runChip.classList.toggle('theia-mod-fail', chipLabel.fail);
                 runChip.classList.toggle('theia-mod-running', this.host.verifyRunning);
-                runChip.disabled = this.host.verifyRunning || this.host.verifyChecksLoading
+                runChip.disabled = this.host.verifyRunning || this.host.verifyResults.some(result => result.state === 'running' || result.state === 'checking') || this.host.verifyChecksLoading
                     || (checksReady && !checksAvailable);
                 const runIcon = document.createElement('i');
                 runIcon.className = this.host.verifyRunning
@@ -318,7 +366,50 @@ export class MobileProjectsTranscriptVerifyUi {
             host.append(between, contentHost);
         } finally {
             this.checksRenderDepth -= 1;
+            this.scheduleFreshnessCheck(project, summary);
+            this.host.diffReviewWidget?.update();
         }
+    }
+
+    protected resultsStorageKey(summary: QaapAgentConversationSummaryDTO): string {
+        return `qaap.verify.tasks:${summary.id}:${summary.cwd}`;
+    }
+
+    protected scheduleFreshnessCheck(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+        if (this.freshnessTimer !== undefined || this.host.verifyRunning || !this.host.verifyResults.some(result => result.taskId)) {
+            return;
+        }
+        this.freshnessTimer = window.setTimeout(async () => {
+            this.freshnessTimer = undefined;
+            if (this.host.transcriptOpenSummaryId !== summary.id || !this.host.transcriptReviewChecksHost?.isConnected) {
+                return;
+            }
+            const results = this.host.verifyResults;
+            const before = JSON.stringify(results);
+            for (const result of results) {
+                if (!result.taskId) {
+                    continue;
+                }
+                try {
+                    const detail = await fetchAgentTaskDetail(result.taskId, true);
+                    result.workspaceSnapshot = detail.workspaceSnapshot ?? 'unknown';
+                    result.state = isAgentTaskFinished(detail.state) ? (detail.state === 'completed' && detail.exitCode === 0 ? 'ok' : 'fail') : 'running';
+                    result.exitCode = detail.exitCode;
+                    result.finishedAt = detail.finishedAt;
+                    result.logTail = this.tailLog(detail.log);
+                } catch {
+                    result.workspaceSnapshot = 'unknown';
+                }
+            }
+            if (this.host.verifyResults === results && this.host.transcriptOpenSummaryId === summary.id) {
+                if (JSON.stringify(results) !== before) {
+                    this.refreshTranscriptChecksViews(project, summary);
+                } else {
+                    // Keep expanded output and keyboard focus stable between unchanged polls.
+                    this.scheduleFreshnessCheck(project, summary);
+                }
+            }
+        }, 5000);
     }
 
 
@@ -340,18 +431,46 @@ export class MobileProjectsTranscriptVerifyUi {
         }
         row.append(dot, name, meta);
 
-        if (result.state === 'fail' && result.logTail) {
+        const command = document.createElement('code');
+        command.className = 'theia-mobile-transcript-verify-evidence';
+        command.textContent = result.check.command;
+        row.append(command);
+        if (result.state === 'ok' || result.state === 'fail') {
+            const evidence = document.createElement('div');
+            evidence.className = 'theia-mobile-transcript-verify-evidence';
+            evidence.textContent = result.workspaceSnapshot === 'current'
+                ? nls.localize('qaap/verify/currentFiles', 'Result matches current files')
+                : result.workspaceSnapshot === 'changed'
+                    ? nls.localize('qaap/verify/changedFiles', 'Files changed — run checks again')
+                    : nls.localize('qaap/verify/unknownFiles', 'File version not verified — run checks again');
+            if (result.state === 'ok' && result.workspaceSnapshot !== 'current') {
+                dot.className = 'theia-mobile-transcript-verify-dot theia-mod-idle';
+            }
+            evidence.append(document.createTextNode(` · ${nls.localize('qaap/verify/exitCode', 'Exit: {0}', String(result.exitCode ?? '?'))}`));
+            if (result.finishedAt) {
+                evidence.append(document.createTextNode(` · ${new Date(result.finishedAt).toLocaleString()}`));
+            }
+            row.append(evidence);
+        }
+
+        if (result.logTail) {
+            const details = document.createElement('details');
+            details.className = 'theia-mobile-transcript-verify-evidence';
+            const label = document.createElement('summary');
+            label.textContent = nls.localize('qaap/verify/output', 'Command output');
+            details.append(label);
             const log = document.createElement('pre');
             log.className = 'theia-mobile-transcript-verify-log';
             log.textContent = result.logTail;
-            row.append(log);
+            details.append(log);
+            row.append(details);
         }
         return row;
     }
 
     /** Run the checks sequentially via the agent-task backend (no new dependency). */
     async runVerifyChecks(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, auto = false): Promise<void> {
-        if (this.host.verifyRunning || !summary.cwd) {
+        if (this.host.verifyRunning || this.host.verifyResults.some(result => result.state === 'running' || result.state === 'checking') || !summary.cwd) {
             return;
         }
         const checks = await this.loadVerifyChecks(summary.cwd, project, summary);
@@ -366,7 +485,8 @@ export class MobileProjectsTranscriptVerifyUi {
         this.host.verifyResults = checks.map(check => ({ check, state: 'idle' as const }));
         this.refreshTranscriptChecksViews(project, summary);
 
-        for (const result of this.host.verifyResults) {
+        const results = this.host.verifyResults;
+        for (const result of results) {
             if (this.host.transcriptOpenSummaryId !== summary.id) {
                 break; // sheet closed mid-run
             }
@@ -374,16 +494,23 @@ export class MobileProjectsTranscriptVerifyUi {
             this.refreshTranscriptChecksViews(project, summary);
             try {
                 const created = await createAgentTask({ command: result.check.command, cwd: summary.cwd });
+                result.taskId = created.id;
+                try {
+                    localStorage.setItem(this.resultsStorageKey(summary), JSON.stringify(results.filter(item => item.taskId).map(item => ({ command: item.check.command, taskId: item.taskId }))));
+                } catch { /* The backend task remains accessible if browser storage is unavailable. */ }
                 const detail = await this.pollVerifyTask(created.id, summary.id);
                 if (!detail) {
+                    result.state = 'idle';
                     break;
                 }
                 result.exitCode = detail.exitCode;
                 result.durationMs = detail.finishedAt ? Math.max(0, detail.finishedAt - (created.createdAt ?? detail.finishedAt)) : undefined;
                 result.logTail = this.tailLog(detail.log);
-                result.state = detail.state === 'completed' && (detail.exitCode ?? 0) === 0 ? 'ok' : 'fail';
+                result.finishedAt = detail.finishedAt;
+                result.workspaceSnapshot = detail.workspaceSnapshot ?? 'unknown';
+                result.state = detail.state === 'completed' && detail.exitCode === 0 ? 'ok' : 'fail';
             } catch (error) {
-                result.state = 'fail';
+                result.state = result.taskId ? 'checking' : 'fail';
                 result.logTail = error instanceof Error ? error.message : String(error);
             }
             this.refreshTranscriptChecksViews(project, summary);
@@ -437,7 +564,7 @@ export class MobileProjectsTranscriptVerifyUi {
             }
             const detail = await fetchAgentTaskDetail(taskId);
             if (isAgentTaskFinished(detail.state)) {
-                return detail;
+                return fetchAgentTaskDetail(taskId, true);
             }
             await new Promise(resolve => window.setTimeout(resolve, 700));
         }
@@ -496,7 +623,12 @@ export class MobileProjectsTranscriptVerifyUi {
     ): void {
         const prev = this.host.transcriptLastStatus;
         this.host.transcriptLastStatus = status;
-        if (prev === 'streaming' && status !== 'streaming'
+        if (status === 'streaming') {
+            for (const result of this.host.verifyResults) {
+                result.workspaceSnapshot = 'unknown';
+            }
+        }
+        if (prev === 'streaming' && status === 'idle'
             && !this.host.verifyRunning
             && this.host.transcriptOpenSummaryId === summary.id
             && this.isAutoVerifyEnabled(summary.cwd)) {

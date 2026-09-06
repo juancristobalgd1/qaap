@@ -96,6 +96,8 @@ export interface QaapAgentMessageWireSnapshot {
     readonly turnAgentModel?: QaapAgentMessageDTO['turnAgentModel'];
     /** @see QaapAgentMessageDTO.runUserMessageId */
     readonly runUserMessageId?: string;
+    readonly runActive?: boolean;
+    readonly runFinishedAt?: number;
 }
 
 function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageDTO {
@@ -109,6 +111,8 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
         turnAgentId: message.turnAgentId,
         turnAgentModel: message.turnAgentModel,
         runUserMessageId: message.runUserMessageId,
+        runActive: message.runActive,
+        runFinishedAt: message.runFinishedAt,
     });
 }
 
@@ -116,10 +120,12 @@ function toWireMessage(message: QaapAgentMessageWireSnapshot): QaapAgentMessageD
 export function toAgentMessageWirePayload(
     message: Pick<
         QaapAgentMessageDTO,
-        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId'
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId' | 'runActive' | 'runFinishedAt'
     >,
 ): QaapAgentMessageDTO {
     const base: QaapAgentMessageDTO = {
+        ...(message.runActive !== undefined ? { runActive: message.runActive } : {}),
+        ...(message.runFinishedAt !== undefined ? { runFinishedAt: message.runFinishedAt } : {}),
         id: message.id,
         role: message.role,
         content: message.content,
@@ -141,10 +147,12 @@ export function toAgentMessageWirePayload(
 export function toAgentMessageWireSnapshot(
     message: Pick<
         QaapAgentMessageDTO,
-        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId'
+        'id' | 'role' | 'content' | 'createdAt' | 'traceEvents' | 'segments' | 'turnAgentId' | 'turnAgentModel' | 'runUserMessageId' | 'runActive' | 'runFinishedAt'
     >,
 ): QaapAgentMessageWireSnapshot {
     const snapshot: QaapAgentMessageWireSnapshot = {
+        ...(message.runActive !== undefined ? { runActive: message.runActive } : {}),
+        ...(message.runFinishedAt !== undefined ? { runFinishedAt: message.runFinishedAt } : {}),
         id: message.id,
         role: message.role,
         content: message.content,
@@ -169,10 +177,10 @@ export function toAgentMessageWireSnapshot(
  * re-seal (fallback-model retry) into `noop`, which `fireAgentMessageWireUpdate` drops outright.
  */
 function turnProvenanceFingerprint(
-    message: Pick<QaapAgentMessageDTO, 'turnAgentId' | 'turnAgentModel'>,
+    message: Pick<QaapAgentMessageDTO, 'turnAgentId' | 'turnAgentModel' | 'runActive' | 'runFinishedAt'>,
 ): string {
     const model = message.turnAgentModel;
-    return `${message.turnAgentId ?? ''}|${model ? `${model.provider}:${model.vendor}:${model.modelId}` : ''}`;
+    return `${message.runActive ?? false}|${message.runFinishedAt ?? ''}|${message.turnAgentId ?? ''}|${model ? `${model.provider}:${model.vendor}:${model.modelId}` : ''}`;
 }
 
 function segmentFingerprint(segment: QaapAgentMessageSegmentDTO): string {

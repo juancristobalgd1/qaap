@@ -54,6 +54,27 @@ export function createSessionsSidebarSignInHintExtracted(options?: { readonly co
 }
 
 export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLElement): void {
+        // Empty first paints need subscriptions too; otherwise the first snapshot
+        // cannot replace the loading/empty state until a later navigation.
+        if (ctx.host.projectsService) {
+            ctx.seedSessionsSidebarProjectsForPaint?.();
+        }
+        if (ctx.host.conversations?.onDidChange) {
+            ctx.bindSessionsSidebarThreadStoreSubscriptions?.();
+        }
+        const snapshotState = ctx.host.conversations?.snapshotState;
+        if (snapshotState === 'loading' || snapshotState === 'error') {
+            const status = document.createElement('p');
+            status.className = 'theia-mobile-work-hub-sessions-sidebar-empty';
+            status.setAttribute('role', 'status');
+            status.textContent = snapshotState === 'loading'
+                ? nls.localize('qaap/sessionsSidebar/loadingHistory', 'Loading session history…')
+                : nls.localize('qaap/sessionsSidebar/historyUnavailable', 'Session history unavailable. Reconnecting…');
+            host.append(status);
+            if (ctx.host.projects.length === 0) {
+                return;
+            }
+        }
         const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
         const query = ctx.host.query.trim().toLowerCase();
         const signedIn = typeof ctx.readQaapSignedIn === 'function' ? ctx.readQaapSignedIn() : readQaapSignedIn();
@@ -165,6 +186,11 @@ export function bindSessionsSidebarThreadStoreSubscriptionsExtracted(ctx: any): 
             return;
         }
         const disposables = new DisposableCollection();
+        // Existing-row subscriptions cannot discover the first/new conversation.
+        disposables.push(conversations.onDidChange(() => {
+            ctx.seedSessionsSidebarProjectsForPaint();
+            ctx.scheduleWorkHubSessionsSidebarRefresh();
+        }));
         for (const entry of ctx.collectSessionsSidebarConversationEntries()) {
             if (entry.summary.source === 'theia-chat') {
                 continue;

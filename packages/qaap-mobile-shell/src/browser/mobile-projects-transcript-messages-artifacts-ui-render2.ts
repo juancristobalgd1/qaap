@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { resolveAgentMessageTiming } from '../common/qaap-transcript-turn-status';
 import { MOBILE_CLOSING_TEXT_ERROR_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
@@ -332,7 +333,7 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: any, body: HTML
         const { streaming, defer, conv, error, message } = options;
         const eventTimeline = createMobileExecutionEventTimeline(segments);
         // Wrap the timeline in a process accordion (Codex-style "Processed in").
-        const isWorking = ctx.isConversationWorking(conv, streaming);
+        const { isWorking, elapsedMs, turnStartMs } = resolveAgentMessageTiming(conv, message ?? ctx.resolveLastAgentMessage(conv));
         const isError = ctx.isConversationError(conv);
         // Cancellation must be derived from THIS message, not merely the
         // conversation's last agent message -- each agent message renders its
@@ -341,8 +342,6 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: any, body: HTML
         // whenever a later turn happened to end up cancelled.
         const effectiveMessage = message ?? ctx.resolveLastAgentMessage(conv);
         const isCancelled = ctx.isAgentMessageCancelled(effectiveMessage);
-        const elapsedMs = ctx.resolveConversationElapsedMs(conv);
-        const turnStartMs = conv ? resolveTranscriptTurnStartMs(conv.messages) : undefined;
         const activityVerb = isWorking ? resolveMobileActivityVerb(buildMobileExecutionEvents(segments).events) : undefined;
         const provenance = ctx.resolveTurnProvenance(conv, effectiveMessage);
         // Agent/model identity always sits ABOVE the accordion (never inside its summary).
@@ -355,7 +354,7 @@ export function renderMobileExecutionEventTimelineExtracted(ctx: any, body: HTML
             turnStartMs,
             activityVerb,
             onStopRun: ctx.resolveRunStopHandler(conv, message, isWorking),
-            settled: ctx.isConversationFinalResponseCommitted(conv, streaming),
+            settled: !isWorking,
         });
         ctx.bindMobileExecutionEventTimelineFileOpen(accordion);
         body.append(accordion);

@@ -28,6 +28,7 @@ import {
 } from '../common/qaap-agent-review';
 import type { QaapGenericCommandResult } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
+import type { QaapAgentStdinPromptMode } from './qaap-agent-task-runner-utils';
 import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 
 const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIONS;
@@ -193,10 +194,10 @@ export interface ReviewSuccessfulAgentTaskDeps {
     resolveTaskAgentId(task: QaapAgentTask): string;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean>;
-    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number }): Promise<QaapGenericCommandResult>;
+    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string }): Promise<QaapGenericCommandResult>;
     changedSensitiveFiles(task: QaapAgentTask): string[];
     resolveReviewerCandidates(task: QaapAgentTask): string[];
-    buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string): { command: string; stdinPrompt?: string; agentId: string };
+    buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string): { command: string; stdinPrompt?: string; stdinPromptMode?: QaapAgentStdinPromptMode; agentId: string };
     appendAndFireOutput(taskId: string, text: string): void;
     agentHealth?: { noteSuccess(agentId: string): void; noteFailure(agentId: string): void };
 }
@@ -261,8 +262,10 @@ export async function reviewSuccessfulAgentTask(
         }
         lastReviewer = reviewerId;
         let command: string;
+        let stdinPrompt: string | undefined;
+        let stdinPromptMode: QaapAgentStdinPromptMode | undefined;
         try {
-            ({ command } = deps.buildAgentCommand(
+            ({ command, stdinPrompt, stdinPromptMode } = deps.buildAgentCommand(
                 prompt,
                 reviewerId,
                 true,
@@ -282,6 +285,7 @@ export async function reviewSuccessfulAgentTask(
         const result = await deps.runGenericCommand(command, task.cwd, env, task.id, QAAP_AGENT_REVIEW_WALL_CLOCK_MS, {
             header: `\n[qaap] High-risk change — starting independent ${reviewerId} review.\n`,
             streamOutput: true,
+            ...(stdinPromptMode === 'plain' && stdinPrompt !== undefined ? { stdinPrompt } : {}),
         });
         const verdict = parseAgentReviewVerdict(`${result.stdout}\n${result.stderr}`);
         if (verdict) {

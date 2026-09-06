@@ -13,6 +13,14 @@ import {
 } from './qaap-work-hub-team';
 
 describe('collectAgentMembers', () => {
+    it('uses the explicit agent identity without exposing its internal prompt as a shell command', () => {
+        const members = collectAgentMembers({ conversations: [], tasks: [{
+            id: 't', agentId: 'codex', command: '[Team delegation] internal prompt', title: 'Fix discount',
+            cwd: '/repo', state: 'running', createdAt: 1
+        }] });
+        expect(members[0].agentId).to.equal('codex');
+        expect(members[0].command).to.equal(undefined);
+    });
     it('includes streaming conversations and running subtasks', () => {
         const members = collectAgentMembers({
             conversations: [{

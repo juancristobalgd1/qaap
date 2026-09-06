@@ -29,8 +29,9 @@ Edit `.env`:
 
 | Variable | Example | Purpose |
 |----------|---------|---------|
-| `THEIA_PORT` | `4873` | Port published to the internet |
-| `QAAP_OAUTH_PUBLIC_URL` | `http://203.0.113.10:4873` | Public URL (OAuth + dev preview) |
+| `THEIA_PORT` | `4873` | Internal Theia port; keep it on VPS loopback behind Caddy |
+| `QAAP_PUBLIC_HOST` | `178.105.136.93.sslip.io` | Public hostname served by Caddy |
+| `QAAP_OAUTH_PUBLIC_URL` | `https://178.105.136.93.sslip.io` | Public HTTPS origin (OAuth + dev preview) |
 | `QAAP_GITHUB_CLIENT_ID` / `SECRET` | from GitHub OAuth app | Login (or `QAAP_SKIP_AUTH=true` for private labs) |
 | `OPENROUTER_API_KEY` | `sk-or-…` | Powers `@qaiq` when no model is set in Settings |
 | `QAAP_DEFAULT_AGENT` | `qaiq` | Default agent (already the image default) |
@@ -43,18 +44,20 @@ Edit `.env`:
 Open the firewall port (example with UFW):
 
 ```bash
-sudo ufw allow 4873/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw delete allow 4873/tcp || true  # Theia is loopback-only behind Caddy
 sudo ufw enable
 ```
 
 Build and run:
 
 ```bash
-docker compose up --build -d
-docker compose logs -f theia   # wait for "Configuration directory URI"
+docker compose up --build -d caddy theia
+docker compose logs -f caddy theia   # wait for Caddy + "Configuration directory URI"
 ```
 
-Open `http://<your-vps-ip>:4873`.
+Open `https://<your-public-host>`; do not expose `:4873` directly.
 
 ## Updating an existing VPS
 
@@ -358,7 +361,7 @@ explicitly single-user box, and verify it before opting out:
 
 ## Backups
 
-The deployment's state lives in three docker volumes; **without backups a bad deploy, a destructive
+The deployment's state lives in six docker volumes; **without backups a bad deploy, a destructive
 agent run, or an operator mistake loses every user's repositories and sessions**:
 
 | Volume | Mounted at | Holds |
@@ -366,6 +369,9 @@ agent run, or an operator mistake loses every user's repositories and sessions**
 | `theia-workspace` | `/workspace` | user repositories, `.qaap/uid-registry.json`, project sessions |
 | `qaap-auth-data` | `/root/.qaap` | OAuth sessions, agent-task index/logs, conversations, helper tokens |
 | `qaap-theia-user` | `/root/.theia` | per-user settings, incl. Settings → AI API keys |
+| `theia-worktrees` | `/tmp/qaap-worktrees` | conversation worktrees, including uncommitted changes |
+| `theia-parallel` | `/tmp/qaap-parallel` | parallel task worktrees |
+| `qaap-tenant-homes` | `/home/qaap-tenants` | private agent configuration and state |
 
 **Install the nightly backup** (the VPS launch gate does this on every deploy; one-time manual equivalent):
 
@@ -380,16 +386,39 @@ dominate the size otherwise.
 
 **Restore** (container stopped or fresh):
 
+Before restoring live volumes, rehearse the archive in a disposable volume:
+
 ```bash
-cd /opt/qaap && docker compose stop theia
-docker run --rm --volumes-from "$(docker compose ps -aq theia)" \
-  -v /var/backups/qaap:/backup busybox \
-  tar xzf /backup/qaap-<STAMP>.tar.gz -C /
-docker compose start theia
+bash scripts/qaap-backup-restore-check.sh /var/backups/qaap/qaap-<STAMP>.tar.gz 'ghcr.io/juancristobalgd1/qaap@sha256:<digest>'
 ```
 
-To restore a single user's repo or one JSON store, extract selectively with
-`tar xzf … -C / workspace/repos/users/<login>` etc.
+New backups include a `.tar.gz.sha256` sidecar. Preserve that sidecar alongside
+the encrypted offsite archive and verify the decrypted archive against it.
+The digest detects corruption; it is not a signature or proof of authenticity.
+The rehearsal mounts only that archive read-only, disables networking and extracts
+into a new anonymous volume which Docker removes afterward. It checks content,
+archive paths, the six state roots and uid/gid/modes when running as root on Linux.
+It does **not** start the restored app. The default decompressed limit is 20 GiB.
+
+**Existing deployments:** preserve runtime contents before activating the three new
+mounts. Follow [runtime state migration](qaap-runtime-state-migration.md) before
+container recreation. Old three-root backups require `--legacy-three-roots` for
+rehearsal and do not cover runtime worktrees. A successful archive rehearsal does
+not by itself prove that an interrupted task can resume.
+
+Backup creation now fails on any tar error (including changing source files), writes
+a partial file first and only publishes a validated archive. It does not pause the
+application; a live archive is not an atomic snapshot across all stores. If writes
+prevent successful backups, arrange a quiet window or filesystem snapshots.
+
+Do not extract an archive over existing application volumes: stale files would
+remain, and partial extraction could mix two incompatible states. First run the
+isolated restore check above. A production recovery must use new, empty volumes
+on a clean instance, preserve numeric ownership and the six original mount paths,
+and pass application startup and two-account checks before switching traffic.
+Keep the previous volumes and image available for rollback. The automated check
+currently validates the archive only; application recovery and traffic switching
+still require a rehearsed operator procedure.
 
 > **Local tars do not survive disk loss.** Pair them with the provider's snapshot feature (Hetzner
 > backups ≈ 20% of the server price) **or** configure an encrypted offsite copy. After each nightly

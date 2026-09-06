@@ -330,7 +330,7 @@ export function createTranscriptPreviewRunButtonExtracted(ctx: any, project: Mob
     icon.className = 'codicon codicon-play';
     icon.setAttribute('aria-hidden', 'true');
     btn.append(ring, icon);
-    const label = nls.localize('qaap/mobileProjects/previewButton', 'Vista previa');
+    const label = nls.localize('qaap/mobileProjects/previewButton', 'Preview');
     btn.title = label;
     btn.setAttribute('aria-label', label);
     return btn;
@@ -460,8 +460,8 @@ export function applyTranscriptPreviewRunButtonStateExtracted(ctx: any, button: 
         icon.classList.toggle('codicon-debug-stop', stoppable);
     }
     const label = stoppable
-        ? nls.localize('qaap/mobileProjects/previewStop', 'Detener vista previa')
-        : nls.localize('qaap/mobileProjects/previewButton', 'Vista previa');
+        ? nls.localize('qaap/mobileProjects/previewStop', 'Stop preview')
+        : nls.localize('qaap/mobileProjects/previewButton', 'Preview');
     button.title = label;
     button.setAttribute('aria-label', label);
     if (waiting) {
@@ -508,7 +508,7 @@ export function stopTranscriptPreviewExtracted(ctx: any, project: MobileProjectE
     ctx.cancelPreviewAgentTurn(project, summary);
     MobileSnackbar.dismiss();
     MobileSnackbar.show(
-        nls.localize('qaap/mobileProjects/previewStopped', 'Vista previa detenida'),
+        nls.localize('qaap/mobileProjects/previewStopped', 'Preview stopped'),
         { duration: 1400 },
     );
 }

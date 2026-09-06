@@ -127,6 +127,20 @@ describe('qaap-agent-approval-flags', () => {
         expect(command).not.to.include('--dangerously-bypass-approvals-and-sandbox');
     });
 
+    it('uses the modern Codex approve-for-me flag when the CLI advertises it', () => {
+        const command = applyAgentApprovalPolicyToCommand(
+            "codex exec --json 'hi'",
+            {
+                agentId: 'codex',
+                approvalPolicyId: 'approve-for-me',
+                autoApprove: true,
+                codexSupportsApproveForMe: true,
+            },
+        );
+        expect(command).to.include('--approve-for-me');
+        expect(command).not.to.include('--ask-for-approval untrusted');
+    });
+
     it('approve-for-me uses full-auto for Codex when shell is explicitly disabled', () => {
         const command = applyAgentApprovalPolicyToCommand(
             "codex exec --json 'hi'",

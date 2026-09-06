@@ -134,8 +134,8 @@ function stickyComposerCommitMenuOptions(): StickyComposerCommitMenuOption[] {
             label: nls.localize('qaap/mobileProjects/createBranchCommitPush', 'Create Branch, Commit & Push'),
         },
         {
-            action: 'commit',
-            label: nls.localize('qaap/mobileProjects/commit', 'Commit'),
+            action: 'commit-push',
+            label: nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push'),
         },
         {
             action: 'commit-create-pr',
@@ -1207,11 +1207,11 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
     commitBtn.type = 'button';
     commitBtn.className = 'theia-mobile-sticky-composer-commit-btn';
     commitBtn.disabled = disabled;
-    commitBtn.textContent = nls.localize('qaap/mobileProjects/commitPush', 'Commit & Push');
+    commitBtn.textContent = nls.localize('qaap/mobileProjects/commit', 'Commit');
     commitBtn.addEventListener('click', ev => {
         ev.preventDefault();
         ev.stopPropagation();
-        options.onCommitAction?.('commit-push');
+        options.onCommitAction?.('commit');
     });
 
     const menuWrap = createStickyComposerSplitMenu(
