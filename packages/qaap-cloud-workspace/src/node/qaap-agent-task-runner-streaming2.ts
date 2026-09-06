@@ -115,7 +115,10 @@ import {
     shellQuote as shellQuoteHelper,
     applyTemplate as applyTemplateHelper,
     applyTemplateWithoutPrompt as applyTemplateWithoutPromptHelper,
-    applyTemplateWithStdinPrompt as applyTemplateWithStdinPromptHelper,
+    applyTemplateForPromptTransport as applyTemplateForPromptTransportHelper,
+    resolveAgentPromptTransport as resolveAgentPromptTransportHelper,
+    writeAgentPromptFile as writeAgentPromptFileHelper,
+    quoteShellArg as quoteShellArgHelper,
     truncateForPrompt as truncateForPromptHelper,
     truncateHead as truncateHeadHelper,
     loadProjectInfoFromDisk as loadProjectInfoFromDiskHelper,
@@ -336,20 +339,30 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
         const useStdioApprovals = usesQaiqProtocol
             && !readOnlyWorkspace
             && shouldUseQaiqStdioApprovals(approvalOptions);
+        const promptTransport = resolveAgentPromptTransportHelper(id, detected ?? (envTemplate
+            ? { id, template: envTemplate }
+            : undefined));
+        const usesOffArgvPrompt = promptTransport.kind !== 'argv';
         if (detected) {
             const vars = ctx.buildTemplateVars(id, agentModel, interaction);
             command = useStdioApprovals
                 ? ctx.applyTemplateWithoutPrompt(detected.template, vars)
-                : id === 'codex' && detected.bin === 'codex' && detected.template.includes(' exec ') && detected.template.includes('{prompt}')
-                    ? applyTemplateWithStdinPromptHelper(detected.template, vars)
+                : usesOffArgvPrompt
+                    ? applyTemplateForPromptTransportHelper(detected.template, promptTransport, vars)
                     : ctx.applyTemplate(detected.template, agentPrompt, vars);
         } else if (envTemplate) {
             const vars = ctx.buildTemplateVars(id, agentModel, interaction);
-            command = useStdioApprovals
-                ? ctx.applyTemplateWithoutPrompt(envTemplate, vars)
+            command = useStdioApprovals || usesOffArgvPrompt
+                ? applyTemplateForPromptTransportHelper(envTemplate, useStdioApprovals
+                    ? { kind: 'plain-stdin', placeholder: 'omit' }
+                    : promptTransport, vars)
                 : ctx.applyTemplate(envTemplate, agentPrompt, vars);
         } else {
             command = agentPrompt;
+        }
+        if (promptTransport.kind === 'prompt-file' && !useStdioApprovals) {
+            const promptFile = writeAgentPromptFileHelper(agentPrompt);
+            command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(promptFile)}`;
         }
         command = applyAgentApprovalPolicyToCommand(command, approvalOptions);
         if (useStdioApprovals) {
@@ -360,7 +373,7 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
                 agentId: id,
             };
         }
-        if (id === 'codex' && detected?.bin === 'codex' && detected.template.includes(' exec ') && detected.template.includes('{prompt}')) {
+        if (promptTransport.kind === 'plain-stdin') {
             return { command, stdinPrompt: agentPrompt, stdinPromptMode: 'plain', agentId: id };
         }
         return { command, agentId: id };

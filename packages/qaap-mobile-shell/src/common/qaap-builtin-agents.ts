@@ -9,7 +9,7 @@ export interface QaapBuiltinAgentDefinition {
     readonly label: string;
     /** Executable looked up with `which <bin>` (may differ from {@link id}). */
     readonly bin: string;
-    /** Shell template; `{prompt}` is replaced with a quoted user prompt. */
+    /** Shell template. `{prompt}` is delivered via stdin or `--prompt-file` (not argv) so Windows cmd.exe is not overflowed. */
     readonly template: string;
 }
 
@@ -59,8 +59,8 @@ export const QAAP_HARNESS_DEFINITIONS: readonly QaapHarnessDefinition[] = [
 
 export const CURSOR_AGENT_ID = 'cursor';
 
-/** VPS agents detected on PATH but not offered in mobile/desktop agent pickers. */
-export const UI_HIDDEN_VPS_AGENT_IDS = new Set([CURSOR_AGENT_ID]);
+/** Optional denylist for detected CLIs that should stay out of the composer picker. */
+export const UI_HIDDEN_VPS_AGENT_IDS = new Set<string>();
 
 /** VPS agents whose CLI model list is not API-selectable in headless runs (no `{model_flags}`). */
 export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set([CURSOR_AGENT_ID]);

@@ -61,7 +61,7 @@ export const REPO_MAP_CACHE_TTL_MS = 60_000;
 /** Source-ish top-level directories worth expanding one level deeper in the repo map. */
 
 /** When several CLIs are on PATH, prefer BYOK/free-tier runners over subscription CLIs. */
-export const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'openclaude', 'grok', 'codex', 'claude'];
+export const DEFAULT_AGENT_PREFERENCE: readonly string[] = [QAIQ_AGENT_ID, 'openclaude', 'grok', 'codex', 'claude', 'cursor'];
 
 export const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: string }[] = [
     { env: 'OPENAI_API_KEY', pref: 'ai-features.openAiOfficial.openAiApiKey' },

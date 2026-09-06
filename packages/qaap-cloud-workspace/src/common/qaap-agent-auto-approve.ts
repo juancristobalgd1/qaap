@@ -51,9 +51,9 @@ export function commandHasAutoApproveFlags(command: string): boolean {
         || /--dangerously-auto-approve-everything\b/.test(command)
         || /--yes-always\b/.test(command)
         || /--always-approve\b/.test(command)
-        || /\b--force\b/.test(command)
-        // `--yolo` cannot use a leading `\b`: `-` is a non-word char, so `\b--yolo`
-        // never matches `hermes --yolo …` and would inject a duplicate flag.
+        // `--force` / `--yolo` cannot use a leading `\b`: `-` is a non-word char,
+        // so `\b--force` never matches `cursor-agent -p --force …`.
+        || /(?:^|\s)--force(?:\s|$)/.test(command)
         || /(?:^|\s)--yolo(?:\s|$)/.test(command)
         || /(?:^|\s)-yolo(?:\s|$)/.test(command)
         || /--approval-mode(?:=|\s+)yolo\b/.test(command)
@@ -94,7 +94,8 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
         return injectAfterExecutable(command, 'hermes', '--yolo');
     }
     if (id === 'cursor') {
-        return injectAfterExecutable(command, 'cursor-agent', '-p --force');
+        const exe = /^\s*agent\b/.test(command) ? 'agent' : 'cursor-agent';
+        return injectAfterExecutable(command, exe, '-p --force');
     }
     if (id === 'antigravity') {
         return applyAntigravityAutoApprove(command);
@@ -127,8 +128,8 @@ export function applyAutoApproveToCommand(command: string, agentId: string | und
     if (/^hermes\b/.test(leading)) {
         return injectAfterExecutable(command, 'hermes', '--yolo');
     }
-    if (/^cursor-agent\b/.test(leading)) {
-        return injectAfterExecutable(command, 'cursor-agent', '-p --force');
+    if (/^cursor-agent\b/.test(leading) || (/^agent\b/.test(leading) && /(?:^|\s)(?:-p|--print|--force|--yolo)\b/.test(leading))) {
+        return injectAfterExecutable(command, /^agent\b/.test(leading) ? 'agent' : 'cursor-agent', '-p --force');
     }
     if (/^(?:agy|antigravity|gemini)\b/.test(leading) && !commandHasAutoApproveFlags(command)) {
         return applyAntigravityAutoApprove(command);

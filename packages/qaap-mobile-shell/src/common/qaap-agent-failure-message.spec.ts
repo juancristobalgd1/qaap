@@ -13,6 +13,7 @@ import {
     localizeGenericAgentFailureMessage,
     resolveAgentTurnFailureMessage,
     resolveAgentTurnFailureTechnicalContent,
+    summarizeCollapsedAgentFailure,
 } from './qaap-agent-failure-message';
 
 describe('qaap-agent-failure-message', () => {
@@ -90,6 +91,26 @@ describe('qaap-agent-failure-message', () => {
         expect(extractAgentLogFailureHint(
             'info\nCodex auth is required for gpt-5.5. Set CODEX_API_KEY or run qaiq login.\n',
         )).to.equal('Codex auth is required for gpt-5.5. Set CODEX_API_KEY or run qaiq login.');
+        expect(extractAgentLogFailureHint('FIND: formato de par\uFFFDmetros incorrecto'))
+            .to.equal('FIND: formato de parmetros incorrecto');
+        expect(extractAgentLogFailureHint('The command line is too long.'))
+            .to.equal('The command line is too long.');
+        expect(extractAgentLogFailureHint('La l\uFFFDnea de comandos es demasiado larga.'))
+            .to.equal('La lnea de comandos es demasiado larga.');
+    });
+
+    it('summarizeCollapsedAgentFailure shows the Windows FIND line without opening details', () => {
+        const generic = localizeGenericAgentFailureMessage('failed', 1);
+        expect(summarizeCollapsedAgentFailure({
+            formatted: generic,
+            generic,
+            technicalContent: 'FIND: formato de par\uFFFDmetros incorrecto',
+            persistedError: generic,
+        })).to.equal('FIND: formato de parmetros incorrecto');
+        expect(resolveAgentTurnFailureMessage(
+            'FIND: formato de par\uFFFDmetros incorrecto',
+            { state: 'failed', exitCode: 1 },
+        )).to.match(/FIND: formato de parmetros incorrecto/);
     });
 
     it('resolveAgentTurnFailureMessage prefers provider quota text over generic copy', () => {

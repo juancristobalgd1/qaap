@@ -239,6 +239,7 @@ export function detectAgentsExtracted(ctx: any): void {
             }
         }
         ctx.detectAntigravityAgent();
+        ctx.detectCursorAgent();
         ctx.detectCodexAgent();
         ctx.detectQaiqAgent();
         for (const candidate of ctx.readCustomAgents()) {
@@ -292,6 +293,29 @@ export function detectAntigravityAgentExtracted(ctx: any): void {
             label: 'Antigravity CLI',
             bin,
             template,
+        });
+}
+
+export function resolveCursorAgentBinExtracted(ctx: any): string | undefined {
+        if (ctx.isOnPath('cursor-agent')) {
+            return 'cursor-agent';
+        }
+        if (ctx.isOnPath('agent')) {
+            return 'agent';
+        }
+        return undefined;
+}
+
+export function detectCursorAgentExtracted(ctx: any): void {
+        const bin = ctx.resolveCursorAgentBin();
+        if (!bin) {
+            return;
+        }
+        ctx.detectedAgents.set('cursor', {
+            id: 'cursor',
+            label: 'Cursor Agent',
+            bin,
+            template: `${bin} -p --force {prompt}`,
         });
 }
 

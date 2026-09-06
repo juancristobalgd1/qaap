@@ -165,16 +165,16 @@ describe('qaap-agent-task-client', () => {
         expect(reconcileSelectedAgent('openclaude', agents, 'qaiq', undefined)).to.equal('openclaude');
     });
 
-    it('filterUiSelectableVpsAgents hides shell and Cursor Agent', () => {
+    it('filterUiSelectableVpsAgents hides shell but keeps Cursor Agent', () => {
         const agents = [
             { id: 'codex', label: 'Codex', available: true },
             { id: 'cursor', label: 'Cursor Agent', available: true },
             shellAgentFallback(),
         ];
-        expect(filterUiSelectableVpsAgents(agents).map(agent => agent.id)).to.deep.equal(['codex']);
+        expect(filterUiSelectableVpsAgents(agents).map(agent => agent.id)).to.deep.equal(['codex', 'cursor']);
     });
 
-    it('reconcileSelectedAgent skips a stored Cursor Agent pick', () => {
+    it('reconcileSelectedAgent honors a stored Cursor Agent pick', () => {
         const storage = new Map<string, string>();
         (global as unknown as { window: Window }).window = {
             localStorage: {
@@ -192,7 +192,7 @@ describe('qaap-agent-task-client', () => {
             { id: 'cursor', label: 'Cursor Agent', available: true },
             shellAgentFallback(),
         ];
-        expect(reconcileSelectedAgent(undefined, agents, 'cursor', '/repo')).to.equal('codex');
+        expect(reconcileSelectedAgent(undefined, agents, 'cursor', '/repo')).to.equal('cursor');
     });
 
     it('resolveExplicitAgentForSubmit prefers @mention over pinned chat agent', () => {

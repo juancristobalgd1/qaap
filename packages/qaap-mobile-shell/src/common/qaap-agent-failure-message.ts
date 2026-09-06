@@ -26,7 +26,9 @@ export type QaapAgentTurnFailureState = 'failed' | 'interrupted' | 'cancelled';
 
 const AGENT_FAILURE_SCAN_LIMIT = 12_000;
 const AGENT_LOG_HINT_MAX_LENGTH = 220;
+const COLLAPSED_FAILURE_REASON_MAX_LENGTH = 96;
 const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+const WINDOWS_CMD_ERROR_LINE = /^(FIND|DIR|COPY|XCOPY|DEL|ERASE|MOVE|REN|RENAME|TYPE|CMD|WHERE|FC|MORE):\s+\S/i;
 
 const QUOTA_PATTERNS: readonly RegExp[] = [
     /\binsufficient[_\s-]?quota\b/i,
@@ -114,12 +116,37 @@ function matchesAny(text: string, patterns: readonly RegExp[]): boolean {
     return patterns.some(pattern => pattern.test(text));
 }
 
+function sanitizeFailureDisplayText(text: string): string {
+    return text.replace(/\uFFFD+/g, '').trim();
+}
+
 function truncateAgentFailureHint(text: string): string {
-    const trimmed = text.trim();
+    const trimmed = sanitizeFailureDisplayText(text);
     if (trimmed.length <= AGENT_LOG_HINT_MAX_LENGTH) {
         return trimmed;
     }
     return `${trimmed.slice(0, AGENT_LOG_HINT_MAX_LENGTH - 1)}…`;
+}
+
+function truncateCollapsedFailureReason(text: string): string {
+    const trimmed = sanitizeFailureDisplayText(text);
+    if (trimmed.length <= COLLAPSED_FAILURE_REASON_MAX_LENGTH) {
+        return trimmed;
+    }
+    return `${trimmed.slice(0, COLLAPSED_FAILURE_REASON_MAX_LENGTH - 1)}…`;
+}
+
+function firstMeaningfulFailureLine(text: string | undefined): string | undefined {
+    if (!text) {
+        return undefined;
+    }
+    for (const line of text.replace(ANSI_REGEX, '').split('\n')) {
+        const trimmed = sanitizeFailureDisplayText(line);
+        if (trimmed) {
+            return trimmed;
+        }
+    }
+    return undefined;
 }
 
 function extractJsonFailureHint(sample: string): string | undefined {
@@ -180,10 +207,49 @@ export function extractAgentLogFailureHint(log: string | undefined): string | un
         if (/^(Error|error|npm error|failed to|Cannot find|fatal:)/i.test(line)) {
             return truncateAgentFailureHint(line);
         }
+        // Windows cmd.exe: "FIND: formato de parámetros incorrecto"
+        if (WINDOWS_CMD_ERROR_LINE.test(line)) {
+            return truncateAgentFailureHint(line);
+        }
+        if (/\bis not recognized as an internal or external command\b/i.test(line)) {
+            return truncateAgentFailureHint(line);
+        }
+        if (/^The system cannot find (?:the )?(?:path|file) specified/i.test(line)) {
+            return truncateAgentFailureHint(line);
+        }
+        if (/command line is too long|l[ií\uFFFD]?nea de comandos es demasiado larga/i.test(line)) {
+            return truncateAgentFailureHint(line);
+        }
         // QAIQ/Codex often emit a bare credential line without an `Error:` prefix
         // ("Codex auth is required for gpt-5.5. Set CODEX_API_KEY…").
         if (/\b(?:auth(?:entication)?\s+is\s+required|CODEX_API_KEY|invalid[_\s-]?api[_\s-]?key)\b/i.test(line)) {
             return truncateAgentFailureHint(line);
+        }
+    }
+    return undefined;
+}
+
+/**
+ * One-line reason for the collapsed "Task failed" banner so the user does not
+ * have to open "Show details" to learn why the turn stopped.
+ */
+export function summarizeCollapsedAgentFailure(input: {
+    readonly formatted: string;
+    readonly generic: string;
+    readonly technicalContent?: string;
+    readonly persistedError?: string;
+}): string | undefined {
+    const sample = [input.technicalContent, input.persistedError]
+        .filter((part): part is string => !!part?.trim())
+        .join('\n');
+    const hint = extractAgentLogFailureHint(sample) ?? extractAgentLogFailureHint(input.formatted);
+    if (hint) {
+        return truncateCollapsedFailureReason(hint);
+    }
+    if (!input.formatted || input.formatted === input.generic) {
+        const first = firstMeaningfulFailureLine(input.technicalContent);
+        if (first && first !== input.generic) {
+            return truncateCollapsedFailureReason(first);
         }
     }
     return undefined;

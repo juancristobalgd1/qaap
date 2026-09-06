@@ -8,6 +8,7 @@
 
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { OPENCLAUDE_AGENT_ID } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
@@ -101,6 +102,111 @@ export function applyTemplateWithoutPrompt(template: string, vars: Record<string
 /** Template expansion for CLIs such as Codex that read a prompt from stdin when given `-`. */
 export function applyTemplateWithStdinPrompt(template: string, vars: Record<string, string> = {}): string {
     return applyTemplateVars(template.split('{prompt}').join('-'), vars);
+}
+
+/**
+ * Drop `-p {prompt}` / `--prompt {prompt}` so the flag does not sit empty after the
+ * prompt moves off argv. Used when `-p` *is* the prompt flag (Copilot, Gemini, Grok file).
+ */
+export function applyTemplateWithoutPromptFlag(template: string, vars: Record<string, string> = {}): string {
+    const stripped = template
+        .replace(/\s+(?:-p|--prompt|--single)\s+\{prompt\}/g, ' ')
+        .split('{prompt}').join(' ');
+    return applyTemplateVars(stripped, vars);
+}
+
+/** How a harness should receive the (often huge) Qaap task prompt. */
+export type QaapAgentPromptPlaceholder = 'omit' | 'omit-flag' | 'dash';
+
+export type QaapAgentPromptTransport =
+    | { readonly kind: 'argv' }
+    | { readonly kind: 'plain-stdin'; readonly placeholder: QaapAgentPromptPlaceholder }
+    | { readonly kind: 'prompt-file'; readonly flag: '--prompt-file' };
+
+const STDIN_OMIT_IDS = new Set(['cursor', 'claude', 'qaiq', 'openclaude', 'opencode', 'qwen']);
+const STDIN_OMIT_FLAG_IDS = new Set(['copilot']);
+const STDIN_DASH_IDS = new Set(['codex', 'kimi', 'goose', 'hermes', 'openclaw']);
+
+/**
+ * Windows `cmd.exe` dies at ~8191 characters ("La línea de comandos es demasiado larga")
+ * when the full Qaap context is inlined as `{prompt}`. Prefer stdin, or `--prompt-file`
+ * for CLIs that refuse piped input (Grok).
+ */
+export function resolveAgentPromptTransport(
+    agentId: string | undefined,
+    detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
+): QaapAgentPromptTransport {
+    const id = (agentId ?? detected?.id ?? '').trim().toLowerCase();
+    const bin = detected?.bin?.trim().toLowerCase();
+    if (id === 'cursor' || bin === 'cursor-agent' || bin === 'agent') {
+        return { kind: 'plain-stdin', placeholder: 'omit' };
+    }
+    if (id === 'grok' || bin === 'grok') {
+        return { kind: 'prompt-file', flag: '--prompt-file' };
+    }
+    if (id === 'antigravity' || bin === 'gemini' || bin === 'agy' || bin === 'antigravity') {
+        return bin === 'gemini'
+            ? { kind: 'plain-stdin', placeholder: 'omit-flag' }
+            : { kind: 'plain-stdin', placeholder: 'dash' };
+    }
+    if (STDIN_OMIT_IDS.has(id)) {
+        return { kind: 'plain-stdin', placeholder: 'omit' };
+    }
+    if (STDIN_OMIT_FLAG_IDS.has(id) || bin === 'copilot') {
+        return { kind: 'plain-stdin', placeholder: 'omit-flag' };
+    }
+    if (STDIN_DASH_IDS.has(id)) {
+        return { kind: 'plain-stdin', placeholder: 'dash' };
+    }
+    const template = detected?.template ?? '';
+    if (template.includes('{prompt}')) {
+        if (/(?:-p|--prompt|--single|-t|-q|--message|--text)\s+\{prompt\}/.test(template)) {
+            return { kind: 'plain-stdin', placeholder: 'dash' };
+        }
+        return { kind: 'plain-stdin', placeholder: 'omit' };
+    }
+    return { kind: 'argv' };
+}
+
+export function applyTemplateForPromptTransport(
+    template: string,
+    transport: QaapAgentPromptTransport,
+    vars: Record<string, string> = {},
+): string {
+    if (transport.kind === 'argv') {
+        return applyTemplateVars(template, vars);
+    }
+    if (transport.kind === 'plain-stdin' && transport.placeholder === 'dash') {
+        return applyTemplateWithStdinPrompt(template, vars);
+    }
+    if (transport.kind === 'prompt-file'
+        || (transport.kind === 'plain-stdin' && transport.placeholder === 'omit-flag')) {
+        return applyTemplateWithoutPromptFlag(template, vars);
+    }
+    return applyTemplateWithoutPrompt(template, vars);
+}
+
+/** Quote a filesystem path for `shell: true` (`cmd.exe` on Windows, POSIX elsewhere). */
+export function quoteShellArg(value: string): string {
+    if (process.platform === 'win32') {
+        return `"${value.replace(/"/g, '""')}"`;
+    }
+    return shellQuote(value);
+}
+
+/** Persist a prompt so CLIs such as Grok can take `--prompt-file` instead of argv. */
+export function writeAgentPromptFile(text: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-prompt-'));
+    const file = path.join(dir, 'prompt.txt');
+    fs.writeFileSync(file, text, 'utf8');
+    return file;
+}
+
+export function agentUsesPlainStdinPrompt(
+    agentId: string | undefined,
+    detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
+): boolean {
+    return resolveAgentPromptTransport(agentId, detected).kind === 'plain-stdin';
 }
 
 export function truncateForPrompt(value: string, maxChars: number): string {

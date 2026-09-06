@@ -6,7 +6,7 @@ import {
     extractAgentAuthLoginChallenge,
     type QaapAgentAuthLoginChallenge,
 } from '../common/qaap-agent-auth-login';
-import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage } from '../common/qaap-agent-failure-message';
+import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage, summarizeCollapsedAgentFailure } from '../common/qaap-agent-failure-message';
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
@@ -170,6 +170,24 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
             toolLine.className = 'theia-mobile-agent-turn-failure-tool';
             toolLine.textContent = failedToolName;
             titleWrap.append(toolLine);
+        }
+        if (!authChallenge && !isQuotaFailure && !isCliMissing) {
+            const reason = summarizeCollapsedAgentFailure({
+                formatted,
+                generic,
+                technicalContent,
+                persistedError: error,
+            });
+            if (reason && reason !== failedToolName) {
+                const reasonLine = document.createElement('span');
+                reasonLine.className = 'theia-mobile-agent-turn-failure-reason';
+                reasonLine.textContent = reason;
+                titleWrap.append(reasonLine);
+                summary.setAttribute(
+                    'aria-label',
+                    `${nls.localize('qaap/mobileProjects/showFailureDetails', 'Show details')}: ${reason}`,
+                );
+            }
         }
         summary.append(chevron, iconWrap, titleWrap);
         ctx.appendTranscriptShellSummaryTail(summary, {
