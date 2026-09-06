@@ -3497,6 +3497,25 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   border-color: color-mix(in srgb, var(--theia-panel-border) 70%, transparent);
 }
 
+.theia-mobile-sticky-composer-api-key-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.theia-mobile-sticky-composer-api-key-banner-action {
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--q-accent, #E58E40) 40%, transparent);
+  background: color-mix(in srgb, var(--q-accent, #E58E40) 16%, var(--theia-editorWidget-background));
+  color: var(--theia-foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 /* Tool UI approval-card pattern (ported from tool-ui.com). */
 .theia-mobile-agent-approval-card {
   overflow: hidden;

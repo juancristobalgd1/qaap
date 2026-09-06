@@ -88,6 +88,7 @@ export interface MobileProjectsTranscriptMessagesHost {
      * (device-auth / OAuth), so Work Hub chat can mirror the TUI sign-in URL.
      */
     openAgentSignInTerminal?(agentId?: string): void | Promise<void>;
+    openPreferencesSheet?(query?: string): Promise<void>;
 }
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */

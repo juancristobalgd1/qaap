@@ -31,6 +31,8 @@ import {
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { rememberQaapHostedRuntime } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { usesSharedAiSettingsFallback } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
@@ -157,6 +159,7 @@ import {
 } from './qaap-agent-task-runner-utils3';
 
 export function initExtracted(ctx: any): void {
+        rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));
         ctx.recoveryState = 'loading';
         ctx.detectAgents();
         ctx.ensureHelperCli();

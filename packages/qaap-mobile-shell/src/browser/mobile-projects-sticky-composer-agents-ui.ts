@@ -23,6 +23,7 @@ import {
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
 import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
+import { localizeHostedInstallCodingAgentLabel, readQaapHostedRuntime } from '../common/qaap-hosted-agent-auth-policy';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
@@ -75,7 +76,9 @@ export class MobileProjectsStickyComposerAgentsUi {
             return fromList;
         }
         if (this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents).length === 0) {
-            return nls.localize('qaap/mobileProjects/installCodingAgent', 'Install a coding CLI');
+            return readQaapHostedRuntime()
+                ? localizeHostedInstallCodingAgentLabel()
+                : nls.localize('qaap/mobileProjects/installCodingAgent', 'Install a coding CLI');
         }
         return this.host.projectRowsUi.resolveConversationAgentLabel(undefined);
     }

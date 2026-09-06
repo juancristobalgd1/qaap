@@ -3,6 +3,7 @@ import {
     applyByokCredentialEnv,
     findCustomOpenAiEndpointForModelId,
     findQaiqByokProvider,
+    hasAnyConfiguredByokCredential,
     formatQaiqModelProviderLabel,
     listCustomOpenAiModels,
     parseTheiaLanguageModelId,
@@ -124,5 +125,15 @@ describe('qaap-qaiq-byok-provider-registry', () => {
         applyByokCredentialEnv(env, QAAP_CUSTOM_OPENAI_VENDOR, readPref);
         expect(env.OPENAI_API_KEY).to.equal('sk-simple');
         expect(env.OPENAI_BASE_URL).to.equal('https://simple.example/v1');
+    });
+
+    it('hasAnyConfiguredByokCredential is true when any provider key is set', () => {
+        expect(hasAnyConfiguredByokCredential(() => undefined)).to.equal(false);
+        expect(hasAnyConfiguredByokCredential(key =>
+            key === 'ai-features.openrouter.openrouterApiKey' ? 'sk-or' : undefined,
+        )).to.equal(true);
+        expect(hasAnyConfiguredByokCredential(() => undefined, envKey =>
+            envKey === 'OPENROUTER_API_KEY' ? 'sk-or' : undefined,
+        )).to.equal(true);
     });
 });

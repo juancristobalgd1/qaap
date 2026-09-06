@@ -41,6 +41,12 @@ export interface QaapAuthConfigResponse {
      * Absent in local dev.
      */
     build?: string;
+    /**
+     * True when the backend is a hosted/production runtime (`NODE_ENV=production` or
+     * `QAAP_CLOUD_MODE` other than `local`). Work Hub uses this to hide localhost-OAuth
+     * agent logins such as Cursor Agent.
+     */
+    productionRuntime?: boolean;
 }
 
 /** Public process liveness. Secrets never belong here — keep in sync with `/auth/config`. */

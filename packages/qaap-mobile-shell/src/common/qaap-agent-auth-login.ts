@@ -5,6 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { migrateQaapProductAgentId, QAIQ_AGENT_ID } from './qaap-agent-task-client';
+import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
  * CLI session / device-code login challenge extracted from agent stdout/stderr.
@@ -257,8 +258,11 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
             // headless-viable path here.
             return 'gh auth login --web';
         case 'cursor':
-            // Prints a URL instead of opening a browser. Completes on desktop; on a headless VPS
-            // the user still pastes the URL. NO_OPEN_BROWSER is documented by `cursor-agent login`.
+            // Localhost OAuth callback cannot complete on a headless VPS.
+            if (isAgentHiddenOnHostedRuntime('cursor')) {
+                return undefined;
+            }
+            // Prints a URL instead of opening a browser. Completes on desktop.
             return process.platform === 'win32'
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
                 : 'NO_OPEN_BROWSER=1 cursor-agent login';
@@ -286,6 +290,31 @@ export function isAgentSessionAuthFailure(log: string | undefined): boolean {
  */
 export function agentHasCliOAuthLogin(agentId: string | undefined): boolean {
     return resolveAgentLoginCliCommand(agentId) !== undefined;
+}
+
+/** Preferences sheet query that contains BYOK API-key fields (not AI Configuration / MCP). */
+export const QAAP_AI_FEATURES_SETTINGS_QUERY = 'ai-features';
+
+/**
+ * True when the agent signs in with a Settings API key rather than a CLI OAuth / device-code
+ * flow. Hosted-blocked localhost-OAuth agents (Cursor) stay out of this path.
+ */
+export function agentNeedsSettingsApiKeyPath(agentId: string | undefined): boolean {
+    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    if (!normalized || normalized === 'shell') {
+        return false;
+    }
+    if (isAgentHiddenOnHostedRuntime(normalized)) {
+        return false;
+    }
+    return !agentHasCliOAuthLogin(normalized);
+}
+
+export function localizeAddApiKeyInSettingsCta(): string {
+    return nls.localize(
+        'qaap/agentLogin/addApiKeyInSettings',
+        'Add API key in Settings',
+    );
 }
 
 /**

@@ -43,6 +43,7 @@ import {
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
 import { localizeAgentFailureMessage, localizeMissingCodingAgentMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
     resolveAgentLogDisplayText,
@@ -330,6 +331,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentConversationRe
             throw new Error(localizeMissingCodingAgentMessage());
         }
     }
+    assertAgentAllowedOnHostedRuntime(agentId);
     const now = Date.now();
     const id = randomUUID();
     const titleSeed = (request.title ?? request.message ?? '').trim();

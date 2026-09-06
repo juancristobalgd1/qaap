@@ -6,6 +6,8 @@
 import { expect } from 'chai';
 import {
     agentHasCliOAuthLogin,
+    agentNeedsSettingsApiKeyPath,
+    localizeAddApiKeyInSettingsCta,
     detectAgentAuthFailureMode,
     extractAgentAuthLoginChallenge,
     isUnauthenticatedCliDeclaration,
@@ -15,8 +17,13 @@ import {
 } from './qaap-agent-auth-login';
 import { detectAgentFailureKind, resolveAgentTurnFailureMessage } from './qaap-agent-failure-message';
 import { resolveAgentLogDisplayText } from './qaap-cli-transcript-stream';
+import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('qaap-agent-auth-login', () => {
+    afterEach(() => {
+        rememberQaapHostedRuntime(false);
+    });
+
 
     it('extracts Codex device-auth URL and one-time code', () => {
         const log = [
@@ -113,6 +120,14 @@ describe('qaap-agent-auth-login', () => {
         expect(message.toLowerCase()).to.match(/sign in|api key/);
     });
 
+    it('omits Cursor login on a hosted runtime because localhost OAuth cannot finish', () => {
+        rememberQaapHostedRuntime(true);
+        expect(resolveAgentLoginCliCommand('cursor')).to.equal(undefined);
+        expect(agentHasCliOAuthLogin('cursor')).to.equal(false);
+        expect(resolveAgentLoginCliCommand('codex')).to.equal('codex login --device-auth');
+        expect(agentHasCliOAuthLogin('codex')).to.equal(true);
+    });
+
     it('resolveAgentLoginCliCommand maps agents to their audited device-code login command', () => {
         // Verified against the installed CLIs (Aug 2026): device-code where the CLI offers one.
         expect(resolveAgentLoginCliCommand('codex')).to.equal('codex login --device-auth');
@@ -145,6 +160,19 @@ describe('qaap-agent-auth-login', () => {
         expect(agentHasCliOAuthLogin('antigravity')).to.equal(false);
         expect(agentHasCliOAuthLogin(undefined)).to.equal(false);
         expect(agentHasCliOAuthLogin('')).to.equal(false);
+    });
+
+    it('agentNeedsSettingsApiKeyPath is true for BYOK agents and false for OAuth or Shell', () => {
+        expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('opencode')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('antigravity')).to.equal(true);
+        expect(agentNeedsSettingsApiKeyPath('codex')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('cursor')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('shell')).to.equal(false);
+        rememberQaapHostedRuntime(true);
+        expect(agentNeedsSettingsApiKeyPath('cursor')).to.equal(false);
+        expect(agentNeedsSettingsApiKeyPath('qaiq')).to.equal(true);
+        expect(localizeAddApiKeyInSettingsCta()).to.match(/API key/i);
     });
 
     it('localizeAgentSettingsApiKeyLoginMessage points BYOK agents to the Settings API key', () => {

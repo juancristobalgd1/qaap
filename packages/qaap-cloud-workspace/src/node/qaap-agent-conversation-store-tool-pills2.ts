@@ -13,6 +13,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
 import {
     QAAP_AGENT_CONVERSATION_API_PATH,
     QaapAgentConversation,
@@ -534,16 +535,21 @@ export function publishFinalizedAgentMessageExtracted(ctx: any, conversationId: 
 export function resolveTurnAgentExtracted(ctx: any, conv: QaapAgentConversation, userContent: string, explicit?: string): string {
         const fromMention = ctx.extractAgentMentionFromUserMessage(userContent);
         if (fromMention) {
+            assertAgentAllowedOnHostedRuntime(fromMention);
             return fromMention;
         }
         const explicitId = explicit?.trim();
         if (explicitId && ctx.isKnownAgentId(explicitId)) {
+            assertAgentAllowedOnHostedRuntime(explicitId);
             return explicitId;
         }
         if (ctx.isKnownAgentId(conv.agentId)) {
+            assertAgentAllowedOnHostedRuntime(conv.agentId);
             return conv.agentId;
         }
-        return ctx.taskRunner.defaultAgent();
+        const fallback = ctx.taskRunner.defaultAgent();
+        assertAgentAllowedOnHostedRuntime(fallback);
+        return fallback;
 }
 
 export function extractAgentMentionFromUserMessageExtracted(ctx: any, content: string): string | undefined {

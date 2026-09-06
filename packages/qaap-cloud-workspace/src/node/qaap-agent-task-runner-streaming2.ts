@@ -44,6 +44,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import { localizeMissingCodingAgentMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
 import {
     formatQaiqInteractionFlags,
     type QaapQaiqInteractionFlagOptions,
@@ -230,6 +231,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         ) {
             throw new Error(localizeMissingCodingAgentMessage());
         }
+        assertAgentAllowedOnHostedRuntime(resolvedAgentId);
         const id = randomUUID();
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
@@ -448,6 +450,7 @@ export function buildRepoMapExtracted(ctx: any, cwd: string): string | undefined
 
 export function resolveAgentIdExtracted(ctx: any, prompt: string, agentId: string | undefined, ownerLogin?: string): string {
         const ensureEnabled = (resolved: string): string => {
+            assertAgentAllowedOnHostedRuntime(resolved);
             if (ctx.isAgentEnabled && !ctx.isAgentEnabled(resolved, ownerLogin)) {
                 throw new Error(`Agent "${resolved}" is disabled in Harness configuration.`);
             }
@@ -458,6 +461,7 @@ export function resolveAgentIdExtracted(ctx: any, prompt: string, agentId: strin
             return ensureEnabled(explicit);
         }
         if (agentId?.trim()) {
+            assertAgentAllowedOnHostedRuntime(agentId);
             throw new Error(`Agent "${agentId.trim()}" is not available on this server.`);
         }
         const mentioned = ctx.extractLastAgentMention(prompt);
@@ -466,9 +470,12 @@ export function resolveAgentIdExtracted(ctx: any, prompt: string, agentId: strin
         }
         const unavailableMention = ctx.extractLastAgentMentionToken(prompt);
         if (unavailableMention) {
+            assertAgentAllowedOnHostedRuntime(unavailableMention);
             throw new Error(`Agent "@${unavailableMention}" is not available on this server.`);
         }
-        return ctx.defaultAgent(ownerLogin);
+        const fallback = ctx.defaultAgent(ownerLogin);
+        assertAgentAllowedOnHostedRuntime(fallback);
+        return fallback;
 }
 
 export function extractLastAgentMentionExtracted(ctx: any, prompt: string): string | undefined {

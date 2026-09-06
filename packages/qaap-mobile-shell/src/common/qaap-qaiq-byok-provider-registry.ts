@@ -254,6 +254,16 @@ export function providerHasByokCredentialOrEnv(
     return descriptor.credentialEnv.some(mapping => !!readEnv(mapping.env)?.trim());
 }
 
+export function hasAnyConfiguredByokCredential(
+    readPref: QaapPreferenceReader,
+    readEnv?: (key: string) => string | undefined,
+): boolean {
+    if (QAAP_QAIQ_BYOK_PROVIDERS.some(provider => providerHasByokCredentialOrEnv(readPref, provider, readEnv))) {
+        return true;
+    }
+    return vendorHasByokCredential(readPref, QAAP_CUSTOM_OPENAI_VENDOR, readEnv);
+}
+
 export function vendorHasByokCredential(
     readPref: QaapPreferenceReader,
     vendor: string,

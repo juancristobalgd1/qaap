@@ -4,6 +4,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import {
     extractAgentAuthLoginChallenge,
+    localizeAddApiKeyInSettingsCta,
     type QaapAgentAuthLoginChallenge,
 } from '../common/qaap-agent-auth-login';
 import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage, summarizeCollapsedAgentFailure } from '../common/qaap-agent-failure-message';
@@ -260,6 +261,7 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: any, challenge:
         options?: {
             readonly onOpenAuthUrl?: (url: string) => void;
             readonly onOpenAgentSignIn?: () => void | Promise<void>;
+            readonly onOpenAiFeaturesSettings?: () => void | Promise<void>;
             readonly onRetry?: () => void | Promise<void>;
             readonly agentLabel?: string;
             readonly agentId?: string;
@@ -351,6 +353,19 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: any, challenge:
                 }
             });
             card.append(urlLine);
+        }
+
+        if (challenge.mode === 'api_key' && options?.onOpenAiFeaturesSettings) {
+            const settingsBtn = document.createElement('button');
+            settingsBtn.type = 'button';
+            settingsBtn.className = 'theia-mobile-agent-auth-login-action theia-mod-primary codicon codicon-settings-gear';
+            settingsBtn.textContent = localizeAddApiKeyInSettingsCta();
+            settingsBtn.addEventListener('click', event => {
+                event.stopPropagation();
+                event.preventDefault();
+                void Promise.resolve(options.onOpenAiFeaturesSettings!());
+            });
+            actions.append(settingsBtn);
         }
 
         if (options?.onOpenAgentSignIn && challenge.mode !== 'api_key') {

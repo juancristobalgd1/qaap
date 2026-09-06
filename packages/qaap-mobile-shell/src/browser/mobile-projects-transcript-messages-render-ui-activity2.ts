@@ -284,6 +284,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, inpu
         readonly onRetry?: () => void | Promise<void>;
         readonly onOpenAuthUrl?: (url: string) => void;
         readonly onOpenAgentSignIn?: () => void | Promise<void>;
+        readonly onOpenAiFeaturesSettings?: () => void | Promise<void>;
         readonly agentLabel?: string;
         readonly agentId?: string;
     } {
@@ -295,6 +296,9 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, inpu
             },
             onOpenAgentSignIn: ctx.host.openAgentSignInTerminal
                 ? () => ctx.host.openAgentSignInTerminal?.(input.agentId)
+                : undefined,
+            onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
+                ? () => ctx.host.openPreferencesSheet?.('ai-features')
                 : undefined,
             agentLabel: input.agentId ? resolveAgentDisplayLabel(input.agentId) : undefined,
             agentId: input.agentId,

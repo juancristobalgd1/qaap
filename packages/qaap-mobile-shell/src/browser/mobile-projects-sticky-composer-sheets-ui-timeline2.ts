@@ -3,7 +3,12 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatMode } from '@theia/ai-chat';
-import { agentHasCliOAuthLogin } from '../common/qaap-agent-auth-login';
+import { agentHasCliOAuthLogin, agentNeedsSettingsApiKeyPath } from '../common/qaap-agent-auth-login';
+import {
+    localizeHostedComposerNoAgentsFilteredMessage,
+    localizeHostedComposerNoAgentsMessage,
+    readQaapHostedRuntime,
+} from '../common/qaap-hosted-agent-auth-policy';
 import {
     agentSupportsModelPicker,
     agentUsesSettingsModelCatalog,
@@ -415,6 +420,8 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         }));
         if (options.onProactiveLogin && agentHasCliOAuthLogin(agentId)) {
             content.append(ctx.createProactiveLoginRow(label, () => options.onProactiveLogin!(agentId)));
+        } else if (options.onOpenAiFeaturesSettings && agentNeedsSettingsApiKeyPath(agentId)) {
+            content.append(ctx.createProactiveSettingsApiKeyRow(label, () => options.onOpenAiFeaturesSettings!(agentId)));
         }
     };
 
@@ -457,7 +464,11 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         const hint = document.createElement('p');
         hint.className = 'theia-qaap-agent-sheet-empty-models';
         const agentConfigured = ctx.host.activeTasks?.isAgentConfigured() ?? false;
-        hint.textContent = agentConfigured
+        hint.textContent = readQaapHostedRuntime()
+            ? (agentConfigured
+                ? localizeHostedComposerNoAgentsFilteredMessage()
+                : localizeHostedComposerNoAgentsMessage())
+            : agentConfigured
             ? nls.localize(
                 'qaap/mobileProjects/stickyComposerNoAgentsFiltered',
                 'Agents were detected on the server but none are selectable in this composer. Restart the backend after installing CLIs (cursor-agent, qaiq, codex, claude, …).',

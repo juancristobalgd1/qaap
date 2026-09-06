@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from './qaap-agent-tui-command';
+import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('resolveInteractiveAgentCliBin', () => {
     it('maps composer agents to interactive TUI binaries', () => {
@@ -26,6 +27,16 @@ describe('resolveInteractiveAgentCliBin', () => {
 });
 
 describe('resolveInteractiveAgentLoginCommand', () => {
+    afterEach(() => {
+        rememberQaapHostedRuntime(false);
+    });
+
+    it('omits Cursor login on a hosted runtime', () => {
+        rememberQaapHostedRuntime(true);
+        expect(resolveInteractiveAgentLoginCommand('cursor')).to.equal(undefined);
+        expect(resolveInteractiveAgentLoginCommand('codex')).to.equal('codex login --device-auth');
+    });
+
     it('returns the real CLI login command for OAuth agents', () => {
         // Commands audited against the installed CLIs (Aug 2026): headless cloud
         // workspaces need device-code / paste flows, so prefer those flags.

@@ -326,6 +326,12 @@ export function openStickyComposerAgentSheetExtracted(ctx: any, project: MobileP
                         void ctx.host.openAgentSignInTerminal?.(agentId);
                     }
                     : undefined,
+                onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
+                    ? () => {
+                        ctx.closeAllComposerSheets();
+                        void ctx.host.openPreferencesSheet?.('ai-features');
+                    }
+                    : undefined,
                 });
             }).catch(() => {
                 if (ctx.host.stickyComposerAgentSheet === chrome.sheet) {

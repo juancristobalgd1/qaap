@@ -40,8 +40,13 @@ import {
     toQaapCreateAgentTaskQaiqModel,
     writeStoredQaiqModel,
 } from './qaap-agent-task-client';
+import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('qaap-agent-task-client', () => {
+    afterEach(() => {
+        rememberQaapHostedRuntime(false);
+    });
+
 
     it('resolveQaapAgentMentionToken lowercases tokens', () => {
         expect(resolveQaapAgentMentionToken('QAIQ')).to.equal('qaiq');
@@ -173,6 +178,18 @@ describe('qaap-agent-task-client', () => {
             shellAgentFallback(),
         ];
         expect(filterUiSelectableVpsAgents(agents).map(agent => agent.id)).to.deep.equal(['codex', 'cursor']);
+    });
+
+    it('filterUiSelectableVpsAgents hides Cursor Agent on a hosted runtime', () => {
+        rememberQaapHostedRuntime(true);
+        const agents = [
+            { id: 'codex', label: 'Codex', available: true },
+            { id: 'cursor', label: 'Cursor Agent', available: true },
+            shellAgentFallback(),
+        ];
+        expect(filterUiSelectableVpsAgents(agents).map(agent => agent.id)).to.deep.equal(['codex']);
+        expect(hasSelectableCodingAgent(agents)).to.equal(true);
+        expect(reconcileSelectedAgent('cursor', agents, 'cursor', undefined)).to.equal('codex');
     });
 
     it('reconcileSelectedAgent honors a stored Cursor Agent pick', () => {

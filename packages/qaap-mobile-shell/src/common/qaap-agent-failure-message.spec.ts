@@ -11,12 +11,18 @@ import {
     formatStoredAgentFailureMessage,
     localizeAgentFailureMessage,
     localizeGenericAgentFailureMessage,
+    localizeMissingCodingAgentMessage,
     resolveAgentTurnFailureMessage,
     resolveAgentTurnFailureTechnicalContent,
     summarizeCollapsedAgentFailure,
 } from './qaap-agent-failure-message';
+import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('qaap-agent-failure-message', () => {
+    afterEach(() => {
+        rememberQaapHostedRuntime(false);
+    });
+
 
     it('detectAgentFailureKind recognizes quota and credit exhaustion', () => {
         expect(detectAgentFailureKind('{"error":{"type":"invalid_request","message":"quota exceeded"}}'))
@@ -272,5 +278,13 @@ describe('qaap-agent-failure-message', () => {
             }],
         });
         expect(technical).to.equal('Error: command not found: qaiq');
+    });
+
+    it('localizeMissingCodingAgentMessage does not promote Cursor on hosted', () => {
+        expect(localizeMissingCodingAgentMessage()).to.match(/Cursor Agent/);
+        rememberQaapHostedRuntime(true);
+        const hosted = localizeMissingCodingAgentMessage();
+        expect(hosted).to.match(/cloud-ready/i);
+        expect(hosted).to.match(/not available here/i);
     });
 });

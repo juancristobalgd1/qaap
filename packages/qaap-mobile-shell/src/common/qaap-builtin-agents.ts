@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
+
 /** Built-in VPS coding-agent CLI the task runner can auto-detect on PATH. */
 export interface QaapBuiltinAgentDefinition {
     readonly id: string;
@@ -84,7 +86,13 @@ export const NATIVE_MODEL_PICKER_AGENT_IDS = new Set([
 
 export function isUiHiddenVpsAgent(agentId: string | undefined): boolean {
     const normalized = agentId?.trim().toLowerCase();
-    return !!normalized && UI_HIDDEN_VPS_AGENT_IDS.has(normalized);
+    if (!normalized) {
+        return false;
+    }
+    if (UI_HIDDEN_VPS_AGENT_IDS.has(normalized)) {
+        return true;
+    }
+    return isAgentHiddenOnHostedRuntime(normalized);
 }
 
 /**

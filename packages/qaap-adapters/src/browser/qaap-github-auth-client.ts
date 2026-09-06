@@ -25,6 +25,7 @@ import {
     type QaapProjectSessionUpsertRequest,
     type QaapProjectSessionSummary,
 } from '../common/qaap-github-api-types';
+import { rememberQaapHostedRuntime } from '../common/qaap-hosted-runtime';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     clearQaapAuthSession,
@@ -72,7 +73,11 @@ export async function fetchQaapAuthConfig(): Promise<QaapAuthConfigResponse> {
     if (!response.ok) {
         return { githubOAuth: false };
     }
-    return response.json() as Promise<QaapAuthConfigResponse>;
+    const config = await response.json() as QaapAuthConfigResponse;
+    if (typeof config.productionRuntime === 'boolean') {
+        rememberQaapHostedRuntime(config.productionRuntime);
+    }
+    return config;
 }
 
 export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {

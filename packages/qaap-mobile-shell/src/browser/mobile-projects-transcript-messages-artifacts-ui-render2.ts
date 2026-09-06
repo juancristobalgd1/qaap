@@ -295,6 +295,9 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: any, segments: Qa
                     onOpenAgentSignIn: ctx.host.openAgentSignInTerminal
                         ? () => ctx.host.openAgentSignInTerminal?.(agentId)
                         : undefined,
+                    onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
+                        ? () => ctx.host.openPreferencesSheet?.('ai-features')
+                        : undefined,
                     agentId,
                     agentMessage: failureMessage,
                 },

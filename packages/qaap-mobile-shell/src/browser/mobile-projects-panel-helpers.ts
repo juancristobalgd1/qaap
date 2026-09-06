@@ -109,6 +109,7 @@ export interface RenderHeaderOverflowMenuItemsDeps {
     copyActiveConversationToClipboard(): Promise<void>;
     isCopyConversationEnabled(): boolean;
     openAiConfigurationSheet?: () => void;
+    openPreferencesSheet?: (query?: string) => Promise<void>;
     appendHeaderOverflowSeparator(menu: HTMLElement): void;
     headerOverflowMenuGroups?: () => MobileProjectsHeaderOverflowMenuItem[][];
     isHeaderOverflowMenuItemVisible(item: MobileProjectsHeaderOverflowMenuItem): boolean;
@@ -161,12 +162,18 @@ export function renderHeaderOverflowMenuItems(
         () => deps.copyActiveConversationToClipboard(),
         deps.isCopyConversationEnabled(),
     );
-    if (deps.openAiConfigurationSheet) {
+    if (deps.openPreferencesSheet || deps.openAiConfigurationSheet) {
         deps.appendHeaderOverflowSeparator(menu);
         appendItem(
             nls.localize('qaap/workHubToolbar/aiSettings', 'AI Settings'),
             'codicon-settings-gear',
-            () => deps.openAiConfigurationSheet?.(),
+            () => {
+                if (deps.openPreferencesSheet) {
+                    void deps.openPreferencesSheet('ai-features');
+                    return;
+                }
+                deps.openAiConfigurationSheet?.();
+            },
         );
     }
     // Preferences (full IDE settings) stay out of Work Hub overflow — use Open IDE / AI Settings.

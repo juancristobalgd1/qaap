@@ -57,8 +57,13 @@ import {
 import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
 import {
     agentHasCliOAuthLogin,
+    QAAP_AI_FEATURES_SETTINGS_QUERY,
     localizeAgentSettingsApiKeyLoginMessage,
 } from '../common/qaap-agent-auth-login';
+import {
+    isAgentHiddenOnHostedRuntime,
+    localizeHostedLocalhostOAuthAgentMessage,
+} from '../common/qaap-hosted-agent-auth-policy';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { MobileSnackbar } from './mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
@@ -579,6 +584,13 @@ export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string): vo
     if (!resolvedAgentId) {
         return;
     }
+    if (isAgentHiddenOnHostedRuntime(resolvedAgentId)) {
+        const message = localizeHostedLocalhostOAuthAgentMessage(resolvedAgentId);
+        if (ctx.messageService) {
+            void ctx.messageService.info(message);
+        }
+        return;
+    }
     // BYOK / Settings-catalog agents (qaiq, and any agent without a CLI login
     // subcommand) have no terminal sign-in — opening the TUI would sign no one
     // in. Point the user to the API key in Settings instead.
@@ -600,15 +612,18 @@ export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string): vo
 export function notifyAgentUsesSettingsApiKeyExtracted(ctx: any, agentId: string): void {
     const message = localizeAgentSettingsApiKeyLoginMessage(resolveAgentDisplayLabel(agentId));
     const openSettings = nls.localize('qaap/agentLogin/openSettings', 'Open Settings');
+    const openAiFeatures = (): void => {
+        void ctx.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
+    };
     if (ctx.messageService) {
         void ctx.messageService.info(message, openSettings).then(action => {
             if (action === openSettings) {
-                void ctx.openAiConfigurationSheet?.();
+                openAiFeatures();
             }
         });
         return;
     }
-    void ctx.openAiConfigurationSheet?.();
+    openAiFeatures();
 }
 
 export async function onDeleteConversationExtracted(ctx: any, project: MobileProjectEntry,

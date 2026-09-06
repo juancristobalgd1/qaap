@@ -92,6 +92,33 @@ import {
 } from './qaap-agent-picker-search';
 import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from './qaap-agent-picker-loading';
 
+export function createProactiveSettingsApiKeyRowExtracted(ctx: any, agentLabel: string, onSelect: () => void): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-agent-sheet-login-option';
+        const content = document.createElement('span');
+        content.className = 'theia-mobile-sticky-composer-sheet-option-content';
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-key theia-qaap-agent-sheet-login-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        content.append(icon);
+        const labelEl = document.createElement('span');
+        labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
+        labelEl.textContent = nls.localize(
+            'qaap/mobileProjects/stickyComposerAddApiKeyForAgent',
+            'Add API key for {0} in Settings',
+            agentLabel,
+        );
+        content.append(labelEl);
+        btn.append(content);
+        btn.addEventListener('click', event => {
+            event.stopPropagation();
+            event.preventDefault();
+            onSelect();
+        });
+        return btn;
+}
+
 export function createProactiveLoginRowExtracted(ctx: any, agentLabel: string, onSelect: () => void): HTMLButtonElement {
         const btn = document.createElement('button');
         btn.type = 'button';

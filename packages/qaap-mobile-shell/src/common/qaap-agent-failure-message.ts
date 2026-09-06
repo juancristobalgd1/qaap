@@ -8,6 +8,7 @@ import {
     extractAgentAuthLoginChallenge,
     localizeAgentAuthFailureMessage,
 } from './qaap-agent-auth-login';
+import { localizeHostedMissingCodingAgentMessage, readQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
 import { isAgentToolResultFailure, isTranscriptErrorOutput } from './qaap-transcript-content-display';
 import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
@@ -337,6 +338,9 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind): string 
 
 /** Shown when Work Hub would otherwise run a natural-language prompt as a raw Shell command. */
 export function localizeMissingCodingAgentMessage(): string {
+    if (readQaapHostedRuntime()) {
+        return localizeHostedMissingCodingAgentMessage();
+    }
     return nls.localize(
         'qaap/agentFailure/noCodingAgent',
         'No coding agent CLI is installed. Install Cursor Agent, QAIQ, Claude Code, Codex, or OpenCode, then restart Qaap.',
