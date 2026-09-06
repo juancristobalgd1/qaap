@@ -75,6 +75,8 @@ describe('MobileProjectsTranscriptSheetUi', () => {
             transcriptHistoryBranch: undefined,
             transcriptHistoryError: undefined,
             transcriptHistoryQuery: '',
+            transcriptHistoryAuthorFilter: undefined,
+            transcriptHistoryBranchFilter: undefined,
             transcriptHistoryRoot: undefined,
             transcriptHistoryLoading: false,
             transcriptLastStatus: undefined,

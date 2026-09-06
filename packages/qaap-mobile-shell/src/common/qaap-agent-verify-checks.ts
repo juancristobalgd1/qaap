@@ -57,6 +57,51 @@ export function buildVerifyRunCommand(script: string, packageManager: QaapVerify
 
 export type QaapVerifyPackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
+export type QaapVerifyWorkspaceFlavor = 'lerna' | 'pnpm' | 'npm';
+
+export interface QaapLeafVerifyPackage {
+    readonly name: string;
+    readonly script: string;
+    readonly kind: QaapVerifyCheckKind;
+}
+
+/** Scoped run so a monorepo root does not fan out to every package. */
+export function buildScopedVerifyRunCommand(
+    script: string,
+    packageName: string,
+    flavor: QaapVerifyWorkspaceFlavor,
+): string {
+    switch (flavor) {
+        case 'lerna':
+            return `npx lerna run ${script} --scope ${packageName}`;
+        case 'pnpm':
+            return `pnpm --filter ${packageName} run ${script}`;
+        default:
+            return `npm run ${script} --workspace ${packageName}`;
+    }
+}
+
+/**
+ * Prefer product `@theia/qaap-*` leaf packages, then the first compile-capable leaf.
+ * Caps at two scopes so verify stays fast after a turn.
+ */
+export function pickMonorepoVerifyTargets(
+    packages: readonly QaapLeafVerifyPackage[],
+    max = 2,
+): QaapLeafVerifyPackage[] {
+    if (packages.length === 0) {
+        return [];
+    }
+    const qaap = packages.filter(entry => entry.name.startsWith('@theia/qaap-'));
+    const pool = qaap.length > 0 ? qaap : packages;
+    const compileFirst = [...pool].sort((left, right) => {
+        const leftCompile = left.script === 'compile' || left.kind === 'build' ? 0 : 1;
+        const rightCompile = right.script === 'compile' || right.kind === 'build' ? 0 : 1;
+        return leftCompile - rightCompile || left.name.localeCompare(right.name);
+    });
+    return compileFirst.slice(0, Math.max(1, max));
+}
+
 /** Picks the first runnable npm script for post-turn verification. */
 export function resolveVerifyCheckFromScripts(
     scripts: Record<string, unknown> | undefined,

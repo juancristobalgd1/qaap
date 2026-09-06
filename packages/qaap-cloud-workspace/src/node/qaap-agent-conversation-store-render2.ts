@@ -34,6 +34,7 @@ import {
 import {
     agentSupportsModelPicker,
     resolveQaapAgentMentionToken,
+    SHELL_AGENT_ID,
     usesAgUiCliTranscriptStream,
     usesStructuredAgentTranscript,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
@@ -41,7 +42,7 @@ import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     totalTokensFromContextUsage,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
-import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { localizeAgentFailureMessage, localizeMissingCodingAgentMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
 import {
     resolveAgentLogDisplayText,
@@ -316,11 +317,19 @@ export function createExtracted(ctx: any, request: QaapCreateAgentConversationRe
     if (isQaapWorkspaceContainerPath(cwd)) {
         throw new Error(QAAP_CONTAINER_CWD_ERROR);
     }
-    const seedAgent = (request.agent ?? '').trim() || ctx.taskRunner.defaultAgent();
+    const requestedAgent = (request.agent ?? '').trim();
+    const seedAgent = requestedAgent || ctx.taskRunner.defaultAgent();
     const firstMessage = (request.message ?? '').trim();
     const agentId = firstMessage
         ? ctx.resolveTurnAgent({ id: '', cwd, agentId: seedAgent, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, firstMessage, request.agent)
         : seedAgent;
+    if (agentId === SHELL_AGENT_ID) {
+        const explicitShell = ctx.taskRunner.normalizeAgentId(requestedAgent) === SHELL_AGENT_ID
+            || (firstMessage ? ctx.extractAgentMentionFromUserMessage(firstMessage) === SHELL_AGENT_ID : false);
+        if (!explicitShell) {
+            throw new Error(localizeMissingCodingAgentMessage());
+        }
+    }
     const now = Date.now();
     const id = randomUUID();
     const titleSeed = (request.title ?? request.message ?? '').trim();

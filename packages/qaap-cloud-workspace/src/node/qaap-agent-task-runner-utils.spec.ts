@@ -15,6 +15,7 @@ import {
     applyTemplateWithStdinPrompt,
     prependPathEntry,
     resolveAgentPromptTransport,
+    resolveExistingExecutablePath,
     resolveQaiqEnvFallbackModel,
     resolveQaiqProviderFlagsFromEnv,
 } from './qaap-agent-task-runner-utils';
@@ -344,6 +345,31 @@ describe('other harness prompt transport', () => {
         } finally {
             fs.rmSync(path.dirname(file), { recursive: true, force: true });
         }
+    });
+});
+
+describe('resolveExistingExecutablePath', () => {
+
+    it('resolves a Windows .cmd shim when where prints the extensionless name', () => {
+        const files = new Set(['C:\\npm\\cursor-agent.cmd']);
+        expect(resolveExistingExecutablePath(['C:\\npm\\cursor-agent'], {
+            platform: 'win32',
+            pathExt: '.COM;.EXE;.BAT;.CMD',
+            stat: filePath => files.has(filePath) ? { isFile: () => true } : undefined,
+        })).to.equal('C:\\npm\\cursor-agent.cmd');
+    });
+
+    it('uses the first existing where line', () => {
+        const files = new Set(['C:\\bin\\claude.exe']);
+        expect(resolveExistingExecutablePath([
+            'INFO: Could not find files',
+            'C:\\missing\\claude',
+            'C:\\bin\\claude.exe',
+        ], {
+            platform: 'win32',
+            pathExt: '.EXE',
+            stat: filePath => files.has(filePath) ? { isFile: () => true } : undefined,
+        })).to.equal('C:\\bin\\claude.exe');
     });
 });
 

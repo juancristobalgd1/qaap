@@ -360,7 +360,7 @@ export async function mountTranscriptStickyComposerAsyncExtracted(ctx: any, host
         inputPlaceholder: isAgentsHubIdleConversationSummary(summary)
             ? nls.localize('qaap/mobileProjects/stickyComposerNewTask', 'Delegate a task…')
             : isLegacyTheiaChat
-                ? nls.localize('qaap/mobileProjects/transcriptLegacyTheiaPlaceholder', 'Start a new QAIQ session…')
+                ? nls.localize('qaap/mobileProjects/transcriptLegacyTheiaPlaceholder', 'Start a new agent session…')
                 : nls.localize('qaap/mobileProjects/transcriptTaskPlaceholder', 'Follow up on this task…'),
         resolveCapabilityLevel: () => ctx.host.transcriptComposerCapabilityLevel
             ?? reconcileModelCapabilityLevel(undefined, cwd),

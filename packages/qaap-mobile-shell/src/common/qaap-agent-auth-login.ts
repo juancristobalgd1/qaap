@@ -257,10 +257,11 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
             // headless-viable path here.
             return 'gh auth login --web';
         case 'cursor':
-            // cursor-agent login only opens a local browser (redirect-to-localhost), so it
-            // completes on a desktop but not on a headless VPS. Kept because it is a real login for
-            // local use; the cloud case needs the OAuth-callback proxy, not a different flag.
-            return 'cursor-agent login';
+            // Prints a URL instead of opening a browser. Completes on desktop; on a headless VPS
+            // the user still pastes the URL. NO_OPEN_BROWSER is documented by `cursor-agent login`.
+            return process.platform === 'win32'
+                ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
+                : 'NO_OPEN_BROWSER=1 cursor-agent login';
         case QAIQ_AGENT_ID:
             // QAIQ is BYOK / Settings — no CLI OAuth login command.
             return undefined;

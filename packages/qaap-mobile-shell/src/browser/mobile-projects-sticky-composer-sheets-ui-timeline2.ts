@@ -460,11 +460,11 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         hint.textContent = agentConfigured
             ? nls.localize(
                 'qaap/mobileProjects/stickyComposerNoAgentsFiltered',
-                'Agents were detected on the server but none are selectable in this composer. Restart the backend after installing CLIs (qaiq, codex, claude, …).',
+                'Agents were detected on the server but none are selectable in this composer. Restart the backend after installing CLIs (cursor-agent, qaiq, codex, claude, …).',
             )
             : nls.localize(
                 'qaap/mobileProjects/stickyComposerNoAgents',
-                'No agents are available. Install a VPS agent CLI on PATH (qaiq, codex, claude) or set QAAP_AGENT_COMMAND, then restart the backend.',
+                'No agents are available. Install a VPS agent CLI on PATH (cursor-agent, qaiq, codex, claude) or set QAAP_AGENT_COMMAND, then restart the backend.',
             );
         content.append(hint);
     }

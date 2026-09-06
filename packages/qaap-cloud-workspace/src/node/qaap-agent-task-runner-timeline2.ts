@@ -126,6 +126,7 @@ import {
     noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
     changedSensitiveFiles as changedSensitiveFilesHelper,
     findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
+    removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
 } from './qaap-agent-task-runner-utils';
 import {
     parseCustomAgent as parseCustomAgentHelper,
@@ -163,12 +164,14 @@ export function killAgentProcessTreeExtracted(ctx: any, child: ChildProcess,
             return undefined;
         }
         const sendSignal = (signal: NodeJS.Signals): void => {
-            if (globalThis.process.platform !== 'win32') {
-                try {
-                    globalThis.process.kill(-pid, signal);
-                    return;
-                } catch { /* process group already gone; try the leader below */ }
+            if (globalThis.process.platform === 'win32') {
+                spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+                return;
             }
+            try {
+                globalThis.process.kill(-pid, signal);
+                return;
+            } catch { /* process group already gone; try the leader below */ }
             try {
                 child.kill(signal);
             } catch { /* already gone */ }
@@ -360,7 +363,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 ctx.recordTaskLatencyMark(task.id, 'build_agent_command_start');
                 const autoApprove = task.autoApprove !== false;
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt, task.ownerLogin);
-                const { command, stdinPrompt, stdinPromptMode, agentId } = ctx.buildAgentCommand(
+                const { command, stdinPrompt, stdinPromptMode, agentId, promptTempDir } = ctx.buildAgentCommand(
                     prompt,
                     request.agent,
                     autoApprove,
@@ -380,6 +383,9 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                         text: stdinPrompt,
                         mode: stdinPromptMode ?? 'qaiq-stdio',
                     });
+                }
+                if (promptTempDir) {
+                    ctx.promptTempDirs.set(task.id, promptTempDir);
                 }
                 const commandTask = ctx.tasks.get(task.id) ?? task;
                 const next: QaapAgentTask = {
@@ -442,6 +448,8 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
         } catch (error) {
             finishAntigravitySettings();
             ctx.stdinPrompts.delete(task.id);
+            removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
+            ctx.promptTempDirs.delete(task.id);
             logStream.end(`Failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
             ctx.finishTask(task.id, 'failed', undefined);
             return;
@@ -589,6 +597,8 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
             ctx.deletedTaskIds.delete(task.id);
             ctx.stdinInteractiveTasks.delete(task.id);
             ctx.stdinPrompts.delete(task.id);
+            removeAgentPromptTempDirHelper(ctx.promptTempDirs.get(task.id));
+            ctx.promptTempDirs.delete(task.id);
             ctx.pendingQaiqControlRequests.delete(task.id);
             ctx.clearQueuedApprovalTimers(task.id);
             ctx.qaiqStdioTasks.delete(task.id);

@@ -14,6 +14,7 @@ import {
     type QaapAgentCliUpdatesResponse,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-cli-update';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
+import { isOnPath } from './qaap-agent-task-runner-utils';
 
 /** Operator opt-in for in-place `npm install -g` on hosted/production backends. */
 export const QAAP_ALLOW_IN_PLACE_CLI_UPDATE = 'QAAP_ALLOW_IN_PLACE_CLI_UPDATE';
@@ -232,7 +233,7 @@ export class QaapAgentCliUpdateService {
 
     protected probeInstalled(tracked: TrackedAgentCli): { bin?: string; version?: string } {
         for (const bin of tracked.bins) {
-            if (!this.isOnPath(bin)) {
+            if (!isOnPath(bin)) {
                 continue;
             }
             try {
@@ -245,16 +246,6 @@ export class QaapAgentCliUpdateService {
             }
         }
         return {};
-    }
-
-    protected isOnPath(bin: string): boolean {
-        try {
-            const which = process.platform === 'win32' ? 'where' : 'which';
-            const result = spawnSync(which, [bin], { encoding: 'utf8', timeout: 3_000 });
-            return result.status === 0 && !!(result.stdout || '').trim();
-        } catch {
-            return false;
-        }
     }
 
     protected async resolveLatestVersion(tracked: TrackedAgentCli): Promise<string | undefined> {

@@ -19,7 +19,6 @@ import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-off
 import {
     fetchAgentTaskListAll,
     mergeAgentTaskAgentOptions,
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
     resolveAgentModelForSubmit,
     resolveBackendAgentForTurn,
@@ -27,6 +26,7 @@ import {
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
+import { localizeMissingCodingAgentMessage } from '../common/qaap-agent-failure-message';
 import { shouldRouteSubmitToTheiaCoder } from '../common/qaap-agent-submit-routing';
 import { reportQaapClientError } from '../common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
@@ -319,7 +319,7 @@ export class MobileProjectsBackgroundTaskUi {
             );
         }
         const agent = await this.boundedSubmitStage(
-            this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId ?? QAAP_COMPOSER_DEFAULT_AGENT_ID),
+            this.selectBackendConversationAgent(cwd, draft, options.selectedAgentId),
             20_000,
             'selecting the agent',
         );
@@ -444,6 +444,9 @@ export class MobileProjectsBackgroundTaskUi {
             defaultAgentId: snapshot.defaultAgent,
             conversationAgentId,
         });
+        if (!resolved) {
+            throw new Error(localizeMissingCodingAgentMessage());
+        }
         writeStoredAgent(cwd, resolved);
         return resolved;
     }

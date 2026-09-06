@@ -170,6 +170,8 @@ export class QaapAgentTaskRunner {
     protected readonly stdinInteractiveTasks = new Set<string>();
     /** Prompts to deliver over stdin, either as plain CLI input or QAIQ `stream-json`. */
     protected readonly stdinPrompts = new Map<string, QaapAgentStdinPrompt>();
+    /** Temp dirs from `--prompt-file` (Grok) — deleted when the child exits. */
+    protected readonly promptTempDirs = new Map<string, string>();
     /** Unanswered `can_use_tool` control requests per task — the pause-and-wait approval queue. */
     protected readonly pendingQaiqControlRequests = new Map<string, QaapQaiqPendingControlRequest[]>();
     /** Grace timers (per task, per requestId) auto-denying queued approvals of auto-approve runs. */
@@ -437,7 +439,7 @@ export class QaapAgentTaskRunner {
         return createExtracted(this, request, ownerLogin);
     }
 
-    protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string } {
+    protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
         return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin);
     }
 

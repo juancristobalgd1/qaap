@@ -229,14 +229,15 @@ export function writeStoredQaiqModel(
 }
 
 /**
- * Pick a valid agent id: honor the current choice, then per-cwd storage, then server default.
+ * Pick a valid coding-agent id: honor the current choice, then per-cwd storage, then server default.
+ * Returns undefined when no VPS coding CLI is installed — never invents Shell.
  */
 export function reconcileSelectedAgent(
     current: string | undefined,
     agents: readonly QaapAgentTaskAgentOption[],
     defaultAgent: string | undefined,
     cwd: string | undefined,
-): string {
+): string | undefined {
     const selectable = filterUiSelectableVpsAgents(agents);
     const ids = new Set(selectable.map(agent => agent.id));
     const normalizedCurrent = migrateQaapProductAgentId(current);
@@ -260,7 +261,7 @@ export function reconcileSelectedAgent(
     if (ids.has(QAAP_PRIMARY_AGENT_ID)) {
         return QAAP_PRIMARY_AGENT_ID;
     }
-    return selectable[0]?.id ?? SHELL_AGENT_ID;
+    return selectable[0]?.id;
 }
 
 /**
@@ -319,9 +320,15 @@ export function filterQaapComposerAgents(
     return mergeComposerAgentPickerOptions(agents);
 }
 
+/** True when the server listed at least one VPS coding CLI the composer can pick. */
+export function hasSelectableCodingAgent(agents: readonly QaapAgentTaskAgentOption[]): boolean {
+    return filterQaapComposerAgents(agents).length > 0;
+}
+
 /**
  * Sticky/transcript composer agent picker — honors the current/stored choice, then defaults to
- * {@link QAAP_COMPOSER_DEFAULT_AGENT_ID} when available.
+ * {@link QAAP_COMPOSER_DEFAULT_AGENT_ID} when available. Returns undefined when no coding CLI is installed
+ * (never invents Shell).
  */
 export function reconcileStickyComposerAgent(
     current: string | undefined,
@@ -329,7 +336,7 @@ export function reconcileStickyComposerAgent(
     defaultAgent: string | undefined,
     cwd: string | undefined,
     coderAgentAvailable = false,
-): string {
+): string | undefined {
     const composerAgents = filterQaapComposerAgents(agents);
     const normalizedCurrent = migrateQaapProductAgentId(current);
     if (isTheiaCoderAgent(normalizedCurrent)) {
@@ -490,6 +497,8 @@ export function extractBackendAgentMention(text: string): string | undefined {
 
 /**
  * Pick the agent for a new turn: `@mention` in this message beats the picker, then stored/default.
+ * Returns undefined when no coding CLI is installed — never invents Shell. `@shell` / explicit
+ * `agent: 'shell'` still resolve to Shell.
  */
 export function resolveBackendAgentForTurn(
     userContent: string,
@@ -500,7 +509,7 @@ export function resolveBackendAgentForTurn(
         readonly defaultAgentId?: string;
         readonly conversationAgentId?: string;
     },
-): string {
+): string | undefined {
     const ids = new Set(agents.map(agent => agent.id));
     const mentioned = extractBackendAgentMention(userContent);
     if (mentioned) {
@@ -603,9 +612,6 @@ function parseAgentTaskListBody(body: {
     qaiqModels?: QaapQaiqModelOption[];
 }): QaapAgentTaskListSnapshot {
     const agents = [...(body.agents ?? [])];
-    if (agents.length === 0) {
-        agents.push(shellAgentFallback());
-    }
     return {
         agents,
         agentConfigured: body.agentConfigured === true,

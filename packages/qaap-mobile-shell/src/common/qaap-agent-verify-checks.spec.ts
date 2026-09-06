@@ -5,8 +5,10 @@
 
 import { expect } from 'chai';
 import {
+    buildScopedVerifyRunCommand,
     buildVerifyRunCommand,
     packageJsonDeclaresWorkspaces,
+    pickMonorepoVerifyTargets,
     resolveVerifyCheckFromScripts,
 } from './qaap-agent-verify-checks';
 
@@ -58,6 +60,27 @@ describe('qaap-agent-verify-checks', () => {
         expect(packageJsonDeclaresWorkspaces({ name: 'single-app', scripts: { build: 'vite build' } })).to.equal(false);
         expect(packageJsonDeclaresWorkspaces({ workspaces: [] })).to.equal(false);
         expect(packageJsonDeclaresWorkspaces(undefined)).to.equal(false);
+    });
+
+    it('builds scoped monorepo verify commands', () => {
+        expect(buildScopedVerifyRunCommand('compile', '@theia/qaap-mobile-shell', 'lerna'))
+            .to.equal('npx lerna run compile --scope @theia/qaap-mobile-shell');
+        expect(buildScopedVerifyRunCommand('test', '@app/web', 'pnpm'))
+            .to.equal('pnpm --filter @app/web run test');
+        expect(buildScopedVerifyRunCommand('build', 'web', 'npm'))
+            .to.equal('npm run build --workspace web');
+    });
+
+    it('prefers qaap leaf packages for monorepo verify', () => {
+        const picked = pickMonorepoVerifyTargets([
+            { name: '@theia/core', script: 'compile', kind: 'build' },
+            { name: '@theia/qaap-cloud-workspace', script: 'compile', kind: 'build' },
+            { name: '@theia/qaap-mobile-shell', script: 'compile', kind: 'build' },
+        ]);
+        expect(picked.map(entry => entry.name)).to.deep.equal([
+            '@theia/qaap-cloud-workspace',
+            '@theia/qaap-mobile-shell',
+        ]);
     });
 
 });

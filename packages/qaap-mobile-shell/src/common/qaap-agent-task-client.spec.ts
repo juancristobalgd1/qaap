@@ -25,6 +25,7 @@ import {
     filterUiSelectableVpsAgents,
     migrateQaapProductAgentId,
     QAAP_PRIMARY_AGENT_ID,
+    hasSelectableCodingAgent,
     reconcileSelectedAgent,
     reconcileStickyComposerAgent,
     resolveAgentOptionId,
@@ -205,6 +206,23 @@ describe('qaap-agent-task-client', () => {
         expect(resolveBackendAgentForTurn('sin mención', agents, {
             explicitAgentId: 'qaiq',
         })).to.equal('qaiq');
+    });
+
+    it('reconcileSelectedAgent does not invent Shell when only Shell is listed', () => {
+        expect(reconcileSelectedAgent(undefined, [shellAgentFallback()], 'shell', undefined)).to.equal(undefined);
+        expect(hasSelectableCodingAgent([shellAgentFallback()])).to.equal(false);
+        expect(hasSelectableCodingAgent([{ id: 'cursor', label: 'Cursor Agent', available: true }])).to.equal(true);
+    });
+
+    it('resolveBackendAgentForTurn does not invent Shell without an explicit @shell or picker', () => {
+        const agents = [shellAgentFallback()];
+        expect(resolveBackendAgentForTurn('fix the tests', agents, {
+            defaultAgentId: 'shell',
+        })).to.equal(undefined);
+        expect(resolveBackendAgentForTurn('@shell echo hi', agents, {})).to.equal(SHELL_AGENT_ID);
+        expect(resolveBackendAgentForTurn('echo hi', agents, {
+            explicitAgentId: SHELL_AGENT_ID,
+        })).to.equal(SHELL_AGENT_ID);
     });
 
     it('reconcileStickyComposerAgent defaults to QAIQ but honors an explicit VPS pick', () => {

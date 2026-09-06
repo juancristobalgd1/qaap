@@ -55,6 +55,8 @@ export interface MobileProjectsTranscriptSheetHost {
     /** Human-readable load failure for the history list. */
     transcriptHistoryError: string | undefined;
     transcriptHistoryQuery: string;
+    transcriptHistoryAuthorFilter: string | undefined;
+    transcriptHistoryBranchFilter: string | undefined;
     transcriptHistoryRoot: string | undefined;
     transcriptHistoryLoading: boolean;
     transcriptLastStatus: string | undefined;
@@ -214,6 +216,8 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptHistoryBranch = undefined;
         this.host.transcriptHistoryError = undefined;
         this.host.transcriptHistoryQuery = '';
+        this.host.transcriptHistoryAuthorFilter = undefined;
+        this.host.transcriptHistoryBranchFilter = undefined;
         this.host.transcriptHistoryRoot = undefined;
         this.host.transcriptHistoryLoading = false;
         this.host.transcriptLastStatus = summary.status;
@@ -366,6 +370,8 @@ export class MobileProjectsTranscriptSheetUi {
         this.host.transcriptHistoryBranch = undefined;
         this.host.transcriptHistoryError = undefined;
         this.host.transcriptHistoryQuery = '';
+        this.host.transcriptHistoryAuthorFilter = undefined;
+        this.host.transcriptHistoryBranchFilter = undefined;
         this.host.transcriptHistoryRoot = undefined;
         this.host.transcriptHistoryLoading = false;
         this.host.transcriptComposerSizeDispose.dispose();

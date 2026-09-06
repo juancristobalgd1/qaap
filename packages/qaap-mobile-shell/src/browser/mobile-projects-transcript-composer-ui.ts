@@ -13,7 +13,6 @@ import {
     isTheiaCoderAgent,
     agentUsesSettingsModelCatalog,
     migrateLegacyBackendAgentId,
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
     QAAP_PRIMARY_AGENT_ID,
     readStoredAgent,
     readStoredAgentModel,
@@ -133,7 +132,7 @@ export class MobileProjectsTranscriptComposerUi {
         if (pinned && pinned !== 'task' && !isTheiaCoderAgent(pinned)) {
             return agentUsesSettingsModelCatalog(pinned) ? QAAP_PRIMARY_AGENT_ID : pinned;
         }
-        return this.host.transcriptComposerBackendAgents[0]?.id ?? QAAP_COMPOSER_DEFAULT_AGENT_ID;
+        return this.host.transcriptComposerBackendAgents[0]?.id ?? '';
     }
 
     resolveTranscriptComposerAgentLabel(): string {

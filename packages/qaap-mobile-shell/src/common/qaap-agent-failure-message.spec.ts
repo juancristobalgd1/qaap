@@ -66,6 +66,8 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('cli_missing');
         expect(detectAgentFailureKind('\'qaiq\' is not recognized as an internal or external command'))
             .to.equal('cli_missing');
+        expect(detectAgentFailureKind('command not found: cursor-agent'))
+            .to.equal('cli_missing');
         expect(detectAgentFailureKind('bash: /usr/local/bin/openclaude: No such file or directory'))
             .to.equal('cli_missing');
         expect(detectAgentFailureKind('Cannot find the qaiq executable'))
@@ -97,6 +99,15 @@ describe('qaap-agent-failure-message', () => {
             .to.equal('The command line is too long.');
         expect(extractAgentLogFailureHint('La l\uFFFDnea de comandos es demasiado larga.'))
             .to.equal('La lnea de comandos es demasiado larga.');
+    });
+
+    it('summarizeCollapsedAgentFailure falls back to the exit code', () => {
+        const generic = localizeGenericAgentFailureMessage('failed', 1);
+        expect(summarizeCollapsedAgentFailure({
+            formatted: generic,
+            generic,
+            exitCode: 1,
+        })).to.equal('Exit code 1');
     });
 
     it('summarizeCollapsedAgentFailure shows the Windows FIND line without opening details', () => {

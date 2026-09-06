@@ -100,6 +100,8 @@ export const TRANSCRIPT_OVERLAY_STATE_KEYS = [
     'transcriptHistoryBranch',
     'transcriptHistoryError',
     'transcriptHistoryQuery',
+    'transcriptHistoryAuthorFilter',
+    'transcriptHistoryBranchFilter',
     'transcriptHistoryRoot',
     'transcriptHistoryLoadGeneration',
     'transcriptPreviewHost',
@@ -207,6 +209,8 @@ export class TranscriptOverlayState {
     transcriptHistoryBranch: string | undefined;
     transcriptHistoryError: string | undefined;
     transcriptHistoryQuery = '';
+    transcriptHistoryAuthorFilter: string | undefined;
+    transcriptHistoryBranchFilter: string | undefined;
     transcriptHistoryRoot: string | undefined;
     transcriptHistoryLoadGeneration = 0;
     transcriptPreviewHost: HTMLElement | undefined;

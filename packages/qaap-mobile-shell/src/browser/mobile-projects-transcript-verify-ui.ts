@@ -255,7 +255,7 @@ export class MobileProjectsTranscriptVerifyUi {
                 note.className = 'theia-mobile-transcript-verify-note';
                 note.textContent = nls.localize(
                     'qaap/mobileProjects/verifyNoScripts',
-                    'No compile, build, test, typecheck, or lint script found in package.json.',
+                    'No compile, build, test, typecheck, or lint script found. On a monorepo, add scripts in a leaf package or open that package as the workspace.',
                 );
                 contentHost.append(note);
             }

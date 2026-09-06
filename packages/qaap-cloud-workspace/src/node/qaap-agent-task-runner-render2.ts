@@ -315,7 +315,7 @@ export function detectCursorAgentExtracted(ctx: any): void {
             id: 'cursor',
             label: 'Cursor Agent',
             bin,
-            template: `${bin} -p --force {prompt}`,
+            template: `${bin} -p --force --trust --approve-mcps {prompt}`,
         });
 }
 

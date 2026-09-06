@@ -15,6 +15,7 @@ import {
     type QaapAgentTaskAgentOption,
     type QaapAgentTaskCreated,
 } from '../common/qaap-agent-task-client';
+import { localizeMissingCodingAgentMessage } from '../common/qaap-agent-failure-message';
 import { createAgentSelectField } from './qaap-agent-ui';
 import { MobileProjectEntry } from './mobile-projects-types';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
@@ -187,22 +188,23 @@ export class MobileAgentTaskComposer {
         const projectName = this.project?.name ?? nls.localize('qaap/mobileAgentComposer/projectFallback', 'Project');
         this.titleEl.textContent = nls.localize('qaap/mobileAgentComposer/title', 'Run task in {0}', projectName);
 
-        this.agentField.setAgents(this.agents, this.selectedAgent ?? this.agents[0]?.id ?? SHELL_AGENT_ID);
-        this.selectedAgent = this.agentField.getSelectedId();
+        this.agentField.setAgents(this.agents, this.selectedAgent ?? this.agents[0]?.id ?? '');
+        this.selectedAgent = this.agentField.getSelectedId() || undefined;
         this.agentField.select.disabled = this.busy || this.agents.length <= 1;
 
         const usingShell = this.selectedAgent === SHELL_AGENT_ID;
+        const missingCodingAgent = !this.selectedAgent;
         this.input.placeholder = usingShell
             ? nls.localize('qaap/mobileAgentComposer/placeholderCommand', 'Command to run in the background...')
             : nls.localize('qaap/mobileAgentComposer/placeholderAgent', 'Describe a task for the agent...');
         this.banner.textContent = !this.cwd
             ? nls.localize('qaap/mobileAgentComposer/noCwd', 'This project has not been cloned locally yet.')
-            : this.agentConfigured || usingShell
-                ? nls.localize('qaap/mobileAgentComposer/shellMode', 'Runs on the VPS without opening this workspace.')
-                : nls.localize('qaap/mobileAgentComposer/noAgent', 'No coding agent detected on the server; shell mode will run commands verbatim.');
+            : missingCodingAgent
+                ? localizeMissingCodingAgentMessage()
+                : nls.localize('qaap/mobileAgentComposer/shellMode', 'Runs on the VPS without opening this workspace.');
 
         this.input.disabled = this.busy || !this.cwd;
-        this.runBtn.disabled = this.busy || !this.cwd || this.input.value.trim().length === 0;
+        this.runBtn.disabled = this.busy || !this.cwd || missingCodingAgent || this.input.value.trim().length === 0;
     }
 
     protected async submit(): Promise<void> {
@@ -210,7 +212,11 @@ export class MobileAgentTaskComposer {
         if (!draft || this.busy || !this.cwd) {
             return;
         }
-        const agent = this.selectedAgent ?? SHELL_AGENT_ID;
+        if (!this.selectedAgent) {
+            this.errorEl.textContent = localizeMissingCodingAgentMessage();
+            return;
+        }
+        const agent = this.selectedAgent;
         const contextPreamble = await this.contextProvider?.resolve();
         const body = buildCreateAgentTaskBody(draft, agent, this.cwd, contextPreamble);
         this.busy = true;

@@ -89,7 +89,15 @@ export function readRelevantFiles(cwd: string, userQuery: string | undefined): s
 
 export function reapAgentProcessGroupAfterExit(child: ChildProcess): void {
     const pid = child.pid;
-    if (!pid || globalThis.process.platform === 'win32') {
+    if (!pid) {
+        return;
+    }
+    if (globalThis.process.platform === 'win32') {
+        try {
+            spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+        } catch {
+            /* already gone */
+        }
         return;
     }
     try {

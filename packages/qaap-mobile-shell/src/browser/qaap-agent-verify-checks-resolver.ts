@@ -8,11 +8,15 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import {
+    buildScopedVerifyRunCommand,
     buildVerifyRunCommand,
     packageJsonDeclaresWorkspaces,
+    pickMonorepoVerifyTargets,
     QaapVerifyCheckKind,
     QaapVerifyPackageManager,
+    QaapVerifyWorkspaceFlavor,
     resolveVerifyCheckFromScripts,
+    type QaapLeafVerifyPackage,
 } from '../common/qaap-agent-verify-checks';
 
 export interface QaapAgentVerifyCheck {
@@ -71,17 +75,20 @@ export async function resolveAgentVerifyChecksForCwd(cwd: string, fileService: F
         return [];
     }
 
-    // Skip auto-verify at a monorepo root: the root build/test fans out to every package, so it is
-    // slow and fails on packages the agent never touched — a pre-existing failure it then wrongly
-    // tries to "fix". Detected via the package.json workspaces field or a pnpm/lerna workspace file.
     const isMonorepoRoot = packageJsonDeclaresWorkspaces(pkg)
         || await fileService.exists(rootUri.resolve('pnpm-workspace.yaml'))
         || await fileService.exists(rootUri.resolve('lerna.json'));
+    const packageManager = await detectVerifyPackageManager(rootUri, fileService);
     if (isMonorepoRoot) {
-        return [];
+        const flavor = await detectVerifyWorkspaceFlavor(rootUri, fileService);
+        const leaves = await listLeafVerifyPackages(rootUri, fileService);
+        const targets = pickMonorepoVerifyTargets(leaves);
+        return targets.map(target => ({
+            label: `${localizeVerifyCheckKind(target.kind)} (${target.name})`,
+            command: buildScopedVerifyRunCommand(target.script, target.name, flavor),
+        }));
     }
 
-    const packageManager = await detectVerifyPackageManager(rootUri, fileService);
     const resolved = resolveVerifyCheckFromScripts(
         pkg.scripts,
         script => buildVerifyRunCommand(script, packageManager),
@@ -94,4 +101,51 @@ export async function resolveAgentVerifyChecksForCwd(cwd: string, fileService: F
         label: localizeVerifyCheckKind(resolved.kind),
         command: resolved.command,
     }];
+}
+
+async function detectVerifyWorkspaceFlavor(rootUri: URI, fileService: FileService): Promise<QaapVerifyWorkspaceFlavor> {
+    if (await fileService.exists(rootUri.resolve('lerna.json'))) {
+        return 'lerna';
+    }
+    if (await fileService.exists(rootUri.resolve('pnpm-workspace.yaml'))) {
+        return 'pnpm';
+    }
+    return 'npm';
+}
+
+async function listLeafVerifyPackages(rootUri: URI, fileService: FileService): Promise<QaapLeafVerifyPackage[]> {
+    const found: QaapLeafVerifyPackage[] = [];
+    for (const folder of ['packages', 'apps']) {
+        try {
+            const stat = await fileService.resolve(rootUri.resolve(folder));
+            for (const child of (stat.children ?? []).filter(entry => entry.isDirectory).slice(0, 80)) {
+                const packageJsonUri = child.resource.resolve('package.json');
+                if (!(await fileService.exists(packageJsonUri))) {
+                    continue;
+                }
+                let parsed: { name?: unknown; scripts?: Record<string, unknown> };
+                try {
+                    const content = await fileService.read(packageJsonUri);
+                    parsed = JSON.parse(content.value || '{}') as { name?: unknown; scripts?: Record<string, unknown> };
+                } catch {
+                    continue;
+                }
+                if (packageJsonDeclaresWorkspaces(parsed) || typeof parsed.name !== 'string' || !parsed.name.trim()) {
+                    continue;
+                }
+                const resolved = resolveVerifyCheckFromScripts(parsed.scripts);
+                if (!resolved) {
+                    continue;
+                }
+                found.push({
+                    name: parsed.name.trim(),
+                    script: resolved.script,
+                    kind: resolved.kind,
+                });
+            }
+        } catch {
+            /* folder missing */
+        }
+    }
+    return found;
 }

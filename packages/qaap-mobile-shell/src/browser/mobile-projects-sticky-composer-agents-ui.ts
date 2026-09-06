@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { ChatAgent } from '@theia/ai-chat';
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
@@ -12,7 +13,6 @@ import {
     fetchAgentModelsForAgent,
     filterQaapComposerAgents,
     isTheiaCoderAgent,
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
     readStoredAgentModel,
     reconcileStickyComposerAgent,
@@ -57,11 +57,13 @@ export class MobileProjectsStickyComposerAgentsUi {
 
     resolveStickyComposerPinnedAgentId(project: MobileProjectEntry): string {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
-        const pinned = this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd);
-        if (pinned && pinned !== 'task') {
-            return pinned;
-        }
-        return this.host.stickyComposerBackendAgents[0]?.id ?? QAAP_COMPOSER_DEFAULT_AGENT_ID;
+        const selectable = this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents);
+        return this.reconcileStickyComposerPinnedAgent(
+            this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
+            selectable,
+            undefined,
+            cwd,
+        ) ?? '';
     }
     resolveStickyComposerAgentLabel(project?: MobileProjectEntry): string {
         const pinned = this.host.stickyComposerPinnedAgentId;
@@ -71,6 +73,9 @@ export class MobileProjectsStickyComposerAgentsUi {
         const fromList = this.host.stickyComposerBackendAgents.find(a => a.id === pinned)?.label;
         if (fromList) {
             return fromList;
+        }
+        if (this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents).length === 0) {
+            return nls.localize('qaap/mobileProjects/installCodingAgent', 'Install a coding CLI');
         }
         return this.host.projectRowsUi.resolveConversationAgentLabel(undefined);
     }
@@ -128,7 +133,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         agents: readonly QaapAgentTaskAgentOption[],
         defaultAgent: string | undefined,
         cwd: string | undefined,
-    ): string {
+    ): string | undefined {
         return reconcileStickyComposerAgent(
             current,
             agents,
@@ -165,13 +170,15 @@ export class MobileProjectsStickyComposerAgentsUi {
             );
             const agentChanged = this.host.stickyComposerPinnedAgentId !== resolved;
             this.host.stickyComposerPinnedAgentId = resolved;
-            const hadModel = !!readStoredAgentModel(cwd, resolved);
-            await this.ensureStickyComposerAgentModel(
-                resolved,
-                cwd,
-                resolved === 'qaiq' ? snapshot.qaiqModels : undefined,
-            );
-            const seededModel = !hadModel && !!readStoredAgentModel(cwd, resolved);
+            const hadModel = resolved ? !!readStoredAgentModel(cwd, resolved) : false;
+            if (resolved) {
+                await this.ensureStickyComposerAgentModel(
+                    resolved,
+                    cwd,
+                    resolved === 'qaiq' ? snapshot.qaiqModels : undefined,
+                );
+            }
+            const seededModel = !!resolved && !hadModel && !!readStoredAgentModel(cwd, resolved);
             if (agentChanged || seededModel) {
                 this.host.stickyComposerRenderUi.renderStickyComposer();
             }

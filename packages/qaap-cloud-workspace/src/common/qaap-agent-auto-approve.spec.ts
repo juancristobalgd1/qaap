@@ -80,11 +80,11 @@ describe('qaap-agent-auto-approve', () => {
         expect(applyAutoApproveToCommand("opencode run 'hi'", 'opencode'))
             .to.equal("opencode run --dangerously-skip-permissions 'hi'");
         expect(applyAutoApproveToCommand("cursor-agent 'hi'", 'cursor'))
-            .to.equal("cursor-agent -p --force 'hi'");
+            .to.equal("cursor-agent --approve-mcps --trust -p --force 'hi'");
         expect(applyAutoApproveToCommand("agent -p --force", 'cursor'))
-            .to.equal('agent -p --force');
+            .to.equal('agent --approve-mcps --trust -p --force');
         expect(applyAutoApproveToCommand("agent 'hi'", 'cursor'))
-            .to.equal("agent -p --force 'hi'");
+            .to.equal("agent --approve-mcps --trust -p --force 'hi'");
         expect(applyAutoApproveToCommand("antigravity 'hi'", 'antigravity'))
             .to.equal("antigravity --dangerously-skip-permissions -p 'hi'");
         expect(applyAutoApproveToCommand("gemini 'hi'", 'antigravity'))

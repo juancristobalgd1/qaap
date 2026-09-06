@@ -53,19 +53,72 @@ export function isQaiqRunner(agentId: string | undefined, command: string): bool
     return /\b(qaiq|openclaude)\b/.test(command);
 }
 
+const WINDOWS_PATHEXT_FALLBACK = '.COM;.EXE;.BAT;.CMD;.VBS;.JS;.MSC';
+
+/**
+ * Pick the first real executable from `where`/`which` output.
+ * On Windows, `where foo` often prints `foo` without `.cmd`; PATHEXT fills that gap.
+ */
+export function resolveExistingExecutablePath(
+    candidates: readonly string[],
+    options: {
+        readonly platform?: NodeJS.Platform;
+        readonly pathExt?: string;
+        readonly stat?: (filePath: string) => { isFile(): boolean } | undefined;
+    } = {},
+): string | undefined {
+    const platform = options.platform ?? process.platform;
+    const stat = options.stat ?? ((filePath: string) => {
+        try {
+            return fs.statSync(filePath);
+        } catch {
+            return undefined;
+        }
+    });
+    const extensions = platform === 'win32'
+        ? (options.pathExt ?? process.env.PATHEXT ?? WINDOWS_PATHEXT_FALLBACK)
+            .split(';')
+            .map(ext => ext.trim())
+            .filter(ext => ext.length > 0)
+        : [];
+    for (const raw of candidates) {
+        const candidate = raw.trim().replace(/^"+|"+$/g, '');
+        if (!candidate || /^INFO:/i.test(candidate)) {
+            continue;
+        }
+        if (stat(candidate)?.isFile()) {
+            return candidate;
+        }
+        if (platform === 'win32' && path.extname(candidate) === '') {
+            for (const ext of extensions) {
+                const variants = [ext, ext.toLowerCase(), ext.toUpperCase()];
+                for (const variant of variants) {
+                    const withExt = candidate + variant;
+                    if (stat(withExt)?.isFile()) {
+                        return withExt;
+                    }
+                }
+            }
+        }
+    }
+    return undefined;
+}
+
 export function isOnPath(bin: string): boolean {
     const cmd = process.platform === 'win32' ? 'where' : 'which';
     try {
-        const result = spawnSync(cmd, [bin], { encoding: 'utf8' });
+        const result = spawnSync(cmd, [bin], { encoding: 'utf8', windowsHide: true });
         if (result.status !== 0 || result.error) {
             return false;
         }
-        const resolved = result.stdout?.trim().split(/\r?\n/)[0];
+        const resolved = resolveExistingExecutablePath((result.stdout ?? '').split(/\r?\n/));
         if (!resolved) {
             return false;
         }
-        fs.accessSync(resolved, fs.constants.X_OK);
-        return fs.statSync(resolved).isFile();
+        if (process.platform !== 'win32') {
+            fs.accessSync(resolved, fs.constants.X_OK);
+        }
+        return true;
     } catch {
         return false;
     }
@@ -195,11 +248,26 @@ export function quoteShellArg(value: string): string {
 }
 
 /** Persist a prompt so CLIs such as Grok can take `--prompt-file` instead of argv. */
-export function writeAgentPromptFile(text: string): string {
+export function writeAgentPromptFile(text: string): { readonly file: string; readonly dir: string } {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-prompt-'));
     const file = path.join(dir, 'prompt.txt');
     fs.writeFileSync(file, text, 'utf8');
-    return file;
+    return { file, dir };
+}
+
+/** Remove a temp dir created by {@link writeAgentPromptFile}. Safe no-op for other paths. */
+export function removeAgentPromptTempDir(dir: string | undefined): void {
+    if (!dir) {
+        return;
+    }
+    if (!path.basename(dir).startsWith('qaap-agent-prompt-')) {
+        return;
+    }
+    try {
+        fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+        /* already gone */
+    }
 }
 
 export function agentUsesPlainStdinPrompt(

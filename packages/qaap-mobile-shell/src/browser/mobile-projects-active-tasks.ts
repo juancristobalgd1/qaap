@@ -130,7 +130,7 @@ export class MobileProjectsActiveTasks {
     protected started = false;
     protected agents: MobileProjectAgentDescriptor[] = [];
     protected agentConfigured = false;
-    protected defaultAgentId = 'shell';
+    protected defaultAgentId = '';
     protected readonly changeScheduler = new QaapChatViewStreamUpdateScheduler(
         () => this.onDidChangeEmitter.fire(),
         () => this.resolveChangeCoalesceDelayMs(),
@@ -327,7 +327,9 @@ export class MobileProjectsActiveTasks {
     protected applySnapshot(payload: SnapshotPayload): void {
         this.agents = [...(payload.agents ?? [])];
         this.agentConfigured = payload.agentConfigured === true;
-        this.defaultAgentId = payload.defaultAgent ?? this.agents[0]?.id ?? 'shell';
+        this.defaultAgentId = payload.defaultAgent && payload.defaultAgent !== 'shell'
+            ? payload.defaultAgent
+            : this.agents.find(agent => agent.id !== 'shell')?.id ?? '';
         const nextActive = new Map<string, MobileProjectActiveTaskInfo>();
         const nextTasks = new Map<string, MobileProjectTaskView[]>();
         for (const group of payload.groups ?? []) {

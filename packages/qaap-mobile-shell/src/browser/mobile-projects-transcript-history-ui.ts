@@ -12,6 +12,12 @@ import {
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
 } from '../common/qaap-git-review';
+import {
+    collectHistoryAuthors,
+    collectHistoryBranches,
+    cycleHistoryFilter,
+    filterTranscriptHistoryCommits,
+} from '../common/qaap-transcript-history-filter';
 import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
 
 /** Panel state for the transcript review-tab commit history drawer. */
@@ -24,6 +30,8 @@ export interface MobileProjectsTranscriptHistoryHost {
     /** Human-readable load failure; never shown in the branch filter button. */
     transcriptHistoryError: string | undefined;
     transcriptHistoryQuery: string;
+    transcriptHistoryAuthorFilter: string | undefined;
+    transcriptHistoryBranchFilter: string | undefined;
     transcriptHistoryRoot: string | undefined;
     transcriptHistoryLoadGeneration: number;
     transcriptReviewHost: HTMLElement | undefined;
@@ -166,31 +174,53 @@ export class MobileProjectsTranscriptHistoryUi {
 
         const filters = document.createElement('div');
         filters.className = 'theia-mobile-transcript-history-filters';
+        const branches = collectHistoryBranches(this.host.transcriptHistoryCommits, this.host.transcriptHistoryBranch);
+        const authors = collectHistoryAuthors(this.host.transcriptHistoryCommits);
         const branch = document.createElement('button');
         branch.type = 'button';
         branch.className = 'theia-mobile-transcript-history-filter';
-        branch.textContent = this.host.transcriptHistoryBranch ?? nls.localize('qaap/mobileProjects/historyBranch', 'Branch');
+        branch.textContent = this.host.transcriptHistoryBranchFilter
+            ?? nls.localize('qaap/mobileProjects/historyBranch', 'Branch');
+        branch.title = nls.localize('qaap/mobileProjects/historyBranchFilter', 'Filter commits by branch');
+        branch.setAttribute('aria-label', branch.title);
+        branch.disabled = branches.length === 0;
+        branch.addEventListener('click', () => {
+            this.host.transcriptHistoryBranchFilter = cycleHistoryFilter(this.host.transcriptHistoryBranchFilter, branches);
+            this.renderTranscriptHistoryPanel(panel, root);
+        });
         const user = document.createElement('button');
         user.type = 'button';
         user.className = 'theia-mobile-transcript-history-filter';
-        user.textContent = nls.localize('qaap/mobileProjects/historyUser', 'User');
+        user.textContent = this.host.transcriptHistoryAuthorFilter
+            ?? nls.localize('qaap/mobileProjects/historyUser', 'User');
+        user.title = nls.localize('qaap/mobileProjects/historyUserFilter', 'Filter commits by author');
+        user.setAttribute('aria-label', user.title);
+        user.disabled = authors.length === 0;
+        user.addEventListener('click', () => {
+            this.host.transcriptHistoryAuthorFilter = cycleHistoryFilter(this.host.transcriptHistoryAuthorFilter, authors);
+            this.renderTranscriptHistoryPanel(panel, root);
+        });
         filters.append(branch, user);
 
         const list = document.createElement('div');
         list.className = 'theia-mobile-transcript-history-list';
-        const query = this.host.transcriptHistoryQuery.trim().toLowerCase();
-        const commits = query
-            ? this.host.transcriptHistoryCommits.filter(commit =>
-                `${commit.subject} ${commit.authorName} ${commit.refs.join(' ')}`.toLowerCase().includes(query))
-            : this.host.transcriptHistoryCommits;
+        const commits = filterTranscriptHistoryCommits(this.host.transcriptHistoryCommits, {
+            query: this.host.transcriptHistoryQuery,
+            branch: this.host.transcriptHistoryBranchFilter,
+            author: this.host.transcriptHistoryAuthorFilter,
+        });
         if (this.host.transcriptHistoryLoading) {
             list.append(this.createTranscriptHistoryNote(nls.localize('qaap/mobileProjects/historyLoading', 'Loading history...')));
         } else if (this.host.transcriptHistoryError) {
             list.append(this.createTranscriptHistoryNote(this.host.transcriptHistoryError));
         } else if (commits.length === 0) {
-            list.append(this.createTranscriptHistoryNote(query
-                ? nls.localize('qaap/mobileProjects/historyNoMatches', 'No matching commits.')
-                : nls.localize('qaap/mobileProjects/historyEmpty', 'No commits found.')));
+            list.append(this.createTranscriptHistoryNote(
+                this.host.transcriptHistoryQuery.trim()
+                    || this.host.transcriptHistoryBranchFilter
+                    || this.host.transcriptHistoryAuthorFilter
+                    ? nls.localize('qaap/mobileProjects/historyNoMatches', 'No matching commits.')
+                    : nls.localize('qaap/mobileProjects/historyEmpty', 'No commits found.'),
+            ));
         } else {
             commits.forEach((commit, index) => list.append(this.createTranscriptHistoryRow(commit, index)));
         }

@@ -90,15 +90,16 @@ const TIMEOUT_PATTERNS: readonly RegExp[] = [
     /\bdeadline\s+exceeded\b/i,
 ];
 
+const CLI_MISSING_NAMES = 'qaiq|openclaude|cursor-agent|codex|claude|opencode|grok|agent';
 const CLI_MISSING_PATTERNS: readonly RegExp[] = [
-    /\bcommand\s+not\s+found:\s*(qaiq|openclaude)\b/i,
-    /\b(qaiq|openclaude):\s*(?:command\s+)?not\s+found\b/i,
-    /\bENOENT[^\n]*(?:\/|\s)(qaiq|openclaude)\b/i,
-    /\bspawn\s+(?:qaiq|openclaude)\s+ENOENT\b/i,
-    /\b(?:qaiq|openclaude)\b[^\n]*\bis\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command\b/i,
-    /\b(?:qaiq|openclaude)\b[^\n]*\bno\s+such\s+file\s+or\s+directory\b/i,
-    /\bno\s+such\s+file\s+or\s+directory[^\n]*(qaiq|openclaude)\b/i,
-    /\bcannot\s+find\s+(?:the\s+)?(?:qaiq|openclaude)\s+(?:binary|executable|command)\b/i,
+    new RegExp(`\\bcommand\\s+not\\s+found:\\s*(${CLI_MISSING_NAMES})\\b`, 'i'),
+    new RegExp(`\\b(${CLI_MISSING_NAMES}):\\s*(?:command\\s+)?not\\s+found\\b`, 'i'),
+    new RegExp(`\\bENOENT[^\\n]*(?:\\/|\\s)(${CLI_MISSING_NAMES})\\b`, 'i'),
+    new RegExp(`\\bspawn\\s+(?:${CLI_MISSING_NAMES})\\s+ENOENT\\b`, 'i'),
+    new RegExp(`\\b(?:${CLI_MISSING_NAMES})\\b[^\\n]*\\bis\\s+not\\s+recognized\\s+as\\s+an\\s+internal\\s+or\\s+external\\s+command\\b`, 'i'),
+    new RegExp(`\\b(?:${CLI_MISSING_NAMES})\\b[^\\n]*\\bno\\s+such\\s+file\\s+or\\s+directory\\b`, 'i'),
+    new RegExp(`\\bno\\s+such\\s+file\\s+or\\s+directory[^\\n]*(${CLI_MISSING_NAMES})\\b`, 'i'),
+    new RegExp(`\\bcannot\\s+find\\s+(?:the\\s+)?(?:${CLI_MISSING_NAMES})\\s+(?:binary|executable|command)\\b`, 'i'),
 ];
 
 const NETWORK_PATTERNS: readonly RegExp[] = [
@@ -238,6 +239,7 @@ export function summarizeCollapsedAgentFailure(input: {
     readonly generic: string;
     readonly technicalContent?: string;
     readonly persistedError?: string;
+    readonly exitCode?: number;
 }): string | undefined {
     const sample = [input.technicalContent, input.persistedError]
         .filter((part): part is string => !!part?.trim())
@@ -251,6 +253,9 @@ export function summarizeCollapsedAgentFailure(input: {
         if (first && first !== input.generic) {
             return truncateCollapsedFailureReason(first);
         }
+    }
+    if (input.exitCode !== undefined && input.exitCode !== 0) {
+        return nls.localize('qaap/agentFailure/exitCodeShort', 'Exit code {0}', String(input.exitCode));
     }
     return undefined;
 }
@@ -326,11 +331,16 @@ export function localizeAgentFailureMessage(kind: QaapAgentFailureKind): string 
                 'The agent could not reach the model provider. Check your connection and try again.',
             );
         case 'cli_missing':
-            return nls.localize(
-                'qaap/agentFailure/cliMissing',
-                'This workspace does not have the agent CLI (qaiq or openclaude). Pick another agent, or install the CLI in the environment.',
-            );
+            return localizeMissingCodingAgentMessage();
     }
+}
+
+/** Shown when Work Hub would otherwise run a natural-language prompt as a raw Shell command. */
+export function localizeMissingCodingAgentMessage(): string {
+    return nls.localize(
+        'qaap/agentFailure/noCodingAgent',
+        'No coding agent CLI is installed. Install Cursor Agent, QAIQ, Claude Code, Codex, or OpenCode, then restart Qaap.',
+    );
 }
 
 export function localizeGenericAgentFailureMessage(

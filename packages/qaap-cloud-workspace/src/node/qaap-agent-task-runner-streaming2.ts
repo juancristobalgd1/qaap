@@ -43,6 +43,7 @@ import {
     resolveQaapCodexTemplate,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { localizeMissingCodingAgentMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import {
     formatQaiqInteractionFlags,
     type QaapQaiqInteractionFlagOptions,
@@ -118,6 +119,7 @@ import {
     applyTemplateForPromptTransport as applyTemplateForPromptTransportHelper,
     resolveAgentPromptTransport as resolveAgentPromptTransportHelper,
     writeAgentPromptFile as writeAgentPromptFileHelper,
+    removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
     quoteShellArg as quoteShellArgHelper,
     truncateForPrompt as truncateForPromptHelper,
     truncateHead as truncateHeadHelper,
@@ -220,6 +222,14 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
             throw new Error(QAAP_CONTAINER_CWD_ERROR);
         }
         const resolvedAgentId = prompt ? ctx.resolveAgentId(prompt, request.agent, ownerLogin) : SHELL_AGENT_ID;
+        if (
+            resolvedAgentId === SHELL_AGENT_ID
+            && prompt
+            && ctx.normalizeAgentId(request.agent) !== SHELL_AGENT_ID
+            && ctx.extractLastAgentMention(prompt) !== SHELL_AGENT_ID
+        ) {
+            throw new Error(localizeMissingCodingAgentMessage());
+        }
         const id = randomUUID();
         const parentId = request.parentId && ctx.tasks.has(request.parentId) ? request.parentId : undefined;
         const parentTask = parentId ? ctx.tasks.get(parentId) : undefined;
@@ -360,9 +370,11 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
         } else {
             command = agentPrompt;
         }
+        let promptTempDir: string | undefined;
         if (promptTransport.kind === 'prompt-file' && !useStdioApprovals) {
-            const promptFile = writeAgentPromptFileHelper(agentPrompt);
-            command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(promptFile)}`;
+            const written = writeAgentPromptFileHelper(agentPrompt);
+            promptTempDir = written.dir;
+            command = `${command} ${promptTransport.flag} ${quoteShellArgHelper(written.file)}`;
         }
         command = applyAgentApprovalPolicyToCommand(command, approvalOptions);
         if (useStdioApprovals) {
@@ -371,12 +383,13 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
                 stdinPrompt: agentPrompt,
                 stdinPromptMode: 'qaiq-stdio',
                 agentId: id,
+                promptTempDir,
             };
         }
         if (promptTransport.kind === 'plain-stdin') {
-            return { command, stdinPrompt: agentPrompt, stdinPromptMode: 'plain', agentId: id };
+            return { command, stdinPrompt: agentPrompt, stdinPromptMode: 'plain', agentId: id, promptTempDir };
         }
-        return { command, agentId: id };
+        return { command, agentId: id, promptTempDir };
 }
 
 export function readProjectInfoExtracted(ctx: any, cwd: string): string | undefined {

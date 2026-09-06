@@ -119,7 +119,11 @@ describe('qaap-agent-auth-login', () => {
         expect(resolveAgentLoginCliCommand('claude')).to.equal('claude auth login');
         expect(resolveAgentLoginCliCommand('grok')).to.equal('grok login --device-auth');
         expect(resolveAgentLoginCliCommand('copilot')).to.equal('gh auth login --web');
-        expect(resolveAgentLoginCliCommand('cursor')).to.equal('cursor-agent login');
+        expect(resolveAgentLoginCliCommand('cursor')).to.equal(
+            process.platform === 'win32'
+                ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
+                : 'NO_OPEN_BROWSER=1 cursor-agent login',
+        );
         // BYOK / no login subcommand — routed to Settings, never a bare TUI.
         expect(resolveAgentLoginCliCommand('qaiq')).to.equal(undefined);
         expect(resolveAgentLoginCliCommand('antigravity')).to.equal(undefined);

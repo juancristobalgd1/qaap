@@ -48,7 +48,27 @@ describe('agent spawn refuses a workspace-container cwd', () => {
     }
 
     it('still accepts a concrete repository path', () => {
-        const task = buildRunner().create({ prompt: 'do work', cwd: '/workspace/repos/users/alice/acme/widgets' });
+        const task = buildRunner().create({
+            prompt: 'do work',
+            agent: 'shell',
+            cwd: '/workspace/repos/users/alice/acme/widgets',
+        });
         expect(task.cwd).to.equal(path.resolve('/workspace/repos/users/alice/acme/widgets'));
+        expect(task.agentId).to.equal('shell');
+    });
+
+    it('refuses a natural-language prompt when no coding CLI is installed', () => {
+        expect(() => buildRunner().create({
+            prompt: 'fix the tests',
+            cwd: '/workspace/repos/users/alice/acme/widgets',
+        })).to.throw(/No coding agent CLI is installed/);
+    });
+
+    it('still accepts a command-only create as Shell', () => {
+        const task = buildRunner().create({
+            command: 'npm test',
+            cwd: '/workspace/repos/users/alice/acme/widgets',
+        });
+        expect(task.agentId).to.equal('shell');
     });
 });

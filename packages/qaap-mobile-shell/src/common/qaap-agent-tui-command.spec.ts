@@ -31,7 +31,11 @@ describe('resolveInteractiveAgentLoginCommand', () => {
         // workspaces need device-code / paste flows, so prefer those flags.
         expect(resolveInteractiveAgentLoginCommand('codex')).to.equal('codex login --device-auth');
         expect(resolveInteractiveAgentLoginCommand('claude')).to.equal('claude auth login');
-        expect(resolveInteractiveAgentLoginCommand('cursor')).to.equal('cursor-agent login');
+        expect(resolveInteractiveAgentLoginCommand('cursor')).to.equal(
+            process.platform === 'win32'
+                ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
+                : 'NO_OPEN_BROWSER=1 cursor-agent login',
+        );
         expect(resolveInteractiveAgentLoginCommand('copilot')).to.equal('gh auth login --web');
         expect(resolveInteractiveAgentLoginCommand('grok')).to.equal('grok login --device-auth');
     });
