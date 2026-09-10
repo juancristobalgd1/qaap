@@ -9,6 +9,7 @@ import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     buildQaapAccountMenuEntries,
+    createQaapViewModeSwitch,
     dismissQaapAccountMenu,
     openQaapAccountMenu,
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
@@ -206,5 +207,26 @@ describe('account menu appearance switch', () => {
         light!.click();
         expect(mode).to.equal('light');
         expect(document.querySelector('.theia-qaap-account-menu')).to.not.equal(null);
+    });
+
+    it('renders the shared IDE/Agents switch with icons while preserving accessible labels and selection', () => {
+        let selected: string | undefined;
+        const field = createQaapViewModeSwitch({
+            activeId: 'editor',
+            onSelect: id => { selected = id; },
+        });
+        document.body.append(field.root);
+
+        const bar = field.root.querySelector('.theia-qaap-segmented-bar');
+        const buttons = [...field.root.querySelectorAll<HTMLButtonElement>('.theia-qaap-segmented-option')];
+        expect(bar?.classList.contains('theia-mod-icon-only')).to.equal(true);
+        expect(buttons).to.have.length(2);
+        expect(buttons[0].querySelector('.theia-qaap-segmented-option-label')).to.equal(null);
+        expect(buttons[0].getAttribute('aria-label')).to.equal('IDE');
+        expect(buttons[1].getAttribute('aria-label')).to.equal('Agents');
+
+        buttons[1].click();
+        expect(field.getValue()).to.equal('agent');
+        expect(selected).to.equal('agent');
     });
 });

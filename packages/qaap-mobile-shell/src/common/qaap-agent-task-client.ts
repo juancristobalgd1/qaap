@@ -72,6 +72,8 @@ export interface QaapAgentTaskListSnapshot {
     readonly agents: QaapAgentTaskAgentOption[];
     readonly agentConfigured: boolean;
     readonly defaultAgent?: string;
+    /** Backend startup preflight for the QAIQ executable. */
+    readonly qaiqInstalled: boolean;
     readonly qaiqModels: QaapQaiqModelOption[];
 }
 
@@ -609,6 +611,7 @@ function parseAgentTaskListBody(body: {
     agents?: QaapAgentTaskAgentOption[];
     agentConfigured?: boolean;
     defaultAgent?: string;
+    qaiqInstalled?: boolean;
     qaiqModels?: QaapQaiqModelOption[];
 }): QaapAgentTaskListSnapshot {
     const agents = [...(body.agents ?? [])];
@@ -616,6 +619,7 @@ function parseAgentTaskListBody(body: {
         agents,
         agentConfigured: body.agentConfigured === true,
         defaultAgent: body.defaultAgent,
+        qaiqInstalled: body.qaiqInstalled === true,
         qaiqModels: body.qaiqModels ?? [],
     };
 }

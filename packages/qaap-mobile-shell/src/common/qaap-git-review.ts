@@ -32,6 +32,13 @@ export interface QaapGitPrReadiness {
     defaultBranch?: string;
 }
 
+/** Git author identity used by the final approve/commit action. */
+export interface QaapGitIdentity {
+    readonly configured: boolean;
+    readonly name?: string;
+    readonly email?: string;
+}
+
 /**
  * Extract a single hunk from a one-file `git diff` into a standalone, appliable patch (the file
  * header + only the selected `@@` hunk). Returns undefined when the diff has no such hunk. Built from
@@ -89,6 +96,8 @@ export interface QaapGitChangesResponse {
     files: QaapGitChangedFile[];
     /** Present when git state could be read: whether a PR can be opened for the current branch. */
     prReadiness?: QaapGitPrReadiness;
+    /** Whether the repository has a usable commit author identity. */
+    gitIdentity?: QaapGitIdentity;
 }
 
 export interface QaapGitHistoryCommit {

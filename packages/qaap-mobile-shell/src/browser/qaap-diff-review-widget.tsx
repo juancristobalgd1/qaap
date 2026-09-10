@@ -19,6 +19,7 @@ import {
     type QaapGitCommitWorkflowAction,
     type QaapGitFileDiffResponse,
     type QaapGitHunkLine,
+    type QaapGitIdentity,
     type QaapGitPrReadiness,
 } from '../common/qaap-git-review';
 import { leadingTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
@@ -145,6 +146,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected runningFileAction = false;
     protected branchName: string | undefined;
     protected prReadiness: QaapGitPrReadiness | undefined;
+    protected gitIdentity: QaapGitIdentity | undefined;
     protected commitMenuOpen = false;
     protected readonly agentFileDiffs = new Map<string, QaapGitFileDiffResponse>();
     /** Per-file /diff failure detail (server error body or transport error), keyed by path. */
@@ -333,6 +335,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
             this.selectedPath = undefined;
             this.diff = undefined;
             this.error = undefined;
+            this.gitIdentity = undefined;
             this.loadingChanges = false;
             this.update();
             return;
@@ -347,13 +350,19 @@ export class QaapDiffReviewWidget extends ReactWidget {
             if (!response.ok) {
                 throw new Error(`changes request failed (${response.status})`);
             }
-            const body = await response.json() as { files?: QaapGitChangedFile[]; branch?: string; prReadiness?: QaapGitPrReadiness };
+            const body = await response.json() as {
+                files?: QaapGitChangedFile[];
+                branch?: string;
+                prReadiness?: QaapGitPrReadiness;
+                gitIdentity?: QaapGitIdentity;
+            };
             if (requestSerial !== this.refreshRequestSerial || requestRoot !== this.rootFsPath) {
                 return;
             }
             this.files = body.files ?? [];
             this.branchName = body.branch;
             this.prReadiness = body.prReadiness;
+            this.gitIdentity = body.gitIdentity;
             this.error = undefined;
             this.loadingChanges = false;
             this.notifyReviewStats();
@@ -674,6 +683,17 @@ export class QaapDiffReviewWidget extends ReactWidget {
                                 {localizeVerifyCommitReadiness(readiness.level)}
                             </span>
                         )}
+                        {this.gitIdentity && !this.gitIdentity.configured && (
+                            <span
+                                className='qaap-agent-changes-verify-status qaap-mod-missing'
+                                title={nls.localize(
+                                    'qaap/mobileProjects/gitIdentityWillBeConfigured',
+                                    'Git author identity will be configured before commit',
+                                )}
+                            >
+                                {nls.localize('qaap/mobileProjects/gitIdentityNeeded', 'Git identity needed')}
+                            </span>
+                        )}
                         <span className='qaap-agent-changes-summary-stats'>
                             <span className='qaap-diff-add'>+{totals.adds}</span>
                             <span className='qaap-diff-del'>-{totals.dels}</span>
@@ -694,7 +714,7 @@ export class QaapDiffReviewWidget extends ReactWidget {
                     disabled={disabled}
                     onClick={() => { void this.runCommitAction('commit'); }}
                 >
-                    {nls.localize('qaap/mobileProjects/commit', 'Commit')}
+                    {nls.localize('qaap/mobileProjects/approveAndCommit', 'Approve & Commit')}
                 </button>
                 <div className='qaap-agent-changes-commit-menu-wrap'>
                     <button

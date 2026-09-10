@@ -12,7 +12,8 @@ export type VerifyCommitReadinessLevel =
     | 'not_configured'
     | 'missing'
     | 'stale'
-    | 'failing';
+    | 'failing'
+    | 'unavailable';
 
 export interface VerifyCommitCheckSnapshot {
     readonly state: 'idle' | 'checking' | 'running' | 'ok' | 'fail';
@@ -21,6 +22,8 @@ export interface VerifyCommitCheckSnapshot {
 
 export interface EvaluateVerifyCommitReadinessInput {
     readonly checksLoading: boolean;
+    /** Checks failed to load within the UI timeout and need a retry/manual decision. */
+    readonly checksError?: boolean;
     readonly running: boolean;
     readonly results: readonly VerifyCommitCheckSnapshot[];
 }
@@ -40,6 +43,9 @@ export function evaluateVerifyCommitReadiness(
     }
     if (input.running || input.results.some(result => result.state === 'running' || result.state === 'checking')) {
         return { level: 'running', requiresConfirmation: false, blocksCommit: true };
+    }
+    if (input.checksError) {
+        return { level: 'unavailable', requiresConfirmation: true, blocksCommit: false };
     }
     if (input.results.length === 0) {
         return { level: 'not_configured', requiresConfirmation: false, blocksCommit: false };
@@ -74,6 +80,11 @@ export function localizeVerifyCommitReadiness(level: VerifyCommitReadinessLevel)
             return nls.localize(
                 'qaap/verify/commitFailing',
                 'Checks are failing. The result does not support this commit.',
+            );
+        case 'unavailable':
+            return nls.localize(
+                'qaap/verify/commitUnavailable',
+                'Checks are unavailable. Retry or approve manually.',
             );
     }
 }

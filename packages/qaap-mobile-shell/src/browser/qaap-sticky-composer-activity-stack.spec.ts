@@ -247,7 +247,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
 
             const commitBtn = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-btn');
             expect(commitBtn).to.exist;
-            expect(commitBtn!.textContent).to.equal('Commit');
+            expect(commitBtn!.textContent).to.equal('Approve & Commit');
             commitBtn!.click();
             expect(actions).to.deep.equal(['commit']);
 

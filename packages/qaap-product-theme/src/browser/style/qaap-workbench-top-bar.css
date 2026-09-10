@@ -291,9 +291,9 @@ body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  flex: 0 1 124px;
-  width: 124px;
-  max-width: 124px;
+  flex: 0 1 72px;
+  width: 72px;
+  max-width: 72px;
   min-width: 0;
   container-type: inline-size;
 }
@@ -337,6 +337,18 @@ body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Keep the shared IDE/Agents control icon-only in both surfaces. The labels
+ * remain in the DOM for titles and accessible names, but are never rendered. */
+.theia-workbench-view-mode-switch .theia-qaap-segmented-option-label {
+  display: none;
+}
+
+.theia-workbench-view-mode-switch .theia-qaap-segmented-option {
+  flex: 0 0 28px;
+  width: 28px;
+  padding: 5px 4px;
 }
 
 .theia-workbench-view-mode-switch .theia-qaap-segmented-option .codicon,

@@ -197,17 +197,24 @@ export class MobileProjectsTranscriptComposerUi {
                 snapshot.defaultAgent,
                 cwd,
             );
-            const summary = this.host.transcriptComposerSummary;
-            const priorEffective = summary && this.host.transcriptOpenProject
-                ? this.resolveTranscriptComposerPinnedAgentId(this.host.transcriptOpenProject, summary)
-                : undefined;
-            if (this.host.transcriptComposerPinnedAgentId !== resolved) {
-                this.host.transcriptComposerPinnedAgentId = resolved;
-                if (priorEffective !== undefined && priorEffective !== resolved) {
-                    this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-                } else {
-                    this.host.transcriptComposerSendRefresh?.();
-                }
+            const modelBefore = resolved ? this.resolveTranscriptComposerAgentModel(resolved, cwd) : undefined;
+            const selection = await this.host.stickyComposerAgentsUi.ensureStickyComposerAgentSelection(
+                resolved,
+                filteredAgents,
+                cwd,
+                snapshot.qaiqModels,
+            );
+            const effectiveResolved = selection?.agentId ?? resolved;
+            const agentChanged = this.host.transcriptComposerPinnedAgentId !== effectiveResolved;
+            const modelAfter = selection?.model
+                ?? (effectiveResolved ? this.resolveTranscriptComposerAgentModel(effectiveResolved, cwd) : undefined);
+            if (selection && selection.agentId !== resolved && cwd) {
+                writeStoredAgent(cwd, selection.agentId);
+            }
+            if (agentChanged || modelBefore?.modelId !== modelAfter?.modelId) {
+                this.host.transcriptComposerPinnedAgentId = effectiveResolved;
+                this.host.transcriptComposerAgentModel = modelAfter;
+                this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
             }
             return true;
         } catch {

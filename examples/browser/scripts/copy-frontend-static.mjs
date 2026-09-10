@@ -54,7 +54,23 @@ function patchIndexForLoginGate(indexPath) {
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
+function patchIndexForFreshStylesheet(indexPath) {
+    const bundleCss = path.join(libFrontend, 'bundle.css');
+    if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss)) {
+        return;
+    }
+    const buildVersion = Date.now().toString(36);
+    const html = fs.readFileSync(indexPath, 'utf8').replace(
+        /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
+        `./bundle.css?qaap-build=${buildVersion}`,
+    );
+    fs.writeFileSync(indexPath, html, 'utf8');
+}
+
 patchIndexForLoginGate(libIndex);
+// The development browser can retain the old stylesheet across reloads. Give each
+// generated bundle.css URL a build version so the new visual contract is fetched.
+patchIndexForFreshStylesheet(libIndex);
 copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 // Service worker must sit at the same scope as index.html so it can control the whole app.
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));

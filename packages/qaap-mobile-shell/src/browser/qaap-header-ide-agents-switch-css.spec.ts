@@ -39,6 +39,21 @@ describe('header IDE/Agents switch CSS', () => {
         expect(ideCss).to.match(/transform:\s*translateX\(-50%\)/);
     });
 
+    it('keeps the shared switch compact for icon-only controls', () => {
+        expect(ideCss).to.match(
+            /\.theia-workbench-view-mode-switch\s*\{[^}]*width:\s*72px;[^}]*max-width:\s*72px/s,
+        );
+        expect(ideCss).to.match(
+            /@container \(max-width:\s*104px\)[\s\S]*?\.theia-workbench-view-mode-switch \.theia-qaap-segmented-option-label\s*\{[^}]*display:\s*none/s,
+        );
+        expect(ideCss).to.match(
+            /\.theia-workbench-view-mode-switch \.theia-qaap-segmented-option-label\s*\{[^}]*display:\s*none/s,
+        );
+        expect(ideCss).to.match(
+            /\.theia-workbench-view-mode-switch \.theia-qaap-segmented-option\s*\{[^}]*flex:\s*0 0 28px;[^}]*width:\s*28px;[^}]*padding:\s*5px 4px/s,
+        );
+    });
+
     it('does not keep the IDE/Agents switch in the sessions sidebar', () => {
         expect(sidebarCss).not.to.include('.theia-mobile-work-hub-sessions-sidebar-view-switch');
     });

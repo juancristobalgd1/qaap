@@ -17,6 +17,7 @@ import {
     parseUnifiedDiff,
     type QaapGitChangedFile,
     type QaapGitChangesResponse,
+    type QaapGitIdentity,
     type QaapGitPrReadiness,
     type QaapGitCommitContextResponse,
     type QaapGitCommitWorkflowAction,
@@ -164,8 +165,9 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 this.readCurrentBranch(root),
                 this.readPrReadiness(root),
             ]);
+            const gitIdentity = await this.readGitIdentity(root);
             this.rememberChangedFilesSnapshot(root, files);
-            res.json({ root, branch, files, prReadiness } satisfies QaapGitChangesResponse);
+            res.json({ root, branch, files, prReadiness, gitIdentity } satisfies QaapGitChangesResponse);
         } catch (error) {
             res.status(500).json({ error: this.errorMessage(error) });
         }
@@ -298,6 +300,7 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             return;
         }
         try {
+            await this.ensureGitIdentity(root);
             if (branchName) {
                 await this.git(root, ['checkout', '-b', branchName]);
             }
@@ -339,6 +342,34 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
             const branch = (await this.git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
             await this.git(root, ['push', '-u', 'origin', branch]);
         }
+    }
+
+    /** Read the local repository author identity without inheriting a host-global Git config. */
+    protected async readGitIdentity(root: string): Promise<QaapGitIdentity> {
+        const read = async (key: string): Promise<string | undefined> => {
+            try {
+                const value = (await this.git(root, ['config', '--local', '--get', key])).trim();
+                return value || undefined;
+            } catch {
+                return undefined;
+            }
+        };
+        const [name, email] = await Promise.all([read('user.name'), read('user.email')]);
+        return { configured: !!name && !!email, ...(name ? { name } : {}), ...(email ? { email } : {}) };
+    }
+
+    /** Configure safe local defaults only when the repository has no author identity yet. */
+    protected async ensureGitIdentity(root: string): Promise<QaapGitIdentity> {
+        const current = await this.readGitIdentity(root);
+        const name = current.name || process.env.QAAP_GIT_USER_NAME?.trim() || 'Qaap';
+        const email = current.email || process.env.QAAP_GIT_USER_EMAIL?.trim() || 'qaap@local';
+        if (!current.name) {
+            await this.git(root, ['config', '--local', 'user.name', name]);
+        }
+        if (!current.email) {
+            await this.git(root, ['config', '--local', 'user.email', email]);
+        }
+        return { configured: true, name, email };
     }
 
     protected sanitizeBranchName(value: unknown): string | undefined {

@@ -55,6 +55,7 @@ import { } from './mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
     type QaapAgentTaskAgentOption,
+    type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTaskListSnapshot,
 } from '../common/qaap-agent-task-client';
@@ -396,6 +397,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected stickyComposerContext: StickyComposerContextEntry[] = [];
     protected stickyComposerFilesExpanded = true;
     protected stickyComposerPinnedAgentId: string | undefined;
+    protected stickyComposerAgentModel: QaapCreateAgentTaskQaiqModel | undefined;
     protected stickyComposerBackendAgents: QaapAgentTaskAgentOption[] = [];
     protected stickyComposerQaiqModels: QaapQaiqModelOption[] = [];
     protected stickyComposerAgentSheet: HTMLElement | undefined;

@@ -48,5 +48,7 @@ describe('Qaap legal pages', () => {
         );
         expect(sync).to.include("resources', 'legal'");
         expect(sync).to.include("libFrontend, 'legal'");
+        expect(sync).to.include('qaap-build=');
+        expect(sync).to.include('bundle\\.css');
     });
 });

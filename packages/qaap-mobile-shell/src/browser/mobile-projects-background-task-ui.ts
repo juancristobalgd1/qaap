@@ -23,10 +23,11 @@ import {
     resolveAgentModelForSubmit,
     resolveBackendAgentForTurn,
     writeStoredAgent,
+    QAIQ_AGENT_ID,
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage } from '../common/qaap-agent-failure-message';
+import { localizeMissingCodingAgentMessage, localizeMissingQaiqMessage } from '../common/qaap-agent-failure-message';
 import { shouldRouteSubmitToTheiaCoder } from '../common/qaap-agent-submit-routing';
 import { reportQaapClientError } from '../common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
@@ -427,6 +428,11 @@ export class MobileProjectsBackgroundTaskUi {
                 agents: mergeAgentTaskAgentOptions(liveAgents),
                 defaultAgent: this.host.activeTasks?.getDefaultAgent(),
                 agentConfigured: this.host.activeTasks?.isAgentConfigured() ?? false,
+                // If the backend snapshot itself is unavailable, leave the final decision to the
+                // backend conversation preflight instead of misreporting a missing executable.
+                qaiqInstalled: this.host.activeTasks
+                    ? this.host.activeTasks.getAgents().some(agent => agent.id === QAIQ_AGENT_ID)
+                    : true,
                 qaiqModels: [],
             };
         }
@@ -438,6 +444,11 @@ export class MobileProjectsBackgroundTaskUi {
         conversationAgentId?: string,
     ): Promise<string> {
         const snapshot = await this.loadBackendAgentSnapshot();
+        if (snapshot.qaiqInstalled === false) {
+            // QAIQ is the required Work Hub runtime. Fail before creating a turn that could sit
+            // in Planning while the backend waits for an executable that cannot start.
+            throw new Error(localizeMissingQaiqMessage());
+        }
         const resolved = resolveBackendAgentForTurn(prompt, snapshot.agents, {
             explicitAgentId: selectedAgentId,
             storedAgentId: readStoredAgent(cwd),

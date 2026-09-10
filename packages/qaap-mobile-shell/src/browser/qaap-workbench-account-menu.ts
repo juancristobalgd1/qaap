@@ -55,7 +55,7 @@ export function createQaapViewModeSwitch(
             },
         ],
         value: options.activeId,
-        iconOnly: false,
+        iconOnly: true,
         onChange: options.onSelect,
     });
     field.root.classList.add('theia-mod-header-surface');

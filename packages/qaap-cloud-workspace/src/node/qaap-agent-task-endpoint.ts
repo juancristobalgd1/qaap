@@ -100,6 +100,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             res.json({
                 tasks: this.filterTasks(ctx, this.runner.listForCwd(cwd)),
                 agentConfigured: this.runner.isAgentConfigured(),
+                qaiqInstalled: this.runner.isQaiqInstalled(),
                 agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
                 defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
                 qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
@@ -117,6 +118,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             // task groups arrive over the WebSocket snapshot instead.
             res.json({
                 agentConfigured: this.runner.isAgentConfigured(),
+                qaiqInstalled: this.runner.isQaiqInstalled(),
                 agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
                 defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
                 qaiqModels: this.runner.listQaiqModels(this.auth.resolveUserLogin(ctx)),
@@ -243,6 +245,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 type: 'snapshot',
                 groups: this.filterTaskGroups(ctx, this.runner.listAllGroupedByCwd()).map(trimTaskGroupCommandsForWire),
                 agentConfigured: this.runner.isAgentConfigured(),
+                qaiqInstalled: this.runner.isQaiqInstalled(),
                 agents: this.runner.listAgents(this.auth.resolveUserLogin(ctx)),
                 defaultAgent: this.runner.defaultAgent(this.auth.resolveUserLogin(ctx)),
             };

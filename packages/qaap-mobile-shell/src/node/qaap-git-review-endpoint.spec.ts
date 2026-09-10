@@ -11,6 +11,20 @@ import * as path from 'path';
 import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile } from '../common/qaap-git-review';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
 
+/** Create the symlink fixture when the host permits it; Windows may require Developer Mode. */
+function createDirectoryLinkIfSupported(target: string, linkPath: string): boolean {
+    try {
+        fs.symlinkSync(target, linkPath, 'dir');
+        return true;
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (process.platform !== 'win32' || (code !== 'EPERM' && code !== 'EACCES')) {
+            throw error;
+        }
+        return false;
+    }
+}
+
 /** Test seam: expose the protected git helpers without spinning up express or DI. */
 class TestableGitReviewEndpoint extends QaapGitReviewEndpoint {
     statusCalls = 0;
@@ -67,6 +81,7 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
     this.timeout(20_000);
 
     let repo: string;
+    let directoryLinkAvailable = false;
     const endpoint = new TestableGitReviewEndpoint();
 
     const git = (args: string[], cwd: string = repo): string =>
@@ -88,7 +103,10 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         fs.writeFileSync(path.join(repo, 'index.html'), '<html>v2</html>\n<footer/>\n');
         fs.writeFileSync(path.join(repo, 'package-lock.json'), '{ "lockfileVersion": 3 }\n');
         fs.writeFileSync(path.join(repo, 'empty-new.txt'), '');
-        fs.symlinkSync(os.tmpdir(), path.join(repo, 'untracked-directory-link'), 'dir');
+        directoryLinkAvailable = createDirectoryLinkIfSupported(
+            os.tmpdir(),
+            path.join(repo, 'untracked-directory-link'),
+        );
         git(['mv', 'rename-old.ts', 'rename-new.ts']);
         git(['rm', '-q', 'deleted.ts']);
         fs.writeFileSync(path.join(repo, 'binary.bin'), Buffer.from([0, 9, 8, 7]));
@@ -130,7 +148,10 @@ describe('qaap-git-review-endpoint computeFileDiff', function (): void {
         expect(await endpoint.isMetadataOnlyUntrackedFileForTest(repo, 'empty-new.txt')).to.equal(true);
     });
 
-    it('classifies an untracked symlink-to-directory as metadata instead of a missing diff', async () => {
+    it('classifies an untracked symlink-to-directory as metadata instead of a missing diff', async function (): Promise<void> {
+        if (!directoryLinkAvailable) {
+            this.skip();
+        }
         expect(await endpoint.computeFileDiffForTest(repo, 'untracked-directory-link')).to.equal('');
         expect(await endpoint.isMetadataOnlyUntrackedFileForTest(repo, 'untracked-directory-link')).to.equal(true);
     });

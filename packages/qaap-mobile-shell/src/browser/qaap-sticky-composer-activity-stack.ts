@@ -1207,7 +1207,7 @@ function renderChangesCommitGroup(options: StickyComposerActivityStackOptions): 
     commitBtn.type = 'button';
     commitBtn.className = 'theia-mobile-sticky-composer-commit-btn';
     commitBtn.disabled = disabled;
-    commitBtn.textContent = nls.localize('qaap/mobileProjects/commit', 'Commit');
+    commitBtn.textContent = nls.localize('qaap/mobileProjects/approveAndCommit', 'Approve & Commit');
     commitBtn.addEventListener('click', ev => {
         ev.preventDefault();
         ev.stopPropagation();

@@ -42,6 +42,15 @@ describe('evaluateVerifyCommitReadiness', () => {
         })).to.deep.equal({ level: 'not_configured', requiresConfirmation: false, blocksCommit: false });
     });
 
+    it('requires confirmation when checks become unavailable after the load timeout', () => {
+        expect(evaluateVerifyCommitReadiness({
+            checksLoading: false,
+            checksError: true,
+            running: false,
+            results: [],
+        })).to.deep.equal({ level: 'unavailable', requiresConfirmation: true, blocksCommit: false });
+    });
+
     it('asks for confirmation when checks failed, were never run, or no longer match files', () => {
         expect(evaluateVerifyCommitReadiness({
             checksLoading: false,

@@ -13,10 +13,12 @@ import {
     fetchAgentModelsForAgent,
     filterQaapComposerAgents,
     isTheiaCoderAgent,
+    pickDefaultAgentModel,
     readStoredAgent,
     readStoredAgentModel,
     reconcileStickyComposerAgent,
     THEIA_CODER_AGENT_ID,
+    writeStoredAgent,
     type QaapAgentTaskAgentOption,
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
@@ -32,6 +34,7 @@ import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from './qaap-ag
 
 export interface MobileProjectsStickyComposerAgentsHost {
     stickyComposerPinnedAgentId: string | undefined;
+    stickyComposerAgentModel?: QaapCreateAgentTaskQaiqModel;
     stickyComposerBackendAgents: QaapAgentTaskAgentOption[];
     stickyComposerQaiqModels: QaapQaiqModelOption[];
     preparedCwdByProjectId: Map<string, string>;
@@ -93,7 +96,13 @@ export class MobileProjectsStickyComposerAgentsUi {
         const cwd = composerCwd ?? (project
             ? (this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id))
             : undefined);
-        return readStoredAgentModel(cwd, agentId);
+        const stored = readStoredAgentModel(cwd, agentId);
+        if (stored) {
+            return stored;
+        }
+        return this.host.stickyComposerPinnedAgentId?.toLowerCase() === agentId.toLowerCase()
+            ? this.host.stickyComposerAgentModel
+            : undefined;
     }
 
     /**
@@ -105,7 +114,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         cwd: string | undefined,
         preferredModels?: readonly QaapQaiqModelOption[],
     ): Promise<QaapCreateAgentTaskQaiqModel | undefined> {
-        if (!cwd || !agentSupportsModelPicker(agentId)) {
+        if (!agentSupportsModelPicker(agentId)) {
             return undefined;
         }
         const existing = readStoredAgentModel(cwd, agentId);
@@ -120,7 +129,55 @@ export class MobileProjectsStickyComposerAgentsUi {
                 catalog = [];
             }
         }
-        return ensureStoredAgentModel(cwd, agentId, catalog);
+        if (cwd) {
+            return ensureStoredAgentModel(cwd, agentId, catalog);
+        }
+        const picked = pickDefaultAgentModel(catalog);
+        return picked
+            ? { provider: picked.provider, vendor: picked.vendor, modelId: picked.modelId }
+            : undefined;
+    }
+
+    /**
+     * Resolve the composer to an agent that has a concrete model. Keep the current agent when
+     * possible, then fall back to the first model-capable harness in picker order. This prevents
+     * the composer from showing a logo-only agent button when a different detected harness already
+     * exposes a usable model catalog.
+     */
+    async ensureStickyComposerAgentSelection(
+        currentAgentId: string | undefined,
+        agents: readonly QaapAgentTaskAgentOption[],
+        cwd: string | undefined,
+        qaiqModels: readonly QaapQaiqModelOption[] = [],
+    ): Promise<{ readonly agentId: string; readonly model: QaapCreateAgentTaskQaiqModel } | undefined> {
+        const candidateIds = [
+            currentAgentId,
+            ...this.filterSelectableComposerAgents(agents).map(agent => agent.id),
+        ];
+        const seen = new Set<string>();
+        for (const candidate of candidateIds) {
+            const agentId = candidate?.trim();
+            if (!agentId) {
+                continue;
+            }
+            const key = agentId.toLowerCase();
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            if (!agentSupportsModelPicker(agentId)) {
+                continue;
+            }
+            const model = await this.ensureStickyComposerAgentModel(
+                agentId,
+                cwd,
+                key === 'qaiq' ? qaiqModels : undefined,
+            );
+            if (model) {
+                return { agentId, model };
+            }
+        }
+        return undefined;
     }
 
     resolveStickyComposerModelLabel(
@@ -173,16 +230,26 @@ export class MobileProjectsStickyComposerAgentsUi {
             );
             const agentChanged = this.host.stickyComposerPinnedAgentId !== resolved;
             this.host.stickyComposerPinnedAgentId = resolved;
-            const hadModel = resolved ? !!readStoredAgentModel(cwd, resolved) : false;
-            if (resolved) {
-                await this.ensureStickyComposerAgentModel(
-                    resolved,
-                    cwd,
-                    resolved === 'qaiq' ? snapshot.qaiqModels : undefined,
-                );
+            const hadModel = resolved
+                ? !!readStoredAgentModel(cwd, resolved)
+                    || (this.host.stickyComposerPinnedAgentId === resolved && !!this.host.stickyComposerAgentModel)
+                : false;
+            const selection = await this.ensureStickyComposerAgentSelection(
+                resolved,
+                filteredAgents,
+                cwd,
+                snapshot.qaiqModels,
+            );
+            this.host.stickyComposerAgentModel = selection?.model;
+            let modelAgentChanged = false;
+            if (selection && selection.agentId !== resolved) {
+                writeStoredAgent(cwd, selection.agentId);
+                this.host.stickyComposerPinnedAgentId = selection.agentId;
+                modelAgentChanged = true;
             }
-            const seededModel = !!resolved && !hadModel && !!readStoredAgentModel(cwd, resolved);
-            if (agentChanged || seededModel) {
+            const effectiveAgentId = this.host.stickyComposerPinnedAgentId;
+            const seededModel = !!effectiveAgentId && !hadModel && !!this.host.stickyComposerAgentModel;
+            if (agentChanged || modelAgentChanged || seededModel) {
                 this.host.stickyComposerRenderUi.renderStickyComposer();
             }
             return true;

@@ -84,6 +84,7 @@ import {
     QAAP_DISABLED_HARNESSES_PREF,
     readDisabledHarnessIds,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
+import { localizeMissingQaiqMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 
@@ -126,6 +127,7 @@ export {
 import {
     AGENT_CANDIDATES,
     CUSTOM_AGENTS_ENV,
+    QAIQ_AGENT_ID,
     SHELL_AGENT_ID,
     ENV_AGENT_ID,
     STORE_DIR,
@@ -376,6 +378,18 @@ export class QaapAgentTaskRunner {
     /** True when at least one coding agent is available — autodetected or env-configured. */
     isAgentConfigured(): boolean {
         return this.detectedAgents.size > 0 || !!process.env.QAAP_AGENT_COMMAND?.trim();
+    }
+
+    /** True when the QAIQ executable was detected during backend startup. */
+    isQaiqInstalled(): boolean {
+        return this.detectedAgents.has(QAIQ_AGENT_ID) || this.isOnPath(QAIQ_AGENT_ID);
+    }
+
+    /** Fail before a conversation can enter the streaming/planning state without a runnable QAIQ. */
+    assertQaiqInstalled(): void {
+        if (!this.isQaiqInstalled()) {
+            throw new Error(localizeMissingQaiqMessage());
+        }
     }
 
     /** Agents the UI can offer in its picker, in priority order. */

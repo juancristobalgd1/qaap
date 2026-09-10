@@ -33,6 +33,7 @@ import {
 } from '../common/qaap-agent-conversation';
 import {
     agentSupportsModelPicker,
+    QAIQ_AGENT_ID,
     resolveQaapAgentMentionToken,
     SHELL_AGENT_ID,
     usesAgUiCliTranscriptStream,
@@ -235,10 +236,20 @@ export function initExtracted(ctx: any): void {
 
 export function listExtracted(ctx: any, cwd: string | undefined): QaapAgentConversationSummary[] {
     const all = [...ctx.conversations.values()];
-    const filtered = cwd ? all.filter(c => c.cwd === path.resolve(cwd)) : all;
+    const filtered = cwd
+        ? all.filter(c => normalizeConversationCwd(c.cwd) === normalizeConversationCwd(cwd))
+        : all;
     return filtered
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(toConversationSummary);
+}
+
+/** Windows drive-letter casing and slash style must not hide an existing conversation. */
+function normalizeConversationCwd(cwd: string): string {
+    const resolved = path.resolve(cwd);
+    return process.platform === 'win32'
+        ? resolved.replace(/[\\/]+/g, '\\').toLowerCase()
+        : resolved;
 }
 
 /**
@@ -324,6 +335,11 @@ export function createExtracted(ctx: any, request: QaapCreateAgentConversationRe
     const agentId = firstMessage
         ? ctx.resolveTurnAgent({ id: '', cwd, agentId: seedAgent, title: '', status: 'idle', createdAt: 0, updatedAt: 0, messages: [] }, firstMessage, request.agent)
         : seedAgent;
+    if (agentId === QAIQ_AGENT_ID) {
+        // The HTTP endpoint performs the same preflight for a clean client error. Keep this
+        // second guard for internal callers, retries, and workflow-created conversations.
+        ctx.taskRunner.assertQaiqInstalled?.();
+    }
     if (agentId === SHELL_AGENT_ID) {
         const explicitShell = ctx.taskRunner.normalizeAgentId(requestedAgent) === SHELL_AGENT_ID
             || (firstMessage ? ctx.extractAgentMentionFromUserMessage(firstMessage) === SHELL_AGENT_ID : false);

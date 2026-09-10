@@ -42,6 +42,8 @@ interface VerifyCheckResult {
 // One auto-fix attempt: if a single agent pass doesn't turn the check green, stop and let the user
 // decide, instead of looping the agent (and the token spend) up to three times.
 const VERIFY_AUTO_MAX_ATTEMPTS = 1;
+/** A discovery failure must become actionable instead of leaving the Checks control spinning. */
+const VERIFY_CHECKS_LOAD_TIMEOUT_MS = 15_000;
 
 /** Panel surface for transcript verify checks in the Changes tab. */
 export interface MobileProjectsTranscriptVerifyHost {
@@ -69,6 +71,7 @@ export class MobileProjectsTranscriptVerifyUi {
      */
     protected checksRenderDepth = 0;
     protected checksLoadGeneration = 0;
+    protected checksLoadError: { readonly summaryId: string; readonly cwd: string; readonly message: string } | undefined;
     protected freshnessTimer: number | undefined;
     protected verificationSummaryId: string | undefined;
 
@@ -96,14 +99,31 @@ export class MobileProjectsTranscriptVerifyUi {
         this.host.verifyChecksCwd = cwd;
         this.host.verifyChecksLoading = true;
         this.host.verifyResults = [];
+        this.checksLoadError = undefined;
         this.refreshTranscriptChecksViews(project, summary);
 
         let checks: VerifyCheck[] = [];
         if (this.host.resolveVerifyChecks) {
+            let timeout: number | undefined;
             try {
-                checks = await this.host.resolveVerifyChecks(cwd);
-            } catch {
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    timeout = window.setTimeout(() => reject(new Error(nls.localize(
+                        'qaap/mobileProjects/verifyLoadTimeout',
+                        'Could not load checks in time. Retry or review manually.',
+                    ))), VERIFY_CHECKS_LOAD_TIMEOUT_MS);
+                });
+                checks = await Promise.race([this.host.resolveVerifyChecks(cwd), timeoutPromise]);
+            } catch (error) {
+                this.checksLoadError = {
+                    summaryId: summary.id,
+                    cwd,
+                    message: error instanceof Error ? error.message : String(error),
+                };
                 checks = [];
+            } finally {
+                if (timeout !== undefined) {
+                    window.clearTimeout(timeout);
+                }
             }
         }
 
@@ -166,6 +186,8 @@ export class MobileProjectsTranscriptVerifyUi {
     getCommitReadinessInput(): EvaluateVerifyCommitReadinessInput {
         return {
             checksLoading: this.host.verifyChecksLoading,
+            checksError: this.checksLoadError?.summaryId === this.verificationSummaryId
+                && this.checksLoadError?.cwd === this.host.verifyChecksCwd,
             running: this.host.verifyRunning,
             results: this.host.verifyResults,
         };
@@ -184,6 +206,10 @@ export class MobileProjectsTranscriptVerifyUi {
         }
         if (this.host.verifyChecksLoading) {
             return { text: nls.localize('qaap/mobileProjects/verifyLoadingChecks', 'Loading…'), fail: false };
+        }
+        if (this.checksLoadError?.summaryId === this.verificationSummaryId
+            && this.checksLoadError?.cwd === this.host.verifyChecksCwd) {
+            return { text: nls.localize('qaap/mobileProjects/verifyChecksUnavailable', 'Checks unavailable — retry'), fail: true };
         }
         if (failed > 0) {
             return {
@@ -239,6 +265,9 @@ export class MobileProjectsTranscriptVerifyUi {
             const failed = this.host.verifyResults.filter(r => r.state === 'fail').length;
             const checksReady = this.host.verifyChecksCwd === summary.cwd && !this.host.verifyChecksLoading;
             const checksAvailable = checksReady && this.host.verifyResults.length > 0;
+            const checksLoadError = this.checksLoadError?.summaryId === summary.id && this.checksLoadError.cwd === summary.cwd
+                ? this.checksLoadError.message
+                : undefined;
 
             const contentHost = document.createElement('div');
             contentHost.className = 'theia-mobile-transcript-review-checks-body';
@@ -254,8 +283,11 @@ export class MobileProjectsTranscriptVerifyUi {
                 const note = document.createElement('div');
                 note.className = 'theia-mobile-transcript-verify-note';
                 note.textContent = nls.localize(
-                    'qaap/mobileProjects/verifyNoScripts',
-                    'No compile, build, test, typecheck, or lint script found. On a monorepo, add scripts in a leaf package or open that package as the workspace.',
+                    checksLoadError ? 'qaap/mobileProjects/verifyLoadFailed' : 'qaap/mobileProjects/verifyNoScripts',
+                    checksLoadError
+                        ? 'Checks could not be loaded: {0}'
+                        : 'No compile, build, test, typecheck, or lint script found. On a monorepo, add scripts in a leaf package or open that package as the workspace.',
+                    ...(checksLoadError ? [checksLoadError] : []),
                 );
                 contentHost.append(note);
             }
@@ -266,7 +298,7 @@ export class MobileProjectsTranscriptVerifyUi {
                 const runBtn = document.createElement('button');
                 runBtn.type = 'button';
                 runBtn.className = 'theia-mobile-transcript-verify-run theia-mod-embedded';
-                runBtn.disabled = this.host.verifyRunning || this.host.verifyResults.some(result => result.state === 'running' || result.state === 'checking') || this.host.verifyChecksLoading || !checksAvailable;
+                runBtn.disabled = this.host.verifyRunning || this.host.verifyResults.some(result => result.state === 'running' || result.state === 'checking') || this.host.verifyChecksLoading || (!checksAvailable && !checksLoadError);
                 runBtn.textContent = this.host.verifyRunning
                     ? nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…')
                     : nls.localize('qaap/mobileProjects/verifyRun', 'Run checks');
@@ -310,7 +342,7 @@ export class MobileProjectsTranscriptVerifyUi {
                 runChip.classList.toggle('theia-mod-fail', chipLabel.fail);
                 runChip.classList.toggle('theia-mod-running', this.host.verifyRunning);
                 runChip.disabled = this.host.verifyRunning || this.host.verifyResults.some(result => result.state === 'running' || result.state === 'checking') || this.host.verifyChecksLoading
-                    || (checksReady && !checksAvailable);
+                    || (checksReady && !checksAvailable && !checksLoadError);
                 const runIcon = document.createElement('i');
                 runIcon.className = this.host.verifyRunning
                     ? 'codicon codicon-loading codicon-mod-spin'
@@ -356,6 +388,9 @@ export class MobileProjectsTranscriptVerifyUi {
                 checksStat.textContent = nls.localize('qaap/mobileProjects/verifyRunningShort', 'Running…');
             } else if (this.host.verifyChecksLoading) {
                 checksStat.textContent = nls.localize('qaap/mobileProjects/verifyLoadingChecks', 'Loading checks…');
+            } else if (checksLoadError) {
+                checksStat.classList.add('theia-mod-fail');
+                checksStat.textContent = nls.localize('qaap/mobileProjects/verifyChecksUnavailable', 'Checks unavailable — retry');
             } else if (failed > 0) {
                 checksStat.classList.add('theia-mod-fail');
                 checksStat.textContent = nls.localize('qaap/mobileProjects/verifyFailing', '{0} failing', String(failed));

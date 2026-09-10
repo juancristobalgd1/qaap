@@ -287,6 +287,8 @@ export interface QaapAgentTaskListResponse {
     readonly agents: QaapAgentDescriptor[];
     /** Id of the agent used when the request omits one (first available, else `'shell'`). */
     readonly defaultAgent: string;
+    /** True only when the QAIQ executable was detected on the backend PATH at startup. */
+    readonly qaiqInstalled?: boolean;
     /** QAIQ model options available from configured provider settings grouped client-side by provider. */
     readonly qaiqModels?: QaapQaiqModelOption[];
 }
@@ -313,6 +315,8 @@ export interface QaapAgentTaskAllResponse {
     readonly agentConfigured: boolean;
     readonly agents: QaapAgentDescriptor[];
     readonly defaultAgent: string;
+    /** True only when the QAIQ executable was detected on the backend PATH at startup. */
+    readonly qaiqInstalled?: boolean;
     readonly qaiqModels?: QaapQaiqModelOption[];
 }
 

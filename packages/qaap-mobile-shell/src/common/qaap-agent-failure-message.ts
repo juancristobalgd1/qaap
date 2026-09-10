@@ -347,6 +347,14 @@ export function localizeMissingCodingAgentMessage(): string {
     );
 }
 
+/** Shown when the Qaap Work Hub flow specifically requires the QAIQ runtime. */
+export function localizeMissingQaiqMessage(): string {
+    return nls.localize(
+        'qaap/agentFailure/qaiqMissing',
+        'QAIQ is not installed or is not on the server PATH. Install QAIQ in the QAAP server/container, then restart the backend and try again.',
+    );
+}
+
 export function localizeGenericAgentFailureMessage(
     state: QaapAgentTurnFailureState,
     exitCode?: number,
