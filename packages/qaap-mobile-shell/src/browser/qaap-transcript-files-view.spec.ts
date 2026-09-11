@@ -339,6 +339,38 @@ describe('qaap-transcript-files-view', () => {
             expect(headerHost.querySelector('.theia-mobile-transcript-files-more')).to.be.null;
         });
 
+        it('switches the drawer header from the selected file to Changes', () => {
+            const host = document.createElement('div');
+            document.body.append(host);
+            const headerHost = document.createElement('header');
+            document.body.append(headerHost);
+            const mount = mountTranscriptFilesView(host, '/repo', {
+                ...createServices(),
+                canShowChanges: true,
+                mountChangesView: async () => undefined,
+                unmountChangesView: () => undefined,
+            });
+
+            try {
+                mount.attachPreviewHeaderHost?.(headerHost);
+                expect(headerHost.querySelector('.theia-mobile-transcript-files-preview-header')).to.exist;
+                expect(headerHost.querySelector('.theia-mobile-transcript-files-changes-header')).to.be.null;
+
+                mount.setViewMode?.('changes');
+                expect(headerHost.querySelector('.theia-mobile-transcript-files-preview-header')).to.be.null;
+                expect(headerHost.querySelector('.theia-mobile-transcript-files-changes-header')?.textContent).to.equal('Changes');
+
+                mount.setViewMode?.('files');
+                expect(headerHost.querySelector('.theia-mobile-transcript-files-preview-header')).to.exist;
+                expect(headerHost.querySelector('.theia-mobile-transcript-files-changes-header')).to.be.null;
+
+                mount.attachPreviewHeaderHost?.(undefined);
+                expect(host.querySelector('.theia-mobile-transcript-files-preview-header')).to.exist;
+            } finally {
+                mount.dispose.dispose();
+            }
+        });
+
         it('toggles file tree visibility from the toolbar button', () => {
             const host = document.createElement('div');
             document.body.append(host);

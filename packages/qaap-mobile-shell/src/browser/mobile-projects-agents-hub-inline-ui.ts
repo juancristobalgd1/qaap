@@ -730,6 +730,13 @@ export class MobileProjectsAgentsHubInlineUi {
         }
         this.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab(activeTab);
         this.host.executionSurfaceTabsUi.mountTranscriptSurfaceTab(project, summary, activeTab);
+        if (activeTab !== 'messages') {
+            // Restoring an idle conversation can select a persisted secondary
+            // surface before activateExecutionSurfaceTab() runs. Keep those
+            // surfaces in the full-screen drawer instead of leaving the
+            // legacy inline Preview/Terminal view visible under the header.
+            this.host.executionSurfaceTabsUi.openExecutionSurfaceSidebarWhenReady?.(activeTab, project, summary, 'transcript');
+        }
         if (chatHost) {
             this.host.transcriptLiveUi.scheduleTranscriptConversationRefresh(project, summary, chatHost);
             this.renderAgentsHubShellChat(chatHost, project, summary);

@@ -29,7 +29,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
-import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, directChildWithClassExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted, syncTranscriptTabStripExtracted } from './mobile-projects-execution-surface-tabs-ui-render2';
+import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, closeExecutionSurfaceSidebarExtracted, directChildWithClassExtracted, dismissExecutionSurfaceSidebarExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, openExecutionSurfaceSidebarExtracted, openExecutionSurfaceSidebarWhenReadyExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted, syncTranscriptTabStripExtracted } from './mobile-projects-execution-surface-tabs-ui-render2';
 import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabStripExtracted, buildTranscriptTabStripExtracted, createExecutionSurfaceIconSelectExtracted, createTerminalAgentTuiSelectExtracted, executionSurfaceTabSpecsExtracted, executionTabOverflowMenuMinTopExtracted, openExecutionTabOverflowMenuExtracted, resolveExecutionTabOverflowMenuPortalExtracted, resolveTerminalAgentTuiActiveAgentIdExtracted, syncTerminalAgentTuiTriggerExtracted, syncTerminalAgentTuiTriggersInStripExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming2';
 import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline2';
 
@@ -50,6 +50,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
     transcriptLastConv: QaapAgentConversationDTO | undefined;
+    headerViewModeSwitchHost?: HTMLElement;
     projectDetailTabStrip: HTMLElement | undefined;
     projectDetailSurfaceTargets: {
         chatHost: HTMLElement;
@@ -74,6 +75,32 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     executionTabOverflowMenu: HTMLElement | undefined;
     executionTabOverflowAnchor: HTMLButtonElement | undefined;
     executionTabOverflowDispose: Disposable;
+    executionSurfaceSidebar: {
+        element: HTMLElement;
+        backdrop: HTMLElement;
+        content: HTMLElement;
+        activeHost?: HTMLElement;
+        placeholder?: Comment;
+        viewModeHost?: HTMLElement;
+        viewModePlaceholder?: Comment;
+        viewModeCandidate?: HTMLElement;
+        viewModeObserver?: MutationObserver;
+        previewHeaderHost?: HTMLElement;
+        previewHeaderPlaceholder?: Comment;
+        previewHeaderObserver?: MutationObserver;
+        previewHeaderMount?: {
+            attachPreviewHeaderHost?: (host: HTMLElement | undefined) => void;
+        };
+        previewChangesHeaderHost?: HTMLElement;
+        toolbarHost?: HTMLElement;
+        toolbarPlaceholder?: Comment;
+        toolbarObserver?: MutationObserver;
+        activeTab: TranscriptTab;
+        project: MobileProjectEntry;
+        summary: QaapAgentConversationSummaryDTO;
+        origin: 'transcript' | 'project-detail';
+        closeTimer?: number;
+    } | undefined;
     expandedId: string | undefined;
     projectDetailExpandedId: string | undefined;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
@@ -157,6 +184,32 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
     showOnlyExecutionSurfaceTab(tab: TranscriptTab): void {
         showOnlyExecutionSurfaceTabExtracted(this, tab);
+    }
+
+    openExecutionSurfaceSidebar(
+        tab: TranscriptTab,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        origin: 'transcript' | 'project-detail',
+    ): void {
+        openExecutionSurfaceSidebarExtracted(this, tab, project, summary, origin);
+    }
+
+    openExecutionSurfaceSidebarWhenReady(
+        tab: TranscriptTab,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        origin: 'transcript' | 'project-detail',
+    ): void {
+        openExecutionSurfaceSidebarWhenReadyExtracted(this, tab, project, summary, origin);
+    }
+
+    closeExecutionSurfaceSidebar(): void {
+        closeExecutionSurfaceSidebarExtracted(this);
+    }
+
+    dismissExecutionSurfaceSidebar(): void {
+        dismissExecutionSurfaceSidebarExtracted(this);
     }
 
     /** Restore the project-owned surface after a shell/header rebuild without changing its state. */

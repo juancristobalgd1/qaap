@@ -276,7 +276,9 @@ export function mountProjectDetailSurfaceTabExtracted(ctx: any, project: MobileP
             ctx.renderPreviewTab(project, summary);
             break;
         case 'files':
-            ctx.ensureTranscriptFilesTab(project, summary);
+            // Explicit Files selection must restore the file explorer, not a
+            // previously persisted Changes mode.
+            ctx.ensureTranscriptFilesTab(project, summary, 'files');
             break;
         case 'terminal':
             void ctx.ensureTranscriptTerminalTab(project, summary);
@@ -414,4 +416,3 @@ export function updateTranscriptHeaderExtracted(ctx: any, project: MobileProject
     subtitle.className = 'theia-mobile-projects-subtitle';
     subtitle.replaceChildren();
 }
-

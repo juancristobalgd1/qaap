@@ -505,12 +505,6 @@ export function mountEmbeddedAgentPreviewChrome(
     const urlField = document.createElement('div');
     urlField.className = 'theia-mini-browser-url-field';
 
-    const refreshBtn = createQaapPreviewToolbarIconButton(
-        nls.localize('theia/mini-browser/reload', 'Reload'),
-        'refresh',
-        Style.TOOLBAR_REFRESH,
-    );
-
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
     urlInput.className = 'theia-input';
@@ -605,7 +599,7 @@ export function mountEmbeddedAgentPreviewChrome(
 
     // Parent workbench under chrome before mounting annotate toolbar — otherwise
     // ensureAnnotateToolbar cannot resolve `.qaap-agent-preview-embedded-toolbar`.
-    // Order: Back, Forward, Reload, URL field, Edit, Overflow.
+    // Order: Back, Forward, URL field, Edit, Overflow.
     toolbar.append(backBtn, forwardBtn, urlField, workbench);
     root.append(toolbar, body);
 
@@ -735,7 +729,7 @@ export function mountEmbeddedAgentPreviewChrome(
         embedded: true,
     });
     previewController = controller;
-    controller.attachToolbarControls(toolbar, urlField, refreshBtn);
+    controller.attachToolbarControls(toolbar, urlField);
     disposables.push(controller);
 
     disposables.push(addEventListener(backBtn, 'click', (e: MouseEvent) => {
@@ -757,11 +751,6 @@ export function mountEmbeddedAgentPreviewChrome(
             return;
         }
         void adapter.navigate(target);
-    }));
-    disposables.push(addEventListener(refreshBtn, 'click', (e: MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        adapter.reload();
     }));
     disposables.push(addEventListener(openBtn, 'click', (e: MouseEvent) => {
         e.preventDefault();

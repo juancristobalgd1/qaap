@@ -37,6 +37,7 @@ if (!copyIfExists(srcIndex, libIndex)) {
 
 const BUNDLE_SCRIPT = '<script type="text/javascript" src="./bundle.js" charset="utf-8"></script>';
 const GATE_SCRIPT = '<script type="text/javascript" src="./qaap-login-gate.js" charset="utf-8"></script>';
+const BUILD_VERSION = Date.now().toString(36);
 
 function patchIndexForLoginGate(indexPath) {
     if (!fs.existsSync(indexPath) || !fs.existsSync(path.join(libFrontend, 'qaap-login-gate.js'))) {
@@ -54,23 +55,53 @@ function patchIndexForLoginGate(indexPath) {
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
-function patchIndexForFreshStylesheet(indexPath) {
+function patchIndexForFreshAssets(indexPath) {
     const bundleCss = path.join(libFrontend, 'bundle.css');
-    if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss)) {
+    const bundleJs = path.join(libFrontend, 'bundle.js');
+    if (!fs.existsSync(indexPath) || !fs.existsSync(bundleCss) || !fs.existsSync(bundleJs)) {
         return;
     }
-    const buildVersion = Date.now().toString(36);
     const html = fs.readFileSync(indexPath, 'utf8').replace(
         /\.\/bundle\.css(?:\?[^"'\s>]*)?/g,
-        `./bundle.css?qaap-build=${buildVersion}`,
+        `./bundle.css?qaap-build=${BUILD_VERSION}`,
+    ).replace(
+        /\.\/bundle\.js(?:\?[^"'\s>]*)?/g,
+        `./bundle.js?qaap-build=${BUILD_VERSION}`,
+    ).replace(
+        /\.\/qaap-login-gate\.js(?:\?[^"'\s>]*)?/g,
+        `./qaap-login-gate.js?qaap-build=${BUILD_VERSION}`,
     );
     fs.writeFileSync(indexPath, html, 'utf8');
 }
 
+function patchFrontendChunkImports() {
+    for (const file of fs.readdirSync(libFrontend)) {
+        if (!file.endsWith('.js') || file === 'qaap-login-gate.js') {
+            continue;
+        }
+        const filePath = path.join(libFrontend, file);
+        const source = fs.readFileSync(filePath, 'utf8');
+        const patched = source.replace(
+            /(["'])\.\/(chunk-[A-Z0-9]+\.js)(?:\?[^"']*)?\1/g,
+            `$1./$2?qaap-build=${BUILD_VERSION}$1`,
+        );
+        if (patched !== source) {
+            fs.writeFileSync(filePath, patched, 'utf8');
+        }
+    }
+}
+
 patchIndexForLoginGate(libIndex);
-// The development browser can retain the old stylesheet across reloads. Give each
-// generated bundle.css URL a build version so the new visual contract is fetched.
-patchIndexForFreshStylesheet(libIndex);
+// The development browser can retain generated assets across reloads. Give each
+// CSS, JS bundle, and code-split chunk URL a build version so the new visual
+// contract is fetched as one coherent build.
+patchIndexForFreshAssets(libIndex);
+// `theia start` serves the generated source index directly in development, while
+// the bundled/static server serves lib/frontend/index.html. Keep both entry points
+// versioned so a browser cannot bypass the fresh bundle through the dev server.
+patchIndexForLoginGate(srcIndex);
+patchIndexForFreshAssets(srcIndex);
+patchFrontendChunkImports();
 copyIfExists(srcManifest, path.join(libFrontend, 'manifest.webmanifest'));
 // Service worker must sit at the same scope as index.html so it can control the whole app.
 copyIfExists(srcServiceWorker, path.join(libFrontend, 'service-worker.js'));
@@ -133,27 +164,11 @@ if (compressed.length) {
     console.log('[qaap] gzipped:', sizes.join(', '));
 }
 
-// Prune stale hashed chunks. esbuild does not clean its outdir, so every full rebuild leaves
-// the previous build's chunk-<hash>.(js|css) files (plus .map/.gz companions) behind — they
-// accumulate across rebuilds forever otherwise. A full build rewrites (or recreates with a new
-// hash) every chunk that's actually referenced by the fresh bundle.js, so any chunk file whose
-// mtime predates the new bundle.js by more than STALE_THRESHOLD_MS is guaranteed to be orphaned.
-const CHUNK_FILE_PATTERN = /^chunk-[A-Z0-9]+\./;
-const STALE_THRESHOLD_MS = 60_000;
-
-const bundlePath = path.join(libFrontend, 'bundle.js');
-if (!fs.existsSync(bundlePath)) {
-    console.warn('[qaap] bundle.js missing — skipping stale chunk prune');
-} else {
-    const bundleMtime = fs.statSync(bundlePath).mtimeMs;
-    const staleChunks = fs.readdirSync(libFrontend)
-        .filter(f => CHUNK_FILE_PATTERN.test(f))
-        .filter(f => (bundleMtime - fs.statSync(path.join(libFrontend, f)).mtimeMs) > STALE_THRESHOLD_MS);
-
-    for (const file of staleChunks) {
-        fs.rmSync(path.join(libFrontend, file));
-    }
-    console.log(`[qaap] pruned ${staleChunks.length} stale chunk file(s)`);
-}
+// Keep generated chunks recoverable between browser rebuilds. A timestamp-based prune is
+// unsafe here: the bundle and its code-split chunks can be written by different build steps,
+// and deleting a chunk before the browser has fetched it leaves the app at the startup error
+// screen. Cache-busting makes old files harmless, while retaining them avoids breaking a
+// bundle whose imports were written just before a concurrent copy step completed.
+console.log('[qaap] retained generated chunks for safe browser reloads');
 
 console.log('[qaap] synced frontend static files → lib/frontend/');

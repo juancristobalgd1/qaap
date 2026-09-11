@@ -285,6 +285,21 @@
         document.head.appendChild(style);
     }
 
+    function resolveBundleUrl() {
+        // copy-frontend-static versions bundle.css in development. Reuse that
+        // version for JS so a reload cannot pair an old bundle with new chunks.
+        var stylesheet = document.querySelector('link[href*="bundle.css"]');
+        var href = stylesheet && stylesheet.getAttribute('href');
+        var match = href && href.match(/[?&]qaap-build=([^&#]+)/);
+        if (match) {
+            return './bundle.js?qaap-build=' + encodeURIComponent(match[1]);
+        }
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '[::1]') {
+            return './bundle.js?qaap-build=' + Date.now().toString(36);
+        }
+        return './bundle.js';
+    }
+
     function loadBundle() {
         if (window.__qaapBundleLoading || window.__qaapBundleLoaded) {
             return;
@@ -295,7 +310,7 @@
         // browser resolves and parallel-loads the shared chunks itself.
         script.type = 'module';
         script.charset = 'utf-8';
-        script.src = './bundle.js';
+        script.src = resolveBundleUrl();
         script.onload = function () {
             window.__qaapBundleLoaded = true;
             window.clearTimeout(bundleLoadWatchdog);
@@ -748,7 +763,7 @@
         try {
             var link = document.createElement('link');
             link.rel = 'modulepreload';
-            link.href = './bundle.js';
+            link.href = resolveBundleUrl();
             link.as = 'script';
             link.crossOrigin = 'anonymous';
             (document.head || document.documentElement).appendChild(link);

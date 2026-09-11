@@ -86,7 +86,9 @@ export function mountTranscriptSurfaceTabExtracted(ctx: any, project: MobileProj
     } else if (tab === 'preview') {
         ctx.host.transcriptSurfacesUi.renderPreviewTab(project, summary);
     } else if (tab === 'files') {
-        ctx.host.transcriptSurfacesUi.ensureTranscriptFilesTab(project, summary);
+        // Explicit Files selection must restore the file tree even if Changes
+        // was the last persisted mode for this workspace.
+        ctx.host.transcriptSurfacesUi.ensureTranscriptFilesTab(project, summary, 'files');
     } else if (tab === 'terminal') {
         void ctx.host.transcriptSurfacesUi.ensureTranscriptTerminalTab(project, summary);
     }

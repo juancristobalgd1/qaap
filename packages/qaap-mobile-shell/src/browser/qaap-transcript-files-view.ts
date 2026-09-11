@@ -392,6 +392,7 @@ export function mountTranscriptFilesView(
     const filesModeBtn = document.createElement('button');
     filesModeBtn.type = 'button';
     filesModeBtn.className = 'theia-mobile-transcript-files-view-mode-btn';
+    filesModeBtn.dataset.viewMode = 'files';
     filesModeBtn.setAttribute('role', 'tab');
     const filesModeIcon = document.createElement('span');
     filesModeIcon.className = 'theia-mobile-transcript-files-view-mode-btn-icon codicon codicon-folder-opened';
@@ -406,6 +407,7 @@ export function mountTranscriptFilesView(
     const changesModeBtn = document.createElement('button');
     changesModeBtn.type = 'button';
     changesModeBtn.className = 'theia-mobile-transcript-files-view-mode-btn';
+    changesModeBtn.dataset.viewMode = 'changes';
     changesModeBtn.setAttribute('role', 'tab');
     const changesModeIcon = document.createElement('span');
     changesModeIcon.className = 'theia-mobile-transcript-files-view-mode-btn-icon qaap-icon-scm-changes';
@@ -419,6 +421,18 @@ export function mountTranscriptFilesView(
     changesModeBtn.setAttribute('aria-label', changesModeLabel.textContent ?? '');
     changesModeBtn.setAttribute('aria-selected', state.viewMode === 'changes' ? 'true' : 'false');
     viewModeSwitch.append(filesModeBtn, changesModeBtn);
+
+    const changesHeader = document.createElement('div');
+    changesHeader.className = 'theia-mobile-transcript-files-changes-header';
+    changesHeader.setAttribute('aria-label', changesModeLabel.textContent ?? '');
+    const changesHeaderIcon = document.createElement('span');
+    changesHeaderIcon.className = 'theia-mobile-transcript-files-changes-header-icon qaap-icon-scm-changes';
+    changesHeaderIcon.setAttribute('aria-hidden', 'true');
+    changesHeaderIcon.innerHTML = QAAP_SCM_CHANGES_SVG_MARKUP;
+    const changesHeaderLabel = document.createElement('span');
+    changesHeaderLabel.className = 'theia-mobile-transcript-files-changes-header-label';
+    changesHeaderLabel.textContent = changesModeLabel.textContent;
+    changesHeader.append(changesHeaderIcon, changesHeaderLabel);
 
     const previewActions = document.createElement('div');
     previewActions.className = 'theia-mobile-transcript-files-preview-actions';
@@ -466,6 +480,24 @@ export function mountTranscriptFilesView(
     const previewBody = document.createElement('div');
     previewBody.className = 'theia-mobile-transcript-files-preview-body';
     previewPane.append(previewHeader, previewBody);
+
+    let previewHeaderHost: HTMLElement | undefined;
+    const syncAttachedPreviewHeader = (): void => {
+        const host = previewHeaderHost;
+        if (!host) {
+            return;
+        }
+        const activeHeader = state.viewMode === 'changes' ? changesHeader : previewHeader;
+        const inactiveHeader = state.viewMode === 'changes' ? previewHeader : changesHeader;
+        if (inactiveHeader.parentElement === host) {
+            inactiveHeader.remove();
+        }
+        if (activeHeader.parentElement !== host) {
+            const switchHost = host.querySelector<HTMLElement>('.theia-mobile-projects-header-view-mode-switch');
+            const close = host.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-close');
+            host.insertBefore(activeHeader, switchHost ?? close ?? null);
+        }
+    };
 
     const treePane = document.createElement('div');
     treePane.className = 'theia-mobile-transcript-files-tree';
@@ -1697,6 +1729,19 @@ export function mountTranscriptFilesView(
         }
     };
 
+    const attachPreviewHeaderHost = (host: HTMLElement | undefined): void => {
+        previewHeaderHost = host;
+        previewHeader.classList.toggle('theia-mobile-execution-surface-sidebar-preview-header', Boolean(host));
+        if (host) {
+            syncAttachedPreviewHeader();
+            return;
+        }
+        changesHeader.remove();
+        if (previewHeader.parentElement !== previewPane) {
+            previewPane.insertBefore(previewHeader, previewBody);
+        }
+    };
+
     disposables.push(Disposable.create(() => {
         clearPreviewSaveTimer();
         void savePreviewText();
@@ -1778,6 +1823,7 @@ export function mountTranscriptFilesView(
         // in changes mode and let the changes host fill the space.
         layout.hidden = mode === 'changes';
         changesHost.hidden = mode !== 'changes';
+        syncAttachedPreviewHeader();
         if (mode === 'changes') {
             if (!state.changesMounted) {
                 state.changesMounted = true;
@@ -1833,5 +1879,14 @@ export function mountTranscriptFilesView(
 
     const viewMode = (): TranscriptFilesViewMode => state.viewMode;
 
-    return { root, dispose: disposables, revealFilePath, attachMoreActionsHost, attachViewModeSwitchHost, setViewMode, viewMode };
+    return {
+        root,
+        dispose: disposables,
+        revealFilePath,
+        attachMoreActionsHost,
+        attachViewModeSwitchHost,
+        attachPreviewHeaderHost,
+        setViewMode,
+        viewMode,
+    };
 }

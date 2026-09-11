@@ -56,6 +56,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import {
     mountTranscriptFilesView,
+    type TranscriptFilesViewMode,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
 import {
@@ -574,8 +575,12 @@ export class MobileProjectsTranscriptSurfacesUi {
         return resolveProjectScopedWorkspaceKeyExtracted(this, project, resolvedPath, conversationId);
     }
 
-    ensureTranscriptFilesTab(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
-        ensureTranscriptFilesTabExtracted(this, project, summary);
+    ensureTranscriptFilesTab(
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        requestedMode?: TranscriptFilesViewMode,
+    ): void {
+        ensureTranscriptFilesTabExtracted(this, project, summary, requestedMode);
     }
 
     async revealTranscriptFile(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, filePath: string,): Promise<void> {

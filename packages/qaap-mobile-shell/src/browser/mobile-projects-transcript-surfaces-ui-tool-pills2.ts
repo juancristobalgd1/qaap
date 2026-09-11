@@ -57,6 +57,8 @@ import {
     mountTranscriptFilesView,
     readPendingTranscriptFilesViewMode,
     clearPendingTranscriptFilesViewMode,
+    writePendingTranscriptFilesViewMode,
+    type TranscriptFilesViewMode,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
 import {
@@ -343,7 +345,12 @@ function renderTranscriptFilesUnavailableNote(ctx: any, host: HTMLElement): void
     host.append(note);
 }
 
-export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+export function ensureTranscriptFilesTabExtracted(
+    ctx: any,
+    project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO,
+    requestedMode?: TranscriptFilesViewMode,
+): void {
     void ensureTranscriptSurfaceCss();
     const host = ctx.executionFilesHost();
     if (!host) {
@@ -358,7 +365,7 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
             && ctx.host.projectsService.projectMatchesCurrentWorkspace(project)
         ) {
             ctx.host.preparedCwdByProjectId.set(project.id, workspaceCwd);
-            ctx.ensureTranscriptFilesTab(project, summary);
+            ctx.ensureTranscriptFilesTab(project, summary, requestedMode);
             return;
         }
     }
@@ -368,7 +375,7 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
                 return;
             }
             ctx.host.preparedCwdByProjectId.set(project.id, prepared);
-            ctx.ensureTranscriptFilesTab(project, summary);
+            ctx.ensureTranscriptFilesTab(project, summary, requestedMode);
         });
     }
     if (!workspaceKey) {
@@ -378,7 +385,10 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
     if (ctx.host.transcriptFilesAttachedKey === workspaceKey && host.querySelector('.theia-mobile-transcript-files')) {
         const attached = ctx.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey);
         const pendingMode = readPendingTranscriptFilesViewMode();
-        if (pendingMode) {
+        if (requestedMode) {
+            clearPendingTranscriptFilesViewMode();
+            attached?.setViewMode?.(requestedMode);
+        } else if (pendingMode) {
             clearPendingTranscriptFilesViewMode();
             attached?.setViewMode?.(pendingMode);
         }
@@ -462,6 +472,11 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
     };
     let mount = ctx.host.transcriptWorkspaceSurfaces.peekFiles(workspaceKey);
     if (!mount) {
+        // Seed the one-shot mount mode before a fresh cached view resolves its
+        // initial state, so a stale sessionStorage value cannot win.
+        if (requestedMode) {
+            writePendingTranscriptFilesViewMode(requestedMode);
+        }
         const stash = document.createElement('div');
         stash.className = 'theia-mobile-transcript-files-staging';
         stash.hidden = true;
@@ -473,7 +488,10 @@ export function ensureTranscriptFilesTabExtracted(ctx: any, project: MobileProje
         // Cached mount — consume any pending view-mode flag set by a
         // 'review' → 'files' redirect so the switch updates on re-attach.
         const pendingMode = readPendingTranscriptFilesViewMode();
-        if (pendingMode) {
+        if (requestedMode) {
+            clearPendingTranscriptFilesViewMode();
+            mount.setViewMode?.(requestedMode);
+        } else if (pendingMode) {
             clearPendingTranscriptFilesViewMode();
             mount.setViewMode?.(pendingMode);
         }
@@ -496,7 +514,7 @@ export async function revealTranscriptFileExtracted(ctx: any, project: MobilePro
         return;
     }
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('files', project, summary);
-    ctx.ensureTranscriptFilesTab(project, summary);
+    ctx.ensureTranscriptFilesTab(project, summary, 'files');
     const workspaceKey = ctx.resolveTranscriptWorkspaceKey(project, summary);
     if (!workspaceKey) {
         return;

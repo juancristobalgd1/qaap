@@ -43,6 +43,7 @@ export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: any, strip:
         return;
     }
     selectBtn.dataset.tab = spec.id;
+    selectBtn.classList.toggle('theia-mobile-transcript-tab-icon-select-chat', spec.id === 'messages');
     selectBtn.title = spec.label;
     selectBtn.setAttribute('aria-label', `${spec.label}, ${nls.localize('qaap/mobileProjects/tabOverflow', 'Change view')}`);
     const iconUnchanged = isExecutionSurfaceIconElement(symbol, spec.icon);
@@ -285,7 +286,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: any, displayTabId
             ? { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: QAAP_MESSAGE_CIRCLE_ICON_CLASS }
             : tabSpecs[0]);
     const menuLabel = nls.localize('qaap/mobileProjects/tabOverflow', 'Change view');
-    const menuOptions = ctx.executionSurfaceTabSpecs();
+    const menuOptions = ctx.executionSurfaceTabSpecs().filter((spec: { id: TranscriptTab }) => spec.id !== 'messages');
 
     const menu = document.createElement('div');
     menu.className = 'theia-mobile-transcript-tab-icon-select-menu';
@@ -302,6 +303,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: any, displayTabId
     trigger.setAttribute('aria-expanded', 'false');
     trigger.classList.remove('theia-mod-active');
     trigger.classList.add('theia-mod-selected');
+    trigger.classList.toggle('theia-mobile-transcript-tab-icon-select-chat', displaySpec.id === 'messages');
     trigger.dataset.surfaceActive = 'true';
     trigger.setAttribute('aria-selected', 'true');
     trigger.title = displaySpec.label;
@@ -325,10 +327,10 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: any, displayTabId
         ctx.openExecutionTabOverflowMenu(trigger, menu);
     });
 
-    const chatSpec = { id: 'messages' as TranscriptTab, label: nls.localize('qaap/mobileProjects/tabChat', 'Chat'), icon: QAAP_MESSAGE_CIRCLE_ICON_CLASS };
-    const allOptions = [chatSpec, ...menuOptions];
-
-    for (const spec of allOptions) {
+    // Chat is the persistent surface underneath this picker. Only secondary
+    // execution views belong in the menu; selecting one opens the full-screen
+    // execution sidebar without replacing the conversation.
+    for (const spec of menuOptions) {
         const item = document.createElement('button');
         item.type = 'button';
         item.className = 'theia-mobile-transcript-tab-icon-select-option';
@@ -355,6 +357,14 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: any, displayTabId
 }
 
 export function resolveExecutionTabOverflowMenuPortalExtracted(ctx: any, anchor: HTMLElement): HTMLElement {
+    // Secondary surfaces are mounted as full-screen drawers above the persistent
+    // Chat root. Keep their menus inside the drawer's stacking context; otherwise
+    // the menu is appended to the underlying Work Hub root and ends up behind the
+    // drawer even though it has a floating z-index.
+    const sidebar = anchor.closest('.theia-mobile-execution-surface-sidebar');
+    if (sidebar instanceof HTMLElement) {
+        return sidebar;
+    }
     const transcriptRoot = anchor.closest('.theia-mobile-agent-transcript-root');
     if (transcriptRoot instanceof HTMLElement) {
         return transcriptRoot;
