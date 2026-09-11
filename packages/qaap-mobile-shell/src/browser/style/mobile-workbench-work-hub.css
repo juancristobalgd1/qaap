@@ -12697,6 +12697,28 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   overflow: hidden;
 }
 
+/* Preview history is an overlay, not part of the document viewport. Let it
+ * escape the content clip so it can cover the drawer header and controls. */
+.theia-mobile-execution-surface-sidebar[data-surface='preview'] > .theia-mobile-execution-surface-sidebar-content {
+  position: relative;
+  z-index: 1;
+  overflow: visible;
+}
+
+.theia-mobile-execution-surface-sidebar[data-surface='preview'] .qaap-agent-preview-embedded-body {
+  overflow: visible !important;
+}
+
+.theia-mobile-execution-surface-sidebar[data-surface='preview'] .qaap-agent-preview-embedded {
+  position: relative;
+  z-index: 2;
+  overflow: visible !important;
+}
+
+.theia-mobile-execution-surface-sidebar[data-surface='preview'] .qaap-agent-preview-history.qaap-mod-history-popover {
+  z-index: 2147483026;
+}
+
 .theia-mobile-execution-surface-sidebar-content > * {
   display: flex;
   flex: 1 1 auto;
