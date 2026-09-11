@@ -361,7 +361,11 @@ export class MobileProjectsTranscriptStickyComposerUi {
 
     /** Prefer the live inline/overlay host — mount-time chatHost can go stale after renderList(). */
     protected resolveComposerTranscriptChatHost(fallback?: HTMLElement): HTMLElement | undefined {
-        return this.host.resolveActiveTranscriptChatHost() ?? fallback;
+        const active = this.host.resolveActiveTranscriptChatHost();
+        if (active?.isConnected) {
+            return active;
+        }
+        return fallback?.isConnected ? fallback : undefined;
     }
 
     syncTranscriptComposerQuickActionsVisibility(host: HTMLElement, summary: QaapAgentConversationSummaryDTO,): void {

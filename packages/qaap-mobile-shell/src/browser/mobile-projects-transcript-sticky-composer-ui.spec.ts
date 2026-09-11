@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { TranscriptFollowUpQueue } from '../common/qaap-transcript-follow-up-queue';
 import { QaapConversationMessageError } from '../common/qaap-agent-conversation-client';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-landing';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 
@@ -339,6 +340,56 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
 
         expect(submittedDrafts).to.deep.equal(['follow-up']);
         expect(optimisticRenders).to.deep.equal([]);
+    });
+
+    it('restores an idle prompt when background task startup is rejected', async () => {
+        const submitted: string[] = [];
+        const host = {
+            transcriptComposerContext: [],
+            transcriptComposerDraft: 'start the task',
+            transcriptComposerDraftPersistTimer: undefined,
+            transcriptComposerModeId: undefined,
+            transcriptComposerApprovalPolicyId: undefined,
+            transcriptComposerAgentModel: undefined,
+            transcriptComposerHost: undefined,
+            transcriptComposerSendRefresh: undefined,
+            resolveAttachmentPreview: undefined,
+            messageService: { warn: () => undefined, error: () => undefined },
+            submitBackgroundAgentTask: async (
+                _project: MobileProjectEntry,
+                draft: string,
+            ) => {
+                submitted.push(draft);
+                return undefined;
+            },
+        };
+        const ui = Object.create(
+            composerModule.MobileProjectsTranscriptStickyComposerUi.prototype,
+        ) as MobileProjectsTranscriptStickyComposerUi;
+        const seam = ui as unknown as Record<string, any>;
+        seam.host = host;
+        seam.isTranscriptStickyComposerAgentWorking = () => false;
+        seam.resolveComposerTranscriptChatHost = () => undefined;
+        seam.workHub = { renderIdleSubmitOptimistic: () => undefined };
+        seam.host.stickyComposerWorkspaceUi = { resolveComposerWorkspaceDestination: () => 'local' };
+        seam.host.stickyComposerRenderUi = { renderStickyComposer: () => undefined };
+        seam.remountTranscriptStickyComposer = () => undefined;
+
+        await liveStatusModule.submitTranscriptComposerDraftExtracted(
+            seam,
+            'start the task',
+            project,
+            { ...summary, id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID, status: 'idle' },
+            document.createElement('div'),
+            {
+                resolvedPinnedId: 'qaiq',
+                showApprovalPolicy: false,
+                isLegacyTheiaChat: false,
+            },
+        );
+
+        expect(submitted).to.deep.equal(['start the task']);
+        expect(host.transcriptComposerDraft).to.equal('start the task');
     });
 
     interface BusySubmitOverrides {

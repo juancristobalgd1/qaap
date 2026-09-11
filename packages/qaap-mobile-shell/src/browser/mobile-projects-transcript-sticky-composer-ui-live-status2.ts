@@ -154,10 +154,17 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
     }) ?? options.resolvedPinnedId;
     const requests = composerContextRequests(contextSnapshot);
     const variables = requests.length > 0 ? requests : undefined;
-    const imagePreviews = await collectComposerImagePreviews(
-        contextSnapshot,
-        ctx.host.resolveAttachmentPreview,
-    );
+    let imagePreviews: QaapTranscriptUserImagePreview[] = [];
+    try {
+        imagePreviews = await collectComposerImagePreviews(
+            contextSnapshot,
+            ctx.host.resolveAttachmentPreview,
+        );
+    } catch (error) {
+        // A preview is cosmetic; a failed device/file preview must never abort the actual
+        // prompt submission after the composer has already accepted it.
+        console.warn('[qaap] failed to collect composer image previews', error);
+    }
     const modeId = ctx.host.transcriptComposerModeId;
     const autoApprove = resolveComposerAutoApprove(
         options.showApprovalPolicy,
@@ -262,13 +269,20 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
     }
     clearComposerDraft();
     if (isAgentsHubIdleConversationSummary(summary)) {
-        const activeChatHost = ctx.resolveComposerTranscriptChatHost(chatHost);
-        if (activeChatHost) {
-            ctx.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
+        try {
+            const activeChatHost = ctx.resolveComposerTranscriptChatHost(chatHost);
+            if (activeChatHost) {
+                ctx.workHub.renderIdleSubmitOptimistic(activeChatHost, summary, draft, selectedAgentId, imagePreviews);
+            }
+        } catch (error) {
+            // The optimistic row must not be allowed to block the real create request. This can
+            // happen while the Work Hub is replacing a detached inline transcript host; the
+            // conversation open path below will paint the live transcript once it exists.
+            console.warn('[qaap] failed to render optimistic transcript submit', error);
         }
         ctx.host.transcriptComposerSendRefresh?.();
         try {
-            await ctx.host.submitBackgroundAgentTask(project, draft, {
+            const started = await ctx.host.submitBackgroundAgentTask(project, draft, {
                 openConversation: true,
                 forceVps: true,
                 selectedAgentId,
@@ -283,7 +297,14 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
                 agentModel: ctx.host.transcriptComposerAgentModel,
                 imagePreviews,
             });
-            commitComposerSubmission();
+            // Background submission reports preflight/create failures as `undefined` after
+            // surfacing the actionable error (for example when QAIQ is missing). Keep the
+            // prompt recoverable instead of treating that failure as a successful send.
+            if (started) {
+                commitComposerSubmission();
+            } else {
+                restoreComposerSubmission();
+            }
         } catch {
             restoreComposerSubmission();
             /* submitBackgroundAgentTask surfaces errors */
@@ -301,7 +322,7 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
     // submission and can leave the follow-up visible twice.
     try {
         if (options.isLegacyTheiaChat) {
-            await ctx.host.submitBackgroundAgentTask(project, draft, {
+            const started = await ctx.host.submitBackgroundAgentTask(project, draft, {
                 openConversation: true,
                 forceVps: true,
                 selectedAgentId: QAAP_PRIMARY_AGENT_ID,
@@ -314,7 +335,11 @@ export async function submitTranscriptComposerDraftExtracted(ctx: any, draft: st
                 ),
                 imagePreviews,
             });
-            commitComposerSubmission();
+            if (started) {
+                commitComposerSubmission();
+            } else {
+                restoreComposerSubmission();
+            }
         } else {
             const submitted = await ctx.host.submitTranscriptViaBackendConversation(project, summary, draft, {
                 selectedAgentId,

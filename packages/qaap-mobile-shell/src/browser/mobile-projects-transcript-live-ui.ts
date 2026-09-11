@@ -355,8 +355,15 @@ export class MobileProjectsTranscriptLiveUi {
     }
 
     resolveActiveTranscriptChatHost(): HTMLElement | undefined {
-        const host = this.host.agentsHubInlineChatHost ?? this.host.transcriptChatHost;
-        return host?.isConnected ? host : undefined;
+        // The inline shell host can survive a replaceChildren() during a Work Hub
+        // re-render even though it is no longer attached. Prefer the connected host,
+        // otherwise a stale inline reference hides the live transcript host behind it.
+        const inlineHost = this.host.agentsHubInlineChatHost;
+        if (inlineHost?.isConnected) {
+            return inlineHost;
+        }
+        const sheetHost = this.host.transcriptChatHost;
+        return sheetHost?.isConnected ? sheetHost : undefined;
     }
 
     resolveTranscriptRefreshContext(): {
