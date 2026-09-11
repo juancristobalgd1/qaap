@@ -283,4 +283,34 @@ describe('TranscriptVirtualList follow-tail after spacer thrash', () => {
         expect(rafQueue).to.have.length(0);
         list.dispose();
     });
+
+    it('observes the footer host so in-place footer growth is measured', () => {
+        let observeCalls: Element[] = [];
+        const PreviousResizeObserver = globalThis.ResizeObserver;
+        class MockResizeObserver {
+            constructor(_callback: ResizeObserverCallback) { }
+            observe(element: Element): void {
+                observeCalls.push(element);
+            }
+            disconnect(): void { }
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).ResizeObserver = MockResizeObserver;
+        const list = new TranscriptVirtualList({
+            scrollHost: host,
+            renderItem: index => {
+                const row = document.createElement('div');
+                row.textContent = `row-${index}`;
+                return row;
+            },
+        });
+        const footer = document.createElement('div');
+        list.setFooter([footer]);
+        const footerHost = host.querySelector<HTMLElement>('.theia-transcript-virtual-footer');
+        expect(footerHost).to.not.equal(undefined);
+        expect(observeCalls).to.include(footerHost);
+        expect(observeCalls).to.have.length(2);
+        list.dispose();
+        globalThis.ResizeObserver = PreviousResizeObserver;
+    });
 });

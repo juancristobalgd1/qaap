@@ -96,6 +96,7 @@ self.onmessage = (event: MessageEvent<TranscriptMarkdownWorkerRequest>): void =>
             stableLength: patch.stableLength,
             totalLength: patch.totalLength,
             ...(patch.frozenHtml !== undefined ? { frozenHtml: patch.frozenHtml } : {}),
+            ...(patch.frozenHtmlAppend !== undefined ? { frozenHtmlAppend: patch.frozenHtmlAppend } : {}),
             tailHtml: patch.tailHtml,
         };
         self.postMessage(response);

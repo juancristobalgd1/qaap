@@ -115,6 +115,7 @@ export class TranscriptVirtualList implements Disposable {
         if (typeof ResizeObserver !== 'undefined') {
             this.resizeObserver = new ResizeObserver(() => this.scheduleMeasure());
             this.resizeObserver.observe(this.window);
+            this.resizeObserver.observe(this.footerHost);
         }
 
         if (typeof document !== 'undefined') {

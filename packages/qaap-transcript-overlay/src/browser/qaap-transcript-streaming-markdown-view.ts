@@ -68,6 +68,8 @@ export interface StreamingMarkdownHtmlPatch {
     readonly totalLength: number;
     /** When the stable boundary moved since the last applied patch. */
     readonly frozenHtml?: string;
+    /** Sanitized HTML for only the newly frozen segment, when the previous DOM is compatible. */
+    readonly frozenHtmlAppend?: string;
     readonly tailHtml: string;
 }
 
@@ -100,8 +102,12 @@ export function applyStreamingMarkdownHtmlPatch(
         delete contentEl.dataset[STREAM_TOTAL_LENGTH_DATA];
     }
 
-    if (patch.stableLength !== previousStable && patch.frozenHtml !== undefined) {
-        frozen.innerHTML = patch.frozenHtml;
+    if (patch.stableLength !== previousStable) {
+        if (patch.frozenHtmlAppend !== undefined && previousStable >= 0 && frozen.childNodes.length > 0) {
+            frozen.insertAdjacentHTML('beforeend', patch.frozenHtmlAppend);
+        } else if (patch.frozenHtml !== undefined) {
+            frozen.innerHTML = patch.frozenHtml;
+        }
         contentEl.dataset[STREAM_STABLE_LENGTH_DATA] = String(patch.stableLength);
     }
     tail.innerHTML = patch.tailHtml;

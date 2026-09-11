@@ -57,6 +57,7 @@ describe('qaap-transcript-markdown-worker-stream', () => {
         // The frozen segment passed to renderHtml is ONLY blockB, not blockA+blockB.
         expect(seen).to.include(blockB);
         expect(seen).to.not.include(`${blockA}${blockB}`);
+        expect(second?.frozenHtmlAppend).to.equal(`[${blockB}]`);
         // Accumulated frozen HTML equals cached prefix + new segment render.
         expect(second?.frozenHtml).to.equal(`[${blockA}][${blockB}]`);
         expect(second?.nextFrozenCache?.stableLength).to.equal(`${blockA}${blockB}`.length);

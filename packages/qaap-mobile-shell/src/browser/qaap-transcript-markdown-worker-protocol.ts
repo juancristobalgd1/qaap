@@ -41,6 +41,7 @@ export interface TranscriptMarkdownWorkerStreamResponse {
     readonly stableLength: number;
     readonly totalLength: number;
     readonly frozenHtml?: string;
+    readonly frozenHtmlAppend?: string;
     readonly tailHtml?: string;
     readonly noop?: boolean;
 }

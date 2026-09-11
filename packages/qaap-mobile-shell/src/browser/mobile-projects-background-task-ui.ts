@@ -444,11 +444,6 @@ export class MobileProjectsBackgroundTaskUi {
         conversationAgentId?: string,
     ): Promise<string> {
         const snapshot = await this.loadBackendAgentSnapshot();
-        if (snapshot.qaiqInstalled === false) {
-            // QAIQ is the required Work Hub runtime. Fail before creating a turn that could sit
-            // in Planning while the backend waits for an executable that cannot start.
-            throw new Error(localizeMissingQaiqMessage());
-        }
         const resolved = resolveBackendAgentForTurn(prompt, snapshot.agents, {
             explicitAgentId: selectedAgentId,
             storedAgentId: readStoredAgent(cwd),
@@ -457,6 +452,12 @@ export class MobileProjectsBackgroundTaskUi {
         });
         if (!resolved) {
             throw new Error(localizeMissingCodingAgentMessage());
+        }
+        if (snapshot.qaiqInstalled === false && resolved === QAIQ_AGENT_ID) {
+            // QAIQ is required only for QAIQ turns. Local Codex/Coder selections can run
+            // without the QAIQ executable, while an explicit/default QAIQ turn still fails
+            // before creating a turn that could sit in Planning waiting for an executable.
+            throw new Error(localizeMissingQaiqMessage());
         }
         writeStoredAgent(cwd, resolved);
         return resolved;

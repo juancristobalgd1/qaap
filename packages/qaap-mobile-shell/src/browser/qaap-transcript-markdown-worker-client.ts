@@ -240,6 +240,7 @@ export class QaapTranscriptMarkdownWorkerClient {
             stableLength: message.stableLength,
             totalLength: message.totalLength,
             ...(message.frozenHtml !== undefined ? { frozenHtml: message.frozenHtml } : {}),
+            ...(message.frozenHtmlAppend !== undefined ? { frozenHtmlAppend: message.frozenHtmlAppend } : {}),
             tailHtml: message.tailHtml,
         }, message.cleanLength);
     }

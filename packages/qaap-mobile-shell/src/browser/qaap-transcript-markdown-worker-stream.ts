@@ -16,6 +16,8 @@ export interface TranscriptStreamingMarkdownPatch {
     readonly totalLength: number;
     /** Full frozen-prefix HTML; present only when the stable boundary advanced since the last patch. */
     readonly frozenHtml?: string;
+    /** HTML for only the newly frozen segment when the previous cache matched. */
+    readonly frozenHtmlAppend?: string;
     readonly tailHtml: string;
     /** Accumulator to remember for the next tick — present whenever {@link frozenHtml} is. */
     readonly nextFrozenCache?: TranscriptStreamingFrozenCache;
@@ -45,20 +47,25 @@ export function computeTranscriptStreamingMarkdownPatch(
         return undefined;
     }
     let frozenHtml: string | undefined;
+    let frozenHtmlAppend: string | undefined;
     let nextFrozenCache: TranscriptStreamingFrozenCache | undefined;
     if (stableLength !== previousStableLength) {
         const canAppend = frozenCache !== undefined
             && frozenCache.stableLength === previousStableLength
             && frozenCache.stableLength <= stableLength;
-        frozenHtml = canAppend
-            ? frozenCache!.frozenHtml + renderHtml(content.slice(frozenCache!.stableLength, stableLength))
-            : renderHtml(content.slice(0, stableLength));
+        if (canAppend) {
+            frozenHtmlAppend = renderHtml(content.slice(frozenCache!.stableLength, stableLength));
+            frozenHtml = frozenCache!.frozenHtml + frozenHtmlAppend;
+        } else {
+            frozenHtml = renderHtml(content.slice(0, stableLength));
+        }
         nextFrozenCache = { stableLength, frozenHtml };
     }
     return {
         stableLength,
         totalLength,
         ...(frozenHtml !== undefined ? { frozenHtml } : {}),
+        ...(frozenHtmlAppend !== undefined ? { frozenHtmlAppend } : {}),
         tailHtml: renderHtml(content.slice(stableLength)),
         ...(nextFrozenCache !== undefined ? { nextFrozenCache } : {}),
     };

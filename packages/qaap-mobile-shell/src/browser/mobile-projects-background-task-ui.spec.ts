@@ -10,8 +10,65 @@ enableJSDOM();
 import { expect } from 'chai';
 import { MobileProjectsBackgroundTaskUi } from './mobile-projects-background-task-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import { localizeMissingQaiqMessage } from '../common/qaap-agent-failure-message';
 
 describe('MobileProjectsBackgroundTaskUi', () => {
+
+    function withAgentSnapshot(snapshot: {
+        agents: Array<{ id: string; label: string; available: boolean }>;
+        agentConfigured: boolean;
+        defaultAgent?: string;
+        qaiqInstalled: boolean;
+        qaiqModels: [];
+    }): MobileProjectsBackgroundTaskUi {
+        const ui = new MobileProjectsBackgroundTaskUi({
+            projects: [],
+            preparedCwdByProjectId: new Map(),
+            justAddedTaskId: undefined,
+            agentsHubShellActive: false,
+            projectsService: {} as never,
+            delegate: {},
+            transcriptSheetUi: {} as never,
+            transcriptLiveUi: {} as never,
+            shouldUseAgentsHubLanding: () => false,
+            renderSubtitle: () => undefined,
+            renderList: () => undefined,
+            seedTranscriptOptimisticSubmit: () => undefined,
+            syncWorkHubProjectSkillRoots: () => undefined,
+        });
+        ui.loadBackendAgentSnapshot = async () => snapshot;
+        return ui;
+    }
+
+    it('allows an explicit local Codex selection when QAIQ is unavailable', async () => {
+        const ui = withAgentSnapshot({
+            agents: [{ id: 'codex', label: 'Codex', available: true }],
+            agentConfigured: true,
+            defaultAgent: 'codex',
+            qaiqInstalled: false,
+            qaiqModels: [],
+        });
+
+        expect(await ui.selectBackendConversationAgent('/repo', 'fix it', 'codex')).to.equal('codex');
+    });
+
+    it('keeps the localized QAIQ error when the resolved agent is QAIQ', async () => {
+        const ui = withAgentSnapshot({
+            agents: [{ id: 'qaiq', label: 'QAIQ', available: true }],
+            agentConfigured: true,
+            defaultAgent: 'qaiq',
+            qaiqInstalled: false,
+            qaiqModels: [],
+        });
+
+        try {
+            await ui.selectBackendConversationAgent('/repo', 'fix it', 'qaiq');
+            expect.fail('expected missing QAIQ error');
+        } catch (error) {
+            expect(error).to.be.an('error');
+            expect((error as Error).message).to.equal(localizeMissingQaiqMessage());
+        }
+    });
 
     it('ensureInlineComposerCwd prefers open workspace when hub project differs (QA-001)', async () => {
         const mockup: MobileProjectEntry = {

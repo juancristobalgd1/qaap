@@ -68,6 +68,26 @@ describe('qaap-transcript-streaming-markdown-view', () => {
         expect(host.querySelector<HTMLElement>(`.${TRANSCRIPT_STREAM_TAIL_CLASS}`)?.innerHTML).to.contain('tail-one-two');
     });
 
+    it('appends a compatible frozen fragment without replacing existing frozen nodes', () => {
+        const host = document.createElement('div');
+        applyStreamingMarkdownHtmlPatch(host, {
+            stableLength: 10,
+            totalLength: 15,
+            frozenHtml: '<p>one</p>',
+            tailHtml: '<p>tail</p>',
+        });
+        const frozen = host.querySelector<HTMLElement>(`.${TRANSCRIPT_STREAM_FROZEN_CLASS}`)!;
+        const firstNode = frozen.firstChild;
+        applyStreamingMarkdownHtmlPatch(host, {
+            stableLength: 20,
+            totalLength: 25,
+            frozenHtmlAppend: '<p>two</p>',
+            tailHtml: '<p>tail-two</p>',
+        });
+        expect(frozen.firstChild).to.equal(firstNode);
+        expect(frozen.innerHTML).to.equal('<p>one</p><p>two</p>');
+    });
+
     it('updateStreamingPlainPreview shows full text before worker paint then only the suffix', () => {
         const host = document.createElement('div');
         const formatted = '## Done\n\n';
