@@ -309,12 +309,13 @@ body.theia-mobile-mod-desktop-ide #theia-top-panel>[id='theia:menubar'] {
 }
 
 .theia-workbench-view-mode-switch .theia-qaap-segmented-bar {
+  box-sizing: border-box;
   display: inline-flex;
   width: 100%;
   min-width: 0;
   gap: 2px;
   padding: 2px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
 }
 

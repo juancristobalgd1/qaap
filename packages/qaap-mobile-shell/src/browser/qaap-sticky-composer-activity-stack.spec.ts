@@ -295,6 +295,29 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(dropdown!.classList.contains('theia-mod-portal')).to.equal(false);
         });
 
+        it('keeps the commit menu open while the surrounding layout settles', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 1, removed: 0 },
+                onReview: () => undefined,
+                onCommitAction: () => undefined,
+                hasCommittableChanges: true,
+            });
+            document.body.append(host!);
+
+            const menuBtn = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-commit-menu');
+            const dropdown = host!.querySelector<HTMLElement>('.theia-mobile-sticky-composer-commit-dropdown');
+            menuBtn!.click();
+            const view = host!.ownerDocument.defaultView!;
+            view.dispatchEvent(new view.Event('scroll'));
+            view.dispatchEvent(new view.Event('resize'));
+
+            expect(dropdown!.hidden).to.equal(false);
+            expect(menuBtn!.getAttribute('aria-expanded')).to.equal('true');
+
+            menuBtn!.click();
+            expect(dropdown!.hidden).to.equal(true);
+        });
+
         it('shows only Open preview when the app is already up (preview URL available)', () => {
             const actions: string[] = [];
             const host = renderStickyComposerChangesPill({

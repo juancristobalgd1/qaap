@@ -13,6 +13,7 @@ export interface MobileProjectsHubRenderHost {
     agentsHubShellActive: boolean;
     transcriptSheet: HTMLElement | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
+    pullRequestDetail: import('@theia/qaap-adapters/lib/common/qaap-github-api-types').QaapGithubPullRequestSummary | undefined;
     sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
 
     isProjectDiffView(): boolean;
@@ -27,6 +28,7 @@ export interface MobileProjectsHubRenderHost {
     syncHubViewAvailability(): void;
     renderFilters(): void;
     renderList(): void;
+    isPullRequestsSidebarVisible?(): boolean;
     isAgentsHubExecutionSurfaceReady(): boolean;
     ensureAgentsHubExecutionShellRendered(): void;
 }
@@ -46,6 +48,8 @@ export class MobileProjectsHubRenderUi {
         this.host.root.classList.toggle('theia-mod-hub-repos', this.host.hubView === 'repos');
         this.host.root.classList.toggle('theia-mod-agents-hub-landing', this.host.shouldUseAgentsHubLanding());
         this.host.root.classList.toggle('theia-mod-project-detail', this.host.isProjectDetailView());
+        this.host.root.classList.toggle('theia-mod-pull-request-detail', this.host.pullRequestDetail !== undefined);
+        this.host.root.classList.toggle('theia-mod-pull-requests-active', this.host.isPullRequestsSidebarVisible?.() === true);
         const detailProject = this.host.projectNavigationUi.resolveSelectedProject();
         const detailTab = detailProject ? this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(detailProject) : 'messages';
         const agentsShellProject = this.host.agentsHubShellActive
@@ -74,7 +78,10 @@ export class MobileProjectsHubRenderUi {
         this.host.syncHubViewAvailability();
         this.host.renderFilters();
         this.host.renderList();
-        if (this.host.shouldUseAgentsHubLanding() && !this.isAgentsHubExecutionSurfacePainted()) {
+        if (this.host.shouldUseAgentsHubLanding()
+            && this.host.pullRequestDetail === undefined
+            && this.host.isPullRequestsSidebarVisible?.() !== true
+            && !this.isAgentsHubExecutionSurfacePainted()) {
             this.host.ensureAgentsHubExecutionShellRendered();
         }
         const activeProject = this.host.agentsHubShellActive

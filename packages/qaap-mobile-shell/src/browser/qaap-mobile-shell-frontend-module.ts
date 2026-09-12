@@ -26,6 +26,7 @@ import '../../src/browser/style/qaap-chat-select-dropdown.css';
 import '../../src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
+import '../../src/browser/style/qaap-work-hub-pull-requests.css';
 import '../../src/browser/style/qaap-transcript-timeline-premium.css';
 import '../../src/browser/style/qaap-transcript-lobehub.css';
 import '../../src/browser/style/qaap-agent-setup-animations.css';

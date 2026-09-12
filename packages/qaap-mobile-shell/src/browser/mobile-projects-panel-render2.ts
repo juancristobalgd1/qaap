@@ -358,6 +358,9 @@ export function onNavigateToConversationHandler(ctx: any, event: Event): void {
 }
 
 export function ensureAgentsHubExecutionShellRenderedExtracted(ctx: any): void {
+    if (ctx.pullRequestDetail !== undefined || ctx.isPullRequestsSidebarVisible?.() === true) {
+        return;
+    }
     ctx.syncCurrentProjectsScrollHost();
     if (ctx.isAgentsHubExecutionSurfaceReady()) {
         return;

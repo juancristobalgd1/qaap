@@ -389,6 +389,26 @@ describe('MobileProjectsHubHeaderUi', () => {
         });
     });
 
+    it('shows an open-sidebar control when Pull requests stays active after collapse', () => {
+        const host = createHost();
+        const header = document.createElement('div');
+        let opened = 0;
+        host.pullRequestHeaderEl = header;
+        host.isPullRequestsSidebarVisible = () => true;
+        host.isPullRequestsSidebarOpen = () => false;
+        host.openWorkHubSessionsSidebar = () => { opened++; };
+
+        new MobileProjectsHubHeaderUi(host).renderHeader();
+
+        const openSidebar = header.querySelector<HTMLButtonElement>(
+            '.theia-mobile-work-hub-pull-request-header-sidebar-toggle',
+        );
+        expect(openSidebar).to.not.equal(null);
+        expect(openSidebar?.getAttribute('aria-label')).to.equal('Open pull requests sidebar');
+        openSidebar?.click();
+        expect(opened).to.equal(1);
+    });
+
     it('shows the header overflow menu only when the chat execution surface is active', () => {
         const current = project('mockup', 'Mockup');
         const ui = new MobileProjectsHubHeaderUi(createHost({

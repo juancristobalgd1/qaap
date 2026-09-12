@@ -21,6 +21,7 @@ const SSE_HEARTBEAT_MS = 25_000;
 interface GithubWebhookPullRequest {
     number: number;
     title: string;
+    body?: string | null;
     html_url: string;
     updated_at: string;
     state: string;
@@ -104,6 +105,7 @@ export class QaapGithubInboxEndpoint implements BackendApplicationContribution {
             repo,
             number: pull.number,
             title: pull.title,
+            description: pull.body ?? undefined,
             branch: pull.head.ref,
             base: pull.base.ref,
             author: pull.user?.login || 'unknown',

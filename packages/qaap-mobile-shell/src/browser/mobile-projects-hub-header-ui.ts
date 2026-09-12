@@ -16,6 +16,7 @@ import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-exe
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import { layoutHeaderProjectClusterContents } from './mobile-projects-panel-chrome-ui';
+import type { MobileProjectsPullRequestDetailTab } from './mobile-projects-pull-request-detail-ui';
 
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;
@@ -38,6 +39,8 @@ export interface MobileProjectsHubHeaderHost {
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptLastConv?: QaapAgentConversationDTO | undefined;
     projects: MobileProjectEntry[];
+    pullRequestDetail?: import('@theia/qaap-adapters/lib/common/qaap-github-api-types').QaapGithubPullRequestSummary;
+    pullRequestHeaderEl?: HTMLElement;
 
     isProjectDetailView(): boolean;
     isProjectDiffView(): boolean;
@@ -66,12 +69,27 @@ export interface MobileProjectsHubHeaderHost {
     closeProjectDiffView(): void;
     closeProjectDetail(): void;
     openWorkHubSessionsSidebar(): void;
+    isPullRequestsSidebarVisible?(): boolean;
+    isPullRequestsSidebarOpen?(): boolean;
+    pullRequestDetailActiveTab?(): MobileProjectsPullRequestDetailTab;
+    setPullRequestDetailTab?(tab: MobileProjectsPullRequestDetailTab): void;
+    openPullRequestChat?(): void;
+    togglePullRequestMerge?(): void;
+    closePullRequestDetail?(): void;
 }
 
 export class MobileProjectsHubHeaderUi {
     constructor(protected readonly host: MobileProjectsHubHeaderHost) { }
 
     renderHeader(): void {
+        if (this.host.pullRequestDetail || this.host.isPullRequestsSidebarVisible?.() === true) {
+            this.renderPullRequestHeader();
+            return;
+        }
+        if (this.host.pullRequestHeaderEl) {
+            this.host.pullRequestHeaderEl.hidden = true;
+            this.host.pullRequestHeaderEl.setAttribute('aria-hidden', 'true');
+        }
         // Reset title visibility at the top; the inline-session branch may re-hide it below.
         this.host.titleEl.classList.remove('theia-mod-sr-only');
         const inProjectDetail = this.host.isProjectDetailView();
@@ -169,6 +187,118 @@ export class MobileProjectsHubHeaderUi {
         }
         this.host.titleEl.textContent = nls.localize('qaap/mobileProjects/title', 'Work Hub');
         this.syncAgentsHubAccountChrome();
+    }
+
+    protected renderPullRequestHeader(): void {
+        const header = this.host.pullRequestHeaderEl;
+        if (!header) {
+            return;
+        }
+        const pullRequest = this.host.pullRequestDetail;
+        const sidebarVisible = this.host.isPullRequestsSidebarOpen?.()
+            ?? this.host.isPullRequestsSidebarVisible?.() === true;
+        header.hidden = false;
+        header.setAttribute('aria-hidden', 'false');
+        header.replaceChildren();
+
+        const leading = document.createElement('div');
+        leading.className = 'theia-mobile-work-hub-pull-request-header-leading';
+        if (!sidebarVisible) {
+            const openSidebar = document.createElement('button');
+            openSidebar.type = 'button';
+            openSidebar.className = 'theia-mobile-work-hub-pull-request-header-sidebar-toggle';
+            openSidebar.title = nls.localize('qaap/pullRequests/openSidebar', 'Open pull requests sidebar');
+            openSidebar.setAttribute('aria-label', openSidebar.title);
+            openSidebar.innerHTML = '<span class="codicon codicon-layout-sidebar-left" aria-hidden="true"></span>';
+            openSidebar.addEventListener('click', () => this.host.openWorkHubSessionsSidebar());
+            leading.append(openSidebar);
+        }
+
+        if (pullRequest && !sidebarVisible) {
+            const back = document.createElement('button');
+            back.type = 'button';
+            back.className = 'theia-mobile-work-hub-pull-request-header-back';
+            back.title = nls.localize('qaap/pullRequests/backToList', 'Back to pull requests');
+            back.setAttribute('aria-label', back.title);
+            back.innerHTML = '<span class="codicon codicon-chevron-left" aria-hidden="true"></span>';
+            back.addEventListener('click', () => this.host.closePullRequestDetail?.());
+            leading.append(back);
+        }
+
+        const status = document.createElement('span');
+        status.className = 'theia-mobile-work-hub-pull-request-header-status codicon codicon-git-pull-request';
+        status.setAttribute('aria-hidden', 'true');
+        if (pullRequest?.state === 'merged') {
+            status.classList.add('theia-mod-merged');
+            status.classList.replace('codicon-git-pull-request', 'codicon-git-merge');
+        }
+        leading.append(status);
+
+        if (!pullRequest) {
+            const title = document.createElement('strong');
+            title.textContent = nls.localize('qaap/pullRequests/headerTitle', 'Pull requests');
+            leading.append(title);
+            header.append(leading);
+            return;
+        }
+
+        const tabs = document.createElement('div');
+        tabs.className = 'theia-mobile-work-hub-pull-request-header-tabs';
+        const activeTab = this.host.pullRequestDetailActiveTab?.() ?? 'summary';
+        for (const tab of [
+            ['summary', nls.localize('qaap/pullRequests/summary', 'Summary')],
+            ['code', nls.localize('qaap/pullRequests/code', 'Code')],
+        ] as const) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'theia-mobile-work-hub-pull-request-header-tab';
+            button.textContent = tab[1];
+            button.classList.toggle('theia-mod-active', activeTab === tab[0]);
+            button.setAttribute('aria-selected', String(activeTab === tab[0]));
+            button.setAttribute('role', 'tab');
+            button.addEventListener('click', () => this.host.setPullRequestDetailTab?.(tab[0]));
+            tabs.append(button);
+        }
+        leading.append(tabs);
+
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-work-hub-pull-request-header-actions';
+        const external = document.createElement('a');
+        external.className = 'theia-mobile-work-hub-pull-request-detail-icon-button';
+        external.href = pullRequest.htmlUrl;
+        external.target = '_blank';
+        external.rel = 'noreferrer';
+        external.title = nls.localize('qaap/pullRequests/openOnGithub', 'Open on GitHub');
+        external.setAttribute('aria-label', external.title);
+        external.innerHTML = '<span class="codicon codicon-link-external" aria-hidden="true"></span>';
+        const chat = this.createPullRequestHeaderButton(
+            nls.localize('qaap/pullRequests/openChat', 'Open chat'),
+            'theia-mobile-work-hub-pull-request-chat-button',
+            () => this.host.openPullRequestChat?.(),
+        );
+        const merge = this.createPullRequestHeaderButton(
+            pullRequest.state === 'merged'
+                ? nls.localize('qaap/pullRequests/merged', 'Merged')
+                : nls.localize('qaap/pullRequests/merge', 'Merge'),
+            'theia-mobile-work-hub-pull-request-merge-button',
+            () => this.host.togglePullRequestMerge?.(),
+        );
+        merge.disabled = pullRequest.state === 'merged' || pullRequest.mergeable === false;
+        const mergeChevron = document.createElement('span');
+        mergeChevron.className = 'codicon codicon-chevron-down';
+        mergeChevron.setAttribute('aria-hidden', 'true');
+        merge.append(mergeChevron);
+        actions.append(external, chat, merge);
+        header.append(leading, actions);
+    }
+
+    protected createPullRequestHeaderButton(label: string, className: string, onClick: () => void): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = className;
+        button.textContent = label;
+        button.addEventListener('click', onClick);
+        return button;
     }
 
     syncHeaderProjectControl(showSessionsMenu: boolean): void {

@@ -118,6 +118,36 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-btn')).to.not.equal(null);
     });
 
+    it('keeps Pull requests active while the sidebar is collapsed', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            renderPullRequestList: host => { host.textContent = 'Pull requests'; },
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+
+        sidebar.showPullRequests();
+        sidebar.show();
+        sidebar.hide();
+
+        expect(sidebar.isPullRequestsModeActive()).to.equal(true);
+        expect(sidebar.isPullRequestsVisible()).to.equal(false);
+
+        sidebar.show();
+        expect(sidebar.isPullRequestsModeActive()).to.equal(true);
+        expect(sidebar.isPullRequestsVisible()).to.equal(true);
+        expect(sidebar.node.classList.contains('theia-mod-pull-requests')).to.equal(true);
+        sidebar.hide();
+    });
+
     it('syncs the embedded state when the viewport layout changes while open', () => {
         const currentWindow = (global as { window?: Window }).window;
         (global as { window?: Window }).window = {

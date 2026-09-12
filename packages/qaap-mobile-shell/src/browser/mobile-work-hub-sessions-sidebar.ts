@@ -41,11 +41,14 @@ const DESKTOP_SIDEBAR_DEFAULT_WIDTH = 328;
 
 export interface MobileWorkHubSessionsSidebarDelegate {
     renderSessionList(host: HTMLElement): void;
+    renderPullRequestList?(host: HTMLElement): void;
     onNewChat(): void;
     onClose(): void;
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
     onSearch?: () => void;
+    onPullRequests?: () => void;
+    onPullRequestsBack?: () => void;
     onStartNewProject?: () => void;
     isEmbedded?: () => boolean;
     /** Skip DOM rebuild when live ticks did not change visible sidebar rows. */
@@ -66,6 +69,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
 export class MobileWorkHubSessionsSidebar {
 
     protected visible = false;
+    protected sidebarMode: 'sessions' | 'pullRequests' = 'sessions';
     protected scrollTouchDispose: Disposable = Disposable.NULL;
     protected edgeSwipeDispose: Disposable = Disposable.NULL;
     protected dismissHintTimer: number | undefined;
@@ -74,6 +78,10 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly panel: HTMLElement;
     protected readonly leftEdgeZone: HTMLElement;
     protected readonly closeBtn: HTMLButtonElement;
+    protected readonly searchBtn: HTMLButtonElement;
+    protected readonly backBtn: HTMLButtonElement;
+    protected readonly brand: HTMLElement;
+    protected readonly nav: HTMLElement;
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly accountLabel: HTMLSpanElement;
@@ -109,13 +117,20 @@ export class MobileWorkHubSessionsSidebar {
 
         const head = document.createElement('header');
         head.className = 'theia-mobile-work-hub-sessions-sidebar-head';
-        const brand = document.createElement('div');
-        brand.className = 'theia-mobile-work-hub-sessions-sidebar-brand';
-        brand.textContent = FrontendApplicationConfigProvider.get().applicationName?.trim()
+        this.brand = document.createElement('div');
+        this.brand.className = 'theia-mobile-work-hub-sessions-sidebar-brand';
+        this.brand.textContent = FrontendApplicationConfigProvider.get().applicationName?.trim()
             || nls.localize('qaap/mobileProjects/title', 'Work Hub');
+        this.backBtn = document.createElement('button');
+        this.backBtn.type = 'button';
+        this.backBtn.className = 'theia-mobile-work-hub-sessions-sidebar-back codicon codicon-chevron-left';
+        this.backBtn.title = nls.localize('qaap/sessionsSidebar/back', 'Back');
+        this.backBtn.setAttribute('aria-label', this.backBtn.title);
+        this.backBtn.hidden = true;
+        this.backBtn.addEventListener('click', () => this.showSessions());
         this.closeBtn = document.createElement('button');
         this.closeBtn.type = 'button';
-        this.closeBtn.className = 'theia-mobile-work-hub-sessions-sidebar-close codicon codicon-chevron-left';
+        this.closeBtn.className = 'theia-mobile-work-hub-sessions-sidebar-close codicon codicon-layout-sidebar-left-off';
         this.closeBtn.title = nls.localize('qaap/sessionsSidebar/close', 'Close');
         this.closeBtn.setAttribute('aria-label', this.closeBtn.title);
         this.closeBtn.addEventListener('click', ev => {
@@ -126,7 +141,13 @@ export class MobileWorkHubSessionsSidebar {
             }
             this.hide();
         });
-        head.append(brand, this.closeBtn);
+        this.searchBtn = document.createElement('button');
+        this.searchBtn.type = 'button';
+        this.searchBtn.className = 'theia-mobile-work-hub-sessions-sidebar-search codicon codicon-search';
+        this.searchBtn.title = nls.localize('qaap/sessionsSidebar/search', 'Search');
+        this.searchBtn.setAttribute('aria-label', this.searchBtn.title);
+        this.searchBtn.addEventListener('click', () => this.delegate.onSearch?.());
+        head.append(this.backBtn, this.brand, this.searchBtn, this.closeBtn);
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
@@ -149,10 +170,10 @@ export class MobileWorkHubSessionsSidebar {
         this.updateAccountAvatar();
         this.loadDeployedBuildSha();
 
-        const nav = document.createElement('nav');
-        nav.className = 'theia-mobile-work-hub-sessions-sidebar-nav';
-        nav.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/navLabel', 'Sidebar shortcuts'));
-        nav.append(
+        this.nav = document.createElement('nav');
+        this.nav.className = 'theia-mobile-work-hub-sessions-sidebar-nav';
+        this.nav.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/navLabel', 'Sidebar shortcuts'));
+        this.nav.append(
             this.createNavButton(
                 'codicon-add',
                 nls.localize('qaap/sessionsSidebar/newChat', 'New agent'),
@@ -162,9 +183,9 @@ export class MobileWorkHubSessionsSidebar {
                 },
             ),
             this.createNavButton(
-                'codicon-search',
-                nls.localize('qaap/sessionsSidebar/search', 'Search'),
-                () => this.delegate.onSearch?.(),
+                'codicon-git-pull-request',
+                nls.localize('qaap/sessionsSidebar/pullRequests', 'Pull requests'),
+                () => this.showPullRequests(),
             ),
         );
         this.scrollHost = document.createElement('div');
@@ -174,7 +195,7 @@ export class MobileWorkHubSessionsSidebar {
         this.scrollHost.append(this.listHost);
         this.delegate.onSessionListHostReady?.(this.listHost);
 
-        this.panel.append(head, nav, this.scrollHost, footer);
+        this.panel.append(head, this.nav, this.scrollHost, footer);
 
         this.leftEdgeZone = document.createElement('div');
         this.leftEdgeZone.className = 'theia-mobile-work-hub-sessions-sidebar-edge-zone';
@@ -208,6 +229,26 @@ export class MobileWorkHubSessionsSidebar {
         return this.visible;
     }
 
+    isPullRequestsVisible(): boolean {
+        return this.visible && this.sidebarMode === 'pullRequests';
+    }
+
+    isPullRequestsModeActive(): boolean {
+        return this.sidebarMode === 'pullRequests';
+    }
+
+    showPullRequests(): void {
+        this.showPullRequestsModeWithoutRefresh();
+        this.refreshList({ force: true });
+        this.delegate.onPullRequests?.();
+    }
+
+    showSessions(): void {
+        this.showSessionsModeWithoutRefresh();
+        this.delegate.onPullRequestsBack?.();
+        this.refreshList({ force: true });
+    }
+
     /**
      * Keep the sidebar's mounting mode in sync when the viewport crosses the responsive breakpoint.
      * The panel can move from an in-panel mobile overlay to the desktop body grid while it stays
@@ -225,6 +266,11 @@ export class MobileWorkHubSessionsSidebar {
         if (this.visible) {
             this.refreshList();
             return;
+        }
+        if (this.sidebarMode === 'pullRequests') {
+            this.showPullRequestsModeWithoutRefresh();
+        } else {
+            this.showSessionsModeWithoutRefresh();
         }
         this.visible = true;
         clearDesktopSessionsSidebarCollapsed(this.delegate.storageScope?.());
@@ -330,6 +376,27 @@ export class MobileWorkHubSessionsSidebar {
         }, 280);
         this.delegate.onClose();
         this.notifyShellResize();
+    }
+
+    protected showSessionsModeWithoutRefresh(): void {
+        this.sidebarMode = 'sessions';
+        this.root.classList.remove('theia-mod-pull-requests');
+        this.root.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/label', 'Sessions and projects'));
+        this.backBtn.hidden = true;
+        this.searchBtn.hidden = false;
+        this.nav.hidden = false;
+        this.brand.textContent = FrontendApplicationConfigProvider.get().applicationName?.trim()
+            || nls.localize('qaap/mobileProjects/title', 'Work Hub');
+    }
+
+    protected showPullRequestsModeWithoutRefresh(): void {
+        this.sidebarMode = 'pullRequests';
+        this.root.classList.add('theia-mod-pull-requests');
+        this.root.setAttribute('aria-label', nls.localize('qaap/pullRequests/sidebarLabel', 'Pull requests'));
+        this.backBtn.hidden = false;
+        this.searchBtn.hidden = true;
+        this.nav.hidden = true;
+        this.brand.textContent = nls.localize('qaap/sessionsSidebar/pullRequests', 'Pull requests');
     }
 
     /** Close after navigation on mobile overlays and in the IDE's embedded chat sidebar.
@@ -467,15 +534,16 @@ export class MobileWorkHubSessionsSidebar {
     }
 
     refreshList(options?: { force?: boolean }): void {
-        if (!options?.force && this.delegate.shouldDeferSessionListRefresh?.()) {
+        const pullRequests = this.sidebarMode === 'pullRequests';
+        if (!pullRequests && !options?.force && this.delegate.shouldDeferSessionListRefresh?.()) {
             this.scheduleDeferredRefresh();
             return;
         }
-        if (!options?.force && this.delegate.tryPatchSessionList?.(this.listHost)) {
+        if (!pullRequests && !options?.force && this.delegate.tryPatchSessionList?.(this.listHost)) {
             this.delegate.rememberSessionListFingerprint?.(this.listHost);
             return;
         }
-        if (!options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
+        if (!pullRequests && !options?.force && this.delegate.shouldSkipSessionListRefresh?.()) {
             return;
         }
         const previousScrollTop = this.scrollHost.scrollTop;
@@ -484,7 +552,11 @@ export class MobileWorkHubSessionsSidebar {
             : undefined;
         const nextList = document.createElement('div');
         nextList.className = this.listHost.className;
-        this.delegate.renderSessionList(nextList);
+        if (pullRequests) {
+            this.delegate.renderPullRequestList?.(nextList);
+        } else {
+            this.delegate.renderSessionList(nextList);
+        }
         if (!options?.force && this.listHost.innerHTML === nextList.innerHTML) {
             this.delegate.rememberSessionListFingerprint?.(this.listHost);
             return;

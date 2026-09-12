@@ -26,11 +26,14 @@ export interface MobileProjectsInboxPrHost {
     inboxPullRequestsLoading: boolean;
     inboxPullRequestsLoaded: boolean;
     inboxGithubSignedIn: boolean | undefined;
+    inboxGithubLogin?: string;
     inboxPullRequestsAbort: AbortController | undefined;
     inboxStream: MobileWorkHubInboxStream | undefined;
 
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     renderList(): void;
+    sessionsSidebar?: import('./mobile-work-hub-sessions-sidebar').MobileWorkHubSessionsSidebar;
+    refreshPullRequestsSidebar?(): void;
 }
 
 /** Fetches and merges inbox pull requests for the Work Hub review surface. */
@@ -45,6 +48,7 @@ export class MobileProjectsInboxPrUi {
         this.host.inboxPullRequestsLoaded = false;
         this.host.inboxPullRequestsLoading = false;
         this.host.inboxGithubSignedIn = undefined;
+        this.host.inboxGithubLogin = undefined;
     }
 
     finishInboxPullRequestLoad(generation: number): void {
@@ -57,6 +61,7 @@ export class MobileProjectsInboxPrUi {
         if (this.host.visible && (this.host.hubView === 'review' || this.host.hubView === 'home')) {
             this.host.renderList();
         }
+        this.host.refreshPullRequestsSidebar?.();
     }
 
     mergeInboxPullRequests(polled: QaapGithubPullRequestSummary[]): QaapGithubPullRequestSummary[] {
@@ -92,11 +97,13 @@ export class MobileProjectsInboxPrUi {
             if (config.skipAuth) {
                 this.host.inboxPullRequests = [];
                 this.host.inboxGithubSignedIn = undefined;
+                this.host.inboxGithubLogin = undefined;
                 return;
             }
             if (repoKeys.length === 0) {
                 this.host.inboxPullRequests = [];
                 this.host.inboxGithubSignedIn = undefined;
+                this.host.inboxGithubLogin = undefined;
                 return;
             }
             const auth = await fetchQaapAuthSession();
@@ -108,10 +115,12 @@ export class MobileProjectsInboxPrUi {
                     clearQaapAuthSession();
                 }
                 this.host.inboxGithubSignedIn = false;
+                this.host.inboxGithubLogin = undefined;
                 this.host.inboxPullRequests = [];
                 return;
             }
             this.host.inboxGithubSignedIn = true;
+            this.host.inboxGithubLogin = auth.user?.login;
             const response = await fetchQaapGithubPullRequests(repoKeys);
             if (generation !== this.host.inboxLoadGeneration || abort.signal.aborted) {
                 return;
@@ -121,6 +130,7 @@ export class MobileProjectsInboxPrUi {
                     clearQaapAuthSession();
                 }
                 this.host.inboxGithubSignedIn = false;
+                this.host.inboxGithubLogin = undefined;
                 this.host.inboxPullRequests = [];
                 return;
             }

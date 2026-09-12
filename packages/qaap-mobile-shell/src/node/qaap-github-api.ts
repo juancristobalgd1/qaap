@@ -44,6 +44,7 @@ interface GithubCreateRepoResponse extends GithubRepoResponse {
 interface GithubPullResponse {
     number: number;
     title: string;
+    body?: string | null;
     html_url: string;
     updated_at: string;
     user?: { login?: string | null } | null;
@@ -249,6 +250,7 @@ export async function fetchGithubPullRequests(
                 repo: repo.name,
                 number: pull.number,
                 title: pull.title,
+                description: pull.body ?? undefined,
                 branch: pull.head.ref,
                 base: pull.base.ref,
                 author: pull.user?.login || 'unknown',

@@ -414,12 +414,18 @@ export class MobileProjectsPanelLifecycleUi {
             return;
         }
         this.host.inboxStreamDispose = this.host.inboxStream.onDidChange(() => {
-            if (!this.host.visible || this.host.hubView !== 'review' || this.host.transcriptSheet) {
+            const sidebarPullRequestsOpen = this.host.sessionsSidebar?.isPullRequestsVisible() === true;
+            if (!this.host.visible || (!sidebarPullRequestsOpen && this.host.hubView !== 'review') || this.host.transcriptSheet) {
                 return;
             }
             this.host.inboxPullRequests = this.host.mergeInboxPullRequests(this.host.inboxPullRequests);
             this.host.inboxPullRequestsLoaded = true;
-            this.host.scheduleRenderList();
+            if (sidebarPullRequestsOpen) {
+                this.host.sessionsSidebar?.refreshList({ force: true });
+                this.host.renderList();
+            } else {
+                this.host.scheduleRenderList();
+            }
         });
     }
 

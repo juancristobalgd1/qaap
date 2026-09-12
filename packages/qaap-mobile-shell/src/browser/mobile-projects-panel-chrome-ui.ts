@@ -41,6 +41,7 @@ export interface MobileProjectsPanelChromeHost {
     headerViewModeSwitchHost: HTMLElement;
     headerIdeAgentsSwitchHost: HTMLElement;
     headerExecutionTabsHost: HTMLElement;
+    pullRequestHeaderEl: HTMLElement;
     subtitleEl: HTMLElement;
     accountBtn: HTMLButtonElement;
     accountAvatar: HTMLElement;
@@ -179,7 +180,7 @@ export class MobileProjectsPanelChromeUi {
         this.host.sessionsMenuBtn.setAttribute('aria-hidden', 'true');
         this.host.sessionsMenuBtn.title = nls.localize('qaap/sessionsSidebar/open', 'Open session history');
         this.host.sessionsMenuBtn.setAttribute('aria-label', this.host.sessionsMenuBtn.title);
-        this.host.sessionsMenuBtn.innerHTML = '<span class="codicon codicon-menu" aria-hidden="true"></span>';
+        this.host.sessionsMenuBtn.innerHTML = '<span class="codicon codicon-layout-sidebar-left" aria-hidden="true"></span>';
         this.host.sessionsMenuBtn.addEventListener('click', ev => {
             ev.stopPropagation();
             this.host.openWorkHubSessionsSidebar();
@@ -249,6 +250,10 @@ export class MobileProjectsPanelChromeUi {
         this.host.headerExecutionTabsHost = document.createElement('div');
         this.host.headerExecutionTabsHost.className = 'theia-mobile-projects-header-execution-tabs';
         this.host.headerExecutionTabsHost.hidden = true;
+        this.host.pullRequestHeaderEl = document.createElement('div');
+        this.host.pullRequestHeaderEl.className = 'theia-mobile-work-hub-pull-request-header';
+        this.host.pullRequestHeaderEl.hidden = true;
+        this.host.pullRequestHeaderEl.setAttribute('aria-hidden', 'true');
         this.host.subtitleEl = document.createElement('div');
         this.host.subtitleEl.className = this.host.homeMode ? 'theia-mobile-projects-subtitle' : 'theia-mobile-projects-meta';
         this.host.titleRow.append(
@@ -318,12 +323,11 @@ export class MobileProjectsPanelChromeUi {
         });
 
         this.host.headerExecutionCluster.append(
-            this.host.headerNewChatBtn,
-            this.host.headerOverflowMenuBtn,
+            this.host.headerExecutionTabsHost,
             this.host.headerPreviewRunHost,
             this.host.headerViewModeSwitchHost,
             this.host.headerFilesMoreHost,
-            this.host.headerExecutionTabsHost,
+            this.host.headerOverflowMenuBtn,
         );
         actions.append(
             this.host.headerIdeViewPickerHost,
@@ -337,7 +341,7 @@ export class MobileProjectsPanelChromeUi {
             this.host.headerExecutionCluster,
             actions,
         );
-        header.append(headerMainRow);
+        header.append(headerMainRow, this.host.pullRequestHeaderEl);
         this.syncHeaderIdeAgentsSwitch();
 
         this.host.filtersHost = document.createElement('div');

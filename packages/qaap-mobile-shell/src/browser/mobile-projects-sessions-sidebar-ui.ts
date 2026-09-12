@@ -119,6 +119,9 @@ export interface MobileProjectsSessionsSidebarHost {
     activateAgentsHubProject(project: MobileProjectEntry): Promise<void>;
     /** Switch the Work Hub transcript/composer to this sidebar project. */
     selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void>;
+    renderSessionsSidebarPullRequestList(host: HTMLElement): void;
+    openSessionsSidebarPullRequests(): Promise<void>;
+    closePullRequestDetail(): void;
     renderHeader(): void;
     renderSubtitle(): void;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
@@ -276,6 +279,18 @@ export class MobileProjectsSessionsSidebarUi {
     }
     renderWorkHubSessionsSidebarList(host: HTMLElement): void {
         renderWorkHubSessionsSidebarListExtracted(this, host);
+    }
+
+    renderSessionsSidebarPullRequestList(host: HTMLElement): void {
+        this.host.renderSessionsSidebarPullRequestList(host);
+    }
+
+    async openSessionsSidebarPullRequests(): Promise<void> {
+        await this.host.openSessionsSidebarPullRequests();
+    }
+
+    closePullRequestDetail(): void {
+        this.host.closePullRequestDetail();
     }
 
     readQaapSignedIn(): boolean {

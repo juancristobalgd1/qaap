@@ -1120,13 +1120,28 @@ function createStickyComposerSplitMenu(
         }
         closeMenu();
     };
+    const positionMenu = (): void => {
+        if (dropdown.hidden) {
+            return;
+        }
+        const view = menuBtn.ownerDocument.defaultView ?? window;
+        const rect = menuBtn.getBoundingClientRect();
+        const width = dropdown.offsetWidth;
+        const margin = 8;
+        let left = rect.right - width;
+        left = Math.min(left, view.innerWidth - margin - width);
+        left = Math.max(margin, left);
+        dropdown.style.left = `${left}px`;
+        dropdown.style.bottom = `${Math.max(margin, view.innerHeight - rect.top + margin)}px`;
+    };
     const onWindowScroll = (ev: Event): void => {
-        // Scrolling inside the open menu itself is fine; anything else moves the
-        // anchor button, so close instead of tracking it.
+        // The activity row can settle its layout while the menu is open. Keep the
+        // portaled menu attached to its trigger instead of dismissing it on an
+        // incidental scroll event.
         if (ev.target instanceof Node && dropdown.contains(ev.target)) {
             return;
         }
-        closeMenu();
+        positionMenu();
     };
     const closeMenu = (): void => {
         dropdown.hidden = true;
@@ -1139,11 +1154,9 @@ function createStickyComposerSplitMenu(
         menuWrap.append(dropdown);
         document.removeEventListener('pointerdown', onDocumentPointerDown, true);
         window.removeEventListener('scroll', onWindowScroll, true);
-        window.removeEventListener('resize', closeMenu);
+        window.removeEventListener('resize', positionMenu);
     };
     const openMenu = (): void => {
-        const view = menuBtn.ownerDocument.defaultView ?? window;
-        const rect = menuBtn.getBoundingClientRect();
         dropdown.classList.add('theia-mod-portal');
         // Append (visible) before measuring so we get the real rendered width,
         // then anchor by `left` clamped into the viewport. Anchoring by `right`
@@ -1151,19 +1164,13 @@ function createStickyComposerSplitMenu(
         // button sat on the left of the row (narrow phones).
         menuBtn.ownerDocument.body.append(dropdown);
         dropdown.hidden = false;
-        const width = dropdown.offsetWidth;
-        const margin = 8;
         // Right-align to the chevron by default, then clamp both edges in.
-        let left = rect.right - width;
-        left = Math.min(left, view.innerWidth - margin - width);
-        left = Math.max(margin, left);
-        dropdown.style.left = `${left}px`;
-        dropdown.style.bottom = `${Math.max(margin, view.innerHeight - rect.top + margin)}px`;
+        positionMenu();
         menuBtn.classList.add('theia-mod-open');
         menuBtn.setAttribute('aria-expanded', 'true');
         document.addEventListener('pointerdown', onDocumentPointerDown, true);
         window.addEventListener('scroll', onWindowScroll, true);
-        window.addEventListener('resize', closeMenu);
+        window.addEventListener('resize', positionMenu);
     };
 
     menuBtn.addEventListener('click', ev => {

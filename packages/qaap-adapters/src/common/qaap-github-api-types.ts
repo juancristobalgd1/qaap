@@ -125,6 +125,8 @@ export interface QaapGithubPullRequestSummary {
     repo: string;
     number: number;
     title: string;
+    /** Markdown body supplied by GitHub, when the pull request includes one. */
+    description?: string;
     branch: string;
     base: string;
     author: string;

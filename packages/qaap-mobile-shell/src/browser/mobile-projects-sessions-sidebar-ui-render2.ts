@@ -114,6 +114,7 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
     if (!ctx.host.sessionsSidebar) {
         ctx.host.sessionsSidebar = new MobileWorkHubSessionsSidebar({
             renderSessionList: host => ctx.renderWorkHubSessionsSidebarList(host),
+            renderPullRequestList: host => ctx.renderSessionsSidebarPullRequestList(host),
             shouldSkipSessionListRefresh: () => ctx.shouldSkipSessionsSidebarListRender(),
             tryPatchSessionList: host => ctx.tryPatchSessionsSidebarList(host),
             rememberSessionListFingerprint: host => ctx.rememberSessionsSidebarListFingerprint(host),
@@ -127,10 +128,15 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
             onClose: () => {
                 ctx.host.cardMenuUi.closeCardMenu();
                 ctx.exitClearFailedMode({ refresh: false });
+                if (ctx.host.sessionsSidebar?.isPullRequestsModeActive()) {
+                    ctx.host.renderHeader();
+                }
             },
             storageScope: () => ctx.host.projectsService.getCurrentWorkspaceCwd(),
             onAccountMenu: anchor => { ctx.onSessionsSidebarAccountClick(anchor); },
             onSearch: () => { void ctx.openSessionsSidebarSearch(); },
+            onPullRequests: () => { void ctx.openSessionsSidebarPullRequests(); },
+            onPullRequestsBack: () => { ctx.closePullRequestDetail?.(); },
             isEmbedded: () => (!isDesktopSessionsSidebarLayout() || document.body.classList.contains('theia-mobile-mod-desktop-ide')) && ctx.host.sessionsSidebarContainer?.() !== undefined,
         });
     }

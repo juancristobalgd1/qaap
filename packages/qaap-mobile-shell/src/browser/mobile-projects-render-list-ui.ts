@@ -15,6 +15,7 @@ export interface MobileProjectsRenderListHost {
     expandedId: string | undefined;
     soloExpanded: boolean;
     homeMode: boolean;
+    pullRequestDetail: import('@theia/qaap-adapters/lib/common/qaap-github-api-types').QaapGithubPullRequestSummary | undefined;
     suppressCurrentAutoExpand: boolean;
     projects: MobileProjectEntry[];
     projectDetailSurfaceTargets: unknown;
@@ -33,6 +34,7 @@ export interface MobileProjectsRenderListHost {
     renderTasksHubView(projects: MobileProjectEntry[]): void;
     renderReviewHubView(projects: MobileProjectEntry[]): void;
     renderCatalogHubView(): void;
+    renderPullRequestDetail(): void;
     createProjectDetailView(project: MobileProjectEntry): HTMLElement;
     createRow(project: MobileProjectEntry): HTMLElement;
     updateNewFabVisibility(): void;
@@ -43,6 +45,8 @@ export interface MobileProjectsRenderListHost {
     hubIncrementalUi: import('./mobile-projects-hub-incremental-ui').MobileProjectsHubIncrementalUi;
     tryPatchHubListBeforeRebuild(): boolean;
     resetHubIncrementalStructure(): void;
+    isPullRequestsSidebarVisible?(): boolean;
+    renderPullRequestEmptyState?(): void;
 }
 
 /**
@@ -53,6 +57,24 @@ export class MobileProjectsRenderListUi {
     constructor(protected readonly host: MobileProjectsRenderListHost) { }
 
     renderList(): void {
+        const pullRequestsSidebarOpen = this.host.isPullRequestsSidebarVisible?.() === true;
+        if (pullRequestsSidebarOpen || this.host.pullRequestDetail) {
+            if (this.host.agentsHubShellActive) {
+                this.host.teardownAgentsHubExecutionShell();
+            }
+            this.host.cardMenuUi.closeCardMenu();
+            this.host.projectDetailSurfaceTargets = undefined;
+            this.host.projectDetailTabStrip = undefined;
+            this.host.scroll.replaceChildren();
+            if (this.host.pullRequestDetail) {
+                this.host.renderPullRequestDetail();
+            } else if (pullRequestsSidebarOpen) {
+                this.host.renderPullRequestEmptyState?.();
+            }
+            this.host.updateNewFabVisibility();
+            this.host.syncLandingHubListChrome();
+            return;
+        }
         if ((this.host.hubView !== 'tasks' || !this.host.shouldUseAgentsHubLanding()) && this.host.agentsHubShellActive) {
             this.host.teardownAgentsHubExecutionShell();
         }

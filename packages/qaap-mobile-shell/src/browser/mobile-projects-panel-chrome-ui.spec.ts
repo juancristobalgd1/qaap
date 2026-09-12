@@ -97,6 +97,11 @@ describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
         expect(switchHost!.querySelector('.theia-qaap-segmented-bar')).to.not.equal(null);
         expect(host.root.querySelector('.theia-mobile-work-hub-sessions-sidebar-view-switch')).to.equal(null);
         expect(switchHost!.hidden).to.equal(false);
+
+        const executionCluster = host.root.querySelector<HTMLElement>('.theia-mobile-projects-header-execution-cluster');
+        expect(executionCluster?.firstElementChild).to.equal(host.headerExecutionTabsHost);
+        expect(executionCluster?.lastElementChild).to.equal(host.headerOverflowMenuBtn);
+        expect(executionCluster?.contains(host.headerNewChatBtn)).to.equal(false);
         chrome.dispose();
     });
 

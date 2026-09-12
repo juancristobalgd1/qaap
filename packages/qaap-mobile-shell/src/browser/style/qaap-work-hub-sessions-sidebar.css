@@ -1,5 +1,29 @@
 /* Full-screen mobile sessions sidebar (history + task rows). */
 
+/* Keep the Work Hub header controls sized to their actual icon content. The shared
+ * switch rules reserve a wider control for text labels, while this header is icon-only. */
+.theia-mobile-projects-header-ide-agents-switch {
+  width: 72px;
+}
+
+.theia-mobile-projects-header-ide-agents-switch .theia-workbench-view-mode-switch {
+  flex: 0 0 64px;
+  width: 64px;
+  max-width: 64px;
+}
+
+.theia-mobile-projects-header-ide-agents-switch
+  .theia-qaap-segmented-field.theia-mod-header-surface
+  .theia-qaap-segmented-bar.theia-mod-icon-only {
+  box-sizing: border-box;
+  border-radius: 10px;
+}
+
+.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-title-block,
+.theia-mobile-projects-header-main:has(.theia-mobile-projects-header-ide-agents-switch:not([hidden])) .theia-mobile-projects-header-execution-cluster {
+  max-width: calc(50% - 44px);
+}
+
 .theia-mobile-work-hub-sessions-sidebar {
   --qaap-sessions-sidebar-motion-duration: 220ms;
   --qaap-sessions-sidebar-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -169,7 +193,7 @@
 
 .theia-mobile-work-hub-sessions-sidebar-close {
   flex: 0 0 36px;
-  margin-left: auto;
+  margin-left: 0;
   width: 36px;
   height: 36px;
   border: none;
@@ -180,6 +204,42 @@
   line-height: 1;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+/* Pull Requests keeps the close control in the same trailing position as the
+ * normal chat sidebar. Search is hidden in this mode, so the close control
+ * needs to absorb the remaining header space itself. */
+.theia-mobile-work-hub-sessions-sidebar.theia-mod-pull-requests
+  .theia-mobile-work-hub-sessions-sidebar-close {
+  margin-left: auto;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-search {
+  display: inline-flex !important;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-descriptionForeground, var(--qaap-muted, #8a847c));
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-search[hidden] {
+  display: none !important;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-search:hover,
+.theia-mobile-work-hub-sessions-sidebar-close:hover {
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  color: var(--theia-foreground);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-brand {

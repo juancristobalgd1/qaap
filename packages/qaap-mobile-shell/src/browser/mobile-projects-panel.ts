@@ -95,6 +95,8 @@ import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHo
 import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
 import { MobileProjectsProjectActionsUi, type MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
 import { MobileProjectsInboxPrUi, type MobileProjectsInboxPrHost } from './mobile-projects-inbox-pr-ui';
+import { MobileProjectsPullRequestsSidebarUi, type MobileProjectsPullRequestsSidebarHost } from './mobile-projects-pull-requests-sidebar-ui';
+import { MobileProjectsPullRequestDetailUi, type MobileProjectsPullRequestDetailHost } from './mobile-projects-pull-request-detail-ui';
 import { MobileProjectsCardMenuUi, type MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
 import {
     MobileProjectsProjectRowsUi,
@@ -242,7 +244,7 @@ import {
     MobileProjectsSessionsSidebarUi,
     type MobileProjectsSessionsSidebarHost,
 } from './mobile-projects-sessions-sidebar-ui';
-import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
+import { MobileWorkHubSessionsSidebar, shouldKeepSessionsSidebarOpenAfterNavigation } from './mobile-work-hub-sessions-sidebar';
 import {
     type WorkHubHomeAttentionItem,
     type WorkHubHomeRecentItem,
@@ -354,6 +356,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerViewModeSwitchHost: HTMLElement;
     protected readonly headerIdeAgentsSwitchHost: HTMLElement;
     protected readonly headerExecutionTabsHost: HTMLElement;
+    protected readonly pullRequestHeaderEl: HTMLElement;
     protected headerSurfacePicker?: QaapSegmentedFieldController<MobileBottomButtonId>;
     protected headerIdeViewPickerBtn: HTMLButtonElement | undefined;
     protected headerIdeViewPickerMenu: HTMLElement | undefined;
@@ -489,6 +492,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly tasksHubUi = new MobileProjectsTasksHubUi(this as unknown as MobileProjectsTasksHubHost);
     protected readonly hubCatalogUi = new MobileProjectsHubCatalogUi(this as unknown as MobileProjectsHubCatalogHost);
     protected readonly inboxPrUi = new MobileProjectsInboxPrUi(this as unknown as MobileProjectsInboxPrHost);
+    protected readonly pullRequestsSidebarUi = new MobileProjectsPullRequestsSidebarUi(this as unknown as MobileProjectsPullRequestsSidebarHost);
+    protected readonly pullRequestDetailUi = new MobileProjectsPullRequestDetailUi(this as unknown as MobileProjectsPullRequestDetailHost);
     protected readonly cardMenuUi = new MobileProjectsCardMenuUi(this as unknown as MobileProjectsCardMenuHost);
     protected readonly projectRowsUi = new MobileProjectsProjectRowsUi(this as unknown as MobileProjectsProjectRowsHost);
     protected readonly hubTeamDataUi = new MobileProjectsHubTeamDataUi(this as unknown as MobileProjectsHubTeamDataHost);
@@ -516,6 +521,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected inboxPullRequests: QaapGithubPullRequestSummary[] = [];
     protected inboxPullRequestsLoading = false;
     protected inboxPullRequestsLoaded = false;
+    protected inboxGithubLogin: string | undefined;
+    protected pullRequestDetail: QaapGithubPullRequestSummary | undefined;
     /** Server GitHub session for inbox PRs (undefined when no GitHub repos in the hub). */
     protected inboxGithubSignedIn: boolean | undefined;
     /** Bumps when the inbox tab is re-entered so stale PR fetches cannot repaint. */
@@ -676,6 +683,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected handleHeaderBackClick(): void {
+        if (this.pullRequestDetail) {
+            this.closePullRequestDetail();
+            return;
+        }
         this.hubHeaderUi.handleHeaderBackClick();
     }
 
@@ -918,6 +929,41 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.renderListUi.renderList();
     }
 
+    protected renderPullRequestDetail(): void {
+        this.pullRequestDetailUi.render();
+    }
+
+    protected renderPullRequestEmptyState(): void {
+        this.pullRequestDetailUi.renderEmpty();
+    }
+
+    protected pullRequestDetailActiveTab(): 'summary' | 'code' {
+        return this.pullRequestDetailUi.getActiveTab();
+    }
+
+    protected setPullRequestDetailTab(tab: 'summary' | 'code'): void {
+        this.pullRequestDetailUi.setActiveTab(tab);
+        if (this.visible) {
+            this.render();
+        }
+    }
+
+    protected openPullRequestChat(): void {
+        this.pullRequestDetailUi.openChat();
+    }
+
+    protected togglePullRequestMerge(): void {
+        this.pullRequestDetailUi.toggleMergeConfirmation();
+    }
+
+    protected isPullRequestsSidebarVisible(): boolean {
+        return this.sessionsSidebar?.isPullRequestsModeActive() === true;
+    }
+
+    protected isPullRequestsSidebarOpen(): boolean {
+        return this.sessionsSidebar?.isPullRequestsVisible() === true;
+    }
+
     protected tryPatchHubListBeforeRebuild(): boolean {
         return tryPatchHubListBeforeRebuildExtracted(this);
     }
@@ -1084,6 +1130,9 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     openWorkHubSessionsSidebar(): void {
         this.sessionsSidebarUi.openWorkHubSessionsSidebar();
+        if (this.sessionsSidebar?.isPullRequestsModeActive()) {
+            this.render();
+        }
     }
 
     async openDesktopIdeFromAgentsHub(): Promise<void> {
@@ -1113,6 +1162,60 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected renderWorkHubSessionsSidebarList(host: HTMLElement): void {
         this.sessionsSidebarUi.renderWorkHubSessionsSidebarList(host);
+    }
+
+    protected renderSessionsSidebarPullRequestList(host: HTMLElement): void {
+        this.pullRequestsSidebarUi.render(host);
+    }
+
+    protected async openSessionsSidebarPullRequests(): Promise<void> {
+        this.render();
+        this.inboxStream?.start();
+        this.subscribeToInboxStream();
+        const refresh = this.refreshInboxPullRequests(undefined, true);
+        this.sessionsSidebar?.refreshList({ force: true });
+        await refresh;
+        this.sessionsSidebar?.refreshList({ force: true });
+    }
+
+    protected refreshPullRequestsSidebar(): void {
+        if (this.sessionsSidebar?.isPullRequestsVisible()) {
+            this.sessionsSidebar.refreshList({ force: true });
+            this.render();
+        }
+    }
+
+    protected openPullRequestDetail(pullRequest: QaapGithubPullRequestSummary): void {
+        this.pullRequestDetail = pullRequest;
+        if (shouldKeepSessionsSidebarOpenAfterNavigation()) {
+            this.sessionsSidebar?.refreshList({ force: true });
+        } else {
+            this.sessionsSidebar?.hideForMobileOverlay();
+        }
+        if (this.visible) {
+            this.render();
+        }
+    }
+
+    protected closePullRequestDetail(): void {
+        if (!this.pullRequestDetail) {
+            if (this.visible) {
+                this.render();
+            }
+            return;
+        }
+        const restorePullRequestSidebar = !shouldKeepSessionsSidebarOpenAfterNavigation();
+        const sidebar = this.sessionsSidebar;
+        this.pullRequestDetail = undefined;
+        if (restorePullRequestSidebar && sidebar && !sidebar.isVisible()) {
+            sidebar.show();
+            sidebar.showPullRequests();
+        } else {
+            sidebar?.refreshList({ force: true });
+        }
+        if (this.visible) {
+            this.render();
+        }
     }
 
     protected syncSessionsSidebarAnimatedListHeights(host: HTMLElement): void {
@@ -1185,6 +1288,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     protected async onWorkHubSessionsSidebarNewChat(): Promise<void> {
+        this.closePullRequestDetail();
         await this.sessionsSidebarUi.onWorkHubSessionsSidebarNewChat();
     }
 
