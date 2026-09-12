@@ -47,6 +47,8 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     storageScope?(): string | undefined;
     onAccountMenu?(anchor: HTMLButtonElement): void;
     onSearch?: () => void;
+    onPullRequestSearch?: (anchor: HTMLButtonElement) => void;
+    onPullRequestSearchClose?: () => void;
     onPullRequests?: () => void;
     onPullRequestsBack?: () => void;
     onStartNewProject?: () => void;
@@ -79,6 +81,7 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly leftEdgeZone: HTMLElement;
     protected readonly closeBtn: HTMLButtonElement;
     protected readonly searchBtn: HTMLButtonElement;
+    protected readonly pullRequestSearchBtn: HTMLButtonElement;
     protected readonly backBtn: HTMLButtonElement;
     protected readonly brand: HTMLElement;
     protected readonly nav: HTMLElement;
@@ -147,7 +150,16 @@ export class MobileWorkHubSessionsSidebar {
         this.searchBtn.title = nls.localize('qaap/sessionsSidebar/search', 'Search');
         this.searchBtn.setAttribute('aria-label', this.searchBtn.title);
         this.searchBtn.addEventListener('click', () => this.delegate.onSearch?.());
-        head.append(this.backBtn, this.brand, this.searchBtn, this.closeBtn);
+        this.pullRequestSearchBtn = document.createElement('button');
+        this.pullRequestSearchBtn.type = 'button';
+        this.pullRequestSearchBtn.className = 'theia-mobile-work-hub-sessions-sidebar-pull-request-search codicon codicon-search';
+        this.pullRequestSearchBtn.title = nls.localize('qaap/pullRequests/searchToggle', 'Search pull requests');
+        this.pullRequestSearchBtn.setAttribute('aria-label', this.pullRequestSearchBtn.title);
+        this.pullRequestSearchBtn.setAttribute('aria-haspopup', 'dialog');
+        this.pullRequestSearchBtn.setAttribute('aria-expanded', 'false');
+        this.pullRequestSearchBtn.hidden = true;
+        this.pullRequestSearchBtn.addEventListener('click', () => this.delegate.onPullRequestSearch?.(this.pullRequestSearchBtn));
+        head.append(this.backBtn, this.brand, this.searchBtn, this.pullRequestSearchBtn, this.closeBtn);
 
         const footer = document.createElement('footer');
         footer.className = 'theia-mobile-work-hub-sessions-sidebar-foot';
@@ -356,6 +368,7 @@ export class MobileWorkHubSessionsSidebar {
             return;
         }
         dismissQaapAccountMenu();
+        this.delegate.onPullRequestSearchClose?.();
         this.scrollTouchDispose.dispose();
         delete this.scrollHost.dataset.theiaMobileScrollY;
         this.edgeSwipeDispose.dispose();
@@ -384,7 +397,9 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/label', 'Sessions and projects'));
         this.backBtn.hidden = true;
         this.searchBtn.hidden = false;
+        this.pullRequestSearchBtn.hidden = true;
         this.nav.hidden = false;
+        this.delegate.onPullRequestSearchClose?.();
         this.brand.textContent = FrontendApplicationConfigProvider.get().applicationName?.trim()
             || nls.localize('qaap/mobileProjects/title', 'Work Hub');
     }
@@ -395,6 +410,7 @@ export class MobileWorkHubSessionsSidebar {
         this.root.setAttribute('aria-label', nls.localize('qaap/pullRequests/sidebarLabel', 'Pull requests'));
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
+        this.pullRequestSearchBtn.hidden = false;
         this.nav.hidden = true;
         this.brand.textContent = nls.localize('qaap/sessionsSidebar/pullRequests', 'Pull requests');
     }

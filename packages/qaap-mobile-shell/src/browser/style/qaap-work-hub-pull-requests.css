@@ -24,7 +24,6 @@
 }
 
 .theia-mobile-work-hub-sessions-sidebar-nav[hidden],
-.theia-mobile-work-hub-pull-requests-filter-menu[hidden],
 .theia-mobile-work-hub-pull-requests-status-state[hidden] {
   display: none !important;
 }
@@ -67,68 +66,6 @@
   color: var(--theia-foreground, #f4f1e8);
 }
 
-.theia-mobile-work-hub-pull-requests-search-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
-}
-
-.theia-mobile-work-hub-pull-requests-search {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 36px;
-  padding: 0 11px;
-  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.25));
-  border-radius: 10px;
-  background: var(--theia-sideBar-background, var(--theia-editor-background));
-  color: var(--theia-descriptionForeground);
-}
-
-.theia-mobile-work-hub-pull-requests-search:focus-within {
-  border-color: var(--theia-panel-border, rgba(128, 128, 128, 0.25));
-  box-shadow: none;
-  outline: none;
-}
-
-.theia-mobile-work-hub-pull-requests-search .codicon {
-  flex: 0 0 auto;
-  color: var(--theia-descriptionForeground);
-  font-size: 15px;
-}
-
-.theia-mobile-work-hub-pull-requests-search input {
-  flex: 1;
-  min-width: 0;
-  height: 36px;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-  touch-action: manipulation;
-  box-shadow: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.theia-mobile-work-hub-pull-requests-search input::placeholder {
-  color: var(--theia-descriptionForeground, #9f9b95);
-}
-
-.theia-mobile-work-hub-pull-requests-search input:focus,
-.theia-mobile-work-hub-pull-requests-search input:focus-visible {
-  border: none;
-  outline: none;
-  box-shadow: none;
-  background: transparent;
-}
-
-.theia-mobile-work-hub-pull-requests-icon-button,
 .theia-mobile-work-hub-pull-request-detail-icon-button {
   display: inline-flex;
   flex: 0 0 34px;
@@ -145,47 +82,9 @@
   text-decoration: none;
 }
 
-.theia-mobile-work-hub-pull-requests-icon-button:hover,
 .theia-mobile-work-hub-pull-request-detail-icon-button:hover {
   background: color-mix(in srgb, var(--theia-foreground) 12%, transparent);
   color: var(--theia-foreground);
-}
-
-.theia-mobile-work-hub-pull-requests-icon-button:disabled {
-  cursor: wait;
-  opacity: 0.55;
-}
-
-.theia-mobile-work-hub-pull-requests-filter-menu {
-  position: absolute;
-  top: 54px;
-  right: 49px;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  min-width: 130px;
-  padding: 5px;
-  border: 1px solid color-mix(in srgb, var(--theia-foreground) 14%, transparent);
-  border-radius: 9px;
-  background: var(--theia-editor-background, #1b1b1b);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
-}
-
-.theia-mobile-work-hub-pull-requests-filter-item {
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--theia-foreground, #f4f1e8);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-}
-
-.theia-mobile-work-hub-pull-requests-filter-item:hover,
-.theia-mobile-work-hub-pull-requests-filter-item.theia-mod-selected {
-  background: color-mix(in srgb, var(--theia-focusBorder, #6ca9ff) 18%, transparent);
 }
 
 .theia-mobile-work-hub-pull-requests-results {

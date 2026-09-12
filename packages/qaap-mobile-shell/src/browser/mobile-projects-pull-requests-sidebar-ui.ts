@@ -6,9 +6,19 @@
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { nls } from '@theia/core/lib/common/nls';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { QuickInputButtonLocation, type QuickInputButton, type QuickPick, type QuickPickItem } from '@theia/core/lib/common/quick-pick-service';
 
 export type MobileProjectsPullRequestSidebarTab = 'all' | 'reviewing' | 'created';
 export type MobileProjectsPullRequestSidebarState = 'open' | 'closed' | 'all';
+
+interface PullRequestSearchPickItem extends QuickPickItem {
+    readonly pullRequest: QaapGithubPullRequestSummary;
+}
+
+interface PullRequestFilterPickItem extends QuickPickItem {
+    readonly state: MobileProjectsPullRequestSidebarState;
+}
 
 export interface MobileProjectsPullRequestsSidebarHost {
     inboxPullRequests: QaapGithubPullRequestSummary[];
@@ -17,6 +27,7 @@ export interface MobileProjectsPullRequestsSidebarHost {
     inboxGithubSignedIn: boolean | undefined;
     inboxGithubLogin?: string;
     pullRequestDetail?: QaapGithubPullRequestSummary;
+    quickInputService?: import('@theia/core/lib/common/quick-pick-service').QuickInputService;
 
     refreshInboxPullRequests(projects?: import('./mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
     openPullRequestDetail(pullRequest: QaapGithubPullRequestSummary): void;
@@ -28,7 +39,12 @@ export class MobileProjectsPullRequestsSidebarUi {
     protected activeTab: MobileProjectsPullRequestSidebarTab = 'all';
     protected searchQuery = '';
     protected stateFilter: MobileProjectsPullRequestSidebarState = 'open';
-    protected filterMenuOpen = false;
+    protected searchQuickPick: QuickPick<PullRequestSearchPickItem> | undefined;
+    protected searchQuickPickCleanup: Disposable = Disposable.NULL;
+    protected filterQuickPick: QuickPick<PullRequestFilterPickItem> | undefined;
+    protected filterQuickPickCleanup: Disposable = Disposable.NULL;
+    protected searchQuickPickAnchor: HTMLElement | undefined;
+    protected results: HTMLElement | undefined;
 
     constructor(protected readonly host: MobileProjectsPullRequestsSidebarHost) { }
 
@@ -60,130 +76,229 @@ export class MobileProjectsPullRequestsSidebarUi {
             tabs.append(button);
         }
 
-        const searchRow = document.createElement('div');
-        searchRow.className = 'theia-mobile-work-hub-pull-requests-search-row';
-        const searchWrap = document.createElement('label');
-        searchWrap.className = 'theia-mobile-work-hub-pull-requests-search';
-        const searchIcon = document.createElement('span');
-        searchIcon.className = 'codicon codicon-search';
-        searchIcon.setAttribute('aria-hidden', 'true');
-        const input = document.createElement('input');
-        input.type = 'search';
-        input.value = this.searchQuery;
-        input.placeholder = nls.localize('qaap/pullRequests/search', 'Search pull requests');
-        input.setAttribute('aria-label', input.placeholder);
-        input.addEventListener('input', () => {
-            this.searchQuery = input.value;
-            renderResults();
-        });
-        searchWrap.append(searchIcon, input);
-
-        const filterButton = document.createElement('button');
-        filterButton.type = 'button';
-        filterButton.className = 'theia-mobile-work-hub-pull-requests-icon-button';
-        filterButton.title = nls.localize('qaap/pullRequests/filter', 'Filter pull requests');
-        filterButton.setAttribute('aria-label', filterButton.title);
-        filterButton.setAttribute('aria-haspopup', 'menu');
-        filterButton.setAttribute('aria-expanded', String(this.filterMenuOpen));
-        const filterIcon = document.createElement('span');
-        filterIcon.className = 'codicon codicon-filter';
-        filterIcon.setAttribute('aria-hidden', 'true');
-        filterButton.append(filterIcon);
-
-        const refreshButton = document.createElement('button');
-        refreshButton.type = 'button';
-        refreshButton.className = 'theia-mobile-work-hub-pull-requests-icon-button';
-        refreshButton.title = nls.localize('qaap/pullRequests/refresh', 'Refresh pull requests');
-        refreshButton.setAttribute('aria-label', refreshButton.title);
-        const refreshIcon = document.createElement('span');
-        refreshIcon.className = 'codicon codicon-refresh';
-        refreshIcon.setAttribute('aria-hidden', 'true');
-        refreshButton.append(refreshIcon);
-        refreshButton.addEventListener('click', () => {
-            refreshButton.disabled = true;
-            void this.host.refreshInboxPullRequests(undefined, true).finally(() => {
-                refreshButton.disabled = false;
-            });
-        });
-
-        const filterMenu = document.createElement('div');
-        filterMenu.className = 'theia-mobile-work-hub-pull-requests-filter-menu';
-        filterMenu.hidden = !this.filterMenuOpen;
-        filterMenu.setAttribute('role', 'menu');
-        for (const filter of [
-            ['open', nls.localize('qaap/pullRequests/filterOpen', 'Open')],
-            ['all', nls.localize('qaap/pullRequests/filterAll', 'All states')],
-            ['closed', nls.localize('qaap/pullRequests/filterClosed', 'Closed')],
-        ] as const) {
-            const item = document.createElement('button');
-            item.type = 'button';
-            item.className = 'theia-mobile-work-hub-pull-requests-filter-item';
-            item.textContent = filter[1];
-            item.setAttribute('role', 'menuitemradio');
-            item.setAttribute('aria-checked', String(this.stateFilter === filter[0]));
-            item.classList.toggle('theia-mod-selected', this.stateFilter === filter[0]);
-            item.addEventListener('click', () => {
-                this.stateFilter = filter[0];
-                this.filterMenuOpen = false;
-                filterMenu.hidden = true;
-                filterButton.setAttribute('aria-expanded', 'false');
-                renderResults();
-            });
-            filterMenu.append(item);
-        }
-        filterButton.addEventListener('click', () => {
-            this.filterMenuOpen = !this.filterMenuOpen;
-            filterMenu.hidden = !this.filterMenuOpen;
-            filterButton.setAttribute('aria-expanded', String(this.filterMenuOpen));
-        });
-
-        searchRow.append(searchWrap, filterButton, refreshButton, filterMenu);
         const results = document.createElement('div');
         results.className = 'theia-mobile-work-hub-pull-requests-results';
         results.setAttribute('aria-live', 'polite');
 
-        const renderResults = (): void => {
-            results.replaceChildren();
-            if (!this.host.inboxPullRequestsLoaded && this.host.inboxPullRequestsLoading) {
-                results.append(this.createStatus(
-                    'codicon-loading codicon-mod-spin',
-                    nls.localize('qaap/pullRequests/loading', 'Loading pull requests…'),
-                    nls.localize('qaap/pullRequests/loadingBody', 'Fetching pull requests from GitHub.'),
-                ));
-                return;
-            }
-            if (this.host.inboxGithubSignedIn === false) {
-                results.append(this.createSignInState());
-                return;
-            }
-            const pullRequests = this.filteredPullRequests();
-            if (pullRequests.length === 0) {
-                results.append(this.createStatus(
-                    'codicon-git-pull-request',
-                    this.searchQuery || this.activeTab !== 'all'
-                        ? nls.localize('qaap/pullRequests/noResults', 'No matching pull requests')
-                        : nls.localize('qaap/pullRequests/empty', 'No pull requests yet'),
-                    this.searchQuery || this.activeTab !== 'all'
-                        ? nls.localize('qaap/pullRequests/noResultsBody', 'Try another title, branch, author, or filter.')
-                        : nls.localize('qaap/pullRequests/emptyBody', 'Pull requests from your linked repositories will appear here.'),
-                ));
-                return;
-            }
-            const list = document.createElement('div');
-            list.className = 'theia-mobile-work-hub-pull-requests-list';
-            for (const pullRequest of pullRequests) {
-                list.append(this.createPullRequestItem(pullRequest));
-            }
-            results.append(list);
-        };
-
-        root.append(tabs, searchRow, results);
+        root.append(tabs, results);
         container.append(root);
-        renderResults();
+        this.results = results;
+        this.renderPullRequestResults(results);
     }
 
-    protected filteredPullRequests(): QaapGithubPullRequestSummary[] {
-        const query = this.searchQuery.trim().toLowerCase();
+    toggleSearchPopup(anchor: HTMLElement): void {
+        if (this.searchQuickPick) {
+            this.closeSearchPopup();
+            return;
+        }
+
+        const quickInputService = this.host.quickInputService;
+        if (!quickInputService) {
+            return;
+        }
+
+        const quickPick = quickInputService.createQuickPick<PullRequestSearchPickItem>();
+        const filterButton: QuickInputButton = {
+            iconClass: 'codicon-filter',
+            location: QuickInputButtonLocation.Inline,
+            alwaysVisible: true,
+            tooltip: nls.localize('qaap/pullRequests/filter', 'Filter pull requests'),
+        };
+        const refreshButton: QuickInputButton = {
+            iconClass: 'codicon-refresh',
+            location: QuickInputButtonLocation.Inline,
+            alwaysVisible: true,
+            tooltip: nls.localize('qaap/pullRequests/refresh', 'Refresh pull requests'),
+        };
+
+        this.searchQuickPick = quickPick;
+        this.searchQuickPickAnchor = anchor;
+        anchor.setAttribute('aria-expanded', 'true');
+        quickPick.placeholder = nls.localize('qaap/pullRequests/search', 'Search pull requests');
+        quickPick.value = this.searchQuery;
+        quickPick.items = this.buildSearchPickItems();
+        quickPick.buttons = [filterButton, refreshButton];
+        quickPick.canSelectMany = false;
+        quickPick.matchOnDescription = true;
+        quickPick.matchOnDetail = true;
+        quickPick.ignoreFocusOut = true;
+
+        this.searchQuickPickCleanup = new DisposableCollection(
+            quickPick.onDidChangeValue(value => {
+                this.searchQuery = value;
+                this.renderPullRequestResults();
+            }),
+            quickPick.onDidAccept(() => {
+                const selected = quickPick.selectedItems[0] ?? quickPick.activeItems[0];
+                if (selected) {
+                    this.host.openPullRequestDetail(selected.pullRequest);
+                }
+                this.closeSearchPopup();
+            }),
+            quickPick.onDidTriggerButton(button => {
+                if (button === filterButton) {
+                    this.openFilterQuickPick();
+                } else if (button === refreshButton) {
+                    this.refreshSearchQuickPick(quickPick);
+                }
+            }),
+            quickPick.onDidHide(() => {
+                if (!this.filterQuickPick) {
+                    this.resetSearchQuickPick(quickPick);
+                }
+            }),
+        );
+        quickPick.show();
+    }
+
+    closeSearchPopup(): void {
+        const quickPick = this.searchQuickPick;
+        this.searchQuickPick = undefined;
+        this.searchQuickPickAnchor?.setAttribute('aria-expanded', 'false');
+        this.searchQuickPickAnchor = undefined;
+        this.searchQuickPickCleanup.dispose();
+        this.searchQuickPickCleanup = Disposable.NULL;
+        this.closeFilterQuickPick();
+        quickPick?.hide();
+        quickPick?.dispose();
+    }
+
+    protected resetSearchQuickPick(quickPick: QuickPick<PullRequestSearchPickItem>): void {
+        if (this.searchQuickPick !== quickPick) {
+            return;
+        }
+        this.searchQuickPick = undefined;
+        this.searchQuickPickAnchor?.setAttribute('aria-expanded', 'false');
+        this.searchQuickPickAnchor = undefined;
+        this.searchQuickPickCleanup.dispose();
+        this.searchQuickPickCleanup = Disposable.NULL;
+        quickPick.dispose();
+    }
+
+    protected openFilterQuickPick(): void {
+        const quickInputService = this.host.quickInputService;
+        const searchQuickPick = this.searchQuickPick;
+        if (!quickInputService || !searchQuickPick || this.filterQuickPick) {
+            return;
+        }
+
+        const filterQuickPick = quickInputService.createQuickPick<PullRequestFilterPickItem>();
+        this.filterQuickPick = filterQuickPick;
+        filterQuickPick.placeholder = nls.localize('qaap/pullRequests/filterPlaceholder', 'Filter pull requests');
+        const filterItems: PullRequestFilterPickItem[] = [
+            { label: nls.localize('qaap/pullRequests/filterOpen', 'Open'), state: 'open' },
+            { label: nls.localize('qaap/pullRequests/filterAll', 'All states'), state: 'all' },
+            { label: nls.localize('qaap/pullRequests/filterClosed', 'Closed'), state: 'closed' },
+        ];
+        filterQuickPick.items = filterItems;
+        const active = filterItems.find(item => item.state === this.stateFilter);
+        if (active) {
+            filterQuickPick.activeItems = [active];
+        }
+        filterQuickPick.canSelectMany = false;
+        filterQuickPick.ignoreFocusOut = true;
+        this.filterQuickPickCleanup = new DisposableCollection(
+            filterQuickPick.onDidAccept(() => {
+                const selected = filterQuickPick.selectedItems[0] ?? filterQuickPick.activeItems[0];
+                if (selected) {
+                    this.stateFilter = selected.state;
+                    this.renderPullRequestResults();
+                    searchQuickPick.items = this.buildSearchPickItems();
+                }
+                filterQuickPick.hide();
+            }),
+            filterQuickPick.onDidHide(() => {
+                if (this.filterQuickPick !== filterQuickPick) {
+                    return;
+                }
+                this.filterQuickPick = undefined;
+                this.filterQuickPickCleanup.dispose();
+                this.filterQuickPickCleanup = Disposable.NULL;
+                filterQuickPick.dispose();
+                if (this.searchQuickPick) {
+                    this.searchQuickPick.show();
+                    this.searchQuickPickAnchor?.setAttribute('aria-expanded', 'true');
+                }
+            }),
+        );
+        filterQuickPick.show();
+    }
+
+    protected closeFilterQuickPick(): void {
+        const filterQuickPick = this.filterQuickPick;
+        this.filterQuickPick = undefined;
+        this.filterQuickPickCleanup.dispose();
+        this.filterQuickPickCleanup = Disposable.NULL;
+        filterQuickPick?.hide();
+        filterQuickPick?.dispose();
+    }
+
+    protected refreshSearchQuickPick(quickPick: QuickPick<PullRequestSearchPickItem>): void {
+        quickPick.busy = true;
+        void this.host.refreshInboxPullRequests(undefined, true)
+            .finally(() => {
+                if (this.searchQuickPick === quickPick) {
+                    quickPick.items = this.buildSearchPickItems();
+                    quickPick.busy = false;
+                }
+            });
+    }
+
+    protected buildSearchPickItems(): PullRequestSearchPickItem[] {
+        return this.filteredPullRequests(false).map(pullRequest => ({
+            label: pullRequest.title,
+            description: `${pullRequest.owner}/${pullRequest.repo} · #${pullRequest.number}`,
+            detail: `${pullRequest.branch} → ${pullRequest.base} · @${pullRequest.author} · +${pullRequest.adds} -${pullRequest.dels}`,
+            iconClasses: [
+                'codicon',
+                pullRequest.state === 'merged'
+                    ? 'codicon-git-merge'
+                    : 'codicon-git-pull-request',
+            ],
+            pullRequest,
+        }));
+    }
+
+    protected renderPullRequestResults(results = this.results): void {
+        if (!results) {
+            return;
+        }
+        results.replaceChildren();
+        if (!this.host.inboxPullRequestsLoaded && this.host.inboxPullRequestsLoading) {
+            results.append(this.createStatus(
+                'codicon-loading codicon-mod-spin',
+                nls.localize('qaap/pullRequests/loading', 'Loading pull requests…'),
+                nls.localize('qaap/pullRequests/loadingBody', 'Fetching pull requests from GitHub.'),
+            ));
+            return;
+        }
+        if (this.host.inboxGithubSignedIn === false) {
+            results.append(this.createSignInState());
+            return;
+        }
+        const pullRequests = this.filteredPullRequests();
+        if (pullRequests.length === 0) {
+            results.append(this.createStatus(
+                'codicon-git-pull-request',
+                this.searchQuery || this.activeTab !== 'all'
+                    ? nls.localize('qaap/pullRequests/noResults', 'No matching pull requests')
+                    : nls.localize('qaap/pullRequests/empty', 'No pull requests yet'),
+                this.searchQuery || this.activeTab !== 'all'
+                    ? nls.localize('qaap/pullRequests/noResultsBody', 'Try another title, branch, author, or filter.')
+                    : nls.localize('qaap/pullRequests/emptyBody', 'Pull requests from your linked repositories will appear here.'),
+            ));
+            return;
+        }
+        const list = document.createElement('div');
+        list.className = 'theia-mobile-work-hub-pull-requests-list';
+        for (const pullRequest of pullRequests) {
+            list.append(this.createPullRequestItem(pullRequest));
+        }
+        results.append(list);
+    }
+
+    protected filteredPullRequests(includeSearchQuery = true): QaapGithubPullRequestSummary[] {
+        const query = includeSearchQuery ? this.searchQuery.trim().toLowerCase() : '';
         const login = this.host.inboxGithubLogin?.trim().toLowerCase();
         return [...this.host.inboxPullRequests]
             .filter(pullRequest => {

@@ -120,6 +120,8 @@ export interface MobileProjectsSessionsSidebarHost {
     /** Switch the Work Hub transcript/composer to this sidebar project. */
     selectSessionsSidebarProject(project: MobileProjectEntry): Promise<void>;
     renderSessionsSidebarPullRequestList(host: HTMLElement): void;
+    togglePullRequestSearch(anchor: HTMLElement): void;
+    closePullRequestSearch(): void;
     openSessionsSidebarPullRequests(): Promise<void>;
     closePullRequestDetail(): void;
     renderHeader(): void;
@@ -283,6 +285,14 @@ export class MobileProjectsSessionsSidebarUi {
 
     renderSessionsSidebarPullRequestList(host: HTMLElement): void {
         this.host.renderSessionsSidebarPullRequestList(host);
+    }
+
+    togglePullRequestSearch(anchor: HTMLElement): void {
+        this.host.togglePullRequestSearch(anchor);
+    }
+
+    closePullRequestSearch(): void {
+        this.host.closePullRequestSearch();
     }
 
     async openSessionsSidebarPullRequests(): Promise<void> {

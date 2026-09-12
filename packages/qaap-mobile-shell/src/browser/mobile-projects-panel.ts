@@ -1168,6 +1168,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.pullRequestsSidebarUi.render(host);
     }
 
+    protected togglePullRequestSearch(anchor: HTMLElement): void {
+        this.pullRequestsSidebarUi.toggleSearchPopup(anchor);
+    }
+
+    protected closePullRequestSearch(): void {
+        this.pullRequestsSidebarUi.closeSearchPopup();
+    }
+
     protected async openSessionsSidebarPullRequests(): Promise<void> {
         this.render();
         this.inboxStream?.start();

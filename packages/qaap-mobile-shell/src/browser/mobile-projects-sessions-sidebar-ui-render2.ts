@@ -135,6 +135,8 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
             storageScope: () => ctx.host.projectsService.getCurrentWorkspaceCwd(),
             onAccountMenu: anchor => { ctx.onSessionsSidebarAccountClick(anchor); },
             onSearch: () => { void ctx.openSessionsSidebarSearch(); },
+            onPullRequestSearch: anchor => { ctx.togglePullRequestSearch(anchor); },
+            onPullRequestSearchClose: () => { ctx.closePullRequestSearch?.(); },
             onPullRequests: () => { void ctx.openSessionsSidebarPullRequests(); },
             onPullRequestsBack: () => { ctx.closePullRequestDetail?.(); },
             isEmbedded: () => (!isDesktopSessionsSidebarLayout() || document.body.classList.contains('theia-mobile-mod-desktop-ide')) && ctx.host.sessionsSidebarContainer?.() !== undefined,
