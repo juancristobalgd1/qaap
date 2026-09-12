@@ -13,7 +13,7 @@ import {
 } from './mobile-projects-project-rows-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
-describe('MobileProjectsProjectRowsUi sidebar hover pin/archive', () => {
+describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
     let disableJSDOM: (() => void) | undefined;
     let originalMatchMedia: typeof window.matchMedia | undefined;
 
@@ -83,8 +83,6 @@ describe('MobileProjectsProjectRowsUi sidebar hover pin/archive', () => {
     }
 
     function createUi(options?: {
-        readonly priority?: boolean;
-        readonly onPin?: (priority: boolean) => void;
         readonly onArchive?: () => void;
     }): MobileProjectsProjectRowsUi {
         const host = {
@@ -102,7 +100,7 @@ describe('MobileProjectsProjectRowsUi sidebar hover pin/archive', () => {
                 isConversationUnread: () => false,
                 resolveConversationLineage: () => 'none',
                 resolveConversationFlags: () => ({
-                    priority: options?.priority === true,
+                    priority: false,
                     paused: false,
                 }),
             },
@@ -115,16 +113,14 @@ describe('MobileProjectsProjectRowsUi sidebar hover pin/archive', () => {
             onArchiveConversation: async () => {
                 options?.onArchive?.();
             },
-            onSetConversationPriority: async (_summary: QaapAgentConversationSummaryDTO, priority: boolean) => {
-                options?.onPin?.(priority);
-            },
+            onSetConversationPriority: async (_summary: QaapAgentConversationSummaryDTO, _priority: boolean) => undefined,
             onDeleteConversation: async () => undefined,
             openTaskInAgent: async () => undefined,
         } as unknown as MobileProjectsProjectRowsHost;
         return new MobileProjectsProjectRowsUi(host);
     }
 
-    it('shows Cursor-style Pin + Archive on compact sidebar rows', () => {
+    it('shows only Archive on compact sidebar rows because Pin lives in the overflow menu', () => {
         const row = createUi().createTaskItem(
             project,
             task,
@@ -134,47 +130,13 @@ describe('MobileProjectsProjectRowsUi sidebar hover pin/archive', () => {
             { compact: true },
         );
         expect(row.classList.contains('theia-mod-sidebar-compact')).to.equal(true);
-        const pin = row.querySelector('.theia-mobile-projects-conversation-pin-btn');
         const archive = row.querySelector('.theia-mobile-projects-conversation-archive-btn');
-        expect(pin).to.not.equal(null);
+        const menu = row.querySelector('.theia-mobile-projects-conversation-menu-btn');
+        expect(row.querySelector('.theia-mobile-projects-conversation-pin-btn')).to.equal(null);
         expect(archive).to.not.equal(null);
-        expect(pin?.querySelector('.codicon-pin')).to.not.equal(null);
         expect(archive?.querySelector('.codicon-archive')).to.not.equal(null);
-        expect(pin?.getAttribute('aria-label')).to.match(/Pin/i);
         expect(archive?.getAttribute('aria-label')).to.match(/Archive/i);
-    });
-
-    it('toggles pin priority from the compact hover control', () => {
-        const calls: boolean[] = [];
-        const row = createUi({
-            onPin: priority => calls.push(priority),
-        }).createTaskItem(
-            project,
-            task,
-            undefined,
-            summary(),
-            undefined,
-            { compact: true },
-        );
-        const pin = row.querySelector('.theia-mobile-projects-conversation-pin-btn');
-        expect(pin).to.be.instanceOf(HTMLButtonElement);
-        (pin as HTMLButtonElement).click();
-        expect(calls).to.deep.equal([true]);
-    });
-
-    it('shows pinned glyph when the conversation is already priority', () => {
-        const row = createUi({ priority: true }).createTaskItem(
-            project,
-            task,
-            undefined,
-            summary({ priority: true }),
-            undefined,
-            { compact: true },
-        );
-        const pin = row.querySelector('.theia-mobile-projects-conversation-pin-btn');
-        expect(pin?.classList.contains('theia-mod-pinned')).to.equal(true);
-        expect(pin?.querySelector('.codicon-pinned')).to.not.equal(null);
-        expect(pin?.getAttribute('aria-pressed')).to.equal('true');
+        expect(menu).to.not.equal(null);
     });
 
     it('does not mount pin/archive on non-compact rows the same way (archive only when not archived)', () => {

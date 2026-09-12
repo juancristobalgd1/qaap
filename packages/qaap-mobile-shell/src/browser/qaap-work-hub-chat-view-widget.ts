@@ -44,6 +44,7 @@ import { MobileProjectsConversationFlags } from './mobile-projects-conversation-
 import { MobileProjectsHeaderOverflowMenuItem, MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
 import { MobileProjectsService } from './mobile-projects-service';
+import { markPreferDesktopIde } from './mobile-projects-open';
 import type { MobileProjectsHubView } from './mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
@@ -239,7 +240,12 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
             },
             delegate: {
                 onProjectOpen: project => { void this.projectsService.openInCurrentWindowAsync(project); },
-                onProjectOpenInIde: project => { void this.projectsService.openInCurrentWindowAsync(project); },
+                onProjectOpenInIde: project => {
+                    // Persist the IDE surface before opening the selected project so a workspace
+                    // reload lands in that project's classic IDE with the shared IDE/Agents switch.
+                    markPreferDesktopIde();
+                    void this.projectsService.openInCurrentWindowAsync(project);
+                },
                 onDismiss: () => this.close(),
                 onWorkspaceOpened: () => undefined,
                 onProjectsChanged: () => undefined,

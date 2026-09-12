@@ -44,10 +44,13 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/\.theia-mobile-projects-task-title-text\s*\{[^}]*text-overflow:\s*ellipsis/s);
         expect(css).to.include('@keyframes qaap-task-title-marquee');
         expect(css).to.match(/\.theia-mod-title-overflow \.theia-mobile-projects-task-title-text\s*\{[^}]*width:\s*max-content/s);
+        expect(css).to.match(/\.theia-mobile-projects-task-title\.theia-mod-title-overflow::before[\s\S]*?linear-gradient\(/s);
+        expect(css).to.match(/\.theia-mobile-projects-task-title\.theia-mod-title-overflow::after[\s\S]*?linear-gradient\(/s);
     });
 
     it('gives resting titles more room and reserves the action slot on interaction', () => {
         expect(css).to.match(/\.theia-mobile-projects-task-row \.theia-mobile-projects-task-body\s*\{[^}]*padding-right:\s*calc\(var\(--qaap-sessions-row-gutter\) \+ 40px\)/s);
-        expect(css).to.match(/\.theia-mobile-projects-task-row:hover \.theia-mobile-projects-task-body[^}]*padding-right:\s*112px/s);
+        expect(css).to.match(/\.theia-mobile-projects-task-row:hover \.theia-mobile-projects-task-body[^}]*padding-right:\s*84px/s);
+        expect(css).not.to.include('theia-mobile-projects-conversation-pin-btn');
     });
 });

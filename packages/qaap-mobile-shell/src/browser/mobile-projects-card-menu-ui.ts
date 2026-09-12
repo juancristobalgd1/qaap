@@ -88,15 +88,15 @@ export class MobileProjectsCardMenuUi {
         this.closeCardMenu();
     }
 
-    handleScrollReposition(): void {
+    handleScrollReposition = (): void => {
         if (this.openMenu && this.openMenuAnchor) {
             this.positionCardMenu(this.openMenu, this.openMenuAnchor);
         }
-    }
+    };
 
-    handleWindowResize(): void {
+    handleWindowResize = (): void => {
         this.handleScrollReposition();
-    }
+    };
 
     buildProjectOptionsMenu(project: MobileProjectEntry): HTMLElement {
         const menu = document.createElement('div');

@@ -268,32 +268,8 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
             }
         }
 
-        // Cursor-style hover actions (desktop sidebar): Pin + Archive fade in over the time slot.
-        if (compact) {
-            const pinBtn = document.createElement('button');
-            pinBtn.type = 'button';
-            pinBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-pin-btn';
-            const pinned = !!(flags.priority && !flags.paused);
-            const pinLabel = pinned
-                ? nls.localize('qaap/mobileProjects/unpinConversation', 'Unpin')
-                : nls.localize('qaap/mobileProjects/pinConversation', 'Pin');
-            pinBtn.setAttribute('aria-label', pinLabel);
-            pinBtn.title = pinLabel;
-            pinBtn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
-            if (pinned) {
-                pinBtn.classList.add('theia-mod-pinned');
-            }
-            const pinIcon = document.createElement('span');
-            pinIcon.className = `codicon ${pinned ? 'codicon-pinned' : 'codicon-pin'}`;
-            pinIcon.setAttribute('aria-hidden', 'true');
-            pinBtn.append(pinIcon);
-            pinBtn.addEventListener('click', ev => {
-                ev.stopPropagation();
-                void ctx.host.onSetConversationPriority(summary, !pinned);
-            });
-            row.append(pinBtn);
-        }
-
+        // Pin remains available from the conversation overflow menu. Keep the compact row
+        // focused on its primary action and the archive affordance on desktop hover.
         if (summary.source !== 'theia-chat' && (compact || !summary.archived)) {
             const archiveBtn = document.createElement('button');
             archiveBtn.type = 'button';

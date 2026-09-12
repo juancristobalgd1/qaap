@@ -706,6 +706,7 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   line-height: 1.35;
   min-width: 0;
   overflow: hidden;
+  position: relative;
   text-overflow: clip;
   white-space: nowrap;
 }
@@ -766,17 +767,9 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   color: var(--theia-descriptionForeground);
 }
 
-/* Pin + Archive + kebab float over the row's right edge so the conversation title
-   can use the full sidebar width. On desktop they fade in on hover (Cursor pattern);
-   on mobile they stay visible as absolute overlays. */
-.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn {
-  position: absolute;
-  right: 76px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-}
-
+/* Archive + kebab float over the row's right edge so the conversation title can use
+   the full sidebar width. On desktop they fade in on hover; on mobile they stay
+   visible as absolute overlays. */
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn {
   position: absolute;
   right: 46px;
@@ -1428,8 +1421,8 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
 
   /* Desktop: lift the time/age out of the meta row and pin it to the right edge.
      Keep only the timestamp's footprint reserved in the resting state so titles
-     remain readable. On hover the Cursor-style Pin + Archive (+ menu) fade in at
-     the same spot and the time fades out, so restore their larger right slot. */
+     remain readable. On hover the Archive + menu actions fade in at the same spot
+     and the time fades out, so restore their right slot. */
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-body {
     padding-right: calc(var(--qaap-sessions-row-gutter) + 40px);
   }
@@ -1437,7 +1430,7 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-body,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-body,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-task-body {
-    padding-right: 112px;
+    padding-right: 84px;
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-since {
@@ -1455,10 +1448,9 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     opacity: 0.75;
   }
 
-  /* Pin + Archive + kebab: invisible by default, same right-edge slot as the time.
+  /* Archive + kebab: invisible by default, same right-edge slot as the time.
      pointer-events stay auto so click always reaches the button (no race
      with :hover evaluation). opacity-0 makes them visually hidden. */
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
     opacity: 0;
@@ -1472,9 +1464,6 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     opacity: 0;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-conversation-pin-btn,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-conversation-pin-btn,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-conversation-pin-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-conversation-archive-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-conversation-archive-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-conversation-archive-btn,
@@ -1489,6 +1478,39 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     animation: qaap-task-title-marquee 5.2s cubic-bezier(0.2, 0.75, 0.25, 1) 180ms 1 both;
   }
 
+  /* Fade the moving title into the row surface at both edges, matching the subtle
+     marquee treatment used by ChatGPT while keeping the text readable at rest. */
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::after,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::before,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::before {
+    left: 0;
+    background: linear-gradient(
+      to right,
+      var(--theia-list-hoverBackground, var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e))) 0%,
+      transparent 100%);
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow::after,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow::after {
+    right: 0;
+    background: linear-gradient(
+      to left,
+      var(--theia-list-hoverBackground, var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e))) 0%,
+      transparent 100%);
+  }
+
   /* Keep the conversation surface continuous beneath the action buttons. */
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover::after,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within::after,
@@ -1498,7 +1520,7 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     top: 0;
     right: 0;
     bottom: 0;
-    width: 118px;
+    width: 88px;
     border-radius: 0 8px 8px 0;
     border-left: 0;
     background: transparent;
@@ -1506,7 +1528,6 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     z-index: 1;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn {
     z-index: 3;
@@ -1525,10 +1546,6 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     color: var(--theia-descriptionForeground);
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn {
-    right: 78px;
-  }
-
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn {
     right: 48px;
   }
@@ -1537,13 +1554,6 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     right: 12px;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn.theia-mod-pinned {
-    color: var(--theia-foreground);
-    opacity: 0.95;
-  }
-
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn:hover,
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn:focus-visible,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:hover,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:focus-visible,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:hover,
@@ -1555,7 +1565,6 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
     outline: none;
   }
 
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn:focus-visible,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn:focus-visible,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:focus-visible {
     outline: 2px solid var(--theia-focusBorder, var(--theia-foreground));
@@ -1571,8 +1580,7 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
 
 /* Touch/mobile: hover is unavailable, so keep a compact action bar permanently
    available at the edge of every conversation row without breaking its surface.
-   Pin lives only in the overflow menu here — the inline control steals too much
-   horizontal title space on narrow viewports. */
+   Pin lives only in the overflow menu. */
 @media (max-width: 767px), (pointer: coarse), (hover: none) {
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row {
     isolation: isolate;
@@ -1621,10 +1629,6 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:has(.theia-mobile-projects-conversation-archive-btn)::after {
     width: 96px;
-  }
-
-  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-pin-btn {
-    display: none !important;
   }
 
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-archive-btn,

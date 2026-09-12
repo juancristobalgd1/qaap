@@ -238,6 +238,11 @@ export class QaapWorkbenchMenuButtonWidget extends Widget {
             mq.addEventListener('change', onMqChange);
             this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));
         }
+        if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+            const observer = new MutationObserver(refresh);
+            observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            this.toDispose.push(Disposable.create(() => observer.disconnect()));
+        }
         this.syncVisibility();
     }
 
@@ -331,6 +336,11 @@ export class QaapWorkbenchViewModeCenterWidget extends Widget {
             const onMqChange = (): void => refresh();
             mq.addEventListener('change', onMqChange);
             this.toDispose.push(Disposable.create(() => mq.removeEventListener('change', onMqChange)));
+        }
+        if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+            const observer = new MutationObserver(refresh);
+            observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            this.toDispose.push(Disposable.create(() => observer.disconnect()));
         }
         this.syncViewModeSwitch();
     }
