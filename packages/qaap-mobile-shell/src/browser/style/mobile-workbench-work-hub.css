@@ -12570,9 +12570,9 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
-  min-height: 56px;
-  padding: max(8px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px));
+  gap: 8px;
+  min-height: 44px;
+  padding: max(4px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) 4px max(12px, env(safe-area-inset-left, 0px));
   border-bottom: none;
   background: var(--theia-sideBar-background, var(--theia-editor-background));
 }
