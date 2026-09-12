@@ -330,7 +330,7 @@ export function createTranscriptPreviewRunButtonExtracted(ctx: any, project: Mob
     icon.className = 'codicon codicon-play';
     icon.setAttribute('aria-hidden', 'true');
     btn.append(ring, icon);
-    const label = nls.localize('qaap/mobileProjects/previewButton', 'Preview');
+    const label = nls.localize('qaap/mobileProjects/previewButton', 'Navegador');
     btn.title = label;
     btn.setAttribute('aria-label', label);
     return btn;
@@ -461,7 +461,7 @@ export function applyTranscriptPreviewRunButtonStateExtracted(ctx: any, button: 
     }
     const label = stoppable
         ? nls.localize('qaap/mobileProjects/previewStop', 'Stop preview')
-        : nls.localize('qaap/mobileProjects/previewButton', 'Preview');
+        : nls.localize('qaap/mobileProjects/previewButton', 'Navegador');
     button.title = label;
     button.setAttribute('aria-label', label);
     if (waiting) {

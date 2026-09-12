@@ -323,5 +323,13 @@ describe('MobileProjectsTranscriptSheetUi', () => {
         expect(css).to.match(
             /@media \(max-width: 640px\)[\s\S]*?\.theia-mobile-projects\.theia-mod-sticky-composer \.theia-mobile-agent-transcript\.theia-mod-empty-chat\s*\{\s*padding-bottom:\s*max\(18px,/,
         );
+        const workHubCssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css');
+        const workHubCss = fs.readFileSync(workHubCssPath, 'utf8');
+        expect(workHubCss).to.match(
+            /\.theia-mobile-execution-surface-sidebar\s*\{[\s\S]*?border-left:\s*none;/,
+        );
+        expect(workHubCss).to.match(
+            /\.theia-mobile-execution-surface-sidebar-header\s*\{[\s\S]*?border-bottom:\s*none;/,
+        );
     });
 });

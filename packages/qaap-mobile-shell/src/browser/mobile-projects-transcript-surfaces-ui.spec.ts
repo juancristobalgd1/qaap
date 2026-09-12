@@ -168,7 +168,6 @@ describe('MobileProjectsTranscriptSurfacesUi — syncHeaderPreviewRunButton', ()
         const summary = sampleSummary();
         const { host, setExecutionSurfaceTabCalls, showOnlyExecutionSurfaceTabCalls } = buildSyncHeaderPreviewHost({
             activeTab: 'preview',
-            transcriptPreviewRequestPending: true,
         });
         const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
 
@@ -177,7 +176,10 @@ describe('MobileProjectsTranscriptSurfacesUi — syncHeaderPreviewRunButton', ()
         expect(setExecutionSurfaceTabCalls).to.deep.equal([]);
         expect(showOnlyExecutionSurfaceTabCalls).to.deep.equal([]);
         expect(host.headerPreviewRunHost.hidden).to.equal(false);
-        expect(host.headerPreviewRunHost.querySelector('.theia-mobile-transcript-preview-run')).to.not.equal(null);
+        const previewButton = host.headerPreviewRunHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-preview-run');
+        expect(previewButton).to.not.equal(null);
+        expect(previewButton?.title).to.equal('Navegador');
+        expect(previewButton?.getAttribute('aria-label')).to.equal('Navegador');
     });
 
     it('shows the selected monorepo app and exposes an explicit switch action', () => {

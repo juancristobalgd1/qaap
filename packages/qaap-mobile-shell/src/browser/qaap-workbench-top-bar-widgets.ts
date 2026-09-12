@@ -917,7 +917,7 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
     protected getFallbackMobileViewPickerOptions(): MobileBottomButton[] {
         return [
             { id: 'agent', label: nls.localize('theia/core/mobileBottomBar/agent', 'Chat'), icon: 'codicon-comment-discussion' },
-            { id: 'preview', label: nls.localize('theia/core/mobileBottomBar/preview', 'Preview'), icon: 'codicon-play' },
+            { id: 'preview', label: nls.localize('theia/core/mobileBottomBar/preview', 'Navegador'), icon: 'codicon-play' },
             { id: 'terminal', label: nls.localize('theia/core/mobileBottomBar/terminal', 'Terminal'), icon: 'codicon-terminal' },
             { id: 'explore', label: nls.localize('theia/core/mobileBottomBar/explore', 'Explore'), icon: 'codicon-folder-opened' },
             { id: 'pr', label: nls.localize('theia/core/mobileBottomBar/pr', 'PR'), icon: 'codicon-git-pull-request' },

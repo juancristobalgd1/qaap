@@ -264,11 +264,11 @@ export function syncTerminalAgentTuiTriggerExtracted(ctx: any, trigger: HTMLButt
 export function executionSurfaceTabSpecsExtracted(ctx: any): Array<{ id: TranscriptTab; label: string; icon: string }> {
     if (peekPreferDesktopIde()) {
         return [
-            { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Preview'), icon: 'codicon-globe' },
+            { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
         ];
     }
     return [
-        { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Preview'), icon: 'codicon-globe' },
+        { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
         { id: 'files', label: nls.localize('qaap/mobileProjects/tabFiles', 'Files'), icon: 'codicon-files' },
         { id: 'terminal', label: nls.localize('qaap/mobileProjects/tabTerminal', 'Terminal'), icon: 'codicon-terminal' },
     ];
