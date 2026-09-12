@@ -9970,7 +9970,7 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   border-bottom-right-radius: var(--qaap-codex-shell-radius) !important;
 }
 
-/* Codex stage — input panel (textarea + botones) fijo; el tray se oculta al focus del textarea. */
+/* Codex stage — input panel (textarea + botones) fijo; el tray permanece disponible al focus. */
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-stage {
   --qaap-codex-tray-band-height: 54px;
   --qaap-codex-tray-lip-overlap: 10px;
@@ -9984,10 +9984,6 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   padding-bottom: calc(var(--qaap-codex-tray-band-height) - var(--qaap-codex-tray-lip-overlap));
   box-sizing: border-box;
   transition: padding-bottom 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded .theia-mobile-projects-sticky-composer-stage {
-  padding-bottom: 0;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-panel {
@@ -10015,19 +10011,6 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
     max-height 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
     min-height 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
     padding 200ms ease;
-}
-
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded .theia-mobile-projects-sticky-composer-stage>.qaap-codex-context-tray,
-.theia-mobile-projects-sticky-composer-card.theia-mod-codex.theia-mod-input-expanded .theia-mobile-projects-sticky-composer-stage>.theia-mobile-projects-sticky-composer-toolbar.qaap-codex-context-tray {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(100%);
-  max-height: 0;
-  min-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  overflow: hidden;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-context-strip {

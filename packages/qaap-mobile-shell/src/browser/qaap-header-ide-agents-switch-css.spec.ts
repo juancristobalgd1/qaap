@@ -25,6 +25,10 @@ describe('header IDE/Agents switch CSS', () => {
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
         'utf8',
     );
+    const conversationCss = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css'),
+        'utf8',
+    );
     const legacyWorkbenchCss = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench.css'),
         'utf8',
@@ -82,6 +86,15 @@ describe('header IDE/Agents switch CSS', () => {
     it('keeps compact project labels short on narrow headers', () => {
         expect(workHubCss).to.match(
             /@media \(max-width:\s*767px\)[\s\S]*?\.theia-mobile-projects-header-project\.theia-mod-compact-project \.theia-mobile-projects-header-project-label\s*\{[\s\S]*?max-width:\s*clamp\(96px,\s*34vw,\s*148px\)/,
+        );
+    });
+
+    it('keeps Codex context controls interactive while the input is focused', () => {
+        expect(conversationCss).not.to.match(
+            /\.theia-mobile-projects-sticky-composer-card\.theia-mod-codex\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage\s*\{[^}]*padding-bottom:\s*0/s,
+        );
+        expect(conversationCss).not.to.match(
+            /\.theia-mobile-projects-sticky-composer-card\.theia-mod-codex\.theia-mod-input-expanded \.theia-mobile-projects-sticky-composer-stage>\.qaap-codex-context-tray,[\s\S]*?pointer-events:\s*none/s,
         );
     });
 });
