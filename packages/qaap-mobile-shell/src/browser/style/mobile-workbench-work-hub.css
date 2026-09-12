@@ -9199,6 +9199,12 @@ body.qaap-theme-dark .theia-qaap-llm-provider-icon.theia-mod-theme-adaptive .the
     flex: 1 1 auto;
     min-width: 0;
   }
+
+  /* Keep the repository label compact so the header actions remain visible on narrow screens. */
+  .theia-mobile-projects.theia-mod-home.theia-mod-agents-hub-landing .theia-mobile-projects-header-project.theia-mod-compact-project .theia-mobile-projects-header-project-label {
+    flex: 0 1 auto;
+    max-width: clamp(96px, 34vw, 148px);
+  }
 }
 
 .theia-mobile-projects-title-row:has(.theia-mobile-projects-header-project:not([hidden])) {

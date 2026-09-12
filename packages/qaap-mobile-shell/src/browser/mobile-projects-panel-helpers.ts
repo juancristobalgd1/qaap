@@ -128,6 +128,7 @@ export function renderHeaderOverflowMenuItems(
         item.className = 'qaap-work-hub-toolbar-menu-item';
         item.setAttribute('role', 'menuitem');
         item.disabled = !enabled;
+        item.setAttribute('aria-disabled', String(!enabled));
         const iconEl = document.createElement('span');
         iconEl.className = `codicon ${icon}`;
         iconEl.setAttribute('aria-hidden', 'true');

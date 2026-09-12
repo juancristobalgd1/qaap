@@ -426,6 +426,20 @@ describe('MobileProjectsHubHeaderUi', () => {
         expect(terminalUi.resolveHeaderOverflowMenuVisible()).to.equal(false);
     });
 
+    it('keeps the header overflow menu visible for an empty Agents landing chat', () => {
+        const current = project('qaap-review-ws-33b39ec8', 'qaap-review-ws-33b39ec8');
+        const host = createHost({ shellProject: current, activeTab: 'messages' });
+        host.hubQueryUi = {
+            isSidebarSecondaryHubView: () => false,
+        } as unknown as MobileProjectsHubHeaderHost['hubQueryUi'];
+
+        new MobileProjectsHubHeaderUi(host).renderHeader();
+
+        expect(host.headerProjectCluster.classList.contains('theia-mod-compact-project')).to.equal(true);
+        expect(host.headerOverflowMenuBtn.hidden).to.equal(false);
+        expect(host.headerOverflowMenuBtn.getAttribute('aria-hidden')).to.equal('false');
+    });
+
     describe('header conversation task menu', () => {
         const summary = {
             id: 'conv-1',

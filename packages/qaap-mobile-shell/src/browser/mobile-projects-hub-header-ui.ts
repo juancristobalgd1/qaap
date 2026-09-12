@@ -452,7 +452,10 @@ export class MobileProjectsHubHeaderUi {
     }
 
     resolveHeaderOverflowMenuVisible(): boolean {
-        return this.resolveHeaderNewChatVisible();
+        const project = this.resolveHeaderProject();
+        return this.host.shouldUseAgentsHubLanding()
+            && !!project
+            && this.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'messages';
     }
 
     protected resolveHeaderNewChatProject(): MobileProjectEntry | undefined {
@@ -462,7 +465,10 @@ export class MobileProjectsHubHeaderUi {
         if (this.host.agentsHubShellActive) {
             return this.host.resolveAgentsHubShellProject();
         }
-        return undefined;
+        // The empty Agents landing has no inline transcript yet, but it still has
+        // a selected composer project. Keep New Chat available from the overflow
+        // menu in that state as well.
+        return this.resolveHeaderProject();
     }
 
     syncAgentsHubAccountChrome(): void {
