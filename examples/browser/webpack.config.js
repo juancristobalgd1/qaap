@@ -15,7 +15,6 @@ const qaapMobileShellLib = path.join(
     'lib/browser',
 );
 const qaapTranscriptMarkdownWorkerEntry = path.join(qaapMobileShellLib, 'qaap-transcript-markdown-worker.js');
-const qaapCliTranscriptParseWorkerEntry = path.join(qaapMobileShellLib, 'qaap-cli-transcript-parse-worker.js');
 
 /**
  * Expose bundled modules on window.theia.moduleName namespace, e.g.
@@ -40,7 +39,6 @@ module.exports = [
         devtool: 'source-map',
         entry: {
             'qaap-transcript-markdown-worker': qaapTranscriptMarkdownWorkerEntry,
-            'qaap-cli-transcript-parse-worker': qaapCliTranscriptParseWorkerEntry,
         },
         output: {
             filename: '[name].js',
