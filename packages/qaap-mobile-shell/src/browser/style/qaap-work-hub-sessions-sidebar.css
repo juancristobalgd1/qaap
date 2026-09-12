@@ -27,6 +27,7 @@
 .theia-mobile-work-hub-sessions-sidebar {
   --qaap-sessions-sidebar-motion-duration: 220ms;
   --qaap-sessions-sidebar-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff));
   /* One gutter for project rows, session pills, and leftover list chrome. */
   --qaap-sessions-row-gutter: 8px;
   position: fixed;
@@ -38,7 +39,7 @@
   height: 100%;
   height: 100dvh;
   overflow: hidden;
-  background: var(--qaap-bg, var(--qaap-surface, var(--theia-editor-background)));
+  background: var(--qaap-sessions-sidebar-background);
   pointer-events: none;
   visibility: hidden;
   opacity: 0;
@@ -204,6 +205,12 @@
   line-height: 1;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+body.qaap-theme-dark .theia-mobile-work-hub-sessions-sidebar,
+body.theia-dark .theia-mobile-work-hub-sessions-sidebar,
+body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
+  --qaap-sessions-sidebar-background: #0b0908;
 }
 
 /* Pull Requests keeps the close control in the same trailing position as the
@@ -697,9 +704,41 @@
   font-weight: 400;
   color: var(--theia-foreground);
   line-height: 1.35;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
+  display: block;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+@keyframes qaap-task-title-marquee {
+  0%, 14% {
+    transform: translateX(0);
+  }
+
+  76%, 88% {
+    transform: translateX(calc(-1 * var(--qaap-task-title-overflow, 0px)));
+  }
+
+  100% {
+    transform: translateX(0);
+  }
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-current .theia-mobile-projects-task-title {
@@ -936,7 +975,7 @@
   gap: 8px;
   margin: 0 -6px 0 -8px;
   padding: 12px 16px 8px;
-  background: var(--theia-sideBar-background, var(--theia-editor-background, #1e1e1e));
+  background: var(--qaap-sessions-sidebar-background);
 }
 
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mod-sessions-sidebar-projects-head .theia-mobile-tasks-inbox-section-label {
@@ -1387,10 +1426,17 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
         var(--theia-foreground) 9%);
   }
 
-  /* Desktop: lift the time/age out of the meta row and pin it to the right edge
-     so the row content uses the full sidebar width. On hover the Cursor-style
-     Pin + Archive (+ menu) fade in at the same spot and the time fades out. */
+  /* Desktop: lift the time/age out of the meta row and pin it to the right edge.
+     Keep only the timestamp's footprint reserved in the resting state so titles
+     remain readable. On hover the Cursor-style Pin + Archive (+ menu) fade in at
+     the same spot and the time fades out, so restore their larger right slot. */
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-task-body {
+    padding-right: calc(var(--qaap-sessions-row-gutter) + 40px);
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-body,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-body,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-task-body {
     padding-right: 112px;
   }
 
@@ -1436,6 +1482,11 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-conversation-menu-btn,
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row.theia-mod-menu-open .theia-mobile-projects-conversation-menu-btn {
     opacity: 0.85;
+  }
+
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:hover .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text,
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row:focus-within .theia-mobile-projects-task-title.theia-mod-title-overflow .theia-mobile-projects-task-title-text {
+    animation: qaap-task-title-marquee 5.2s cubic-bezier(0.2, 0.75, 0.25, 1) 180ms 1 both;
   }
 
   /* Keep the conversation surface continuous beneath the action buttons. */
@@ -1509,6 +1560,12 @@ button.theia-mod-sessions-sidebar-accordion .theia-mobile-projects-conversation-
   .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-row .theia-mobile-projects-conversation-menu-btn:focus-visible {
     outline: 2px solid var(--theia-focusBorder, var(--theia-foreground));
     outline-offset: 1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
+    animation: none !important;
   }
 }
 
@@ -1794,7 +1851,7 @@ body.theia-mobile-mod-sessions-sidebar-open .lm-Widget.dialogOverlay {
   .theia-mobile-work-hub-sessions-sidebar-panel {
     width: 100%;
     height: 100dvh;
-    background: var(--qaap-bg, var(--qaap-surface, var(--theia-editor-background)));
+    background: var(--qaap-sessions-sidebar-background);
   }
 
   .theia-mobile-work-hub-sessions-sidebar-close {

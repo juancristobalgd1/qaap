@@ -21,6 +21,7 @@ import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types'; import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
 export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     task: MobileProjectTaskView,
@@ -103,7 +104,8 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     taskTitleRow.className = 'theia-mobile-projects-task-title-row';
     const taskTitle = document.createElement('span');
     taskTitle.className = 'theia-mobile-projects-task-title';
-    taskTitle.textContent = task.title;
+    taskTitle.append(createTaskTitleText(task.title));
+    attachTaskTitleMarquee(row, taskTitle);
     const taskSince = document.createElement('span');
     taskSince.className = 'theia-mobile-projects-task-since';
     taskSince.textContent = ctx.formatTaskSince(task, summary);

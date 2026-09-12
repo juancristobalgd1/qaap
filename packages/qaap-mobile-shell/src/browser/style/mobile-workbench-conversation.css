@@ -3718,8 +3718,8 @@ body>.theia-mobile-transcript-files-menu {
   margin: 0;
   max-width: 14em;
   color: color-mix(in srgb, var(--theia-foreground) 90%, var(--theia-descriptionForeground));
-  font-size: clamp(24px, 4.4vw, 36px);
-  font-weight: 360;
+  font-size: clamp(20px, 3.4vw, 30px);
+  font-weight: 300;
   line-height: 1.14;
   letter-spacing: -0.012em;
   text-wrap: balance;
@@ -3741,7 +3741,7 @@ body>.theia-mobile-transcript-files-menu {
   }
 
   .theia-mobile-agent-transcript-empty-title {
-    font-size: clamp(22px, 7vw, 30px);
+    font-size: clamp(19px, 6vw, 26px);
   }
 }
 
@@ -10081,9 +10081,9 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   align-items: center;
   gap: 4px;
   min-width: 0;
-  min-height: 64px;
+  min-height: 48px;
   box-sizing: border-box;
-  padding: 16px 12px 4px 18px;
+  padding: 10px 12px 2px 18px;
 }
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input-actions {
@@ -10099,7 +10099,7 @@ body.qaap-theme-dark .theia-mobile-projects-sticky-composer-card.theia-mod-codex
   flex: 1 1 auto;
   width: auto;
   min-width: 0;
-  min-height: 44px;
+  min-height: 24px;
   max-height: 120px;
   padding: 0;
   margin: 0;

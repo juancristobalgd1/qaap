@@ -29,4 +29,25 @@ describe('sessions sidebar selection CSS', () => {
             /\.theia-mobile-projects-task-row\.theia-mod-current::before\s*\{[^}]*inset:\s*0 8px/s,
         );
     });
+
+    it('uses the reference dark surface for the sessions sidebar and panel', () => {
+        expect(css).to.include('--qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff))');
+        expect(css).to.include('body.qaap-theme-dark .theia-mobile-work-hub-sessions-sidebar');
+        expect(css).to.include('--qaap-sessions-sidebar-background: #0b0908');
+        expect(css).to.match(/\.theia-mobile-work-hub-sessions-sidebar\s*\{[^}]*background:\s*var\(--qaap-sessions-sidebar-background\)/s);
+        expect(css).to.match(/\.theia-mobile-work-hub-sessions-sidebar-panel\s*\{[^}]*background:\s*var\(--qaap-sessions-sidebar-background\)/s);
+        expect(css).to.match(/\.theia-mod-sessions-sidebar-projects-head\s*\{[^}]*background:\s*var\(--qaap-sessions-sidebar-background\)/s);
+    });
+
+    it('animates only overflowing titles while keeping the normal ellipsis state', () => {
+        expect(css).to.include('.theia-mobile-projects-task-title-text');
+        expect(css).to.match(/\.theia-mobile-projects-task-title-text\s*\{[^}]*text-overflow:\s*ellipsis/s);
+        expect(css).to.include('@keyframes qaap-task-title-marquee');
+        expect(css).to.match(/\.theia-mod-title-overflow \.theia-mobile-projects-task-title-text\s*\{[^}]*width:\s*max-content/s);
+    });
+
+    it('gives resting titles more room and reserves the action slot on interaction', () => {
+        expect(css).to.match(/\.theia-mobile-projects-task-row \.theia-mobile-projects-task-body\s*\{[^}]*padding-right:\s*calc\(var\(--qaap-sessions-row-gutter\) \+ 40px\)/s);
+        expect(css).to.match(/\.theia-mobile-projects-task-row:hover \.theia-mobile-projects-task-body[^}]*padding-right:\s*112px/s);
+    });
 });

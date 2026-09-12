@@ -263,8 +263,8 @@ export class MobileProjectsStickyComposerColumnUi {
 
         const input = document.createElement('textarea');
         input.className = 'theia-mobile-projects-sticky-composer-input';
-        input.rows = 2;
-        input.setAttribute('rows', '2');
+        input.rows = 1;
+        input.setAttribute('rows', '1');
         const placeholderAgent = options.resolveAgentLabel();
         input.placeholder = options.inputPlaceholder ?? nls.localize(
             'qaap/mobileProjects/stickyComposerPlaceholder',
@@ -619,7 +619,7 @@ export class MobileProjectsStickyComposerColumnUi {
      * overridden by the CSS `field-sizing` calculation on the next layout pass.
      */
     protected installTextareaAutoGrow(input: HTMLTextAreaElement): void {
-        const MIN_HEIGHT = 44;
+        const MIN_HEIGHT = 24;
         const MAX_HEIGHT = 120;
 
         const resize = (): void => {

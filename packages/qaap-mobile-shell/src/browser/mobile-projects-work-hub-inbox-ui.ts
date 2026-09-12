@@ -20,6 +20,7 @@ import type { MobileProjectsConversations } from './mobile-projects-conversation
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
 import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
+import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
 /** Panel surface for Work Hub inbox grouping and Review / Chat hub list rendering. */
 export interface MobileProjectsWorkHubInboxHost {
@@ -451,7 +452,8 @@ export class MobileProjectsWorkHubInboxUi {
         titleRow.className = 'theia-mobile-projects-task-title-row';
         const title = document.createElement('span');
         title.className = 'theia-mobile-projects-task-title';
-        title.textContent = pullRequest.title;
+        title.append(createTaskTitleText(pullRequest.title));
+        attachTaskTitleMarquee(row, title);
         const since = document.createElement('span');
         since.className = 'theia-mobile-projects-task-since';
         since.textContent = this.formatInboxPullRequestSince(pullRequest);

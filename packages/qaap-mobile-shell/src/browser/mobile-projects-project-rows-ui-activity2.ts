@@ -22,6 +22,7 @@ import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-
 import type { MobileProjectsService } from './mobile-projects-service';
 import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
 import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import { setTaskTitleText } from './mobile-projects-task-title-marquee';
 
 export function patchSidebarCompactTaskRowExtracted(ctx: any, row: HTMLElement,
         project: MobileProjectEntry,
@@ -63,7 +64,7 @@ export function patchWorkHubTaskRowContentExtracted(ctx: any, row: HTMLElement,
         row.classList.toggle('theia-mod-current', !!options?.isCurrent);
         const titleEl = row.querySelector<HTMLElement>('.theia-mobile-projects-task-title');
         if (titleEl && titleEl.textContent !== task.title) {
-            titleEl.textContent = task.title;
+            setTaskTitleText(titleEl, task.title);
         }
         const sinceEl = row.querySelector<HTMLElement>('.theia-mobile-projects-task-since');
         if (sinceEl) {
