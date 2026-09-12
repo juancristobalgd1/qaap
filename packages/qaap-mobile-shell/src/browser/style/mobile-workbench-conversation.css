@@ -9831,8 +9831,9 @@ body:has(.theia-mobile-agent-transcript-root.theia-mod-visible) .lm-Widget.dialo
   --qaap-codex-tray-bg: color-mix(in srgb, var(--qaap-codex-shell-bg) 88%, #000 12%);
   --qaap-codex-send-ready-bg: color-mix(in srgb, var(--theia-foreground) 92%, #fff);
   --qaap-codex-send-ready-fg: color-mix(in srgb, var(--theia-editor-background) 92%, #000);
-  --qaap-codex-shell-radius: 26px;
-  --qaap-codex-shell-lip-radius: 18px;
+  /* Keep the composer structured without the oversized pill silhouette. */
+  --qaap-codex-shell-radius: 16px;
+  --qaap-codex-shell-lip-radius: 12px;
   border-radius: var(--qaap-codex-shell-radius);
   border: none;
   background: transparent;
