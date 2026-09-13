@@ -6940,9 +6940,9 @@ body.qaap-theme-light .theia-mobile-projects-sticky-composer-card.theia-mod-code
 
 .theia-mobile-projects-sticky-composer-card.theia-mod-codex .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input::selection,
 .theia-mobile-projects-sticky-composer-input.theia-mod-highlight-input::selection {
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  background: color-mix(in srgb, var(--theia-focusBorder) 35%, transparent);
+  color: var(--theia-foreground);
+  -webkit-text-fill-color: var(--theia-foreground);
+  background: color-mix(in srgb, var(--theia-editor-selectionBackground, var(--theia-list-activeSelectionBackground, #264f78)) 82%, var(--theia-foreground) 18%);
 }
 
 .theia-mobile-projects-sticky-composer-attach-menu-empty {

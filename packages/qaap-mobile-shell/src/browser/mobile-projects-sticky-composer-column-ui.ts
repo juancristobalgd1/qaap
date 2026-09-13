@@ -297,6 +297,18 @@ export class MobileProjectsStickyComposerColumnUi {
         improveBloom.setAttribute('aria-hidden', 'true');
         improveBtn.append(createStickyComposerImproveIcon(), improveBloom);
 
+        const expandBtn = document.createElement('button');
+        expandBtn.type = 'button';
+        expandBtn.className = 'theia-mobile-projects-sticky-composer-input-expand';
+        expandBtn.hidden = true;
+        expandBtn.setAttribute('aria-expanded', 'false');
+        const expandIcon = document.createElement('span');
+        expandIcon.className = 'codicon codicon-chevron-down';
+        expandIcon.setAttribute('aria-hidden', 'true');
+        const expandLabel = document.createElement('span');
+        expandLabel.className = 'theia-mobile-projects-sticky-composer-input-expand-label';
+        expandBtn.append(expandIcon, expandLabel);
+
         let lastSendIcon: 'send' | 'stop' | undefined;
         const updateSend = (): void => {
             const has = input.value.trim().length > 0;
@@ -487,6 +499,7 @@ export class MobileProjectsStickyComposerColumnUi {
 
         const inputActions = document.createElement('div');
         inputActions.className = 'theia-mobile-projects-sticky-composer-input-actions';
+        inputActions.append(expandBtn);
         if (options.onImprovePrompt) {
             inputActions.append(improveBtn);
         }
@@ -554,7 +567,7 @@ export class MobileProjectsStickyComposerColumnUi {
         cardBeamBloom.setAttribute('aria-hidden', 'true');
         card.append(cardBeamBloom);
         this.installCodexComposerExpandBehavior(card, stage, inputBody, input);
-        this.installTextareaAutoGrow(input);
+        this.installTextareaAutoGrow(input, inputPanel, expandBtn, expandIcon, expandLabel);
         if (options.onDropFiles) {
             this.installComposerDropZone(card, inputPanel, input, options.onDropFiles);
             this.installComposerPasteHandler(inputPanel, input, options.onDropFiles);
@@ -611,27 +624,77 @@ export class MobileProjectsStickyComposerColumnUi {
     }
 
     /**
-     * Auto-grow fallback for browsers that don't support `field-sizing: content`
-     * (Safari, Firefox, older Chrome). The textarea grows with its content up to
-     * `max-height` (120px via CSS), then scrolls internally. In browsers that DO
-     * support `field-sizing: content` (Chrome 123+), the CSS handles auto-grow
-     * natively and this JS fallback is a no-op — the height set here is immediately
-     * overridden by the CSS `field-sizing` calculation on the next layout pass.
+     * Grow the prompt textarea up to five lines and expose a smooth expand/collapse
+     * control for longer prompts.
      */
-    protected installTextareaAutoGrow(input: HTMLTextAreaElement): void {
+    protected installTextareaAutoGrow(
+        input: HTMLTextAreaElement,
+        inputPanel: HTMLElement,
+        expandBtn: HTMLButtonElement,
+        expandIcon: HTMLSpanElement,
+        expandLabel: HTMLSpanElement,
+    ): void {
+        const COLLAPSED_LINE_COUNT = 5;
         const MIN_HEIGHT = 24;
-        const MAX_HEIGHT = 120;
+        const MAX_EXPANDED_HEIGHT = 360;
+        let expanded = false;
+
+        const resolveLineHeight = (): number => {
+            const lineHeight = Number.parseFloat(window.getComputedStyle(input).lineHeight);
+            return Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : 15 * 1.45;
+        };
+
+        const updateExpandButton = (hasOverflow: boolean): void => {
+            const expandText = expanded
+                ? nls.localize('qaap/mobileProjects/stickyComposerCollapsePrompt', 'Collapse')
+                : nls.localize('qaap/mobileProjects/stickyComposerExpandPrompt', 'Expand');
+            const actionText = expanded
+                ? nls.localize('qaap/mobileProjects/stickyComposerCollapsePromptAria', 'Collapse prompt')
+                : nls.localize('qaap/mobileProjects/stickyComposerExpandPromptAria', 'Expand prompt');
+            expandBtn.hidden = !hasOverflow;
+            expandBtn.title = actionText;
+            expandBtn.setAttribute('aria-label', actionText);
+            expandBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            expandIcon.className = `codicon ${expanded ? 'codicon-chevron-up' : 'codicon-chevron-down'}`;
+            expandLabel.textContent = expandText;
+        };
 
         const resize = (): void => {
+            const collapsedMaxHeight = resolveLineHeight() * COLLAPSED_LINE_COUNT;
+            const expandedMaxHeight = Math.min(
+                MAX_EXPANDED_HEIGHT,
+                Math.max(collapsedMaxHeight, Math.floor(window.innerHeight * 0.46)),
+            );
+            const maxHeight = expanded ? expandedMaxHeight : collapsedMaxHeight;
             // Reset to a small height so scrollHeight measures the actual content
             // height (not the previously expanded height).
             input.style.height = 'auto';
-            const next = Math.min(Math.max(input.scrollHeight, MIN_HEIGHT), MAX_HEIGHT);
+            input.style.maxHeight = `${maxHeight}px`;
+            const contentHeight = input.scrollHeight;
+            const next = Math.min(Math.max(contentHeight, MIN_HEIGHT), maxHeight);
             input.style.height = `${next}px`;
-            input.style.overflowY = input.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden';
+            input.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
+            const hasOverflow = contentHeight > collapsedMaxHeight + 1;
+            if (!hasOverflow && expanded) {
+                expanded = false;
+                inputPanel.classList.remove('theia-mod-composer-input-expanded');
+                window.requestAnimationFrame(resize);
+                return;
+            }
+            updateExpandButton(hasOverflow);
         };
 
+        expandBtn.addEventListener('click', ev => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            expanded = !expanded;
+            inputPanel.classList.toggle('theia-mod-composer-input-expanded', expanded);
+            input.focus();
+            resize();
+        });
+
         input.addEventListener('input', resize);
+        window.addEventListener('resize', resize, { passive: true });
         // Handle programmatic value changes (prompt history, slash commands, etc.)
         new MutationObserver(resize).observe(input, {
             attributes: true,
