@@ -88,6 +88,7 @@ export const QAAP_SPANISH_TRANSLATIONS: Readonly<Record<string, string>> = {
     'qaap/sessionsSidebar/noSessions': 'Todavía no hay sesiones. Inicia una desde Agentes.',
     'qaap/sessionsSidebar/noSearchResults': 'Ninguna sesión coincide con la búsqueda.',
     'qaap/sessionsSidebar/projectsSection': 'Proyectos',
+    'qaap/sessionsSidebar/projectsSectionWithProject': 'Proyectos · {0}',
     'qaap/sessionsSidebar/signIn': 'Iniciar sesión con GitHub',
     'qaap/sessionsSidebar/signInHint': 'Inicia sesión con GitHub para ver tus sesiones de agentes.',
     'qaap/sessionsSidebar/newChat': 'Nuevo agente',

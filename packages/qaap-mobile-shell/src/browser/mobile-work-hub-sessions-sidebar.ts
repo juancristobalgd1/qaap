@@ -93,6 +93,9 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly scrollHost: HTMLElement;
     protected readonly listHost: HTMLElement;
     protected readonly resizeHandle: HTMLElement;
+    protected readonly onProjectsScroll = (): void => {
+        this.updateProjectsHeading();
+    };
     protected dismissHint: HTMLElement | undefined;
     protected resizeDispose: Disposable = Disposable.NULL;
     protected refreshListRaf = 0;
@@ -202,6 +205,7 @@ export class MobileWorkHubSessionsSidebar {
         );
         this.scrollHost = document.createElement('div');
         this.scrollHost.className = 'theia-mobile-work-hub-sessions-sidebar-scroll';
+        this.scrollHost.addEventListener('scroll', this.onProjectsScroll, { passive: true });
         this.listHost = document.createElement('div');
         this.listHost.className = 'theia-mobile-work-hub-sessions-sidebar-list';
         this.scrollHost.append(this.listHost);
@@ -575,10 +579,12 @@ export class MobileWorkHubSessionsSidebar {
         }
         if (!options?.force && this.listHost.innerHTML === nextList.innerHTML) {
             this.delegate.rememberSessionListFingerprint?.(this.listHost);
+            this.updateProjectsHeading();
             return;
         }
         this.listHost.replaceChildren(...Array.from(nextList.childNodes));
         this.scrollHost.scrollTop = previousScrollTop;
+        this.updateProjectsHeading();
         if (activeConversationId) {
             const nextFocus = this.listHost
                 .querySelector<HTMLElement>(`[data-qaap-conversation-id="${cssEscapeAttribute(activeConversationId)}"] button`);
@@ -588,6 +594,38 @@ export class MobileWorkHubSessionsSidebar {
         if (this.visible) {
             this.ensureScrollTouchFallback();
         }
+    }
+
+    /**
+     * Keep the sticky Projects heading anchored to the project whose folder row has just
+     * scrolled past it. The project rows stay in the list, so this is purely presentational
+     * and does not affect the active project or the accordion state.
+     */
+    protected updateProjectsHeading(): void {
+        const heading = this.listHost.querySelector<HTMLElement>('.theia-mod-sessions-sidebar-projects-head');
+        const label = heading?.querySelector<HTMLElement>('.theia-mobile-tasks-inbox-section-label');
+        if (!heading || !label) {
+            return;
+        }
+        const headingTop = heading.getBoundingClientRect().top;
+        let currentProjectName: string | undefined;
+        const groups = this.listHost.querySelectorAll<HTMLElement>('.theia-mobile-work-hub-sessions-sidebar-project-group');
+        for (const group of groups) {
+            const row = group.querySelector<HTMLElement>('.theia-mobile-work-hub-sessions-sidebar-project-row');
+            const name = group.querySelector<HTMLElement>('.theia-mobile-work-hub-sessions-sidebar-project-name')?.textContent?.trim();
+            if (row && name && row.getBoundingClientRect().top <= headingTop + 1) {
+                currentProjectName = name;
+            }
+        }
+
+        const nextLabel = currentProjectName
+            ? nls.localize('qaap/sessionsSidebar/projectsSectionWithProject', 'Projects · {0}', currentProjectName)
+            : nls.localize('qaap/sessionsSidebar/projectsSection', 'Projects');
+        if (label.textContent !== nextLabel) {
+            label.textContent = nextLabel;
+        }
+        label.title = currentProjectName || nls.localize('qaap/sessionsSidebar/projectsSection', 'Projects');
+        label.classList.toggle('theia-mod-project-context', !!currentProjectName);
     }
 
     protected onKeyDown(event: KeyboardEvent): void {

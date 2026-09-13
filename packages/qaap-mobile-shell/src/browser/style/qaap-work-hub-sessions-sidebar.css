@@ -996,6 +996,9 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mod-sessions-sidebar-projects-head .theia-mobile-tasks-inbox-section-label {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-projects-head-actions {
