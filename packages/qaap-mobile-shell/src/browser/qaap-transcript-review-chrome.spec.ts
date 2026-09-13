@@ -18,14 +18,14 @@ describe('qaap-transcript-review-chrome', () => {
         disableJSDOM?.();
     });
 
-    it('mounts the diff, checks, and history controls expected by external chrome mode', () => {
+    it('mounts the diff and history controls expected by external chrome mode', () => {
         const host = document.createElement('div');
         const chrome = createTranscriptReviewChrome(host, false);
 
         expect(host.children).to.have.lengthOf(4);
         expect(chrome.diffHost.parentElement).to.equal(host);
-        expect(chrome.checksHost.closest('.theia-mobile-transcript-changes-dock')).not.to.be.null;
-        expect(chrome.historyToggleHost.closest('.theia-mobile-transcript-changes-dock')).not.to.be.null;
+        expect(host.querySelector('.theia-mobile-transcript-changes-dock')).to.be.null;
+        expect(chrome.historyToggleHost.parentElement).to.equal(host);
         expect(chrome.historyPanel.hidden).to.be.true;
         expect(chrome.historyResizeHandle.hidden).to.be.true;
         expect(chrome.historyResizeHandle.getAttribute('role')).to.equal('separator');

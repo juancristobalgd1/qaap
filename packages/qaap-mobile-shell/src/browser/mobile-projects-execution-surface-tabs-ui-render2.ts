@@ -240,7 +240,9 @@ function restoreExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): voi
 function restoreExecutionSurfaceSidebarPreviewHeaderMountExtracted(sidebar: any): void {
     const mount = sidebar.previewHeaderMount as {
         attachPreviewHeaderHost?: (host: HTMLElement | undefined) => void;
+        attachChangesHeaderActionHost?: (host: HTMLElement | undefined) => void;
     } | undefined;
+    mount?.attachChangesHeaderActionHost?.(undefined);
     mount?.attachPreviewHeaderHost?.(undefined);
     sidebar.previewHeaderMount = undefined;
 }

@@ -482,6 +482,14 @@ export function mountTranscriptFilesView(
     previewPane.append(previewHeader, previewBody);
 
     let previewHeaderHost: HTMLElement | undefined;
+    let changesHeaderActionHost: HTMLElement | undefined;
+    const syncChangesHeaderActionHost = (): void => {
+        if (!changesHeaderActionHost) {
+            return;
+        }
+        changesHeaderActionHost.hidden = state.viewMode !== 'changes';
+        changesHeaderActionHost.setAttribute('aria-hidden', String(state.viewMode !== 'changes'));
+    };
     const syncAttachedPreviewHeader = (): void => {
         const host = previewHeaderHost;
         if (!host) {
@@ -1742,6 +1750,28 @@ export function mountTranscriptFilesView(
         }
     };
 
+    const attachChangesHeaderActionHost = (host: HTMLElement | undefined): void => {
+        if (changesHeaderActionHost) {
+            changesHeaderActionHost.classList.remove('theia-mobile-transcript-history-toggle-host--header');
+            changesHeaderActionHost.remove();
+        }
+        changesHeaderActionHost = host;
+        if (!host) {
+            return;
+        }
+        host.classList.add('theia-mobile-transcript-history-toggle-host--header');
+        syncChangesHeaderActionHost();
+        const externalHeader = previewHeaderHost ?? document.querySelector<HTMLElement>(
+            '.theia-mobile-execution-surface-sidebar[data-surface="files"] .theia-mobile-execution-surface-sidebar-header',
+        );
+        const close = externalHeader?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-close');
+        if (externalHeader) {
+            externalHeader.insertBefore(host, close ?? null);
+        } else {
+            changesHeader.append(host);
+        }
+    };
+
     disposables.push(Disposable.create(() => {
         clearPreviewSaveTimer();
         void savePreviewText();
@@ -1823,6 +1853,7 @@ export function mountTranscriptFilesView(
         // in changes mode and let the changes host fill the space.
         layout.hidden = mode === 'changes';
         changesHost.hidden = mode !== 'changes';
+        syncChangesHeaderActionHost();
         syncAttachedPreviewHeader();
         if (mode === 'changes') {
             if (!state.changesMounted) {
@@ -1886,6 +1917,7 @@ export function mountTranscriptFilesView(
         attachMoreActionsHost,
         attachViewModeSwitchHost,
         attachPreviewHeaderHost,
+        attachChangesHeaderActionHost,
         setViewMode,
         viewMode,
     };

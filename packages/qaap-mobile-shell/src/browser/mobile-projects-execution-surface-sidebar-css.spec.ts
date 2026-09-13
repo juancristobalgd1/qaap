@@ -18,4 +18,16 @@ describe('execution surface sidebar CSS', () => {
             /\.theia-mobile-execution-surface-sidebar-header\s*\{[^}]*gap:\s*8px;[^}]*min-height:\s*44px;[^}]*padding:\s*max\(4px,\s*env\(safe-area-inset-top,\s*0px\)\)[^}]*4px\s+max\(12px,\s*env\(safe-area-inset-left,\s*0px\)\)/s,
         );
     });
+
+    it('centers the Files/Changes switch and keeps history beside close', () => {
+        expect(workHubCss).to.match(
+            /\.theia-mobile-execution-surface-sidebar-header\s*\{[^}]*position:\s*relative;/s,
+        );
+        expect(workHubCss).to.match(
+            /\.theia-mobile-execution-surface-sidebar-header\s*>\s*\.theia-mobile-projects-header-view-mode-switch\s*\{[^}]*left:\s*50%;[^}]*transform:\s*translate\(-50%,\s*-50%\)/s,
+        );
+        expect(workHubCss).to.match(
+            /\.theia-mobile-execution-surface-sidebar-header\s*>\s*\.theia-mobile-transcript-history-toggle-host\s*\{[^}]*margin-left:\s*auto;/s,
+        );
+    });
 });

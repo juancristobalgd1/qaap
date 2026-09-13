@@ -7,7 +7,6 @@ import { nls } from '@theia/core/lib/common/nls';
 
 export interface TranscriptReviewChrome {
     readonly diffHost: HTMLElement;
-    readonly checksHost: HTMLElement;
     readonly historyToggleHost: HTMLElement;
     readonly historyResizeHandle: HTMLElement;
     readonly historyPanel: HTMLElement;
@@ -46,17 +45,9 @@ export function createTranscriptReviewChrome(
         historyPanel.style.setProperty('--qaap-transcript-history-height', `${historyPanelHeightPx}px`);
     }
 
-    const dock = document.createElement('div');
-    dock.className = 'theia-mobile-transcript-changes-dock';
-    const dockControls = document.createElement('div');
-    dockControls.className = 'theia-mobile-transcript-changes-controls';
-    const checksHost = document.createElement('div');
-    checksHost.className = 'theia-mobile-transcript-review-checks';
     const historyToggleHost = document.createElement('div');
     historyToggleHost.className = 'theia-mobile-transcript-history-toggle-host';
-    dockControls.append(checksHost, historyToggleHost);
-    dock.append(dockControls);
-    host.append(diffHost, historyResizeHandle, historyPanel, dock);
+    host.append(diffHost, historyResizeHandle, historyPanel, historyToggleHost);
 
-    return { diffHost, checksHost, historyToggleHost, historyResizeHandle, historyPanel };
+    return { diffHost, historyToggleHost, historyResizeHandle, historyPanel };
 }

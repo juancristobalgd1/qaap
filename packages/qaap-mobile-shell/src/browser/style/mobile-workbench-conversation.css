@@ -1034,6 +1034,18 @@ button.theia-mobile-transcript-team-row:focus-visible {
   flex: 0 0 auto;
 }
 
+.theia-mobile-transcript-history-toggle-host--header {
+  margin-left: auto;
+}
+
+.theia-mobile-transcript-history-toggle-host--header .theia-mobile-transcript-history-toggle {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: 8px;
+}
+
 .theia-mobile-transcript-history-toggle,
 .theia-mobile-transcript-history-icon {
   display: inline-flex;

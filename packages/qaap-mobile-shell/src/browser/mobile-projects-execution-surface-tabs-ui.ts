@@ -90,6 +90,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
         previewHeaderObserver?: MutationObserver;
         previewHeaderMount?: {
             attachPreviewHeaderHost?: (host: HTMLElement | undefined) => void;
+            attachChangesHeaderActionHost?: (host: HTMLElement | undefined) => void;
         };
         previewChangesHeaderHost?: HTMLElement;
         toolbarHost?: HTMLElement;

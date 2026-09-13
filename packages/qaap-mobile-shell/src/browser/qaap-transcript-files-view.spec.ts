@@ -360,9 +360,21 @@ describe('qaap-transcript-files-view', () => {
                 expect(headerHost.querySelector('.theia-mobile-transcript-files-preview-header')).to.be.null;
                 expect(headerHost.querySelector('.theia-mobile-transcript-files-changes-header')?.textContent).to.equal('Changes');
 
+                const historyHost = document.createElement('div');
+                mount.attachChangesHeaderActionHost?.(historyHost);
+                expect(headerHost.lastElementChild).to.equal(historyHost);
+                expect(headerHost.querySelector('.theia-mobile-transcript-files-changes-header')?.lastElementChild).to.not.equal(historyHost);
+                expect(historyHost.classList.contains('theia-mobile-transcript-history-toggle-host--header')).to.be.true;
+                expect(historyHost.hidden).to.be.false;
+
                 mount.setViewMode?.('files');
                 expect(headerHost.querySelector('.theia-mobile-transcript-files-preview-header')).to.exist;
                 expect(headerHost.querySelector('.theia-mobile-transcript-files-changes-header')).to.be.null;
+                expect(historyHost.parentElement).to.equal(headerHost);
+                expect(historyHost.hidden).to.be.true;
+
+                mount.setViewMode?.('changes');
+                expect(historyHost.hidden).to.be.false;
 
                 mount.attachPreviewHeaderHost?.(undefined);
                 expect(host.querySelector('.theia-mobile-transcript-files-preview-header')).to.exist;

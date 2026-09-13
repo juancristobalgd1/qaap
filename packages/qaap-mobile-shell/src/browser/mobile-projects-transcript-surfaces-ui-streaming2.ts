@@ -109,9 +109,8 @@ export async function mountTranscriptReviewWidgetExtracted(ctx: any, project: Mo
             ctx.host.transcriptHistoryPanelOpen,
             ctx.host.transcriptHistoryPanelHeightPx,
         );
-        const { diffHost, checksHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
+        const { diffHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
         ctx.host.transcriptReviewDiffHost = diffHost;
-        ctx.host.transcriptReviewChecksHost = checksHost;
         ctx.host.transcriptHistoryRoot = cwd;
         ctx.host.transcriptHistoryUi.installTranscriptHistoryResize(historyResizeHandle, historyPanel, host);
 
@@ -145,10 +144,8 @@ export async function mountTranscriptReviewWidgetExtracted(ctx: any, project: Mo
             }),
             () => {
                 invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
-                ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
             },
         );
-        ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
         ctx.host.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
         ctx.host.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);
 }

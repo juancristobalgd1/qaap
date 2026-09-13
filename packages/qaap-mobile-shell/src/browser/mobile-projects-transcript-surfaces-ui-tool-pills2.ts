@@ -417,14 +417,17 @@ export function ensureTranscriptFilesTabExtracted(
                 if (!changesHost.isConnected || changesHost.hidden) {
                     return;
                 }
+                // A restored Changes view can invoke this callback while the files mount
+                // is still being assigned. Yield once so the header relocation has a
+                // concrete mount to target.
+                await Promise.resolve();
                 const chrome = createTranscriptReviewChrome(
                     changesHost,
                     ctx.host.transcriptHistoryPanelOpen,
                     ctx.host.transcriptHistoryPanelHeightPx,
                 );
-                const { diffHost, checksHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
+                const { diffHost, historyToggleHost, historyResizeHandle, historyPanel } = chrome;
                 ctx.host.transcriptReviewDiffHost = diffHost;
-                ctx.host.transcriptReviewChecksHost = checksHost;
                 ctx.host.transcriptHistoryRoot = cwd;
                 ctx.host.transcriptHistoryUi.installTranscriptHistoryResize(historyResizeHandle, historyPanel, changesHost);
                 const rootUri = FileUri.create(cwd).toString();
@@ -456,11 +459,12 @@ export function ensureTranscriptFilesTabExtracted(
                     }),
                     () => {
                         invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
-                        ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
                     },
                 );
-                ctx.host.renderChecksSection(checksHost, project, summary, { embedded: true });
                 ctx.host.transcriptHistoryUi.renderTranscriptHistoryToggle(historyToggleHost, historyPanel, historyResizeHandle, cwd);
+                // Relocate the fully rendered control after the async diff mount has
+                // settled, so restored and freshly-created Files mounts behave alike.
+                mount?.attachChangesHeaderActionHost?.(historyToggleHost);
                 ctx.host.transcriptHistoryUi.renderTranscriptHistoryPanel(historyPanel, cwd);
             }
             : undefined,

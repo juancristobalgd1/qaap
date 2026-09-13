@@ -28,6 +28,8 @@ export interface TranscriptFilesMount {
     readonly attachViewModeSwitchHost?: (host: HTMLElement | undefined) => void;
     /** Relocates the selected-file preview row into the Files drawer header. */
     readonly attachPreviewHeaderHost?: (host: HTMLElement | undefined) => void;
+    /** Relocates an external Changes action into the Changes drawer header. */
+    readonly attachChangesHeaderActionHost?: (host: HTMLElement | undefined) => void;
     /** Switches between the file tree/preview and the SCM changes (diff) view. */
     readonly setViewMode?: (mode: TranscriptFilesViewMode) => void;
     /** Current view mode ('files' or 'changes'). */
