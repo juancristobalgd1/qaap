@@ -313,10 +313,19 @@ export async function startDevServerExtracted(ctx: any, plan: { command: string;
                     return;
                 }
                 if (ctx._phase === 'starting' || ctx._phase === 'running') {
-                    void ctx.failDevRun(nls.localize(
-                        'qaap/projectBootstrap/devServerTabClosed',
-                        'Dev server tab closed.',
-                    ), plan, runId);
+                    // A strict-port dev server can exit while its terminal widget is being
+                    // disposed (for example after EADDRINUSE). Read the terminal tail before
+                    // falling back to the generic close message so conflict recovery and the
+                    // visible diagnostic keep the actual process error.
+                    const terminalTail = ctx.readTerminalTail(terminal);
+                    void ctx.failDevRun(
+                        terminalTail || nls.localize(
+                            'qaap/projectBootstrap/devServerTabClosed',
+                            'Dev server tab closed.',
+                        ),
+                        plan,
+                        runId,
+                    );
                 }
             });
             ctx.devTerminalListener = new DisposableCollection(onOutput, onProcessExit, onWidgetClose);

@@ -31,6 +31,18 @@
   }
 }
 
+/*
+ * Qaap controls keep DOM focus after a pointer click, while the browser/Theia
+ * default focus ring makes them look selected. Keep the keyboard focus state
+ * available through :focus-visible, but remove the decorative ring left by a
+ * mouse or touch interaction across the Work Hub surface.
+ */
+body.theia-mobile-mod-workhub-composer-header :where(button, a, [role="button"], summary):focus:not(:focus-visible),
+.theia-mobile-work-hub-sessions-sidebar :where(button, a, [role="button"], summary):focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /*-----------------------------------------------------------------------------
 | Work Hub landing — full-screen, decoupled from bottom nav until the user opts in.
 |-----------------------------------------------------------------------------*/
