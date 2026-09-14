@@ -198,13 +198,16 @@ export class MobileProjectsActiveTaskActionsUi {
             renderTaskTimeline(host, state, createdAt, startedAt, finishedAt);
         }
 
+        const diagnosticText = buildTaskDiagnostic(detail, knownTask);
+        const diagnosticActions = document.createElement('div');
+        diagnosticActions.className = 'theia-mobile-agent-log-actions';
         const diagnostic = document.createElement('button');
         diagnostic.type = 'button';
         diagnostic.className = 'theia-mobile-agent-log-copy';
         diagnostic.textContent = nls.localize('qaap/mobileProjects/copyTaskDiagnostic', 'Copy diagnostic');
         diagnostic.addEventListener('click', async () => {
             try {
-                await copyTaskDiagnostic(buildTaskDiagnostic(detail, knownTask));
+                await copyTaskDiagnostic(diagnosticText);
                 diagnostic.textContent = nls.localize('qaap/mobileProjects/taskDiagnosticCopied', 'Diagnostic copied');
                 window.setTimeout(() => {
                     if (diagnostic.isConnected) {
@@ -218,7 +221,28 @@ export class MobileProjectsActiveTaskActionsUi {
                 );
             }
         });
-        host.append(diagnostic);
+        diagnosticActions.append(diagnostic);
+
+        const download = document.createElement('button');
+        download.type = 'button';
+        download.className = 'theia-mobile-agent-log-download';
+        download.textContent = nls.localize('qaap/mobileProjects/downloadTaskDiagnostic', 'Download diagnostic');
+        download.addEventListener('click', () => {
+            try {
+                downloadTaskDiagnostic(diagnosticText, taskId);
+                MobileSnackbar.show(
+                    nls.localize('qaap/mobileProjects/taskDiagnosticDownloaded', 'Diagnostic downloaded'),
+                    { kind: 'success', duration: 1600 },
+                );
+            } catch {
+                MobileSnackbar.show(
+                    nls.localize('qaap/mobileProjects/taskDiagnosticDownloadFailed', 'Could not download the diagnostic.'),
+                    { kind: 'warning', duration: 2600 },
+                );
+            }
+        });
+        diagnosticActions.append(download);
+        host.append(diagnosticActions);
 
         if (state === 'queued') {
             const queueActions = document.createElement('div');
@@ -393,6 +417,18 @@ async function copyTaskDiagnostic(text: string): Promise<void> {
     if (!copied) {
         throw new Error('Clipboard unavailable');
     }
+}
+
+function downloadTaskDiagnostic(text: string, taskId: string): void {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeId = taskId.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'task';
+    link.href = url;
+    link.download = `qaap-${safeId}-diagnostic.txt`;
+    link.rel = 'noopener';
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function appendTaskMeta(host: HTMLElement, label: string, value: string): void {

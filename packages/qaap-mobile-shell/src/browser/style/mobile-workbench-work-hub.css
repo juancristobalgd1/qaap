@@ -11881,6 +11881,7 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 .theia-mobile-agent-log-copy,
+.theia-mobile-agent-log-download,
 .theia-mobile-agent-log-retry,
 .theia-mobile-agent-log-cancel,
 .theia-mobile-agent-log-queue-action {
@@ -11914,6 +11915,22 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   color: var(--theia-foreground);
 }
 
+.theia-mobile-agent-log-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.theia-mobile-agent-log-actions button {
+  margin-top: 0;
+}
+
+.theia-mobile-agent-log-download {
+  background: color-mix(in srgb, var(--q-accent, #E58E40) 15%, var(--theia-editorWidget-background));
+  color: var(--theia-foreground);
+}
+
 .theia-mobile-agent-log-cancel {
   background: color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 15%, var(--theia-editorWidget-background));
   color: var(--theia-errorForeground, var(--theia-foreground));
@@ -11921,6 +11938,8 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 
 .theia-mobile-agent-log-copy:hover,
 .theia-mobile-agent-log-copy:focus-visible,
+.theia-mobile-agent-log-download:hover,
+.theia-mobile-agent-log-download:focus-visible,
 .theia-mobile-agent-log-retry:hover,
 .theia-mobile-agent-log-retry:focus-visible,
 .theia-mobile-agent-log-cancel:hover,
