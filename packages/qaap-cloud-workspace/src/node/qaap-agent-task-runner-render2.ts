@@ -442,6 +442,14 @@ export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void 
                 ctx.queuedCreateRequests.set(task.id, queuedRequest);
             }
         }
+        const queued = [...ctx.tasks.values()]
+                .filter((task: QaapAgentTask) => task.state === 'queued')
+                .sort(compareQueuedTasks);
+        queued.forEach((task: QaapAgentTask, index: number) => {
+                if (task.queuePosition !== index + 1) {
+                        ctx.tasks.set(task.id, { ...task, queuePosition: index + 1 });
+                }
+        });
 }
 
 export function countRunningTasksExtracted(ctx: any): number {
@@ -472,23 +480,100 @@ export function runningTaskCountForOwnerExtracted(ctx: any, ownerLogin: string):
 export function ownerAtConcurrencyCapExtracted(ctx: any, ownerLogin: string | undefined): boolean {
         const owner = ownerLogin?.trim();
         if (!owner) {
-            return false;
+        return false;
         }
         const cap = ctx.billingStore?.maxConcurrentAgentsForOwner?.(owner)
             ?? ctx.maxConcurrentAgentsPerUser();
         return ctx.runningTaskCountForOwner(owner) >= cap;
 }
 
+function queueOwnerKey(ownerLogin: string | undefined): string {
+        return ownerLogin?.trim().toLowerCase() ?? '';
+}
+
+function queuePositionForSort(task: QaapAgentTask): number {
+        return typeof task.queuePosition === 'number' && Number.isFinite(task.queuePosition)
+            ? task.queuePosition
+            : task.createdAt;
+}
+
+function compareQueuedTasks(left: QaapAgentTask, right: QaapAgentTask): number {
+        return queuePositionForSort(left) - queuePositionForSort(right)
+            || left.createdAt - right.createdAt
+            || left.id.localeCompare(right.id);
+}
+
+/**
+ * Reorder only tasks owned by the authenticated user. The complete queue is reindexed after the
+ * move, which keeps the persisted order compact and makes recovery deterministic even for legacy
+ * tasks that predate `queuePosition`.
+ */
+export function reorderQueuedTaskExtracted(
+        ctx: any,
+        id: string,
+        direction: 'up' | 'down',
+        ownerLogin?: string,
+): QaapAgentTask | undefined {
+        const task = ctx.tasks.get(id) as QaapAgentTask | undefined;
+        if (!task || task.state !== 'queued' || queueOwnerKey(task.ownerLogin) !== queueOwnerKey(ownerLogin)) {
+                return undefined;
+        }
+        const owned = [...ctx.tasks.values()]
+            .filter((candidate: QaapAgentTask) => candidate.state === 'queued'
+                && queueOwnerKey(candidate.ownerLogin) === queueOwnerKey(ownerLogin))
+            .sort(compareQueuedTasks);
+        const currentIndex = owned.findIndex(candidate => candidate.id === id);
+        const targetIndex = currentIndex + (direction === 'up' ? -1 : 1);
+        if (currentIndex < 0 || targetIndex < 0 || targetIndex >= owned.length) {
+                return undefined;
+        }
+
+        const queue = [...ctx.tasks.values()]
+            .filter((candidate: QaapAgentTask) => candidate.state === 'queued')
+            .sort(compareQueuedTasks);
+        const ownedSlots = queue
+            .map((candidate: QaapAgentTask, index: number) => ({ candidate, index }))
+            .filter(({ candidate }) => queueOwnerKey(candidate.ownerLogin) === queueOwnerKey(ownerLogin));
+        const reorderedOwned = [...owned];
+        [reorderedOwned[currentIndex], reorderedOwned[targetIndex]] = [reorderedOwned[targetIndex], reorderedOwned[currentIndex]];
+        const changed: QaapAgentTask[] = [];
+        ownedSlots.forEach(({ candidate, index }, slotIndex) => {
+                const replacement = reorderedOwned[slotIndex];
+                const updated: QaapAgentTask = { ...replacement, queuePosition: index + 1 };
+                ctx.tasks.set(updated.id, updated);
+                if (updated.id !== candidate.id || updated.queuePosition !== candidate.queuePosition) {
+                        changed.push(updated);
+                }
+        });
+        // Reindex other queued tasks too. Their relative order is unchanged, but emitting the
+        // update keeps every connected client in sync with the persisted position shown in detail.
+        queue.forEach((candidate: QaapAgentTask, index: number) => {
+                if (queueOwnerKey(candidate.ownerLogin) === queueOwnerKey(ownerLogin)) {
+                        return;
+                }
+                const updated: QaapAgentTask = { ...candidate, queuePosition: index + 1 };
+                ctx.tasks.set(updated.id, updated);
+                if (updated.queuePosition !== candidate.queuePosition) {
+                        changed.push(updated);
+                }
+        });
+        void ctx.persist();
+        for (const updated of changed) {
+                ctx.onDidChangeTaskEmitter.fire({ type: 'reordered', task: updated });
+        }
+        return ctx.tasks.get(id);
+}
+
 export function drainQueuedTasksExtracted(ctx: any): void {
         if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed) {
-            return;
+        return;
         }
         while (ctx.countRunningTasks() < ctx.maxConcurrentAgents()) {
             // Skip queued tasks whose owner is already at their per-user cap so one busy user can't
             // block everyone behind them in the FIFO queue — promote the next eligible tenant instead.
             const next = [...ctx.tasks.values()]
                 .filter(task => task.state === 'queued' && !ctx.ownerAtConcurrencyCap(task.ownerLogin))
-                .sort((left, right) => left.createdAt - right.createdAt)[0];
+                .sort(compareQueuedTasks)[0];
             if (!next) {
                 return;
             }
@@ -497,7 +582,7 @@ export function drainQueuedTasksExtracted(ctx: any): void {
                 ctx.finishTask(next.id, 'failed', undefined);
                 continue;
             }
-            const running: QaapAgentTask = { ...next, state: 'running' };
+            const running: QaapAgentTask = { ...next, state: 'running', queuePosition: undefined };
             ctx.tasks.set(next.id, running);
             ctx.queuedCreateRequests.delete(next.id);
             void ctx.spawnProcessWhenReady(running, request);

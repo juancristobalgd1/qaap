@@ -17,6 +17,10 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
         this.drainQueuedTasks();
     }
 
+    public exposeReorderQueuedTask(id: string, direction: 'up' | 'down', ownerLogin?: string): import('../common/qaap-agent-task').QaapAgentTask | undefined {
+        return this.reorderQueuedTask(id, direction, ownerLogin);
+    }
+
     public exposeRestorePersistedIndex(stored: unknown): void {
         this.restorePersistedIndex(stored);
     }
@@ -102,6 +106,46 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         runner.exposeDrainQueuedTasks();
         expect(tasks.get(third.id)?.state).to.equal('running');
         expect(spawned).to.equal(3);
+    });
+
+    it('persists queue order, keeps ownership boundaries, and drains the promoted task first', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const tasks = new Map<string, import('../common/qaap-agent-task').QaapAgentTask>();
+        const queuedCreateRequests = new Map<string, import('../common/qaap-agent-task').QaapCreateAgentTaskRequest>();
+        const events: Array<{ type: string; id: string }> = [];
+        Object.assign(runner, {
+            tasks,
+            queuedCreateRequests,
+            processes: new Map(),
+            onDidChangeTaskEmitter: { fire: (event: { type: string; task: { id: string } }) => events.push({ type: event.type, id: event.task.id }) },
+            maxConcurrentAgents: () => 1,
+            countRunningTasks: () => [...tasks.values()].filter(task => task.state === 'running').length,
+            ownerAtConcurrencyCap: () => false,
+            resolveAgentModelForRequest: () => undefined,
+            isDirectory: () => true,
+            persist: async () => undefined,
+            spawnProcessWhenReady: async () => undefined,
+        });
+
+        const request = { command: 'echo queued', cwd: '/repo' };
+        const running = runner.create({ command: 'echo running', cwd: '/repo' }, 'alice');
+        const first = runner.create(request, 'alice');
+        const second = runner.create(request, 'alice');
+        expect(first.queuePosition).to.equal(1);
+        expect(second.queuePosition).to.equal(2);
+
+        const moved = runner.exposeReorderQueuedTask(second.id, 'up', 'alice');
+        expect(moved?.id).to.equal(second.id);
+        expect(tasks.get(second.id)?.queuePosition).to.equal(1);
+        expect(tasks.get(first.id)?.queuePosition).to.equal(2);
+        expect(events.filter(event => event.type === 'reordered').map(event => event.id)).to.have.members([first.id, second.id]);
+        expect(runner.exposeReorderQueuedTask(second.id, 'up', 'bob')).to.equal(undefined);
+        expect(runner.exposeReorderQueuedTask(second.id, 'up', 'alice')).to.equal(undefined);
+
+        tasks.set(running.id, { ...running, state: 'completed', finishedAt: Date.now() });
+        runner.exposeDrainQueuedTasks();
+        expect(tasks.get(second.id)?.state).to.equal('running');
+        expect(tasks.get(first.id)?.state).to.equal('queued');
     });
 
     it('caps concurrent agents per authenticated user without starving other users', () => {

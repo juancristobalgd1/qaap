@@ -257,6 +257,12 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         if (atCapacity) {
             new QaapAgentQueuePolicy().assertCapacity(ctx.tasks.values(), ownerLogin);
         }
+        const nextQueuePosition = atCapacity
+            ? Math.max(0, ...[...ctx.tasks.values()]
+                .filter((task: QaapAgentTask) => task.state === 'queued')
+                .map((task: QaapAgentTask) => task.queuePosition)
+                .filter((position: unknown): position is number => typeof position === 'number' && Number.isFinite(position))) + 1
+            : undefined;
         if (ownerLogin && ctx.billingStore) {
             void ctx.billingStore.getOrCreateAccount(ownerLogin).catch(() => undefined);
         }
@@ -268,6 +274,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
             cwd,
             state: atCapacity ? 'queued' : 'running',
             createdAt: Date.now(),
+            ...(nextQueuePosition !== undefined ? { queuePosition: nextQueuePosition } : {}),
             parentId,
             autoApprove,
             ...(request.readOnlyWorkspace ? { readOnlyWorkspace: true } : {}),

@@ -53,6 +53,11 @@ export interface QaapAgentTask {
     readonly createdAt: number;
     readonly finishedAt?: number;
     /**
+     * Stable ordering key for queued tasks. Lower values run first; it is persisted so a restart
+     * does not silently undo a user's queue arrangement. Only queued tasks expose this field.
+     */
+    readonly queuePosition?: number;
+    /**
      * Id of the task that spawned this one — set when an agent calls the `qaap-task` helper.
      * Lets the UI render sub-tasks under their parent.
      */
@@ -330,7 +335,7 @@ export interface QaapAgentTaskAllResponse {
 
 /** Payload pushed over SSE when a task changes state. */
 export type QaapAgentTaskEvent =
-    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted'; readonly task: QaapAgentTask }
+    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered'; readonly task: QaapAgentTask }
     | { readonly type: 'output'; readonly task: QaapAgentTask; readonly chunk: string };
 
 /** True once the task has stopped and will not change state again. */

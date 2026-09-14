@@ -127,6 +127,14 @@ describe('sortTasks', () => {
         expect(sortTasks(tasks).map(task => task.id)).to.deep.equal(['running', 'queued', 'blocked', 'done']);
     });
 
+    it('uses the persisted queue position before creation time', () => {
+        const tasks = [
+            { id: 'later', title: 'Later', command: '', cwd: '/', state: 'queued', createdAt: 1000, queuePosition: 2 },
+            { id: 'first', title: 'First', command: '', cwd: '/', state: 'queued', createdAt: 2000, queuePosition: 1 },
+        ];
+        expect(sortTasks(tasks).map(task => task.id)).to.deep.equal(['first', 'later']);
+    });
+
     it('does not mutate the input array', () => {
         const tasks = [
             { id: 'a', title: 'A', command: '', cwd: '/', state: 'completed', createdAt: 2000 },

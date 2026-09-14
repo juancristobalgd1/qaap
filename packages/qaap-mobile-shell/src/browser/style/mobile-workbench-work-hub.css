@@ -11709,7 +11709,8 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 
 .theia-mobile-agent-log-copy,
 .theia-mobile-agent-log-retry,
-.theia-mobile-agent-log-cancel {
+.theia-mobile-agent-log-cancel,
+.theia-mobile-agent-log-queue-action {
   justify-self: start;
   margin-top: 4px;
   padding: 7px 12px;
@@ -11720,6 +11721,19 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.theia-mobile-agent-log-queue-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.theia-mobile-agent-log-queue-action {
+  margin-top: 0;
+  background: color-mix(in srgb, var(--q-accent, #E58E40) 15%, var(--theia-editorWidget-background));
+  color: var(--theia-foreground);
 }
 
 .theia-mobile-agent-log-copy {
@@ -11737,7 +11751,9 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 .theia-mobile-agent-log-retry:hover,
 .theia-mobile-agent-log-retry:focus-visible,
 .theia-mobile-agent-log-cancel:hover,
-.theia-mobile-agent-log-cancel:focus-visible {
+.theia-mobile-agent-log-cancel:focus-visible,
+.theia-mobile-agent-log-queue-action:hover,
+.theia-mobile-agent-log-queue-action:focus-visible {
   background: var(--theia-button-hoverBackground);
   outline: none;
 }

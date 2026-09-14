@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { resumeAgentTask, retryAgentTask, type QaapAgentTaskDetailDTO } from '../common/qaap-agent-task-client';
+import { reorderAgentTask, resumeAgentTask, retryAgentTask, type QaapAgentTaskDetailDTO } from '../common/qaap-agent-task-client';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -91,6 +91,30 @@ export class MobileProjectsActiveTaskActionsUi {
         }
     }
 
+    async reorderQueuedTask(taskId: string, direction: 'up' | 'down'): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        try {
+            const task = await reorderAgentTask(taskId, direction);
+            this.host.activeTasks?.recordTaskCreated(task);
+            MobileSnackbar.show(
+                direction === 'up'
+                    ? nls.localize('qaap/mobileProjects/taskMovedUp', 'Task moved up in the queue')
+                    : nls.localize('qaap/mobileProjects/taskMovedDown', 'Task moved down in the queue'),
+                { kind: 'success', duration: 1400 },
+            );
+        } catch (error) {
+            MobileSnackbar.show(nls.localize(
+                'qaap/mobileProjects/reorderTaskFailed',
+                'Could not reorder: {0}',
+                error instanceof Error ? error.message : String(error),
+            ), { kind: 'warning', duration: 3200 });
+        } finally {
+            this.host.projects = await this.host.projectsService.loadProjects();
+            this.host.render();
+            this.host.delegate.onProjectsChanged?.();
+        }
+    }
+
     async showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void> {
         this.host.cardMenuUi.closeCardMenu();
         const root = document.createElement('div');
@@ -159,6 +183,14 @@ export class MobileProjectsActiveTaskActionsUi {
                 formatTaskDuration(createdAt, finishedAt),
             );
         }
+        const queuePosition = detail.queuePosition ?? knownTask?.queuePosition;
+        if (state === 'queued' && queuePosition !== undefined) {
+            appendTaskMeta(
+                host,
+                nls.localize('qaap/mobileProjects/taskQueuePositionLabel', 'Queue position'),
+                `#${queuePosition}`,
+            );
+        }
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskCauseLabel', 'Cause'), taskCause(detail));
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskNextActionLabel', 'Next action'), taskNextAction(state));
 
@@ -184,6 +216,24 @@ export class MobileProjectsActiveTaskActionsUi {
         });
         host.append(diagnostic);
 
+        if (state === 'queued') {
+            const queueActions = document.createElement('div');
+            queueActions.className = 'theia-mobile-agent-log-queue-actions';
+            for (const direction of ['up', 'down'] as const) {
+                const action = document.createElement('button');
+                action.type = 'button';
+                action.className = 'theia-mobile-agent-log-queue-action';
+                action.textContent = direction === 'up'
+                    ? nls.localize('qaap/mobileProjects/moveTaskUp', 'Move up')
+                    : nls.localize('qaap/mobileProjects/moveTaskDown', 'Move down');
+                action.addEventListener('click', () => {
+                    close();
+                    void this.reorderQueuedTask(taskId, direction);
+                });
+                queueActions.append(action);
+            }
+            host.append(queueActions);
+        }
         if (state === 'queued' || state === 'running') {
             const action = document.createElement('button');
             action.type = 'button';

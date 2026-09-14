@@ -98,6 +98,7 @@ export interface QaapAgentTaskCreated {
     readonly title?: string;
     readonly command?: string;
     readonly createdAt?: number;
+    readonly queuePosition?: number;
 }
 
 /** A task plus its captured stdout/stderr log — returned by `GET /qaap/api/agent-tasks/:id`. */
@@ -109,6 +110,7 @@ export interface QaapAgentTaskDetailDTO {
     readonly command?: string;
     readonly state: string;
     readonly createdAt?: number;
+    readonly queuePosition?: number;
     readonly exitCode?: number;
     readonly finishedAt?: number;
     readonly parentId?: string;
@@ -662,6 +664,21 @@ export async function cancelAgentTask(id: string): Promise<void> {
     if (!response.ok) {
         throw new Error(response.statusText);
     }
+}
+
+/** Move a queued task up or down in its owner's durable queue. */
+export async function reorderAgentTask(id: string, direction: 'up' | 'down'): Promise<QaapAgentTaskCreated> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}/reorder`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction }),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskCreated>;
 }
 
 /** Recreate a failed/interrupted standalone task from the server's durable request data. */

@@ -50,6 +50,8 @@ export interface MobileProjectTaskView {
     readonly state: string;
     readonly createdAt: number;
     readonly finishedAt?: number;
+    /** Lower values run first while the task is queued. */
+    readonly queuePosition?: number;
     /** Set when spawned by a leader via `qaap-task`. */
     readonly parentId?: string;
     /** Backend self-verification result (passed/failed/skipped) when QAAP_AGENT_VERIFY ran. */
@@ -65,6 +67,7 @@ interface TaskEventPayload {
     readonly command?: string;
     readonly createdAt?: number;
     readonly finishedAt?: number;
+    readonly queuePosition?: number;
     readonly parentId?: string;
     readonly verification?: MobileProjectTaskVerification;
 }
@@ -89,7 +92,7 @@ interface SnapshotPayload {
 type WsServerMessage =
     | ({ readonly type: 'snapshot' } & SnapshotPayload)
     | { readonly type: 'heartbeat' }
-    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted'; readonly task: TaskEventPayload }
+    | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered'; readonly task: TaskEventPayload }
     | { readonly type: 'output'; readonly task: TaskEventPayload; readonly chunk: string };
 
 /** Snapshot of what's running in one project. */
@@ -433,7 +436,7 @@ export class MobileProjectsActiveTasks {
         this.replaceActive(nextActive);
     }
 
-    protected applyEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted', task: TaskEventPayload): void {
+    protected applyEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted' | 'reordered', task: TaskEventPayload): void {
         const cwd = normalizeCwd(task.cwd);
         if (type === 'deleted') {
             const list = [...(lookupByCwd(this.tasksByCwd, cwd) ?? [])].filter(entry => entry.id !== task.id);
@@ -538,6 +541,7 @@ export function toTaskView(task: TaskEventPayload): MobileProjectTaskView {
         state: task.state,
         createdAt: task.createdAt ?? Date.now(),
         finishedAt: task.finishedAt,
+        queuePosition: task.queuePosition,
         parentId: task.parentId,
         verification: task.verification,
     };
@@ -593,6 +597,13 @@ export function sortTasks(tasks: MobileProjectTaskView[]): MobileProjectTaskView
         const bPriority = taskStatePriority(b.state);
         if (aPriority !== bPriority) {
             return aPriority - bPriority;
+        }
+        if (a.state === 'queued' && b.state === 'queued') {
+            const aPosition = a.queuePosition ?? Number.POSITIVE_INFINITY;
+            const bPosition = b.queuePosition ?? Number.POSITIVE_INFINITY;
+            if (aPosition !== bPosition) {
+                return aPosition - bPosition;
+            }
         }
         return b.createdAt - a.createdAt;
     });
@@ -663,7 +674,8 @@ function sameTasks(a: Map<string, MobileProjectTaskView[]>, b: Map<string, Mobil
         for (let i = 0; i < tasks.length; i++) {
             const left = tasks[i];
             const right = other[i];
-            if (left.id !== right.id || left.state !== right.state || left.title !== right.title) {
+            if (left.id !== right.id || left.state !== right.state || left.title !== right.title
+                || left.queuePosition !== right.queuePosition) {
                 return false;
             }
         }

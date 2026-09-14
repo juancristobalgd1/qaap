@@ -72,7 +72,7 @@ import {
     probeAgentBinOnce as probeAgentBinOnceHelper,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
 } from './qaap-agent-task-runner-utils3';
-import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, readCustomAgentsExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
+import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
 import { assertQaiqConfiguredExtracted, buildAgentCommandExtracted, buildRepoMapExtracted, buildTemplateVarsExtracted, cancelExtracted, createExtracted, deleteForCwdExtracted, extractLastAgentMentionExtracted, extractLastAgentMentionTokenExtracted, nativeModelRoutingTableExtracted, normalizeAgentBindingExtracted, previewProviderEnvExtracted, readAgentInstructionsExtracted, readProjectInfoExtracted, readRepoMapExtracted, resolveAgentBindingForTaskExtracted, resolveAgentIdExtracted, resolveAgentModelForRequestExtracted, resolveQaapQaiqBindingExtracted, resolveQaiqProviderFlagsExtracted, retryExtracted, resumeExtracted, stripLeadingAgentMentionExtracted } from './qaap-agent-task-runner-streaming2';
 import { acquireVerificationPassExtracted, clearQueuedApprovalTimerExtracted, clearQueuedApprovalTimersExtracted, findPendingControlRequestEntryExtracted, getApprovalChannelExtracted, killAgentProcessTreeExtracted, maxConcurrentVerificationPassesExtracted, respondToApprovalPromptExtracted, scheduleQueuedApprovalTimeoutExtracted, spawnProcessExtracted, spawnProcessWhenReadyExtracted } from './qaap-agent-task-runner-timeline2';
 import { injectStdioUserMessageExtracted, type QaapStdioInjectHost } from './qaap-agent-stdio-inject';
@@ -357,6 +357,11 @@ export class QaapAgentTaskRunner {
 
     protected drainQueuedTasks(): void {
         drainQueuedTasksExtracted(this);
+    }
+
+    /** Move one of the owner's queued tasks and persist the new order immediately. */
+    reorderQueuedTask(id: string, direction: 'up' | 'down', ownerLogin?: string): QaapAgentTask | undefined {
+        return reorderQueuedTaskExtracted(this, id, direction, ownerLogin);
     }
 
     list(): QaapAgentTask[] {

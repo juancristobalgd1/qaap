@@ -301,6 +301,9 @@ export function readVisualVerificationExtracted(ctx: any, conversationId: string
 }
 
 export function onTaskChangedExtracted(ctx: any, event: QaapAgentTaskEvent): void {
+        if (event.type === 'reordered') {
+            return;
+        }
         const ref = ctx.taskToConversation.get(event.task.id);
         if (ref) {
             ctx.recordTaskLatencyMarks(ref.conversationId, event.task);

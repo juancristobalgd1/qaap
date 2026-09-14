@@ -204,6 +204,39 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }
             res.json(task);
         });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/reorder`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const direction = (req.body as { readonly direction?: unknown } | undefined)?.direction;
+            if (direction !== 'up' && direction !== 'down') {
+                res.status(400).json({ error: nls.localize('qaap/agentTasks/reorderDirectionRequired', 'Direction must be "up" or "down".') });
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
+                return;
+            }
+            const ownerLogin = this.auth.resolveUserLogin(ctx);
+            const taskOwner = existing.ownerLogin?.trim().toLowerCase() ?? '';
+            const requester = ownerLogin?.trim().toLowerCase() ?? '';
+            if (taskOwner !== requester) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id, action: 'reorder' });
+                return;
+            }
+            const task = this.runner.reorderQueuedTask(req.params.id, direction, ownerLogin);
+            if (!task) {
+                res.status(409).json({ error: nls.localize('qaap/agentTasks/reorderUnavailable', 'Only queued tasks with a task in that direction can be reordered.') });
+                return;
+            }
+            res.json(task);
+        });
         app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/retry`, (req, res) => {
             const ctx = this.requireAuth(req, res);
             if (!ctx) {
