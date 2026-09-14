@@ -135,4 +135,22 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
         expect(activity?.textContent).to.contain('Preview available');
         expect(activity?.textContent).not.to.contain('Preview ready');
     });
+
+    it('surfaces the agent failure reason in the activity chip', () => {
+        const ui = newUi();
+        const activity = ui.createConversationActivityRow(
+            { previewUrl: 'http://localhost:5173' } as never,
+            summary({
+                status: 'failed',
+                lastMessageRole: 'agent',
+                lastMessagePreview: 'Error: dev server exited with code 1',
+            }),
+            { isRunning: false, needsInput: false, isDone: false },
+        );
+
+        const failedChip = activity?.querySelector('.theia-mobile-projects-task-activity-chip.theia-mod-failed');
+        expect(failedChip).to.not.equal(null);
+        expect(failedChip?.textContent).to.contain('Failed: Error: dev server exited with code 1');
+        expect(activity?.querySelector('.theia-mobile-projects-task-activity-chip.theia-mod-surface')).to.not.equal(null);
+    });
 });

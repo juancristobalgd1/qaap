@@ -177,4 +177,33 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         expect(retried).to.equal(1);
         expect(opened).to.equal(0);
     });
+
+    it('shows a compact failure reason only when the latest message came from the agent', () => {
+        const ui = createUi();
+        const failedSummary = summary({
+            id: 'failed-conversation-with-reason',
+            status: 'failed',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Error: dev server exited with code 1',
+        });
+        const failedTask = { ...task, id: failedSummary.id, state: 'failed' as const };
+        const row = ui.createTaskItem(project, failedTask, undefined, failedSummary, new Set(), { compact: true });
+
+        const hint = row.querySelector('.theia-mobile-projects-task-failure-hint');
+        expect(hint).to.not.equal(null);
+        expect(hint?.textContent).to.contain('Failed: Error: dev server exited with code 1');
+        expect(row.querySelector('.theia-mobile-projects-task-dot')?.getAttribute('aria-label'))
+            .to.equal('Failed: Error: dev server exited with code 1');
+
+        const userFailedSummary = summary({
+            id: 'failed-conversation-user-message',
+            status: 'failed',
+            lastMessageRole: 'user',
+            lastMessagePreview: 'Deploy this to production',
+        });
+        const userFailedTask = { ...task, id: userFailedSummary.id, state: 'failed' as const };
+        const userFailedRow = ui.createTaskItem(project, userFailedTask, undefined, userFailedSummary, new Set(), { compact: true });
+        expect(userFailedRow.querySelector('.theia-mobile-projects-task-failure-hint')).to.equal(null);
+        expect(userFailedRow.textContent).not.to.contain('Deploy this to production');
+    });
 });

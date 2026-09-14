@@ -24,6 +24,37 @@ import type { MobileProjectsService } from './mobile-projects-service';
 import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types'; import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
+const TASK_FAILURE_HINT_MAX_LENGTH = 120;
+
+function resolveTaskFailureHint(summary: QaapAgentConversationSummaryDTO | undefined): string | undefined {
+    if (!summary || summary.lastMessageRole !== 'agent' || !isFailedRunSummary(summary)) {
+        return undefined;
+    }
+    const preview = summary.lastMessagePreview?.replace(/\s+/g, ' ').trim();
+    if (!preview) {
+        return undefined;
+    }
+    if (preview.length <= TASK_FAILURE_HINT_MAX_LENGTH) {
+        return preview;
+    }
+    return `${preview.slice(0, TASK_FAILURE_HINT_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+function createTaskFailureHintElement(hint: string): HTMLElement {
+    const failure = document.createElement('div');
+    failure.className = 'theia-mobile-projects-task-failure-hint';
+    const icon = document.createElement('span');
+    icon.className = 'codicon codicon-error';
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.className = 'theia-mobile-projects-task-failure-hint-label';
+    label.textContent = hint;
+    failure.append(icon, label);
+    failure.setAttribute('aria-label', hint);
+    failure.title = hint;
+    return failure;
+}
+
 export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     task: MobileProjectTaskView,
     _activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
@@ -57,6 +88,7 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     const needsInput = visualStatus.id === 'needs-you';
     const isDone = visualStatus.id === 'verified' || visualStatus.id === 'pr-merged';
     const isFailed = visualStatus.id === 'failed';
+    const failureHint = resolveTaskFailureHint(summary);
     const stateColor = visualStatus.color;
     if (ctx.host.justAddedTaskId === task.id) {
         item.classList.add('theia-mod-flash');
@@ -89,8 +121,11 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
         }
         taskDot.append(ctx.createTaskLeadingGlyph(visualStatus.iconClass));
         const statusLabel = nls.localize(visualStatus.labelKey, visualStatus.label);
-        taskDot.setAttribute('aria-label', statusLabel);
-        taskDot.title = statusLabel;
+        const statusHint = failureHint
+            ? nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint)
+            : statusLabel;
+        taskDot.setAttribute('aria-label', statusHint);
+        taskDot.title = statusHint;
     } else if (isRunning) {
         ctx.renderConversationTurnProgress(taskDot, summary);
     } else {
@@ -140,6 +175,12 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
         taskTitleRow.append(taskTitle);
     }
     taskBody.append(taskTitleRow);
+
+    if (compact && failureHint) {
+        taskBody.append(createTaskFailureHintElement(
+            nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint),
+        ));
+    }
 
     const sessionMeta = summary
         ? formatConversationComposerSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
@@ -387,7 +428,16 @@ export function createConversationActivityRowExtracted(ctx: any, project: Mobile
         return undefined;
     }
     const chips: HTMLElement[] = [];
-    if (state.needsInput) {
+    const failureHint = resolveTaskFailureHint(summary);
+    if (isFailedRunSummary(summary)) {
+        chips.push(ctx.createConversationActivityChip({
+            iconClass: 'codicon-error',
+            label: failureHint
+                ? nls.localize('qaap/mobileProjects/failedTaskWithReason', 'Failed: {0}', failureHint)
+                : nls.localize('qaap/mobileProjects/activityFailed', 'Task failed'),
+            variant: 'failed',
+        }));
+    } else if (state.needsInput) {
         chips.push(ctx.createConversationActivityChip({
             iconClass: 'codicon-comment-discussion',
             label: nls.localize('qaap/mobileProjects/activityNeedsUser', 'Waiting for you'),
@@ -448,7 +498,7 @@ export function createConversationActivityRowExtracted(ctx: any, project: Mobile
 export function createConversationActivityChipExtracted(ctx: any, options: {
     readonly iconClass: string;
     readonly label: string;
-    readonly variant: 'working' | 'needs-you' | 'ready' | 'surface';
+    readonly variant: 'working' | 'needs-you' | 'ready' | 'failed' | 'surface';
 }): HTMLElement {
     const chip = document.createElement('span');
     chip.className = `theia-mobile-projects-task-activity-chip theia-mod-${options.variant}`;

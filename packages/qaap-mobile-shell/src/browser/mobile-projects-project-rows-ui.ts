@@ -112,7 +112,7 @@ export class MobileProjectsProjectRowsUi {
         return createConversationActivityRowExtracted(this, project, summary, state);
     }
 
-    createConversationActivityChip(options: { readonly iconClass: string; readonly label: string; readonly variant: 'working' | 'needs-you' | 'ready' | 'surface'; }): HTMLElement {
+    createConversationActivityChip(options: { readonly iconClass: string; readonly label: string; readonly variant: 'working' | 'needs-you' | 'ready' | 'failed' | 'surface'; }): HTMLElement {
         return createConversationActivityChipExtracted(this, options);
     }
 
