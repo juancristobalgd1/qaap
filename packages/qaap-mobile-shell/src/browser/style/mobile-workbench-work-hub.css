@@ -5483,7 +5483,8 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   width: 32px;
 }
 
-/* Phone / narrow: densify Changes · Commit · Run so the strip steals less transcript. */
+/* Phone / narrow: densify Changes · Commit while keeping Preview / Run app aligned with
+   the prompt suggestion chips. */
 @media (max-width: 767px) {
   .theia-mobile-projects.theia-mod-sticky-composer {
     --qaap-composer-pill-strip-height: 26px;
@@ -5514,8 +5515,13 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   .theia-mobile-sticky-composer-working-pill,
   .theia-mobile-sticky-composer-step-pill,
   .theia-mobile-sticky-composer-next-action {
-    padding: 3px 8px;
-    font-size: 11px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  /* Keep Preview / Run aligned with the empty-chat prompt suggestion chips. */
+  .theia-mobile-sticky-composer-next-action {
+    min-height: 30px;
   }
 
   .theia-mobile-sticky-composer-commit-btn {

@@ -5,6 +5,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     buildStickyComposerActivityStackFingerprint,
@@ -18,6 +20,20 @@ import {
 } from './qaap-sticky-composer-activity-stack';
 
 describe('qaap-sticky-composer-activity-stack', () => {
+
+    it('keeps Preview and Run app at the prompt suggestion height on narrow screens', () => {
+        const css = fs.readFileSync(
+            path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
+            'utf8',
+        );
+        const narrowCss = css.slice(css.indexOf('@media (max-width: 767px)'));
+        expect(narrowCss).to.include(
+            '/* Keep Preview / Run aligned with the empty-chat prompt suggestion chips. */\n'
+            + '  .theia-mobile-sticky-composer-next-action {\n'
+            + '    min-height: 30px;\n'
+            + '  }',
+        );
+    });
 
     describe('selectComposerPillChanges', () => {
         const unstaged: StickyComposerChangedFileView = { path: 'a.ts', kind: 'edited', added: 3, removed: 1 };
