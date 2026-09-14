@@ -951,7 +951,7 @@ export class QaapAgentTaskRunner {
         return improveComposerPromptExtracted(this, options);
     }
 
-    protected runOneShotCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, agentId?: string, timeoutMs = 45_000,): Promise<string> {
-        return runOneShotCommandExtracted(this, command, cwd, env, agentId, timeoutMs = 45_000);
+    protected runOneShotCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, agentId?: string, timeoutMs = 45_000, stdinPrompt?: string, promptTempDir?: string,): Promise<string> {
+        return runOneShotCommandExtracted(this, command, cwd, env, agentId, timeoutMs = 45_000, stdinPrompt, promptTempDir);
     }
 }

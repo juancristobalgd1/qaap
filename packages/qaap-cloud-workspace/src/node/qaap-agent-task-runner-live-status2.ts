@@ -157,13 +157,15 @@ export function runOneShotCommandExtracted(ctx: any, command: string,
         cwd: string,
         env: NodeJS.ProcessEnv,
         agentId?: string,
-        timeoutMs = 45_000,): Promise<string> {
+        timeoutMs = 45_000,
+        stdinPrompt?: string,
+        promptTempDir?: string,): Promise<string> {
         return runOneShotCommandHelper(command, cwd, env, agentId, timeoutMs, {
             enforceAgentIsolationPolicy: () => ctx.enforceAgentIsolationPolicy(),
             ensureAgentCwdOwnership: c => ctx.ensureAgentCwdOwnership(c),
             spawnAgentCommand: (cmd, opts) => ctx.spawnAgentCommand(cmd, opts),
             killAgentProcessTree: c => ctx.killAgentProcessTree(c),
             reapAgentProcessGroupAfterExit: c => ctx.reapAgentProcessGroupAfterExit(c),
-        });
+        }, stdinPrompt, promptTempDir);
 }
 

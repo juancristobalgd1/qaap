@@ -13,6 +13,7 @@ import {
     applyTemplateWithoutPrompt,
     applyTemplateWithoutPromptFlag,
     applyTemplateWithStdinPrompt,
+    buildPromptTransportCommand,
     prependPathEntry,
     resolveAgentPromptTransport,
     resolveExistingExecutablePath,
@@ -42,6 +43,20 @@ describe('resolveQaiqEnvFallbackModel', () => {
 });
 
 describe('Codex prompt transport', () => {
+
+    it('keeps prompt improvement text out of the Codex subcommand position', () => {
+        const result = buildPromptTransportCommand(
+            'codex exec --json {model_flags} {prompt}',
+            'Rewrite the user prompt below so it is clearer.',
+            'codex',
+            { id: 'codex', bin: 'codex', template: 'codex exec --json {model_flags} {prompt}' },
+            { model_flags: '-m gpt-5.6-luna' },
+        );
+
+        expect(result.command).to.equal('codex exec --json -m gpt-5.6-luna -');
+        expect(result.stdinPrompt).to.contain('Rewrite the user prompt');
+        expect(result.command).not.to.contain('the user prompt');
+    });
 
     it('uses the stdin marker without putting the prompt into argv', () => {
         const prompt = 'A'.repeat(12_000);

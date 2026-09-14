@@ -155,6 +155,7 @@ import {
     QAAP_AGENT_VERIFY_MAX_ATTEMPTS,
     QAAP_AGENT_VERIFY_WALL_CLOCK_MS,
 } from './qaap-agent-task-runner-utils3';
+import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
 
 export function runGenericCommandExtracted(ctx: any, command: string,
         cwd: string,
@@ -580,26 +581,43 @@ export async function improveComposerPromptExtracted(ctx: any, options: {
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
             .replace(/--verbose/g, '');
+        const cwd = options.cwd?.trim() || process.cwd();
+        const transported = buildPromptTransportCommand(
+            template,
+            improveText,
+            agentId,
+            detected,
+            vars,
+        );
         const command = applyAgentApprovalPolicyToCommand(
-            ctx.applyTemplate(template, improveText, vars),
+            transported.command,
             {
                 agentId,
                 approvalPolicyId: 'approve-for-me',
                 autoApprove: true,
+                codexSupportsApproveForMe: detected.codexSupportsApproveForMe,
             },
         );
-        const cwd = options.cwd?.trim() || process.cwd();
         const createdAt = Date.now();
         const task: QaapAgentTask = {
             id: 'composer-improve-prompt',
             title: 'Improve prompt',
             command,
             cwd,
+            agentId,
             state: 'running',
             createdAt,
             startedAt: createdAt,
             autoApprove: true,
             ...(options.agentModel ? { agentModel: options.agentModel, qaiqModel: options.agentModel } : {}),
         };
-        return ctx.runOneShotCommand(command, cwd, ctx.buildChildEnv(task), agentId);
+        return ctx.runOneShotCommand(
+            command,
+            cwd,
+            ctx.buildChildEnv(task),
+            agentId,
+            45_000,
+            transported.stdinPrompt,
+            transported.promptTempDir,
+        );
 }

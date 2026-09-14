@@ -239,6 +239,33 @@ export function applyTemplateForPromptTransport(
     return applyTemplateWithoutPrompt(template, vars);
 }
 
+export interface QaapPromptTransportCommand {
+    readonly command: string;
+    readonly stdinPrompt?: string;
+    readonly promptTempDir?: string;
+}
+
+/** Build a one-shot command without placing a long improvement prompt in argv. */
+export function buildPromptTransportCommand(
+    template: string,
+    prompt: string,
+    agentId: string | undefined,
+    detected?: { readonly id?: string; readonly bin?: string; readonly template?: string },
+    vars: Record<string, string> = {},
+): QaapPromptTransportCommand {
+    const transport = resolveAgentPromptTransport(agentId, detected);
+    if (transport.kind === 'argv') {
+        return { command: applyTemplate(template, prompt, vars) };
+    }
+    let command = applyTemplateForPromptTransport(template, transport, vars);
+    if (transport.kind === 'prompt-file') {
+        const written = writeAgentPromptFile(prompt);
+        command = `${command} ${transport.flag} ${quoteShellArg(written.file)}`;
+        return { command, promptTempDir: written.dir };
+    }
+    return { command, stdinPrompt: prompt };
+}
+
 /** Quote a filesystem path for `shell: true` (`cmd.exe` on Windows, POSIX elsewhere). */
 export function quoteShellArg(value: string): string {
     if (process.platform === 'win32') {

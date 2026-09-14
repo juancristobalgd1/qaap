@@ -28,7 +28,10 @@ import {
 } from '../common/qaap-agent-review';
 import type { QaapGenericCommandResult } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
-import type { QaapAgentStdinPromptMode } from './qaap-agent-task-runner-utils';
+import {
+    removeAgentPromptTempDir,
+    type QaapAgentStdinPromptMode,
+} from './qaap-agent-task-runner-utils';
 import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
 
 const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIONS;
@@ -332,7 +335,7 @@ export async function reviewSuccessfulAgentTask(
 export interface RunOneShotCommandDeps {
     enforceAgentIsolationPolicy(): void;
     ensureAgentCwdOwnership(cwd: string): void;
-    spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('ignore' | 'pipe')[] }): ChildProcess;
+    spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('ignore' | 'pipe')[]; detached?: boolean }): ChildProcess;
     killAgentProcessTree(child: ChildProcess): void;
     reapAgentProcessGroupAfterExit(child: ChildProcess): void;
 }
@@ -344,24 +347,35 @@ export function runOneShotCommand(
     agentId: string | undefined,
     timeoutMs: number,
     deps: RunOneShotCommandDeps,
+    stdinPrompt?: string,
+    promptTempDir?: string,
 ): Promise<string> {
     return new Promise((resolve, reject) => {
         let stdout = '';
         let stderr = '';
         let child: ChildProcess;
+        const cleanupPromptTempDir = (): void => {
+            removeAgentPromptTempDir(promptTempDir);
+        };
         try {
             deps.enforceAgentIsolationPolicy();
             deps.ensureAgentCwdOwnership(cwd);
             child = deps.spawnAgentCommand(command, {
                 cwd,
                 env,
-                stdio: ['ignore', 'pipe', 'pipe'],
+                stdio: stdinPrompt === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+                ...(stdinPrompt === undefined ? {} : { detached: false }),
             });
+            if (stdinPrompt !== undefined) {
+                child.stdin?.end(stdinPrompt);
+            }
         } catch (error) {
+            cleanupPromptTempDir();
             reject(error instanceof Error ? error : new Error(String(error)));
             return;
         }
         const timer = setTimeout(() => {
+            cleanupPromptTempDir();
             deps.killAgentProcessTree(child);
             reject(new Error('Prompt improvement timed out.'));
         }, timeoutMs);
@@ -373,6 +387,7 @@ export function runOneShotCommand(
         });
         child.on('error', error => {
             clearTimeout(timer);
+            cleanupPromptTempDir();
             reject(error);
         });
         child.once('exit', () => {
@@ -380,6 +395,7 @@ export function runOneShotCommand(
         });
         child.on('close', code => {
             clearTimeout(timer);
+            cleanupPromptTempDir();
             if (code !== 0) {
                 reject(new Error(stderr.trim() || stdout.trim() || `Agent exited with code ${code ?? 'unknown'}.`));
                 return;
