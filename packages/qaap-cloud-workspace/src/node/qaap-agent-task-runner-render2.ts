@@ -582,7 +582,7 @@ export function drainQueuedTasksExtracted(ctx: any): void {
                 ctx.finishTask(next.id, 'failed', undefined);
                 continue;
             }
-            const running: QaapAgentTask = { ...next, state: 'running', queuePosition: undefined };
+            const running: QaapAgentTask = { ...next, state: 'running', startedAt: Date.now(), queuePosition: undefined };
             ctx.tasks.set(next.id, running);
             ctx.queuedCreateRequests.delete(next.id);
             void ctx.spawnProcessWhenReady(running, request);

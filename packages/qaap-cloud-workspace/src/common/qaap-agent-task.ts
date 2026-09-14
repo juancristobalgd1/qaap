@@ -51,6 +51,8 @@ export interface QaapAgentTask {
     readonly exitCode?: number;
     /** Epoch milliseconds. */
     readonly createdAt: number;
+    /** Epoch milliseconds when the agent process actually started; absent while queued. */
+    readonly startedAt?: number;
     readonly finishedAt?: number;
     /**
      * Stable ordering key for queued tasks. Lower values run first; it is persisted so a restart

@@ -266,6 +266,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         if (ownerLogin && ctx.billingStore) {
             void ctx.billingStore.getOrCreateAccount(ownerLogin).catch(() => undefined);
         }
+        const createdAt = Date.now();
         const task: QaapAgentTask = {
             id,
             agentId: resolvedAgentId,
@@ -273,7 +274,8 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
             command: rawCommand || prompt,
             cwd,
             state: atCapacity ? 'queued' : 'running',
-            createdAt: Date.now(),
+            createdAt,
+            ...(atCapacity ? {} : { startedAt: createdAt }),
             ...(nextQueuePosition !== undefined ? { queuePosition: nextQueuePosition } : {}),
             parentId,
             autoApprove,

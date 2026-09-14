@@ -195,6 +195,11 @@ describe('toTaskView', () => {
         expect(view.parentId).to.equal('leader');
     });
 
+    it('preserves the backend execution start timestamp', () => {
+        const view = toTaskView({ id: 'x', cwd: '/a', state: 'running', createdAt: 1000, startedAt: 1200 });
+        expect(view.startedAt).to.equal(1200);
+    });
+
     it('normalizes cwd in the returned view', () => {
         const view = toTaskView({ id: 'x', cwd: '/a/b/', state: 'running', createdAt: 1000 });
         expect(view.cwd).to.equal('/a/b');

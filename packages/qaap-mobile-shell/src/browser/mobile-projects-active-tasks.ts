@@ -49,6 +49,7 @@ export interface MobileProjectTaskView {
     readonly cwd: string;
     readonly state: string;
     readonly createdAt: number;
+    readonly startedAt?: number;
     readonly finishedAt?: number;
     /** Lower values run first while the task is queued. */
     readonly queuePosition?: number;
@@ -66,6 +67,7 @@ interface TaskEventPayload {
     readonly title?: string;
     readonly command?: string;
     readonly createdAt?: number;
+    readonly startedAt?: number;
     readonly finishedAt?: number;
     readonly queuePosition?: number;
     readonly parentId?: string;
@@ -540,6 +542,7 @@ export function toTaskView(task: TaskEventPayload): MobileProjectTaskView {
         cwd: normalizeCwd(task.cwd),
         state: task.state,
         createdAt: task.createdAt ?? Date.now(),
+        startedAt: task.startedAt,
         finishedAt: task.finishedAt,
         queuePosition: task.queuePosition,
         parentId: task.parentId,

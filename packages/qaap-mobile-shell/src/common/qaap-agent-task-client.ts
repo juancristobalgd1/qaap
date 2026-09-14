@@ -98,6 +98,7 @@ export interface QaapAgentTaskCreated {
     readonly title?: string;
     readonly command?: string;
     readonly createdAt?: number;
+    readonly startedAt?: number;
     readonly queuePosition?: number;
 }
 
@@ -110,6 +111,7 @@ export interface QaapAgentTaskDetailDTO {
     readonly command?: string;
     readonly state: string;
     readonly createdAt?: number;
+    readonly startedAt?: number;
     readonly queuePosition?: number;
     readonly exitCode?: number;
     readonly finishedAt?: number;

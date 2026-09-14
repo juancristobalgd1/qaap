@@ -175,6 +175,7 @@ export class MobileProjectsActiveTaskActionsUi {
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskStateLabel', 'State'), taskStateLabel(state));
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskCommandLabel', 'Command'), detail.command ?? knownTask?.command ?? '—');
         const createdAt = detail.createdAt ?? knownTask?.createdAt;
+        const startedAt = detail.startedAt ?? knownTask?.startedAt ?? (state !== 'queued' ? createdAt : undefined);
         const finishedAt = detail.finishedAt ?? knownTask?.finishedAt;
         if (createdAt !== undefined) {
             appendTaskMeta(
@@ -193,6 +194,9 @@ export class MobileProjectsActiveTaskActionsUi {
         }
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskCauseLabel', 'Cause'), taskCause(detail));
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskNextActionLabel', 'Next action'), taskNextAction(state));
+        if (createdAt !== undefined) {
+            renderTaskTimeline(host, state, createdAt, startedAt, finishedAt);
+        }
 
         const diagnostic = document.createElement('button');
         diagnostic.type = 'button';
@@ -278,6 +282,75 @@ function formatTaskDuration(createdAt: number, finishedAt?: number): string {
     }
     const hours = Math.floor(minutes / 60);
     return nls.localize('qaap/mobileProjects/taskDurationHours', '{0}h {1}m', String(hours), String(minutes % 60));
+}
+
+function renderTaskTimeline(host: HTMLElement, state: string, createdAt: number, startedAt?: number, finishedAt?: number): void {
+    const timeline = document.createElement('section');
+    timeline.className = 'theia-mobile-agent-log-timeline';
+    const heading = document.createElement('h3');
+    heading.textContent = nls.localize('qaap/mobileProjects/taskTimelineTitle', 'Timeline');
+    const list = document.createElement('ol');
+    list.className = 'theia-mobile-agent-log-timeline-list';
+
+    appendTimelinePhase(
+        list,
+        'done',
+        nls.localize('qaap/mobileProjects/taskTimelineSubmitted', 'Submitted'),
+        formatTaskTime(createdAt),
+    );
+
+    const waitedForSlot = startedAt !== undefined && startedAt > createdAt;
+    if (state === 'queued' || waitedForSlot) {
+        appendTimelinePhase(
+            list,
+            state === 'queued' ? 'current' : 'done',
+            nls.localize('qaap/mobileProjects/taskTimelineQueue', 'Queue'),
+            state === 'queued'
+                ? nls.localize('qaap/mobileProjects/taskTimelineWaiting', 'Waiting for an available agent slot · {0}', formatTaskDuration(createdAt))
+                : nls.localize('qaap/mobileProjects/taskTimelineQueueDuration', '{0} wait', formatTaskDuration(createdAt, startedAt)),
+        );
+    }
+
+    appendTimelinePhase(
+        list,
+        state === 'queued' ? 'pending' : state === 'running' ? 'current' : 'done',
+        nls.localize('qaap/mobileProjects/taskTimelineExecution', 'Agent execution'),
+        startedAt === undefined
+            ? nls.localize('qaap/mobileProjects/taskTimelineNotStarted', 'Not started')
+            : nls.localize('qaap/mobileProjects/taskTimelineExecutionDuration', '{0} · {1}', formatTaskTime(startedAt), formatTaskDuration(startedAt, finishedAt)),
+    );
+
+    appendTimelinePhase(
+        list,
+        finishedAt !== undefined ? 'done' : 'pending',
+        nls.localize('qaap/mobileProjects/taskTimelineFinished', 'Finished'),
+        finishedAt === undefined
+            ? nls.localize('qaap/mobileProjects/taskTimelineNotFinished', 'Pending')
+            : formatTaskTime(finishedAt),
+    );
+    timeline.append(heading, list);
+    host.append(timeline);
+}
+
+function appendTimelinePhase(list: HTMLOListElement, status: 'done' | 'current' | 'pending', label: string, detail: string): void {
+    const item = document.createElement('li');
+    item.className = `theia-mobile-agent-log-timeline-phase theia-mod-${status}`;
+    const marker = document.createElement('span');
+    marker.className = 'theia-mobile-agent-log-timeline-marker';
+    marker.setAttribute('aria-hidden', 'true');
+    const content = document.createElement('div');
+    content.className = 'theia-mobile-agent-log-timeline-content';
+    const phase = document.createElement('strong');
+    phase.textContent = label;
+    const value = document.createElement('span');
+    value.textContent = detail;
+    content.append(phase, value);
+    item.append(marker, content);
+    list.append(item);
+}
+
+function formatTaskTime(value: number): string {
+    return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function buildTaskDiagnostic(

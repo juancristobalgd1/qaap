@@ -131,6 +131,8 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         const running = runner.create({ command: 'echo running', cwd: '/repo' }, 'alice');
         const first = runner.create(request, 'alice');
         const second = runner.create(request, 'alice');
+        expect(running.startedAt).to.be.a('number');
+        expect(first.startedAt).to.equal(undefined);
         expect(first.queuePosition).to.equal(1);
         expect(second.queuePosition).to.equal(2);
 
@@ -145,6 +147,7 @@ describe('QaapAgentTaskRunner concurrency quota', () => {
         tasks.set(running.id, { ...running, state: 'completed', finishedAt: Date.now() });
         runner.exposeDrainQueuedTasks();
         expect(tasks.get(second.id)?.state).to.equal('running');
+        expect(tasks.get(second.id)?.startedAt).to.be.at.least(second.createdAt);
         expect(tasks.get(first.id)?.state).to.equal('queued');
     });
 

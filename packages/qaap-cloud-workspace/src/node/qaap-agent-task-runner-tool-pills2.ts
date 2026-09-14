@@ -589,13 +589,15 @@ export async function improveComposerPromptExtracted(ctx: any, options: {
             },
         );
         const cwd = options.cwd?.trim() || process.cwd();
+        const createdAt = Date.now();
         const task: QaapAgentTask = {
             id: 'composer-improve-prompt',
             title: 'Improve prompt',
             command,
             cwd,
             state: 'running',
-            createdAt: Date.now(),
+            createdAt,
+            startedAt: createdAt,
             autoApprove: true,
             ...(options.agentModel ? { agentModel: options.agentModel, qaiqModel: options.agentModel } : {}),
         };
