@@ -97,7 +97,7 @@ describe('sessions sidebar head popovers', () => {
 
         expect(anchor.getAttribute('aria-expanded')).to.equal('true');
         expect(document.querySelector('.theia-mod-status-legend[role="dialog"]')).to.not.equal(null);
-        expect(document.querySelectorAll('[role="listitem"]')).to.have.length(9);
+        expect(document.querySelectorAll('[role="listitem"]')).to.have.length(16);
         expect(document.querySelector('.theia-mod-legend-running')).to.not.equal(null);
 
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

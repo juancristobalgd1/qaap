@@ -68,12 +68,30 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
         expect(resolveQaapGitPrVisualStatus({ linkedPullRequest: { ...pull, tests: 'pending' } })?.id).to.equal('checks-pending');
     });
 
-    it('uses changes for branch/git activity and no PR semantics', () => {
+    it('uses distinct glyphs for branch / commit / push / local changes (not only PR)', () => {
         expect(resolveQaapGitPrVisualStatus({
             linkedPullRequest: { owner: 'acme', repo: 'app', branch: 'agent/work' },
-        })?.id).to.equal('changes');
-        expect(resolveQaapGitPrVisualStatus({ hasGitOperation: true })?.id).to.equal('changes');
+        })).to.include({
+            id: 'branch',
+            iconClass: 'codicon-git-branch',
+        });
+        expect(resolveQaapGitPrVisualStatus({ worktreeBranch: 'feat/x' })).to.include({
+            id: 'branch',
+            iconClass: 'codicon-git-branch',
+        });
+        expect(resolveQaapGitPrVisualStatus({ lastGitActionKind: 'commit' })).to.include({
+            id: 'committed',
+            iconClass: 'codicon-git-commit',
+        });
+        expect(resolveQaapGitPrVisualStatus({ lastGitActionKind: 'push' })).to.include({
+            id: 'pushed',
+            iconClass: 'codicon-repo-push',
+        });
         expect(resolveQaapGitPrVisualStatus({ linesAdded: 2 })?.id).to.equal('changes');
+        expect(resolveQaapGitPrVisualStatus({ hasGitOperation: true })).to.include({
+            id: 'branch',
+            iconClass: 'codicon-git-branch',
+        });
     });
 
     it('keeps legacy linked PRs neutral instead of guessing open or merged', () => {
@@ -134,7 +152,7 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
 });
 
 describe('listQaapAgentTaskVisualStatusLegendEntries', () => {
-    it('returns the core sidebar statuses without the full PR matrix', () => {
+    it('returns core agent statuses plus branch/commit/push/PR glyphs', () => {
         const entries = listQaapAgentTaskVisualStatusLegendEntries();
         expect(entries.map(entry => entry.id)).to.deep.equal([
             'idle',
@@ -145,9 +163,20 @@ describe('listQaapAgentTaskVisualStatusLegendEntries', () => {
             'background',
             'verified',
             'warnings',
+            'branch',
+            'changes',
+            'committed',
+            'pushed',
             'pr-ready',
+            'pr-merged',
+            'pr-closed',
+            'pr-draft',
         ]);
         expect(entries.every(entry => entry.labelKey.startsWith('qaap/mobileProjects/'))).to.equal(true);
+        expect(entries.find(entry => entry.id === 'branch')?.iconClass).to.equal('codicon-git-branch');
+        expect(entries.find(entry => entry.id === 'committed')?.iconClass).to.equal('codicon-git-commit');
+        expect(entries.find(entry => entry.id === 'pushed')?.iconClass).to.equal('codicon-repo-push');
+        expect(entries.find(entry => entry.id === 'pr-merged')?.iconClass).to.equal('codicon-git-merge');
     });
 });
 
