@@ -17,7 +17,11 @@ import { cancelConversation } from '../common/qaap-agent-conversation-client';
 import { cancelAgentTask, fetchAgentTaskDetail } from '../common/qaap-agent-task-client';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
+import {
+    summarizeTaskStates,
+    type MobileProjectsActiveTasks,
+    type MobileProjectTaskView,
+} from './mobile-projects-active-tasks';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
 import {
@@ -111,6 +115,13 @@ export function renderTasksHubViewExtracted(ctx: any, projects: MobileProjectEnt
             return;
         }
 
+        if (ctx.host.activeTasks) {
+            root.append(createTaskTransportStatus(ctx.host.activeTasks));
+            const queueSummary = createTaskQueueSummary(ctx.host.activeTasks);
+            if (queueSummary) {
+                root.append(queueSummary);
+            }
+        }
         const groups = ctx.host.collectTasksInboxGroups(projects);
         const teamRendered = ctx.appendTasksHubTeamSection(root);
 
@@ -143,5 +154,50 @@ export function renderTasksHubViewExtracted(ctx: any, projects: MobileProjectEnt
         ctx.host.scroll.append(root);
         ctx.updateTasksAttentionChrome();
         ctx.host.renderSubtitle();
+}
+
+function createTaskTransportStatus(activeTasks: MobileProjectsActiveTasks): HTMLElement {
+        const state = activeTasks.getTransportState();
+        const status = document.createElement('div');
+        status.className = `theia-mobile-agent-tasks-transport theia-mod-${state}`;
+        status.setAttribute('role', 'status');
+        status.textContent = state === 'connected'
+            ? nls.localize('qaap/mobileProjects/taskTransportConnected', 'Live task connection: connected')
+            : state === 'reconnecting'
+                ? nls.localize('qaap/mobileProjects/taskTransportReconnecting', 'Live task connection: reconnecting…')
+                : nls.localize('qaap/mobileProjects/taskTransportDisconnected', 'Live task connection: disconnected. Tasks continue on the server and will resync automatically.');
+        return status;
+}
+
+function createTaskQueueSummary(activeTasks: MobileProjectsActiveTasks): HTMLElement | undefined {
+        const counts = summarizeTaskStates(activeTasks.getAllTasks());
+        const entries: Array<{ readonly key: string; readonly label: string; readonly count: number }> = [
+            { key: 'queued', label: nls.localize('qaap/mobileProjects/taskQueueQueued', 'Waiting'), count: counts.queued },
+            { key: 'running', label: nls.localize('qaap/mobileProjects/taskQueueRunning', 'Running'), count: counts.running },
+            { key: 'blocked', label: nls.localize('qaap/mobileProjects/taskQueueBlocked', 'Blocked'), count: counts.blocked },
+            { key: 'failed', label: nls.localize('qaap/mobileProjects/taskQueueFailed', 'Failed'), count: counts.failed },
+            { key: 'interrupted', label: nls.localize('qaap/mobileProjects/taskQueueInterrupted', 'Interrupted'), count: counts.interrupted },
+        ].filter(entry => entry.count > 0);
+        if (entries.length === 0) {
+            return undefined;
+        }
+        const summary = document.createElement('div');
+        summary.className = 'theia-mobile-agent-tasks-queue-summary';
+        summary.setAttribute('role', 'status');
+        summary.setAttribute(
+            'aria-label',
+            nls.localize('qaap/mobileProjects/taskQueueSummaryAria', 'Task queue: {0}', entries.map(entry => `${entry.count} ${entry.label}`).join(', ')),
+        );
+        const label = document.createElement('span');
+        label.className = 'theia-mobile-agent-tasks-queue-label';
+        label.textContent = nls.localize('qaap/mobileProjects/taskQueueLabel', 'Task queue');
+        summary.append(label);
+        for (const entry of entries) {
+            const chip = document.createElement('span');
+            chip.className = `theia-mobile-agent-tasks-queue-chip theia-mod-${entry.key}`;
+            chip.textContent = `${entry.label} ${entry.count}`;
+            summary.append(chip);
+        }
+        return summary;
 }
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 
 import { expect } from 'chai';
-import { retryExtracted } from './qaap-agent-task-runner-streaming2';
+import { createExtracted, retryExtracted, resumeExtracted } from './qaap-agent-task-runner-streaming2';
 
 describe('Qaap standalone task retry', () => {
     it('rebuilds a failed coding task from its durable prompt and preserves its execution context', () => {
@@ -64,5 +64,70 @@ describe('Qaap standalone task retry', () => {
         expect(retryExtracted(ctx, 'blocked')).to.equal(undefined);
         expect(retryExtracted(ctx, 'completed')).to.equal(undefined);
         expect(creates).to.equal(0);
+    });
+
+    it('continues an interrupted task from its durable command', () => {
+        const original = {
+            id: 'interrupted-task',
+            title: 'Recover preview',
+            command: 'npm run dev',
+            cwd: '/workspace/repo',
+            agentId: 'shell',
+            state: 'interrupted' as const,
+            createdAt: Date.now(),
+            ownerLogin: 'alice',
+        };
+        let request: Record<string, unknown> | undefined;
+        const ctx = {
+            tasks: new Map<string, any>([[original.id, original]]),
+            resumingTaskIds: new Map(),
+            resolveTaskAgentId: () => original.agentId,
+            create: (next: Record<string, unknown>) => {
+                request = next;
+                const resumed = { ...original, id: 'resumed-task', state: 'queued' as const, resumedFromTaskId: 'interrupted-task' };
+                ctx.tasks.set(resumed.id, resumed);
+                return resumed;
+            },
+        };
+
+        const resumed = resumeExtracted(ctx, original.id);
+
+        expect(resumed?.id).to.equal('resumed-task');
+        expect(request).to.deep.include({
+            title: original.title,
+            command: original.command,
+            cwd: original.cwd,
+            autoApprove: undefined,
+            resumedFromTaskId: original.id,
+        });
+        expect(resumeExtracted(ctx, original.id)?.id).to.equal('resumed-task');
+    });
+
+    it('returns the existing task for a repeated create clientRequestId', () => {
+        const ctx = {
+            recoveryState: 'ready',
+            storageWriteFailed: false,
+            tasks: new Map(),
+            clientRequestTaskIds: new Map(),
+            processes: new Map(),
+            isDirectory: () => true,
+            resolveAgentId: () => 'shell',
+            normalizeAgentId: () => 'shell',
+            extractLastAgentMention: () => undefined,
+            countRunningTasks: () => 0,
+            maxConcurrentAgents: () => 1,
+            ownerAtConcurrencyCap: () => false,
+            resolveAgentModelForRequest: () => undefined,
+            spawnProcessWhenReady: () => undefined,
+            persist: () => Promise.resolve(),
+            onDidChangeTaskEmitter: { fire: () => undefined },
+        };
+        const request = { command: 'echo hello', cwd: '/workspace/repo', clientRequestId: 'submit-1' };
+
+        const first = createExtracted(ctx, request, 'alice');
+        const second = createExtracted(ctx, request, 'alice');
+
+        expect(second).to.equal(first);
+        expect(ctx.tasks.size).to.equal(1);
     });
 });

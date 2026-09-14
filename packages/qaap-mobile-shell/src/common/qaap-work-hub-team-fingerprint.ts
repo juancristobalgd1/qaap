@@ -32,7 +32,7 @@ export function buildWorkHubTeamSectionFingerprint(
     const parts: string[] = [`a:${approvalsCount}`];
     const sorted = [...members].sort((left, right) => left.id.localeCompare(right.id));
     for (const member of sorted) {
-        parts.push(`m:${member.id}:${member.parentId ?? ''}`);
+        parts.push(`m:${member.id}:${member.parentId ?? ''}:${member.state}`);
     }
     return parts.join('|');
 }

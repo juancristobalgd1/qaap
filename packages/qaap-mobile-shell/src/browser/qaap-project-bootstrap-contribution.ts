@@ -14,6 +14,7 @@ import { MobileHaptics } from './mobile-haptics';
 import { MobileSnackbar } from './mobile-snackbar';
 import { parsePreviewIdentityPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { probeQaapIdentityPreview } from './qaap-dev-preview-client';
+import { formatQaapBootstrapDiagnostic } from './qaap-bootstrap-display';
 import {
     QaapBootstrapStateChange,
     QaapProjectBootstrapService,
@@ -59,6 +60,12 @@ function monorepoFlavorLabel(flavor: QaapMonorepoFlavor | undefined): string {
         case 'implicit': return 'Monorepo';
         default: return 'Monorepo';
     }
+}
+
+interface QaapBootstrapBannerAction {
+    readonly label: string;
+    readonly primary?: boolean;
+    readonly run: () => void | Promise<void>;
 }
 
 /**
@@ -226,8 +233,9 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
         subtitle.textContent = this.subtitleFor(state, descriptor);
         text.appendChild(subtitle);
 
+        let logDetails: HTMLDetailsElement | undefined;
         if (state.previewLogTail && (state.phase === 'starting' || state.phase === 'run-failed' || state.phase === 'install-failed')) {
-            const logDetails = document.createElement('details');
+            logDetails = document.createElement('details');
             logDetails.className = 'qaap-project-bootstrap-log';
             logDetails.open = state.previewWaitTimedOut === true || state.phase === 'run-failed';
             const logSummary = document.createElement('summary');
@@ -264,38 +272,78 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
         const actions = document.createElement('div');
         actions.className = 'qaap-project-bootstrap-actions';
         for (const action of this.actionsFor(state, descriptor)) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = `qaap-project-bootstrap-action${action.primary ? ' qaap-mod-primary' : ''}`;
-            btn.textContent = action.label;
-            btn.disabled = this.actionInFlight;
-            btn.addEventListener('click', () => {
-                if (this.actionInFlight) {
-                    return;
-                }
-                MobileHaptics.fire(MobileHaptics.LIGHT);
-                this.actionInFlight = true;
-                btn.disabled = true;
-                let result: void | Promise<void>;
-                try {
-                    result = action.run();
-                } catch (error) {
-                    this.actionInFlight = false;
-                    MobileSnackbar.show(String(error), { kind: 'warning', duration: 3000 });
-                    return;
-                }
-                void Promise.resolve(result).catch(error => {
-                    MobileSnackbar.show(String(error), { kind: 'warning', duration: 3000 });
-                }).finally(() => {
-                    this.actionInFlight = false;
-                    if (this.lastState && this.banner) {
-                        this.render(this.lastState);
-                    }
-                });
+            this.appendActionButton(actions, action);
+        }
+        if (logDetails) {
+            this.appendActionButton(actions, {
+                label: nls.localize('qaap/projectBootstrap/viewLogs', 'View logs'),
+                run: () => {
+                    logDetails!.open = true;
+                    logDetails!.scrollIntoView({ block: 'nearest' });
+                },
             });
-            actions.appendChild(btn);
+        }
+        if (this.hasPreviewDiagnostic(state)) {
+            this.appendActionButton(actions, {
+                label: nls.localize('qaap/projectBootstrap/copyDiagnostic', 'Copy diagnostic'),
+                run: () => this.copyPreviewDiagnostic(state),
+            });
         }
         banner.appendChild(actions);
+    }
+
+    protected appendActionButton(actions: HTMLElement, action: QaapBootstrapBannerAction): void {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `qaap-project-bootstrap-action${action.primary ? ' qaap-mod-primary' : ''}`;
+        btn.textContent = action.label;
+        btn.disabled = this.actionInFlight;
+        btn.addEventListener('click', () => {
+            if (this.actionInFlight) {
+                return;
+            }
+            MobileHaptics.fire(MobileHaptics.LIGHT);
+            this.actionInFlight = true;
+            btn.disabled = true;
+            let result: void | Promise<void>;
+            try {
+                result = action.run();
+            } catch (error) {
+                this.actionInFlight = false;
+                MobileSnackbar.show(String(error), { kind: 'warning', duration: 3000 });
+                return;
+            }
+            void Promise.resolve(result).catch(error => {
+                MobileSnackbar.show(String(error), { kind: 'warning', duration: 3000 });
+            }).finally(() => {
+                this.actionInFlight = false;
+                if (this.lastState && this.banner) {
+                    this.render(this.lastState);
+                }
+            });
+        });
+        actions.appendChild(btn);
+    }
+
+    protected hasPreviewDiagnostic(state: QaapBootstrapStateChange): boolean {
+        return state.error !== undefined
+            || state.failureKind !== undefined
+            || state.portInUse === true
+            || state.previewWaitTimedOut === true
+            || state.previewLogTail !== undefined;
+    }
+
+    protected async copyPreviewDiagnostic(state: QaapBootstrapStateChange): Promise<void> {
+        const failureDetail = this.bootstrap.getBootstrapFailureDetail();
+        const diagnostic = formatQaapBootstrapDiagnostic(state, failureDetail);
+        if (!navigator.clipboard?.writeText) {
+            throw new Error(nls.localize('qaap/projectBootstrap/clipboardUnavailable', 'Clipboard is unavailable'));
+        }
+        await navigator.clipboard.writeText(diagnostic);
+        MobileSnackbar.show(
+            nls.localize('qaap/projectBootstrap/diagnosticCopied', 'Preview diagnostic copied'),
+            { kind: 'success', duration: 1800 }
+        );
     }
 
     /**
@@ -519,7 +567,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
         };
     }
 
-    protected actionsFor(state: QaapBootstrapStateChange, descriptor: QaapProjectDescriptor): { label: string; primary?: boolean; run: () => void | Promise<void> }[] {
+    protected actionsFor(state: QaapBootstrapStateChange, descriptor: QaapProjectDescriptor): QaapBootstrapBannerAction[] {
         const monorepoNeedsPick = descriptor.apps.length > 1 && !state.selectedApp;
         const envAction = this.cloudEnvAction();
         switch (state.phase) {
@@ -585,7 +633,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                 if (state.previewWaitTimedOut) {
                     return [
                         {
-                            label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                            label: nls.localize('qaap/projectBootstrap/restartPreview', 'Restart Preview'),
                             primary: true,
                             run: async () => {
                                 this.bootstrap.cancelActivePreviewLaunch();
@@ -607,7 +655,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
             case 'install-failed':
                 return [
                     {
-                        label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                        label: nls.localize('qaap/projectBootstrap/restartPreview', 'Restart Preview'),
                         primary: true,
                         run: () => this.bootstrap.runInstall(),
                     },
@@ -630,7 +678,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                             run: () => this.bootstrap.openExistingPreview(),
                         },
                         {
-                            label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                            label: nls.localize('qaap/projectBootstrap/restartPreview', 'Restart Preview'),
                             run: () => this.bootstrap.runDevServer(),
                         },
                         {
@@ -647,7 +695,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                             run: () => this.bootstrap.runInstall(),
                         },
                         {
-                            label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                            label: nls.localize('qaap/projectBootstrap/restartPreview', 'Restart Preview'),
                             run: () => this.bootstrap.runDevServer(),
                         },
                         {
@@ -664,7 +712,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                             run: envAction.run,
                         },
                         {
-                            label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                            label: nls.localize('qaap/projectBootstrap/restartPreview', 'Restart Preview'),
                             run: () => this.bootstrap.runDevServer(),
                         },
                         {
@@ -675,7 +723,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                 }
                 return [
                     {
-                        label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                        label: nls.localize('qaap/projectBootstrap/restartPreview', 'Restart Preview'),
                         primary: true,
                         run: () => this.bootstrap.runDevServer(),
                     },
@@ -686,7 +734,7 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                 ];
             }
             case 'running': {
-                const actions: { label: string; primary?: boolean; run: () => void | Promise<void> }[] = [
+                const actions: QaapBootstrapBannerAction[] = [
                     {
                         label: nls.localize('qaap/projectBootstrap/focusPreview', 'Focus preview'),
                         primary: true,

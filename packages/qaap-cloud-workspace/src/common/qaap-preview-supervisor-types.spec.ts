@@ -92,7 +92,7 @@ describe('qaap-preview-supervisor-types', () => {
     });
 
     describe('buildQaapPreviewFailureHtml', () => {
-        it('renders exit code, signal, and escaped stderr with a Restart button', () => {
+        it('renders exit code, signal, escaped stderr, and diagnostic actions', () => {
             const html = buildQaapPreviewFailureHtml({
                 port: 5173,
                 cwd: '/home/user/app',
@@ -104,15 +104,19 @@ describe('qaap-preview-supervisor-types', () => {
             expect(html).to.contain('exit code 1');
             expect(html).to.contain('signal SIGTERM');
             expect(html).to.contain('Error: &lt;boom&gt;');
-            expect(html).to.contain('Restart dev server');
+            expect(html).to.contain('Restart Preview');
+            expect(html).to.contain('View logs');
+            expect(html).to.contain('Copy diagnostic');
             expect(html).to.contain(QAAP_PREVIEW_RESTART_PATH);
             expect(html).to.contain('"port":5173');
             expect(html).to.contain('"cwd":"/home/user/app"');
+            expect(html).to.contain('serverOutput');
         });
 
         it('disables restart when no cwd is known', () => {
             const html = buildQaapPreviewFailureHtml({ port: 5173, everStarted: false });
-            expect(html).to.not.contain('Restart dev server');
+            expect(html).to.not.contain('id="restart"');
+            expect(html).to.contain('Copy diagnostic');
             expect(html).to.contain('No dev server is running on port 5173');
         });
 
@@ -124,6 +128,7 @@ describe('qaap-preview-supervisor-types', () => {
             });
             expect(html).to.not.contain('<img src=x onerror=alert(1)>');
             expect(html).to.contain('&lt;/script&gt;');
+            expect(html).to.not.contain('</script><img');
         });
     });
 });

@@ -148,7 +148,7 @@ export function buildQaapPreviewFailureHtml(options: QaapPreviewFailurePageOptio
         exitBits.push(`exit code ${options.exitCode}`);
     }
     if (options.signal) {
-        exitBits.push(`signal ${escapeQaapHtml(options.signal)}`);
+        exitBits.push(`signal ${options.signal}`);
     }
     const exitLine = exitBits.length > 0
         ? `The dev server on port ${port} stopped (${exitBits.join(', ')}).`
@@ -157,12 +157,28 @@ export function buildQaapPreviewFailureHtml(options: QaapPreviewFailurePageOptio
             : `No dev server is running on port ${port}.`;
     const tail = (options.stderrTail ?? []).filter(line => line.length > 0);
     const logBlock = tail.length > 0
-        ? `<pre class="log">${escapeQaapHtml(tail.join('\n'))}</pre>`
-        : '<p class="muted">No recent server output was captured.</p>';
+        ? `<details id="logs"><summary>View logs</summary><pre class="log">${escapeQaapHtml(tail.join('\n'))}</pre></details>`
+        : '<details id="logs"><summary>View logs</summary><p class="muted">No recent server output was captured.</p></details>';
     const restartControl = canRestart
-        ? `<button id="restart" type="button">Restart dev server</button>`
+        ? `<button id="restart" type="button">Restart Preview</button>`
         : `<p class="muted">Restart is unavailable here — reopen the project to start the dev server.</p>`;
-    const configJson = JSON.stringify({ port: options.port, cwd: cwd ?? '', restartPath });
+    const diagnostic = [
+        'Qaap Preview diagnostic',
+        `status: ${exitLine}`,
+        `port: ${options.port}`,
+        `workspace: ${cwd ?? '(unknown)'}`,
+        `exitCode: ${options.exitCode ?? '(none)'}`,
+        `signal: ${options.signal ?? '(none)'}`,
+        `everStarted: ${options.everStarted === true}`,
+        tail.length > 0 ? `serverOutput:\n${tail.join('\n')}` : 'serverOutput: (none captured)',
+    ].join('\n');
+    // JSON embedded in a script must not be allowed to terminate that script from captured output.
+    const configJson = JSON.stringify({ port: options.port, cwd: cwd ?? '', restartPath, diagnostic })
+        .replace(/</g, '\\u003c')
+        .replace(/>/g, '\\u003e')
+        .replace(/&/g, '\\u0026')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -177,11 +193,15 @@ export function buildQaapPreviewFailureHtml(options: QaapPreviewFailurePageOptio
   h1 { font-size: 1.05rem; font-weight: 600; margin: 0 0 0.5rem; }
   p { font-size: 0.9rem; color: #b9c2cc; margin: 0 0 0.75rem; line-height: 1.5; }
   .muted { color: #8b949e; }
+  details { margin: 0 0 1rem; }
+  summary { color: #58a6ff; cursor: pointer; font-size: 0.85rem; margin-bottom: 0.5rem; }
   .log { background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 0.75rem 1rem;
     font-family: ui-monospace, monospace; font-size: 0.78rem; color: #c9d1d9; line-height: 1.45;
     white-space: pre-wrap; word-break: break-word; max-height: 15rem; overflow: auto; margin: 0 0 1rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
   button { appearance: none; border: 0; border-radius: 6px; background: #238636; color: #fff;
     font-size: 0.9rem; font-weight: 600; padding: 0.55rem 1.1rem; cursor: pointer; }
+  button.secondary { background: #21262d; border: 1px solid #30363d; }
   button:disabled { opacity: 0.6; cursor: default; }
   #status { font-size: 0.85rem; color: #8b949e; margin-top: 0.75rem; min-height: 1.2rem; }
 </style>
@@ -191,16 +211,47 @@ export function buildQaapPreviewFailureHtml(options: QaapPreviewFailurePageOptio
     <h1>Preview is not running</h1>
     <p>${escapeQaapHtml(exitLine)}</p>
     ${logBlock}
-    ${restartControl}
+    <div class="actions">
+      ${restartControl}
+      <button id="copy-diagnostic" class="secondary" type="button">Copy diagnostic</button>
+    </div>
     <div id="status" role="status"></div>
   </div>
   <script>
     (function () {
       var cfg = ${configJson};
       var btn = document.getElementById('restart');
+      var copyBtn = document.getElementById('copy-diagnostic');
       var status = document.getElementById('status');
-      if (!btn) { return; }
       var polling = false;
+      function copyText(value) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(value);
+        }
+        var area = document.createElement('textarea');
+        area.value = value;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        var copied = document.execCommand('copy');
+        area.remove();
+        return copied ? Promise.resolve() : Promise.reject(new Error('Clipboard unavailable'));
+      }
+      if (copyBtn) {
+        copyBtn.addEventListener('click', function () {
+          copyBtn.disabled = true;
+          copyText(cfg.diagnostic).then(function () {
+            status.textContent = 'Diagnostic copied.';
+          }).catch(function (err) {
+            status.textContent = 'Could not copy the diagnostic (' + err.message + ').';
+          }).then(function () {
+            copyBtn.disabled = false;
+          });
+        });
+      }
+      if (!btn) { return; }
       function poll() {
         setTimeout(function () { location.reload(); }, 2500);
       }

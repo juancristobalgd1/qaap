@@ -434,6 +434,10 @@ export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void 
                 ? 'interrupted' as const
                 : task.state;
             ctx.tasks.set(task.id, { ...task, state, ...(state === 'interrupted' && task.state !== 'interrupted' ? { finishedAt: Date.now() } : {}) });
+            if (task.clientRequestId) {
+                ctx.clientRequestTaskIds ??= new Map();
+                ctx.clientRequestTaskIds.set(`${task.ownerLogin?.trim() || '_'}:${task.clientRequestId}`, task.id);
+            }
             if (state === 'queued' && queuedRequest) {
                 ctx.queuedCreateRequests.set(task.id, queuedRequest);
             }

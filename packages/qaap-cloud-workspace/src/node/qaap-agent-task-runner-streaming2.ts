@@ -222,6 +222,20 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         if (isQaapWorkspaceContainerPath(cwd)) {
             throw new Error(QAAP_CONTAINER_CWD_ERROR);
         }
+        const clientRequestId = typeof request.clientRequestId === 'string'
+            ? request.clientRequestId.trim()
+            : '';
+        if (clientRequestId) {
+            const dedupKey = `${ownerLogin?.trim() || '_'}:${clientRequestId}`;
+            const priorId = ctx.clientRequestTaskIds?.get(dedupKey);
+            const prior = priorId ? ctx.tasks.get(priorId) : undefined;
+            if (prior) {
+                return prior;
+            }
+            if (priorId) {
+                ctx.clientRequestTaskIds.delete(dedupKey);
+            }
+        }
         const resolvedAgentId = prompt ? ctx.resolveAgentId(prompt, request.agent, ownerLogin) : SHELL_AGENT_ID;
         if (
             resolvedAgentId === SHELL_AGENT_ID
@@ -259,6 +273,8 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
             ...(request.readOnlyWorkspace ? { readOnlyWorkspace: true } : {}),
             ...(request.externalReview ? { externalReview: true } : {}),
             ...(ownerLogin ? { ownerLogin: ownerLogin.trim() } : {}),
+            ...(clientRequestId ? { clientRequestId } : {}),
+            ...(request.resumedFromTaskId ? { resumedFromTaskId: request.resumedFromTaskId } : {}),
             ...(request.latencyMarks ? { latencyMarks: request.latencyMarks } : {}),
             ...(() => {
                 const agentModel = ctx.resolveAgentModelForRequest(request, prompt || rawCommand, ownerLogin);
@@ -266,6 +282,18 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
             })(),
         };
         ctx.tasks.set(id, task);
+        if (clientRequestId) {
+            const dedupKey = `${ownerLogin?.trim() || '_'}:${clientRequestId}`;
+            ctx.clientRequestTaskIds ??= new Map();
+            ctx.clientRequestTaskIds.set(dedupKey, id);
+            while (ctx.clientRequestTaskIds.size > 512) {
+                const oldest = ctx.clientRequestTaskIds.keys().next().value;
+                if (oldest === undefined) {
+                    break;
+                }
+                ctx.clientRequestTaskIds.delete(oldest);
+            }
+        }
         if (atCapacity) {
             ctx.queuedCreateRequests.set(id, request);
         } else {
@@ -310,6 +338,56 @@ export function retryExtracted(ctx: any, id: string, ownerLogin?: string): QaapA
                 externalReview: task.externalReview,
             };
         return ctx.create(request, task.ownerLogin ?? ownerLogin);
+}
+
+/** Continue an interrupted task once, rebuilding it from the durable original request. */
+export function resumeExtracted(ctx: any, id: string, ownerLogin?: string): QaapAgentTask | undefined {
+        const task = ctx.tasks.get(id) as QaapAgentTask | undefined;
+        if (!task || task.state !== 'interrupted') {
+            return undefined;
+        }
+        const persistedReplacement = [...ctx.tasks.values()].find((candidate: QaapAgentTask) =>
+            candidate.resumedFromTaskId === id && !isQaapAgentTaskFinished(candidate.state));
+        if (persistedReplacement) {
+            return persistedReplacement;
+        }
+        const priorId = ctx.resumingTaskIds?.get(id);
+        const prior = priorId ? ctx.tasks.get(priorId) : undefined;
+        if (prior && !isQaapAgentTaskFinished(prior.state)) {
+            return prior;
+        }
+        if (priorId) {
+            ctx.resumingTaskIds.delete(id);
+        }
+        const agentId = ctx.resolveTaskAgentId(task);
+        const request: QaapCreateAgentTaskRequest = agentId === SHELL_AGENT_ID
+            ? {
+                title: task.title,
+                command: task.command,
+                cwd: task.cwd,
+                parentId: task.parentId,
+                autoApprove: task.autoApprove,
+                readOnlyWorkspace: task.readOnlyWorkspace,
+                externalReview: task.externalReview,
+                resumedFromTaskId: id,
+            }
+            : {
+                title: task.title,
+                prompt: task.command,
+                agent: agentId,
+                cwd: task.cwd,
+                agentModel: resolveTaskAgentModel(task),
+                qaiqModel: resolveTaskAgentModel(task),
+                parentId: task.parentId,
+                autoApprove: task.autoApprove,
+                readOnlyWorkspace: task.readOnlyWorkspace,
+                externalReview: task.externalReview,
+                resumedFromTaskId: id,
+            };
+        const resumed = ctx.create(request, task.ownerLogin ?? ownerLogin);
+        ctx.resumingTaskIds ??= new Map();
+        ctx.resumingTaskIds.set(id, resumed.id);
+        return resumed;
 }
 
 export function buildAgentCommandExtracted(ctx: any, prompt: string,

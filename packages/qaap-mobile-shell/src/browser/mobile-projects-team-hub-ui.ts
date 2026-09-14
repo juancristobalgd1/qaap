@@ -72,18 +72,23 @@ export class MobileProjectsTeamHubUi {
         if (approvals.length > 0) {
             list.append(this.createApprovalSection(approvals));
         }
-        if (tree.roots.length > 0) {
+        for (const kind of ['active', 'queued', 'attention'] as const) {
+            const roots = tree.roots.filter(root => this.teamSectionKind(root) === kind);
+            if (roots.length === 0) {
+                continue;
+            }
             const head = document.createElement('div');
             head.className = 'theia-mobile-hub-team-section-head';
+            head.dataset.qaapTeamSectionKind = kind;
             const label = document.createElement('span');
             label.className = 'theia-mobile-hub-team-section-label';
-            label.textContent = nls.localize('qaap/mobileProjects/teamSectionActive', 'In progress');
+            label.textContent = this.teamSectionLabel(kind);
             const count = document.createElement('span');
             count.className = 'theia-mobile-hub-team-section-count';
-            count.textContent = String(tree.roots.length);
+            count.textContent = String(this.countTeamSectionMembers(roots, tree.childrenByParent));
             head.append(label, count);
             list.append(head);
-            for (const root of tree.roots) {
+            for (const root of roots) {
                 list.append(this.createMemberRow(root, false));
                 const children = tree.childrenByParent.get(root.id) ?? [];
                 for (const child of children) {
@@ -138,15 +143,51 @@ export class MobileProjectsTeamHubUi {
             }
             existing.replaceWith(this.createMemberRow(member, nested));
         }
-        const activeCount = list.querySelector('.theia-mobile-hub-team-section-count');
-        if (activeCount && tree.roots.length > 0) {
-            activeCount.textContent = String(tree.roots.length);
+        for (const kind of ['active', 'queued', 'attention'] as const) {
+            const roots = tree.roots.filter(root => this.teamSectionKind(root) === kind);
+            const count = list.querySelector<HTMLElement>(
+                `[data-qaap-team-section-kind="${kind}"] .theia-mobile-hub-team-section-count`,
+            );
+            if (count && roots.length > 0) {
+                count.textContent = String(this.countTeamSectionMembers(roots, tree.childrenByParent));
+            }
         }
         const approvalCount = list.querySelector('.theia-mobile-hub-team-section-count.theia-mod-warn');
         if (approvalCount && approvals.length > 0) {
             approvalCount.textContent = String(approvals.length);
         }
         return true;
+    }
+
+    protected teamSectionKind(member: WorkHubTeamMember): 'active' | 'queued' | 'attention' {
+        if (member.state === 'queued') {
+            return 'queued';
+        }
+        if (member.state === 'blocked'
+            || member.state === 'failed'
+            || member.state === 'interrupted'
+            || member.state === 'completed_with_warnings') {
+            return 'attention';
+        }
+        return 'active';
+    }
+
+    protected teamSectionLabel(kind: 'active' | 'queued' | 'attention'): string {
+        switch (kind) {
+            case 'queued':
+                return nls.localize('qaap/mobileProjects/teamSectionQueue', 'Queue');
+            case 'attention':
+                return nls.localize('qaap/mobileProjects/teamSectionNeedsAttention', 'Needs attention');
+            default:
+                return nls.localize('qaap/mobileProjects/teamSectionActive', 'In progress');
+        }
+    }
+
+    protected countTeamSectionMembers(
+        roots: readonly WorkHubTeamMember[],
+        childrenByParent: ReadonlyMap<string, readonly WorkHubTeamMember[]>,
+    ): number {
+        return roots.reduce((count, root) => count + 1 + (childrenByParent.get(root.id)?.length ?? 0), 0);
     }
 
     protected createEmptyState(): HTMLElement {
@@ -286,7 +327,7 @@ export class MobileProjectsTeamHubUi {
     protected createMemberRow(member: WorkHubTeamMember, nested: boolean): HTMLElement {
         const row = document.createElement('button');
         row.type = 'button';
-        row.className = `theia-mobile-hub-team-row${nested ? ' theia-mod-nested' : ''}`;
+        row.className = `theia-mobile-hub-team-row${nested ? ' theia-mod-nested' : ''} theia-mod-${member.state.replace(/_/g, '-')}`;
         row.setAttribute(QAAP_TEAM_MEMBER_ID_ATTR, member.id);
         row.setAttribute(QAAP_TEAM_ROW_FP_ATTR, buildWorkHubTeamRowFingerprint(member));
         const agentLabel = this.deps.resolveAgentLabel(member.agentId);

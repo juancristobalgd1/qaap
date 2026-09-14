@@ -110,6 +110,77 @@ export function formatQaapBootstrapVariableValue(
     return lines.join('\n');
 }
 
+/**
+ * Full, pasteable Preview report for support and incident triage. Keep it text-only and bounded
+ * to the state already exposed by the bootstrap service so copying a diagnostic never executes a
+ * command or leaks a whole terminal transcript.
+ */
+export function formatQaapBootstrapDiagnostic(
+    state: QaapBootstrapStateChange,
+    extras?: { terminalFailure?: string; terminalTail?: string }
+): string {
+    const descriptor = state.descriptor;
+    const devCommand = state.selectedApp?.devCommandLabel
+        ?? descriptor?.devCommandLabel
+        ?? descriptor?.devCommand;
+    const lines: string[] = [
+        'Qaap Preview diagnostic',
+        `phase: ${state.phase}`,
+        `readiness: ${state.previewReadiness ?? '(unknown)'}`,
+        `project: ${descriptor?.name ?? '(unknown)'}`,
+        `framework: ${qaapFrameworkLabel(state.selectedApp?.kind ?? descriptor?.kind)}`,
+        `command: ${devCommand ?? '(unknown)'}`,
+    ];
+    if (state.selectedApp?.relativePath) {
+        lines.push(`app: ${state.selectedApp.relativePath}`);
+    }
+    if (state.previewUrl) {
+        lines.push(`previewUrl: ${state.previewUrl}`);
+    }
+    if (state.activePort !== undefined) {
+        lines.push(`activePort: ${state.activePort}`);
+    }
+    if (state.lastPort !== undefined) {
+        lines.push(`lastPort: ${state.lastPort}`);
+    }
+    if (state.portInUse !== undefined) {
+        lines.push(`portInUse: ${state.portInUse}`);
+    }
+    if (state.existingServerPort !== undefined) {
+        lines.push(`existingServerPort: ${state.existingServerPort}`);
+    }
+    if (state.portRecoveryFrom !== undefined && state.activePort !== undefined) {
+        lines.push(`portRecovery: :${state.portRecoveryFrom} -> :${state.activePort}`);
+    }
+    if (state.failureKind) {
+        lines.push(`failureKind: ${state.failureKind}`);
+    }
+    if (state.previewWaitTimedOut) {
+        lines.push('previewWaitTimedOut: true');
+    }
+    if (state.needsInstall) {
+        lines.push('needsInstall: true');
+    }
+    if (state.error) {
+        lines.push(`error: ${state.error}`);
+    }
+    if (extras?.terminalFailure) {
+        lines.push(`terminalFailure: ${extras.terminalFailure}`);
+    }
+    const tail = extras?.terminalTail ?? state.previewLogTail;
+    if (tail) {
+        lines.push(`serverOutput:\n${tail}`);
+    }
+    lines.push(`suggestedAction: ${state.needsInstall
+        ? 'Run Install, then retry Preview.'
+        : state.portInUse
+            ? 'Open the existing Preview or retry on another port.'
+            : state.phase === 'run-failed' || state.previewWaitTimedOut
+                ? 'Review the logs and restart Preview.'
+                : 'Inspect the Preview status and retry if needed.'}`);
+    return lines.join('\n');
+}
+
 export function resolveActiveFrameworkKind(
     state: QaapBootstrapStateChange,
     descriptor: QaapProjectDescriptor

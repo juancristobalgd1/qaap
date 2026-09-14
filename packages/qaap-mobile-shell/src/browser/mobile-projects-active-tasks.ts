@@ -28,6 +28,8 @@ const WS_PATH = `${AGENT_TASK_API_PATH}/ws`;
 const RECONNECT_MAX_MS = 30_000;
 const ACTIVE_TASKS_BACKGROUND_CHANGE_COALESCE_MS = 120;
 
+export type MobileProjectTaskTransportState = 'connected' | 'reconnecting' | 'disconnected';
+
 /**
  * Backend self-verification outcome for a QAIQ task that edited files. Mirrors
  * `QaapAgentTaskVerification` in `@theia/qaap-cloud-workspace`; kept local on purpose to avoid a
@@ -86,6 +88,7 @@ interface SnapshotPayload {
 
 type WsServerMessage =
     | ({ readonly type: 'snapshot' } & SnapshotPayload)
+    | { readonly type: 'heartbeat' }
     | { readonly type: 'created' | 'completed' | 'cancelled' | 'deleted'; readonly task: TaskEventPayload }
     | { readonly type: 'output'; readonly task: TaskEventPayload; readonly chunk: string };
 
@@ -104,6 +107,17 @@ export interface MobileProjectTaskLogTail {
     readonly taskId: string;
     readonly text: string;
     readonly truncated: boolean;
+}
+
+/** Counts used by the Tasks hub queue summary. */
+export interface MobileProjectTaskStateCounts {
+    readonly queued: number;
+    readonly running: number;
+    readonly blocked: number;
+    readonly failed: number;
+    readonly interrupted: number;
+    readonly completed: number;
+    readonly completedWithWarnings: number;
 }
 
 /**
@@ -128,6 +142,7 @@ export class MobileProjectsActiveTasks {
     protected reconnectHandle: number | undefined;
     protected reconnectAttempt = 0;
     protected started = false;
+    protected transportState: MobileProjectTaskTransportState = 'disconnected';
     protected agents: MobileProjectAgentDescriptor[] = [];
     protected agentConfigured = false;
     protected defaultAgentId = '';
@@ -145,6 +160,10 @@ export class MobileProjectsActiveTasks {
     /** Fires when a task's live log tail changes (WS chunk or HTTP seed). */
     readonly onDidTaskOutput: Event<MobileProjectTaskLogTail> = this.onDidTaskOutputEmitter.event;
 
+    getTransportState(): MobileProjectTaskTransportState {
+        return this.transportState;
+    }
+
     constructor(@unmanaged() protected readonly updateClocks: QaapChatViewStreamUpdateClocks = defaultQaapChatViewStreamUpdateClocks) { }
 
     /** Idempotent — safe to call from multiple consumers. The first call opens the WebSocket. */
@@ -153,6 +172,12 @@ export class MobileProjectsActiveTasks {
             return;
         }
         this.started = true;
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', this.onVisibilityChange);
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener('pageshow', this.onPageShow);
+        }
         this.openSocket();
     }
 
@@ -256,8 +281,13 @@ export class MobileProjectsActiveTasks {
 
     protected openSocket(): void {
         if (typeof WebSocket === 'undefined') {
+            this.setTransportState('disconnected');
             return;
         }
+        if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+        this.setTransportState('reconnecting');
         try {
             const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const socket = new WebSocket(`${proto}//${window.location.host}${WS_PATH}`);
@@ -265,12 +295,15 @@ export class MobileProjectsActiveTasks {
 
             socket.addEventListener('open', () => {
                 this.reconnectAttempt = 0;
+                this.setTransportState('connected');
             });
 
             socket.addEventListener('message', ev => {
                 try {
                     const msg = JSON.parse(String(ev.data)) as WsServerMessage;
-                    if (msg.type === 'snapshot') {
+                    if (msg.type === 'heartbeat') {
+                        this.setTransportState('connected');
+                    } else if (msg.type === 'snapshot') {
                         this.applySnapshot(msg);
                     } else if (msg.type === 'output') {
                         this.applyOutput(msg.task, msg.chunk);
@@ -282,7 +315,17 @@ export class MobileProjectsActiveTasks {
                 }
             });
 
-            socket.addEventListener('close', () => this.scheduleReconnect());
+            socket.addEventListener('close', () => {
+                if (this.socket !== socket) {
+                    return;
+                }
+                this.socket = undefined;
+                if (typeof document !== 'undefined' && document.hidden) {
+                    this.setTransportState('disconnected');
+                    return;
+                }
+                this.scheduleReconnect();
+            });
             socket.addEventListener('error', () => socket.close());
         } catch {
             this.scheduleReconnect();
@@ -311,16 +354,51 @@ export class MobileProjectsActiveTasks {
     }
 
     protected scheduleReconnect(): void {
+        if (!this.started) {
+            return;
+        }
         if (this.reconnectHandle !== undefined) {
             return;
         }
         this.socket = undefined;
+        this.setTransportState('reconnecting');
         const delay = Math.min(RECONNECT_MAX_MS, 1_000 * (2 ** this.reconnectAttempt));
         this.reconnectAttempt++;
         this.reconnectHandle = window.setTimeout(() => {
             this.reconnectHandle = undefined;
             this.openSocket();
         }, delay);
+    }
+
+    protected readonly onVisibilityChange = (): void => {
+        if (typeof document === 'undefined' || document.hidden) {
+            return;
+        }
+        this.reconnectIfNeeded();
+    };
+
+    protected readonly onPageShow = (): void => {
+        this.reconnectIfNeeded();
+    };
+
+    protected reconnectIfNeeded(): void {
+        if (!this.started || (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING))) {
+            return;
+        }
+        if (this.reconnectHandle !== undefined && typeof window !== 'undefined') {
+            window.clearTimeout(this.reconnectHandle);
+            this.reconnectHandle = undefined;
+        }
+        this.reconnectAttempt = 0;
+        this.openSocket();
+    }
+
+    protected setTransportState(state: MobileProjectTaskTransportState): void {
+        if (this.transportState === state) {
+            return;
+        }
+        this.transportState = state;
+        this.scheduleDidChange();
     }
 
     /** Apply a full snapshot sent by the server on WebSocket connect. */
@@ -365,41 +443,32 @@ export class MobileProjectsActiveTasks {
                 this.tasksByCwd.delete(cwd);
             }
             this.logByTaskId.delete(task.id);
-            this.activeByCwd.delete(cwd);
+            this.refreshActiveForCwd(cwd);
             this.scheduleDidChange();
             return;
         }
         this.upsertTaskList({ ...task, cwd });
-        const current = lookupByCwd(this.activeByCwd, cwd);
-        if (type === 'created') {
-            if (current?.taskId === task.id) {
-                this.scheduleDidChange();
-                return;
-            }
-            this.activeByCwd.set(cwd, {
-                activeCount: (current?.activeCount ?? 0) + 1,
-                taskId: task.id,
-                title: task.title ?? current?.title,
-            });
-        } else {
-            const nextCount = Math.max(0, (current?.activeCount ?? 1) - 1);
-            const tasks = this.getTasksForCwd(cwd);
-            const running = tasks.find(entry => entry.state === 'running');
-            if (nextCount === 0) {
-                this.activeByCwd.delete(cwd);
-            } else {
-                this.activeByCwd.set(cwd, {
-                    activeCount: nextCount,
-                    taskId: running?.id,
-                    title: running?.title ?? current?.title,
-                });
-            }
-            // Drop cancelled buffers; keep completed tails so DETAIL can still show the final log.
-            if (type === 'cancelled' && task.id) {
-                this.logByTaskId.delete(task.id);
-            }
+        this.refreshActiveForCwd(cwd);
+        // Drop cancelled buffers; keep completed tails so DETAIL can still show the final log.
+        if (type === 'cancelled' && task.id) {
+            this.logByTaskId.delete(task.id);
         }
         this.scheduleDidChange();
+    }
+
+    /** Rebuild the running summary from the task list so queued events never consume an active slot. */
+    protected refreshActiveForCwd(cwd: string): void {
+        const tasks = this.getTasksForCwd(cwd);
+        const running = tasks.filter(task => task.state === 'running');
+        if (running.length === 0) {
+            this.activeByCwd.delete(cwd);
+            return;
+        }
+        this.activeByCwd.set(cwd, {
+            activeCount: running.length,
+            taskId: running[0]?.id,
+            title: running[0]?.title,
+        });
     }
 
     protected upsertTaskList(task: TaskEventPayload): void {
@@ -520,13 +589,53 @@ export function cwdMatchesProject(
 /** @internal Exported for testing. */
 export function sortTasks(tasks: MobileProjectTaskView[]): MobileProjectTaskView[] {
     return [...tasks].sort((a, b) => {
-        const aRunning = a.state === 'running' ? 1 : 0;
-        const bRunning = b.state === 'running' ? 1 : 0;
-        if (aRunning !== bRunning) {
-            return bRunning - aRunning;
+        const aPriority = taskStatePriority(a.state);
+        const bPriority = taskStatePriority(b.state);
+        if (aPriority !== bPriority) {
+            return aPriority - bPriority;
         }
         return b.createdAt - a.createdAt;
     });
+}
+
+/** @internal Exported for the Tasks hub and unit tests. */
+export function summarizeTaskStates(tasks: readonly Pick<MobileProjectTaskView, 'state'>[]): MobileProjectTaskStateCounts {
+    const counts = {
+        queued: 0,
+        running: 0,
+        blocked: 0,
+        failed: 0,
+        interrupted: 0,
+        completed: 0,
+        completedWithWarnings: 0,
+    };
+    for (const task of tasks) {
+        switch (task.state) {
+            case 'queued': counts.queued++; break;
+            case 'running': counts.running++; break;
+            case 'blocked': counts.blocked++; break;
+            case 'failed': counts.failed++; break;
+            case 'interrupted': counts.interrupted++; break;
+            case 'completed': counts.completed++; break;
+            case 'completed_with_warnings': counts.completedWithWarnings++; break;
+            default: break;
+        }
+    }
+    return counts;
+}
+
+function taskStatePriority(state: string): number {
+    switch (state) {
+        case 'running': return 0;
+        case 'queued': return 1;
+        case 'blocked': return 2;
+        case 'failed':
+        case 'interrupted': return 3;
+        case 'completed_with_warnings': return 4;
+        case 'completed': return 5;
+        case 'cancelled': return 6;
+        default: return 7;
+    }
 }
 
 function sameActive(a: Map<string, MobileProjectActiveTaskInfo>, b: Map<string, MobileProjectActiveTaskInfo>): boolean {

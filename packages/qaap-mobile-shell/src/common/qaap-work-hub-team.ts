@@ -132,7 +132,11 @@ export function collectAgentMembers(input: CollectAgentMembersInput): WorkHubTea
             });
             continue;
         }
-        if (task.state !== 'running') {
+        if (task.state !== 'running'
+            && task.state !== 'blocked'
+            && task.state !== 'failed'
+            && task.state !== 'interrupted'
+            && task.state !== 'completed_with_warnings') {
             continue;
         }
         const cwd = normalizeTeamCwd(task.cwd);

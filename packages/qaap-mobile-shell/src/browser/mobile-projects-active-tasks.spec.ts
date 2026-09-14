@@ -9,6 +9,7 @@ import {
     MobileProjectsActiveTasks,
     normalizeCwd,
     sortTasks,
+    summarizeTaskStates,
     toTaskView,
 } from './mobile-projects-active-tasks';
 
@@ -49,6 +50,10 @@ class TestActiveTasks extends MobileProjectsActiveTasks {
             createdAt: Date.now(),
             finishedAt: Date.now(),
         });
+    }
+
+    fireEvent(type: 'created' | 'completed' | 'cancelled' | 'deleted', task: { id: string; cwd: string; state: string; title?: string; createdAt?: number }): void {
+        this.applyEvent(type, task);
     }
 }
 
@@ -112,6 +117,16 @@ describe('sortTasks', () => {
         expect(sorted[0].id).to.equal('b');
     });
 
+    it('orders the queue before blocked and terminal history', () => {
+        const tasks = [
+            { id: 'done', title: 'Done', command: '', cwd: '/', state: 'completed', createdAt: 5000 },
+            { id: 'blocked', title: 'Blocked', command: '', cwd: '/', state: 'blocked', createdAt: 4000 },
+            { id: 'queued', title: 'Queued', command: '', cwd: '/', state: 'queued', createdAt: 3000 },
+            { id: 'running', title: 'Running', command: '', cwd: '/', state: 'running', createdAt: 1000 },
+        ];
+        expect(sortTasks(tasks).map(task => task.id)).to.deep.equal(['running', 'queued', 'blocked', 'done']);
+    });
+
     it('does not mutate the input array', () => {
         const tasks = [
             { id: 'a', title: 'A', command: '', cwd: '/', state: 'completed', createdAt: 2000 },
@@ -120,6 +135,28 @@ describe('sortTasks', () => {
         const original = [...tasks];
         sortTasks(tasks);
         expect(tasks).to.deep.equal(original);
+    });
+});
+
+describe('summarizeTaskStates', () => {
+    it('counts queue and attention states without losing terminal distinctions', () => {
+        expect(summarizeTaskStates([
+            { state: 'queued' },
+            { state: 'running' },
+            { state: 'blocked' },
+            { state: 'failed' },
+            { state: 'interrupted' },
+            { state: 'completed' },
+            { state: 'completed_with_warnings' },
+        ])).to.deep.equal({
+            queued: 1,
+            running: 1,
+            blocked: 1,
+            failed: 1,
+            interrupted: 1,
+            completed: 1,
+            completedWithWarnings: 1,
+        });
     });
 });
 
@@ -177,6 +214,11 @@ describe('toTaskView', () => {
 
 describe('MobileProjectsActiveTasks', () => {
 
+    it('starts disconnected and exposes a transport state for the task hub', () => {
+        const activeTasks = new TestActiveTasks();
+        expect(activeTasks.getTransportState()).to.equal('disconnected');
+    });
+
     it('coalesces bursty active-task changes into one UI notification per frame', () => {
         const activeTasks = new TestActiveTasks();
         let changeCount = 0;
@@ -192,6 +234,24 @@ describe('MobileProjectsActiveTasks', () => {
         activeTasks.flushChanges();
 
         expect(changeCount).to.equal(1);
+    });
+
+    it('does not expose a queued task as an active running task', () => {
+        const activeTasks = new TestActiveTasks();
+        activeTasks.fireEvent('created', {
+            id: 'queued', cwd: '/repo/mobile', state: 'queued', title: 'Queued', createdAt: 1,
+        });
+        expect(activeTasks.getForCwd('/repo/mobile')).to.equal(undefined);
+
+        activeTasks.fireEvent('created', {
+            id: 'queued', cwd: '/repo/mobile', state: 'running', title: 'Queued', createdAt: 1,
+        });
+        expect(activeTasks.getForCwd('/repo/mobile')?.activeCount).to.equal(1);
+
+        activeTasks.fireEvent('completed', {
+            id: 'queued', cwd: '/repo/mobile', state: 'completed', title: 'Queued', createdAt: 1,
+        });
+        expect(activeTasks.getForCwd('/repo/mobile')).to.equal(undefined);
     });
 
     it('buffers WS output chunks and exposes a live log tail', () => {

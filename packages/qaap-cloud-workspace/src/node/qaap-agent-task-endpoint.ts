@@ -225,6 +225,27 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             }
             res.status(201).json(task);
         });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/resume`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
+                return;
+            }
+            const task = this.runner.resume(req.params.id, this.auth.resolveUserLogin(ctx));
+            if (!task) {
+                res.status(409).json({ error: nls.localize('qaap/agentTasks/resumeUnavailable', 'Only interrupted tasks can be continued.') });
+                return;
+            }
+            res.status(201).json(task);
+        });
     }
 
     /** Capture the port the backend is listening on so spawned agents can call back via HTTP. */
@@ -293,9 +314,17 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                     clearInterval(ping);
                 }
             }, WS_PING_MS);
+            const heartbeat = setInterval(() => {
+                if (client.readyState === WsClient.OPEN) {
+                    client.send(JSON.stringify({ type: 'heartbeat' }));
+                } else {
+                    clearInterval(heartbeat);
+                }
+            }, WS_PING_MS);
 
             const cleanup = (): void => {
                 clearInterval(ping);
+                clearInterval(heartbeat);
                 subscription.dispose();
             };
             client.on('close', cleanup);
@@ -491,6 +520,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 }
             }
             const task = this.runner.create({
+                clientRequestId: typeof body.clientRequestId === 'string' ? body.clientRequestId.trim() : undefined,
                 command: body.command,
                 prompt: body.prompt,
                 agent: body.agent,

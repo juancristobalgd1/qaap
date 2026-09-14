@@ -57,6 +57,18 @@ describe('collectAgentMembers', () => {
         expect(members[0].kind).to.equal('leader-task');
     });
 
+    it('keeps blocked and failed VPS tasks visible for queue diagnostics', () => {
+        const members = collectAgentMembers({
+            conversations: [],
+            tasks: [
+                { id: 'blocked', title: 'Needs input', command: 'qaiq …', cwd: '/srv/core', state: 'blocked', createdAt: 1000 },
+                { id: 'failed', title: 'Build failed', command: 'npm run build', cwd: '/srv/core', state: 'failed', createdAt: 900, finishedAt: 1200 },
+            ],
+        });
+        expect(members.map(member => member.state)).to.deep.equal(['blocked', 'failed']);
+        expect(members.find(member => member.id === 'failed')?.updatedAt).to.equal(1200);
+    });
+
     it('brands Antigravity from agy argv0 even when the prompt mentions QAIQ', () => {
         const command = [
             "agy --dangerously-skip-permissions -p '",

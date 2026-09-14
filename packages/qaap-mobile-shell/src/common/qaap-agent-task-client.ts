@@ -122,11 +122,13 @@ export function isAgentTaskFinished(state: string): boolean {
 }
 
 export type QaapCreateAgentTaskBody =
-    | { readonly command: string; readonly cwd: string }
+    | { readonly command: string; readonly cwd: string; readonly clientRequestId?: string }
     | {
         readonly prompt: string;
         readonly agent: string;
         readonly cwd: string;
+        /** Reused by a client retry so a slow POST cannot start the same task twice. */
+        readonly clientRequestId?: string;
         readonly agentModel?: QaapCreateAgentTaskQaiqModel;
         /** @deprecated Use {@link agentModel}. */
         readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
@@ -630,11 +632,12 @@ function parseAgentTaskListBody(body: {
 }
 
 export async function createAgentTask(body: QaapCreateAgentTaskBody): Promise<QaapAgentTaskCreated> {
+    const clientRequestId = body.clientRequestId?.trim() || createAgentTaskRequestId();
     const response = await fetch(QAAP_AGENT_TASK_API_PATH, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, clientRequestId }),
     });
     if (!response.ok) {
         const text = await response.text();
@@ -672,6 +675,27 @@ export async function retryAgentTask(id: string): Promise<QaapAgentTaskCreated> 
         throw new Error(text || response.statusText);
     }
     return response.json() as Promise<QaapAgentTaskCreated>;
+}
+
+/** Continue an interrupted task from the server's durable original request. */
+export async function resumeAgentTask(id: string): Promise<QaapAgentTaskCreated> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}/resume`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskCreated>;
+}
+
+function createAgentTaskRequestId(): string {
+    const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+    if (typeof crypto?.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return `qaap-task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export async function deleteAgentTasksForCwd(cwd: string): Promise<number> {

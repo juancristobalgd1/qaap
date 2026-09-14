@@ -79,6 +79,10 @@ export interface QaapAgentTask {
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
     /** Login of the user who owns this task — used for multi-tenant isolation. */
     readonly ownerLogin?: string;
+    /** Client-generated idempotency key for the create request that produced this task. */
+    readonly clientRequestId?: string;
+    /** Id of the interrupted task this execution is continuing, when applicable. */
+    readonly resumedFromTaskId?: string;
     /** Opt-in latency marks for submit → first output diagnostics. */
     readonly latencyMarks?: Partial<Record<QaapTurnLatencyMark, number>>;
     /**
@@ -170,6 +174,10 @@ export namespace QaapAgentTaskKind {
 }
 
 export interface QaapCreateAgentTaskRequest {
+    /** Reused by a client retry so a slow POST cannot start the same task twice. */
+    readonly clientRequestId?: string;
+    /** Internal durable marker used to make Continue idempotent across backend restarts. */
+    readonly resumedFromTaskId?: string;
     readonly title?: string;
     /** A raw shell command to run. Provide this OR {@link prompt}. */
     readonly command?: string;

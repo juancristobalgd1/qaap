@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { retryAgentTask, type QaapAgentTaskDetailDTO } from '../common/qaap-agent-task-client';
+import { resumeAgentTask, retryAgentTask, type QaapAgentTaskDetailDTO } from '../common/qaap-agent-task-client';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -60,6 +60,28 @@ export class MobileProjectsActiveTaskActionsUi {
             MobileSnackbar.show(nls.localize(
                 'qaap/mobileProjects/retryTaskFailed',
                 'Could not retry: {0}',
+                error instanceof Error ? error.message : String(error),
+            ), { kind: 'warning', duration: 3200 });
+        } finally {
+            this.host.projects = await this.host.projectsService.loadProjects();
+            this.host.render();
+            this.host.delegate.onProjectsChanged?.();
+        }
+    }
+
+    async continueActiveTask(taskId: string): Promise<void> {
+        this.host.cardMenuUi.closeCardMenu();
+        try {
+            const task = await resumeAgentTask(taskId);
+            this.host.activeTasks?.recordTaskCreated(task);
+            MobileSnackbar.show(
+                nls.localize('qaap/mobileProjects/taskContinued', 'Task continued'),
+                { kind: 'success', duration: 1400 },
+            );
+        } catch (error) {
+            MobileSnackbar.show(nls.localize(
+                'qaap/mobileProjects/continueTaskFailed',
+                'Could not continue: {0}',
                 error instanceof Error ? error.message : String(error),
             ), { kind: 'warning', duration: 3200 });
         } finally {
@@ -128,20 +150,125 @@ export class MobileProjectsActiveTaskActionsUi {
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskAgentLabel', 'Agent'), formatAgentId(agentId));
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskStateLabel', 'State'), taskStateLabel(state));
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskCommandLabel', 'Command'), detail.command ?? knownTask?.command ?? '—');
+        const createdAt = detail.createdAt ?? knownTask?.createdAt;
+        const finishedAt = detail.finishedAt ?? knownTask?.finishedAt;
+        if (createdAt !== undefined) {
+            appendTaskMeta(
+                host,
+                nls.localize('qaap/mobileProjects/taskDurationLabel', 'Duration'),
+                formatTaskDuration(createdAt, finishedAt),
+            );
+        }
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskCauseLabel', 'Cause'), taskCause(detail));
         appendTaskMeta(host, nls.localize('qaap/mobileProjects/taskNextActionLabel', 'Next action'), taskNextAction(state));
 
-        if (state === 'failed' || state === 'interrupted') {
-            const retry = document.createElement('button');
-            retry.type = 'button';
-            retry.className = 'theia-mobile-agent-log-retry';
-            retry.textContent = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
-            retry.addEventListener('click', () => {
+        const diagnostic = document.createElement('button');
+        diagnostic.type = 'button';
+        diagnostic.className = 'theia-mobile-agent-log-copy';
+        diagnostic.textContent = nls.localize('qaap/mobileProjects/copyTaskDiagnostic', 'Copy diagnostic');
+        diagnostic.addEventListener('click', async () => {
+            try {
+                await copyTaskDiagnostic(buildTaskDiagnostic(detail, knownTask));
+                diagnostic.textContent = nls.localize('qaap/mobileProjects/taskDiagnosticCopied', 'Diagnostic copied');
+                window.setTimeout(() => {
+                    if (diagnostic.isConnected) {
+                        diagnostic.textContent = nls.localize('qaap/mobileProjects/copyTaskDiagnostic', 'Copy diagnostic');
+                    }
+                }, 1600);
+            } catch {
+                MobileSnackbar.show(
+                    nls.localize('qaap/mobileProjects/taskDiagnosticCopyFailed', 'Could not copy the diagnostic.'),
+                    { kind: 'warning', duration: 2600 },
+                );
+            }
+        });
+        host.append(diagnostic);
+
+        if (state === 'queued' || state === 'running') {
+            const action = document.createElement('button');
+            action.type = 'button';
+            action.className = 'theia-mobile-agent-log-cancel';
+            action.textContent = nls.localize('qaap/mobileProjects/cancelTask', 'Cancel task');
+            action.addEventListener('click', () => {
                 close();
-                void this.retryActiveTask(taskId);
+                void this.cancelActiveTask(taskId);
             });
-            host.append(retry);
+            host.append(action);
         }
+        if (state === 'failed' || state === 'interrupted') {
+            const action = document.createElement('button');
+            action.type = 'button';
+            action.className = 'theia-mobile-agent-log-retry';
+            action.textContent = state === 'interrupted'
+                ? nls.localize('qaap/mobileProjects/continueTask', 'Continue task')
+                : nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
+            action.addEventListener('click', () => {
+                close();
+                if (state === 'interrupted') {
+                    void this.continueActiveTask(taskId);
+                } else {
+                    void this.retryActiveTask(taskId);
+                }
+            });
+            host.append(action);
+        }
+    }
+}
+
+function formatTaskDuration(createdAt: number, finishedAt?: number): string {
+    const elapsedMs = Math.max(0, (finishedAt ?? Date.now()) - createdAt);
+    const totalSeconds = Math.floor(elapsedMs / 1000);
+    if (totalSeconds < 60) {
+        return nls.localize('qaap/mobileProjects/taskDurationSeconds', '{0}s', String(totalSeconds));
+    }
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes < 60) {
+        return nls.localize('qaap/mobileProjects/taskDurationMinutes', '{0}m {1}s', String(minutes), String(seconds));
+    }
+    const hours = Math.floor(minutes / 60);
+    return nls.localize('qaap/mobileProjects/taskDurationHours', '{0}h {1}m', String(hours), String(minutes % 60));
+}
+
+function buildTaskDiagnostic(
+    detail: QaapAgentTaskDetailDTO,
+    knownTask: { readonly agentId?: string; readonly command: string; readonly createdAt: number; readonly finishedAt?: number; readonly state: string } | undefined,
+): string {
+    const createdAt = detail.createdAt ?? knownTask?.createdAt;
+    const finishedAt = detail.finishedAt ?? knownTask?.finishedAt;
+    const log = detail.log ?? '';
+    const logTail = log.length > 12_000 ? `[truncated]\n${log.slice(-12_000)}` : log;
+    return [
+        'Qaap task diagnostic',
+        `Task: ${detail.id}`,
+        `State: ${detail.state || knownTask?.state || 'unknown'}`,
+        `Agent: ${detail.agentId ?? knownTask?.agentId ?? 'unknown'}`,
+        `Workspace: ${detail.cwd}`,
+        `Command: ${detail.command ?? knownTask?.command ?? ''}`,
+        createdAt !== undefined ? `Duration: ${formatTaskDuration(createdAt, finishedAt)}` : undefined,
+        `Exit code: ${detail.exitCode ?? 'unknown'}`,
+        '',
+        'Log tail:',
+        logTail || '(no output)',
+    ].filter((line): line is string => line !== undefined).join('\n');
+}
+
+async function copyTaskDiagnostic(text: string): Promise<void> {
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    if (!copied) {
+        throw new Error('Clipboard unavailable');
     }
 }
 
@@ -179,7 +306,7 @@ function taskStateLabel(state: string): string {
 
 function taskCause(detail: QaapAgentTaskDetailDTO): string {
     if (detail.state === 'interrupted') {
-        return nls.localize('qaap/mobileProjects/taskCauseInterrupted', 'The server or browser connection interrupted the task.');
+        return nls.localize('qaap/mobileProjects/taskCauseInterrupted', 'The backend lost the running process. A browser reload does not cancel a task.');
     }
     if (detail.state === 'blocked') {
         return nls.localize('qaap/mobileProjects/taskCauseBlocked', 'The agent needs a decision or more information.');
@@ -194,7 +321,8 @@ function taskCause(detail: QaapAgentTaskDetailDTO): string {
 function taskNextAction(state: string): string {
     switch (state) {
         case 'failed':
-        case 'interrupted': return nls.localize('qaap/mobileProjects/taskNextRetry', 'Retry the task.');
+            return nls.localize('qaap/mobileProjects/taskNextRetry', 'Retry the task.');
+        case 'interrupted': return nls.localize('qaap/mobileProjects/taskNextContinue', 'Continue the task from its persisted request.');
         case 'blocked': return nls.localize('qaap/mobileProjects/taskNextResolveBlock', 'Resolve the request, then continue from the task transcript.');
         case 'queued': return nls.localize('qaap/mobileProjects/taskNextWait', 'Wait for an available agent slot.');
         case 'running': return nls.localize('qaap/mobileProjects/taskNextMonitor', 'Monitor the live log or cancel it if needed.');
