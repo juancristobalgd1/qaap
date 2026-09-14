@@ -3491,6 +3491,99 @@ body.theia-mobile-mod-landing #theia-app-shell:not(.theia-mod-mobile-one-column)
   color: var(--theia-errorForeground, var(--theia-descriptionForeground));
 }
 
+.theia-mobile-agent-tasks-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 12px 8px;
+  padding: 10px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.2));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-editor-background) 42%, transparent);
+}
+
+.theia-mobile-agent-tasks-history-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.theia-mobile-agent-tasks-history-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theia-mobile-agent-tasks-history-count {
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+}
+
+.theia-mobile-agent-tasks-history-filters {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theia-mobile-agent-tasks-history-filter {
+  display: flex;
+  flex: 1 1 120px;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 110px;
+}
+
+.theia-mobile-agent-tasks-history-filter-label {
+  color: var(--theia-descriptionForeground);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.theia-mobile-agent-tasks-history-filter-select {
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 1px solid var(--theia-input-border, var(--theia-panel-border, rgba(128, 128, 128, 0.25)));
+  border-radius: 5px;
+  color: var(--theia-input-foreground);
+  background: var(--theia-input-background);
+  font-size: 11px;
+}
+
+.theia-mobile-agent-tasks-history-clear {
+  min-height: 26px;
+  padding: 2px 8px;
+  border: 1px solid var(--theia-panel-border, rgba(128, 128, 128, 0.2));
+  border-radius: 5px;
+  color: var(--theia-descriptionForeground);
+  background: transparent;
+  font-size: 11px;
+}
+
+.theia-mobile-agent-tasks-history-clear:not(:disabled):hover {
+  color: var(--theia-foreground);
+  background: var(--theia-toolbar-hoverBackground);
+}
+
+.theia-mobile-agent-tasks-history-clear:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.theia-mobile-agent-tasks-history-list {
+  min-height: 0;
+}
+
+.theia-mobile-agent-tasks-history-empty {
+  padding: 8px 2px 2px;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+}
+
+.theia-mobile-agent-tasks-history-row {
+  margin: 0;
+}
+
 .theia-mobile-sticky-composer-file-row {
   display: flex;
   align-items: center;

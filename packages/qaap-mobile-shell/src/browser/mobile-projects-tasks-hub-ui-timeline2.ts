@@ -23,6 +23,11 @@ import {
     type MobileProjectTaskView,
 } from './mobile-projects-active-tasks';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import {
+    filterTaskHistoryEntries,
+    type MobileProjectTaskHistoryEntry,
+    type MobileProjectTaskHistoryFilters,
+} from './mobile-projects-task-history-filters';
 import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
 import {
     closeWorkingAgentsPopover,
@@ -121,6 +126,10 @@ export function renderTasksHubViewExtracted(ctx: any, projects: MobileProjectEnt
             if (queueSummary) {
                 root.append(queueSummary);
             }
+            const taskHistory = createTaskHistoryBlock(ctx, projects, ctx.host.activeTasks);
+            if (taskHistory) {
+                root.append(taskHistory);
+            }
         }
         const groups = ctx.host.collectTasksInboxGroups(projects);
         const teamRendered = ctx.appendTasksHubTeamSection(root);
@@ -199,5 +208,179 @@ function createTaskQueueSummary(activeTasks: MobileProjectsActiveTasks): HTMLEle
             summary.append(chip);
         }
         return summary;
+}
+
+function createTaskHistoryBlock(
+    ctx: any,
+    projects: MobileProjectEntry[],
+    activeTasks: MobileProjectsActiveTasks,
+): HTMLElement | undefined {
+    const entries = collectTaskHistoryEntries(activeTasks, projects);
+    if (entries.length === 0) {
+        return undefined;
+    }
+    const filters: MobileProjectTaskHistoryFilters = ctx.getTaskHistoryFilters();
+    const matching = filterTaskHistoryEntries(entries, filters);
+    const section = document.createElement('section');
+    section.className = 'theia-mobile-agent-tasks-history';
+    section.setAttribute(
+        'aria-label',
+        nls.localize('qaap/mobileProjects/taskHistoryAria', 'Task history'),
+    );
+
+    const head = document.createElement('div');
+    head.className = 'theia-mobile-agent-tasks-history-head';
+    const title = document.createElement('span');
+    title.className = 'theia-mobile-agent-tasks-history-title';
+    title.textContent = nls.localize('qaap/mobileProjects/taskHistoryTitle', 'Task history');
+    const count = document.createElement('span');
+    count.className = 'theia-mobile-agent-tasks-history-count';
+    count.textContent = entries.length === matching.length
+        ? String(matching.length)
+        : nls.localize(
+            'qaap/mobileProjects/taskHistoryFilteredCount',
+            '{0} of {1}',
+            String(matching.length),
+            String(entries.length),
+        );
+    head.append(title, count);
+    section.append(head, createTaskHistoryFilters(ctx, projects, filters));
+
+    if (matching.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'theia-mobile-agent-tasks-history-empty';
+        empty.textContent = entries.length === 0
+            ? nls.localize('qaap/mobileProjects/taskHistoryEmpty', 'No background tasks yet.')
+            : nls.localize(
+                'qaap/mobileProjects/taskHistoryNoMatches',
+                'No tasks match these filters.',
+            );
+        section.append(empty);
+        return section;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'theia-mobile-projects-chats-list theia-mobile-agent-tasks-history-list';
+    for (const entry of matching) {
+        const row = ctx.host.projectRowsUi.createTaskItem(
+            entry.project,
+            entry.task,
+            ctx.host.activeInfoForProject(entry.project),
+        );
+        row.classList.add('theia-mod-task-history-row');
+        row.dataset.qaapTaskHistoryId = entry.task.id;
+        list.append(row);
+    }
+    section.append(list);
+    return section;
+}
+
+function createTaskHistoryFilters(
+    ctx: any,
+    projects: MobileProjectEntry[],
+    filters: MobileProjectTaskHistoryFilters,
+): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'theia-mobile-agent-tasks-history-filters';
+    wrapper.setAttribute(
+        'aria-label',
+        nls.localize('qaap/mobileProjects/taskHistoryFiltersAria', 'Filter task history'),
+    );
+
+    const projectOptions = [
+        { value: '', label: nls.localize('qaap/mobileProjects/taskHistoryAllProjects', 'All projects') },
+        ...projects.map(project => ({ value: project.id, label: project.name })),
+    ];
+    wrapper.append(createTaskHistorySelect(
+        ctx,
+        'projectId',
+        nls.localize('qaap/mobileProjects/taskHistoryProjectFilter', 'Project'),
+        filters.projectId,
+        projectOptions,
+    ));
+    wrapper.append(createTaskHistorySelect(
+        ctx,
+        'state',
+        nls.localize('qaap/mobileProjects/taskHistoryStateFilter', 'State'),
+        filters.state,
+        [
+            { value: 'all', label: nls.localize('qaap/mobileProjects/taskHistoryAllStates', 'All states') },
+            { value: 'queued', label: nls.localize('qaap/mobileProjects/taskQueueQueued', 'Waiting') },
+            { value: 'running', label: nls.localize('qaap/mobileProjects/taskQueueRunning', 'Running') },
+            { value: 'blocked', label: nls.localize('qaap/mobileProjects/taskQueueBlocked', 'Blocked') },
+            { value: 'failed', label: nls.localize('qaap/mobileProjects/taskQueueFailed', 'Failed') },
+            { value: 'interrupted', label: nls.localize('qaap/mobileProjects/taskQueueInterrupted', 'Interrupted') },
+            { value: 'completed', label: nls.localize('qaap/mobileProjects/taskHistoryCompleted', 'Completed') },
+        ],
+    ));
+    wrapper.append(createTaskHistorySelect(
+        ctx,
+        'date',
+        nls.localize('qaap/mobileProjects/taskHistoryDateFilter', 'Date'),
+        filters.date,
+        [
+            { value: 'all', label: nls.localize('qaap/mobileProjects/taskHistoryAnyDate', 'Any time') },
+            { value: 'today', label: nls.localize('qaap/mobileProjects/taskHistoryToday', 'Today') },
+            { value: '7d', label: nls.localize('qaap/mobileProjects/taskHistoryLast7Days', 'Last 7 days') },
+            { value: '30d', label: nls.localize('qaap/mobileProjects/taskHistoryLast30Days', 'Last 30 days') },
+        ],
+    ));
+
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'theia-mobile-agent-tasks-history-clear';
+    clear.textContent = nls.localize('qaap/mobileProjects/taskHistoryClearFilters', 'Clear');
+    clear.disabled = !filters.projectId && filters.state === 'all' && filters.date === 'all';
+    clear.addEventListener('click', () => { ctx.clearTaskHistoryFilters(); });
+    wrapper.append(clear);
+    return wrapper;
+}
+
+function createTaskHistorySelect(
+    ctx: any,
+    key: 'projectId' | 'state' | 'date',
+    labelText: string,
+    value: string,
+    options: Array<{ value: string; label: string }>,
+): HTMLElement {
+    const label = document.createElement('label');
+    label.className = 'theia-mobile-agent-tasks-history-filter';
+    const text = document.createElement('span');
+    text.className = 'theia-mobile-agent-tasks-history-filter-label';
+    text.textContent = labelText;
+    const select = document.createElement('select');
+    select.className = 'theia-mobile-agent-tasks-history-filter-select';
+    select.value = value;
+    select.setAttribute('aria-label', labelText);
+    for (const option of options) {
+        const optionElement = document.createElement('option');
+        optionElement.value = option.value;
+        optionElement.textContent = option.label;
+        optionElement.selected = option.value === value;
+        select.append(optionElement);
+    }
+    select.addEventListener('change', () => {
+        ctx.setTaskHistoryFilter(key, select.value);
+    });
+    label.append(text, select);
+    return label;
+}
+
+function collectTaskHistoryEntries(
+    activeTasks: MobileProjectsActiveTasks,
+    projects: MobileProjectEntry[],
+): MobileProjectTaskHistoryEntry[] {
+    const entries: MobileProjectTaskHistoryEntry[] = [];
+    const seenTaskIds = new Set<string>();
+    for (const project of projects) {
+        for (const task of activeTasks.findTasksForProject(project)) {
+            if (seenTaskIds.has(task.id)) {
+                continue;
+            }
+            seenTaskIds.add(task.id);
+            entries.push({ project, task });
+        }
+    }
+    return entries;
 }
 

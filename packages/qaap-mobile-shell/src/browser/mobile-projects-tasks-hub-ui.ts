@@ -53,6 +53,12 @@ import {
 import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
 import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import {
+    EMPTY_MOBILE_PROJECT_TASK_HISTORY_FILTERS,
+    type MobileProjectTaskHistoryDate,
+    type MobileProjectTaskHistoryFilters,
+    type MobileProjectTaskHistoryState,
+} from './mobile-projects-task-history-filters';
 import { applyComposerQuickActionPromptExtracted, bindWorkingDetailConversationSubscriptionExtracted, collectAgentsHubRecentItemsExtracted, createAgentsHubLandingHeroBlockExtracted, createAgentsHubQuickActionsBlockExtracted, createAgentsHubRecentsBlockExtracted, openWorkingAgentsPopoverFromPillExtracted, resolveActiveConversationTodoStepProgressExtracted, shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted, updateStepPillChromeExtracted, updateTasksAttentionChromeExtracted, updateWorkingPillChromeExtracted } from './mobile-projects-tasks-hub-ui-render2';
 import { bindWorkingDetailTaskLogSubscriptionExtracted, cancelWorkingConversationLikeComposerStopExtracted, collectTeamMembersForTranscriptSectionExtracted, createTaskSkeletonRowExtracted, createTasksEmptyStateExtracted, createTasksLoadingStateExtracted, isEmptyComposerQuickActionsSurfacePaintedExtracted, markTasksFirstLoadCompleteExtracted, paintWorkingDetailTaskLogExtracted, prefetchWorkingDetailDocumentsExtracted, resolveOpenComposerConversationIdExtracted, resolveWorkingDetailActivityFeedExtracted, resolveWorkingDetailTranscriptExcerptExtracted, seedWorkingDetailTaskLogFromServerExtracted, shouldSuppressWorkingPillForEmptyComposerExtracted, stopAllWorkingAgentsExtracted, stopWorkingAgentExtracted } from './mobile-projects-tasks-hub-ui-streaming2';
 import { appendTasksHubTeamSectionExtracted, renderTasksHubViewExtracted } from './mobile-projects-tasks-hub-ui-timeline2';
@@ -157,8 +163,37 @@ export class MobileProjectsTasksHubUi {
     protected workingDetailTaskLogDispose: Disposable = Disposable.NULL;
     protected workingDetailTaskLogTaskId: string | undefined;
     protected workingDetailTaskLogSeedToken = 0;
+    protected taskHistoryFilters: MobileProjectTaskHistoryFilters = {
+        ...EMPTY_MOBILE_PROJECT_TASK_HISTORY_FILTERS,
+    };
 
     constructor(protected readonly host: MobileProjectsTasksHubHost) { }
+
+    getTaskHistoryFilters(): MobileProjectTaskHistoryFilters {
+        return { ...this.taskHistoryFilters };
+    }
+
+    setTaskHistoryFilter(key: 'projectId' | 'state' | 'date', value: string): void {
+        if (key === 'projectId') {
+            this.taskHistoryFilters = { ...this.taskHistoryFilters, projectId: value };
+        } else if (key === 'state') {
+            this.taskHistoryFilters = {
+                ...this.taskHistoryFilters,
+                state: value as MobileProjectTaskHistoryState,
+            };
+        } else {
+            this.taskHistoryFilters = {
+                ...this.taskHistoryFilters,
+                date: value as MobileProjectTaskHistoryDate,
+            };
+        }
+        this.host.renderList();
+    }
+
+    clearTaskHistoryFilters(): void {
+        this.taskHistoryFilters = { ...EMPTY_MOBILE_PROJECT_TASK_HISTORY_FILTERS };
+        this.host.renderList();
+    }
 
     collectAgentsHubRecentItems(projects: MobileProjectEntry[], limit = QAAP_AGENTS_HUB_RECENT_LIMIT, scopeProject?: MobileProjectEntry,): Array<{ project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO }> {
         return collectAgentsHubRecentItemsExtracted(this, projects, limit = QAAP_AGENTS_HUB_RECENT_LIMIT, scopeProject);
