@@ -133,8 +133,10 @@ export function shouldServeNestedStaticFromWorkspaceRoot(relDir: string): boolea
 
 /** Nested static entry from a synthesized `QAAP_STATIC_ENTRY=... node -e` serve command. */
 export function staticEntryPathFromDevCommand(devCommand: string | undefined): string | undefined {
-    const match = /QAAP_STATIC_ENTRY="(\/[^"]*)"/.exec(devCommand ?? '');
-    const entry = match?.[1];
+    const command = devCommand ?? '';
+    const directMatch = /QAAP_STATIC_ENTRY="(\/[^"]*)"/.exec(command);
+    const encodedMatch = /QAAP_STATIC_ENTRY=Buffer\.from\('([^']+)'\s*,\s*'base64'\)/.exec(command);
+    const entry = directMatch?.[1] ?? (encodedMatch?.[1] ? decodeBase64(encodedMatch[1]) : undefined);
     if (!entry || entry === '/') {
         return undefined;
     }
@@ -180,9 +182,16 @@ export function buildStaticServeCommand(relDir: string, entryFile?: string): str
         : nested
             ? `/${raw.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')}/`
             : '/';
-    const escapedDir = dir.replace(/"/g, '\\"');
-    const escapedEntry = entry.replace(/"/g, '\\"');
-    return `QAAP_STATIC_ROOT="${escapedDir}" QAAP_STATIC_ENTRY="${escapedEntry}" node -e '${STATIC_SERVER_SCRIPT}'`;
+    // Keep the generated command shell-neutral. Qaap can run on Windows (cmd.exe) or POSIX
+    // shells, and neither POSIX inline environment assignments nor single-quoted node -e scripts
+    // are portable across both. The encoded bootstrap also keeps paths with spaces/quotes safe.
+    const encodedRoot = encodeBase64(dir);
+    const encodedEntry = encodeBase64(entry);
+    const encodedScript = encodeBase64(STATIC_SERVER_SCRIPT);
+    return 'node -e "process.env.QAAP_STATIC_ROOT=Buffer.from(\'' + encodedRoot
+        + '\',\'base64\').toString();process.env.QAAP_STATIC_ENTRY=Buffer.from(\''
+        + encodedEntry + '\',\'base64\').toString();eval(Buffer.from(\''
+        + encodedScript + '\',\'base64\').toString())"';
 }
 
 /**
@@ -234,4 +243,23 @@ function escapeHtml(value: string): string {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function encodeBase64(value: string): string {
+    const bytes = new TextEncoder().encode(value);
+    let binary = '';
+    for (const byte of bytes) {
+        binary += String.fromCharCode(byte);
+    }
+    return btoa(binary);
+}
+
+function decodeBase64(value: string): string | undefined {
+    try {
+        const binary = atob(value);
+        const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+        return new TextDecoder().decode(bytes);
+    } catch {
+        return undefined;
+    }
 }

@@ -176,6 +176,11 @@ export async function runDevServerExtracted(ctx: any, options?: { conversationId
         }
         ctx.devPortOverride = undefined;
         ctx.automaticPortRecoveryAttempts = 0;
+        ctx.previewAutoRetryAttempts = 0;
+        if (typeof window !== 'undefined' && ctx.previewAutoRetryTimer !== undefined) {
+            window.clearTimeout(ctx.previewAutoRetryTimer);
+            ctx.previewAutoRetryTimer = undefined;
+        }
         ctx.attemptedDevPorts.clear();
         ctx.portRecoveryFrom = undefined;
         await ctx.startDevServer(plan, descriptor);
@@ -189,6 +194,8 @@ export async function startDevServerExtracted(ctx: any, plan: { command: string;
         ctx._portConflictPort = undefined;
         ctx._error = undefined;
         ctx._needsInstall = false;
+        ctx._previewReadiness = 'starting';
+        ctx._previewWaitTimedOut = false;
         ctx.devOutputTail = '';
         ctx.activeDevPortHint = undefined;
         const runId = ++ctx.devRunGeneration;
@@ -338,12 +345,18 @@ export function cancelActivePreviewLaunchExtracted(ctx: any): void {
         ctx.installGeneration++;
         ctx.releaseActivePreview();
         ctx.cancelDevPreviewFallbacks();
-        ctx.cancelDevPreviewHealthMonitor();
+    ctx.cancelDevPreviewHealthMonitor();
+    if (typeof window !== 'undefined' && ctx.previewAutoRetryTimer !== undefined) {
+        window.clearTimeout(ctx.previewAutoRetryTimer);
+        ctx.previewAutoRetryTimer = undefined;
+    }
         ctx.cleanupDevTerminal();
         ctx.disposeBootstrapTerminal(ctx.installTerminal);
         ctx.installTerminal = undefined;
         ctx.devTerminalConversationId = undefined;
-        ctx._previewUrl = undefined;
+    ctx._previewUrl = undefined;
+    ctx._previewReadiness = undefined;
+    ctx._previewWaitTimedOut = false;
         ctx._error = undefined;
         ctx._needsInstall = false;
         if (ctx._phase === 'installing' || ctx._phase === 'starting' || ctx._phase === 'running') {

@@ -31,6 +31,7 @@ export interface MobileProjectsCardMenuHost {
     chatService: ChatService | undefined;
     conversations: MobileProjectsConversations | undefined;
     conversationFlags: MobileProjectsConversationFlags | undefined;
+    activeTasks?: MobileProjectsActiveTasks;
     projectsService: MobileProjectsService;
     delegate: {
         onResumePreview?(project: MobileProjectEntry): void | Promise<void>;
@@ -52,6 +53,7 @@ export interface MobileProjectsCardMenuHost {
     openEmptyMobileChatSheet(project: MobileProjectEntry): Promise<void>;
     showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void>;
     cancelActiveTask(taskId: string): Promise<void>;
+    retryActiveTask(taskId: string): Promise<void>;
     onTogglePin(project: MobileProjectEntry): Promise<void>;
     onRenameProject(project: MobileProjectEntry): Promise<void>;
     onDuplicateProject(project: MobileProjectEntry): Promise<void>;
@@ -208,6 +210,22 @@ export class MobileProjectsCardMenuUi {
             onSelect: () => {
                 if (activeInfo?.taskId) {
                     void this.host.cancelActiveTask(activeInfo.taskId);
+                }
+            },
+        });
+
+        const retryableTask = this.host.activeTasks?.findTasksForProject(project)
+            .find(task => task.state === 'failed' || task.state === 'interrupted');
+        this.appendCardMenuItem(menu, {
+            label: nls.localize('qaap/mobileProjects/retryFailedTask', 'Retry failed task'),
+            iconClass: 'codicon-debug-restart',
+            disabled: !retryableTask,
+            title: retryableTask
+                ? nls.localize('qaap/mobileProjects/retryFailedTaskTitle', 'Start a new run with the same agent and command.')
+                : nls.localize('qaap/mobileProjects/retryFailedTaskUnavailable', 'No failed or interrupted standalone task to retry.'),
+            onSelect: () => {
+                if (retryableTask) {
+                    void this.host.retryActiveTask(retryableTask.id);
                 }
             },
         });

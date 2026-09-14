@@ -7,6 +7,7 @@ import { OS } from '@theia/core/lib/common/os';
 import { Path } from '@theia/core/lib/common/path';
 import URI from '@theia/core/lib/common/uri';
 import { normalizeIsolationPath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { isQaapStaticBootstrapCommand } from '../common/qaap-project-bootstrap-static';
 
 export interface QaapManagedShellInvocation {
     readonly shellPath: string;
@@ -43,9 +44,55 @@ export function buildQaapManagedShellInvocation(
     platform: string = defaultManagedShellPlatform(),
 ): QaapManagedShellInvocation {
     if (/^win/i.test(platform)) {
+        const staticCommand = tokenizeWindowsStaticBootstrapCommand(command);
+        if (staticCommand) {
+            // node-pty joins cmd.exe arguments itself. Passing the complete /c expression as one
+            // argument makes cmd.exe lose the nested quotes around `node -e "…"`, which exits
+            // before the static server starts. Keep each shell token separate; node-pty then
+            // reconstructs a valid command line while preserving the workspace cwd.
+            return {
+                shellPath: 'cmd.exe',
+                shellArgs: ['/d', '/s', '/c', 'cd', '/d', cwd, '&&', ...staticCommand],
+            };
+        }
         const quotedCwd = `"${cwd.replace(/"/g, '""')}"`;
         return { shellPath: 'cmd.exe', shellArgs: ['/d', '/s', '/c', `cd /d ${quotedCwd} && ${command}`] };
     }
     const quotedCwd = `'${cwd.replace(/'/g, "'\"'\"'")}'`;
     return { shellPath: '/bin/bash', shellArgs: ['-l', '-c', `cd -- ${quotedCwd} && ${command}`] };
+}
+
+/**
+ * Converts the generated static bootstrap into cmd.exe tokens. The payload itself contains no
+ * whitespace or cmd metacharacters, so it is safe to pass as the `-e` value without quotes.
+ */
+function tokenizeWindowsStaticBootstrapCommand(command: string): string[] | undefined {
+    if (!isQaapStaticBootstrapCommand(command)) {
+        return undefined;
+    }
+    const trimmed = command.trim();
+    const nodeIndex = trimmed.lastIndexOf('node -e "');
+    if (nodeIndex < 0 || !trimmed.endsWith('"')) {
+        return undefined;
+    }
+    const payload = trimmed.slice(nodeIndex + 'node -e "'.length, -1);
+    if (!payload || /\s|[&|<>]/.test(payload)) {
+        return undefined;
+    }
+    const prefix = trimmed.slice(0, nodeIndex).trim();
+    const tokens: string[] = [];
+    let cursor = 0;
+    const setPattern = /set\s+"([^"]+)"\s*&&\s*/g;
+    let match: RegExpExecArray | null;
+    while ((match = setPattern.exec(prefix))) {
+        if (match.index !== cursor && prefix.slice(cursor, match.index).trim()) {
+            return undefined;
+        }
+        tokens.push('set', match[1], '&&');
+        cursor = setPattern.lastIndex;
+    }
+    if (prefix.slice(cursor).trim()) {
+        return undefined;
+    }
+    return [...tokens, 'node', '-e', payload];
 }

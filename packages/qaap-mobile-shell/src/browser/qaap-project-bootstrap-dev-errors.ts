@@ -20,6 +20,7 @@ const CONFIGURATION_REGEX = /failed to load config|error loading config|invalid 
 export const NEXT_ALT_PORT_REGEX = /using available port (\d{2,5}) instead/gi;
 
 const DEV_OUTPUT_URL_PORT_REGEX = /\bhttps?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})\b/gi;
+const DEV_OUTPUT_HOST_PORT_REGEX = /\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})\b/gi;
 
 const ANSI_REGEX = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 
@@ -59,6 +60,11 @@ export function extractDevOutputProbePorts(output: string): number[] {
         ports.push(Number(match[1]));
     }
     for (const match of clean.matchAll(DEV_OUTPUT_URL_PORT_REGEX)) {
+        ports.push(Number(match[1]));
+    }
+    // Some CLIs omit the scheme in their startup line (`Local: localhost:5173`). The scanner
+    // can still probe this port through Qaap's backend proxy and discover the canonical URL.
+    for (const match of clean.matchAll(DEV_OUTPUT_HOST_PORT_REGEX)) {
         ports.push(Number(match[1]));
     }
     return [...new Set(ports.filter(p => Number.isFinite(p) && p > 0 && p < 65536))];

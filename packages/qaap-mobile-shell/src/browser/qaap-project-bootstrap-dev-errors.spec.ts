@@ -37,6 +37,10 @@ describe('qaap-project-bootstrap-dev-errors', () => {
         expect(extractDevOutputProbePorts(tail)).to.deep.equal([3001]);
     });
 
+    it('extractDevOutputProbePorts reads host and port when the startup line omits the scheme', () => {
+        expect(extractDevOutputProbePorts('Local: localhost:5173')).to.deep.equal([5173]);
+    });
+
     it('extractTerminalFailureLine explains Next lock with preview hint', () => {
         const tail = 'using available port 3001 instead.\nUnable to acquire lock\n';
         expect(extractTerminalFailureLine(tail, 'fallback')).to.contain('Next.js is already running');

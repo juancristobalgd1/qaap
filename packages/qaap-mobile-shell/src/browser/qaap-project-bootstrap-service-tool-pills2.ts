@@ -346,6 +346,9 @@ export function buildStateChangeExtracted(ctx: any, phase: QaapBootstrapPhase): 
         return {
             phase,
             descriptor: ctx._descriptor,
+            previewReadiness: ctx._previewReadiness,
+            previewLogTail: ctx.devOutputTail ? ctx.devOutputTail.slice(-2400) : undefined,
+            previewWaitTimedOut: ctx._previewWaitTimedOut || undefined,
             previewUrl: ctx._previewUrl,
             error: ctx._error,
             needsInstall: ctx._needsInstall || undefined,
@@ -366,6 +369,12 @@ export function buildStateChangeExtracted(ctx: any, phase: QaapBootstrapPhase): 
 export function setPhaseExtracted(ctx: any, phase: QaapBootstrapPhase): void {
         const previousPhase = ctx._phase;
         ctx._phase = phase;
+        if (phase === 'running') {
+            ctx._previewReadiness = 'transport-ready';
+            ctx._previewWaitTimedOut = false;
+        } else if (phase === 'run-failed') {
+            ctx._previewReadiness = 'failed';
+        }
         if (phase === 'running') {
             // Several preview surfaces can report the same ready URL concurrently. Do not keep
             // postponing the health check every time a duplicate `running` state is published.

@@ -10,7 +10,9 @@ export type QaapAgentTaskVisualStatusId =
     | 'queued'
     | 'running'
     | 'needs-you'
+    | 'blocked'
     | 'failed'
+    | 'interrupted'
     | 'pr-ready'
     | 'pr-merged'
     | 'pr-closed'
@@ -69,6 +71,15 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         color: 'var(--theia-notificationsWarningIcon-foreground, #cca700)',
         gitPr: false,
     },
+    'blocked': {
+        id: 'blocked',
+        labelKey: 'qaap/mobileProjects/taskStateBlocked',
+        label: 'blocked',
+        className: 'theia-mod-blocked',
+        iconClass: 'codicon-warning',
+        color: 'var(--theia-notificationsWarningIcon-foreground, #cca700)',
+        gitPr: false,
+    },
     'failed': {
         id: 'failed',
         labelKey: 'qaap/mobileProjects/taskStateFailed',
@@ -76,6 +87,15 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
         className: 'theia-mod-failed',
         iconClass: 'codicon-error',
         color: 'var(--theia-errorForeground, #f14c4c)',
+        gitPr: false,
+    },
+    'interrupted': {
+        id: 'interrupted',
+        labelKey: 'qaap/mobileProjects/taskStateInterrupted',
+        label: 'interrupted',
+        className: 'theia-mod-interrupted',
+        iconClass: 'codicon-debug-pause',
+        color: 'var(--theia-notificationsWarningIcon-foreground, #cca700)',
         gitPr: false,
     },
     'pr-ready': {
@@ -194,7 +214,9 @@ const LEGEND_STATUS_IDS: readonly QaapAgentTaskVisualStatusId[] = [
     'queued',
     'running',
     'needs-you',
+    'blocked',
     'failed',
+    'interrupted',
     'background',
     'verified',
     'warnings',
@@ -279,12 +301,15 @@ export function resolveQaapAgentTaskVisualStatus(
     // isFailedRunSummary also catches turns the agent self-reported as stopped/failed while
     // exiting cleanly — those would otherwise fall through to the generic "needs-you" bucket below
     // (unread + last message from the agent) and paint the same glyph as an ordinary unread reply.
-    if (state === 'failed' || state === 'interrupted' || (summary && isFailedRunSummary(summary))) {
+    if (state === 'failed' || (summary && isFailedRunSummary(summary))) {
         return STATUS_BY_ID['failed'];
+    }
+    if (state === 'interrupted') {
+        return STATUS_BY_ID['interrupted'];
     }
     // The agent explicitly asked for the user — highest urgency after failure.
     if (state === 'blocked') {
-        return STATUS_BY_ID['needs-you'];
+        return STATUS_BY_ID['blocked'];
     }
     // Checked before the Git/PR resolution below: a task with red local verification almost
     // always has uncommitted changes, and the generic 'changes' chip would mask the warning.

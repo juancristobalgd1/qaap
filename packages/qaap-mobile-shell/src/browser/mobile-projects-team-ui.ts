@@ -113,7 +113,7 @@ export class MobileProjectsTeamUi {
             case 'completed_with_warnings':
                 return nls.localize('qaap/mobileProjects/teamStateChecksFailing', 'Checks failing');
             case 'blocked':
-                return nls.localize('qaap/mobileProjects/teamStateBlocked', 'Needs you');
+                return nls.localize('qaap/mobileProjects/teamStateBlocked', 'Blocked');
             case 'failed':
                 return nls.localize('qaap/mobileProjects/teamStateFailed', 'Failed');
             case 'interrupted':

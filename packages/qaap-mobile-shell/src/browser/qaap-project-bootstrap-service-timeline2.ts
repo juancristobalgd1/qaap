@@ -259,6 +259,9 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: any, port: numbe
             return;
         }
         ({ port, url } = ctx.resolvePrimaryPreviewTarget(port, url));
+        ctx._previewReadiness = 'waiting-for-server';
+        ctx._previewWaitTimedOut = false;
+        ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
         let ready = await waitForQaapDevPreviewPort(port, {
             maxAttempts: DEV_PREVIEW_OPEN_PROBE_ATTEMPTS,
             intervalMs: DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS,
@@ -274,6 +277,12 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: any, port: numbe
             return;
         }
         if (!ready) {
+            ctx._previewWaitTimedOut = true;
+            ctx._error = nls.localize(
+                'qaap/projectBootstrap/previewWaitTimedOut',
+                'The server has not answered after 30 seconds. Check the startup log, then retry.',
+            );
+            ctx.stateEmitter.fire(ctx.buildStateChange(ctx._phase));
             return;
         }
         const activeUrl = ctx.activePreviewClaim?.port === port

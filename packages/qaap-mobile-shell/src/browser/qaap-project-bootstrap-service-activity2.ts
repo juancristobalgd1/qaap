@@ -92,7 +92,7 @@ import {
     disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
     delay as delayHelper,
 } from './qaap-project-bootstrap-helpers';
-import { DEV_PORT_RECOVERY_MAX_ATTEMPTS, PORT_IN_USE_REGEX, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS, TERMINAL_READY_DELAY_MS, TERMINAL_SPAWN_MAX_ATTEMPTS, TERMINAL_SPAWN_RETRY_DELAY_MS } from './qaap-project-bootstrap-service';
+import { DEV_PREVIEW_AUTO_RETRY_DELAY_MS, DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS, DEV_PORT_RECOVERY_MAX_ATTEMPTS, PORT_IN_USE_REGEX, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS, TERMINAL_READY_DELAY_MS, TERMINAL_SPAWN_MAX_ATTEMPTS, TERMINAL_SPAWN_RETRY_DELAY_MS } from './qaap-project-bootstrap-service';
 
 export async function failDevRunExtracted(ctx: any, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
@@ -126,6 +126,36 @@ export async function failDevRunExtracted(ctx: any, message: string,
             }
         }
         const descriptor = ctx._descriptor;
+        const diagnosis = diagnoseBootstrapFailure(ctx.devOutputTail || message, message);
+        const canAutoRetry = !portConflict
+            && !terminalOutputNeedsInstall(ctx.devOutputTail)
+            && (diagnosis.kind === 'process-exit' || diagnosis.kind === 'unknown')
+            && ctx.previewAutoRetryAttempts < DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS
+            && typeof window !== 'undefined';
+        if (canAutoRetry && descriptor) {
+            ctx.previewAutoRetryAttempts++;
+            ctx.cleanupDevTerminal();
+            ctx.releaseActivePreview();
+            ctx._previewReadiness = 'starting';
+            ctx._previewWaitTimedOut = false;
+            ctx._error = nls.localize(
+                'qaap/projectBootstrap/previewAutoRetry',
+                'Preview did not become ready. Retrying automatically ({0}/{1})…',
+                String(ctx.previewAutoRetryAttempts),
+                String(DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS),
+            );
+            ctx.setPhase('starting');
+            const retryRunId = runId;
+            ctx.previewAutoRetryTimer = window.setTimeout(() => {
+                ctx.previewAutoRetryTimer = undefined;
+                if (retryRunId !== ctx.devRunGeneration || ctx.devRunCancelledByUser || !ctx._descriptor) {
+                    return;
+                }
+                ctx._phase = 'ready-to-run';
+                void ctx.startDevServer({ ...plan }, ctx._descriptor);
+            }, DEV_PREVIEW_AUTO_RETRY_DELAY_MS * ctx.previewAutoRetryAttempts);
+            return;
+        }
         if (portConflict && conflictPort !== undefined && descriptor && !nextLock
             && ctx.automaticPortRecoveryAttempts < DEV_PORT_RECOVERY_MAX_ATTEMPTS) {
             const alternatePort = pickNextDevPort(conflictPort, [...ctx.attemptedDevPorts]);

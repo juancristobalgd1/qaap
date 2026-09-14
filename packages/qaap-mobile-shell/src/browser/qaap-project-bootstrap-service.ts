@@ -31,6 +31,7 @@ import {
     QaapBootstrapPhase,
     QaapForwardedPort,
     QaapMonorepoAppCandidate,
+    QaapPreviewReadiness,
     QaapProjectDescriptor,
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
@@ -132,8 +133,13 @@ export const RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS = 500;
 export const DEV_PREVIEW_FALLBACK_MS = 2500;
 
 /** Poll the backend probe before opening preview (Replit-style: wait until the port responds). */
-export const DEV_PREVIEW_OPEN_PROBE_ATTEMPTS = 40;
-export const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 250;
+export const DEV_PREVIEW_OPEN_PROBE_ATTEMPTS = 60;
+export const DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS = 500;
+
+/** Give slower package managers/frameworks enough time to expose their first HTTP response. */
+/** Retry only transient process exits; never loop on install or port conflicts. */
+export const DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS = 2;
+export const DEV_PREVIEW_AUTO_RETRY_DELAY_MS = 1_500;
 
 /** Delay before auto-attaching or restarting a remembered dev port after workspace load. */
 export const DEV_PREVIEW_WARMUP_DELAY_MS = 800;
@@ -145,6 +151,12 @@ export const DEV_PORT_RECOVERY_MAX_ATTEMPTS = 8;
 
 export interface QaapBootstrapStateChange {
     readonly phase: QaapBootstrapPhase;
+    /** Fine-grained readiness while the durable phase remains `starting`/`running`. */
+    readonly previewReadiness?: QaapPreviewReadiness;
+    /** Recent dev-server output for startup diagnostics and the visible Preview log. */
+    readonly previewLogTail?: string;
+    /** True when the server did not answer within the bounded readiness window. */
+    readonly previewWaitTimedOut?: boolean;
     readonly descriptor?: QaapProjectDescriptor;
     /** Set when the dev server printed a URL we could open. */
     readonly previewUrl?: string;
@@ -239,6 +251,8 @@ export class QaapProjectBootstrapService {
     protected _phase: QaapBootstrapPhase = 'idle';
     protected _descriptor: QaapProjectDescriptor | undefined;
     protected _previewUrl: string | undefined;
+    protected _previewReadiness: QaapPreviewReadiness | undefined;
+    protected _previewWaitTimedOut = false;
     protected _error: string | undefined;
     /** Set when dev stdout indicates missing devDependencies (typical on NODE_ENV=production hosts). */
     protected _needsInstall = false;
@@ -305,6 +319,8 @@ export class QaapProjectBootstrapService {
     protected automaticPortRecoveryAttempts = 0;
     protected readonly attemptedDevPorts = new Set<number>();
     protected portRecoveryFrom: number | undefined;
+    protected previewAutoRetryAttempts = 0;
+    protected previewAutoRetryTimer: number | undefined;
     /** Tracks the in-flight install/dev terminals so we can clean up on workspace switch. */
     protected installTerminal: TerminalWidget | undefined;
     protected devTerminal: TerminalWidget | undefined;

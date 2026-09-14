@@ -276,6 +276,42 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
         return task;
 }
 
+/**
+ * Rebuild a standalone task from its durable, already-authorized task record. The persisted
+ * command is the original prompt for coding agents and the original shell command for `shell`;
+ * retrying from the browser must never depend on a truncated WebSocket payload.
+ */
+export function retryExtracted(ctx: any, id: string, ownerLogin?: string): QaapAgentTask | undefined {
+        const task = ctx.tasks.get(id) as QaapAgentTask | undefined;
+        if (!task || (task.state !== 'failed' && task.state !== 'interrupted')) {
+            return undefined;
+        }
+        const agentId = ctx.resolveTaskAgentId(task);
+        const request: QaapCreateAgentTaskRequest = agentId === SHELL_AGENT_ID
+            ? {
+                title: task.title,
+                command: task.command,
+                cwd: task.cwd,
+                parentId: task.parentId,
+                autoApprove: task.autoApprove,
+                readOnlyWorkspace: task.readOnlyWorkspace,
+                externalReview: task.externalReview,
+            }
+            : {
+                title: task.title,
+                prompt: task.command,
+                agent: agentId,
+                cwd: task.cwd,
+                agentModel: resolveTaskAgentModel(task),
+                qaiqModel: resolveTaskAgentModel(task),
+                parentId: task.parentId,
+                autoApprove: task.autoApprove,
+                readOnlyWorkspace: task.readOnlyWorkspace,
+                externalReview: task.externalReview,
+            };
+        return ctx.create(request, task.ownerLogin ?? ownerLogin);
+}
+
 export function buildAgentCommandExtracted(ctx: any, prompt: string,
         agentId: string | undefined,
         autoApprove: boolean,

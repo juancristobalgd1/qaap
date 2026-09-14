@@ -94,6 +94,7 @@ export interface QaapAgentTaskCreated {
     readonly id: string;
     readonly cwd: string;
     readonly state: string;
+    readonly agentId?: string;
     readonly title?: string;
     readonly command?: string;
     readonly createdAt?: number;
@@ -103,10 +104,14 @@ export interface QaapAgentTaskCreated {
 export interface QaapAgentTaskDetailDTO {
     readonly id: string;
     readonly cwd: string;
+    readonly title?: string;
+    readonly agentId?: string;
     readonly command?: string;
     readonly state: string;
+    readonly createdAt?: number;
     readonly exitCode?: number;
     readonly finishedAt?: number;
+    readonly parentId?: string;
     readonly log: string;
     readonly workspaceSnapshot?: 'current' | 'changed' | 'unknown';
 }
@@ -654,6 +659,19 @@ export async function cancelAgentTask(id: string): Promise<void> {
     if (!response.ok) {
         throw new Error(response.statusText);
     }
+}
+
+/** Recreate a failed/interrupted standalone task from the server's durable request data. */
+export async function retryAgentTask(id: string): Promise<QaapAgentTaskCreated> {
+    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/${encodeURIComponent(id)}/retry`, {
+        method: 'POST',
+        credentials: 'include',
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || response.statusText);
+    }
+    return response.json() as Promise<QaapAgentTaskCreated>;
 }
 
 export async function deleteAgentTasksForCwd(cwd: string): Promise<number> {

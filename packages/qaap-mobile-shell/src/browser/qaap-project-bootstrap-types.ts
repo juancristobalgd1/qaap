@@ -17,6 +17,9 @@ export type QaapBootstrapPhase =
     | 'run-failed'
     | 'dismissed';
 
+/** Readiness inside a dev-server launch; kept separate from the durable bootstrap phase. */
+export type QaapPreviewReadiness = 'starting' | 'waiting-for-server' | 'transport-ready' | 'failed';
+
 /** Package manager understood by the detector. */
 export type QaapPackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun' | 'native';
 

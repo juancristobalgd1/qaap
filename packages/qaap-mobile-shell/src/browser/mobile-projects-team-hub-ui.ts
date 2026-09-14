@@ -385,7 +385,13 @@ export class MobileProjectsTeamHubUi {
             case 'failed':
                 return nls.localize('qaap/mobileProjects/teamStateFailed', 'Failed');
             case 'queued':
-                return nls.localize('qaap/mobileProjects/teamStateQueued', 'Queued');
+                return nls.localize('qaap/mobileProjects/teamStateQueued', 'Waiting');
+            case 'blocked':
+                return nls.localize('qaap/mobileProjects/teamStateBlocked', 'Blocked');
+            case 'interrupted':
+                return nls.localize('qaap/mobileProjects/teamStateInterrupted', 'Interrupted');
+            case 'completed':
+                return nls.localize('qaap/mobileProjects/teamStateDone', 'Completed');
             default:
                 return state;
         }

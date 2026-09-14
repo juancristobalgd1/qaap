@@ -1546,6 +1546,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.activeTaskActionsUi.cancelActiveTask(taskId);
     }
 
+    protected async retryActiveTask(taskId: string): Promise<void> {
+        await this.activeTaskActionsUi.retryActiveTask(taskId);
+    }
+
     protected async showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void> {
         await this.activeTaskActionsUi.showTaskLog(project, taskId);
     }

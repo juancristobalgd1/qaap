@@ -80,12 +80,32 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
     protected pickerDismiss: (() => void) | undefined;
     /** Tracks the last phase we surfaced a snackbar for, so port-change re-renders do not re-toast. */
     protected lastAnnouncedPhase: QaapBootstrapStateChange['phase'] | undefined;
+    protected lastState: QaapBootstrapStateChange | undefined;
+    protected previewLogRenderTimer: number | undefined;
+    protected actionInFlight = false;
     protected readonly toDispose = new DisposableCollection();
 
     onStart(): void {
         // Tear down any floater left by an older bundle (HMR / cached frontend).
         document.querySelectorAll('.qaap-project-bootstrap-ports.qaap-mod-floating').forEach(node => node.remove());
         this.toDispose.push(this.bootstrap.onStateChange(state => this.render(state)));
+        this.toDispose.push(this.bootstrap.onDevOutput(() => {
+            if (!this.lastState || (this.lastState.phase !== 'starting' && this.lastState.phase !== 'run-failed')) {
+                return;
+            }
+            if (this.previewLogRenderTimer !== undefined) {
+                return;
+            }
+            this.previewLogRenderTimer = window.setTimeout(() => {
+                this.previewLogRenderTimer = undefined;
+                if (this.lastState) {
+                    this.render({
+                        ...this.lastState,
+                        previewLogTail: this.bootstrap.devOutput.slice(-2400),
+                    });
+                }
+            }, 180);
+        }));
     }
 
     onDidInitializeLayout(): void {
@@ -99,10 +119,15 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
     onStop(): void {
         this.closeAppPicker();
         this.removeBanner();
+        if (this.previewLogRenderTimer !== undefined) {
+            window.clearTimeout(this.previewLogRenderTimer);
+            this.previewLogRenderTimer = undefined;
+        }
         this.toDispose.dispose();
     }
 
     protected render(state: QaapBootstrapStateChange): void {
+        this.lastState = state;
         switch (state.phase) {
             case 'detected':
             case 'ready-to-run':
@@ -201,6 +226,19 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
         subtitle.textContent = this.subtitleFor(state, descriptor);
         text.appendChild(subtitle);
 
+        if (state.previewLogTail && (state.phase === 'starting' || state.phase === 'run-failed' || state.phase === 'install-failed')) {
+            const logDetails = document.createElement('details');
+            logDetails.className = 'qaap-project-bootstrap-log';
+            logDetails.open = state.previewWaitTimedOut === true || state.phase === 'run-failed';
+            const logSummary = document.createElement('summary');
+            logSummary.textContent = nls.localize('qaap/projectBootstrap/showStartupLog', 'Show startup log');
+            const log = document.createElement('pre');
+            log.className = 'qaap-project-bootstrap-log-content';
+            log.textContent = state.previewLogTail;
+            logDetails.append(logSummary, log);
+            text.appendChild(logDetails);
+        }
+
         // Monorepo chip: lets the user swap the active app without going through the action sheet.
         if (descriptor.apps.length > 0 && state.selectedApp) {
             const chip = document.createElement('button');
@@ -230,9 +268,30 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
             btn.type = 'button';
             btn.className = `qaap-project-bootstrap-action${action.primary ? ' qaap-mod-primary' : ''}`;
             btn.textContent = action.label;
+            btn.disabled = this.actionInFlight;
             btn.addEventListener('click', () => {
+                if (this.actionInFlight) {
+                    return;
+                }
                 MobileHaptics.fire(MobileHaptics.LIGHT);
-                void action.run();
+                this.actionInFlight = true;
+                btn.disabled = true;
+                let result: void | Promise<void>;
+                try {
+                    result = action.run();
+                } catch (error) {
+                    this.actionInFlight = false;
+                    MobileSnackbar.show(String(error), { kind: 'warning', duration: 3000 });
+                    return;
+                }
+                void Promise.resolve(result).catch(error => {
+                    MobileSnackbar.show(String(error), { kind: 'warning', duration: 3000 });
+                }).finally(() => {
+                    this.actionInFlight = false;
+                    if (this.lastState && this.banner) {
+                        this.render(this.lastState);
+                    }
+                });
             });
             actions.appendChild(btn);
         }
@@ -370,6 +429,12 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                 }
                 return nls.localize('qaap/projectBootstrap/readyToRun', 'Ready to run {0}', framework);
             case 'starting':
+                if (state.previewWaitTimedOut) {
+                    return nls.localize('qaap/projectBootstrap/previewNotReady', 'Preview not ready');
+                }
+                if (state.previewReadiness === 'waiting-for-server') {
+                    return nls.localize('qaap/projectBootstrap/waitingForServer', 'Waiting for server…');
+                }
                 return nls.localize('qaap/projectBootstrap/starting', 'Starting dev server…');
             case 'running':
                 if (state.selectedApp) {
@@ -408,6 +473,21 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
             case 'installing':
                 return descriptor.installCommand;
             case 'starting':
+                if (state.previewWaitTimedOut) {
+                    return state.error ?? nls.localize(
+                        'qaap/projectBootstrap/previewWaitTimedOutSubtitle',
+                        'Check the startup log, then retry.',
+                    );
+                }
+                if (state.previewReadiness === 'waiting-for-server') {
+                    const port = state.activePort ? nls.localize('qaap/projectBootstrap/waitingOnPort', ' on :{0}', state.activePort) : '';
+                    return nls.localize(
+                        'qaap/projectBootstrap/waitingForServerSubtitle',
+                        'Waiting for the dev server{0} · {1}',
+                        port,
+                        devCommand ?? descriptor.name,
+                    );
+                }
                 if (state.portRecoveryFrom && state.activePort && devCommand) {
                     return nls.localize(
                         'qaap/projectBootstrap/recoveringPort',
@@ -495,11 +575,33 @@ export class QaapProjectBootstrapContribution implements FrontendApplicationCont
                     },
                 ];
             case 'installing':
-            case 'starting':
                 return [
                     {
                         label: nls.localize('qaap/projectBootstrap/cancel', 'Cancel'),
-                        run: () => this.bootstrap.skip(),
+                        run: () => this.bootstrap.cancelActivePreviewLaunch(),
+                    },
+                ];
+            case 'starting':
+                if (state.previewWaitTimedOut) {
+                    return [
+                        {
+                            label: nls.localize('qaap/projectBootstrap/retry', 'Retry'),
+                            primary: true,
+                            run: async () => {
+                                this.bootstrap.cancelActivePreviewLaunch();
+                                await this.bootstrap.runDevServer();
+                            },
+                        },
+                        {
+                            label: nls.localize('qaap/projectBootstrap/cancel', 'Cancel'),
+                            run: () => this.bootstrap.cancelActivePreviewLaunch(),
+                        },
+                    ];
+                }
+                return [
+                    {
+                        label: nls.localize('qaap/projectBootstrap/cancel', 'Cancel'),
+                        run: () => this.bootstrap.cancelActivePreviewLaunch(),
                     },
                 ];
             case 'install-failed':

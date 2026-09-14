@@ -11,15 +11,24 @@ import {
     staticEntryPathFromDevCommand,
 } from './qaap-project-bootstrap-static';
 
+function decodeStaticBootstrap(command: string): string {
+    const matches = [...command.matchAll(/Buffer\.from\('([^']+)'\s*,\s*'base64'\)/g)];
+    const encodedScript = matches[matches.length - 1]?.[1];
+    expect(encodedScript).to.be.a('string');
+    return Buffer.from(encodedScript!, 'base64').toString('utf8');
+}
+
 describe('qaap-project-bootstrap-static', () => {
 
     describe('buildStaticServeCommand', () => {
 
         it('serves the workspace root when given "."', () => {
             const cmd = buildStaticServeCommand('.');
-            expect(cmd).to.match(/^QAAP_STATIC_ROOT="\." QAAP_STATIC_ENTRY="\/" node -e '/);
-            expect(cmd).to.include('http.createServer');
-            expect(cmd.endsWith("'")).to.equal(true);
+            expect(cmd).to.match(/^node -e "/);
+            expect(cmd).to.include('process.env.QAAP_STATIC_ROOT=Buffer.from(');
+            expect(cmd).to.include('process.env.QAAP_STATIC_ENTRY=Buffer.from(');
+            expect(decodeStaticBootstrap(cmd)).to.include('http.createServer');
+            expect(cmd.endsWith('"')).to.equal(true);
         });
 
         it('defaults to "." when the directory is empty', () => {
@@ -27,40 +36,39 @@ describe('qaap-project-bootstrap-static', () => {
         });
 
         it('embeds a subdirectory serve root', () => {
-            expect(buildStaticServeCommand('public')).to.include('QAAP_STATIC_ROOT="public"');
+            expect(buildStaticServeCommand('public')).to.match(/^node -e "/);
         });
 
         it('serves nested demo folders from the workspace root with an entry path', () => {
             const cmd = buildStaticServeCommand('docs/demo');
-            expect(cmd).to.include('QAAP_STATIC_ROOT="."');
-            expect(cmd).to.include('QAAP_STATIC_ENTRY="/docs/demo/"');
-            expect(cmd).to.include('docs/demo');
+            expect(staticEntryPathFromDevCommand(cmd)).to.equal('/docs/demo/');
         });
 
         it('reads the port from the PORT env var so the bootstrap port wrapper can inject it', () => {
-            expect(buildStaticServeCommand('.')).to.include('process.env.PORT');
+            expect(decodeStaticBootstrap(buildStaticServeCommand('.'))).to.include('process.env.PORT');
         });
 
         it('binds to loopback so the same-origin dev preview proxy can reach it', () => {
-            expect(buildStaticServeCommand('.')).to.include('"127.0.0.1"');
+            expect(decodeStaticBootstrap(buildStaticServeCommand('.'))).to.include('"127.0.0.1"');
         });
 
         it('does not SPA-fallback missing JS/CSS to index.html', () => {
-            const cmd = buildStaticServeCommand('.');
-            expect(cmd).to.include('ext!==".html"');
-            expect(cmd).to.include('Not found');
+            const script = decodeStaticBootstrap(buildStaticServeCommand('.'));
+            expect(script).to.include('ext!==".html"');
+            expect(script).to.include('Not found');
         });
 
         it('retries nested demo library paths at the workspace root', () => {
             const cmd = buildStaticServeCommand('docs/demo');
-            expect(cmd).to.include('stripSeg');
-            expect(cmd).to.include('writeHead(302');
-            expect(cmd).to.include('alts.push');
+            const script = decodeStaticBootstrap(cmd);
+            expect(script).to.include('stripSeg');
+            expect(script).to.include('writeHead(302');
+            expect(script).to.include('alts.push');
             expect(staticEntryPathFromDevCommand(cmd)).to.equal('/docs/demo/');
             expect(staticEntryPathFromDevCommand(buildStaticServeCommand('.'))).to.equal(undefined);
             expect(staticEntryPathFromDevCommand('npm run dev')).to.equal(undefined);
             expect(staticEntryPathFromDevCommand(buildStaticServeCommand('.', 'game.html'))).to.equal('/game.html');
-            expect(buildStaticServeCommand('.', 'game.html')).to.include('entryIsFile');
+            expect(decodeStaticBootstrap(buildStaticServeCommand('.', 'game.html'))).to.include('entryIsFile');
             expect(nestedStaticUrlFallbacks('/docs/lib/marked.esm.js', '/docs/demo/')).to.deep.equal([
                 '/docs/lib/marked.esm.js',
                 '/lib/marked.esm.js',
@@ -75,17 +83,13 @@ describe('qaap-project-bootstrap-static', () => {
         });
 
         it('prints a localhost URL the dev-output scanner can detect', () => {
-            expect(buildStaticServeCommand('.')).to.include('http://127.0.0.1:');
+            expect(decodeStaticBootstrap(buildStaticServeCommand('.'))).to.include('http://127.0.0.1:');
         });
 
-        it('embeds a script free of single quotes (so node -e \'...\' stays valid)', () => {
+        it('uses a shell-neutral encoded bootstrap for node -e', () => {
             const cmd = buildStaticServeCommand('.');
-            const script = cmd.slice(cmd.indexOf("node -e '") + "node -e '".length, -1);
-            expect(script.includes("'")).to.equal(false);
-        });
-
-        it('escapes double quotes in the directory name', () => {
-            expect(buildStaticServeCommand('we"ird')).to.include('QAAP_STATIC_ROOT="we\\"ird"');
+            expect(cmd).not.to.include("node -e '");
+            expect(cmd).to.include('eval(Buffer.from(');
         });
     });
 });

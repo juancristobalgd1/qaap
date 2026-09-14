@@ -9,6 +9,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node';
 import * as http from 'http';
 import * as https from 'https';
 import { WebSocketServer, WebSocket as WsClient } from 'ws';
+import { nls } from '@theia/core/lib/common/nls';
 import {
     QAAP_AGENT_TASK_API_PATH,
     QaapAgentTaskKind,
@@ -202,6 +203,27 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 return;
             }
             res.json(task);
+        });
+        app.post(`${QAAP_AGENT_TASK_API_PATH}/:id/retry`, (req, res) => {
+            const ctx = this.requireAuth(req, res);
+            if (!ctx) {
+                return;
+            }
+            const existing = this.runner.listForCwd(undefined).find(task => task.id === req.params.id);
+            if (!existing) {
+                res.status(404).json({ error: 'Task not found.' });
+                return;
+            }
+            if (!this.auth.ownsWorkspacePath(ctx, existing.cwd)) {
+                this.auth.denyForbidden(res, req, 'agent_task', { taskId: req.params.id });
+                return;
+            }
+            const task = this.runner.retry(req.params.id, this.auth.resolveUserLogin(ctx));
+            if (!task) {
+                res.status(409).json({ error: nls.localize('qaap/agentTasks/retryUnavailable', 'Only failed or interrupted tasks can be retried.') });
+                return;
+            }
+            res.status(201).json(task);
         });
     }
 

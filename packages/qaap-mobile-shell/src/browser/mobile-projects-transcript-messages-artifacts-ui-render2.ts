@@ -274,7 +274,10 @@ export function createTranscriptAgentSegmentsRowExtracted(ctx: any, segments: Qa
                 content: '',
                 segments,
             });
-            const canRetry = conv?.status === 'failed' && !!ctx.host.retryOpenFailedConversationTask;
+            // The effective backend status normally becomes `failed`, but older/reconnected
+            // payloads can arrive with an idle status while the last agent message already has
+            // the durable error. Keep the recovery CTA available in both shapes.
+            const canRetry = ctx.isConversationError(conv) && !!ctx.host.retryOpenFailedConversationTask;
             const provenance = ctx.resolveTurnProvenance(conv, undefined);
             const agentId = provenance.turnAgentId ?? conv?.agentId;
             const failureMessage = {

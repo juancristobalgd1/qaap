@@ -11,6 +11,7 @@ import { join } from 'path';
 import { OS } from '@theia/core/lib/common/os';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
+import { buildStaticServeCommand } from '../common/qaap-project-bootstrap-static';
 import { buildQaapManagedShellInvocation, resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 
 describe('qaap-project-bootstrap-shell', () => {
@@ -77,5 +78,18 @@ describe('qaap-project-bootstrap-shell', () => {
         } finally {
             OS.backend.isWindows = previousBackendWindows;
         }
+    });
+
+    it('tokenizes the static node bootstrap for node-pty on Windows', () => {
+        const command = buildStaticServeCommand('.');
+        const invocation = buildQaapManagedShellInvocation(command, 'C:\\Users\\me\\static site', 'win32');
+
+        expect(invocation.shellPath).to.equal('cmd.exe');
+        expect(invocation.shellArgs.slice(0, 7)).to.deep.equal([
+            '/d', '/s', '/c', 'cd', '/d', 'C:\\Users\\me\\static site', '&&',
+        ]);
+        expect(invocation.shellArgs).to.include('node');
+        expect(invocation.shellArgs).to.include('-e');
+        expect(invocation.shellArgs.at(-1)).to.not.match(/^"|"$/);
     });
 });

@@ -30,6 +30,7 @@ import {
     isQaapStaticBootstrapCommand,
     isStaticHtmlFileName,
     shouldServeNestedStaticFromWorkspaceRoot,
+    staticEntryPathFromDevCommand,
 } from './qaap-project-bootstrap-static';
 import { formatMissingBootstrapProjectHint } from '../common/qaap-project-bootstrap-scaffold-plan';
 import {
@@ -416,10 +417,8 @@ export class QaapProjectBootstrapDetector {
         },
     ): QaapProjectDescriptor {
         const serveCommand = staticSite.devCommand ?? '';
-        const nested = /QAAP_STATIC_ENTRY="\/[^"]+\//.test(serveCommand)
-            || shouldServeNestedStaticFromWorkspaceRoot(
-                serveCommand.match(/QAAP_STATIC_ENTRY="([^"]+)"/)?.[1]?.replace(/^\/|\/$/g, '') ?? '',
-            );
+        const entryPath = staticEntryPathFromDevCommand(serveCommand);
+        const nested = shouldServeNestedStaticFromWorkspaceRoot(entryPath?.replace(/^\/|\/$/g, '') ?? '');
         const buildScript = this.pickLibraryStaticBuildScript(options.scripts);
         const buildPrefix = nested && buildScript
             ? `${this.buildRunCommand(options.packageManager, buildScript)} && `

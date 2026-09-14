@@ -25,6 +25,11 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'idle' }, { status: 'streaming', messageCount: 1 }).id).to.equal('running');
     });
 
+    it('keeps blocked and interrupted tasks distinct from generic attention and failure', () => {
+        expect(resolveQaapAgentTaskVisualStatus({ state: 'blocked' }).id).to.equal('blocked');
+        expect(resolveQaapAgentTaskVisualStatus({ state: 'interrupted' }).id).to.equal('interrupted');
+    });
+
     it('classifies explicit input waits and unread agent replies as needs-you', () => {
         expect(resolveQaapAgentTaskVisualStatus({ state: 'needs-input' }).id).to.equal('needs-you');
         expect(resolveQaapAgentTaskVisualStatus(
@@ -141,7 +146,9 @@ describe('listQaapAgentTaskVisualStatusLegendEntries', () => {
             'queued',
             'running',
             'needs-you',
+            'blocked',
             'failed',
+            'interrupted',
             'background',
             'verified',
             'warnings',

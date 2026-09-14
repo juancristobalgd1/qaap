@@ -123,7 +123,7 @@ export function isConversationFinalResponseCommitted(conv: QaapAgentConversation
 
 /** True when the conversation ended in a failure. */
 export function isConversationError(conv: QaapAgentConversationDTO | undefined): boolean {
-    return conv?.status === 'failed';
+    return conv?.status === 'failed' || conv?.messages.some(message => !!message.error) === true;
 }
 
 // ─── Agent message ───────────────────────────────────────────────────────────

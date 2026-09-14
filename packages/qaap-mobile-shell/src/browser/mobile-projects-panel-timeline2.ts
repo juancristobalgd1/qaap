@@ -66,6 +66,7 @@ import {
 } from '../common/qaap-hosted-agent-auth-policy';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { MobileSnackbar } from './mobile-snackbar';
+import { isConversationError } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
     type QaapAgentTaskAgentOption,
@@ -568,7 +569,8 @@ export function retryOpenTranscriptStreamExtracted(ctx: any): void {
 export function retryOpenFailedConversationTaskExtracted(ctx: any): void {
     const project = ctx.transcriptController.state.transcriptOpenProject;
     const summary = ctx.transcriptController.state.transcriptOpenSummary;
-    if (!project || !summary || summary.status !== 'failed') {
+    const conversation = ctx.transcriptController.state.transcriptLastConv;
+    if (!project || !summary || (!isConversationError(conversation) && summary.status !== 'failed')) {
         return;
     }
     void ctx.onRetryConversation(project, summary);

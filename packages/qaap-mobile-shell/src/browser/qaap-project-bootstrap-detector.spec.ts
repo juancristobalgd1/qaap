@@ -16,6 +16,7 @@ import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { FileStat } from '@theia/filesystem/lib/common/files';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
+import { staticEntryPathFromDevCommand } from './qaap-project-bootstrap-static';
 
 const VITE_PKG = JSON.stringify({
     name: 'rioja-wines-landing-page',
@@ -245,7 +246,7 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
 
         const descriptor = await detector.detect(URI.fromFilePath('/ws'));
         expect(descriptor!.kind).to.equal('static');
-        expect(descriptor!.devCommand).to.include('docs/demo');
+        expect(staticEntryPathFromDevCommand(descriptor!.devCommand)).to.equal('/docs/demo/');
         expect(descriptor!.devCommand).to.include('npm run build');
         expect(descriptor!.installCommand).to.match(/npm install/);
         expect(descriptor!.expectedPort).to.equal(8080);
@@ -288,8 +289,7 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
 
         const descriptor = await detector.detect(URI.fromFilePath('/ws'));
         expect(descriptor!.kind).to.equal('static');
-        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ENTRY="/docs/demo/"');
-        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ROOT="."');
+        expect(staticEntryPathFromDevCommand(descriptor!.devCommand)).to.equal('/docs/demo/');
     });
 
     it('prefers static index.html at workspace root over child Node projects', async () => {
@@ -318,7 +318,7 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         const descriptor = await detector.detect(URI.fromFilePath('/ws'));
         expect(descriptor!.kind).to.equal('static');
         expect(descriptor!.expectedPort).to.equal(8080);
-        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ROOT="campaign"');
+        expect(staticEntryPathFromDevCommand(descriptor!.devCommand)).to.equal(undefined);
         expect(descriptor!.devCommandLabel).to.include('campaign/index.html');
     });
 
@@ -332,8 +332,7 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
 
         const descriptor = await detector.detect(URI.fromFilePath('/ws'));
         expect(descriptor!.kind).to.equal('static');
-        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ROOT="."');
-        expect(descriptor!.devCommand).to.include('QAAP_STATIC_ENTRY="/game.html"');
+        expect(staticEntryPathFromDevCommand(descriptor!.devCommand)).to.equal('/game.html');
         expect(descriptor!.devCommandLabel).to.include('game.html');
     });
 

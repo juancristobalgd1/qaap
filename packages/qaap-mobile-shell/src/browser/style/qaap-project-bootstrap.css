@@ -102,6 +102,37 @@
     font-family: var(--theia-monospace-font-family, monospace);
 }
 
+.qaap-project-bootstrap-log {
+    margin-top: 6px;
+    min-width: 0;
+    color: var(--theia-descriptionForeground);
+    font-size: var(--theia-ui-font-size0, 11px);
+}
+
+.qaap-project-bootstrap-log summary {
+    width: fit-content;
+    color: var(--theia-textLink-foreground, var(--theia-foreground));
+    cursor: pointer;
+    user-select: none;
+}
+
+.qaap-project-bootstrap-log-content {
+    max-width: min(520px, calc(100vw - 64px));
+    max-height: 180px;
+    margin: 6px 0 0;
+    padding: 8px;
+    overflow: auto;
+    background: var(--theia-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+    border: 1px solid var(--theia-contrastBorder, transparent);
+    border-radius: 6px;
+    color: var(--theia-terminal-foreground, var(--theia-foreground));
+    font-family: var(--theia-monospace-font-family, monospace);
+    font-size: 10px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .qaap-project-bootstrap-actions {
     flex: 0 0 auto;
     display: flex;
@@ -137,6 +168,11 @@
 .qaap-project-bootstrap-action:focus-visible {
     outline: 0.5px solid var(--theia-focusBorder);
     outline-offset: 2px;
+}
+
+.qaap-project-bootstrap-action:disabled {
+    cursor: wait;
+    opacity: 0.6;
 }
 
 /* Codicon spinner — falls back to a CSS keyframe rotation so we do not require the optional
