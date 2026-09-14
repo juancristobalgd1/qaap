@@ -5,6 +5,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { conversationTurnProgressRatio } from '../common/qaap-agent-conversation-list-metrics';
 import {
     isConversationAutoApproveEnabled,
+    isFailedRunSummary,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import { resolveQaapAgentTaskVisualStatus, type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
@@ -266,6 +267,43 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
                 shield.title = manualLabel;
                 taskTitleRow.insertBefore(shield, taskTitleRow.firstChild);
             }
+        }
+
+        if (summary.source !== 'theia-chat'
+            && !summary.id.startsWith('pending-')
+            && isFailedRunSummary(summary)
+            && !selection) {
+            const retryBtn = document.createElement('button');
+            retryBtn.type = 'button';
+            retryBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-retry-btn';
+            const retryLabel = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
+            retryBtn.setAttribute('aria-label', retryLabel);
+            retryBtn.title = retryLabel;
+            const retryIcon = document.createElement('span');
+            retryIcon.className = 'codicon codicon-debug-restart';
+            retryIcon.setAttribute('aria-hidden', 'true');
+            retryBtn.append(retryIcon);
+            if (!compact) {
+                const retryText = document.createElement('span');
+                retryText.className = 'theia-mobile-projects-conversation-retry-label';
+                retryText.textContent = retryLabel;
+                retryBtn.append(retryText);
+            }
+            retryBtn.addEventListener('click', ev => {
+                ev.stopPropagation();
+                if (retryBtn.disabled) {
+                    return;
+                }
+                retryBtn.disabled = true;
+                retryBtn.classList.add('theia-mod-retrying');
+                void ctx.host.onRetryConversation(project, summary).catch(() => {
+                    // The action service already reports the failure; restore the local affordance
+                    // if the row remains mounted after that rollback.
+                    retryBtn.disabled = false;
+                    retryBtn.classList.remove('theia-mod-retrying');
+                });
+            });
+            row.append(retryBtn);
         }
 
         // Pin remains available from the conversation overflow menu. Keep the compact row

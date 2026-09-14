@@ -10647,13 +10647,46 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
 }
 
 .theia-mobile-projects-conversation-retry-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 44px;
+  padding: 0 10px;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--theia-errorForeground, #f14c4c) 35%, transparent);
+  border-radius: var(--qaap-mobile-radius-control, 8px);
+  background: color-mix(in srgb, var(--theia-errorBackground, #d32f2f) 12%, transparent);
   color: var(--theia-errorForeground, #f14c4c);
-  opacity: 0.8;
+  opacity: 0.92;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .theia-mobile-projects-conversation-retry-btn:hover,
 .theia-mobile-projects-conversation-retry-btn:focus-visible {
   opacity: 1;
+}
+
+.theia-mobile-projects-conversation-retry-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.theia-mobile-projects-conversation-retry-btn.theia-mod-retrying,
+.theia-mobile-projects-conversation-retry-btn:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-retry-btn {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+}
+
+.theia-mobile-projects-task-row.theia-mod-sidebar-compact .theia-mobile-projects-conversation-retry-label {
+  display: none;
 }
 
 .theia-mobile-projects-conversation-archive-btn {

@@ -84,6 +84,7 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
 
     function createUi(options?: {
         readonly onArchive?: () => void;
+        readonly onRetry?: () => void;
     }): MobileProjectsProjectRowsUi {
         const host = {
             homeMode: false,
@@ -109,7 +110,9 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
                 openConversationSummary: async () => undefined,
                 openTaskInAgent: async () => undefined,
             },
-            onRetryConversation: async () => undefined,
+            onRetryConversation: async () => {
+                options?.onRetry?.();
+            },
             onArchiveConversation: async () => {
                 options?.onArchive?.();
             },
@@ -150,5 +153,28 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         );
         expect(row.querySelector('.theia-mobile-projects-conversation-pin-btn')).to.equal(null);
         expect(row.querySelector('.theia-mobile-projects-conversation-archive-btn')).to.not.equal(null);
+    });
+
+    it('shows a direct retry action for failed conversations and invokes it without opening the row', async () => {
+        let retried = 0;
+        let opened = 0;
+        const ui = createUi({ onRetry: () => { retried += 1; } });
+        const failedSummary = summary({
+            id: 'failed-conversation-1',
+            status: 'failed',
+        });
+        const failedTask = { ...task, id: failedSummary.id, state: 'failed' as const };
+        const row = ui.createTaskItem(project, failedTask, undefined, failedSummary, new Set(), {
+            compact: true,
+            onActivate: () => { opened += 1; },
+        });
+        const retry = row.querySelector<HTMLButtonElement>('.theia-mobile-projects-conversation-retry-btn');
+        expect(retry).to.not.equal(null);
+        expect(retry?.getAttribute('aria-label')).to.equal('Retry task');
+        expect(retry?.querySelector('.codicon-debug-restart')).to.not.equal(null);
+        retry?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        await Promise.resolve();
+        expect(retried).to.equal(1);
+        expect(opened).to.equal(0);
     });
 });

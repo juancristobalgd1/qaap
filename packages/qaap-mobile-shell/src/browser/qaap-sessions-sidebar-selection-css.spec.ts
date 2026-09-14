@@ -53,4 +53,10 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/\.theia-mobile-projects-task-row:hover \.theia-mobile-projects-task-body[^}]*padding-right:\s*84px/s);
         expect(css).not.to.include('theia-mobile-projects-conversation-pin-btn');
     });
+
+    it('keeps a visible retry action from overlapping compact session titles', () => {
+        expect(css).to.include('theia-mobile-projects-conversation-retry-btn');
+        expect(css).to.match(/:has\(\.theia-mobile-projects-conversation-retry-btn\)[^}]*padding-right:\s*120px/s);
+        expect(css).to.match(/:has\(\.theia-mobile-projects-conversation-retry-btn\)[^{}]*::after\s*\{[^}]*width:\s*136px/s);
+    });
 });
