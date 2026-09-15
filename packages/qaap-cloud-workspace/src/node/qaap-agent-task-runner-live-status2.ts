@@ -162,7 +162,9 @@ export function runOneShotCommandExtracted(ctx: any, command: string,
         promptTempDir?: string,): Promise<string> {
         return runOneShotCommandHelper(command, cwd, env, agentId, timeoutMs, {
             enforceAgentIsolationPolicy: () => ctx.enforceAgentIsolationPolicy(),
-            ensureAgentCwdOwnership: c => ctx.ensureAgentCwdOwnership(c),
+            ensureAgentCwdOwnership: c => ctx.ensureAgentCwdOwnershipAsync
+                ? ctx.ensureAgentCwdOwnershipAsync(c)
+                : ctx.ensureAgentCwdOwnership(c),
             spawnAgentCommand: (cmd, opts) => ctx.spawnAgentCommand(cmd, opts),
             killAgentProcessTree: c => ctx.killAgentProcessTree(c),
             reapAgentProcessGroupAfterExit: c => ctx.reapAgentProcessGroupAfterExit(c),

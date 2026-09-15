@@ -700,8 +700,8 @@ export class QaapAgentTaskRunner {
         return noteReadOnlyEnforcementHelper(taskId, agentId);
     }
 
-    protected spawnProcess(task: QaapAgentTask): void {
-        spawnProcessExtracted(this, task);
+    protected async spawnProcess(task: QaapAgentTask): Promise<void> {
+        await spawnProcessExtracted(this, task);
     }
 
     /** In-flight self-verification passes. Each may spawn an extra (fix-turn) qaiq — bounded below. */
@@ -859,6 +859,11 @@ export class QaapAgentTaskRunner {
     /** @see QaapTenantSpawnService.prepareTenantIsolation */
     protected ensureAgentCwdOwnership(cwd: string): void {
         this.tenantSpawn.prepareTenantIsolation(cwd);
+    }
+
+    /** Async lifecycle gate: Docker tenant creation/inspection must complete before any child spawn. */
+    protected async ensureAgentCwdOwnershipAsync(cwd: string): Promise<void> {
+        await this.tenantSpawn.prepareTenantIsolationAsync(cwd);
     }
 
     protected buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {

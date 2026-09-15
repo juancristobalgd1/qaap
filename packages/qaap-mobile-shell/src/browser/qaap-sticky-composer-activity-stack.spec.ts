@@ -365,6 +365,15 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(actions).to.deep.equal(['run']);
         });
 
+        it('hides preview and run actions when the composer has no file activity', () => {
+            const host = renderStickyComposerChangesPill({
+                onRunApp: () => undefined,
+                onOpenPreview: () => undefined,
+            });
+
+            expect(host).to.equal(undefined);
+        });
+
         it('marks the commit group busy (border beam) and disables its buttons while committing', () => {
             const host = renderStickyComposerChangesPill({
                 diffStats: { added: 4, removed: 2 },

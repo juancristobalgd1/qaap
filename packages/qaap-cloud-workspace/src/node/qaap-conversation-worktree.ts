@@ -68,6 +68,7 @@ export class QaapConversationWorktreeService {
         // clean/smudge filters) UNDER THE TENANT UID, so any filter/hook runs as the tenant, not root,
         // and the new worktree is tenant-owned. Provision the worktree parent tenant-owned first so the
         // dropped git can create the slug dir. No-op in dev / when uid-per-user is off (plain git).
+        await this.ensureTenantContainerReady(cwd);
         this.tenantSpawn.provisionTenantDir(cwd, path.dirname(worktreePath));
         await this.mutatingGit(cwd, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD']);
         return { worktreePath, branch };
@@ -97,7 +98,7 @@ export class QaapConversationWorktreeService {
 
         // SEC-1: commit writes objects into the shared base-repo .git; merge checks out into
         // the base tree. Both must run as the tenant uid over a tenant-owned base repo.
-        this.tenantSpawn.prepareTenantIsolation(baseCwd);
+        await this.ensureTenantContainerReady(baseCwd);
         if (this.isDirectory(worktreePath)) {
             await this.commitWorktree(worktreePath, `qaap: parallel fork ${branch}`);
         } else if (input.action === 'merge') {
@@ -157,6 +158,17 @@ export class QaapConversationWorktreeService {
         const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
         const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
+    }
+
+    protected async ensureTenantContainerReady(cwd: string): Promise<void> {
+        const spawn = this.tenantSpawn as QaapTenantSpawnService & {
+            prepareTenantIsolationAsync?: (target: string) => Promise<void>;
+        };
+        if (typeof spawn.prepareTenantIsolationAsync === 'function') {
+            await spawn.prepareTenantIsolationAsync(cwd);
+        } else {
+            spawn.prepareTenantIsolation?.(cwd);
+        }
     }
 
     protected async assertGitRepo(cwd: string): Promise<void> {

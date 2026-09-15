@@ -334,13 +334,13 @@ export async function reviewSuccessfulAgentTask(
 
 export interface RunOneShotCommandDeps {
     enforceAgentIsolationPolicy(): void;
-    ensureAgentCwdOwnership(cwd: string): void;
+    ensureAgentCwdOwnership(cwd: string): void | Promise<void>;
     spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('ignore' | 'pipe')[]; detached?: boolean }): ChildProcess;
     killAgentProcessTree(child: ChildProcess): void;
     reapAgentProcessGroupAfterExit(child: ChildProcess): void;
 }
 
-export function runOneShotCommand(
+export async function runOneShotCommand(
     command: string,
     cwd: string,
     env: NodeJS.ProcessEnv,
@@ -350,6 +350,8 @@ export function runOneShotCommand(
     stdinPrompt?: string,
     promptTempDir?: string,
 ): Promise<string> {
+    deps.enforceAgentIsolationPolicy();
+    await deps.ensureAgentCwdOwnership(cwd);
     return new Promise((resolve, reject) => {
         let stdout = '';
         let stderr = '';
@@ -358,8 +360,6 @@ export function runOneShotCommand(
             removeAgentPromptTempDir(promptTempDir);
         };
         try {
-            deps.enforceAgentIsolationPolicy();
-            deps.ensureAgentCwdOwnership(cwd);
             child = deps.spawnAgentCommand(command, {
                 cwd,
                 env,

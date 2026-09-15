@@ -185,21 +185,19 @@ export class MobileProjectsStickyComposerColumnUi {
                 options.composerCwd,
             );
         const modelLabel = agentModel ? formatQaiqModelSelectionLabel(agentModel) : undefined;
-        const nextRunLabel = nls.localize('qaap/mobileProjects/stickyComposerNextRun', 'Next run');
         agentBtn.title = modelLabel
             ? nls.localize(
-                'qaap/mobileProjects/stickyComposerNextRunWithModel',
-                'Next run: Agent: {0}, model: {1}',
+                'qaap/mobileProjects/stickyComposerAgentWithModel',
+                'Agent: {0}, model: {1}',
                 agentLabel,
                 modelLabel,
             )
-            : nls.localize('qaap/mobileProjects/stickyComposerNextRunAgent', 'Next run: Agent: {0}', agentLabel);
+            : nls.localize('qaap/mobileProjects/stickyComposerAgent', 'Agent: {0}', agentLabel);
         agentBtn.setAttribute('aria-label', agentBtn.title);
         populateAgentToolbarButton(agentBtn, {
             agentId,
             label: agentLabel,
             agentModel,
-            intentLabel: modelLabel ? nextRunLabel : undefined,
         });
         if (options.agentLocked) {
             agentBtn.classList.add('theia-mod-locked');

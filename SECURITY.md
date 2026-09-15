@@ -13,13 +13,23 @@ description, reproduction steps, and impact.
 Qaap runs a hosted agent (a CLI) that executes shell commands and edits files in
 per-user workspaces. Understand the isolation model before exposing it publicly:
 
-- **Single-user is safe by default.** One person on their own box: the defaults
-  are fine. **Inviting a second user onto the same instance is not a current
-  product milestone.** Do not treat this tree as multi-tenant-ready until you
-  explicitly flip that and run the VPS verification below.
-- **Multi-user requires hardening.** In a shared container one tenant's agent
-  could read other tenants' secrets and code on the shared filesystem. Before
-  inviting other users you **must**:
+- **Single-user is still the simplest deployment.** One person on their own box
+  does not need the worker orchestration overhead.
+- **Multi-user requires the Docker worker mode and its control-plane prerequisite.**
+  The default compose configuration enables a dedicated worker container per
+  tenant. Before inviting other users you **must**:
+  - Keep `QAAP_CLOUD_MODE=docker` and
+    `QAAP_TENANT_CONTAINER_ISOLATION=1`. The lifecycle is fail-closed: the
+    backend will not execute tenant code until `ensure → inspect → exec` has
+    validated the worker.
+  - Set `QAAP_TENANT_DOCKER_IMAGE` (or `QAAP_THEIA_IMAGE`) to the exact image
+    containing the agent CLIs. The worker is not allowed to fall back to a
+    bare `node` image in a hosted deployment.
+  - Prefer a rootless Docker socket through `DOCKER_HOST`, or place Docker
+    operations behind a narrowly allowlisted supervisor. A rootful
+    `/var/run/docker.sock` gives its reader Docker-root-equivalent control;
+    putting the Theia process in a non-root Unix account does not remove that
+    risk.
   - Keep the non-root agent drop enabled. The shipped image sets
     `QAAP_AGENT_UID=1001` (a provisioned `qaap-agent` user) **by default**, so the
     agent cannot read other tenants' secrets/tokens under the root-owned `/root`
@@ -29,22 +39,18 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
     `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true` if you fully understand the risk.
     See [doc/qaap-vps-deployment.md](doc/qaap-vps-deployment.md) for the
     verification steps.
-  - Keep per-tenant CODE isolation enabled. `QAAP_AGENT_UID_PER_USER` defaults to
-    **on** in `docker-compose.yml`: each GitHub login gets its own OS uid, its
-    repos/worktrees are locked to `0700`, and the agent (wrapped in
-    `setpriv --clear-groups`) runs under that uid — so one tenant's agent cannot
-    read or write another tenant's code. The backend **refuses to spawn an agent
-    under a shared uid in a production runtime**; a single-user box can opt out
-    with `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true`. See
-    [doc/qaap-uid-per-user.md](doc/qaap-uid-per-user.md) for verification and
-    rollback.
+  - Keep per-tenant CODE isolation enabled when using the host fallback. In
+    `docker-compose.yml`, `QAAP_AGENT_UID_PER_USER` defaults to **on**. In
+    Docker worker mode the container boundary is primary; the uid policy is
+    still useful for host-side compatibility paths.
   - Serve over **HTTPS** and never set `QAAP_SKIP_AUTH` in production (it is
     refused in a production runtime, but do not rely on that alone).
   - Provide **your own** GitHub OAuth app credentials and VAPID keys — never
     reuse the placeholders in `*.env.example`, and never commit real secrets.
-- **Full per-tenant isolation** (a container or OS user per tenant, so tenants
-  cannot read each other's *code* either) is on the roadmap and recommended for
-  any larger public deployment.
+- **Full code-worker isolation** is implemented by the Docker worker mode, but
+  it does not automatically isolate Theia's core singletons, terminal attach
+  channel, logs, or the Docker control-plane. Those remain explicit hardening
+  work for a public multi-user service.
 
 ### Known residual: git-over-tenant-repo run as root — GATE THE MULTI-TENANT FLIP
 

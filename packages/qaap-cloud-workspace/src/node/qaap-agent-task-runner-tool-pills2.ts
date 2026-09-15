@@ -157,7 +157,7 @@ import {
 } from './qaap-agent-task-runner-utils3';
 import { buildPromptTransportCommand } from './qaap-agent-task-runner-utils';
 
-export function runGenericCommandExtracted(ctx: any, command: string,
+export async function runGenericCommandExtracted(ctx: any, command: string,
         cwd: string,
         env: NodeJS.ProcessEnv,
         taskId: string,
@@ -173,6 +173,15 @@ export function runGenericCommandExtracted(ctx: any, command: string,
         } = {},): Promise<QaapGenericCommandResult> {
         if (options.header) {
             ctx.appendAndFireOutput(taskId, options.header);
+        }
+        try {
+            ctx.enforceAgentIsolationPolicy();
+            await (ctx.ensureAgentCwdOwnershipAsync
+                ? ctx.ensureAgentCwdOwnershipAsync(cwd)
+                : ctx.ensureAgentCwdOwnership(cwd));
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { exitCode: 1, stdout: '', stderr: message, timedOut: false };
         }
         return new Promise(resolve => {
             let stdout = '';
@@ -190,8 +199,6 @@ export function runGenericCommandExtracted(ctx: any, command: string,
                 resolve({ exitCode, stdout, stderr, timedOut });
             };
             try {
-                ctx.enforceAgentIsolationPolicy();
-                ctx.ensureAgentCwdOwnership(cwd);
                 child = ctx.spawnAgentCommand(command, {
                     cwd,
                     env,

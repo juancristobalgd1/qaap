@@ -55,6 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     curl \
+    docker.io \
     python3 \
     build-essential \
     ripgrep \
@@ -140,7 +141,17 @@ RUN groupadd --gid 1001 qaap-agent \
     # `git commit` without "unable to look up current user in the passwd file". The backend writes a
     # real passwd record per tenant at spawn; this is the fallback.
     && git config --system user.name 'Qaap Agent' \
-    && git config --system user.email 'agent@qaap.local'
+    && git config --system user.email 'agent@qaap.local' \
+    && (id -u node >/dev/null 2>&1 && usermod -l theia -d /home/theia -m node || useradd -u 1000 -m -s /bin/bash theia) \
+    && (getent group node >/dev/null 2>&1 && groupmod -n theia node || true) \
+    # Legacy/rootful Docker socket deployments need this group for the worker lifecycle. Prefer a
+    # rootless Docker socket in production; membership is kept only for backwards-compatible local
+    # compose deployments and is explicitly documented as a control-plane privilege.
+    && (groupadd -g 999 docker 2>/dev/null || groupadd docker 2>/dev/null || true) \
+    && usermod -aG docker theia 2>/dev/null || true \
+    && mkdir -p /home/theia/.theia /home/theia/.qaap \
+    && chown -R 1000:1000 /home/theia /workspace 2>/dev/null || true \
+    && chmod -R a+rX /app
 
 ARG QAAP_IDE_PORT=4873
 # Deployed-build identity: the short git SHA the image was built from. Surfaced via
@@ -148,6 +159,9 @@ ARG QAAP_IDE_PORT=4873
 # at a glance; the deploy pipeline asserts it matches the pushed commit post-deploy.
 ARG QAAP_BUILD_SHA=dev
 ENV NODE_ENV=production \
+    HOME=/home/theia \
+    USER=theia \
+    LOGNAME=theia \
     HOST=0.0.0.0 \
     PORT=${QAAP_IDE_PORT} \
     SHELL=/bin/bash \
@@ -157,6 +171,8 @@ ENV NODE_ENV=production \
     QAAP_AGENT_HOME=/home/qaap-agent \
     QAAP_AGENT_UID=1001 \
     QAAP_AGENT_GID=1001 \
+    QAAP_TENANT_CONTAINER_UID=1000 \
+    QAAP_TENANT_CONTAINER_GID=1000 \
     QAAP_HEADLESS_CHROMIUM=/usr/bin/chromium \
     QAAP_BUILD_SHA=${QAAP_BUILD_SHA}
 
@@ -166,6 +182,8 @@ VOLUME ["/workspace"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/qaap/api/health',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"
+
+USER theia
 
 CMD ["sh", "-c", "exec node src-gen/backend/main.js \
     --hostname=${HOST} \

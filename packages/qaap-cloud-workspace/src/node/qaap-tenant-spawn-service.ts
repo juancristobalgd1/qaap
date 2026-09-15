@@ -14,7 +14,6 @@ import {
     resolveQaapWorktreesRoot,
     resolveTenantHome,
     resolveTenantIsolationRoot,
-    safeUserIdSegment,
     QAAP_USER_REPOS_SEGMENT,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
@@ -82,6 +81,12 @@ export class QaapTenantSpawnService {
         const canonical = this.canonicalizeCwd(cwd);
         const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), canonical);
         return target?.segment;
+    }
+
+    /** Resolve the host-side directory that the tenant worker is allowed to mount. */
+    resolveTenantRoot(cwd: string): string | undefined {
+        const canonical = this.canonicalizeCwd(cwd);
+        return resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), canonical)?.root;
     }
 
     /**
@@ -225,10 +230,15 @@ export class QaapTenantSpawnService {
         this.assertTenantCwdInProduction(cwd);
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
-            if (this.dockerOrchestrator && segment) {
-                this.dockerOrchestrator.ensureTenantContainer(segment).catch(err => {
-                    console.warn(`[qaap-docker] Failed to ensure container for tenant ${segment}:`, err);
-                });
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot) {
+                throw new Error(`Refusing to run a container-isolated process outside a tenant tree: "${cwd}".`);
+            }
+            if (!this.dockerOrchestrator || !this.dockerOrchestrator.isEnabled()) {
+                throw new Error('Container isolation is enabled but the Docker orchestrator is unavailable.');
+            }
+            if (!this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Tenant container is not ready. Await prepareTenantIsolationAsync() before spawning.');
             }
             return;
         }
@@ -249,6 +259,29 @@ export class QaapTenantSpawnService {
         if (this.applyTenantWorkingTreeOwnership(ownershipRoot, identity.uid, gid)) {
             this.ownershipPreparedRoots.add(ownershipRoot);
         }
+    }
+
+    /**
+     * Async lifecycle gate for Docker mode. Every asynchronous process owner must await this before
+     * calling the synchronous child-process APIs. A rejected Docker create/inspect is propagated;
+     * there is intentionally no best-effort prewarm and no fallback to the backend host.
+     */
+    async prepareTenantIsolationAsync(cwd: string): Promise<void> {
+        cwd = this.canonicalizeCwd(cwd);
+        this.assertTenantCwdInProduction(cwd);
+        if (!this.isContainerIsolationEnabled()) {
+            this.prepareTenantIsolation(cwd);
+            return;
+        }
+        const segment = this.resolveTenantSegment(cwd);
+        const tenantRoot = this.resolveTenantRoot(cwd);
+        if (!segment || !tenantRoot) {
+            throw new Error(`Refusing to run a container-isolated process outside a tenant tree: "${cwd}".`);
+        }
+        if (!this.dockerOrchestrator || !this.dockerOrchestrator.isEnabled()) {
+            throw new Error('Container isolation is enabled but the Docker orchestrator is unavailable.');
+        }
+        await this.dockerOrchestrator.ensureTenantContainer(segment, tenantRoot);
     }
 
     /** Recursive ownership repair seam, kept separate so the once-per-backend behavior is testable. */
@@ -282,15 +315,11 @@ export class QaapTenantSpawnService {
         const cwd = this.canonicalizeCwd(options.cwd);
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
-            const wrapped = this.dockerOrchestrator?.wrapShellForTenantContainer(
-                segment,
-                cwd,
-                '/bin/bash',
-                ['-c', command],
-            ) || {
-                file: 'docker',
-                args: ['exec', '-i', '-w', cwd, `qaap-tenant-${safeUserIdSegment(segment || '_anonymous')}`, '/bin/bash', '-c', command],
-            };
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Refusing to spawn: the validated tenant container has not been prepared.');
+            }
+            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, '/bin/bash', ['-c', command], tenantRoot);
             return this.launchProcess(wrapped.file, wrapped.args, {
                 cwd,
                 detached: options.detached ?? process.platform !== 'win32',
@@ -365,6 +394,14 @@ export class QaapTenantSpawnService {
         return this.spawn(command, { ...options, cwd });
     }
 
+    /** Async variant used by request/task lifecycles that can wait for Docker provisioning. */
+    async spawnPreparedAsync(command: string, options: QaapTenantSpawnOptions): Promise<ChildProcess> {
+        const cwd = this.canonicalizeCwd(options.cwd);
+        this.enforceIsolationPolicy();
+        await this.prepareTenantIsolationAsync(cwd);
+        return this.spawn(command, { ...options, cwd });
+    }
+
     /**
      * Argv-form isolated spawn (no shell): enforce the policy, provision + own the tenant tree, then
      * spawn `file args...` under the tenant identity. When a uid drop applies and `setpriv` exists the
@@ -388,15 +425,11 @@ export class QaapTenantSpawnService {
         };
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
-            const wrapped = this.dockerOrchestrator?.wrapShellForTenantContainer(
-                segment,
-                cwd,
-                file,
-                args,
-            ) || {
-                file: 'docker',
-                args: ['exec', '-i', '-w', cwd, `qaap-tenant-${safeUserIdSegment(segment || '_anonymous')}`, file, ...args],
-            };
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Refusing to spawn: the validated tenant container has not been prepared.');
+            }
+            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot);
             return this.launchProcess(wrapped.file, wrapped.args, spawnOptions);
         }
         const identity = this.resolveSpawnIdentity(cwd);
@@ -411,6 +444,18 @@ export class QaapTenantSpawnService {
             ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
             spawnOptions,
         );
+    }
+
+    /** Async variant that makes Docker create/inspect part of the spawn lifecycle. */
+    async spawnArgvPreparedAsync(
+        file: string,
+        args: readonly string[],
+        options: { cwd: string; env: NodeJS.ProcessEnv; detached?: boolean },
+    ): Promise<ChildProcess> {
+        const cwd = this.canonicalizeCwd(options.cwd);
+        this.enforceIsolationPolicy();
+        await this.prepareTenantIsolationAsync(cwd);
+        return this.spawnArgvPrepared(file, args, { ...options, cwd });
     }
 
     /**
@@ -498,13 +543,12 @@ export class QaapTenantSpawnService {
         this.enforceIsolationPolicy();
         if (this.isContainerIsolationEnabled()) {
             const segment = this.resolveTenantSegment(cwd);
-            if (this.dockerOrchestrator) {
-                return this.dockerOrchestrator.wrapInteractiveTerminalForTenant(segment, cwd, file, args);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            this.prepareTenantIsolation(cwd);
+            if (this.dockerOrchestrator && segment && tenantRoot) {
+                return this.dockerOrchestrator.wrapInteractiveTerminalForTenant(segment, cwd, file, args, tenantRoot);
             }
-            return {
-                file: 'docker',
-                args: ['exec', '-it', '-w', cwd, `qaap-tenant-${safeUserIdSegment(segment || '_anonymous')}`, file, ...args],
-            };
+            throw new Error('Refusing to open a terminal without a validated tenant container.');
         }
         const identity = this.resolveSpawnIdentity(cwd);
         if (identity.uid === undefined) {

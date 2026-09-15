@@ -101,6 +101,7 @@ export class QaapParallelRunStore {
         const root = path.join(resolveQaapParallelRoot(), tenant, slug);
         // Make the run's worktree parent tenant-owned so the dropped `git worktree add` (below) can
         // create the variant dirs under it. No-op in dev / when uid-per-user is off.
+        await this.ensureTenantContainerReady(cwd);
         this.tenantSpawn.provisionTenantDir(cwd, root);
         const variants: QaapParallelRunVariant[] = [];
         try {
@@ -250,7 +251,7 @@ export class QaapParallelRunStore {
         // SEC-1: the winner's commit writes objects to the SHARED base-repo .git, and the merge below
         // checks out into the base repo — both must run as the tenant uid over a tenant-owned base repo.
         // Provision the base repo first so its .git is tenant-owned before the commit writes to it.
-        this.tenantSpawn.prepareTenantIsolation(run.cwd);
+        await this.ensureTenantContainerReady(run.cwd);
         // Commit the winner's working-tree changes so the branch carries them once its worktree is removed.
         await this.commitWorktree(winner.worktreePath, `qaap: parallel variant ${winner.agentId}`);
 
@@ -468,6 +469,17 @@ export class QaapParallelRunStore {
         const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
         const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
+    }
+
+    protected async ensureTenantContainerReady(cwd: string): Promise<void> {
+        const spawn = this.tenantSpawn as QaapTenantSpawnService & {
+            prepareTenantIsolationAsync?: (target: string) => Promise<void>;
+        };
+        if (typeof spawn.prepareTenantIsolationAsync === 'function') {
+            await spawn.prepareTenantIsolationAsync(cwd);
+        } else {
+            spawn.prepareTenantIsolation?.(cwd);
+        }
     }
 
     protected isDirectory(p: string): boolean {

@@ -324,7 +324,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
                 return;
             }
             try {
-                const status = this.previewSupervisor.start(cwd, port, { ...identity, ownerLogin });
+                const status = await this.previewSupervisor.start(cwd, port, { ...identity, ownerLogin });
                 const processId = this.previewSupervisor.describe(identity.previewId)?.processId;
                 this.previewRegistry.attachProcess(identity.previewId, ownerLogin, processId);
                 res.json({
@@ -345,7 +345,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
             const record = this.previewRegistry.getByPort(port);
             if (record && record.ownerLogin === ownerLogin && this.sameWorkspacePath(record.root, cwd)) {
                 try {
-                    const status = this.previewSupervisor.start(cwd, port, { ...record, ownerLogin });
+                    const status = await this.previewSupervisor.start(cwd, port, { ...record, ownerLogin });
                     const processId = this.previewSupervisor.describe(record.previewId)?.processId;
                     this.previewRegistry.attachProcess(record.previewId, ownerLogin, processId);
                     res.json({
@@ -360,7 +360,7 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
                 return;
             }
         }
-        const status = this.previewSupervisor.start(cwd, port);
+        const status = await this.previewSupervisor.start(cwd, port);
         res.json({ status, port });
     }
 

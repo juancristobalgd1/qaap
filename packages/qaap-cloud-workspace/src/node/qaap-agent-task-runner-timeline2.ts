@@ -401,7 +401,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 };
                 ctx.tasks.set(task.id, next);
                 void ctx.persist();
-                ctx.spawnProcess(next);
+                await ctx.spawnProcess(next);
                 return;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
@@ -411,10 +411,10 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 return;
             }
         }
-        ctx.spawnProcess(task);
+        await ctx.spawnProcess(task);
 }
 
-export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
+export async function spawnProcessExtracted(ctx: any, task: QaapAgentTask): Promise<void> {
         fs.mkdirSync(STORE_DIR, { recursive: true });
         const logStream = fs.createWriteStream(ctx.logPath(task.id), { flags: 'w' });
         const stdinPromptEntry = ctx.stdinPrompts.get(task.id);
@@ -433,7 +433,7 @@ export function spawnProcessExtracted(ctx: any, task: QaapAgentTask): void {
         let child: ChildProcess;
         try {
             ctx.enforceAgentIsolationPolicy();
-            ctx.ensureAgentCwdOwnership(task.cwd);
+            await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(task.command, {

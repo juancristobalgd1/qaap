@@ -2,7 +2,7 @@
 
 > Estado del documento: **auditoría revisada (v2)**
 > Alcance: aislamiento por usuario autenticado de todos los recursos persistentes y temporales.
-> Veredicto global: **El aislamiento NO es total, pero es mejor de lo que parecía.** Qaap implementa un modelo coherente de **multi-tenancy basado en rutas** (ver §1.1) que aísla workspaces, archivos, repos, conversaciones, tasks, git-review y caches del browser, con tests de seguridad dedicados. Las brechas reales restantes están en recursos a nivel de SO/proceso que viven FUERA del árbol de rutas por usuario: secrets/keystore, terminales, MCP, skills, preferencias y algunos temporales.
+> Veredicto global: **El aislamiento de código ejecutable ya tiene una ruta de contenedor por tenant, pero el aislamiento de Theia no es total.** Qaap mantiene un modelo coherente de **multi-tenancy basado en rutas** (ver §1.1) y, en modo Docker, crea un worker dedicado por tenant con mount exclusivo, usuario no-root y hardening validado. Las brechas restantes están en recursos a nivel de SO/proceso que viven fuera de ese worker: canales core de Theia, preferencias, logs y el control-plane Docker.
 
 ---
 
@@ -10,11 +10,11 @@
 
 Qaap está construido sobre **Eclipse Theia**, un framework de IDE diseñado como **single-tenant**: un usuario del SO por proceso backend. El estado vive en el `$HOME` del backend (`~/.qaap/...`, keystore del SO, preferencias) y en singletons de proceso (`ProcessManager`, managers de MCP, etc.).
 
-Las mitigaciones aplicadas (campos `ownerLogin`, `requireAuth`, y el módulo de aislamiento por rutas) son una capa multi-tenant **encima** de una base single-tenant. Cubren bien la capa de datos/workspace, pero NO los recursos del SO/proceso compartido:
+Las mitigaciones aplicadas (campos `ownerLogin`, `requireAuth`, el módulo de aislamiento por rutas y el worker por contenedor) son una capa multi-tenant **encima** de una base Theia single-tenant. Cubren el código ejecutable del tenant, pero NO convierten automáticamente todos los recursos del SO/proceso compartido en privados:
 
-- Los secrets/tokens (Copilot OAuth) viven en una cuenta de keystore global y fija.
-- Terminales y procesos viven en un `ProcessManager` singleton de proceso.
+- Terminales y procesos siguen teniendo un `ProcessManager` singleton de proceso, aunque su comando se enruta al worker del tenant en modo Docker.
 - MCP, skills y preferencias se resuelven desde el `$HOME`/preferencias del backend.
+- El backend necesita un control-plane Docker; un socket rootful montado directamente no equivale a un usuario sin privilegios. Se recomienda un socket rootless o un supervisor allowlisted.
 
 **Decisión arquitectónica pendiente**: para cerrar las brechas del SO hay dos caminos (ver §5). La vía más realista con Theia es **aislamiento por contenedor/proceso por usuario**.
 
@@ -48,11 +48,11 @@ Leyenda: ✅ aislado · 🟡 parcial · ❌ no aislado (fuga posible en backend 
 | Caches del browser | ✅ | `qaapUserScopedStorageKey` por login. |
 | Preview | 🟡 | `QaapPreviewShareStore.create` acepta `ownerLogin`; puertos a nivel de workspace. |
 | Eventos en tiempo real (SSE/WS) | 🟡 | Conversaciones e inbox filtran por cwd/repos permitidos en el endpoint; revisar el resto de streams. |
-| Contenedores / runtimes | ✅ (corregido) | **C-1 corregido**: `containerNameFor` ahora incluye `ownerLogin`. |
+| Contenedores / runtimes | ✅ en modo Docker | `QaapDockerOrchestrator` usa un contenedor estable por tenant, monta sólo `{tenantRoot}:/workspace`, exige UID/GID no-root, límites, `no-new-privileges`, `CapDrop=ALL`, rootfs de sólo lectura y valida el `inspect` antes de reutilizar. |
 | Secrets / tokens | ❌ | `KeyStoreService` con cuenta fija global (`theia-copilot-auth`/`github-copilot`). Fuera del árbol por usuario. |
 | Credenciales OAuth (Copilot) | ❌ | Mismo keystore global. Cache en memoria invalidado (FIX-10) pero token subyacente compartido. |
-| Terminales | ❌ | `ProcessManager` compartido; canal `${terminalsPath}/:id` permite attach por id sin check de usuario. |
-| Procesos | ❌ | `ProcessManager` singleton de proceso, sin partición por usuario. |
+| Terminales | 🟡 | El PTY ejecuta `docker exec -it --user 1000:1000` sólo después de validar el worker, pero el canal de attach de Theia sigue siendo singleton y requiere owner-scoping propio. |
+| Procesos | 🟡 en modo Docker | Agente, preview, deploy, jobs y verificaciones esperan `ensure → inspect → exec`; la identidad del proceso Docker queda aislada, pero el `ProcessManager` host sigue compartido. |
 | Skills | ❌ | Se cargan de `~/.cursor/skills`, `~/.claude/skills`, etc. (HOME compartido). |
 | MCP Servers | 🟡 | Aislamiento parcial por `ConnectionContainerModule` (por conexión); config/env/secrets desde preferencias del backend. |
 | Configuración de usuario (preferences) | ❌ | Preferencias Theia por backend/workspace, no por usuario autenticado. |
@@ -67,11 +67,13 @@ Leyenda: ✅ aislado · 🟡 parcial · ❌ no aislado (fuga posible en backend 
 
 ## 3. Hallazgos críticos (con evidencia)
 
-### C-1 · Contenedores compartidos por repo, no por usuario · ✅ CORREGIDO
+### C-1 · Contenedores compartidos por repo, no por usuario · ✅ CORREGIDO EN MODO DOCKER
 
 `packages/qaap-cloud-workspace/src/node/qaap-docker-orchestrator.ts`
 
-Antes el contenedor se nombraba sólo por `repoKey`, de modo que dos usuarios con el mismo repo compartían contenedor, procesos, FS y mounts. **Corregido**: `containerNameFor(repoKey, ownerLogin)` ahora namespaces por usuario (hash de `tenant\0repoKey`), y `QaapCloudOrchestrator.ensure` propaga `ownerLogin` a `ensureContainer`/`stopContainer`.
+Antes el contenedor se nombraba sólo por `repoKey`, de modo que dos usuarios con el mismo repo compartían contenedor, procesos, FS y mounts. El camino cloud actual usa `containerNameForTenant(segment)` —un contenedor estable por tenant, no por repo— y monta únicamente el root canónico del tenant. `QaapDockerOrchestrator` no reutiliza silenciosamente una configuración distinta: inspecciona labels, imagen, usuario, mount único, límites, capacidades, rootfs y red; si no coinciden, falla cerrado.
+
+El lifecycle de ejecución también está cerrado: los caminos async esperan `prepareTenantIsolationAsync()` y los caminos síncronos (PTY/compatibilidad) rechazan el spawn si no existe un worker previamente validado. Ya no existe el prewarm best-effort que ignoraba el error y continuaba sobre el host.
 
 ### C-2 · Secrets/OAuth en keystore global y fijo · ✅ CORREGIDO
 
@@ -79,20 +81,13 @@ Antes el contenedor se nombraba sólo por `repoKey`, de modo que dos usuarios co
 
 Antes el `keystoreAccount` era fijo (`'github-copilot'`), de modo que el token OAuth de un usuario era legible por otro en el mismo backend. **Corregido**: `setOwnerLogin(login)` se añadió a la interfaz `CopilotAuthService` y su implementación compute `keystoreAccount` como `${baseAccount}:${ownerLogin}`. Una contribución frontend (`QaapCopilotOwnerBinding`) llama `setOwnerLogin` con el login de la sesión Qaap al arrancar, propagándolo via RPC al backend per-conexión. Cada usuario ahora lee/escribe su propio entry del keystore del SO.
 
-### C-3 · Terminales adjuntables por id sin verificación de usuario · ⏸ DIFERIDO A OPCIÓN A
+### C-3 · Terminales adjuntables por id sin verificación de usuario · 🟡 MITIGADO, NO CERRADO
 
 `packages/terminal/src/node/terminal-backend-contribution.ts`
 
-```ts
-service.registerChannelHandler(`${terminalsPath}/:id`, (params, channel) => {
-    const termProcess = this.processManager.get(parseInt(params.id, 10));
-    // ... conecta IO sin comprobar propiedad del terminal
-});
-```
+Antes, cualquier cliente conectado podía adjuntarse a la terminal de otro usuario en un backend compartido conociendo o iterando el id numérico del proceso (`this.processManager.get(parseInt(params.id, 10))`).
 
-Cualquier cliente conectado puede adjuntarse a la terminal de otro usuario conociendo/iterando el id numérico.
-
-**Decisión**: Diferido a Opción A (contenedor por usuario). `ShellTerminalServer` y `TerminalBackendContribution` son singletons de core Theia (`terminal-backend-module.ts:58,86`); el `ProcessManager` es compartido y la capa RPC de Theia no transporta la sesión GitHub de Qaap. Un fix en backend compartido requeriría plomear la sesión en la capa de mensajería de core — invasivo y alto riesgo de regresión. El límite de contenedor de Opción A aísla terminales/procesos "gratis".
+**Mitigación implementada**: en modo Docker, [`QaapTenantSpawnService.wrapShellForTenant`](packages/qaap-cloud-workspace/src/node/qaap-tenant-spawn-service.ts) redirige el shell interactivo a `docker exec -it --user 1000:1000` dentro del worker validado del tenant. Esto aísla el código y los procesos que ejecuta el shell, pero **no** corrige por sí solo el endpoint/canal de attach por id de `ProcessManager`. Para cerrar C-3 completamente hay que asociar la sesión autenticada al id antes de entregar el canal, o mover el terminal-server a un supervisor por tenant.
 
 ### C-4 · Persistencia global única para tasks/conversaciones · ❌ DESCARTADO (no es fuga)
 

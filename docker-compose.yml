@@ -133,8 +133,15 @@ services:
       # Opt-in relevance retrieval: ripgrep the user's message keywords over the repo and inject the
       # top matching file paths as a "likely relevant files" hint (Cursor-style priming). Adds a small
       # per-turn token + ripgrep cost — set QAAP_AGENT_RETRIEVAL=1 and measure. Default off.
-      QAAP_AGENT_RETRIEVAL: ${QAAP_AGENT_RETRIEVAL:-}
-      QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-local}
+      QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-docker}
+      # Container-per-tenant isolation (Opción A): each user runs agents and terminals in an isolated container
+      QAAP_TENANT_CONTAINER_ISOLATION: ${QAAP_TENANT_CONTAINER_ISOLATION:-1}
+      QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-2147483648}
+      QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
+      QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
+      QAAP_TENANT_CONTAINER_UID: ${QAAP_TENANT_CONTAINER_UID:-1000}
+      QAAP_TENANT_CONTAINER_GID: ${QAAP_TENANT_CONTAINER_GID:-1000}
+      QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-bridge}
       # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
       # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.
       # Public origin for Checkout success/cancel URLs (prefer the Caddy HTTPS host).
@@ -178,19 +185,26 @@ services:
       ENABLE_TOOL_SEARCH: ${ENABLE_TOOL_SEARCH:-false}
       # Optional: mount a host folder as the default workspace
       # THEIA_PLUGINS_DIR: /app/plugins
+      # Prefer a rootless Docker socket in hosted deployments. The fallback is kept for existing
+      # VPS/local deployments; Docker control-plane access is distinct from tenant worker identity.
+      DOCKER_HOST: ${DOCKER_HOST:-unix:///var/run/docker.sock}
+      # The worker must use the same image so qaiq/codex/claude binaries and the non-root uid exist
+      # inside the tenant container. In production set this to the immutable deployed image tag.
+      QAAP_THEIA_IMAGE: ${QAAP_THEIA_IMAGE:-qaap-theia:local}
     depends_on:
       - searxng
     volumes:
       - theia-workspace:/workspace
       # Persist GitHub OAuth, agent-task index, qaap-task helper token.
-      - qaap-auth-data:/root/.qaap
+      - qaap-auth-data:/home/theia/.qaap
       # Persist Settings → AI keys and user preferences across rebuilds.
-      - qaap-theia-user:/root/.theia
+      - qaap-theia-user:/home/theia/.theia
       # Preserve absolute worktree paths used by Git and persisted conversations.
       # Existing deployments MUST run qaap-persist-runtime-state.mjs --apply first.
       - theia-worktrees:/tmp/qaap-worktrees
       - theia-parallel:/tmp/qaap-parallel
       - qaap-tenant-homes:/home/qaap-tenants
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     deploy:
       resources:

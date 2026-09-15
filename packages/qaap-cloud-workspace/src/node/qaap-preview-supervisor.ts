@@ -62,12 +62,12 @@ export class QaapPreviewSupervisor {
      * Starts (or restarts) a dev server for `cwd` on `port`. If a supervised child is already
      * live on that port it is returned as-is. Returns the resulting status.
      */
-    start(
+    async start(
         cwd: string,
         port: number,
         identity?: QaapPreviewProcessIdentity,
         launch?: QaapPreviewSupervisorLaunch,
-    ): QaapPreviewProcessStatus {
+    ): Promise<QaapPreviewProcessStatus> {
         const key = identity?.previewId ?? `legacy-port-${port}`;
         const existing = this.records.get(key);
         if (existing && existing.status !== 'exited' && existing.child && existing.child.exitCode === null) {
@@ -127,13 +127,13 @@ export class QaapPreviewSupervisor {
         };
     }
 
-    protected spawnDevServer(
+    protected async spawnDevServer(
         cwd: string,
         port: number,
         autoRestartAt: number[],
         identity?: QaapPreviewProcessIdentity,
         launch?: QaapPreviewSupervisorLaunch,
-    ): QaapPreviewProcessStatus {
+    ): Promise<QaapPreviewProcessStatus> {
         const key = identity?.previewId ?? `legacy-port-${port}`;
         const plan = launch ?? this.resolveDevCommand(cwd);
         if (!plan) {
@@ -163,7 +163,7 @@ export class QaapPreviewSupervisor {
         let child: ChildProcess;
         try {
             const env = this.tenantSpawn.resolveProcessEnv(cwd, { ...process.env, PORT: String(port), BROWSER: 'none' });
-            child = this.tenantSpawn.spawnArgvPrepared(plan.command, plan.args, { cwd, env });
+            child = await this.tenantSpawn.spawnArgvPreparedAsync(plan.command, plan.args, { cwd, env });
         } catch (error) {
             const refused: QaapPreviewProcessRecord = {
                 key,
@@ -244,7 +244,7 @@ export class QaapPreviewSupervisor {
         // Small delay so a crash-on-boot app cannot busy-loop between spawns.
         setTimeout(() => {
             if (this.records.get(record.key) === record && record.status === 'exited') {
-                this.spawnDevServer(record.cwd, record.port, record.autoRestartAt, record.identity, record.launch);
+                void this.spawnDevServer(record.cwd, record.port, record.autoRestartAt, record.identity, record.launch);
             }
         }, 1500).unref?.();
     }

@@ -824,7 +824,7 @@ export class QaapHeadlessVisualCaptureService {
         // capture servers must not collide with — or be mistaken for — user preview processes.
         const startedPreviewId = publicIdentity?.previewId ?? `qaap-headless-capture:${app.root}`;
         const launch = app.launch ? materializeQaapPreviewLaunchPlan(app.launch, port) : undefined;
-        this.supervisor.start(app.root, port, {
+        await this.supervisor.start(app.root, port, {
             previewId: startedPreviewId,
             projectId: publicIdentity?.projectId ?? app.root,
             ...(publicIdentity ? {

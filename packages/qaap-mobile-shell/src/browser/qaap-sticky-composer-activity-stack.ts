@@ -244,10 +244,9 @@ function stickyComposerHasChangesToReview(options: StickyComposerActivityStackOp
 function stickyComposerHasActivityRow(options: StickyComposerActivityStackOptions): boolean {
     return stickyComposerHasChangesToReview(options)
         || !!options.hasCommittableChanges
-        // A ready preview is an actionable state on its own: the user asked "levanta la app" and
-        // must always get the clickable "Open preview" affordance, even when the turn produced no
-        // reviewable file activity (e.g. deps-only install before serving).
-        || !!options.onOpenPreview
+        // A preview/run action belongs to the post-edit state. A stale preview URL must not
+        // push the prompt suggestions out of a fresh, empty composer.
+        || !!(options.hasFileActivity && !!options.onOpenPreview)
         || !!(options.hasFileActivity && !!options.onRunApp);
 }
 
@@ -374,7 +373,7 @@ export function patchStickyComposerChangesPillHost(
 export function renderStickyComposerChangesPill(options: StickyComposerActivityStackOptions): HTMLElement | undefined {
     // The row survives after the git review controls are gone so the user can still
     // Commit remaining work or open the preview. It hides entirely once the agent
-    // has no file activity.
+    // has no file activity, so a stale preview URL cannot displace empty-state suggestions.
     if (!stickyComposerHasActivityRow(options)) {
         return undefined;
     }
