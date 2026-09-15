@@ -115,10 +115,36 @@ export function isQaapProductionRuntime(env: NodeJS.ProcessEnv): boolean {
  *    is on or an operator explicitly accepts the risk via `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION`
  *    (single-user boxes).
  *
+/** Whether container-per-tenant isolation is enabled (QAAP_CLOUD_MODE=docker or QAAP_TENANT_CONTAINER_ISOLATION=1). */
+export function isContainerIsolationEnabled(env: NodeJS.ProcessEnv): boolean {
+    const cloudMode = env.QAAP_CLOUD_MODE?.trim().toLowerCase();
+    return cloudMode === 'docker' || /^(1|true)$/i.test(env.QAAP_TENANT_CONTAINER_ISOLATION?.trim() ?? '');
+}
+
+/**
+ * Fail-closed guard for the shared-container isolation risk. In a production runtime:
+ *
+ * 1. The agent must NOT run as root: as root with `--dangerously-skip-permissions` it can read every
+ *    tenant's secrets, tokens and code on the shared filesystem. Refuse the spawn unless privileges
+ *    are dropped (`QAAP_AGENT_UID`, which the shipped image defaults to `1001`) or an operator
+ *    explicitly accepts the risk via `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION`.
+ * 2. The agent must NOT run under a uid SHARED across tenants: with `QAAP_AGENT_UID_PER_USER` off,
+ *    every tenant's code is sibling paths owned by the same uid, so a prompt-injected agent can
+ *    read/write another tenant's repository (SEC-1). Refuse the spawn unless uid-per-user isolation
+ *    is on or an operator explicitly accepts the risk via `QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION`
+ *    (single-user boxes).
+ *
+ * Container-per-tenant isolation (Opción A): when QAAP_CLOUD_MODE=docker or
+ * QAAP_TENANT_CONTAINER_ISOLATION=1, processes execute inside isolated tenant worker containers,
+ * so the host uid-per-user policy is satisfied by container boundary.
+ *
  * Local/single-user dev is unaffected: nothing is refused when the backend is not root or the runtime
  * is not production.
  */
 export function evaluateAgentIsolationPolicy(env: NodeJS.ProcessEnv, isRoot: boolean): QaapAgentIsolationDecision {
+    if (isContainerIsolationEnabled(env)) {
+        return { refuse: false };
+    }
     if (!isRoot || !isQaapProductionRuntime(env)) {
         return { refuse: false };
     }

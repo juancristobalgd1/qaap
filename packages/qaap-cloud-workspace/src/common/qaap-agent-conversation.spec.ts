@@ -66,6 +66,36 @@ describe('resolveEffectiveConversationStatus', () => {
     });
 });
 
+describe('turn provenance in conversation summaries', () => {
+    it('exposes the latest sealed turn separately from the conversation composer selection', () => {
+        const summary = toConversationSummary(conversation({
+            status: 'failed',
+            agentId: 'codex',
+            agentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-sol' },
+            messages: [
+                {
+                    id: 'u1',
+                    role: 'user',
+                    content: 'first turn',
+                    createdAt: 1,
+                    turnAgentId: 'codex',
+                    turnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-luna' },
+                },
+                {
+                    id: 'u2',
+                    role: 'user',
+                    content: 'queued follow-up',
+                    createdAt: 2,
+                },
+            ],
+        }));
+
+        expect(summary.agentModel?.modelId).to.equal('gpt-5.6-sol');
+        expect(summary.lastTurnAgentId).to.equal('codex');
+        expect(summary.lastTurnAgentModel?.modelId).to.equal('gpt-5.6-luna');
+    });
+});
+
 describe('visualVerificationPending summary flag', () => {
     const uiTurn = (agentContent: string): QaapAgentConversation => conversation({
         status: 'idle',

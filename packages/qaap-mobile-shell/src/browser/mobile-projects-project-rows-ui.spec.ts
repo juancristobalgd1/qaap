@@ -153,4 +153,74 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
         expect(failedChip?.textContent).to.contain('Failed: Error: dev server exited with code 1');
         expect(activity?.querySelector('.theia-mobile-projects-task-activity-chip.theia-mod-surface')).to.not.equal(null);
     });
+
+    it('renders the last executed turn model in compact rows, not the next composer selection', () => {
+        Object.defineProperty(window, 'matchMedia', {
+            configurable: true,
+            value: () => ({ matches: false }),
+        });
+        const ui = new MobileProjectsProjectRowsUi({
+            activeTasks: undefined,
+            transcriptOpenSummaryId: undefined,
+            justAddedTaskId: undefined,
+            conversationIndexUi: {
+                isConversationUnread: () => false,
+                resolveConversationLineage: () => 'none',
+                resolveConversationFlags: () => ({ priority: false, paused: false }),
+            },
+            cardMenuUi: {
+                buildConversationMenu: () => document.createElement('div'),
+                toggleCardMenu: () => undefined,
+            },
+        } as never);
+        const executedSummary = summary({
+            status: 'failed',
+            lastMessageRole: 'agent',
+            lastMessagePreview: 'Not inside a trusted directory',
+            agentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-sol' },
+            lastTurnAgentId: 'codex',
+            lastTurnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-luna' },
+        });
+        const row = ui.createTaskItem(
+            {
+                id: 'project-1',
+                name: 'Project',
+                color: '#fff',
+                branch: 'main',
+                status: 'idle',
+                task: '',
+                progress: 0,
+                agents: [],
+            } as never,
+            task,
+            undefined,
+            executedSummary,
+            new Set(),
+            { compact: true },
+        );
+
+        expect(row.querySelector('.theia-qaap-agent-identity-label')?.textContent).to.equal('gpt-5.6-luna');
+
+        const patched = (ui as unknown as {
+            patchWorkHubTaskRowContent: (
+                r: HTMLElement,
+                t: MobileProjectTaskView,
+                s: QaapAgentConversationSummaryDTO,
+                o?: unknown,
+                st?: { isRunning?: boolean },
+            ) => boolean;
+        }).patchWorkHubTaskRowContent(
+            row,
+            task,
+            {
+                ...executedSummary,
+                lastTurnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-astra' },
+            },
+            undefined,
+            { isRunning: false },
+        );
+
+        expect(patched).to.equal(true);
+        expect(row.querySelector('.theia-qaap-agent-identity-label')?.textContent).to.equal('gpt-5.6-astra');
+    });
 });

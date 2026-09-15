@@ -90,6 +90,142 @@ export class QaapDockerOrchestrator {
         return `${QAAP_CONTAINER_PREFIX}${hash}`;
     }
 
+    /**
+     * Stable, isolated container name for a tenant. All workspaces and tasks
+     * for this user run inside this dedicated container.
+     */
+    containerNameForTenant(ownerLogin?: string): string {
+        const tenant = ownerLogin && ownerLogin.trim() ? ownerLogin.trim().toLowerCase() : '__anonymous__';
+        const hash = crypto.createHash('sha256').update(`tenant\u0000${tenant}`).digest('hex').slice(0, 12);
+        return `qaap-tenant-${hash}`;
+    }
+
+    /** Ensure the dedicated tenant container exists and is running with resource limits. */
+    async ensureTenantContainer(ownerLogin?: string, workspaceUri?: string): Promise<QaapDockerEnsureResult> {
+        const name = this.containerNameForTenant(ownerLogin);
+        const docker = await this.getDocker();
+        const hostPath = workspaceUri ? this.hostPathFromUri(workspaceUri) : (process.env.NODE_ENV === 'production' ? '/workspace' : process.cwd());
+        let container: Dockerode.Container;
+        try {
+            container = docker.getContainer(name);
+            const info = await container.inspect();
+            if (!info.State.Running) {
+                await container.start();
+            }
+        } catch {
+            const memoryLimit = this.getTenantMemoryLimit();
+            const cpuLimit = this.getTenantCpuLimit();
+            const pidsLimit = this.getTenantPidsLimit();
+            const binds = [`${hostPath}:${WORKSPACE_MOUNT}`];
+
+            container = await docker.createContainer({
+                name,
+                Image: this.getTenantImage(),
+                Tty: true,
+                OpenStdin: true,
+                WorkingDir: WORKSPACE_MOUNT,
+                Cmd: ['/bin/bash'],
+                HostConfig: {
+                    Binds: binds,
+                    Memory: memoryLimit,
+                    NanoCpus: cpuLimit,
+                    PidsLimit: pidsLimit,
+                    SecurityOpt: ['no-new-privileges:true'],
+                    AutoRemove: false,
+                },
+            });
+            await container.start();
+        }
+        const inspect = await container.inspect();
+        return {
+            containerId: inspect.Id,
+            containerName: name,
+            workspaceMount: WORKSPACE_MOUNT,
+            hostPath,
+        };
+    }
+
+    /** Stop a tenant's dedicated container. */
+    async stopTenantContainer(ownerLogin?: string): Promise<void> {
+        const docker = await this.getDocker();
+        try {
+            const container = docker.getContainer(this.containerNameForTenant(ownerLogin));
+            await container.stop({ t: 10 });
+        } catch {
+            /* already stopped */
+        }
+    }
+
+    /**
+     * Wrap a command to execute inside the tenant's container via `docker exec`.
+     */
+    wrapShellForTenantContainer(ownerLogin: string | undefined, cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+        const containerName = this.containerNameForTenant(ownerLogin);
+        const containerCwd = this.toContainerPath(cwd);
+        return {
+            file: 'docker',
+            args: ['exec', '-i', '-w', containerCwd, containerName, file, ...args],
+        };
+    }
+
+    /**
+     * Wrap an interactive shell (PTY) to attach to the tenant's container via `docker exec -it`.
+     */
+    wrapInteractiveTerminalForTenant(ownerLogin: string | undefined, cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+        const containerName = this.containerNameForTenant(ownerLogin);
+        const containerCwd = this.toContainerPath(cwd);
+        return {
+            file: 'docker',
+            args: ['exec', '-it', '-w', containerCwd, containerName, file, ...args],
+        };
+    }
+
+    protected toContainerPath(hostPath: string): string {
+        if (hostPath.startsWith('/workspace')) {
+            return hostPath;
+        }
+        return WORKSPACE_MOUNT;
+    }
+
+    protected getTenantMemoryLimit(): number {
+        const raw = process.env.QAAP_TENANT_MEMORY_LIMIT?.trim();
+        if (raw) {
+            const num = Number.parseInt(raw, 10);
+            if (!Number.isNaN(num) && num > 0) {
+                return num;
+            }
+        }
+        return 2 * 1024 * 1024 * 1024; // 2 GiB default
+    }
+
+    protected getTenantCpuLimit(): number {
+        const raw = process.env.QAAP_TENANT_CPU_LIMIT?.trim();
+        if (raw) {
+            const num = Number.parseFloat(raw);
+            if (!Number.isNaN(num) && num > 0) {
+                return Math.floor(num * 1e9);
+            }
+        }
+        return 2 * 1e9; // 2 cores default
+    }
+
+    protected getTenantPidsLimit(): number {
+        const raw = process.env.QAAP_TENANT_PIDS_LIMIT?.trim();
+        if (raw) {
+            const num = Number.parseInt(raw, 10);
+            if (!Number.isNaN(num) && num > 0) {
+                return num;
+            }
+        }
+        return 256; // 256 PIDs default
+    }
+
+    protected getTenantImage(): string {
+        return process.env.QAAP_TENANT_DOCKER_IMAGE?.trim()
+            || process.env.QAAP_THEIA_IMAGE?.trim()
+            || DEFAULT_IMAGE;
+    }
+
     protected hostPathFromUri(workspaceUri: string): string {
         if (workspaceUri.startsWith('file://')) {
             return FileUri.fsPath(workspaceUri);

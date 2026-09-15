@@ -15,7 +15,7 @@ import {
     QAAP_INBOX_ROW_ID_ATTR,
 } from './mobile-projects-hub-incremental-ui';
 import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
-import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
+import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
 import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { createAgentTaskBadge, createAgentTaskVerificationBadge, createAgentIdentityElement } from './qaap-agent-ui';
 import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
@@ -183,7 +183,7 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     }
 
     const sessionMeta = summary
-        ? formatConversationComposerSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
+        ? formatConversationExecutionSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
             ...summary,
             agentId,
         }))
@@ -192,15 +192,21 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     if (compact && summary?.agentId) {
         const metaRow = document.createElement('div');
         metaRow.className = 'theia-mobile-projects-task-foot theia-mod-sidebar-compact-meta';
-        const model = summary.agentModel ?? summary.qaiqModel;
+        // The sidebar describes the run that produced this row. The composer model is the
+        // selection for the next follow-up and may intentionally differ after a fallback or
+        // after the user changes the picker. Prefer the server-sealed last-turn provenance.
+        const model = summary.lastTurnAgentModel ?? summary.agentModel ?? summary.qaiqModel;
         const modelId = model?.modelId?.trim();
+        const executionAgentId = summary.lastTurnAgentId ?? summary.agentId;
         const identity = createAgentIdentityElement({
-            agentId: summary.agentId,
+            agentId: executionAgentId,
             agentModel: modelId ? model : undefined,
             label: modelId ?? undefined,
             iconSize: 'sm',
         });
         identity.classList.add('theia-mobile-projects-task-foot-meta-identity');
+        metaRow.dataset.qaapExecutionAgent = executionAgentId;
+        metaRow.dataset.qaapExecutionModel = modelId ?? '';
         metaRow.append(identity, taskSince);
         taskBody.append(metaRow);
     } else if (compact && sessionMeta) {
@@ -318,8 +324,15 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
             retryBtn.type = 'button';
             retryBtn.className = 'theia-mobile-projects-card-menu-btn theia-mobile-projects-conversation-retry-btn';
             const retryLabel = nls.localize('qaap/mobileProjects/retryTask', 'Retry task');
-            retryBtn.setAttribute('aria-label', retryLabel);
-            retryBtn.title = retryLabel;
+            const retryExecutionLabel = summary.lastTurnAgentId || summary.lastTurnAgentModel
+                ? nls.localize(
+                    'qaap/mobileProjects/retryTaskWithExecution',
+                    'Retry with {0}',
+                    sessionMeta ?? retryLabel,
+                )
+                : retryLabel;
+            retryBtn.setAttribute('aria-label', retryExecutionLabel);
+            retryBtn.title = retryExecutionLabel;
             const retryIcon = document.createElement('span');
             retryIcon.className = 'codicon codicon-debug-restart';
             retryIcon.setAttribute('aria-hidden', 'true');

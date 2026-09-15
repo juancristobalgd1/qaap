@@ -14,9 +14,9 @@ import {
     QAAP_INBOX_ROW_ID_ATTR,
 } from './mobile-projects-hub-incremental-ui';
 import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
-import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
+import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
 import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
+import { createAgentIdentityElement, createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
 import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -74,12 +74,31 @@ export function patchWorkHubTaskRowContentExtracted(ctx: any, row: HTMLElement,
             }
         }
         const metaEl = row.querySelector<HTMLElement>('.theia-mobile-projects-task-foot.theia-mod-sidebar-compact-meta');
-        const sessionMeta = formatConversationComposerSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
+        const sessionMeta = formatConversationExecutionSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
             ...summary,
             agentId,
         }));
-        if (metaEl && sessionMeta && metaEl.textContent !== sessionMeta) {
-            metaEl.textContent = sessionMeta;
+        const executionAgentId = summary.lastTurnAgentId ?? summary.agentId;
+        const executionModel = summary.lastTurnAgentModel ?? summary.agentModel ?? summary.qaiqModel;
+        const executionModelId = executionModel?.modelId?.trim() ?? '';
+        if (metaEl && sessionMeta && (
+            metaEl.dataset.qaapExecutionAgent !== executionAgentId
+            || metaEl.dataset.qaapExecutionModel !== executionModelId
+        )) {
+            const identity = createAgentIdentityElement({
+                agentId: executionAgentId,
+                agentModel: executionModelId ? executionModel : undefined,
+                label: executionModelId || undefined,
+                iconSize: 'sm',
+            });
+            identity.classList.add('theia-mobile-projects-task-foot-meta-identity');
+            const since = row.querySelector<HTMLElement>('.theia-mobile-projects-task-since');
+            metaEl.replaceChildren(identity);
+            metaEl.dataset.qaapExecutionAgent = executionAgentId;
+            metaEl.dataset.qaapExecutionModel = executionModelId;
+            if (since) {
+                metaEl.append(since);
+            }
         }
         const isRunning = state?.isRunning ?? resolveQaapAgentTaskVisualStatus(
             task,
@@ -196,12 +215,13 @@ export function populateWorkHubTaskFootRowExtracted(ctx: any, footRow: HTMLEleme
         footRow.replaceChildren();
         const agentLabel = ctx.resolveConversationAgentLabel(summary);
         const sessionMeta = summary
-            ? formatConversationComposerSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
+            ? formatConversationExecutionSessionMeta(summary, agentId => ctx.resolveConversationAgentLabel({
                 ...summary,
                 agentId,
             }))
             : undefined;
-        const agentId = summary?.agentId?.trim()
+        const agentId = summary?.lastTurnAgentId?.trim()
+            || summary?.agentId?.trim()
             || ctx.host.activeTasks?.getDefaultAgent()
             || SHELL_AGENT_ID;
         const agentChip = createAgentTaskBadge({

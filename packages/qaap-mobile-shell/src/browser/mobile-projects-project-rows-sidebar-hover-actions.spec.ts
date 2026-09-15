@@ -176,6 +176,18 @@ describe('MobileProjectsProjectRowsUi sidebar hover archive', () => {
         await Promise.resolve();
         expect(retried).to.equal(1);
         expect(opened).to.equal(0);
+
+        const executedSummary = summary({
+            id: 'failed-conversation-with-execution',
+            status: 'failed',
+            lastTurnAgentId: 'qaiq',
+            lastTurnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-luna' },
+        });
+        const executedTask = { ...task, id: executedSummary.id, state: 'failed' as const };
+        const executedRow = ui.createTaskItem(project, executedTask, undefined, executedSummary, new Set(), { compact: true });
+        const executedRetry = executedRow.querySelector<HTMLButtonElement>('.theia-mobile-projects-conversation-retry-btn');
+        expect(executedRetry?.getAttribute('aria-label')).to.equal('Retry with @qaiq · gpt-5.6-luna');
+        expect(executedRetry?.title).to.equal('Retry with @qaiq · gpt-5.6-luna');
     });
 
     it('shows a compact failure reason only when the latest message came from the agent', () => {

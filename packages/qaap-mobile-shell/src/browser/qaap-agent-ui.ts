@@ -564,6 +564,8 @@ export function populateAgentToolbarButton(
         readonly agentId: string;
         readonly label: string;
         readonly agentModel?: { readonly vendor: string; readonly modelId: string };
+        /** Optional compact intent label, e.g. `Next run`, shown before the model label. */
+        readonly intentLabel?: string;
     },
 ): void {
     button.replaceChildren();
@@ -583,6 +585,13 @@ export function populateAgentToolbarButton(
                 label: 'theia-mobile-projects-sticky-composer-agent-label',
             },
         });
+        const intentLabel = options.intentLabel?.trim();
+        if (intentLabel) {
+            const intent = document.createElement('span');
+            intent.className = 'theia-mobile-projects-sticky-composer-agent-intent';
+            intent.textContent = intentLabel;
+            identity.insertBefore(intent, identity.querySelector('.theia-qaap-agent-identity-label'));
+        }
         identity.append(chevron);
         button.append(identity);
         button.classList.remove('theia-mod-logo-only');

@@ -286,6 +286,10 @@ export interface QaapAgentConversationSummary {
     readonly agentModel?: QaapCreateAgentTaskQaiqModel;
     /** @deprecated Use {@link agentModel}. */
     readonly qaiqModel?: QaapCreateAgentTaskQaiqModel;
+    /** Agent sealed onto the most recently started user turn. Unlike {@link agentId}, this is turn-specific. */
+    readonly lastTurnAgentId?: string;
+    /** Model sealed onto the most recently started user turn. Unlike {@link agentModel}, this is execution provenance. */
+    readonly lastTurnAgentModel?: QaapCreateAgentTaskQaiqModel;
     /** Last composer interaction mode (`agent`, `plan`, `ask`). */
     readonly interactionModeId?: string;
     /** Last composer approval preset id. */
@@ -513,6 +517,7 @@ export function conversationNeedsVisualVerificationEvidence(conv: QaapAgentConve
 
 export function toConversationSummary(conv: QaapAgentConversation): QaapAgentConversationSummary {
     const last = conv.messages[conv.messages.length - 1];
+    const lastTurn = [...conv.messages].reverse().find(message => message.role === 'user' && (message.turnAgentId || message.turnAgentModel));
     const status = resolveEffectiveConversationStatus(conv);
     const base: QaapAgentConversationSummary = {
         id: conv.id,
@@ -532,6 +537,8 @@ export function toConversationSummary(conv: QaapAgentConversation): QaapAgentCon
         ...(conv.agentModel ?? conv.qaiqModel
             ? { agentModel: conv.agentModel ?? conv.qaiqModel }
             : {}),
+        ...(lastTurn?.turnAgentId ? { lastTurnAgentId: lastTurn.turnAgentId } : {}),
+        ...(lastTurn?.turnAgentModel ? { lastTurnAgentModel: lastTurn.turnAgentModel } : {}),
         ...(conv.interactionModeId ? { interactionModeId: conv.interactionModeId } : {}),
         ...(conv.approvalPolicyId ? { approvalPolicyId: conv.approvalPolicyId } : {}),
         forkedFromId: conv.forkedFromId,

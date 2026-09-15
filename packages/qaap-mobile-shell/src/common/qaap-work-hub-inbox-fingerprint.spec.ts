@@ -85,6 +85,26 @@ describe('qaap-work-hub-inbox-fingerprint', () => {
         expect(searching).to.not.equal(thinking);
     });
 
+    it('changes row fingerprint when the executed turn model changes', () => {
+        const fallback = buildWorkHubInboxRowFingerprintFromSummary(
+            {
+                ...summary,
+                agentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-sol' },
+                lastTurnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-luna' },
+            },
+            { rowKey: 'conv-1', visualStatusId: 'running' },
+        );
+        const settled = buildWorkHubInboxRowFingerprintFromSummary(
+            {
+                ...summary,
+                agentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-sol' },
+                lastTurnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-astra' },
+            },
+            { rowKey: 'conv-1', visualStatusId: 'running' },
+        );
+        expect(fallback).to.not.equal(settled);
+    });
+
     it('detects structure changes when row order changes', () => {
         const first = buildWorkHubInboxStructureFingerprint({
             hubKind: 'tasks-inbox',

@@ -17,6 +17,7 @@ export interface WorkHubInboxRowFingerprintInput {
     readonly paused?: boolean;
     readonly linkedPullRequestNumber?: number;
     readonly agentId?: string;
+    readonly agentModelId?: string;
     readonly unread?: boolean;
     readonly visualStatusId: string;
     readonly isCurrent?: boolean;
@@ -54,6 +55,7 @@ export function buildWorkHubInboxRowFingerprint(input: WorkHubInboxRowFingerprin
         input.paused ? 1 : 0,
         input.linkedPullRequestNumber ?? '',
         input.agentId ?? '',
+        input.agentModelId ?? '',
         input.unread ? 1 : 0,
         input.visualStatusId,
         input.isCurrent ? 1 : 0,
@@ -84,7 +86,8 @@ export function buildWorkHubInboxRowFingerprintFromSummary(
         priority: summary.priority,
         paused: summary.paused,
         linkedPullRequestNumber: summary.linkedPullRequest?.number,
-        agentId: summary.agentId,
+        agentId: summary.lastTurnAgentId ?? summary.agentId,
+        agentModelId: (summary.lastTurnAgentModel ?? summary.agentModel ?? summary.qaiqModel)?.modelId,
         unread: options.unread,
         visualStatusId: options.visualStatusId,
         isCurrent: options.isCurrent,

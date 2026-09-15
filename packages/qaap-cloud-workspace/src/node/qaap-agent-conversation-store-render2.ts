@@ -1031,7 +1031,15 @@ export function retryExtracted(ctx: any, id: string): QaapAgentConversation {
     };
     ctx.conversations.set(id, trimmed);
     ctx.fire({ type: 'updated', conversation: toConversationSummary(trimmed) });
-    return ctx.postUserMessage(id, failedMessage.content);
+    // Retry is a recovery action for the failed turn, not a new composer submission. Preserve
+    // the execution identity sealed on that user message so changing the conversation picker
+    // after the failure cannot silently run the retry with a different agent or model.
+    return ctx.postUserMessage(
+        id,
+        failedMessage.content,
+        failedMessage.turnAgentId,
+        failedMessage.turnAgentModel,
+    );
 }
 
 export function cancelExtracted(ctx: any, id: string): QaapAgentConversation | undefined {

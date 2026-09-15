@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import {
+    conversationToSummary,
     isFailedRunSummary,
     looksLikeSelfReportedAgentStopFailure,
     preferQaapConversationSummary,
@@ -130,5 +131,41 @@ describe('preferQaapConversationSummary', () => {
         );
 
         expect(result.status).to.equal('streaming');
+    });
+});
+
+describe('turn provenance in conversation summaries', () => {
+    it('keeps the executed turn model separate from the next composer model', () => {
+        const result = conversationToSummary({
+            id: 'conversation-1',
+            cwd: '/workspace/project',
+            agentId: 'codex',
+            title: 'Fix preview',
+            status: 'failed',
+            createdAt: 1,
+            updatedAt: 10,
+            agentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-sol' },
+            messages: [
+                {
+                    id: 'user-1',
+                    role: 'user',
+                    content: 'Fix preview',
+                    createdAt: 1,
+                    turnAgentId: 'codex',
+                    turnAgentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-luna' },
+                },
+                {
+                    id: 'agent-1',
+                    role: 'agent',
+                    content: '',
+                    createdAt: 2,
+                    error: 'Not inside a trusted directory',
+                },
+            ],
+        });
+
+        expect(result.agentModel?.modelId).to.equal('gpt-5.6-sol');
+        expect(result.lastTurnAgentId).to.equal('codex');
+        expect(result.lastTurnAgentModel?.modelId).to.equal('gpt-5.6-luna');
     });
 });

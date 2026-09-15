@@ -7992,6 +7992,16 @@ body.qaap-theme-dark .theia-qaap-agent-brand-icon.theia-mod-theme-adaptive .thei
   white-space: nowrap;
 }
 
+.theia-mobile-projects-sticky-composer-agent-intent {
+  flex: 0 0 auto;
+  color: var(--theia-descriptionForeground);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .theia-mobile-projects-sticky-composer-mode .theia-qaap-mode-sheet-icon {
   flex: 0 0 auto;
   width: 15px;

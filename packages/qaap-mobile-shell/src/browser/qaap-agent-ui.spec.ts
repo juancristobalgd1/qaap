@@ -40,6 +40,22 @@ describe('qaap-agent-ui', () => {
         expect(button.classList.contains('theia-mod-logo-only')).to.equal(false);
     });
 
+    it('shows an optional intent label before the selected model', () => {
+        const button = document.createElement('button');
+        populateAgentToolbarButton(button, {
+            agentId: 'shell',
+            label: '@shell',
+            agentModel: { vendor: 'openai', modelId: 'gpt-5.6-luna' },
+            intentLabel: 'Next run',
+        });
+
+        const identity = button.querySelector('.theia-qaap-agent-identity');
+        expect(identity?.querySelector('.theia-mobile-projects-sticky-composer-agent-intent')?.textContent)
+            .to.equal('Next run');
+        expect(identity?.querySelector('.theia-qaap-agent-identity-label')?.textContent)
+            .to.equal('gpt-5.6-luna');
+    });
+
     it('createModeSheetOptionButton prepends Lucide icon by mode id', () => {
         for (const modeId of ['agent', 'plan'] as const) {
             const button = createModeSheetOptionButton({

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { ChildProcess, spawn, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -14,18 +14,21 @@ import {
     resolveQaapWorktreesRoot,
     resolveTenantHome,
     resolveTenantIsolationRoot,
+    safeUserIdSegment,
     QAAP_USER_REPOS_SEGMENT,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     resolveAgentSpawnIdentity as resolveAgentSpawnIdentityFromEnv,
     buildAgentSpawnInvocation,
     evaluateAgentIsolationPolicy,
+    isContainerIsolationEnabled,
     isQaapProductionRuntime,
     isTenantUidPerUserEnabled,
     resolvePerTenantSpawnIdentity,
     QaapAgentIsolationDecision,
 } from './qaap-agent-spawn-identity';
 import { QaapTenantUidRegistry, resolveDefaultTenantUidRegistryPath } from './qaap-tenant-uid-registry';
+import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 
 /** How the spawned process's stdio streams are wired. */
 export type QaapSpawnStdio = ('pipe' | 'ignore')[];
@@ -55,6 +58,10 @@ export interface QaapTenantSpawnOptions {
 @injectable()
 export class QaapTenantSpawnService {
 
+    @inject(QaapDockerOrchestrator)
+    @optional()
+    protected readonly dockerOrchestrator?: QaapDockerOrchestrator;
+
     protected tenantUidRegistry: QaapTenantUidRegistry | undefined;
     protected agentSpawnIdentityWarned = false;
     protected agentIsolationDecision: QaapAgentIsolationDecision | undefined;
@@ -64,6 +71,18 @@ export class QaapTenantSpawnService {
     protected setprivExecutable: string | undefined;
     /** Repositories whose complete working tree was repaired during this backend lifetime. */
     protected readonly ownershipPreparedRoots = new Set<string>();
+
+    /** Whether container-per-tenant isolation is active (Docker cloud mode). */
+    isContainerIsolationEnabled(): boolean {
+        return isContainerIsolationEnabled(process.env);
+    }
+
+    /** Resolve the tenant segment (sanitized login) from a workspace or repo working directory. */
+    resolveTenantSegment(cwd: string): string | undefined {
+        const canonical = this.canonicalizeCwd(cwd);
+        const target = resolveTenantIsolationRoot(resolveQaapReposRoot(), resolveQaapWorktreesRoot(), canonical);
+        return target?.segment;
+    }
 
     /**
      * Rewrite Windows-client / mixed-separator cwds to a real absolute path on this host before
@@ -204,6 +223,15 @@ export class QaapTenantSpawnService {
     prepareTenantIsolation(cwd: string): void {
         cwd = this.canonicalizeCwd(cwd);
         this.assertTenantCwdInProduction(cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            if (this.dockerOrchestrator && segment) {
+                this.dockerOrchestrator.ensureTenantContainer(segment).catch(err => {
+                    console.warn(`[qaap-docker] Failed to ensure container for tenant ${segment}:`, err);
+                });
+            }
+            return;
+        }
         this.ensureTenantRootIsolated(cwd);
         this.ensureTenantIdentityProvisioned(cwd);
         if (!this.isBackendRoot()) {
@@ -244,11 +272,32 @@ export class QaapTenantSpawnService {
      * drop never calls `setgroups`). Otherwise falls back to a plain `shell: true` spawn with the
      * Node-level drop — byte-identical to a non-isolated spawn.
      *
+     * In container isolation mode (QAAP_CLOUD_MODE=docker), delegates execution to `docker exec`
+     * inside the tenant's dedicated worker container.
+     *
      * NOTE: callers should invoke {@link enforceIsolationPolicy} and {@link prepareTenantIsolation}
      * first (see {@link spawnPrepared}).
      */
     spawn(command: string, options: QaapTenantSpawnOptions): ChildProcess {
         const cwd = this.canonicalizeCwd(options.cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const wrapped = this.dockerOrchestrator?.wrapShellForTenantContainer(
+                segment,
+                cwd,
+                '/bin/bash',
+                ['-c', command],
+            ) || {
+                file: 'docker',
+                args: ['exec', '-i', '-w', cwd, `qaap-tenant-${safeUserIdSegment(segment || '_anonymous')}`, '/bin/bash', '-c', command],
+            };
+            return this.launchProcess(wrapped.file, wrapped.args, {
+                cwd,
+                detached: options.detached ?? process.platform !== 'win32',
+                env: options.env,
+                stdio: options.stdio,
+            });
+        }
         const identity = this.resolveSpawnIdentity(cwd);
         this.assertDropIsComplete(identity);
         const invocation = buildAgentSpawnInvocation(command, identity, this.isSetprivAvailable());
@@ -332,13 +381,26 @@ export class QaapTenantSpawnService {
         const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
         this.prepareTenantIsolation(cwd);
-        const identity = this.resolveSpawnIdentity(cwd);
-        this.assertDropIsComplete(identity);
         const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean } = {
             cwd,
             env: options.env,
             detached: options.detached ?? false,
         };
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const wrapped = this.dockerOrchestrator?.wrapShellForTenantContainer(
+                segment,
+                cwd,
+                file,
+                args,
+            ) || {
+                file: 'docker',
+                args: ['exec', '-i', '-w', cwd, `qaap-tenant-${safeUserIdSegment(segment || '_anonymous')}`, file, ...args],
+            };
+            return this.launchProcess(wrapped.file, wrapped.args, spawnOptions);
+        }
+        const identity = this.resolveSpawnIdentity(cwd);
+        this.assertDropIsComplete(identity);
         if (identity.uid === undefined) {
             return this.launchProcess(file, [...args], spawnOptions);
         }
@@ -427,10 +489,23 @@ export class QaapTenantSpawnService {
      * the pair unchanged when no uid drop applies (local dev). THROWS when a drop is required but
      * `setpriv` is missing — it never silently returns a root/shared shell (the shipped Linux image
      * provisions util-linux; a missing setpriv is a misconfiguration, not a reason to leak root).
+     *
+     * In container isolation mode (QAAP_CLOUD_MODE=docker), delegates interactive PTY to
+     * `docker exec -it` inside the tenant's dedicated worker container.
      */
     wrapShellForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
         cwd = this.canonicalizeCwd(cwd);
         this.enforceIsolationPolicy();
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            if (this.dockerOrchestrator) {
+                return this.dockerOrchestrator.wrapInteractiveTerminalForTenant(segment, cwd, file, args);
+            }
+            return {
+                file: 'docker',
+                args: ['exec', '-it', '-w', cwd, `qaap-tenant-${safeUserIdSegment(segment || '_anonymous')}`, file, ...args],
+            };
+        }
         const identity = this.resolveSpawnIdentity(cwd);
         if (identity.uid === undefined) {
             return { file, args: [...args] };

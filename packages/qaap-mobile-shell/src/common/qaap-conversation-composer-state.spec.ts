@@ -13,6 +13,7 @@ import {
     extractConversationComposerPrefs,
     extractConversationComposerPrefsFromSummary,
     formatConversationComposerSessionMeta,
+    formatConversationExecutionSessionMeta,
     readConversationComposerDraft,
     writeConversationComposerDraft,
 } from './qaap-conversation-composer-state';
@@ -77,6 +78,16 @@ describe('qaap-conversation-composer-state', () => {
         const meta = formatConversationComposerSessionMeta({
             agentId: 'opencode',
             agentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4' },
+        }, id => id === 'opencode' ? 'OpenCode' : id);
+        expect(meta).to.equal('OpenCode · claude-sonnet-4');
+    });
+
+    it('formatConversationExecutionSessionMeta prefers the last executed turn', () => {
+        const meta = formatConversationExecutionSessionMeta({
+            agentId: 'opencode',
+            agentModel: { provider: 'openai', vendor: 'openai', modelId: 'gpt-5.6-sol' },
+            lastTurnAgentId: 'opencode',
+            lastTurnAgentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4' },
         }, id => id === 'opencode' ? 'OpenCode' : id);
         expect(meta).to.equal('OpenCode · claude-sonnet-4');
     });

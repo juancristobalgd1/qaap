@@ -257,6 +257,30 @@ export function formatConversationComposerSessionMeta(
     return agentLabel;
 }
 
+/**
+ * Formats the identity of the run represented by a conversation row. The composer selection is
+ * intentionally excluded: it describes the next follow-up, while the row describes the last run
+ * that actually executed.
+ */
+export function formatConversationExecutionSessionMeta(
+    summary: Pick<QaapAgentConversationSummaryDTO,
+        'agentId' | 'agentModel' | 'qaiqModel' | 'lastTurnAgentId' | 'lastTurnAgentModel'>,
+    resolveAgentLabel: (agentId: string) => string,
+): string | undefined {
+    const agentId = migrateLegacyBackendAgentId(summary.lastTurnAgentId ?? summary.agentId)
+        ?? summary.lastTurnAgentId
+        ?? summary.agentId;
+    if (!agentId) {
+        return undefined;
+    }
+    const agentLabel = resolveAgentLabel(agentId);
+    const model = summary.lastTurnAgentModel ?? summary.agentModel ?? summary.qaiqModel;
+    if (model?.modelId && agentSupportsModelPicker(agentId)) {
+        return `${agentLabel} · ${model.modelId}`;
+    }
+    return agentLabel;
+}
+
 function scopedConversationDraftKey(conversationId: string): string {
     return `${CONVERSATION_COMPOSER_DRAFT_KEY}.${conversationId}`;
 }
