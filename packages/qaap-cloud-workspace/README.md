@@ -97,6 +97,14 @@ PWA service worker includes `push` / `notificationclick` handlers (see `Frontend
 ## Other env
 
 - `QAAP_CLOUD_MODE=local` — local-sandbox metadata only (default)
+- `QAAP_AGENT_MEMORY_LIMIT` — Linux host memory ceiling for every workspace child process
+  (default `2GiB`; supports `MiB`/`GiB` values). Host production mode requires `systemd-run` so the
+  limit is enforced by a cgroup and covers the complete descendant tree.
+- `QAAP_AGENT_CPU_LIMIT` — Linux host CPU quota in cores (default `2`; percentages such as `150%`
+  are also accepted). On a local Linux host without systemd, bounded rlimits are used as a fallback;
+  production fails closed instead of launching an unbounded process.
+- `QAAP_TENANT_MEMORY_LIMIT` / `QAAP_TENANT_CPU_LIMIT` — optional Docker worker limits (bytes and
+  cores respectively); these are also accepted as host-limit fallbacks for deployment consistency.
 - `QAAP_OAUTH_PUBLIC_URL` — canonical Qaap application origin (also the trusted parent of preview iframes)
 - `QAAP_PREVIEW_BASE_DOMAIN` — optional isolated preview domain, for example `preview.qaap.example`.
   Configure wildcard DNS/TLS (`*.preview.qaap.example`) to the Qaap backend. Each execution then

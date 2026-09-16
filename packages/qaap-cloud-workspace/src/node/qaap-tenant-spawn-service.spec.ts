@@ -9,7 +9,7 @@ import * as path from 'path';
 import { resolveQaapReposRoot, resolveTenantHome } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
-interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv } }
+interface LaunchCall { file: string; args: string[]; options: { uid?: number; gid?: number; env?: NodeJS.ProcessEnv; shell?: boolean } }
 
 /**
  * Test double: captures the argv/options that would reach `child_process.spawn` without executing,
@@ -22,6 +22,8 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     setprivPath = '/usr/bin/setpriv';
     prepared: string[] = [];
     container = false;
+    linuxResourceLimits = false;
+    systemdRun = false;
 
     override isContainerIsolationEnabled(): boolean {
         return this.container;
@@ -35,6 +37,12 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     }
     protected override resolveSetprivExecutable(): string | undefined {
         return this.setpriv ? this.setprivPath : undefined;
+    }
+    protected override isLinuxResourceLimitPlatform(): boolean {
+        return this.linuxResourceLimits;
+    }
+    protected override isSystemdRunAvailable(): boolean {
+        return this.systemdRun;
     }
     override prepareTenantIsolation(cwd: string): void {
         this.prepared.push(cwd);
@@ -107,6 +115,73 @@ describe('QaapTenantSpawnService.prepareTenantIsolation', () => {
 });
 
 describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
+
+    const originalMemoryLimit = process.env.QAAP_AGENT_MEMORY_LIMIT;
+    const originalCpuLimit = process.env.QAAP_AGENT_CPU_LIMIT;
+    const originalNodeEnv = process.env.NODE_ENV;
+    afterEach(() => {
+        if (originalMemoryLimit === undefined) {
+            delete process.env.QAAP_AGENT_MEMORY_LIMIT;
+        } else {
+            process.env.QAAP_AGENT_MEMORY_LIMIT = originalMemoryLimit;
+        }
+        if (originalCpuLimit === undefined) {
+            delete process.env.QAAP_AGENT_CPU_LIMIT;
+        } else {
+            process.env.QAAP_AGENT_CPU_LIMIT = originalCpuLimit;
+        }
+        if (originalNodeEnv === undefined) {
+            delete process.env.NODE_ENV;
+        } else {
+            process.env.NODE_ENV = originalNodeEnv;
+        }
+    });
+
+    it('wraps argv in a systemd cgroup with memory and CPU limits on Linux', () => {
+        process.env.QAAP_AGENT_MEMORY_LIMIT = '512MiB';
+        process.env.QAAP_AGENT_CPU_LIMIT = '1.5';
+        const svc = new TestTenantSpawnService();
+        svc.linuxResourceLimits = true;
+        svc.systemdRun = true;
+        svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
+        expect(svc.launches[0].file).to.equal('systemd-run');
+        expect(svc.launches[0].args).to.include.members([
+            '--user', '--scope', '--property=MemoryMax=536870912', '--property=CPUQuota=150%',
+        ]);
+        expect(svc.launches[0].args.slice(-4)).to.deep.equal(['--', 'npm', 'run', 'dev']);
+        expect(svc.launches[0].options.shell).to.equal(false);
+    });
+
+    it('applies inherited rlimits on a non-systemd development Linux host', () => {
+        const svc = new TestTenantSpawnService();
+        svc.linuxResourceLimits = true;
+        svc.systemdRun = false;
+        svc.spawnArgvPrepared('node', ['-e', 'process.exit(0)'], { cwd: tenantCwd, env: {} });
+        expect(svc.launches[0].file).to.equal('/bin/sh');
+        expect(svc.launches[0].args[0]).to.equal('-c');
+        expect(svc.launches[0].args[1]).to.contain('ulimit -v');
+        expect(svc.launches[0].args.slice(-3)).to.deep.equal(['node', '-e', 'process.exit(0)']);
+    });
+
+    it('fails closed instead of spawning without limits in production host mode', () => {
+        process.env.NODE_ENV = 'production';
+        const svc = new TestTenantSpawnService();
+        svc.linuxResourceLimits = true;
+        svc.systemdRun = false;
+        expect(() => svc.spawnArgvPrepared('node', [], { cwd: tenantCwd, env: {} }))
+            .to.throw(/systemd-run with cgroups/);
+        expect(svc.launches).to.have.length(0);
+    });
+
+    it('wraps the agent shell command itself in the same systemd cgroup', () => {
+        const svc = new TestTenantSpawnService();
+        svc.linuxResourceLimits = true;
+        svc.systemdRun = true;
+        svc.spawn('node -e "process.exit(0)"', { cwd: tenantCwd, env: {}, stdio: ['ignore', 'pipe', 'pipe'] });
+        expect(svc.launches[0].file).to.equal('systemd-run');
+        expect(svc.launches[0].args.slice(-3)).to.deep.equal(['/bin/sh', '-c', 'node -e "process.exit(0)"']);
+        expect(svc.launches[0].options.shell).to.equal(false);
+    });
 
     it('wraps the dev command in setpriv --clear-groups when a uid drop applies', () => {
         const svc = new TestTenantSpawnService();
