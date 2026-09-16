@@ -162,8 +162,12 @@ export class QaapJobRuntime {
         return listGraphsExtracted(this, ownerLogin);
     }
 
-    getGraph(id: string): { graph: QaapJobGraph; jobs: Readonly<Record<string, QaapJob>> } | undefined {
+    /** Return a graph only when it belongs to the requested owner; omitted owner is backend-internal. */
+    getGraph(id: string, ownerLogin?: string): { graph: QaapJobGraph; jobs: Readonly<Record<string, QaapJob>> } | undefined {
         const persisted = this.graphs.get(id);
+        if (persisted && ownerLogin !== undefined && persisted.graph.ownerLogin !== this.normalizeOwner(ownerLogin)) {
+            return undefined;
+        }
         return persisted ? { graph: persisted.graph, jobs: this.jobsForGraph(persisted.graph) } : undefined;
     }
 
@@ -171,13 +175,17 @@ export class QaapJobRuntime {
         return listExtracted(this, ownerLogin);
     }
 
-    get(id: string): QaapJobDetail | undefined {
+    /** Return a job and its log only when it belongs to the requested owner; omitted owner is internal. */
+    get(id: string, ownerLogin?: string): QaapJobDetail | undefined {
         const job = this.jobs.get(id);
+        if (job && ownerLogin !== undefined && job.ownerLogin !== this.normalizeOwner(ownerLogin)) {
+            return undefined;
+        }
         return job ? { ...job, log: this.logs.get(id) ?? '', result: this.results.get(id) } : undefined;
     }
 
-    cancel(id: string): QaapJob | undefined {
-        return cancelExtracted(this, id);
+    cancel(id: string, ownerLogin?: string): QaapJob | undefined {
+        return cancelExtracted(this, id, ownerLogin);
     }
 
     async shutdown(): Promise<void> {

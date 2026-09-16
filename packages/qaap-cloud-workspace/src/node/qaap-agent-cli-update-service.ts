@@ -16,7 +16,7 @@ import {
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { isOnPath } from './qaap-agent-task-runner-utils';
 
-/** Operator opt-in for in-place `npm install -g` on hosted/production backends. */
+/** Retained for compatibility with older configuration; hosted installs are now never permitted. */
 export const QAAP_ALLOW_IN_PLACE_CLI_UPDATE = 'QAAP_ALLOW_IN_PLACE_CLI_UPDATE';
 
 /**
@@ -27,8 +27,10 @@ export function isInPlaceCliUpdateAllowed(env: NodeJS.ProcessEnv = process.env):
     if (!isQaapProductionRuntime(env)) {
         return true;
     }
-    const raw = env[QAAP_ALLOW_IN_PLACE_CLI_UPDATE]?.trim().toLowerCase();
-    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+    // `npm install -g` executes package lifecycle scripts with backend privileges. An environment
+    // override is not an acceptable tenant boundary, even when an operator accidentally exposes
+    // the update endpoint to a hosted tenant. Rebuild the immutable worker/backend image instead.
+    return false;
 }
 
 /** npm registry GET timeout — boot toast must never block the backend event loop long. */
@@ -145,7 +147,7 @@ export class QaapAgentCliUpdateService {
     /**
      * Best-effort in-place update for a whitelisted npm package.
      * QAIQ and unknown agents return a clear non-ok message (no shell injection — id is mapped).
-     * Hosted/production denies unless `QAAP_ALLOW_IN_PLACE_CLI_UPDATE` is set.
+     * Hosted/production always denies; rebuild the immutable image to update a CLI.
      */
     async installUpdate(agentId: string): Promise<QaapAgentCliUpdateResult> {
         const id = agentId.trim().toLowerCase();
@@ -161,7 +163,7 @@ export class QaapAgentCliUpdateService {
                 ok: false,
                 id,
                 message: 'In-place CLI updates are disabled on hosted/production deployments. '
-                    + 'Rebuild the Qaap image with updated CLI pins (or set QAAP_ALLOW_IN_PLACE_CLI_UPDATE=1).',
+                    + 'Rebuild the Qaap image with updated CLI pins.',
             };
         }
         const tracked = TRACKED_AGENT_CLIS.find(entry => entry.id === id);

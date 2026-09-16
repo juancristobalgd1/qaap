@@ -34,9 +34,18 @@ import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent
 import { QaapResearchStore } from './qaap-research-store';
 import { LEDGER_PATHSPEC_EXCLUDE, LEDGER_RELATIVE_PATH, PREFLIGHT_PROMPT, PREFLIGHT_TIMEOUT_MS, REMINDER_MISSING_BLOCK, REMINDER_NOOP_ROUND } from './qaap-research-runner';
 import { toAgentTaskModel,reminderRepeatedFingerprint } from './qaap-research-runner';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 
 export async function reconcileOnBootExtracted(ctx: any): Promise<void> {
         for (const goal of ctx.store.listRunning()) {
+            if (isQaapHostedEnvironment()) {
+                try {
+                    await ctx.tenantSpawn.prepareTenantIsolationAsync(goal.cwd);
+                } catch (error) {
+                    console.error('[qaap-security] skipped research goal without a ready tenant worker:', error);
+                    continue;
+                }
+            }
             ctx.ensureLoop(goal.id);
         }
 }

@@ -197,6 +197,7 @@ const ALLOWED = [
     // QAAP Playwright harness seams (test-only; no upstream product code).
     /^examples\/playwright\/src\/tests\/qaap-mobile\.test\.ts$/,
     /^examples\/playwright\/src\/tests\/qaap-transcript-preview-flow\.ui-spec\.ts$/,
+    /^examples\/playwright\/src\/tests\/qaap-recovery-preview-resilience\.ui-spec\.ts$/,
     // Upstream sample plugins removed in this fork — we ship our own plugin set.
     /^sample-plugins\//,
     // Fork-specific build tooling and dev scripts (not user-facing product code).

@@ -6,10 +6,21 @@
 // Git utility helpers extracted from QaapAgentConversationStore.
 // Pure functions that operate only on their parameters.
 
-import { spawnSync } from 'child_process';
+import { spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseGitNumstat } from './qaap-agent-conversation-store-constants';
+
+const SAFE_GIT_CONFIG = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'] as const;
+
+/** Synchronous read-only Git seam; hosted callers provide the tenant-worker implementation. */
+export type QaapGitReadSync = (cwd: string, args: readonly string[]) => SpawnSyncReturns<string>;
+
+const localGitReadSync: QaapGitReadSync = (cwd, args) => spawnSync(
+    'git',
+    [...SAFE_GIT_CONFIG, ...args],
+    { cwd, encoding: 'utf8', timeout: 4000 },
+);
 
 /** True only when `cwd` itself is a git root/worktree — never walk to a parent repository. */
 export function cwdIsGitRepository(cwd: string): boolean {
@@ -52,12 +63,12 @@ export function parseGithubRepoFromRemoteUrl(url: string): { owner: string; name
     return undefined;
 }
 
-export function parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined {
+export function parseGithubRepoFromCwd(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): { owner: string; name: string } | undefined {
     if (!cwdIsGitRepository(cwd)) {
         return undefined;
     }
     try {
-        const result = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd, encoding: 'utf8' });
+        const result = gitRead(cwd, ['remote', 'get-url', 'origin']);
         if (result.status !== 0) {
             return undefined;
         }
@@ -66,9 +77,9 @@ export function parseGithubRepoFromCwd(cwd: string): { owner: string; name: stri
     return undefined;
 }
 
-export function readGitBranch(cwd: string): string | undefined {
+export function readGitBranch(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     try {
-        const result = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8' });
+        const result = gitRead(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (result.status === 0) {
             const branch = result.stdout.trim();
             return branch && branch !== 'HEAD' ? branch : undefined;
@@ -77,9 +88,9 @@ export function readGitBranch(cwd: string): string | undefined {
     return undefined;
 }
 
-export function captureGitSha(cwd: string): string | undefined {
+export function captureGitSha(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     try {
-        const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
+        const result = gitRead(cwd, ['rev-parse', 'HEAD']);
         if (result.status === 0) {
             return result.stdout.trim();
         }
@@ -87,19 +98,19 @@ export function captureGitSha(cwd: string): string | undefined {
     return undefined;
 }
 
-export function computeGitDiffStats(cwd: string, startSha?: string): { added: number; removed: number } | undefined {
+export function computeGitDiffStats(cwd: string, startSha?: string, gitRead: QaapGitReadSync = localGitReadSync): { added: number; removed: number } | undefined {
     try {
         let added = 0;
         let removed = 0;
         if (startSha) {
-            const committed = spawnSync('git', ['diff', '--numstat', `${startSha}..HEAD`], { cwd, encoding: 'utf8' });
+            const committed = gitRead(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', `${startSha}..HEAD`]);
             if (committed.status === 0 && committed.stdout) {
                 const stats = parseGitNumstat(committed.stdout);
                 added += stats.added;
                 removed += stats.removed;
             }
         }
-        const uncommitted = spawnSync('git', ['diff', '--numstat', 'HEAD'], { cwd, encoding: 'utf8' });
+        const uncommitted = gitRead(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--numstat', 'HEAD']);
         if (uncommitted.status === 0 && uncommitted.stdout) {
             const stats = parseGitNumstat(uncommitted.stdout);
             added += stats.added;

@@ -8,6 +8,7 @@ import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { DefaultMessagingService } from '@theia/core/lib/node/messaging/default-messaging-service';
 import { installQaapMessagingAuthPatches, installQaapRpcAuthPatches } from './qaap-rpc-auth-patcher';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
+import { installQaapMcpOAuthStoragePatches } from './qaap-mcp-oauth-tenant-scope';
 
 /** Installs per-connection RPC auth scoping for filesystem, workspace, and related services. */
 @injectable()
@@ -20,6 +21,7 @@ export class QaapMessagingAuthContribution implements BackendApplicationContribu
     protected readonly registry: QaapWebsocketAuthRegistry;
 
     onStart(): void {
+        installQaapMcpOAuthStoragePatches(this.registry);
         installQaapRpcAuthPatches(this.registry);
         installQaapMessagingAuthPatches(this.messaging, this.registry);
     }

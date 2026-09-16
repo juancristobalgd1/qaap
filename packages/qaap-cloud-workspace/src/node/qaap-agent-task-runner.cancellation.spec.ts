@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import type { ChildProcess } from 'child_process';
+import * as path from 'path';
 import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 import {
     AGENT_STOP_GRACE_TIMEOUT_MS,
@@ -44,6 +45,10 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     public exposeSpawnProcessWhenReady(task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         return this.spawnProcessWhenReady(task, request);
     }
+
+    public exposeLogPath(id: string, ownerLogin?: string): string {
+        return this.logPath(id, ownerLogin);
+    }
 }
 
 const runningTask = (id: string, ownerLogin = 'alice'): QaapAgentTask => ({
@@ -58,6 +63,19 @@ const runningTask = (id: string, ownerLogin = 'alice'): QaapAgentTask => ({
 });
 
 describe('QaapAgentTaskRunner cancellation', () => {
+
+    it('physically segments authenticated task logs by owner', () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const aliceTask: QaapAgentTask = { ...runningTask('11111111-1111-4111-8111-111111111111'), ownerLogin: 'alice' };
+        const bobTask: QaapAgentTask = { ...runningTask('22222222-2222-4222-8222-222222222222', 'bob'), ownerLogin: 'bob' };
+        Object.assign(runner, { tasks: new Map([[aliceTask.id, aliceTask], [bobTask.id, bobTask]]) });
+
+        const aliceLog = runner.exposeLogPath(aliceTask.id);
+        const bobLog = runner.exposeLogPath(bobTask.id);
+        expect(aliceLog).to.contain(path.join('owners', 'alice'));
+        expect(bobLog).to.contain(path.join('owners', 'bob'));
+        expect(aliceLog).not.to.equal(bobLog);
+    });
 
     it('uses a bounded configurable graceful-stop timeout', () => {
         expect(resolveAgentStopGraceTimeoutMs(undefined)).to.equal(DEFAULT_AGENT_STOP_GRACE_TIMEOUT_MS);

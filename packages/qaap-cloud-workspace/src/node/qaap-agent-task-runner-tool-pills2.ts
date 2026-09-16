@@ -170,9 +170,11 @@ export async function runGenericCommandExtracted(ctx: any, command: string,
             readonly maxCaptureChars?: number;
             /** Plain-text prompt to deliver over stdin instead of embedding it in the command. */
             readonly stdinPrompt?: string;
+            /** Owner for ephemeral commands that do not have a persisted QaapAgentTask entry. */
+            readonly ownerLogin?: string;
         } = {},): Promise<QaapGenericCommandResult> {
         if (options.header) {
-            ctx.appendAndFireOutput(taskId, options.header);
+            ctx.appendAndFireOutput(taskId, options.header, options.ownerLogin);
         }
         try {
             ctx.enforceAgentIsolationPolicy();
@@ -193,7 +195,7 @@ export async function runGenericCommandExtracted(ctx: any, command: string,
                     const combined = `${stdout}${stderr}`;
                     const tail = ctx.truncateHead(combined, QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS);
                     if (tail.trim()) {
-                        ctx.appendAndFireOutput(taskId, `${tail.endsWith('\n') ? tail : `${tail}\n`}`);
+                        ctx.appendAndFireOutput(taskId, `${tail.endsWith('\n') ? tail : `${tail}\n`}`, options.ownerLogin);
                     }
                 }
                 resolve({ exitCode, stdout, stderr, timedOut });
@@ -223,14 +225,14 @@ export async function runGenericCommandExtracted(ctx: any, command: string,
                 const text = String(chunk);
                 stdout = ctx.appendBoundedCommandOutput(stdout, text, options.maxCaptureChars);
                 if (options.streamOutput) {
-                    ctx.appendAndFireOutput(taskId, text);
+                    ctx.appendAndFireOutput(taskId, text, options.ownerLogin);
                 }
             });
             child.stderr?.on('data', (chunk: Buffer | string) => {
                 const text = String(chunk);
                 stderr = ctx.appendBoundedCommandOutput(stderr, text, options.maxCaptureChars);
                 if (options.streamOutput) {
-                    ctx.appendAndFireOutput(taskId, text);
+                    ctx.appendAndFireOutput(taskId, text, options.ownerLogin);
                 }
             });
             child.on('error', error => {
@@ -252,12 +254,22 @@ export async function runGenericCommandExtracted(ctx: any, command: string,
         });
 }
 
-export function appendAndFireOutputExtracted(ctx: any, taskId: string, chunk: string): void {
+export function appendAndFireOutputExtracted(ctx: any, taskId: string, chunk: string, ownerLogin?: string): void {
         if (ctx.deletedTaskIds?.has(taskId)) {
             return;
         }
         try {
-            fs.appendFileSync(ctx.logPath(taskId), chunk, 'utf8');
+            const logPath = ctx.logPath(taskId, ownerLogin);
+            fs.mkdirSync(path.dirname(logPath), { recursive: true, mode: STORE_DIR_MODE });
+            if (!fs.existsSync(logPath)) {
+                fs.writeFileSync(logPath, '', { encoding: 'utf8', mode: STORE_FILE_MODE });
+            }
+            const currentBytes = fs.statSync(logPath).size;
+            const remainingBytes = Math.max(0, MAX_LOG_BYTES - currentBytes);
+            if (remainingBytes > 0) {
+                const encoded = Buffer.from(chunk, 'utf8');
+                fs.appendFileSync(logPath, encoded.subarray(0, remainingBytes));
+            }
         } catch {
             /* log append is best-effort */
         }
@@ -297,12 +309,12 @@ export function spawnAgentCommandExtracted(ctx: any, command: string, options: {
 export function buildChildEnvExtracted(ctx: any, task: QaapAgentTask): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
         env.PWD = task.cwd;
-        // When the agent is dropped to a non-root uid (QAAP_AGENT_UID), its inherited HOME still
-        // points at root's /root, which it cannot write — CLI caches/configs would fail. Point HOME
-        // at a writable agent home so the non-root process has somewhere to write. In uid-per-user
-        // mode this is a PER-TENANT home (the shared /home/qaap-agent is owned by uid 1001 and is
-        // neither writable nor private under a tenant uid) — see resolveAgentHome.
-        if (ctx.resolveAgentSpawnIdentity(task.cwd).uid !== undefined) {
+        // When an agent is dropped to a non-root uid, its inherited HOME may point at root's
+        // /root, which it cannot write. In Docker mode the overlay deliberately points inside the
+        // worker; never copy the host's per-tenant HOME into a container that does not mount it.
+        if (ctx.tenantHomeEnvOverlay) {
+            Object.assign(env, ctx.tenantHomeEnvOverlay(task.cwd));
+        } else if (ctx.resolveAgentSpawnIdentity(task.cwd).uid !== undefined) {
             env.HOME = ctx.resolveAgentHome(task.cwd);
         }
         // Strip shared provider API keys from process.env so per-user settings

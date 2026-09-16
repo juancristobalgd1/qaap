@@ -217,7 +217,11 @@ import {
 } from './qaap-agent-conversation-store-constants';
 
 export function mutatingGitSyncExtracted(ctx: any, cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
-    const wrapped = ctx.tenantSpawn.wrapShellForTenant(cwd, 'git', args);
+    const wrapped = ctx.tenantSpawn.wrapShellForTenant(
+        cwd,
+        'git',
+        ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args],
+    );
     const runEnv = { ...(env ?? process.env), ...ctx.tenantSpawn.tenantHomeEnvOverlay(cwd) };
     return spawnSync(wrapped.file, wrapped.args, { cwd, env: runEnv, encoding: 'utf8' });
 }

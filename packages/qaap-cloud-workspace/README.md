@@ -4,15 +4,65 @@ Cloud workspace for Qaap (browser/VPS + optional Electron dev containers).
 
 ## Docker orchestrator (`QAAP_CLOUD_MODE=docker`)
 
-When set, `POST /qaap/api/cloud/workspaces/ensure` creates or starts a **Docker container per `repoKey`** (bind-mounts the workspace path, default image `node:20-bookworm` or `QAAP_DOCKER_IMAGE`).
+When set, Qaap creates or starts a **hardened Docker worker per authenticated tenant** and routes
+agent, preview, deploy, job, and terminal execution through that worker. The worker receives only
+the canonical tenant root as `/workspace`; it is non-root, resource-limited, drops all capabilities,
+uses a read-only root filesystem, is attached to a dedicated tenant network with ICC disabled, and
+is inspected before reuse. Hosted startup refuses the legacy host fallback.
 
 ```bash
 export QAAP_CLOUD_MODE=docker
-export QAAP_DOCKER_IMAGE=node:20-bookworm   # optional
-# Docker socket: /var/run/docker.sock (or DOCKER_HOST)
+export QAAP_THEIA_IMAGE=qaap-theia:immutable-tag
+# Hosted mode requires a rootless socket; rootful /var/run/docker.sock is rejected.
+export DOCKER_HOST=unix:///run/user/1000/docker.sock
+# Compose must bind the same rootless socket path into theia.
+export QAAP_DOCKER_SOCKET_SOURCE=/run/user/1000/docker.sock
+export QAAP_DOCKER_SOCKET_TARGET=/run/user/1000/docker.sock
+export QAAP_TENANT_NETWORK_MODE=isolated-bridge
 ```
 
+The shared Docker `bridge`, `host`, `container:<id>` and rootful socket modes are rejected in
+hosting. Set `QAAP_TENANT_NETWORK_MODE=none` only when provider egress is supplied through an
+external proxy.
+
 Workspace records include `containerRef` (Docker container id).
+
+## Backend Theia por tenant
+
+El worker de código y el backend Theia son límites separados. Para ofrecer Qaap a
+terceros se debe activar también el router de backend por tenant:
+
+```bash
+export QAAP_BACKEND_PER_TENANT=1
+export QAAP_TENANT_BACKEND_MASTER_SECRET="$(openssl rand -hex 32)"
+export QAAP_BETA_ALLOWED_LOGINS="alice,bob"
+```
+
+El control-plane mantiene únicamente health, OAuth y admisión. Las peticiones
+autenticadas HTTP/RPC/WebSocket se enrutan al backend del login correspondiente.
+Cada backend valida una aserción HMAC de corta duración y recibe un token interno
+de BrowserConnection sólo para su propia conexión. Si falta el flag, el secreto,
+el worker o el wiring del proxy, el arranque hospedado falla cerrado.
+
+La prueba local de dos tenants confirmó contenedores, puertos y redes distintos y
+rechazo de autenticación cruzada. La validación de producción requiere además
+`scripts/qaap-vps-launch-gate.sh` y `scripts/qaap-verify-multitenant.sh` en un VPS
+Linux con Docker rootless.
+
+## Validación local
+
+Desde la raíz del repositorio:
+
+```bash
+npm run compile
+node scripts/qaap-drift-check.js
+npm audit --omit=dev
+docker compose config --quiet
+```
+
+La suite de aislamiento y los tests del orchestrator deben ejecutarse después de
+compilar y antes de declarar un despliegue listo. No se deben versionar los
+directorios `.qaap-it-data/`, que son artefactos runtime de pruebas.
 
 ## Electron + dev-container
 

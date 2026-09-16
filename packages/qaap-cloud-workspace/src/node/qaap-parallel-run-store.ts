@@ -5,7 +5,7 @@
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
-import { execFile, spawnSync } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
@@ -319,13 +319,13 @@ export class QaapParallelRunStore {
         } catch {
             /* no prior parallel runs */
         }
-        if (this.reconcileFromConversations()) {
+        if (await this.reconcileFromConversations()) {
             await this.persist();
         }
     }
 
     /** Rebuild run records lost from disk but still referenced by persisted variant conversations. */
-    protected reconcileFromConversations(): boolean {
+    protected async reconcileFromConversations(): Promise<boolean> {
         const variantsByRunId = new Map<string, Array<{
             conversationId: string;
             agentId: string;
@@ -357,18 +357,21 @@ export class QaapParallelRunStore {
             added = true;
             const baseCwd = path.resolve(items[0].baseCwd);
             const slug = runId.slice(0, 8);
-            const variants: QaapParallelRunVariant[] = items.map(item => ({
-                id: randomUUID(),
-                agentId: item.agentId,
-                worktreePath: item.worktreePath,
-                branch: this.resolveBranchName(item.worktreePath)
-                    ?? `qaap/parallel/${slug}/${item.agentId.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
-                conversationId: item.conversationId,
-                state: 'idle',
-                adds: 0,
-                dels: 0,
-                fileCount: 0,
-            }));
+            const variants: QaapParallelRunVariant[] = [];
+            for (const item of items) {
+                variants.push({
+                    id: randomUUID(),
+                    agentId: item.agentId,
+                    worktreePath: item.worktreePath,
+                    branch: await this.resolveBranchName(item.worktreePath)
+                        ?? `qaap/parallel/${slug}/${item.agentId.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+                    conversationId: item.conversationId,
+                    state: 'idle',
+                    adds: 0,
+                    dels: 0,
+                    fileCount: 0,
+                });
+            }
             this.runs.set(runId, {
                 id: runId,
                 cwd: baseCwd,
@@ -389,13 +392,11 @@ export class QaapParallelRunStore {
         }
     }
 
-    protected resolveBranchName(worktreePath: string): string | undefined {
+    protected async resolveBranchName(worktreePath: string): Promise<string | undefined> {
         try {
-            const result = spawnSync('git', ['-C', worktreePath, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' });
-            if (result.status === 0) {
-                const branch = result.stdout.trim();
-                return branch && branch !== 'HEAD' ? branch : undefined;
-            }
+            await this.ensureTenantContainerReady(worktreePath);
+            const branch = (await this.git(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+            return branch && branch !== 'HEAD' ? branch : undefined;
         } catch { /* worktree may be gone */ }
         return undefined;
     }
@@ -413,11 +414,11 @@ export class QaapParallelRunStore {
     }
 
     protected async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
-        await this.git(cwd, ['worktree', 'remove', '--force', worktreePath]);
+        await this.mutatingGit(cwd, ['worktree', 'remove', '--force', worktreePath]);
     }
 
     protected async deleteBranch(cwd: string, branch: string): Promise<void> {
-        await this.git(cwd, ['branch', '-D', branch]);
+        await this.mutatingGit(cwd, ['branch', '-D', branch]);
     }
 
     protected async diffStats(worktreePath: string): Promise<{ adds: number; dels: number; fileCount: number }> {
@@ -456,7 +457,8 @@ export class QaapParallelRunStore {
      * (worktree add, merge, add, commit) must go through {@link mutatingGit} instead.
      */
     protected async git(cwd: string, args: string[]): Promise<string> {
-        const { stdout } = await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+        const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
     }
 

@@ -176,11 +176,11 @@ describe('qaap-github-auth-guard security', () => {
             expect(guard().isSkipAuthEnabled()).to.equal(false);
         });
 
-        it('allows the explicit production override', () => {
+        it('ignores the legacy production override', () => {
             process.env.QAAP_SKIP_AUTH = 'true';
             process.env.NODE_ENV = 'production';
             process.env.QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION = 'true';
-            expect(guard().isSkipAuthEnabled()).to.equal(true);
+            expect(guard().isSkipAuthEnabled()).to.equal(false);
         });
 
         it('is off by default regardless of runtime', () => {

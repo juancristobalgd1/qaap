@@ -7,6 +7,7 @@
     "@theia/ai-chat-ui": "1.73.0",
     "@theia/ai-core": "1.73.0",
     "@theia/ai-ide": "1.73.0",
+    "@theia/ai-mcp": "1.73.0",
     "@theia/core": "1.73.0",
     "@theia/filesystem": "1.73.0",
     "@theia/process": "1.73.0",

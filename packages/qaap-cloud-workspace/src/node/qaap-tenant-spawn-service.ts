@@ -319,7 +319,7 @@ export class QaapTenantSpawnService {
             if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
                 throw new Error('Refusing to spawn: the validated tenant container has not been prepared.');
             }
-            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, '/bin/bash', ['-c', command], tenantRoot);
+            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, '/bin/bash', ['-c', command], tenantRoot, options.env);
             return this.launchProcess(wrapped.file, wrapped.args, {
                 cwd,
                 detached: options.detached ?? process.platform !== 'win32',
@@ -413,14 +413,15 @@ export class QaapTenantSpawnService {
     spawnArgvPrepared(
         file: string,
         args: readonly string[],
-        options: { cwd: string; env: NodeJS.ProcessEnv; detached?: boolean },
+        options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean },
     ): ChildProcess {
         const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
         this.prepareTenantIsolation(cwd);
-        const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean } = {
+        const spawnOptions: { cwd: string; env: NodeJS.ProcessEnv; stdio: QaapSpawnStdio; detached: boolean } = {
             cwd,
             env: options.env,
+            stdio: options.stdio ?? ['pipe', 'pipe', 'pipe'],
             detached: options.detached ?? false,
         };
         if (this.isContainerIsolationEnabled()) {
@@ -429,7 +430,7 @@ export class QaapTenantSpawnService {
             if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
                 throw new Error('Refusing to spawn: the validated tenant container has not been prepared.');
             }
-            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot);
+            const wrapped = this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot, options.env);
             return this.launchProcess(wrapped.file, wrapped.args, spawnOptions);
         }
         const identity = this.resolveSpawnIdentity(cwd);
@@ -450,7 +451,7 @@ export class QaapTenantSpawnService {
     async spawnArgvPreparedAsync(
         file: string,
         args: readonly string[],
-        options: { cwd: string; env: NodeJS.ProcessEnv; detached?: boolean },
+        options: { cwd: string; env: NodeJS.ProcessEnv; stdio?: QaapSpawnStdio; detached?: boolean },
     ): Promise<ChildProcess> {
         const cwd = this.canonicalizeCwd(options.cwd);
         this.enforceIsolationPolicy();
@@ -459,11 +460,48 @@ export class QaapTenantSpawnService {
     }
 
     /**
+     * Return the validated argv wrapper without launching it. Synchronous read-only helpers such as
+     * repository search/fingerprinting use this seam so they cannot accidentally execute against the
+     * host filesystem in Docker mode. The caller must still collect output with strict bounds.
+     */
+    wrapArgvForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+        cwd = this.canonicalizeCwd(cwd);
+        this.enforceIsolationPolicy();
+        this.prepareTenantIsolation(cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator || !this.dockerOrchestrator.isTenantContainerReady(segment, tenantRoot)) {
+                throw new Error('Refusing to wrap a process without a validated tenant container.');
+            }
+            return this.dockerOrchestrator.wrapShellForTenantContainer(segment, cwd, file, args, tenantRoot);
+        }
+        const identity = this.resolveSpawnIdentity(cwd);
+        this.assertDropIsComplete(identity);
+        if (identity.uid === undefined) {
+            return { file, args: [...args] };
+        }
+        const gid = identity.gid ?? identity.uid;
+        return {
+            file: 'setpriv',
+            args: ['--reuid', String(identity.uid), '--regid', String(gid), '--clear-groups', '--', file, ...args],
+        };
+    }
+
+    /**
      * The tenant HOME/USER/LOGNAME overlay for a dropped process, or `{}` when no uid drop applies.
      * Without a writable HOME a dropped process inherits root's `/root`, which it cannot write.
      */
     tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
         cwd = this.canonicalizeCwd(cwd);
+        if (this.isContainerIsolationEnabled()) {
+            // The host-side per-uid HOME is not mounted into a tenant worker. Passing it through
+            // docker exec would make the child point at a nonexistent/shared host path and could
+            // accidentally bypass the worker's private HOME. The orchestrator seeds this HOME
+            // when it creates the container; exec must keep using the same worker-local value.
+            const home = process.env.QAAP_TENANT_CONTAINER_HOME?.trim() || '/tmp/qaap-home';
+            return { HOME: home, USER: 'qaap-tenant', LOGNAME: 'qaap-tenant' };
+        }
         if (this.resolveSpawnIdentity(cwd).uid === undefined) {
             return {};
         }
@@ -524,6 +562,25 @@ export class QaapTenantSpawnService {
      */
     wrapGitForTenant(cwd: string, gitArgs: readonly string[]): { file: string; args: string[] } {
         cwd = this.canonicalizeCwd(cwd);
+        if (this.isContainerIsolationEnabled()) {
+            const segment = this.resolveTenantSegment(cwd);
+            const tenantRoot = this.resolveTenantRoot(cwd);
+            this.prepareTenantIsolation(cwd);
+            if (!segment || !tenantRoot || !this.dockerOrchestrator) {
+                throw new Error('Refusing to run git without a validated tenant container.');
+            }
+            // `cwd` is a host path. Translate the explicit -C path as well; otherwise git inside the
+            // worker receives `/workspace/repos/users/<login>/...`, which is outside its `/workspace`
+            // mount and breaks worktree/parallel operations. The mounted path is tenant-local.
+            const containerCwd = this.dockerOrchestrator.toContainerPath(cwd, tenantRoot);
+            return this.dockerOrchestrator.wrapShellForTenantContainer(
+                segment,
+                cwd,
+                'git',
+                ['-c', 'core.hooksPath=/dev/null', '-C', containerCwd, ...gitArgs],
+                tenantRoot,
+            );
+        }
         return this.wrapShellForTenant(cwd, 'git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...gitArgs]);
     }
 
@@ -538,7 +595,7 @@ export class QaapTenantSpawnService {
      * In container isolation mode (QAAP_CLOUD_MODE=docker), delegates interactive PTY to
      * `docker exec -it` inside the tenant's dedicated worker container.
      */
-    wrapShellForTenant(cwd: string, file: string, args: readonly string[]): { file: string; args: string[] } {
+    wrapShellForTenant(cwd: string, file: string, args: readonly string[], environment?: NodeJS.ProcessEnv): { file: string; args: string[] } {
         cwd = this.canonicalizeCwd(cwd);
         this.enforceIsolationPolicy();
         if (this.isContainerIsolationEnabled()) {
@@ -546,7 +603,7 @@ export class QaapTenantSpawnService {
             const tenantRoot = this.resolveTenantRoot(cwd);
             this.prepareTenantIsolation(cwd);
             if (this.dockerOrchestrator && segment && tenantRoot) {
-                return this.dockerOrchestrator.wrapInteractiveTerminalForTenant(segment, cwd, file, args, tenantRoot);
+                return this.dockerOrchestrator.wrapInteractiveTerminalForTenant(segment, cwd, file, args, tenantRoot, environment);
             }
             throw new Error('Refusing to open a terminal without a validated tenant container.');
         }

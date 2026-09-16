@@ -39,6 +39,11 @@ import {
     resolveRepositoryWorkspacePath,
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+import {
+    QaapTenantProcessExecutor,
+    type QaapTenantProcessExecutor as QaapTenantProcessExecutorContract,
+} from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import {
     createGithubRepository,
     exchangeGithubCode,
@@ -61,6 +66,7 @@ const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
 const THEIA_EMPTY_WINDOW_HASH = '!empty';
 const GIT_OPERATION_TIMEOUT_MS = 120_000;
+const GIT_MAX_OUTPUT = 16 * 1024 * 1024;
 
 /** Placeholder user returned by `/auth/session` when `QAAP_SKIP_AUTH` is enabled. */
 const SKIP_AUTH_DEV_USER = {
@@ -89,6 +95,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     @inject(QaapBillingQuota) @optional()
     protected readonly billingQuota: QaapBillingQuota | undefined;
+
+    /** Bound by qaap-cloud-workspace; hosted git must never execute on the shared backend. */
+    @inject(QaapTenantProcessExecutor) @optional()
+    protected readonly tenantProcess: QaapTenantProcessExecutorContract | undefined;
 
     /** A stalled network operation must release the clone request and its workspace lock. */
     protected readonly gitOperationTimeoutMs = GIT_OPERATION_TIMEOUT_MS;
@@ -334,6 +344,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             productionRuntime: readiness.productionRuntime,
             oauthConfigured: readiness.oauthConfigured,
             agentUidPerUser: readiness.agentUidPerUser,
+            backendIsolationMode: readiness.backendIsolationMode,
+            backendIsolationReady: readiness.backendIsolationReady,
             ...(process.env.QAAP_AGENT_UID?.trim() ? { agentUid: process.env.QAAP_AGENT_UID.trim() } : {}),
             // Deployed-build identity (short git SHA, baked into the image at build time).
             // Public by design: the repo is public, and this is the one signal that ends
@@ -344,17 +356,20 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected handleAuthSession(req: Request, res: Response): void {
-        const stored = this.auth.resolveGithubSession(req);
-        if (stored) {
+        // Use the same authentication boundary as every protected endpoint. In a tenant
+        // backend this also validates the short-lived control-plane assertion; consulting only
+        // the shared session store would make a correctly proxied tenant appear signed out.
+        const auth = this.auth.authenticate(req);
+        if (auth.kind === 'authenticated') {
             // Never include the session id: the HttpOnly cookie is the only credential,
             // and echoing the id here would hand it to any XSS.
             res.json({
                 signedIn: true,
-                user: stored.stored.user,
+                user: auth.session.user,
             });
             return;
         }
-        if (this.auth.isSkipAuthEnabled()) {
+        if (auth.kind === 'skip') {
             res.json({ signedIn: true, user: SKIP_AUTH_DEV_USER });
             return;
         }
@@ -733,7 +748,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         if (!gitRoot) {
             return undefined;
         }
-        const remoteUrl = await this.runGitOutput(['-C', gitRoot, 'remote', 'get-url', 'origin']).catch(() => undefined);
+        const remoteUrl = await this.runGitOutput(['-C', gitRoot, 'remote', 'get-url', 'origin'], gitRoot).catch(() => undefined);
         const parsed = remoteUrl ? this.parseGithubRepositoryInput(remoteUrl) : undefined;
         if (!parsed) {
             return undefined;
@@ -775,7 +790,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         } catch {
             return undefined;
         }
-        const output = await this.runGitOutput(['-C', candidate, 'rev-parse', '--show-toplevel']).catch(() => undefined);
+        const output = await this.runGitOutput(['-C', candidate, 'rev-parse', '--show-toplevel'], candidate).catch(() => undefined);
         return output?.trim() || undefined;
     }
 
@@ -793,7 +808,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             // (from the repo's own .git/config) as ROOT, i.e. a root-RCE. We deliberately do NOT check
             // out in the open flow: the working tree fast-forwards on the tenant's next git operation
             // (agent / terminal), which runs UNDER THE TENANT UID and is therefore safe. See SECURITY.md.
-            await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken);
+            await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken, target);
             return target;
         }
         let cloneTargetCreated = false;
@@ -808,7 +823,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         await this.assertBillingAllowsNewRepo(userLogin);
         try {
-            await this.runGit(['clone', repository.cloneUrl, target], accessToken);
+            await this.runGit(['clone', repository.cloneUrl, path.basename(target)], accessToken, path.dirname(target));
         } catch (err) {
             if (cloneTargetCreated) {
                 await fs.rm(target, { recursive: true, force: true }).catch(cleanupErr => {
@@ -821,7 +836,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             throw err;
         }
         try {
-            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken));
+            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken, target));
         } catch (err) {
             console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
         }
@@ -902,25 +917,26 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
     }
 
-    protected runGit(args: string[], accessToken: string | undefined): Promise<void> {
-        // SEC-1/C-3 hardening: these clone/fetch/pull run as the backend uid (root in prod) over a repo
-        // the tenant controls. `core.hooksPath=/dev/null` disables ALL git hooks so a `.git/hooks/*`
-        // planted by the tenant cannot execute as root when `pull` fast-forwards. (Residual: a
-        // tenant-defined clean/smudge FILTER in `.git/config` can still run during a `pull` checkout —
-        // the complete fix is to run these under the tenant uid, which is blocked here by a package
-        // dependency cycle to QaapTenantSpawnService; tracked for the staging pass. See SECURITY.md.)
-        const hardening = ['-c', 'core.hooksPath=/dev/null'];
+    protected runGit(args: string[], accessToken: string | undefined, cwd = this.reposRoot): Promise<void> {
+        const invocation = this.resolveGitInvocation(args, cwd);
+        // GitHub clone/fetch is tenant-controlled work. In hosted mode it MUST go through the
+        // worker so clean/smudge filters, config helpers and repository hooks cannot execute as the
+        // shared backend uid. The hooks-path override remains defense in depth inside the tenant.
+        const hardening = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
         const gitArgs = accessToken
             ? [
                 ...hardening,
                 '-c',
                 `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${accessToken}`).toString('base64')
                 }`,
-                ...args,
+                ...invocation.args,
             ]
-            : [...hardening, ...args];
+            : [...hardening, ...invocation.args];
+        if (isQaapHostedEnvironment()) {
+            return this.runTenantGit(invocation.cwd, gitArgs, false).then(() => undefined);
+        }
         return new Promise((resolve, reject) => {
-            const child = spawn('git', gitArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+            const child = spawn('git', gitArgs, { cwd: invocation.cwd, stdio: ['ignore', 'ignore', 'pipe'] });
             let stderr = '';
             let settled = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -956,9 +972,14 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         });
     }
 
-    protected runGitOutput(args: string[]): Promise<string> {
+    protected runGitOutput(args: string[], cwd = this.reposRoot): Promise<string> {
+        const invocation = this.resolveGitInvocation(args, cwd);
+        const gitArgs = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...invocation.args];
+        if (isQaapHostedEnvironment()) {
+            return this.runTenantGit(invocation.cwd, gitArgs, true).then(output => output.trim());
+        }
         return new Promise((resolve, reject) => {
-            const child = spawn('git', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            const child = spawn('git', gitArgs, { cwd: invocation.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
             let stdout = '';
             let stderr = '';
             child.stdout.on('data', chunk => {
@@ -975,6 +996,87 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                     reject(new Error(stderr.trim() || `git exited with status ${code}`));
                 }
             });
+        });
+    }
+
+    /** Extract a host-side `-C` into the worker cwd so Docker argv never receives an unmapped path. */
+    protected resolveGitInvocation(args: readonly string[], cwd: string): { cwd: string; args: string[] } {
+        const copy = [...args];
+        const index = copy.indexOf('-C');
+        if (index >= 0 && typeof copy[index + 1] === 'string') {
+            return {
+                cwd: copy[index + 1],
+                args: [...copy.slice(0, index), ...copy.slice(index + 2)],
+            };
+        }
+        return { cwd, args: copy };
+    }
+
+    /** Execute git with a minimal environment and a fail-closed tenant worker in hosted mode. */
+    protected async runTenantGit(cwd: string, args: readonly string[], captureStdout: boolean): Promise<string> {
+        if (!this.tenantProcess) {
+            throw new Error('Hosted GitHub repository operations are unavailable: the tenant worker is not bound.');
+        }
+        const baseEnv: NodeJS.ProcessEnv = {
+            GIT_CONFIG_NOSYSTEM: '1',
+            GIT_TERMINAL_PROMPT: '0',
+        };
+        for (const key of ['PATH', 'DOCKER_HOST', 'LANG', 'LC_ALL']) {
+            const value = process.env[key];
+            if (value) {
+                baseEnv[key] = value;
+            }
+        }
+        const child = await this.tenantProcess.spawnArgvPreparedAsync('git', args, {
+            cwd,
+            env: this.tenantProcess.resolveProcessEnv(cwd, baseEnv),
+            stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'],
+            detached: true,
+        });
+        return new Promise((resolve, reject) => {
+            let stdout = '';
+            let stderr = '';
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            const complete = (callback: () => void): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeout) {
+                    clearTimeout(timeout);
+                }
+                callback();
+            };
+            const collect = (target: 'stdout' | 'stderr', chunk: unknown): void => {
+                if (settled) {
+                    return;
+                }
+                const value = String(chunk);
+                if (target === 'stdout') {
+                    stdout += value;
+                } else {
+                    stderr += value;
+                }
+                if (stdout.length + stderr.length > GIT_MAX_OUTPUT) {
+                    child.kill();
+                    complete(() => reject(new Error(`Git output exceeded ${GIT_MAX_OUTPUT} bytes.`)));
+                }
+            };
+            child.stdout?.on('data', chunk => collect('stdout', chunk));
+            child.stderr?.on('data', chunk => collect('stderr', chunk));
+            child.on('error', error => complete(() => reject(error)));
+            child.on('close', code => complete(() => {
+                if (code === 0) {
+                    resolve(stdout);
+                } else {
+                    reject(new Error(stderr.trim() || `git exited with status ${code}`));
+                }
+            }));
+            timeout = setTimeout(() => {
+                child.kill();
+                complete(() => reject(new Error(`Git operation timed out after ${Math.ceil(GIT_OPERATION_TIMEOUT_MS / 1000)} seconds`)));
+            }, GIT_OPERATION_TIMEOUT_MS);
         });
     }
 

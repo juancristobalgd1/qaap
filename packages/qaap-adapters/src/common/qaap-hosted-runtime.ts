@@ -16,3 +16,9 @@ export function rememberQaapHostedRuntime(hosted: boolean): void {
 export function readQaapHostedRuntime(): boolean {
     return hostedRuntime;
 }
+
+/** Backend-side equivalent of the cloud package's hosted admission check for leaf packages. */
+export function isQaapHostedEnvironment(env: NodeJS.ProcessEnv = process.env): boolean {
+    const cloudMode = env.QAAP_CLOUD_MODE?.trim().toLowerCase();
+    return env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
+}

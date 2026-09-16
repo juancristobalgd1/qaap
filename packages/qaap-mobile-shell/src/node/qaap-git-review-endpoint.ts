@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { inject, injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { execFile } from 'child_process';
@@ -26,10 +26,16 @@ import {
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
 } from '../common/qaap-git-review';
+import {
+    QaapTenantProcessExecutor,
+    type QaapTenantProcessExecutor as QaapTenantProcessExecutorContract,
+} from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
+const GIT_OPERATION_TIMEOUT_MS = 120_000;
 /** Keep one expanded file from monopolizing the review response/browser. */
 const FILE_DIFF_RESPONSE_LIMIT = 2 * 1024 * 1024;
 /** Reuse the authoritative `/changes` status for the immediately-following lazy diff requests. */
@@ -74,6 +80,10 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
 
     @inject(QaapGithubAuthGuard)
     protected readonly auth: QaapGithubAuthGuard;
+
+    /** Bound by qaap-cloud-workspace; optional so the mobile shell remains usable in local Theia. */
+    @inject(QaapTenantProcessExecutor) @optional()
+    protected readonly tenantProcess: QaapTenantProcessExecutorContract | undefined;
 
     protected readonly changedFilesSnapshots = new Map<string, QaapGitChangedFilesSnapshot>();
 
@@ -851,8 +861,12 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
     }
 
     protected git(root: string, args: string[]): Promise<string> {
+        const gitArgs = this.hardenedGitArgs(args);
+        if (isQaapHostedEnvironment()) {
+            return this.gitInTenant(root, gitArgs);
+        }
         return new Promise((resolve, reject) => {
-            execFile('git', args, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
+            execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
                 if (error) {
                     reject(Object.assign(error, { stdout, stderr }));
                 } else {
@@ -864,8 +878,12 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
 
     /** Run git feeding `input` on stdin (for `git apply -`). Rejects with stderr on non-zero exit. */
     protected gitStdin(root: string, args: string[], input: string): Promise<string> {
+        const gitArgs = this.hardenedGitArgs(args);
+        if (isQaapHostedEnvironment()) {
+            return this.gitInTenant(root, gitArgs, input);
+        }
         return new Promise((resolve, reject) => {
-            const child = execFile('git', args, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
+            const child = execFile('git', gitArgs, { cwd: root, maxBuffer: GIT_MAX_BUFFER }, (error, stdout, stderr) => {
                 if (error) {
                     reject(Object.assign(error, { stdout, stderr }));
                 } else {
@@ -873,6 +891,82 @@ export class QaapGitReviewEndpoint implements BackendApplicationContribution {
                 }
             });
             child.stdin?.end(input);
+        });
+    }
+
+    /** Disable hooks/config-driven execution even in local mode; hosted mode adds the worker boundary. */
+    protected hardenedGitArgs(args: readonly string[]): string[] {
+        return ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args];
+    }
+
+    /** Run git inside the authenticated tenant worker, never as the shared backend uid. */
+    protected async gitInTenant(root: string, args: readonly string[], input?: string): Promise<string> {
+        if (!this.tenantProcess) {
+            throw new Error('Hosted git execution is unavailable: the tenant worker is not bound.');
+        }
+        const baseEnv: NodeJS.ProcessEnv = {
+            GIT_CONFIG_NOSYSTEM: '1',
+            GIT_TERMINAL_PROMPT: '0',
+        };
+        for (const key of ['PATH', 'DOCKER_HOST', 'LANG', 'LC_ALL']) {
+            const value = process.env[key];
+            if (value) {
+                baseEnv[key] = value;
+            }
+        }
+        const child = await this.tenantProcess.spawnArgvPreparedAsync('git', args, {
+            cwd: root,
+            env: this.tenantProcess.resolveProcessEnv(root, baseEnv),
+            stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+            detached: true,
+        });
+        return new Promise((resolve, reject) => {
+            let stdout = '';
+            let stderr = '';
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            const complete = (callback: () => void): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeout) {
+                    clearTimeout(timeout);
+                }
+                callback();
+            };
+            const collect = (target: 'stdout' | 'stderr', chunk: unknown): void => {
+                if (settled) {
+                    return;
+                }
+                const value = String(chunk);
+                if (target === 'stdout') {
+                    stdout += value;
+                } else {
+                    stderr += value;
+                }
+                if (stdout.length + stderr.length > GIT_MAX_BUFFER) {
+                    child.kill();
+                    complete(() => reject(new Error(`Git output exceeded ${GIT_MAX_BUFFER} bytes.`)));
+                }
+            };
+            child.stdout?.on('data', chunk => collect('stdout', chunk));
+            child.stderr?.on('data', chunk => collect('stderr', chunk));
+            child.on('error', error => complete(() => reject(error)));
+            child.on('close', code => complete(() => {
+                if (code === 0) {
+                    resolve(stdout);
+                } else {
+                    reject(Object.assign(new Error(stderr.trim() || `git exited with status ${code}`), { stdout, stderr }));
+                }
+            }));
+            if (input !== undefined) {
+                child.stdin?.end(input);
+            }
+            timeout = setTimeout(() => {
+                child.kill();
+                complete(() => reject(new Error(`Git operation timed out after ${Math.ceil(GIT_OPERATION_TIMEOUT_MS / 1000)} seconds.`)));
+            }, GIT_OPERATION_TIMEOUT_MS);
         });
     }
 

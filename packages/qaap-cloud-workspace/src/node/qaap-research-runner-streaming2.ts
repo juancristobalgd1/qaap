@@ -31,6 +31,7 @@ import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qa
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { QaapResearchStore } from './qaap-research-store';
 import { COMMAND_FAILURE_OUTPUT_TAIL_CHARS, GIT_COMMAND_TIMEOUT_MS, LEDGER_PATHSPEC_EXCLUDE, MAX_RUN_RESUME_ATTEMPTS, RESEARCH_COMMAND_CAPTURE_MAX_CHARS } from './qaap-research-runner';
 import { resolveResearchMeasureTimeoutMs } from './qaap-research-runner';
@@ -165,13 +166,14 @@ export async function runRunPhaseExtracted(ctx: any, goal: ResearchGoal, record:
         const result = await ctx.taskRunner.runGenericCommand(
             goal.runCommand,
             goal.cwd,
-            ctx.buildResearchCommandEnv(),
+            ctx.buildResearchCommandEnv(ctx.store.ownerOf(goal.id)),
             taskId,
             goal.runTimeoutMs || DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
             {
                 header: `\n[qaap-research] round ${record.round}: running ${goal.runCommand}\n`,
                 tailOutput: true,
                 maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+                ownerLogin: ctx.store.ownerOf(goal.id),
             },
         );
         ctx.activeExecutionId.delete(goal.id);
@@ -204,13 +206,14 @@ export async function runMeasurePhaseExtracted(ctx: any, goal: ResearchGoal, rec
             const result = await ctx.taskRunner.runGenericCommand(
                 spec.metricCommand,
                 goal.cwd,
-                ctx.buildResearchCommandEnv(),
+                ctx.buildResearchCommandEnv(ctx.store.ownerOf(goal.id)),
                 taskId,
                 resolveResearchMeasureTimeoutMs(goal),
                 {
                     header: `\n[qaap-research] round ${record.round}: measuring ${spec.name}\n`,
                     tailOutput: true,
                     maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+                    ownerLogin: ctx.store.ownerOf(goal.id),
                 },
             );
             ctx.activeExecutionId.delete(goal.id);
@@ -275,13 +278,14 @@ export async function revertRoundExtracted(ctx: any, goal: ResearchGoal, record:
         const result = await ctx.taskRunner.runGenericCommand(
             `git revert --no-edit ${ctx.shellQuote(record.sha)}`,
             goal.cwd,
-            ctx.buildResearchCommandEnv(),
+            ctx.buildResearchCommandEnv(ctx.store.ownerOf(goal.id)),
             taskId,
             GIT_COMMAND_TIMEOUT_MS,
             {
                 header: `\n[qaap-research] round ${record.round}: reverting regression\n`,
                 tailOutput: true,
                 maxCaptureChars: RESEARCH_COMMAND_CAPTURE_MAX_CHARS,
+                ownerLogin: ctx.store.ownerOf(goal.id),
             },
         );
         if (result.exitCode === 0) {
@@ -349,15 +353,44 @@ export function appendCommandOutputExtracted(ctx: any, reason: string, result: Q
         return `${reason}\nCaptured output tail:\n${tail}`;
 }
 
-export function buildResearchCommandEnvExtracted(ctx: any): NodeJS.ProcessEnv {
+export function buildResearchCommandEnvExtracted(ctx: any, ownerLogin?: string): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
-        ctx.taskRunner.applyHelperEnv(env);
+        // Research commands are autonomous tenant work too. Never fall back to the
+        // backend-wide helper token: the owner is resolved from the goal at every phase.
+        ctx.taskRunner.applyHelperEnv(env, ownerLogin);
         return env;
 }
 
 export function runGitExtracted(ctx: any, cwd: string, args: readonly string[]): { readonly stdout: string; readonly ok: boolean } {
         try {
-            const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: GIT_COMMAND_TIMEOUT_MS });
+            if (isQaapHostedEnvironment()) {
+                if (!ctx.tenantSpawn) {
+                    return { stdout: '', ok: false };
+                }
+                const wrapped = ctx.tenantSpawn.wrapGitForTenant(cwd, args);
+                const baseEnv: NodeJS.ProcessEnv = {
+                    GIT_CONFIG_NOSYSTEM: '1',
+                    GIT_TERMINAL_PROMPT: '0',
+                };
+                for (const key of ['PATH', 'DOCKER_HOST', 'LANG', 'LC_ALL']) {
+                    const value = process.env[key];
+                    if (value) {
+                        baseEnv[key] = value;
+                    }
+                }
+                const result = spawnSync(wrapped.file, wrapped.args, {
+                    cwd,
+                    env: ctx.tenantSpawn.resolveProcessEnv(cwd, baseEnv),
+                    encoding: 'utf8',
+                    timeout: GIT_COMMAND_TIMEOUT_MS,
+                });
+                return { stdout: (result.stdout ?? '').trim(), ok: result.status === 0 };
+            }
+            const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args], {
+                cwd,
+                encoding: 'utf8',
+                timeout: GIT_COMMAND_TIMEOUT_MS,
+            });
             return { stdout: (result.stdout ?? '').trim(), ok: result.status === 0 };
         } catch {
             return { stdout: '', ok: false };

@@ -6,7 +6,11 @@
 import { expect } from 'chai';
 import type { ChildProcess } from 'child_process';
 import * as path from 'path';
-import { resolveQaapReposRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import {
+    resolveQaapParallelRoot,
+    resolveQaapReposRoot,
+    resolveQaapWorktreesRoot,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import {
@@ -39,6 +43,8 @@ describe('Container-per-Tenant Runner (Option A)', () => {
     const reposRoot = resolveQaapReposRoot();
     const aliceRoot = path.join(reposRoot, 'users', 'alice');
     const bobRoot = path.join(reposRoot, 'users', 'bob');
+    const aliceWorktreesRoot = path.join(resolveQaapWorktreesRoot(), 'alice');
+    const aliceParallelRoot = path.join(resolveQaapParallelRoot(), 'alice');
     const aliceCwd = path.join(reposRoot, 'users', 'alice', 'acme', 'webapp');
     const bobCwd = path.join(reposRoot, 'users', 'bob', 'acme', 'webapp');
 
@@ -69,13 +75,39 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             expect(anon1).to.not.equal(alice);
         });
 
-        it('creates one non-root container with only the tenant root mounted and hardening enabled', async () => {
+        it('assigns each tenant a distinct managed network and rejects the shared bridge', () => {
+            expect(orchestrator.tenantNetworkNameFor('alice')).to.match(/^qaap-net-[a-f0-9]{12}$/);
+            expect(orchestrator.tenantNetworkNameFor('alice')).to.not.equal(orchestrator.tenantNetworkNameFor('bob'));
+            const previous = process.env.QAAP_TENANT_NETWORK_MODE;
+            try {
+                process.env.QAAP_TENANT_NETWORK_MODE = 'bridge';
+                expect(() => (orchestrator as any).getTenantNetworkMode('alice')).to.throw(/shared|unsupported/i);
+                process.env.QAAP_TENANT_NETWORK_MODE = 'none';
+                expect((orchestrator as any).getTenantNetworkMode('alice')).to.equal('none');
+            } finally {
+                if (previous === undefined) {
+                    delete process.env.QAAP_TENANT_NETWORK_MODE;
+                } else {
+                    process.env.QAAP_TENANT_NETWORK_MODE = previous;
+                }
+            }
+        });
+
+        it('creates one non-root container with only that tenant storage roots mounted and hardening enabled', async () => {
             const previousEnv = process.env;
-            process.env = { ...previousEnv, QAAP_CLOUD_MODE: 'docker', QAAP_TENANT_DOCKER_IMAGE: 'qaap-test-worker:local' };
+            process.env = {
+                ...previousEnv,
+                NODE_ENV: 'development',
+                QAAP_CLOUD_MODE: 'local',
+                QAAP_TENANT_CONTAINER_ISOLATION: '1',
+                QAAP_TENANT_DOCKER_IMAGE: 'qaap-test-worker:local',
+            };
             try {
                 let created: any;
                 let createOptions: any;
                 let createCalls = 0;
+                let networkCreated: any;
+                let networkOptions: any;
                 const fakeDocker = {
                     getContainer: (): any => {
                         if (!created) {
@@ -99,10 +131,35 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                                     Labels: options.Labels,
                                 },
                                 HostConfig: { ...options.HostConfig, PidMode: 'private', IpcMode: 'private' },
-                                Mounts: [{ Source: aliceRoot, Destination: '/workspace', RW: true }],
+                                Mounts: [
+                                    { Source: aliceRoot, Destination: '/workspace', RW: true },
+                                    { Source: aliceWorktreesRoot, Destination: '/workspace/.qaap-worktrees', RW: true },
+                                    { Source: aliceParallelRoot, Destination: '/workspace/.qaap-parallel', RW: true },
+                                ],
                             }),
                         };
                         return created;
+                    },
+                    getNetwork: (): any => {
+                        if (!networkCreated) {
+                            const missing: any = new Error('not found');
+                            missing.statusCode = 404;
+                            throw missing;
+                        }
+                        return networkCreated;
+                    },
+                    createNetwork: async (options: any): Promise<any> => {
+                        networkOptions = options;
+                        networkCreated = {
+                            inspect: async (): Promise<any> => ({
+                                Name: options.Name,
+                                Driver: options.Driver,
+                                Internal: options.Internal,
+                                Labels: options.Labels,
+                                Options: options.Options,
+                            }),
+                        };
+                        return networkCreated;
                     },
                 };
                 (orchestrator as any).docker = fakeDocker;
@@ -114,12 +171,45 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                 expect(createCalls).to.equal(1);
                 expect(first.containerId).to.equal(second.containerId);
                 expect(orchestrator.isTenantContainerReady('alice', aliceRoot)).to.be.true;
-                expect(createOptions.HostConfig.Binds).to.deep.equal([`${aliceRoot}:/workspace:rw`]);
+                expect(createOptions.HostConfig.Binds).to.deep.equal([
+                    `${aliceRoot}:/workspace:rw`,
+                    `${aliceWorktreesRoot}:/workspace/.qaap-worktrees:rw`,
+                    `${aliceParallelRoot}:/workspace/.qaap-parallel:rw`,
+                ]);
                 expect(createOptions.User).to.equal('1000:1000');
                 expect(createOptions.HostConfig.CapDrop).to.deep.equal(['ALL']);
                 expect(createOptions.HostConfig.SecurityOpt).to.include('no-new-privileges:true');
                 expect(createOptions.HostConfig.ReadonlyRootfs).to.equal(true);
                 expect(createOptions.HostConfig.PidsLimit).to.be.greaterThan(0);
+                expect(networkOptions.Name).to.equal(orchestrator.tenantNetworkNameFor('alice'));
+                expect(networkOptions.Options['com.docker.network.bridge.enable_icc']).to.equal('false');
+                expect(createOptions.HostConfig.NetworkMode).to.equal(networkOptions.Name);
+            } finally {
+                process.env = previousEnv;
+            }
+        });
+
+        it('rejects a hosted daemon that does not report rootless mode', async () => {
+            const previousEnv = process.env;
+            process.env = {
+                ...previousEnv,
+                NODE_ENV: 'production',
+                QAAP_CLOUD_MODE: 'docker',
+                DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+            };
+            try {
+                const hosted = new QaapDockerOrchestrator();
+                (hosted as any).docker = {
+                    info: async (): Promise<{ SecurityOptions: string[] }> => ({ SecurityOptions: ['name=seccomp'] }),
+                };
+                let error: unknown;
+                try {
+                    await (hosted as any).getDocker();
+                } catch (caught) {
+                    error = caught;
+                }
+                expect(error).to.be.instanceOf(Error);
+                expect((error as Error).message).to.match(/did not report rootless/i);
             } finally {
                 process.env = previousEnv;
             }
@@ -144,6 +234,37 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                 '-c',
                 'npm test',
             ]);
+        });
+
+        it('forwards tenant environment with docker exec while removing control-plane secrets', () => {
+            (orchestrator as any).tenantRoots.set(orchestrator.containerNameForTenant('alice'), aliceRoot);
+            const wrapped = orchestrator.wrapShellForTenantContainer(
+                'alice',
+                aliceCwd,
+                '/bin/bash',
+                ['-c', 'env'],
+                aliceRoot,
+                {
+                    PATH: '/usr/local/bin:/usr/bin',
+                    HOME: '/tmp/qaap-home',
+                    OPENAI_API_KEY: 'tenant-key',
+                    DOCKER_HOST: 'unix:///run/user/1000/docker.sock',
+                    QAAP_GITHUB_CLIENT_SECRET: 'backend-secret',
+                    'INVALID-NAME': 'must-not-cross',
+                },
+            );
+
+            expect(wrapped.args).to.include.members([
+                '-e',
+                'PATH=/usr/local/bin:/usr/bin',
+                '-e',
+                'HOME=/tmp/qaap-home',
+                '-e',
+                'OPENAI_API_KEY=tenant-key',
+            ]);
+            expect(wrapped.args).to.not.include('DOCKER_HOST=unix:///run/user/1000/docker.sock');
+            expect(wrapped.args).to.not.include('QAAP_GITHUB_CLIENT_SECRET=backend-secret');
+            expect(wrapped.args).to.not.include('INVALID-NAME=must-not-cross');
         });
 
         it('wraps interactive terminal into docker exec -it targeting the tenant container', () => {
@@ -251,6 +372,37 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             expect(launch.args).to.include(orchestrator.containerNameForTenant('bob'));
             expect(launch.args).to.include('npm');
             expect(launch.args).to.include('dev');
+        });
+
+        it('translates the explicit git -C path into the tenant mount', () => {
+            const orchestrator = new QaapDockerOrchestrator();
+            const service = new TestDockerTenantSpawnService(orchestrator);
+            (orchestrator as any).tenantRoots.set(orchestrator.containerNameForTenant('alice'), aliceRoot);
+
+            const wrapped = service.wrapGitForTenant(aliceCwd, ['worktree', 'prune']);
+            const containerCwd = '/workspace/acme/webapp';
+
+            expect(wrapped.file).to.equal('docker');
+            expect(wrapped.args).to.include(orchestrator.containerNameForTenant('alice'));
+            expect(wrapped.args).to.include(containerCwd);
+            expect(wrapped.args).to.not.include(aliceCwd);
+        });
+
+        it('translates a worktree path embedded in Git argv to the same tenant container', () => {
+            const orchestrator = new QaapDockerOrchestrator();
+            const service = new TestDockerTenantSpawnService(orchestrator);
+            (orchestrator as any).tenantRoots.set(orchestrator.containerNameForTenant('alice'), aliceRoot);
+            (orchestrator as any).tenantMounts.set(orchestrator.containerNameForTenant('alice'), {
+                reposRoot: aliceRoot,
+                worktreesRoot: aliceWorktreesRoot,
+                parallelRoot: aliceParallelRoot,
+            });
+
+            const worktreePath = path.join(aliceWorktreesRoot, 'fork-123');
+            const wrapped = service.wrapGitForTenant(aliceCwd, ['worktree', 'remove', '--force', worktreePath]);
+
+            expect(wrapped.args).to.include('/workspace/.qaap-worktrees/fork-123');
+            expect(wrapped.args).to.not.include(worktreePath);
         });
 
         it('routes wrapShellForTenant() to docker exec -it for interactive terminals (C-3 mitigation)', () => {

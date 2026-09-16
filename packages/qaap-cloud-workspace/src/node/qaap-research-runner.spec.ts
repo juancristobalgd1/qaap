@@ -43,6 +43,7 @@ class FakeTaskRunner {
     protected nextTaskId = 1;
     readonly createdTasks: Array<{ id: string; request: unknown; ownerLogin?: string }> = [];
     readonly cancelledIds: string[] = [];
+    readonly helperEnvOwners: Array<string | undefined> = [];
     readonly genericCommandCalls: Array<{
         command: string;
         cwd: string;
@@ -92,7 +93,8 @@ class FakeTaskRunner {
         return undefined;
     }
 
-    applyHelperEnv(): boolean {
+    applyHelperEnv(_env: NodeJS.ProcessEnv, ownerLogin?: string): boolean {
+        this.helperEnvOwners.push(ownerLogin);
         return true;
     }
 
@@ -486,6 +488,7 @@ describe('QaapResearchRunner state machine', () => {
 
     it('runs the runCommand phase before measuring when the goal declares one', async () => {
         const store = new FakeResearchStore();
+        store.ownerLogin = 'alice';
         const taskRunner = new FakeTaskRunner();
         const goal = makeGoal({ metrics: [METRIC], runCommand: 'python train.py' });
         store.seedGoal(goal);
@@ -504,6 +507,7 @@ describe('QaapResearchRunner state machine', () => {
         expect(taskRunner.genericCommandCalls[1].command).to.equal('python measure.py');
         expect(taskRunner.genericCommandCalls[0].options?.maxCaptureChars).to.equal(256 * 1024);
         expect(taskRunner.genericCommandCalls[1].options?.maxCaptureChars).to.equal(256 * 1024);
+        expect(taskRunner.helperEnvOwners).to.deep.equal(['alice', 'alice']);
         const [record] = store.readLedgerForGoal(goal);
         expect(record).to.deep.include({ phase: 'done', verdict: 'improved' });
     });
@@ -557,6 +561,7 @@ describe('QaapResearchRunner state machine', () => {
 
     it('reverts the round with `git revert` (never a hard reset) when the verdict is a regression', async () => {
         const store = new FakeResearchStore();
+        store.ownerLogin = 'alice';
         const taskRunner = new FakeTaskRunner();
         const goal = makeGoal({ metrics: [METRIC] });
         store.seedGoal(goal);
@@ -583,6 +588,7 @@ describe('QaapResearchRunner state machine', () => {
         const revertCall = taskRunner.genericCommandCalls.find(call => call.command.includes('git revert'));
         expect(revertCall).to.not.equal(undefined);
         expect(revertCall!.command).to.not.contain('reset --hard');
+        expect(taskRunner.helperEnvOwners).to.deep.equal(['alice', 'alice']);
     });
 
     it('anti-stall fallback: a missing [QAAP experiment] block never stops the loop', async () => {

@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 import { injectable, inject, optional, postConstruct } from '@theia/core/shared/inversify';
+import * as path from 'path';
 import URI from '@theia/core/lib/common/uri';
 import { DefaultSkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
@@ -13,6 +14,7 @@ import { Skill, SKILL_FILE_NAME } from '@theia/ai-core/lib/common/skill';
 import { PREFERENCE_NAME_SKILL_DIRECTORIES } from '@theia/ai-core/lib/common/ai-core-preferences';
 import { FileChangesEvent, FileChangeType } from '@theia/filesystem/lib/common/files';
 import { readQaapAuthUser } from '@theia/qaap-adapters/src/browser/qaap-auth-session';
+import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     QaapProjectSkillRoots,
     qaapProjectSkillDirectoryPaths,
@@ -167,6 +169,13 @@ export class QaapSkillService extends DefaultSkillService {
         const user = readQaapAuthUser();
         if (!user?.login?.trim()) {
             return [];
+        }
+        const tenantConfigRoot = await this.envVariablesServer.getValue('QAAP_TENANT_CONFIG_ROOT');
+        if (tenantConfigRoot?.value?.trim()) {
+            // The backend advertises the effective root rather than making the browser
+            // guess the host HOME. This remains correct when the root is overridden by
+            // deployment configuration or when the browser and backend run on different OSes.
+            return [path.join(tenantConfigRoot.value, safeUserIdSegment(user.login), 'skills')];
         }
         return [qaapPerUserSkillsDirectory(homePath, user.login)];
     }

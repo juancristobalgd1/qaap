@@ -91,6 +91,7 @@ export class QaapConversationWorktreeService {
         await this.assertGitRepo(baseCwd);
 
         if (input.action === 'none') {
+            await this.ensureTenantContainerReady(baseCwd);
             await this.removeWorktree(baseCwd, worktreePath).catch(() => undefined);
             await this.deleteBranch(baseCwd, branch).catch(() => undefined);
             return { ok: true, branch };
@@ -142,11 +143,11 @@ export class QaapConversationWorktreeService {
     }
 
     protected async removeWorktree(cwd: string, worktreePath: string): Promise<void> {
-        await this.git(cwd, ['worktree', 'remove', '--force', worktreePath]);
+        await this.mutatingGit(cwd, ['worktree', 'remove', '--force', worktreePath]);
     }
 
     protected async deleteBranch(cwd: string, branch: string): Promise<void> {
-        await this.git(cwd, ['branch', '-D', branch]);
+        await this.mutatingGit(cwd, ['branch', '-D', branch]);
     }
 
     protected errorMessage(error: unknown): string {
@@ -180,13 +181,11 @@ export class QaapConversationWorktreeService {
     }
 
     protected async git(cwd: string, args: string[]): Promise<string> {
-        // SEC-1/C-3 hardening: `git worktree add` checks out HEAD into a new tree as the backend uid
-        // (root in prod) over a repo the tenant controls. Disable hooks so a `.git/hooks/*` planted by
-        // the tenant cannot execute as root on checkout. (Residual: a tenant-defined clean/smudge FILTER
-        // in `.git/config` can still run during the checkout — the complete fix is to run this under the
-        // tenant uid, which needs the worktree parent provisioned first; gated on the multi-tenant flip,
-        // see SECURITY.md.)
-        const { stdout } = await execFileAsync('git', ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args], { maxBuffer: GIT_MAX_BUFFER });
+        // Read-only Git must use the same tenant boundary as worktree mutations. Git may still load
+        // repository config, extensions, and filter metadata for a status/rev-parse query.
+        await this.ensureTenantContainerReady(cwd);
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+        const { stdout } = await execFileAsync(wrapped.file, wrapped.args, { maxBuffer: GIT_MAX_BUFFER });
         return stdout;
     }
 

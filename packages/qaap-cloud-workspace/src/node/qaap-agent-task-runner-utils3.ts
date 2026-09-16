@@ -5,7 +5,7 @@
 
 // Pure + DI helpers extracted from QaapAgentTaskRunner (batch 3).
 
-import { spawnSync, type ChildProcess } from 'child_process';
+import { spawnSync, type ChildProcess, type SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -46,9 +46,12 @@ const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
 const SHELL_AGENT_ID = 'shell';
 const ENV_AGENT_ID = 'env';
 
+/** Bounded read-only process seam; hosted callers execute the search inside the tenant worker. */
+export type QaapReadProcessSync = (cwd: string, file: string, args: readonly string[], maxBuffer: number) => SpawnSyncReturns<string>;
+
 // ─── Pure: readRelevantFiles ─────────────────────────────────────────────────
 
-export function readRelevantFiles(cwd: string, userQuery: string | undefined): string | undefined {
+export function readRelevantFiles(cwd: string, userQuery: string | undefined, readProcess: QaapReadProcessSync = (root, file, args, maxBuffer) => spawnSync(file, args, { cwd: root, encoding: 'utf8', timeout: 4000, maxBuffer })): string | undefined {
     if (!QAAP_AGENT_RETRIEVAL_ENABLED) {
         return undefined;
     }
@@ -65,7 +68,7 @@ export function readRelevantFiles(cwd: string, userQuery: string | undefined): s
             args.push('-g', `!${dir}/**`);
         }
         args.push('--', '.');
-        const out = spawnSync('rg', args, { cwd, encoding: 'utf8', timeout: 4000, maxBuffer: 4 * 1024 * 1024 });
+        const out = readProcess(cwd, 'rg', args, 4 * 1024 * 1024);
         if (out.status !== 0 && out.status !== 1 || !out.stdout) {
             return undefined; // status 1 = no matches; other non-zero = rg missing/error
         }
@@ -205,7 +208,7 @@ export interface ReviewSuccessfulAgentTaskDeps {
     resolveTaskAgentId(task: QaapAgentTask): string;
     buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv;
     hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean>;
-    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string }): Promise<QaapGenericCommandResult>;
+    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; readonly ownerLogin?: string }): Promise<QaapGenericCommandResult>;
     changedSensitiveFiles(task: QaapAgentTask): string[];
     resolveReviewerCandidates(task: QaapAgentTask): string[];
     buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string): { command: string; stdinPrompt?: string; stdinPromptMode?: QaapAgentStdinPromptMode; agentId: string };

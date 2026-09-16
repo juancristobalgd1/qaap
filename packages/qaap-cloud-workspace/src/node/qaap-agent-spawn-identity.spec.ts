@@ -82,11 +82,11 @@ describe('evaluateAgentIsolationPolicy', () => {
             { NODE_ENV: 'production', QAAP_AGENT_UID: '1001', QAAP_AGENT_UID_PER_USER: '1' }, true).refuse).to.equal(false);
     });
 
-    it('does not refuse when the operator explicitly overrides the root refusal', () => {
+    it('ignores the legacy root override in production', () => {
         expect(evaluateAgentIsolationPolicy(
-            { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: 'true' }, true).refuse).to.equal(false);
+            { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: 'true' }, true).refuse).to.equal(true);
         expect(evaluateAgentIsolationPolicy(
-            { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: '1' }, true).refuse).to.equal(false);
+            { NODE_ENV: 'production', QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION: '1' }, true).refuse).to.equal(true);
     });
 
     it('REFUSES a shared-uid agent in production when uid-per-user is off (SEC-1 fail-closed)', () => {
@@ -95,10 +95,10 @@ describe('evaluateAgentIsolationPolicy', () => {
         expect(decision.reason).to.contain('QAAP_AGENT_UID_PER_USER');
     });
 
-    it('does not refuse a shared uid when the operator explicitly accepts it (single-user box)', () => {
+    it('ignores the legacy shared-uid override in production', () => {
         expect(evaluateAgentIsolationPolicy(
             { NODE_ENV: 'production', QAAP_AGENT_UID: '1001', QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION: 'true' },
-            true).refuse).to.equal(false);
+            true).refuse).to.equal(true);
     });
 
     it('does not refuse a shared uid outside production (local dev container)', () => {

@@ -46,6 +46,9 @@
       "path": "../qaap-ai-openrouter"
     },
     {
+      "path": "../qaap-cloud-workspace"
+    },
+    {
       "path": "../qaap-mobile-shell"
     }
   ]

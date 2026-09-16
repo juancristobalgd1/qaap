@@ -5,7 +5,7 @@ import { Emitter, Event } from '@theia/core/lib/common/event';
 import { nls } from '@theia/core/lib/common/nls';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
-import { spawnSync, SpawnSyncReturns } from 'child_process';
+import { SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
@@ -229,7 +229,11 @@ export async function rewindToMessageExtracted(ctx: any, conversationId: string,
             gitDiffRemoved: undefined,
         };
         if (plan.restoreCheckpoint) {
-            if (spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: conv.cwd, encoding: 'utf8' }).status !== 0) {
+            const repositoryCheck = ctx.mutatingGitSync(
+                conv.cwd,
+                ['rev-parse', '--is-inside-work-tree'],
+            );
+            if (repositoryCheck.status !== 0) {
                 throw new Error('The conversation workspace is not a git repository.');
             }
             const undo = ctx.captureCheckpoint(conv.cwd, conversationId, messageId, 'Before rewind');
@@ -259,7 +263,11 @@ export async function restoreCheckpointExtracted(ctx: any, conversationId: strin
         if (!checkpoint) {
             throw new Error('Checkpoint not found.');
         }
-        if (spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: conv.cwd, encoding: 'utf8' }).status !== 0) {
+        const repositoryCheck = ctx.mutatingGitSync(
+            conv.cwd,
+            ['rev-parse', '--is-inside-work-tree'],
+        );
+        if (repositoryCheck.status !== 0) {
             throw new Error('The conversation workspace is not a git repository.');
         }
         const undo = ctx.captureCheckpoint(conv.cwd, conversationId, checkpoint.messageId, 'Before restore');

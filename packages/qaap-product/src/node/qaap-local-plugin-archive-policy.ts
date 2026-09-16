@@ -12,19 +12,25 @@
  * `download-plugins` are unaffected.
  *
  * Enabled by default. Set `QAAP_ALLOW_LOCAL_VSIX=1` (or true/on/yes) to allow local installs
- * for desktop/dev workflows that need sideloading.
+ * for local desktop/dev workflows that need sideloading. Hosted/production deployments always
+ * block local archives because a plugin executes in the shared Theia control-plane process.
  */
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+
 export const LOCAL_PLUGIN_FILE_SCHEME_PREFIX = 'local-file:';
 
-export function isLocalPluginArchivePolicyEnabled(): boolean {
-    const raw = process.env.QAAP_ALLOW_LOCAL_VSIX?.trim();
+export function isLocalPluginArchivePolicyEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+    if (isQaapHostedEnvironment(env)) {
+        return true;
+    }
+    const raw = env.QAAP_ALLOW_LOCAL_VSIX?.trim();
     if (!raw) {
         return true;
     }
     return !/^(1|true|yes|on)$/i.test(raw);
 }
 
-export function isLocalPluginArchiveInstallBlocked(pluginEntry: string): boolean {
-    return isLocalPluginArchivePolicyEnabled()
+export function isLocalPluginArchiveInstallBlocked(pluginEntry: string, env: NodeJS.ProcessEnv = process.env): boolean {
+    return isLocalPluginArchivePolicyEnabled(env)
         && pluginEntry.startsWith(LOCAL_PLUGIN_FILE_SCHEME_PREFIX);
 }

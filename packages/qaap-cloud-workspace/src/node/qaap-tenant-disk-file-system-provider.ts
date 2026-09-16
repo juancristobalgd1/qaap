@@ -3,18 +3,19 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import * as os from 'os';
 import * as path from 'path';
+import * as os from 'os';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import {
     isPathUnderUserWorkspace,
     resolveQaapReposRoot,
+    resolveQaapParallelRoot,
+    resolveQaapWorktreesRoot,
     resolveUserReposRoot,
+    safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { isVpsWorkspaceInfrastructurePath } from '@theia/qaap-mobile-shell/lib/common/qaap-hub-project-eligibility';
 import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 import { isRealPathUnder } from '@theia/qaap-mobile-shell/lib/node/qaap-realpath-guard';
 import {
@@ -30,6 +31,10 @@ import {
 import { DiskFileSystemProvider } from '@theia/filesystem/lib/node/disk-file-system-provider';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
+import {
+    isQaapTenantConfigPath,
+    resolveQaapTenantUserRoot,
+} from './qaap-tenant-config-scope';
 
 /**
  * Defense-in-depth filesystem guard for hosted multi-tenant deployments.
@@ -46,51 +51,62 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
 
     protected readonly reposRoot = resolveQaapReposRoot();
 
-    /**
-     * Tenant isolation applies only to managed workspace trees (hosted repos + dev workspaces).
-     * System paths such as `/app/plugins` or `/root/.qaap` must pass through unchanged — rebinding
-     * the global DiskFileSystemProvider would otherwise break plugin loading and agent storage.
-     */
-    protected isTenantGuardedPath(fsPath: string): boolean {
-        const resolved = path.resolve(fsPath);
-        const reposRoot = path.resolve(this.reposRoot);
-        const relativeToRepos = path.relative(reposRoot, resolved);
-        if (relativeToRepos === '' || (!relativeToRepos.startsWith('..') && !path.isAbsolute(relativeToRepos))) {
-            return true;
-        }
-        const devReposRoot = path.resolve(os.homedir(), '.qaap', 'workspaces');
-        const relativeToDev = path.relative(devReposRoot, resolved);
-        if (relativeToDev === '' || (!relativeToDev.startsWith('..') && !path.isAbsolute(relativeToDev))) {
-            return true;
-        }
-        return isVpsWorkspaceInfrastructurePath(resolved) || isQaapWorkspaceContainerPath(resolved);
-    }
-
-    protected assertAllowed(uri: URI): void {
+    protected assertAllowed(uri: URI, access: 'read' | 'write' = 'read'): void {
         if (this.auth.isSkipAuthEnabled()) {
             return;
         }
         const fsPath = FileUri.fsPath(uri);
-        if (!this.isTenantGuardedPath(fsPath)) {
+        // A dedicated tenant backend must be able to initialize its own Theia preference tree
+        // before a browser WebSocket exists. This directory is mounted exclusively into this
+        // container; it is not the shared control-plane config and is never reachable directly
+        // from another tenant backend.
+        if (this.isTenantBackendRuntime()
+            && (isQaapTenantConfigPath(fsPath)
+                || isRealPathUnder(fsPath, path.join(os.homedir(), '.theia')))) {
             return;
-        }
-        if (isQaapWorkspaceContainerPath(fsPath) || isVpsWorkspaceInfrastructurePath(fsPath)) {
-            throw this.forbidden();
         }
         const login = this.connections.getCurrentLogin();
         if (!login) {
             throw this.forbidden();
         }
-        if (!this.auth.loginOwnsWorkspacePath(login, fsPath)) {
+        if (isQaapTenantConfigPath(fsPath)) {
+            if (!isRealPathUnder(fsPath, resolveQaapTenantUserRoot(login))) {
+                throw this.forbidden();
+            }
+            return;
+        }
+        const systemSkillsDir = process.env.QAAP_SYSTEM_SKILLS_DIR?.trim();
+        if (systemSkillsDir && isRealPathUnder(fsPath, systemSkillsDir)) {
+            if (access === 'write') {
+                throw this.forbidden();
+            }
+            return;
+        }
+        if (!this.isOwnedWorkspaceArtifact(fsPath, login)) {
             throw this.forbidden();
         }
+    }
+
+    protected isTenantBackendRuntime(): boolean {
+        return /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
+    }
+
+    /**
+     * Authenticated browser sessions may access only tenant-owned workspace artifacts.
+     * System paths are deliberately not an exception: this provider is reachable from the browser
+     * and must never become a generic backend filesystem reader for `/root`, `/app`, or `/tmp`.
+     */
+    protected isOwnedWorkspaceArtifact(fsPath: string, login: string): boolean {
         const userRoot = resolveUserReposRoot(this.reposRoot, login);
-        if (!isPathUnderUserWorkspace(fsPath, this.reposRoot, login)) {
-            throw this.forbidden();
+        if (isPathUnderUserWorkspace(fsPath, this.reposRoot, login)
+            && isRealPathUnder(fsPath, userRoot)
+            && this.auth.loginOwnsWorkspacePath(login, fsPath)) {
+            return true;
         }
-        if (!isRealPathUnder(fsPath, userRoot)) {
-            throw this.forbidden();
-        }
+        const tenant = safeUserIdSegment(login);
+        return [resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]
+            .map(root => path.join(root, tenant))
+            .some(root => isRealPathUnder(fsPath, root));
     }
 
     protected forbidden(): never {
@@ -113,29 +129,29 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
     }
 
     override writeFile(resource: URI, content: Uint8Array, opts: FileWriteOptions): Promise<void> {
-        this.assertAllowed(resource);
+        this.assertAllowed(resource, 'write');
         return super.writeFile(resource, content, opts);
     }
 
     override mkdir(resource: URI): Promise<void> {
-        this.assertAllowed(resource);
+        this.assertAllowed(resource, 'write');
         return super.mkdir(resource);
     }
 
     override delete(resource: URI, opts: FileDeleteOptions): Promise<void> {
-        this.assertAllowed(resource);
+        this.assertAllowed(resource, 'write');
         return super.delete(resource, opts);
     }
 
     override rename(from: URI, to: URI, opts: FileOverwriteOptions): Promise<void> {
-        this.assertAllowed(from);
-        this.assertAllowed(to);
+        this.assertAllowed(from, 'write');
+        this.assertAllowed(to, 'write');
         return super.rename(from, to, opts);
     }
 
     override copy(from: URI, to: URI, opts: FileOverwriteOptions): Promise<void> {
-        this.assertAllowed(from);
-        this.assertAllowed(to);
+        this.assertAllowed(from, 'write');
+        this.assertAllowed(to, 'write');
         return super.copy(from, to, opts);
     }
 
@@ -145,7 +161,7 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
     }
 
     override open(resource: URI, opts: FileOpenOptions): Promise<number> {
-        this.assertAllowed(resource);
+        this.assertAllowed(resource, opts.create ? 'write' : 'read');
         return super.open(resource, opts);
     }
 

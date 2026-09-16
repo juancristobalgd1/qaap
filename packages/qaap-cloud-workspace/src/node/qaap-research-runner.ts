@@ -35,6 +35,8 @@ import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } 
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { cancelExtracted, collectRealFileChangesExtracted, ensureLoopExtracted, ensurePreflightPassedExtracted, pushRealFileChangeExtracted, reconcileOnBootExtracted, recordPreflightResultExtracted, resumeRoundExtracted, roundDiffStatExtracted, runLoopExtracted, runProposeExtracted, startNewRoundExtracted, synthesizeFallbackProposalExtracted, terminateExtracted, unquoteGitPathExtracted } from './qaap-research-runner-render2';
 import { appendCommandOutputExtracted, buildResearchCommandEnvExtracted, commitRoundChangesExtracted, commitRoundExtracted, describeGateFailureExtracted, discardBrokenRoundExtracted, finishAsInfraFailureExtracted, finishAsNoopExtracted, revertRoundExtracted, runGitExtracted, runMeasurePhaseExtracted, runRunPhaseExtracted, waitForTaskFinishExtracted, waitForTaskFinishOrTimeoutExtracted } from './qaap-research-runner-streaming2';
 
@@ -220,6 +222,9 @@ export class QaapResearchRunner {
     @inject(QaapAgentTaskRunner)
     protected readonly taskRunner: QaapAgentTaskRunner;
 
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
+
     /** goalId → the task id / synthetic id currently executing, so `cancel` can kill it immediately
      *  instead of waiting out a multi-hour `runCommand`. */
     protected readonly activeExecutionId = new Map<string, string>();
@@ -249,6 +254,15 @@ export class QaapResearchRunner {
 
     /** Starts a freshly created goal's loop. Called by the endpoint right after `store.create`. */
     start(goal: ResearchGoal): void {
+        if (isQaapHostedEnvironment()) {
+            // Docker creation is asynchronous. Never let the first synchronous git bookkeeping
+            // call race ahead and fall back to the shared backend; the loop starts only after the
+            // worker is inspected and ready.
+            void this.tenantSpawn.prepareTenantIsolationAsync(goal.cwd)
+                .then(() => this.ensureLoop(goal.id))
+                .catch(error => console.error('[qaap-security] research worker preparation failed:', error));
+            return;
+        }
         this.ensureLoop(goal.id);
     }
 
@@ -396,8 +410,8 @@ export class QaapResearchRunner {
         return appendCommandOutputExtracted(this, reason, result);
     }
 
-    protected buildResearchCommandEnv(): NodeJS.ProcessEnv {
-        return buildResearchCommandEnvExtracted(this);
+    protected buildResearchCommandEnv(ownerLogin?: string): NodeJS.ProcessEnv {
+        return buildResearchCommandEnvExtracted(this, ownerLogin);
     }
 
     protected runGit(cwd: string, args: readonly string[]): { readonly stdout: string; readonly ok: boolean } {

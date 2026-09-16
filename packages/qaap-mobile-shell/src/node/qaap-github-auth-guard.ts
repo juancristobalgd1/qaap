@@ -22,6 +22,13 @@ import {
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapGithubSessionStore, type QaapGithubStoredSession } from './qaap-github-session-store';
 import { isRealPathUnder } from './qaap-realpath-guard';
+import {
+    QAAP_TENANT_BACKEND_ASSERTION_HEADER,
+    QAAP_TENANT_BACKEND_MODE_ENV,
+    QAAP_TENANT_BACKEND_SECRET_ENV,
+    QAAP_TENANT_LOGIN_ENV,
+    verifyQaapTenantBackendAssertion,
+} from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 
 /**
  * Outcome of normalizing a client-supplied agent `cwd` to the authenticated user's per-user
@@ -64,6 +71,10 @@ export class QaapGithubAuthGuard {
     protected readonly reposRoot = resolveQaapReposRoot();
 
     authenticate(req: Request): QaapGithubAuthContext {
+        const tenantBackend = this.authenticateTenantBackend(req);
+        if (tenantBackend) {
+            return tenantBackend;
+        }
         const session = this.resolveGithubSession(req);
         if (session) {
             return {
@@ -77,6 +88,36 @@ export class QaapGithubAuthGuard {
             return { kind: 'skip', userLogin: QAAP_SKIP_AUTH_USER_LOGIN };
         }
         return { kind: 'unauthorized' };
+    }
+
+    /**
+     * A tenant backend is reachable only through the control-plane proxy. It does not receive the
+     * shared session store or the browser's authority to choose an owner; the proxy supplies a
+     * short-lived HMAC assertion whose tenant is fixed by the container environment.
+     */
+    protected authenticateTenantBackend(req: Request): Extract<QaapGithubAuthContext, { kind: 'authenticated' }> | undefined {
+        if (!/^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '')) {
+            return undefined;
+        }
+        const rawHeader = req.headers[QAAP_TENANT_BACKEND_ASSERTION_HEADER];
+        const token = typeof rawHeader === 'string' ? rawHeader : undefined;
+        const payload = verifyQaapTenantBackendAssertion(
+            token,
+            process.env[QAAP_TENANT_BACKEND_SECRET_ENV],
+            process.env[QAAP_TENANT_LOGIN_ENV],
+        );
+        if (!payload) {
+            return undefined;
+        }
+        return {
+            kind: 'authenticated',
+            sessionId: `tenant-backend:${payload.tenantLogin.toLowerCase()}`,
+            userLogin: payload.tenantLogin,
+            session: {
+                accessToken: payload.githubAccessToken,
+                user: payload.user,
+            },
+        };
     }
 
     resolveUserLogin(ctx: QaapGithubAuthContext): string | undefined {
@@ -316,21 +357,19 @@ export class QaapGithubAuthGuard {
 
     /**
      * Skip-auth (no login, everyone becomes the shared `_dev` bucket) is a LOCAL-DEV-ONLY switch.
-     * Honoring it in a production runtime would disable all multi-tenant isolation, so it is refused
-     * there regardless of the env var — fail safe (auth stays ON) with a loud one-time warning.
-     * An explicit `QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION=true` is required to override (e.g. a private
-     * single-user box behind a separate auth proxy).
+     * There is deliberately no production override: an environment variable must never be able to
+     * turn a hosted multi-tenant deployment into an unauthenticated shared bucket.
      */
     isSkipAuthEnabled(): boolean {
         const requested = process.env.QAAP_SKIP_AUTH === 'true' || process.env.QAAP_SKIP_AUTH === '1';
         if (!requested) {
             return false;
         }
-        if (this.isProductionRuntime() && !this.isSkipAuthProductionOverride()) {
+        if (this.isProductionRuntime()) {
             if (!this.skipAuthInProductionWarned) {
                 this.skipAuthInProductionWarned = true;
                 console.error('[qaap-security] REFUSING QAAP_SKIP_AUTH in a production runtime — authentication stays ON. '
-                    + 'Skip-auth is local-dev only; set QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION=true only if you fully understand the risk.');
+                    + 'Skip-auth is local-dev only and has no production override.');
             }
             return false;
         }
@@ -341,11 +380,6 @@ export class QaapGithubAuthGuard {
     protected isProductionRuntime(): boolean {
         const cloudMode = process.env.QAAP_CLOUD_MODE?.trim().toLowerCase();
         return process.env.NODE_ENV === 'production' || (!!cloudMode && cloudMode !== 'local');
-    }
-
-    protected isSkipAuthProductionOverride(): boolean {
-        const value = process.env.QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION?.trim().toLowerCase();
-        return value === 'true' || value === '1';
     }
 
     /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */

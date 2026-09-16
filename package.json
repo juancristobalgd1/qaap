@@ -12,29 +12,38 @@
     "react-dom": "^18.3.1",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
-    "multer": "^2.2.0",
+    "multer": "^2.4.0",
     "axios": "^1.16.0",
     "form-data": "^4.0.6",
     "tmp": "^0.2.6",
     "serialize-javascript": "^7.0.5",
-    "dompurify": "^3.4.11",
-    "adm-zip": "0.6.0",
+    "dompurify": "^3.4.15",
+    "adm-zip": "0.6.1",
+    "baseline-browser-mapping": "^2.11.24",
+    "browserslist": "^4.29.0",
+    "fast-uri": "^3.1.8",
+    "fflate": "0.8.3",
+    "hono": "^4.13.8",
+    "mermaid": "^11.16.1",
     "ai": "^7.0.55",
     "@ai-sdk/anthropic": "^4.0.33",
     "@ai-sdk/openai": "^4.0.32",
     "@ai-sdk/provider": "^4.0.6",
     "@vscode/proxy-agent": "^0.44.0",
-    "@hono/node-server": "2.1.0",
+    "@hono/node-server": "2.1.1",
     "@modelcontextprotocol/sdk": {
-      "@hono/node-server": "2.1.0"
+      "@hono/node-server": "2.1.1"
     },
     "follow-redirects": "^1.16.0",
-    "js-yaml": "^4.3.1",
-    "tar": "^7.5.22",
+    "js-yaml": "^4.3.2",
+    "qs": "^6.16.0",
+    "stream-json": "3.6.0",
+    "tar": "7.5.22",
     "uuid": "^11.1.1",
     "yaml": "^2.9.0",
     "nx": {
-      "brace-expansion": "5.0.9"
+      "brace-expansion": "5.0.9",
+      "smol-toml": "1.8.0"
     },
     "electron-mocha": {
       "mocha": {
@@ -49,14 +58,22 @@
       }
     },
     "scanoss": {
-      "adm-zip": "0.6.0",
+      "adm-zip": "0.6.1",
+      "stream-json": "3.6.0",
       "tar": "7.5.22",
       "uuid": "11.1.1"
-    }
+    },
+    "scanoss@0.40.2": {
+      "tar": "7.5.22"
+    },
+    "open-collaboration-protocol": {
+      "fflate": "0.8.3"
+    },
+    "pacote": "21.5.1"
   },
   "devDependencies": {
     "@eclipse-dash/nodejs-wrapper": "^0.0.1",
-    "@hono/node-server": "2.1.0",
+    "@hono/node-server": "2.1.1",
     "@types/chai": "4.3.0",
     "@types/chai-spies": "1.0.3",
     "@types/chai-string": "^1.4.0",
@@ -88,15 +105,18 @@
     "glob": "^7.1.7",
     "ignore-styles": "^5.0.1",
     "jsdom": "^22.1.0",
-    "lerna": "^9.0.0",
+    "lerna": "^10.0.1",
     "minimatch": "^10.0.3",
     "mkdirp": "^0.5.0",
     "nan": "2.28.0",
+    "nanoid": "^3.3.19",
     "node-abi": "^4.26.0",
     "node-gyp": "^11.5.0",
     "nyc": "^17.1.0",
-    "puppeteer": "23.1.0",
-    "puppeteer-core": "23.1.0",
+    "postcss-selector-parser": "^7.1.6",
+    "proxy-agent": "^8.0.2",
+    "puppeteer": "25.11.0",
+    "puppeteer-core": "25.11.0",
     "puppeteer-to-istanbul": "1.4.0",
     "rimraf": "^5.0.0",
     "sinon": "^12.0.0",

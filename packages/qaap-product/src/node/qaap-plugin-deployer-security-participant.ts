@@ -34,7 +34,7 @@ export class QaapPluginDeployerSecurityParticipant implements PluginDeployerPart
         if (removed > 0) {
             console.warn(
                 `[qaap] Blocked ${removed} local-file: drop-in plugin entr${removed === 1 ? 'y' : 'ies'} `
-                + '(QAAP_ALLOW_LOCAL_VSIX=1 to allow).',
+                + '(QAAP_ALLOW_LOCAL_VSIX=1 is local-development-only).',
             );
         }
     }

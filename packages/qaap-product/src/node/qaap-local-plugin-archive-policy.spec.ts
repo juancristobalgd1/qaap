@@ -11,12 +11,18 @@ import {
 
 describe('qaap-local-plugin-archive-policy', () => {
     const original = process.env.QAAP_ALLOW_LOCAL_VSIX;
+    const originalNodeEnv = process.env.NODE_ENV;
 
     afterEach(() => {
         if (original === undefined) {
             delete process.env.QAAP_ALLOW_LOCAL_VSIX;
         } else {
             process.env.QAAP_ALLOW_LOCAL_VSIX = original;
+        }
+        if (originalNodeEnv === undefined) {
+            delete process.env.NODE_ENV;
+        } else {
+            process.env.NODE_ENV = originalNodeEnv;
         }
     });
 
@@ -31,5 +37,12 @@ describe('qaap-local-plugin-archive-policy', () => {
         process.env.QAAP_ALLOW_LOCAL_VSIX = '1';
         expect(isLocalPluginArchivePolicyEnabled()).to.equal(false);
         expect(isLocalPluginArchiveInstallBlocked('local-file:/tmp/ok.vsix')).to.equal(false);
+    });
+
+    it('still blocks local-file: when the legacy allow flag is set in hosted mode', () => {
+        process.env.QAAP_ALLOW_LOCAL_VSIX = '1';
+        process.env.NODE_ENV = 'production';
+        expect(isLocalPluginArchivePolicyEnabled()).to.equal(true);
+        expect(isLocalPluginArchiveInstallBlocked('local-file:/tmp/hosted.vsix')).to.equal(true);
     });
 });

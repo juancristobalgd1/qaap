@@ -31,6 +31,7 @@ import {
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
     QAAP_BUILTIN_AGENT_DEFINITIONS,
@@ -311,7 +312,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
             try {
                 const account = await ctx.billingStore.getOrCreateAccount(task.ownerLogin);
                 if (!canStartNewAgentJob(account)) {
-                    fs.mkdirSync(STORE_DIR, { recursive: true });
+                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                     fs.writeFileSync(
                         ctx.logPath(task.id),
                         'Agent runtime allowance is used up for this billing period. The current turn was not started. Top up hours or wait for the next cycle.\n',
@@ -327,14 +328,14 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                     ? hostedModelDenialReason(account, modelId)
                     : undefined;
                 if (hostedDenial) {
-                    fs.mkdirSync(STORE_DIR, { recursive: true });
+                    fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                     fs.writeFileSync(ctx.logPath(task.id), `${hostedDenial}\n`, 'utf8');
                     ctx.finishTask(task.id, 'failed', 1);
                     return;
                 }
             } catch (error) {
                 // Fail closed for authenticated owners: a billing outage must not silently grant Pro quotas.
-                fs.mkdirSync(STORE_DIR, { recursive: true });
+                fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                 const message = error instanceof Error ? error.message : 'Billing check failed';
                 fs.writeFileSync(
                     ctx.logPath(task.id),
@@ -348,7 +349,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
         const markedTask = ctx.tasks.get(task.id) ?? task;
         const baseline = ctx.captureWorktreeBaseline(task.cwd);
         // Private disk copy of secrets — hashes alone cannot restore a destroyed `.env`.
-        const sensitiveSnapshotDir = path.join(STORE_DIR, task.id, 'sensitive-snapshot');
+        const sensitiveSnapshotDir = path.join(path.dirname(ctx.logPath(task.id)), task.id, 'sensitive-snapshot');
         const snapshotted = snapshotSensitiveFiles(task.cwd, sensitiveSnapshotDir);
         task = {
             ...markedTask,
@@ -405,7 +406,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 return;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                fs.mkdirSync(STORE_DIR, { recursive: true });
+                fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
                 fs.writeFileSync(ctx.logPath(task.id), `${message}\n`, 'utf8');
                 ctx.finishTask(task.id, 'failed', 1);
                 return;
@@ -415,7 +416,7 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
 }
 
 export async function spawnProcessExtracted(ctx: any, task: QaapAgentTask): Promise<void> {
-        fs.mkdirSync(STORE_DIR, { recursive: true });
+        fs.mkdirSync(path.dirname(ctx.logPath(task.id)), { recursive: true });
         const logStream = fs.createWriteStream(ctx.logPath(task.id), { flags: 'w' });
         const stdinPromptEntry = ctx.stdinPrompts.get(task.id);
         const stdinPrompt = typeof stdinPromptEntry === 'string'
@@ -423,7 +424,11 @@ export async function spawnProcessExtracted(ctx: any, task: QaapAgentTask): Prom
             : stdinPromptEntry;
         const stdinInteractive = task.autoApprove === false || stdinPrompt !== undefined;
         const agentModel = resolveTaskAgentModel(task);
-        const restoreAntigravitySettings = agentModel?.modelId?.trim()
+        // A shared Theia backend must never rewrite one global CLI settings file while another
+        // tenant is spawning. Hosted workers own their HOME; until the worker itself applies a
+        // model override inside that HOME, skip the unsafe host-side mutation.
+        const restoreAntigravitySettings = !isQaapHostedEnvironment()
+            && agentModel?.modelId?.trim()
             && isAntigravityCliCommand(task.command)
             ? applyAntigravityModelSetting(agentModel.modelId)?.restore
             : undefined;

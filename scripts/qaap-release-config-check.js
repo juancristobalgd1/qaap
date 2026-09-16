@@ -12,7 +12,13 @@ function validateReleaseConfig(config, health, expectedSha) {
             errors.push(`${name}: expected a JSON object`);
             continue;
         }
-        for (const [key, value] of Object.entries({ skipAuth: false, productionRuntime: true, agentUidPerUser: true, oauthConfigured: true })) {
+        for (const [key, value] of Object.entries({
+            skipAuth: false,
+            productionRuntime: true,
+            agentUidPerUser: true,
+            oauthConfigured: true,
+            backendIsolationReady: true,
+        })) {
             if (payload[key] !== value) {
                 errors.push(`${name}: ${key} must be ${value}`);
             }

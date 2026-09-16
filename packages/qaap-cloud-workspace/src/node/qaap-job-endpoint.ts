@@ -196,7 +196,7 @@ export class QaapJobEndpoint implements BackendApplicationContribution {
         if (!ctx) {
             return;
         }
-        const detail = this.runtime.getGraph(req.params.id);
+        const detail = this.runtime.getGraph(req.params.id, this.ownerLogin(ctx));
         if (!detail) {
             res.status(404).json({ error: nls.localize('qaap/jobs/graphNotFound', 'Job graph not found.') });
             return;
@@ -213,7 +213,7 @@ export class QaapJobEndpoint implements BackendApplicationContribution {
         if (!ctx) {
             return;
         }
-        const job = this.runtime.get(req.params.id);
+        const job = this.runtime.get(req.params.id, this.ownerLogin(ctx));
         if (!job) {
             res.status(404).json({ error: nls.localize('qaap/jobs/notFound', 'Job not found.') });
             return;
@@ -230,7 +230,7 @@ export class QaapJobEndpoint implements BackendApplicationContribution {
         if (!ctx) {
             return;
         }
-        const existing = this.runtime.get(req.params.id);
+        const existing = this.runtime.get(req.params.id, this.ownerLogin(ctx));
         if (!existing) {
             res.status(404).json({ error: nls.localize('qaap/jobs/notFound', 'Job not found.') });
             return;
@@ -239,7 +239,7 @@ export class QaapJobEndpoint implements BackendApplicationContribution {
             this.auth.denyForbidden(res, req, 'agent_task', { jobId: existing.id });
             return;
         }
-        res.json(this.runtime.cancel(existing.id));
+        res.json(this.runtime.cancel(existing.id, this.ownerLogin(ctx)));
     }
 
     protected requireAuth(req: Request, res: Response): QaapGithubAuthContext | undefined {

@@ -18,7 +18,7 @@ describe('evaluateQaapProductionAuthReadiness', () => {
         expect(result.oauthConfigured).to.equal(false);
     });
 
-    it('refuses production without OAuth and without skip-auth override', () => {
+    it('refuses production without OAuth', () => {
         const result = evaluateQaapProductionAuthReadiness({
             NODE_ENV: 'production',
             QAAP_SKIP_AUTH: 'false',
@@ -45,6 +45,22 @@ describe('evaluateQaapProductionAuthReadiness', () => {
         });
         expect(result.ready).to.equal(true);
         expect(result.oauthConfigured).to.equal(true);
+        expect(result.backendIsolationMode).to.equal('per-tenant');
+        expect(result.backendIsolationReady).to.equal(true);
+    });
+
+    it('refuses an invited public tenant list while the backend is shared', () => {
+        const result = evaluateQaapProductionAuthReadiness({
+            NODE_ENV: 'production',
+            QAAP_CLOUD_MODE: 'docker',
+            QAAP_BETA_ALLOWED_LOGINS: 'alice,bob',
+            QAAP_GITHUB_CLIENT_ID: 'client',
+            QAAP_GITHUB_CLIENT_SECRET: 'secret',
+            QAAP_OAUTH_PUBLIC_URL: 'https://qaap.example',
+        });
+        expect(result.ready).to.equal(false);
+        expect(result.backendIsolationReady).to.equal(false);
+        expect(result.fatalReason).to.match(/backend-per-tenant/i);
     });
 
     it('rejects placeholder OAuth client ids', () => {
@@ -58,7 +74,7 @@ describe('evaluateQaapProductionAuthReadiness', () => {
         expect(result.ready).to.equal(false);
     });
 
-    it('honors skip-auth only with the production override', () => {
+    it('never enables skip-auth in production, even with legacy overrides', () => {
         const refused = evaluateQaapProductionAuthReadiness({
             NODE_ENV: 'production',
             QAAP_SKIP_AUTH: 'true',
@@ -66,21 +82,21 @@ describe('evaluateQaapProductionAuthReadiness', () => {
         expect(refused.skipAuth).to.equal(false);
         expect(refused.ready).to.equal(false);
 
-        const allowed = evaluateQaapProductionAuthReadiness({
+        const stillRefused = evaluateQaapProductionAuthReadiness({
             NODE_ENV: 'production',
             QAAP_SKIP_AUTH: 'true',
             QAAP_ALLOW_SKIP_AUTH_IN_PRODUCTION: 'true',
         });
-        expect(allowed.skipAuth).to.equal(true);
-        expect(allowed.ready).to.equal(true);
+        expect(stillRefused.skipAuth).to.equal(false);
+        expect(stillRefused.ready).to.equal(false);
     });
 
-    it('allows the unconfigured-OAuth override for a private box', () => {
+    it('ignores the legacy unconfigured-OAuth override', () => {
         const result = evaluateQaapProductionAuthReadiness({
             NODE_ENV: 'production',
             QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION: '1',
         });
-        expect(result.ready).to.equal(true);
+        expect(result.ready).to.equal(false);
     });
 });
 
@@ -104,6 +120,8 @@ describe('buildQaapLaunchHealthPayload', () => {
             skipAuth: false,
             oauthConfigured: true,
             agentUidPerUser: true,
+            backendIsolationMode: 'per-tenant',
+            backendIsolationReady: true,
             build: 'abc123def456',
         });
         expect(JSON.stringify(payload)).to.not.match(/secret|client/i);

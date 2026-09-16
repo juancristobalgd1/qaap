@@ -195,8 +195,11 @@ export function listExtracted(ctx: any, ownerLogin?: string): QaapJob[] {
             .sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function cancelExtracted(ctx: any, id: string): QaapJob | undefined {
+export function cancelExtracted(ctx: any, id: string, ownerLogin?: string): QaapJob | undefined {
         const job = ctx.jobs.get(id);
+        if (job && ownerLogin !== undefined && job.ownerLogin !== ctx.normalizeOwner(ownerLogin)) {
+            return undefined;
+        }
         if (!job || isQaapJobFinished(job.state)) {
             return job;
         }

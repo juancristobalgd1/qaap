@@ -21,6 +21,11 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     setpriv = true;
     setprivPath = '/usr/bin/setpriv';
     prepared: string[] = [];
+    container = false;
+
+    override isContainerIsolationEnabled(): boolean {
+        return this.container;
+    }
 
     override resolveSpawnIdentity(): { uid?: number; gid?: number } {
         return this.identity;
@@ -260,11 +265,17 @@ describe('QaapTenantSpawnService.wrapGitForTenant (mutating git over a tenant re
 describe('QaapTenantSpawnService.resolveProcessEnv', () => {
 
     const original = process.env.QAAP_AGENT_UID_PER_USER;
+    const originalContainerHome = process.env.QAAP_TENANT_CONTAINER_HOME;
     afterEach(() => {
         if (original === undefined) {
             delete process.env.QAAP_AGENT_UID_PER_USER;
         } else {
             process.env.QAAP_AGENT_UID_PER_USER = original;
+        }
+        if (originalContainerHome === undefined) {
+            delete process.env.QAAP_TENANT_CONTAINER_HOME;
+        } else {
+            process.env.QAAP_TENANT_CONTAINER_HOME = originalContainerHome;
         }
     });
 
@@ -285,5 +296,16 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin', HOME: '/root' });
         expect(env.HOME).to.equal('/root');
         expect(env.USER).to.equal(undefined);
+    });
+
+    it('keeps Docker worker commands on the worker-local HOME instead of the host tenant HOME', () => {
+        process.env.QAAP_TENANT_CONTAINER_HOME = '/tmp/alice-home';
+        const svc = new TestTenantSpawnService();
+        svc.container = true;
+        svc.identity = { uid: 20005, gid: 20005 };
+        const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin', HOME: '/root' });
+        expect(env.HOME).to.equal('/tmp/alice-home');
+        expect(env.USER).to.equal('qaap-tenant');
+        expect(env.LOGNAME).to.equal('qaap-tenant');
     });
 });

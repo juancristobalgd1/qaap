@@ -33,9 +33,10 @@ services:
       # Not world-reachable. Public traffic should hit Caddy on :443.
       - "127.0.0.1:${THEIA_PORT:-4873}:${THEIA_PORT:-4873}"
     environment:
-      # Theia backend runs in production mode; project bootstrap install uses
-      # NODE_ENV=development / npm --include=dev so Vite/Next devDependencies are installed.
-      NODE_ENV: production
+      # Theia backend defaults to production. For a private Docker Desktop smoke test, set
+      # NODE_ENV=development and QAAP_CLOUD_MODE=local; hosted production requires a rootless
+      # Docker socket and is rejected if it falls back to /var/run/docker.sock.
+      NODE_ENV: ${NODE_ENV:-production}
       NODE_OPTIONS: ${QAAP_NODE_OPTIONS:---max-old-space-size=1536}
       HOST: 0.0.0.0
       PORT: "${THEIA_PORT:-4873}"
@@ -51,8 +52,12 @@ services:
       QAAP_SKIP_AUTH: ${QAAP_SKIP_AUTH:-false}
       # Production denies admission until actual invited GitHub logins are configured.
       QAAP_BETA_ALLOWED_LOGINS: ${QAAP_BETA_ALLOWED_LOGINS:-}
+      # Complete backend-per-tenant mode. Public beta refuses to start unless this is enabled
+      # and the master secret is at least 32 characters; the secret is only used to derive the
+      # loopback proxy assertion for each tenant backend.
+      QAAP_BACKEND_PER_TENANT: ${QAAP_BACKEND_PER_TENANT:-0}
+      QAAP_TENANT_BACKEND_MASTER_SECRET: ${QAAP_TENANT_BACKEND_MASTER_SECRET:-}
       # Production boot exits if OAuth is missing (NODE_ENV=production). Override only on a private box:
-      QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION: ${QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION:-}
       QAAP_VAPID_PUBLIC_KEY: ${QAAP_VAPID_PUBLIC_KEY:-}
       QAAP_VAPID_PRIVATE_KEY: ${QAAP_VAPID_PRIVATE_KEY:-}
       QAAP_VAPID_SUBJECT: ${QAAP_VAPID_SUBJECT:-mailto:qaap@localhost}
@@ -108,22 +113,19 @@ services:
       # Security: run the spawned agent under a non-root uid so it cannot read other tenants' secrets
       # under /root (API keys, OAuth tokens, helper tokens). The image ships a qaap-agent user (uid
       # 1001) and chowns /workspace + the agent home to it, so the drop is safe by DEFAULT — and the
-      # backend refuses to spawn a root agent in a production runtime anyway. Default to 1001 (matching
-      # the image's ENV); an empty default here would have OVERRIDDEN that ENV back to root. Set
-      # QAAP_AGENT_UID= (empty) + QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true only if you truly need root.
+      # backend refuses to spawn a root agent in a production runtime. Default to 1001 (matching
+      # the image's ENV); an empty default here would have OVERRIDDEN that ENV back to root. Root
+      # execution has no production escape hatch; use NODE_ENV=development + QAAP_CLOUD_MODE=local
+      # only for a deliberate single-user development run.
       QAAP_AGENT_UID: ${QAAP_AGENT_UID:-1001}
       QAAP_AGENT_GID: ${QAAP_AGENT_GID:-1001}
       QAAP_AGENT_HOME: ${QAAP_AGENT_HOME:-/home/qaap-agent}
-      # Multi-tenant CODE isolation (SEC-1). Default ON → each GitHub login gets a distinct,
-      # persistent uid (20000+); its repos/worktrees are chowned to that uid + chmod 0700 and its
-      # agent runs under it with a private per-tenant HOME — so one tenant's agent cannot read/write
-      # another's code. REQUIRES the backend to be root (it is, in this image). Enabling rewrites
-      # on-disk ownership lazily at each spawn; read doc/qaap-uid-per-user.md (incl. the rollback
-      # script — turning it back off leaves files owned by 20000+). To opt OUT on a single-user box,
-      # set QAAP_AGENT_UID_PER_USER=0 AND QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION=true — the
-      # backend refuses to spawn agents under a shared uid in production without that explicit ack.
+      # Multi-tenant CODE isolation (SEC-1). Default ON for the legacy host fallback → each GitHub
+      # login gets a distinct persistent uid (20000+) when the backend has the privilege to provision
+      # it. Hosted worker-container mode does not need this host-side chown path: the worker boundary
+      # and its non-root uid are primary. Keep the flag on so a deliberate host fallback remains
+      # fail-closed; read doc/qaap-uid-per-user.md before changing ownership policy.
       QAAP_AGENT_UID_PER_USER: ${QAAP_AGENT_UID_PER_USER:-1}
-      QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION: ${QAAP_ALLOW_SHARED_AGENT_UID_IN_PRODUCTION:-}
       # Where per-tenant agent HOMEs live (image provisions /home/qaap-tenants at 0711). Only used
       # when uid-per-user is on.
       QAAP_TENANT_HOME_ROOT: ${QAAP_TENANT_HOME_ROOT:-/home/qaap-tenants}
@@ -134,14 +136,16 @@ services:
       # top matching file paths as a "likely relevant files" hint (Cursor-style priming). Adds a small
       # per-turn token + ripgrep cost — set QAAP_AGENT_RETRIEVAL=1 and measure. Default off.
       QAAP_CLOUD_MODE: ${QAAP_CLOUD_MODE:-docker}
-      # Container-per-tenant isolation (Opción A): each user runs agents and terminals in an isolated container
+      # Container-per-tenant isolation: each user runs agents and terminals in an isolated worker container.
       QAAP_TENANT_CONTAINER_ISOLATION: ${QAAP_TENANT_CONTAINER_ISOLATION:-1}
       QAAP_TENANT_MEMORY_LIMIT: ${QAAP_TENANT_MEMORY_LIMIT:-2147483648}
       QAAP_TENANT_CPU_LIMIT: ${QAAP_TENANT_CPU_LIMIT:-2}
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
       QAAP_TENANT_CONTAINER_UID: ${QAAP_TENANT_CONTAINER_UID:-1000}
       QAAP_TENANT_CONTAINER_GID: ${QAAP_TENANT_CONTAINER_GID:-1000}
-      QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-bridge}
+      # Never use Docker's shared default bridge for untrusted tenant workers. The backend creates
+      # one managed bridge per tenant (or use `none` with an external egress proxy).
+      QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-isolated-bridge}
       # Billing / Stripe Checkout (Pro €29, Team €79). Without these, Work Hub Billing shows
       # stripeEnabled=false and POST /qaap/api/billing/checkout returns 503.
       # Public origin for Checkout success/cancel URLs (prefer the Caddy HTTPS host).
@@ -185,9 +189,9 @@ services:
       ENABLE_TOOL_SEARCH: ${ENABLE_TOOL_SEARCH:-false}
       # Optional: mount a host folder as the default workspace
       # THEIA_PLUGINS_DIR: /app/plugins
-      # Prefer a rootless Docker socket in hosted deployments. The fallback is kept for existing
-      # VPS/local deployments; Docker control-plane access is distinct from tenant worker identity.
-      DOCKER_HOST: ${DOCKER_HOST:-unix:///var/run/docker.sock}
+      # Hosted deployments must use a rootless Docker socket. The secure default is the usual
+      # rootless-per-user socket; local Docker Desktop users must override this explicitly in .env.
+      DOCKER_HOST: ${DOCKER_HOST:-unix:///run/user/1000/docker.sock}
       # The worker must use the same image so qaiq/codex/claude binaries and the non-root uid exist
       # inside the tenant container. In production set this to the immutable deployed image tag.
       QAAP_THEIA_IMAGE: ${QAAP_THEIA_IMAGE:-qaap-theia:local}
@@ -204,7 +208,10 @@ services:
       - theia-worktrees:/tmp/qaap-worktrees
       - theia-parallel:/tmp/qaap-parallel
       - qaap-tenant-homes:/home/qaap-tenants
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Rootless default: /run/user/1000/docker.sock:/run/user/1000/docker.sock. Never make a
+      # rootful host socket the compose fallback; hosted admission rejects it, but the mount itself
+      # would still expose a dangerous control-plane capability to a compromised backend.
+      - ${QAAP_DOCKER_SOCKET_SOURCE:-/run/user/1000/docker.sock}:${QAAP_DOCKER_SOCKET_TARGET:-/run/user/1000/docker.sock}
     restart: unless-stopped
     deploy:
       resources:

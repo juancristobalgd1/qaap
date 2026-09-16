@@ -44,16 +44,50 @@ fi
 
 dexec() { docker compose exec -T "$SVC" sh -c "$1"; }
 
-if dexec 'id' | grep -q 'uid=0(root)'; then
-    ok "backend runs as root (required for uid-per-user drop)"
+CONTAINER_ISOLATION="$(dexec 'printf %s "${QAAP_TENANT_CONTAINER_ISOLATION:-}"')"
+if [[ "$CONTAINER_ISOLATION" == "1" || "$CONTAINER_ISOLATION" == "true" ]]; then
+    if dexec 'id' | grep -q 'uid=0(root)'; then
+        bad "backend runs as root — hosted Theia must remain non-root when worker containers are enabled"
+    else
+        ok "backend runs as non-root; tenant worker containers are the execution boundary"
+    fi
 else
-    bad "backend is not root — uid-per-user degrades to no isolation"
+    bad "QAAP_TENANT_CONTAINER_ISOLATION='$CONTAINER_ISOLATION' — public deploy requires container-per-tenant isolation"
+fi
+
+DOCKER_HOST_IN_CONTAINER="$(dexec 'printf %s "${DOCKER_HOST:-}"')"
+ALLOW_ROOTFUL_DOCKER="$(dexec 'printf %s "${QAAP_ALLOW_ROOTFUL_DOCKER_SOCKET_IN_PRODUCTION:-}"')"
+if [[ -n "$ALLOW_ROOTFUL_DOCKER" && "$ALLOW_ROOTFUL_DOCKER" =~ ^(1|true|yes)$ ]]; then
+    bad "rootful Docker socket override is enabled — public launch is blocked"
+elif [[ "$DOCKER_HOST_IN_CONTAINER" == unix:///var/run/docker.sock || "$DOCKER_HOST_IN_CONTAINER" == unix:///run/docker.sock || -z "$DOCKER_HOST_IN_CONTAINER" ]]; then
+    bad "hosted Docker control plane uses the rootful default; configure a rootless socket"
+elif [[ "$DOCKER_HOST_IN_CONTAINER" == unix:///* ]]; then
+    ok "hosted Docker control plane uses a non-system Unix socket (${DOCKER_HOST_IN_CONTAINER})"
+else
+    bad "hosted Docker control plane is not a rootless Unix socket (${DOCKER_HOST_IN_CONTAINER})"
 fi
 
 if dexec 'command -v setpriv >/dev/null 2>&1'; then
     ok "setpriv is present"
 else
     bad "setpriv missing"
+fi
+
+# Public beta must use the compiled backend-per-tenant router. A tenant worker
+# alone is insufficient because Theia singletons, memory, operator logs and
+# in-process indexes otherwise remain shared.
+BETA_ALLOWED_LOGINS="$(dexec 'printf %s "${QAAP_BETA_ALLOWED_LOGINS:-}"')"
+BACKEND_ISOLATION_MODE="$(dexec 'node -e "const m=require(\"/app/packages/qaap-adapters/lib/common/qaap-backend-isolation.js\"); process.stdout.write(m.QAAP_BACKEND_ISOLATION_MODE)"')"
+BACKEND_PER_TENANT="$(dexec 'printf %s "${QAAP_BACKEND_PER_TENANT:-}"')"
+BACKEND_SECRET_LENGTH="$(dexec 'printf %s "${#QAAP_TENANT_BACKEND_MASTER_SECRET}"')"
+if [[ -n "${BETA_ALLOWED_LOGINS//[[:space:],]/}" && "$BACKEND_ISOLATION_MODE" != "per-tenant" ]]; then
+    bad "public beta is configured but the compiled backend isolation mode is '$BACKEND_ISOLATION_MODE'; backend-per-tenant is required"
+elif [[ -n "${BETA_ALLOWED_LOGINS//[[:space:],]/}" && ! "$BACKEND_PER_TENANT" =~ ^(1|true)$ ]]; then
+    bad "public beta is configured but QAAP_BACKEND_PER_TENANT='$BACKEND_PER_TENANT'"
+elif [[ -n "${BETA_ALLOWED_LOGINS//[[:space:],]/}" && "$BACKEND_SECRET_LENGTH" -lt 32 ]]; then
+    bad "public beta requires QAAP_TENANT_BACKEND_MASTER_SECRET with at least 32 characters"
+else
+    ok "compiled backend isolation mode is '$BACKEND_ISOLATION_MODE'"
 fi
 
 FLAG="$(dexec 'printf %s "${QAAP_AGENT_UID_PER_USER:-}"')"

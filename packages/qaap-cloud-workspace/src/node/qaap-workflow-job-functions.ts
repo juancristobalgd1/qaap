@@ -12,7 +12,7 @@
  */
 
 import { nls } from '@theia/core';
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { execFile } from 'child_process';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
@@ -30,6 +30,8 @@ import {
     resolveQaapDeclaredVerificationScript,
 } from './qaap-agent-verification';
 import { QaapJobFunctionContribution, QaapJobFunctionContext, QaapJobFunctionRegistry } from './qaap-job-function-registry';
+import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
+import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 
 const execFileAsync = promisify(execFile);
 
@@ -134,6 +136,9 @@ interface VerifyOutput {
 
 @injectable()
 export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
+
+    @inject(QaapTenantSpawnService)
+    protected readonly tenantSpawn: QaapTenantSpawnService;
 
     registerFunctions(registry: QaapJobFunctionRegistry): void {
         registry.register<QaapWorkflowBaseRefInput, ClassifyRiskOutput>({
@@ -274,6 +279,9 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
 
     /** Run one npm script; return an error summary on failure, or undefined on success. Overridable for tests. */
     protected async runVerificationScript(context: QaapJobFunctionContext, script: string): Promise<string | undefined> {
+        if (isQaapHostedEnvironment()) {
+            return this.runVerificationScriptInTenant(context, script);
+        }
         try {
             // Windows exposes npm through a .cmd shim, which execFile cannot launch directly.
             // Run it through the platform command interpreter; the script name has already passed
@@ -294,6 +302,95 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
         } catch (error) {
             return this.describeScriptFailure(error);
         }
+    }
+
+    /** Execute repository-defined npm lifecycle code only inside the authenticated tenant worker. */
+    protected async runVerificationScriptInTenant(context: QaapJobFunctionContext, script: string): Promise<string | undefined> {
+        if (context.signal.aborted) {
+            return 'Verification was cancelled before the tenant worker started.';
+        }
+        const baseEnv: NodeJS.ProcessEnv = {
+            GIT_CONFIG_NOSYSTEM: '1',
+            npm_config_update_notifier: 'false',
+        };
+        for (const key of ['PATH', 'DOCKER_HOST', 'LANG', 'LC_ALL']) {
+            const value = process.env[key];
+            if (value) {
+                baseEnv[key] = value;
+            }
+        }
+        let child;
+        try {
+            child = await this.tenantSpawn.spawnArgvPreparedAsync('npm', ['run', script], {
+                cwd: context.cwd,
+                env: this.tenantSpawn.resolveProcessEnv(context.cwd, baseEnv),
+                stdio: ['ignore', 'pipe', 'pipe'],
+                detached: true,
+            });
+        } catch (error) {
+            return `Could not start tenant verification: ${error instanceof Error ? error.message : String(error)}`;
+        }
+        return new Promise(resolve => {
+            let stdout = '';
+            let stderr = '';
+            let settled = false;
+            let timedOut = false;
+            let aborted = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            const finish = (result: string | undefined): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeout) {
+                    clearTimeout(timeout);
+                }
+                context.signal.removeEventListener('abort', abort);
+                resolve(result);
+            };
+            const collect = (target: 'stdout' | 'stderr', chunk: unknown): void => {
+                if (settled) {
+                    return;
+                }
+                const value = String(chunk);
+                if (target === 'stdout') {
+                    stdout += value;
+                } else {
+                    stderr += value;
+                }
+                if (stdout.length + stderr.length > MAX_VERIFY_OUTPUT_BYTES * 8) {
+                    child.kill();
+                    finish(`Verification output exceeded ${MAX_VERIFY_OUTPUT_BYTES * 8} bytes.`);
+                }
+            };
+            const abort = (): void => {
+                aborted = true;
+                child.kill();
+            };
+            child.stdout?.on('data', chunk => collect('stdout', chunk));
+            child.stderr?.on('data', chunk => collect('stderr', chunk));
+            child.on('error', error => finish(`Tenant verification failed to start: ${error.message}`));
+            child.on('close', code => {
+                if (aborted) {
+                    finish('Verification was cancelled.');
+                } else if (timedOut) {
+                    finish(`Verification timed out after ${Math.ceil(VERIFY_SCRIPT_TIMEOUT_MS / 60_000)} minutes.`);
+                } else if (code === 0) {
+                    finish(undefined);
+                } else {
+                    finish(this.describeScriptFailure({
+                        message: `Command failed: npm run ${script}`,
+                        stdout,
+                        stderr,
+                    }));
+                }
+            });
+            context.signal.addEventListener('abort', abort, { once: true });
+            timeout = setTimeout(() => {
+                timedOut = true;
+                child.kill();
+            }, VERIFY_SCRIPT_TIMEOUT_MS);
+        });
     }
 
     /**
@@ -341,12 +438,84 @@ export class QaapWorkflowJobFunctions implements QaapJobFunctionContribution {
 
     /** `execFile`, never a shell string: workflow inputs must never reach a shell. */
     protected async git(context: QaapJobFunctionContext, args: readonly string[]): Promise<string> {
-        const { stdout } = await execFileAsync('git', [...args], {
+        const gitArgs = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args];
+        if (isQaapHostedEnvironment()) {
+            return this.gitInTenant(context, gitArgs);
+        }
+        const { stdout } = await execFileAsync('git', gitArgs, {
             cwd: context.cwd,
             signal: context.signal,
             timeout: GIT_TIMEOUT_MS,
             maxBuffer: MAX_DIFF_BYTES * 4,
         });
         return stdout;
+    }
+
+    /** Keep workflow git inspection behind the same tenant boundary as verification commands. */
+    protected async gitInTenant(context: QaapJobFunctionContext, args: readonly string[]): Promise<string> {
+        const baseEnv: NodeJS.ProcessEnv = {
+            GIT_CONFIG_NOSYSTEM: '1',
+            GIT_TERMINAL_PROMPT: '0',
+        };
+        for (const key of ['PATH', 'DOCKER_HOST', 'LANG', 'LC_ALL']) {
+            const value = process.env[key];
+            if (value) {
+                baseEnv[key] = value;
+            }
+        }
+        const child = await this.tenantSpawn.spawnArgvPreparedAsync('git', args, {
+            cwd: context.cwd,
+            env: this.tenantSpawn.resolveProcessEnv(context.cwd, baseEnv),
+            stdio: ['ignore', 'pipe', 'pipe'],
+            detached: true,
+        });
+        return new Promise((resolve, reject) => {
+            let stdout = '';
+            let stderr = '';
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            const finish = (callback: () => void): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timeout) {
+                    clearTimeout(timeout);
+                }
+                context.signal.removeEventListener('abort', abort);
+                callback();
+            };
+            const abort = (): void => {
+                child.kill();
+            };
+            const collect = (target: 'stdout' | 'stderr', chunk: unknown): void => {
+                if (target === 'stdout') {
+                    stdout += String(chunk);
+                } else {
+                    stderr += String(chunk);
+                }
+                if (stdout.length + stderr.length > MAX_DIFF_BYTES * 4) {
+                    child.kill();
+                    finish(() => reject(new Error(`Git output exceeded ${MAX_DIFF_BYTES * 4} bytes.`)));
+                }
+            };
+            child.stdout?.on('data', chunk => collect('stdout', chunk));
+            child.stderr?.on('data', chunk => collect('stderr', chunk));
+            child.on('error', error => finish(() => reject(error)));
+            child.on('close', code => finish(() => {
+                if (code === 0) {
+                    resolve(stdout);
+                } else if (context.signal.aborted) {
+                    reject(context.signal.reason ?? new Error('Workflow git operation was cancelled.'));
+                } else {
+                    reject(new Error(stderr.trim() || `git exited with status ${code}`));
+                }
+            }));
+            context.signal.addEventListener('abort', abort, { once: true });
+            timeout = setTimeout(() => {
+                child.kill();
+                finish(() => reject(new Error(`Git operation timed out after ${Math.ceil(GIT_TIMEOUT_MS / 1000)} seconds.`)));
+            }, GIT_TIMEOUT_MS);
+        });
     }
 }

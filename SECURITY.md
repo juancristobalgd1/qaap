@@ -1,5 +1,17 @@
 # Qaap Security
 
+## Estado de la implementación (2026-09-16)
+
+La ruta completa de backend por tenant está implementada detrás de un gate explícito:
+
+- `QAAP_BACKEND_PER_TENANT=1` y un `QAAP_TENANT_BACKEND_MASTER_SECRET` de al menos 32 caracteres son obligatorios antes de aceptar `QAAP_BETA_ALLOWED_LOGINS`.
+- El control-plane conserva health, OAuth y admisión; el tráfico autenticado del IDE se enruta al backend Theia dedicado del tenant mediante una aserción HMAC de corta duración.
+- La prueba local de dos tenants verificó contenedores, puertos y redes distintos, autenticación cruzada denegada, token interno de WebSocket y ausencia de cookies del tenant en el control-plane.
+- El worker y el backend usan usuario no privilegiado, rootfs de sólo lectura, `no-new-privileges`, `CapDrop=ALL`, límites de recursos, mounts allowlisted y red dedicada.
+- La suite enfocada de aislamiento terminó con **140 passing**; la imagen Docker compiló **101 proyectos**; `npm audit` y `npm audit --omit=dev` reportaron **0 vulnerabilidades conocidas**; el drift gate reportó **0 drift nuevo**.
+
+Esto es evidencia de código y entorno local. La apertura pública sigue condicionada a la aceptación en VPS Linux con Docker rootless, TLS/OAuth reales, dos cuentas invitadas, backups off-site y los scripts de launch readiness descritos más abajo.
+
 ## Reporting a vulnerability
 
 Please **do not** open a public issue, PR, or discussion for a suspected
@@ -25,40 +37,78 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
   - Set `QAAP_TENANT_DOCKER_IMAGE` (or `QAAP_THEIA_IMAGE`) to the exact image
     containing the agent CLIs. The worker is not allowed to fall back to a
     bare `node` image in a hosted deployment.
-  - Prefer a rootless Docker socket through `DOCKER_HOST`, or place Docker
-    operations behind a narrowly allowlisted supervisor. A rootful
-    `/var/run/docker.sock` gives its reader Docker-root-equivalent control;
-    putting the Theia process in a non-root Unix account does not remove that
-    risk.
+  - Use a rootless Docker socket through `DOCKER_HOST`. Qaap rejects the
+    rootful `/var/run/docker.sock`, TCP Docker endpoints, Windows named pipes and
+    an unwired supervisor in hosted mode; putting the Theia process in a non-root
+    Unix account does not remove the Docker-root-equivalent risk of a writable
+    rootful socket.
+    Configure `QAAP_DOCKER_SOCKET_SOURCE` and `QAAP_DOCKER_SOCKET_TARGET` to the
+    same rootless socket path in Compose (normally `/run/user/1000/docker.sock`).
   - Keep the non-root agent drop enabled. The shipped image sets
     `QAAP_AGENT_UID=1001` (a provisioned `qaap-agent` user) **by default**, so the
     agent cannot read other tenants' secrets/tokens under the root-owned `/root`
     tree. As a backstop, the backend **refuses to spawn the agent as root in a
-    production runtime** (`NODE_ENV=production` or a non-local `QAAP_CLOUD_MODE`)
-    unless the drop is applied — override only via
-    `QAAP_ALLOW_ROOT_AGENT_IN_PRODUCTION=true` if you fully understand the risk.
+    production runtime** (`NODE_ENV=production` or a non-local `QAAP_CLOUD_MODE`).
+    The hosted admission gate rejects the host fallback entirely, so the legacy
+    root/shared-uid compatibility overrides are not a public multi-tenant escape hatch.
     See [doc/qaap-vps-deployment.md](doc/qaap-vps-deployment.md) for the
     verification steps.
-  - Keep per-tenant CODE isolation enabled when using the host fallback. In
-    `docker-compose.yml`, `QAAP_AGENT_UID_PER_USER` defaults to **on**. In
-    Docker worker mode the container boundary is primary; the uid policy is
-    still useful for host-side compatibility paths.
+  - Keep per-tenant CODE isolation enabled. In `docker-compose.yml`,
+    `QAAP_AGENT_UID_PER_USER` defaults to **on** for local compatibility, but
+    hosted admission rejects the host fallback and requires the Docker worker.
+  - Keep `QAAP_TENANT_NETWORK_MODE=isolated-bridge` (the default). Qaap creates
+    one managed bridge per tenant with inter-container communication disabled.
+    Use `none` only when an external egress proxy is deliberately configured;
+    shared `bridge`, `host` and `container:<id>` modes are rejected.
   - Serve over **HTTPS** and never set `QAAP_SKIP_AUTH` in production (it is
     refused in a production runtime, but do not rely on that alone).
   - Provide **your own** GitHub OAuth app credentials and VAPID keys — never
     reuse the placeholders in `*.env.example`, and never commit real secrets.
-- **Full code-worker isolation** is implemented by the Docker worker mode, but
-  it does not automatically isolate Theia's core singletons, terminal attach
-  channel, logs, or the Docker control-plane. Those remain explicit hardening
-  work for a public multi-user service.
+  - **Tenant code-worker isolation** is implemented by the Docker worker mode.
+    For a public beta, also enable the complete backend-per-tenant router with
+    `QAAP_BACKEND_PER_TENANT=1` and a random
+    `QAAP_TENANT_BACKEND_MASTER_SECRET` of at least 32 characters. The outer
+    Theia process then keeps only OAuth/health/admission control-plane routes;
+    authenticated IDE HTTP/RPC/WebSocket traffic is routed to that user's own
+    non-root backend container. The control-plane still owns operator records,
+    billing/admission state and operational logs by design; do not expose those
+    stores as tenant data. Authenticated task output and sensitive-file snapshots
+    are physically stored below `~/.qaap/agent-tasks/owners/{login}/`.
+    With the flag disabled, Qaap remains the hardened private hybrid mode and
+    must not be advertised as public third-party isolation.
+    Browser-visible filesystem/RPC boundaries are owner-scoped, and tenant
+    containers receive only a short-lived tenant-bound HMAC assertion plus the
+    user's GitHub token—not the shared session store, Docker socket, OAuth
+    client secret or host keystore.
+  - The frontend-facing `EnvVariablesServer` filters secret-like variables and
+    Docker control-plane settings in hosted mode; new sensitive environment
+    variables must retain the same deny-list coverage.
+  - Hosted execution never rewrites a shared host-side Antigravity/Gemini
+    `settings.json` to select a tenant's model. Model/config state must be
+    applied inside the tenant worker HOME; otherwise the task is not allowed to
+    create a cross-tenant global settings race.
 
-### Known residual: git-over-tenant-repo run as root — GATE THE MULTI-TENANT FLIP
+- **A tenant worker and a tenant backend are separate boundaries.** The
+  complete backend-per-tenant path now exists, but is deliberately opt-in and
+  fail-closed: the compiled product reports `per-tenant`, while the launch gate
+  additionally requires `QAAP_BACKEND_PER_TENANT=1` and the 32-character master
+  secret before accepting `QAAP_BETA_ALLOWED_LOGINS`. Do not treat the worker
+  flag alone as sufficient. When backend-per-tenant is disabled, the hardened
+  worker mode remains private/single-user or internal validation only because
+  the shared Theia control-plane retains process-global state.
+
+### Git-over-tenant-repo: hosted worker boundary closed; local fallback remains private-only
 
 Every process that runs *tenant-controlled program code* — the agent, preview
 dev server, terminal, and deploy build — drops to the tenant uid via
 `setpriv --clear-groups`. The git checkpoint/restore in the conversation store
-also drops (it runs checkout/add over the tenant repo). **But several git
-operations that touch tenant repos still run as the backend uid (root in prod).**
+also drops (it runs checkout/add over the tenant repo). In the hosted worker
+    container mode these operations are delegated into the tenant worker. The worker mounts only
+    that tenant's repository root plus its tenant-segmented conversation-worktree and parallel-run
+    roots; host paths are translated to `/workspace`, `/workspace/.qaap-worktrees`, and
+    `/workspace/.qaap-parallel` before Git receives them. **The
+legacy host fallback is rejected during hosted startup and remains only a local/private
+compatibility path. It must not be enabled for public multi-tenancy.
 git executes tenant-controlled hooks (`.git/hooks/*`) and clean/smudge/merge
 **filter drivers** (`.git/config`, tenant-writable) during checkout/merge/add,
 so running them as root is a root-RCE vector, and they leave root-owned files.
@@ -76,19 +126,18 @@ Current state of these paths:
   mutating git (`worktree add` / `merge` / `add` / `commit`) runs under the tenant
   uid (`mutatingGit`). The base repo is provisioned before finalize so the shared
   `.git` is tenant-owned when the commit/merge write to it.
-- **`qaap-github-oauth-endpoint.ts` (clone/fetch/pull) — CLOSED.** Hooks are
-  disabled (`-c core.hooksPath=/dev/null`). Clone/fetch are safe (a fresh clone's
-  `.git/config` is git-generated, not tenant-controlled; fetch downloads objects
-  with no checkout). The one dangerous op was **`git pull --ff-only`** on an
-  existing repo — its ff checkout ran a tenant-defined clean/smudge **filter**
-  (from the repo's own `.git/config`) as root. The repo-`open` flow no longer
-  checks out as root: it does `fetch --all --prune` only (refs + objects, no
-  checkout), and the working tree fast-forwards on the tenant's NEXT git operation
-  (agent / terminal), which runs under the tenant uid and is safe. Tradeoff: an
-  opened repo is not auto-fast-forwarded to the remote tip until the tenant's next
-  git op — a deliberate exchange of an auto-pull convenience for eliminating the
-  root-checkout RCE (avoids relocating `QaapTenantSpawnService` across the
-  `qaap-cloud-workspace` → `qaap-mobile-shell` dep cycle).
+- **`qaap-github-oauth-endpoint.ts` (clone/fetch) — CLOSED.** In hosted mode both
+  operations run through the tenant-process DI seam and Docker worker; host paths are
+  translated to `/workspace` before Git receives them. Hooks/config execution is
+  additionally hardened with `core.hooksPath=/dev/null`, `core.fsmonitor=false` and
+  a minimal environment. The local fallback is private-development compatibility only.
+- **`qaap-git-review-endpoint.ts` and workflow verification — CLOSED.** Git review,
+  workflow diffs and `npm run` verification use the worker in hosted mode; missing worker
+  binding fails closed. This includes stdin-based hunk application and the output/timeout
+  controls.
+- **Research and worktree Git — CLOSED.** Research bookkeeping is prepared against the
+  tenant worker before its loop starts; `wrapGitForTenant` translates explicit `-C` paths
+  into the tenant mount. New Worktree and parallel-run mutations use that same seam.
 
 > [!IMPORTANT]
 > **The uid-per-user drop is not verified on a real box by these unit tests.** It
@@ -113,14 +162,20 @@ Current state of these paths:
 > does not cancel background jobs that were already running.
 > Configure encrypted offsite copies via `/opt/qaap/.env.backup` — local tars do not survive disk loss.
 > A production runtime without GitHub OAuth now **exits on
-> startup** unless `QAAP_ALLOW_UNCONFIGURED_OAUTH_IN_PRODUCTION` is set.
+> startup**. There is no production authentication bypass; `QAAP_SKIP_AUTH` is local-development-only.
 
 ## Dependency audit notes
 
-`npm audit --omit=dev` reports **zero production vulnerabilities**. The
-unmaintained `decompress@4.2.1` package (GHSA-mp2f-45pm-3cg9, hardlink/symlink
-path traversal during archive extraction) has been removed from runtime
-dependencies. Plugin, VSIX, CLI, and remote-native extraction now use
+`npm audit --omit=dev` and the unfiltered `npm audit` both report **zero known
+vulnerabilities** for the committed lockfile. Runtime dependency pins include
+the patched releases of DOMPurify, js-yaml, fast-uri, Hono, Multer, qs,
+adm-zip, fflate, Mermaid, and the SCANOSS integration. SCANOSS is pinned to
+`0.40.2`; its nested `stream-json` and `tar` dependencies are overridden to
+patched releases, and the runtime API is covered by the package test.
+
+The unmaintained `decompress@4.2.1` package (GHSA-mp2f-45pm-3cg9,
+hardlink/symlink path traversal during archive extraction) has been removed from
+runtime dependencies. Plugin, VSIX, CLI, and remote-native extraction now use
 `@theia/qaap-archive`, which parses ZIP/TAR/TGZ data and validates every entry
 path, link target, parent realpath, and file write (`O_NOFOLLOW`) before writing.
 `packages/qaap-archive/src/node/safe-archive-extractor.spec.ts` covers traversal,
@@ -133,11 +188,12 @@ are blocked by default via `QaapPluginServerImpl` +
 `QaapPluginDeployerSecurityParticipant` in `@theia/qaap-product`. Marketplace
 (`vscode-extension:`) and build-time `download-plugins` now use the same
 validated extractor. Set `QAAP_ALLOW_LOCAL_VSIX=1` only when sideloading is
-intentionally required (local desktop/dev).
+intentionally required in local desktop/dev; hosted/production runtimes ignore
+that override because plugins execute in the shared Theia control-plane process.
 
-The unfiltered audit still reports development-tool advisories; they are not
-included in the production dependency graph. Re-run both audit modes after
-dependency changes.
+Both audit modes are currently clean. Re-run `npm audit --omit=dev` and
+`npm audit` after every dependency change; a clean audit does not replace the
+tenant-isolation and live two-tenant checks described above.
 
 If you find a gap in this model, report it privately as above.
 

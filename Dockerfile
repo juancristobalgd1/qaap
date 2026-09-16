@@ -107,18 +107,15 @@ WORKDIR /app/examples/browser
 
 COPY --from=build /app /app
 
-# Bundled slash skills (global for every tenant). User-specific skills live under
-# /root/.qaap/users/{login}/skills on the qaap-auth-data volume.
+# Bundled slash skills (global for every tenant, read-only at runtime). User-specific skills live
+# under /home/theia/.qaap/users/{login}/skills on the qaap-auth-data volume.
 COPY packages/qaap-product/resources/qaap-system-skills /opt/qaap/system-skills
 
 # --- Agent privilege-drop (on by default via QAAP_AGENT_UID below) -------------
-# The backend runs as root so it can spawn the agent under a non-root uid. A non-root agent cannot
-# traverse the root-owned /root/{.qaap,.theia} trees where every tenant's API keys, OAuth tokens and
-# helper tokens live — bounding the agent's --dangerously-skip-permissions to OS permissions.
-# The image provisions the qaap-agent user (uid 1001) and owns /workspace + /home/qaap-agent by it, so
-# the drop is safe to enable by default (see the QAAP_AGENT_UID ENV below). The backend additionally
-# refuses to spawn the agent as root in a production runtime unless the drop is applied — see
-# evaluateAgentIsolationPolicy in packages/qaap-cloud-workspace.
+# The backend intentionally runs as non-root. In hosted Docker mode, tenant worker containers are
+# the execution boundary and start the agent as their configured non-root uid. The image still
+# provisions qaap-agent (uid 1001) for local compatibility; hosted startup refuses the host
+# fallback and refuses a root agent — see evaluateAgentIsolationPolicy.
 RUN groupadd --gid 1001 qaap-agent \
     && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/qaap-agent --shell /usr/sbin/nologin qaap-agent \
     && chmod 700 /root \
@@ -127,15 +124,16 @@ RUN groupadd --gid 1001 qaap-agent \
     && chown -R 1001:1001 /workspace /home/qaap-agent \
     # uid-per-user mode (QAAP_AGENT_UID_PER_USER=1): each tenant gets a private agent HOME under here.
     # 0711 root-owned lets a tenant uid enter its own 0700 subdir by name but not list sibling logins;
-    # the root backend creates the per-tenant subdirs at spawn. No-op when the flag is off.
+    # the privileged host-fallback backend creates the per-tenant subdirs at spawn. No-op in worker
+    # container mode, where the container boundary provides the primary isolation.
     && mkdir -p /home/qaap-tenants \
     && chmod 0711 /home/qaap-tenants \
     && mkdir -p /tmp/qaap-worktrees /tmp/qaap-parallel \
     && chmod 0711 /tmp/qaap-worktrees /tmp/qaap-parallel \
-    # The root backend runs git (status/stage/discard/commit/diff) on per-user repos that the agent
-    # (uid 1001, or a per-tenant uid) owns after chown-on-spawn. Without this, git aborts every such
-    # command with "detected dubious ownership", breaking the composer Accept/Discard/Commit and the
-    # diff review. Root deliberately manages these repos, so trust them all.
+    # The legacy host-fallback backend may run git (status/stage/discard/commit/diff) on per-user
+    # repos that the agent owns after chown-on-spawn. Without this, git aborts with "detected dubious
+    # ownership", breaking the composer Accept/Discard/Commit and the diff review. Worker mode routes
+    # tenant git through docker exec instead.
     && git config --system --add safe.directory '*' \
     # Belt-and-suspenders identity so a tenant uid (even before its /etc/passwd record is written) can
     # `git commit` without "unable to look up current user in the passwd file". The backend writes a
@@ -144,11 +142,6 @@ RUN groupadd --gid 1001 qaap-agent \
     && git config --system user.email 'agent@qaap.local' \
     && (id -u node >/dev/null 2>&1 && usermod -l theia -d /home/theia -m node || useradd -u 1000 -m -s /bin/bash theia) \
     && (getent group node >/dev/null 2>&1 && groupmod -n theia node || true) \
-    # Legacy/rootful Docker socket deployments need this group for the worker lifecycle. Prefer a
-    # rootless Docker socket in production; membership is kept only for backwards-compatible local
-    # compose deployments and is explicitly documented as a control-plane privilege.
-    && (groupadd -g 999 docker 2>/dev/null || groupadd docker 2>/dev/null || true) \
-    && usermod -aG docker theia 2>/dev/null || true \
     && mkdir -p /home/theia/.theia /home/theia/.qaap \
     && chown -R 1000:1000 /home/theia /workspace 2>/dev/null || true \
     && chmod -R a+rX /app
@@ -177,8 +170,6 @@ ENV NODE_ENV=production \
     QAAP_BUILD_SHA=${QAAP_BUILD_SHA}
 
 EXPOSE ${QAAP_IDE_PORT}
-
-VOLUME ["/workspace"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD node -e "const p=process.env.PORT||4873;require('http').get('http://127.0.0.1:'+p+'/qaap/api/health',r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"

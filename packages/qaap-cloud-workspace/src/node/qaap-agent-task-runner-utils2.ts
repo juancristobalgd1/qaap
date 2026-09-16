@@ -7,7 +7,7 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import { createHash } from 'crypto';
-import { spawnSync } from 'child_process';
+import { spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as os from 'os';
@@ -21,6 +21,21 @@ import type { QaapPreferenceReader } from '@theia/qaap-mobile-shell/lib/common/q
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
+
+const safeGitReadArgs = (args: readonly string[]): string[] => [
+    '-c', 'core.hooksPath=/dev/null',
+    '-c', 'core.fsmonitor=false',
+    ...args,
+];
+
+/** Synchronous, read-only Git seam. The runner supplies a tenant-worker implementation in hosted mode. */
+export type QaapGitReadSync = (cwd: string, args: readonly string[], maxBuffer?: number) => SpawnSyncReturns<string>;
+
+const localGitReadSync: QaapGitReadSync = (cwd, args, maxBuffer = WORKTREE_FINGERPRINT_MAX_BUFFER) => spawnSync(
+    'git',
+    safeGitReadArgs(args),
+    { cwd, encoding: 'utf8', timeout: 4000, maxBuffer },
+);
 
 // ─── Constants (shared with the main class) ──────────────────────────────────
 
@@ -153,14 +168,14 @@ export function buildRepoTree(cwd: string): string | undefined {
 }
 
 /** Recently-changed files via git, so the agent knows where work is already in flight. */
-export function buildRecentlyChangedFiles(cwd: string): string | undefined {
+export function buildRecentlyChangedFiles(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     if (!fs.existsSync(path.join(cwd, '.git'))) {
         return undefined;
     }
     const names = new Set<string>();
     for (const args of [['diff', '--name-only', 'HEAD~5', '--'], ['status', '--porcelain', '--untracked-files=all']]) {
         try {
-            const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
+            const out = gitRead(cwd, args);
             if (out.status !== 0 || !out.stdout) {
                 continue;
             }
@@ -188,13 +203,13 @@ export function buildRecentlyChangedFiles(cwd: string): string | undefined {
  * where it stands instead of spending its first tool call on `git status`. Never cached — the
  * working tree drifts as the agent edits between turns.
  */
-export function readGitStatusSnapshot(cwd: string): string | undefined {
+export function readGitStatusSnapshot(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     if (!fs.existsSync(path.join(cwd, '.git'))) {
         return undefined;
     }
     const run = (args: string[]): string | undefined => {
         try {
-            const out = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 4000 });
+            const out = gitRead(cwd, args);
             return out.status === 0 && out.stdout.trim() ? out.stdout.trim() : undefined;
         } catch {
             return undefined;
@@ -229,16 +244,11 @@ export function readGitStatusSnapshot(cwd: string): string | undefined {
 
 // ─── Worktree fingerprinting ─────────────────────────────────────────────────
 
-export function captureWorktreeStatus(cwd: string): string | undefined {
+export function captureWorktreeStatus(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     if (!fs.existsSync(path.join(cwd, '.git'))) {
         return undefined;
     }
-    const result = spawnSync('git', ['-C', cwd, 'status', '--porcelain', '--untracked-files=all'], {
-        cwd,
-        encoding: 'utf8',
-        maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
-        stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const result = gitRead(cwd, ['status', '--porcelain', '--untracked-files=all'], WORKTREE_FINGERPRINT_MAX_BUFFER);
     if (result.status !== 0 || result.error || typeof result.stdout !== 'string') {
         return undefined;
     }
@@ -256,17 +266,12 @@ export function captureWorktreeStatus(cwd: string): string | undefined {
  * above the explicit byte budget return undefined so callers can use the porcelain baseline
  * instead of a bare "any dirty path" probe.
  */
-export function captureWorktreeFingerprint(cwd: string): string | undefined {
+export function captureWorktreeFingerprint(cwd: string, gitRead: QaapGitReadSync = localGitReadSync): string | undefined {
     if (!fs.existsSync(path.join(cwd, '.git'))) {
         return undefined;
     }
     const runGit = (args: readonly string[]): string | undefined => {
-        const result = spawnSync('git', ['-C', cwd, ...args], {
-            cwd,
-            encoding: 'utf8',
-            maxBuffer: WORKTREE_FINGERPRINT_MAX_BUFFER,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
+        const result = gitRead(cwd, args, WORKTREE_FINGERPRINT_MAX_BUFFER);
         return result.status === 0 && !result.error && typeof result.stdout === 'string'
             ? result.stdout
             : undefined;

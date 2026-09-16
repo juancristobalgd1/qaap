@@ -10,7 +10,7 @@ import {
     optional,
     postConstruct,
 } from '@theia/core/shared/inversify';
-import { ChildProcess } from 'child_process';
+import { ChildProcess, spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -85,6 +85,7 @@ import {
     readDisabledHarnessIds,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
 import { localizeMissingQaiqMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 
@@ -493,7 +494,7 @@ export class QaapAgentTaskRunner {
      * never blocks a turn.
      */
     protected readRelevantFiles(cwd: string, userQuery: string | undefined): string | undefined {
-        return readRelevantFilesHelper(cwd, userQuery);
+        return readRelevantFilesHelper(cwd, userQuery, this.readProcessSync.bind(this));
     }
 
     protected buildRepoMap(cwd: string): string | undefined {
@@ -507,7 +508,7 @@ export class QaapAgentTaskRunner {
 
     /** Recently-changed files via git, so the agent knows where work is already in flight. */
     protected buildRecentlyChangedFiles(cwd: string): string | undefined {
-        return buildRecentlyChangedFilesHelper(cwd);
+        return buildRecentlyChangedFilesHelper(cwd, this.readGitSync.bind(this));
     }
 
     /**
@@ -516,7 +517,7 @@ export class QaapAgentTaskRunner {
      * working tree drifts as the agent edits between turns.
      */
     protected readGitStatusSnapshot(cwd: string): string | undefined {
-        return readGitStatusSnapshotHelper(cwd);
+        return readGitStatusSnapshotHelper(cwd, this.readGitSync.bind(this));
     }
 
     /**
@@ -763,7 +764,7 @@ export class QaapAgentTaskRunner {
      * equivalent dirty trees compare equal even when git emits paths in different orders.
      */
     protected captureWorktreeStatus(cwd: string): string | undefined {
-        return captureWorktreeStatusHelper(cwd);
+        return captureWorktreeStatusHelper(cwd, this.readGitSync.bind(this));
     }
 
     /**
@@ -773,7 +774,7 @@ export class QaapAgentTaskRunner {
      * instead of a bare "any dirty path" probe.
      */
     protected captureWorktreeFingerprint(cwd: string): string | undefined {
-        return captureWorktreeFingerprintHelper(cwd);
+        return captureWorktreeFingerprintHelper(cwd, this.readGitSync.bind(this));
     }
 
     protected async resolveVerificationScriptsForCwd(cwd: string): Promise<string[]> {
@@ -792,7 +793,7 @@ export class QaapAgentTaskRunner {
         return buildAgentVerificationFixPromptExtracted(this, failedCommand, failure, attempt);
     }
 
-    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly tailOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; } = {},): Promise<QaapGenericCommandResult> {
+    runGenericCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, taskId: string, timeoutMs: number, options: { readonly header?: string; readonly streamOutput?: boolean; readonly tailOutput?: boolean; readonly maxCaptureChars?: number; readonly stdinPrompt?: string; readonly ownerLogin?: string; } = {},): Promise<QaapGenericCommandResult> {
         return runGenericCommandExtracted(this, command, cwd, env, taskId, timeoutMs, options);
     }
 
@@ -800,8 +801,8 @@ export class QaapAgentTaskRunner {
         return appendBoundedCommandOutputHelper(current, chunk, maxChars);
     }
 
-    protected appendAndFireOutput(taskId: string, chunk: string): void {
-        appendAndFireOutputExtracted(this, taskId, chunk);
+    protected appendAndFireOutput(taskId: string, chunk: string, ownerLogin?: string): void {
+        appendAndFireOutputExtracted(this, taskId, chunk, ownerLogin);
     }
 
     protected isTaskStillRunning(taskId: string): boolean {
@@ -856,9 +857,38 @@ export class QaapAgentTaskRunner {
         return this.tenantSpawn.resolveTenantHome(cwd);
     }
 
+    /** @see QaapTenantSpawnService.tenantHomeEnvOverlay */
+    protected tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
+        return this.tenantSpawn.tenantHomeEnvOverlay(cwd);
+    }
+
     /** @see QaapTenantSpawnService.prepareTenantIsolation */
     protected ensureAgentCwdOwnership(cwd: string): void {
         this.tenantSpawn.prepareTenantIsolation(cwd);
+    }
+
+    /** Read Git metadata through the tenant worker whenever container/uid isolation is active. */
+    protected readGitSync(cwd: string, args: readonly string[], maxBuffer = 64 * 1024 * 1024): SpawnSyncReturns<string> {
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+        return spawnSync(wrapped.file, wrapped.args, {
+            cwd,
+            encoding: 'utf8',
+            timeout: 4000,
+            maxBuffer,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+    }
+
+    /** Run bounded repository search through the same validated tenant boundary as Git. */
+    protected readProcessSync(cwd: string, file: string, args: readonly string[], maxBuffer: number): SpawnSyncReturns<string> {
+        const wrapped = this.tenantSpawn.wrapArgvForTenant(cwd, file, args);
+        return spawnSync(wrapped.file, wrapped.args, {
+            cwd,
+            encoding: 'utf8',
+            timeout: 4000,
+            maxBuffer,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
     }
 
     /** Async lifecycle gate: Docker tenant creation/inspection must complete before any child spawn. */
@@ -944,8 +974,14 @@ export class QaapAgentTaskRunner {
         return persistExtracted(this);
     }
 
-    protected logPath(id: string): string {
-        return path.join(STORE_DIR, `${id}.log`);
+    protected logPath(id: string, ownerLogin?: string): string {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+            throw new Error('Invalid task id.');
+        }
+        const owner = ownerLogin?.trim() || this.tasks.get(id)?.ownerLogin?.trim();
+        // Keep legacy/anonymous logs readable, but physically segment authenticated task output.
+        const root = owner ? path.join(STORE_DIR, 'owners', safeUserIdSegment(owner)) : STORE_DIR;
+        return path.join(root, `${id}.log`);
     }
 
     protected isDirectory(target: string): boolean {

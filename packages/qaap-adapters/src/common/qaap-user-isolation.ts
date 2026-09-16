@@ -54,6 +54,20 @@ export function resolveQaapTenantHomeRoot(): string {
     return process.env.QAAP_TENANT_HOME_ROOT?.trim() || '/home/qaap-tenants';
 }
 
+/** Root for persisted browser-visible data owned by one tenant. */
+export function resolveQaapTenantConfigRoot(): string {
+    return process.env.QAAP_TENANT_CONFIG_ROOT?.trim() || path.join(os.homedir(), '.qaap', 'users');
+}
+
+/** Tenant-owned data root shared by user storage, custom skills and future per-user state. */
+export function resolveQaapTenantUserRoot(ownerLogin: string): string {
+    const owner = ownerLogin.trim();
+    if (!owner) {
+        throw new Error('Cannot resolve a tenant data directory without an owner login.');
+    }
+    return path.join(resolveQaapTenantConfigRoot(), safeUserIdSegment(owner));
+}
+
 /** A single tenant's agent HOME: `{tenantHomeRoot}/{segment}`. `segment` is a {@link safeUserIdSegment}. */
 export function resolveTenantHome(segment: string): string {
     return path.join(resolveQaapTenantHomeRoot(), segment);

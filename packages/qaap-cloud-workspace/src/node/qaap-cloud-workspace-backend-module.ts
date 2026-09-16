@@ -16,7 +16,14 @@ import { IShellTerminalServer, IShellTerminalServerOptions } from '@theia/termin
 import { ShellProcess, getRootPath } from '@theia/terminal/lib/node/shell-process';
 import { parseArgs } from '@theia/process/lib/node/utils';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { normalizeIsolationPath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { MultiKeyMap } from '@theia/core/lib/common/collections';
+import URI from '@theia/core/lib/common/uri';
+import { EnvVariablesServer } from '@theia/core/lib/common/env-variables';
+import { promises as fs } from 'fs';
+import {
+    QAAP_ANONYMOUS_USER_LOGIN,
+    normalizeIsolationPath,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapNodeFileUploadService } from './qaap-node-file-upload-service';
 import { QaapAgentApprovalEndpoint } from './qaap-agent-approval-endpoint';
 import { QaapAgentApprovalStore } from './qaap-agent-approval-store';
@@ -80,6 +87,19 @@ import {
     QaapWorkflowDeterministicAdapter,
 } from './qaap-workflow-runtime-ports';
 import { QaapWorkflowService } from './qaap-workflow-service';
+import { ProcessManager } from '@theia/process/lib/node';
+import { QaapTerminalOwnership, installQaapTerminalOwnership } from './qaap-terminal-ownership';
+import { QaapDockerControlPlaneContribution } from './qaap-docker-control-plane-contribution';
+import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
+import { isQaapHostedRuntime } from './qaap-docker-control-plane';
+import { QaapTenantProcessExecutor } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
+import {
+    rememberQaapSharedTheiaConfigDir,
+    resolveQaapTenantConfigRoot,
+    resolveQaapTenantConfigDir,
+    resolveQaapTenantUserRoot,
+} from './qaap-tenant-config-scope';
+import { filterQaapFrontendEnvironment, isQaapSensitiveEnvKey } from './qaap-env-variables';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsync, onActivation) => {
     // Confine HTTP file uploads to the caller's workspace (auth + ownership); the upstream
@@ -87,10 +107,71 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapNodeFileUploadService).toSelf().inSingletonScope();
     rebind(NodeFileUploadService).toService(QaapNodeFileUploadService);
     bind(QaapWebsocketAuthRegistry).toSelf().inSingletonScope();
+    bind(QaapTerminalOwnership).toSelf().inSingletonScope();
+    bind(QaapDockerControlPlaneContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapDockerControlPlaneContribution);
+    bind(QaapTenantBackendProxyContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantBackendProxyContribution);
     bind(QaapWebsocketAuthListener).toSelf().inSingletonScope();
     bind(MessagingListenerContribution).toService(QaapWebsocketAuthListener);
     bind(QaapMessagingAuthContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapMessagingAuthContribution);
+    onActivation<ProcessManager>(ProcessManager, (ctx, processManager) => {
+        installQaapTerminalOwnership(
+            processManager,
+            ctx.container.get(QaapTerminalOwnership),
+            () => ctx.container.get(QaapWebsocketAuthRegistry).getCurrentLogin(),
+        );
+        return processManager;
+    });
+    onActivation<EnvVariablesServer>(EnvVariablesServer, (ctx, environments) => {
+        const registry = ctx.container.get(QaapWebsocketAuthRegistry);
+        const originalGetConfigDirUri = environments.getConfigDirUri.bind(environments);
+        const originalGetHomeDirUri = environments.getHomeDirUri.bind(environments);
+        const originalGetVariables = environments.getVariables.bind(environments);
+        const originalGetValue = environments.getValue.bind(environments);
+        environments.getConfigDirUri = async (): Promise<string> => {
+            const baseConfigDirUri = await originalGetConfigDirUri();
+            rememberQaapSharedTheiaConfigDir(baseConfigDirUri);
+            const ownerLogin = registry.getCurrentLogin();
+            if (!isQaapHostedRuntime(process.env)) {
+                return baseConfigDirUri;
+            }
+            const tenantConfigDir = resolveQaapTenantConfigDir(ownerLogin || QAAP_ANONYMOUS_USER_LOGIN);
+            await fs.mkdir(tenantConfigDir, { recursive: true, mode: 0o700 });
+            if (process.platform !== 'win32') {
+                await fs.chmod(tenantConfigDir, 0o700);
+            }
+            return FileUri.create(tenantConfigDir).toString();
+        };
+        environments.getHomeDirUri = async (): Promise<string> => {
+            const baseHomeDirUri = await originalGetHomeDirUri();
+            if (!isQaapHostedRuntime(process.env)) {
+                return baseHomeDirUri;
+            }
+            const ownerLogin = registry.getCurrentLogin() || QAAP_ANONYMOUS_USER_LOGIN;
+            const tenantHome = resolveQaapTenantUserRoot(ownerLogin);
+            await fs.mkdir(tenantHome, { recursive: true, mode: 0o700 });
+            if (process.platform !== 'win32') {
+                await fs.chmod(tenantHome, 0o700);
+            }
+            return FileUri.create(tenantHome).toString();
+        };
+        environments.getVariables = async () => {
+            const variables = await originalGetVariables();
+            return isQaapHostedRuntime(process.env) ? filterQaapFrontendEnvironment(variables) : variables;
+        };
+        environments.getValue = async key => {
+            if (isQaapHostedRuntime(process.env) && key === 'QAAP_TENANT_CONFIG_ROOT') {
+                return { value: resolveQaapTenantConfigRoot() };
+            }
+            if (isQaapHostedRuntime(process.env) && isQaapSensitiveEnvKey(key)) {
+                return undefined;
+            }
+            return originalGetValue(key);
+        };
+        return environments;
+    });
     bind(QaapTenantDiskFileSystemProvider).toSelf().inSingletonScope();
     rebind(DiskFileSystemProvider).toService(QaapTenantDiskFileSystemProvider);
     rebind(FileSystemProvider).toService(QaapTenantDiskFileSystemProvider);
@@ -105,6 +186,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapWebPushService).toSelf().inSingletonScope();
     bind(QaapPreviewShareStore).toSelf().inSingletonScope();
     bind(QaapTenantSpawnService).toSelf().inSingletonScope();
+    bind(QaapTenantProcessExecutor).toService(QaapTenantSpawnService);
     bindRootContributionProvider(bind, QaapJobFunctionContribution);
     bind(QaapJobFunctionRegistry).toSelf().inSingletonScope();
     bind(QaapBuiltinJobFunctions).toSelf().inSingletonScope();
@@ -196,6 +278,55 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     onActivation<IShellTerminalServer>(IShellTerminalServer, (ctx, server) => {
         const taskRunner = ctx.container.get(QaapAgentTaskRunner);
         const tenantSpawn = ctx.container.get(QaapTenantSpawnService);
+        const registry = ctx.container.get(QaapWebsocketAuthRegistry);
+        const shellServer = server as IShellTerminalServer & {
+            collections: MultiKeyMap<string, unknown>;
+            applyToProcessEnvironment(cwdUri: URI, env: { [key: string]: string | null }): void;
+        };
+        const sharedCollections = shellServer.collections;
+        const tenantCollections = new Map<string, MultiKeyMap<string, unknown>>();
+        const currentCollections = (): MultiKeyMap<string, unknown> => {
+            if (!isQaapHostedRuntime(process.env)) {
+                return sharedCollections;
+            }
+            const owner = registry.getCurrentLogin()?.trim().toLowerCase();
+            if (!owner) {
+                throw new Error('Tenant terminal environment requires an authenticated owner.');
+            }
+            let collections = tenantCollections.get(owner);
+            if (!collections) {
+                collections = new MultiKeyMap<string, unknown>(2);
+                tenantCollections.set(owner, collections);
+            }
+            return collections;
+        };
+        const withTenantCollections = <T>(callback: () => T): T => {
+            const previous = shellServer.collections;
+            shellServer.collections = currentCollections();
+            try {
+                return callback();
+            } finally {
+                shellServer.collections = previous;
+            }
+        };
+        // ShellTerminalServer stores extension environment mutators in one process-global
+        // MultiKeyMap. Swap that map only for the synchronous upstream method bodies, so one
+        // tenant cannot inject variables into another tenant's terminal. The RPC auth patcher
+        // establishes the owner context before any of these methods run.
+        const originalApplyToProcessEnvironment = shellServer.applyToProcessEnvironment.bind(shellServer);
+        shellServer.applyToProcessEnvironment = (cwdUri, env) =>
+            withTenantCollections(() => originalApplyToProcessEnvironment(cwdUri, env));
+        const originalSetCollection = shellServer.setCollection.bind(shellServer);
+        shellServer.setCollection = (...args) => withTenantCollections(() => originalSetCollection(...args));
+        const originalDeleteCollection = shellServer.deleteCollection.bind(shellServer);
+        shellServer.deleteCollection = (...args) => withTenantCollections(() => originalDeleteCollection(...args));
+        const originalRestorePersisted = shellServer.restorePersisted.bind(shellServer);
+        shellServer.restorePersisted = (...args) => withTenantCollections(() => originalRestorePersisted(...args));
+        const originalGetEnvVarCollections = shellServer.getEnvVarCollections.bind(shellServer);
+        shellServer.getEnvVarCollections = (...args) => withTenantCollections(() => originalGetEnvVarCollections(...args));
+        const originalGetEnvVarCollectionDescriptions = shellServer.getEnvVarCollectionDescriptionsByExtension.bind(shellServer);
+        shellServer.getEnvVarCollectionDescriptionsByExtension = (...args) =>
+            withTenantCollections(() => originalGetEnvVarCollectionDescriptions(...args));
         const originalCreate = server.create.bind(server);
         server.create = async (options: IShellTerminalServerOptions) => {
             if (options.strictEnv !== true) {
@@ -239,7 +370,13 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
             const shellArgs = options.args === undefined
                 ? ShellProcess.getShellExecutableArgs()
                 : (Array.isArray(options.args) ? options.args : parseArgs(options.args));
-            const wrapped = tenantSpawn.wrapShellForTenant(cwd, shell, shellArgs);
+            const tenantEnvironment: NodeJS.ProcessEnv = {};
+            for (const [key, value] of Object.entries(options.env ?? {})) {
+                if (value !== undefined && value !== null) {
+                    tenantEnvironment[key] = value;
+                }
+            }
+            const wrapped = tenantSpawn.wrapShellForTenant(cwd, shell, shellArgs, tenantEnvironment);
             options.shell = wrapped.file;
             options.args = wrapped.args;
             const homeOverlay = tenantSpawn.tenantHomeEnvOverlay(cwd);

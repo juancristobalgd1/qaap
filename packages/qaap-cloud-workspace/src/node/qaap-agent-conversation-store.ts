@@ -9,7 +9,7 @@ import {
     optional,
     postConstruct,
 } from '@theia/core/shared/inversify';
-import { SpawnSyncReturns } from 'child_process';
+import { spawnSync, SpawnSyncReturns } from 'child_process';
 import {
     QaapAgentConversation,
     QaapAgentConversationCwdGroup,
@@ -668,11 +668,11 @@ export class QaapAgentConversationStore {
     }
 
     protected parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined {
-        return parseGithubRepoFromCwdHelper(cwd);
+        return parseGithubRepoFromCwdHelper(cwd, this.readGitSync.bind(this));
     }
 
     protected readGitBranch(cwd: string): string | undefined {
-        return readGitBranchHelper(cwd);
+        return readGitBranchHelper(cwd, this.readGitSync.bind(this));
     }
 
     protected async restoreFromDisk(): Promise<void> {
@@ -757,11 +757,23 @@ export class QaapAgentConversationStore {
     }
 
     protected captureGitSha(cwd: string): string | undefined {
-        return captureGitShaHelper(cwd);
+        return captureGitShaHelper(cwd, this.readGitSync.bind(this));
     }
 
     protected computeGitDiffStats(cwd: string, startSha?: string): { added: number; removed: number } | undefined {
-        return computeGitDiffStatsHelper(cwd, startSha);
+        return computeGitDiffStatsHelper(cwd, startSha, this.readGitSync.bind(this));
+    }
+
+    /** Read Git metadata through the validated tenant worker; never reopen the host Git boundary. */
+    protected readGitSync(cwd: string, args: readonly string[]): SpawnSyncReturns<string> {
+        const wrapped = this.tenantSpawn.wrapGitForTenant(cwd, args);
+        return spawnSync(wrapped.file, wrapped.args, {
+            cwd,
+            encoding: 'utf8',
+            timeout: 4000,
+            maxBuffer: 64 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
     }
 
     protected captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number },): QaapConversationCheckpoint | undefined {

@@ -4,10 +4,15 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as path from 'path';
+import * as os from 'os';
 import URI from '@theia/core/lib/common/uri';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 import { FileSystemProviderErrorCode } from '@theia/filesystem/lib/common/files';
 import { QaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
+import { resolveQaapTenantConfigDir } from './qaap-tenant-config-scope';
+import { resolveQaapParallelRoot, resolveQaapWorktreesRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
 function normalizedPath(fsPath: string): string {
     return fsPath.replace(/\\/g, '/');
@@ -87,13 +92,96 @@ describe('QaapTenantDiskFileSystemProvider', () => {
         )).to.throw();
     });
 
-    it('allows system paths outside the managed workspace tree without login', () => {
+    it('allows only the active tenant to access its Theia user-storage tree', () => {
+        const registry = new QaapWebsocketAuthRegistry();
+        const provider = createProvider({});
+        (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+        const aliceConfig = FileUri.create(path.join(resolveQaapTenantConfigDir('alice'), 'settings.json'));
+        registry.runWithLogin('alice', () => {
+            expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(aliceConfig)).to.not.throw();
+        });
+    });
+
+    it('blocks a tenant from another tenant Theia user-storage tree', () => {
+        const registry = new QaapWebsocketAuthRegistry();
+        const provider = createProvider({});
+        (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+        const bobConfig = FileUri.create(path.join(resolveQaapTenantConfigDir('bob'), 'settings.json'));
+        registry.runWithLogin('alice', () => {
+            expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(bobConfig)).to.throw();
+        });
+    });
+
+    it('blocks system paths outside the tenant allowlist', () => {
         const provider = createProvider({});
         expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(
             new URI('file:///app/plugins/vscode.theme-monokai/package.json'),
-        )).to.not.throw();
+        )).to.throw();
         expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(
             new URI('file:///root/.qaap/agent-conversations/index.json'),
-        )).to.not.throw();
+        )).to.throw();
+    });
+
+    it('allows a dedicated tenant backend to initialize its private Theia config without a socket', () => {
+        const previous = process.env.QAAP_TENANT_BACKEND_MODE;
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        try {
+            const provider = createProvider({});
+            const config = FileUri.create(path.join(os.homedir(), '.theia', 'backend-settings.json'));
+            expect(() => (provider as unknown as { assertAllowed(uri: URI, access?: 'read' | 'write'): void })
+                .assertAllowed(config, 'write')).to.not.throw();
+        } finally {
+            if (previous === undefined) {
+                delete process.env.QAAP_TENANT_BACKEND_MODE;
+            } else {
+                process.env.QAAP_TENANT_BACKEND_MODE = previous;
+            }
+        }
+    });
+
+    it('allows reading bundled skills but never allows a tenant to modify them', () => {
+        const previous = process.env.QAAP_SYSTEM_SKILLS_DIR;
+        process.env.QAAP_SYSTEM_SKILLS_DIR = '/opt/qaap/system-skills';
+        try {
+            const registry = new QaapWebsocketAuthRegistry();
+            const provider = createProvider({});
+            (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+            const skill = new URI('file:///opt/qaap/system-skills/review/SKILL.md');
+            registry.runWithLogin('alice', () => {
+                expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(skill)).to.not.throw();
+                expect(() => (provider as unknown as { assertAllowed(uri: URI, access: 'read' | 'write'): void })
+                    .assertAllowed(skill, 'write')).to.throw();
+            });
+        } finally {
+            if (previous === undefined) {
+                delete process.env.QAAP_SYSTEM_SKILLS_DIR;
+            } else {
+                process.env.QAAP_SYSTEM_SKILLS_DIR = previous;
+            }
+        }
+    });
+
+    it('allows only the active tenant worktree and parallel-run roots', () => {
+        const registry = new QaapWebsocketAuthRegistry();
+        const provider = createProvider({});
+        (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+        const worktree = FileUri.create(path.join(resolveQaapWorktreesRoot(), 'alice', 'run-1', 'src', 'index.ts'));
+        const parallel = FileUri.create(path.join(resolveQaapParallelRoot(), 'alice', 'run-1', 'variant-a', 'src', 'index.ts'));
+        registry.runWithLogin('alice', () => {
+            expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(worktree)).to.not.throw();
+            expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(parallel)).to.not.throw();
+        });
+    });
+
+    it('blocks another tenant worktree and parallel-run roots', () => {
+        const registry = new QaapWebsocketAuthRegistry();
+        const provider = createProvider({});
+        (provider as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+        const bobWorktree = FileUri.create(path.join(resolveQaapWorktreesRoot(), 'bob', 'run-1', 'src', 'index.ts'));
+        const bobParallel = FileUri.create(path.join(resolveQaapParallelRoot(), 'bob', 'run-1', 'variant-a', 'src', 'index.ts'));
+        registry.runWithLogin('alice', () => {
+            expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(bobWorktree)).to.throw();
+            expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(bobParallel)).to.throw();
+        });
     });
 });
