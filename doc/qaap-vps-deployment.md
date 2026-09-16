@@ -373,6 +373,14 @@ agent run, or an operator mistake loses every user's repositories and sessions**
 | `theia-parallel` | `/tmp/qaap-parallel` | parallel task worktrees |
 | `qaap-tenant-homes` | `/home/qaap-tenants` | private agent configuration and state |
 
+Persistent Node stores are SQLite databases inside the first two volumes and
+inside each repository's `.qaap` directory for research ledgers. The database
+files use WAL mode, so a consistent backup must include each `.sqlite` file
+together with any adjacent `-wal` and `-shm` files. Stop `theia` before a manual
+file-level copy, or use a filesystem/storage snapshot. The migration keeps the
+old JSON/JSONL sources beside the new databases for rollback; see
+[SQLite persistence](qaap-sqlite-persistence.md) for the complete inventory.
+
 **Install the nightly backup** (the VPS launch gate does this on every deploy; one-time manual equivalent):
 
 ```bash

@@ -12,19 +12,18 @@ import { QaapResearchStore } from './qaap-research-store';
 import type { ResearchGoal, ResearchMetricSpec } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
 import type { ResearchExperimentRecord } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
 
-/** Bypasses the constructor/@postConstruct (which would touch `~/.qaap/research-goals.json`) —
+/** Bypasses the constructor/@postConstruct (which would initialize the goal SQLite store) —
  *  same trick `qaap-agent-task-runner.verification.spec.ts` uses for the sibling task runner. */
 function makeStore(): QaapResearchStore {
     const store = Object.create(QaapResearchStore.prototype) as QaapResearchStore;
     return Object.assign(store, {
         ledgerChains: new Map<string, Promise<void>>(),
-        ledgerTempCounter: 0,
     });
 }
 
 /** {@link makeStore} plus the goal-metadata fields the bypassed constructor never initialized, and
  *  a stubbed-out `persistGoals` — needed for tests that call `store.create()`, which otherwise
- *  writes to the developer's real `~/.qaap/research-goals.json` (a fixed path, not `tmpDir`). */
+ *  writes to the developer's real goal SQLite store (a fixed path, not `tmpDir`). */
 function makeStoreForGoalCreation(): QaapResearchStore {
     const store = makeStore();
     return Object.assign(store, {
@@ -69,7 +68,7 @@ describe('QaapResearchStore ledger', () => {
         expect(store.readLedger(tmpDir)).to.deep.equal([]);
     });
 
-    it('appends a new record (new id) as a new line', async () => {
+    it('stores a new record (new id)', async () => {
         const store = makeStore();
         await store.upsertRecord(tmpDir, record({ id: 'r1', round: 1 }));
         await store.upsertRecord(tmpDir, record({ id: 'r2', round: 2 }));
@@ -86,14 +85,14 @@ describe('QaapResearchStore ledger', () => {
         expect(records[0]).to.deep.include({ phase: 'run', sha: 'abc123' });
     });
 
-    it('persists across a fresh store instance pointed at the same cwd (the file IS the state)', async () => {
+    it('persists across a fresh store instance pointed at the same cwd (the database is the state)', async () => {
         const store = makeStore();
         await store.upsertRecord(tmpDir, record({ id: 'r1' }));
         const reopened = makeStore();
         expect(reopened.readLedger(tmpDir)).to.have.lengthOf(1);
     });
 
-    it('skips a corrupt line instead of throwing, so one bad write cannot lose the whole ledger', async () => {
+    it('skips a corrupt legacy line instead of throwing, so one bad write cannot lose the whole ledger', async () => {
         const store = makeStore();
         await store.upsertRecord(tmpDir, record({ id: 'r1' }));
         fs.appendFileSync(path.join(tmpDir, '.qaap', 'experiments.jsonl'), 'not-json\n', 'utf8');

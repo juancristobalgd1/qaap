@@ -3,8 +3,6 @@
 
 import { expect } from 'chai';
 import * as sinon from 'sinon';
-import * as fsp from 'fs/promises';
-import * as atomic from './qaap-write-json-atomic';
 import { persistExtracted } from './qaap-agent-conversation-store-thought-brief2';
 import { clearRunActive } from './qaap-agent-conversation-store-helpers';
 import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
@@ -13,14 +11,17 @@ describe('conversation persistence and turn completion', () => {
     afterEach(() => sinon.restore());
 
     it('serializes writes and continues after a failed save', async () => {
-        sinon.stub(fsp, 'mkdir').resolves();
         sinon.stub(console, 'warn');
         let release!: () => void;
-        const write = sinon.stub(atomic, 'writeJsonAtomic');
+        const write = sinon.stub();
         write.onFirstCall().returns(new Promise<void>(resolve => { release = resolve; }));
         write.onSecondCall().rejects(new Error('busy'));
         write.onThirdCall().resolves();
-        const ctx = { conversations: new Map(), persistFailureLoggedAtMs: 0 };
+        const ctx = {
+            conversations: new Map(),
+            persistFailureLoggedAtMs: 0,
+            getSqliteStore: () => ({ replace: write }),
+        };
         const first = persistExtracted(ctx);
         await new Promise(resolve => setImmediate(resolve));
         const second = persistExtracted(ctx);

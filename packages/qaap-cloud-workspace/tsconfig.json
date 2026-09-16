@@ -43,6 +43,9 @@
       "path": "../qaap-mobile-shell"
     },
     {
+      "path": "../qaap-persistence"
+    },
+    {
       "path": "../terminal"
     },
     {

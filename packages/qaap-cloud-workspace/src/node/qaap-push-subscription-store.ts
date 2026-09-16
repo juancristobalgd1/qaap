@@ -4,13 +4,13 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
-import * as fs from 'fs/promises';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type { QaapPushSubscriptionJson } from '../common/qaap-cloud-api-types';
 
 const STORE_PATH = path.join(os.homedir(), '.qaap', 'push-subscriptions.json');
+const SQLITE_PATH = resolveQaapSqlitePath(STORE_PATH);
 
 export interface StoredPushSubscription {
     readonly userLogin: string;
@@ -20,6 +20,8 @@ export interface StoredPushSubscription {
 
 @injectable()
 export class QaapPushSubscriptionStore {
+
+    protected sqliteStore: QaapSqliteStore | undefined;
 
     async upsert(userLogin: string, subscription: QaapPushSubscriptionJson): Promise<void> {
         const all = await this.readAll();
@@ -43,16 +45,30 @@ export class QaapPushSubscriptionStore {
 
     protected async readAll(): Promise<Record<string, StoredPushSubscription>> {
         try {
-            const raw = await fs.readFile(STORE_PATH, 'utf8');
-            const parsed = JSON.parse(raw) as Record<string, StoredPushSubscription>;
-            return parsed && typeof parsed === 'object' ? parsed : {};
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<StoredPushSubscription>(raw => {
+                    const parsed = JSON.parse(raw) as Record<string, StoredPushSubscription>;
+                    return Object.entries(parsed && typeof parsed === 'object' ? parsed : {});
+                });
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            return Object.fromEntries(store.list<StoredPushSubscription>());
         } catch {
             return {};
         }
     }
 
     protected async writeAll(data: Record<string, StoredPushSubscription>): Promise<void> {
-        await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-        await writeJsonAtomic(STORE_PATH, data);
+        this.getSqliteStore().replace(Object.entries(data));
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: SQLITE_PATH,
+            namespace: 'push-subscriptions',
+            legacyPath: STORE_PATH,
+        });
     }
 }

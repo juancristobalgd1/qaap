@@ -7,9 +7,9 @@ import { Emitter, Event, nls } from '@theia/core';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { DEFAULT_REVIEW_DIFF_CAP_CHARS } from '../common/qaap-agent-review';
 import { QaapWorkflowDef, QaapWorkflowNodeOutcome, validateQaapWorkflowDef } from '../common/qaap-workflow-ir';
 import {
@@ -21,10 +21,8 @@ import {
     startQaapWorkflowRun,
 } from '../common/qaap-workflow-run';
 import { appendQaapWorkflowTrace, QaapWorkflowTraceEntry } from '../common/qaap-workflow-trace';
-import { sweepOrphanedTempFilesSync, writeJsonAtomic } from './qaap-write-json-atomic';
 
 const STORE_MODE = 0o700;
-const INDEX_MODE = 0o600;
 const MAX_RUNS_PER_OWNER = 200;
 /**
  * Hard cap per stored artifact. Producers already cap at what a prompt can carry; this is the
@@ -167,6 +165,7 @@ export interface QaapAdoptWorkflowRunOptions {
 export class QaapWorkflowRunStore {
 
     protected readonly records = new Map<string, QaapPersistedWorkflowRun>();
+    protected sqliteStore: QaapSqliteStore | undefined;
     protected mutationChain: Promise<void> = Promise.resolve();
     protected readonly onDidChangeEmitter = new Emitter<QaapPersistedWorkflowRun>();
     readonly onDidChange: Event<QaapPersistedWorkflowRun> = this.onDidChangeEmitter.event;
@@ -681,42 +680,46 @@ export class QaapWorkflowRunStore {
     }
 
     protected async persist(records: readonly QaapPersistedWorkflowRun[]): Promise<void> {
-        await fsp.mkdir(this.storeDirectory(), { recursive: true, mode: STORE_MODE });
         const index: PersistedWorkflowRunIndex = { version: 1, runs: records };
-        await writeJsonAtomic(this.indexPath(), index, { mode: INDEX_MODE });
+        this.getSqliteStore().replace([['index', index]]);
     }
 
     protected restoreFromDisk(): void {
-        sweepOrphanedTempFilesSync(this.indexPath());
-        let raw: string;
         try {
-            raw = fs.readFileSync(this.indexPath(), 'utf8');
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<PersistedWorkflowRunIndex>(raw => [['index', JSON.parse(raw) as PersistedWorkflowRunIndex]]);
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            const parsed = store.get<Partial<PersistedWorkflowRunIndex>>('index');
+            if (!parsed) {
+                return;
+            }
+            if (parsed?.version !== 1 || !Array.isArray(parsed.runs)) {
+                console.warn('[qaap-workflow-runs] ignoring unreadable run index.');
+                return;
+            }
+            this.records.clear();
+            for (const record of parsed.runs) {
+                if (record?.run?.id && record.def) {
+                    // `dispatched`, `cwd` and `inputs` were added after the first runs were written;
+                    // default them rather than dropping otherwise valid rows.
+                    this.records.set(record.run.id, {
+                        ...record,
+                        dispatched: record.dispatched ?? {},
+                        dispatchClaims: record.dispatchClaims ?? {},
+                        cwd: record.cwd ?? '',
+                        inputs: record.inputs ?? {},
+                        artifacts: record.artifacts ?? {},
+                        routedAgents: record.routedAgents ?? {},
+                        trace: record.trace ?? [],
+                    });
+                }
+            }
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
                 throw error;
-            }
-            return;
-        }
-        const parsed = JSON.parse(raw) as Partial<PersistedWorkflowRunIndex>;
-        if (parsed?.version !== 1 || !Array.isArray(parsed.runs)) {
-            console.warn('[qaap-workflow-runs] ignoring unreadable run index.');
-            return;
-        }
-        this.records.clear();
-        for (const record of parsed.runs) {
-            if (record?.run?.id && record.def) {
-                // `dispatched`, `cwd` and `inputs` were added after the first runs were written;
-                // default them rather than dropping otherwise valid rows.
-                this.records.set(record.run.id, {
-                    ...record,
-                    dispatched: record.dispatched ?? {},
-                    dispatchClaims: record.dispatchClaims ?? {},
-                    cwd: record.cwd ?? '',
-                    inputs: record.inputs ?? {},
-                    artifacts: record.artifacts ?? {},
-                    routedAgents: record.routedAgents ?? {},
-                    trace: record.trace ?? [],
-                });
             }
         }
     }
@@ -762,5 +765,13 @@ export class QaapWorkflowRunStore {
 
     protected indexPath(): string {
         return path.join(this.storeDirectory(), 'index.json');
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: resolveQaapSqlitePath(this.indexPath()),
+            namespace: 'workflow-runs',
+            legacyPath: this.indexPath(),
+        });
     }
 }

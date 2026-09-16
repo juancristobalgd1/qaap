@@ -9,10 +9,9 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import { sweepOrphanedTempFiles, writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { resolveQaapParallelRoot, safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
@@ -29,6 +28,7 @@ const execFileAsync = promisify(execFile);
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const STORE_DIR = path.join(os.homedir(), '.qaap', 'parallel-runs');
 const INDEX_PATH = path.join(STORE_DIR, 'index.json');
+const SQLITE_PATH = resolveQaapSqlitePath(INDEX_PATH);
 const LIVE_STATS_DEBOUNCE_MS = 1500;
 const DEFAULT_MAX_PARALLEL_VARIANTS = 4;
 const MAX_PARALLEL_VARIANTS_ENV = 'QAAP_MAX_PARALLEL_VARIANTS';
@@ -50,6 +50,7 @@ export class QaapParallelRunStore {
 
     protected readonly runs = new Map<string, QaapParallelRun>();
     protected readonly liveStatsTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    protected sqliteStore: QaapSqliteStore | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -309,10 +310,14 @@ export class QaapParallelRunStore {
 
     protected async load(): Promise<void> {
         await this.conversationStore.whenReady();
-        await sweepOrphanedTempFiles(INDEX_PATH).catch(() => undefined);
         try {
-            const raw = await fsp.readFile(INDEX_PATH, 'utf8');
-            const stored = JSON.parse(raw) as QaapParallelRun[];
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<QaapParallelRun[]>(raw => [['runs', JSON.parse(raw) as QaapParallelRun[]]]);
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            const stored = store.get<QaapParallelRun[]>('runs') ?? [];
             for (const run of stored) {
                 this.runs.set(run.id, run);
             }
@@ -385,11 +390,18 @@ export class QaapParallelRunStore {
 
     protected async persist(): Promise<void> {
         try {
-            await fsp.mkdir(STORE_DIR, { recursive: true });
-            await writeJsonAtomic(INDEX_PATH, [...this.runs.values()]);
+            this.getSqliteStore().replace([['runs', [...this.runs.values()]]]);
         } catch {
             /* persistence is best-effort */
         }
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: SQLITE_PATH,
+            namespace: 'parallel-runs',
+            legacyPath: INDEX_PATH,
+        });
     }
 
     protected async resolveBranchName(worktreePath: string): Promise<string | undefined> {

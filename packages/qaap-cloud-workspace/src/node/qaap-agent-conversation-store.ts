@@ -10,6 +10,7 @@ import {
     postConstruct,
 } from '@theia/core/shared/inversify';
 import { spawnSync, SpawnSyncReturns } from 'child_process';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import {
     QaapAgentConversation,
     QaapAgentConversationCwdGroup,
@@ -78,6 +79,7 @@ import {
     buildContextCompactionSummary as buildContextCompactionSummaryHelper,
 } from './qaap-agent-conversation-store-helpers';
 import {
+    INDEX_PATH,
     MAX_LOOP_SPAWNS_PER_USER_MESSAGE,
     type PostUserMessageInternalOptions,
     type QaapConversationTaskRef,
@@ -157,6 +159,7 @@ export class QaapAgentConversationStore {
     protected readonly agUiReducerByAgentMessageId = new Map<string, QaapAgUiTraceReducerState>();
     protected sseBatcher!: QaapAgentConversationSseBatcher;
     protected persistTimer: ReturnType<typeof setTimeout> | undefined;
+    protected sqliteStore: QaapSqliteStore | undefined;
     /** Periodic sweep that force-stops turns stuck 'streaming' past {@link QAAP_MAX_TURN_MINUTES_ENV}. */
     protected turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
     protected readonly streamMetrics = new QaapConversationStreamMetricsCollector('server');
@@ -754,6 +757,14 @@ export class QaapAgentConversationStore {
 
     protected async persist(): Promise<void> {
         return persistExtracted(this);
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: resolveQaapSqlitePath(INDEX_PATH),
+            namespace: 'agent-conversations',
+            legacyPath: INDEX_PATH,
+        });
     }
 
     protected captureGitSha(cwd: string): string | undefined {

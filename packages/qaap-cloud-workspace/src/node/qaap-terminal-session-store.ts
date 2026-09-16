@@ -4,19 +4,21 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
-import * as fs from 'fs/promises';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type {
     QaapTerminalSessionRecord,
     QaapTerminalSessionsUpsertRequest,
 } from '../common/qaap-cloud-api-types';
 
 const STORE_PATH = path.join(os.homedir(), '.qaap', 'terminal-sessions.json');
+const SQLITE_PATH = resolveQaapSqlitePath(STORE_PATH);
 
 @injectable()
 export class QaapTerminalSessionStore {
+
+    protected sqliteStore: QaapSqliteStore | undefined;
 
     async get(workspaceKey: string, ownerLogin?: string): Promise<QaapTerminalSessionRecord[]> {
         const all = await this.readAll();
@@ -47,9 +49,16 @@ export class QaapTerminalSessionStore {
 
     protected async readAll(): Promise<Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>> {
         try {
-            const raw = await fs.readFile(STORE_PATH, 'utf8');
-            const parsed = JSON.parse(raw) as Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>;
-            return parsed && typeof parsed === 'object' ? parsed : {};
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<{ updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>(raw => {
+                    const parsed = JSON.parse(raw) as Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>;
+                    return Object.entries(parsed && typeof parsed === 'object' ? parsed : {});
+                });
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            return Object.fromEntries(store.list<{ updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>());
         } catch {
             return {};
         }
@@ -58,7 +67,14 @@ export class QaapTerminalSessionStore {
     protected async writeAll(
         data: Record<string, { updatedAt: string; terminals: QaapTerminalSessionRecord[]; ownerLogin?: string }>,
     ): Promise<void> {
-        await fs.mkdir(path.dirname(STORE_PATH), { recursive: true });
-        await writeJsonAtomic(STORE_PATH, data);
+        this.getSqliteStore().replace(Object.entries(data));
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: SQLITE_PATH,
+            namespace: 'terminal-sessions',
+            legacyPath: STORE_PATH,
+        });
     }
 }

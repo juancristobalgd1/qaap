@@ -7,8 +7,6 @@ import { inject, injectable, optional, postConstruct } from '@theia/core/shared/
 import { randomUUID } from 'crypto';
 import { spawnSync, SpawnSyncReturns } from 'child_process';
 import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -193,9 +191,7 @@ import {
     recordGitAction as recordGitActionHelper,
 } from './qaap-agent-conversation-store-helpers2';
 import {
-    STORE_DIR,
     STREAMING_PERSIST_DEBOUNCE_MS,
-    INDEX_PATH,
     MAX_CONCURRENT_CONVERSATION_RUNS,
     TURN_WATCHDOG_SWEEP_MS,
     QAAP_AUTO_RESUME_TURNS_ENABLED,
@@ -535,8 +531,7 @@ export function interruptStreamingTurnForRestartExtracted(ctx: any, conversation
 export async function persistExtracted(ctx: any): Promise<void> {
     ctx.persistChain = (ctx.persistChain ?? Promise.resolve()).catch(() => undefined).then(async () => {
         try {
-            await fsp.mkdir(STORE_DIR, { recursive: true });
-            await writeJsonAtomic(INDEX_PATH, [...ctx.conversations.values()]);
+            await ctx.getSqliteStore().replace([['conversations', [...ctx.conversations.values()]]]);
             ctx.persistFailureLoggedAtMs = 0;
         } catch (error) {
             // Best-effort persistence, but a swallowed error hides disk-full/corruption; surface it

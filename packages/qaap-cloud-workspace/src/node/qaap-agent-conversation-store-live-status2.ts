@@ -6,9 +6,6 @@ import { nls } from '@theia/core/lib/common/nls';
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
 import { spawnSync, SpawnSyncReturns } from 'child_process';
-import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import { sweepOrphanedTempFiles, writeJsonAtomic } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
@@ -193,9 +190,7 @@ import {
     recordGitAction as recordGitActionHelper,
 } from './qaap-agent-conversation-store-helpers2';
 import {
-    STORE_DIR,
     STREAMING_PERSIST_DEBOUNCE_MS,
-    INDEX_PATH,
     MAX_CONCURRENT_CONVERSATION_RUNS,
     TURN_WATCHDOG_SWEEP_MS,
     QAAP_AUTO_RESUME_TURNS_ENABLED,
@@ -437,13 +432,14 @@ export async function runQaapConversationRestoreStep<T extends { readonly id: st
 }
 
 export async function restoreFromDiskExtracted(ctx: any): Promise<void> {
-    // Sweep orphaned .tmp files left by previous (crashed/killed) backend processes before
-    // reading the index. Without this, temp files from dead PIDs accumulate unboundedly
-    // (observed: 90 GB across 1600+ files). See sweepOrphanedTempFiles in qaap-write-json-atomic.
-    await sweepOrphanedTempFiles(INDEX_PATH).catch(() => undefined);
     try {
-        const raw = await fsp.readFile(INDEX_PATH, 'utf8');
-        const stored = JSON.parse(raw) as QaapAgentConversation[];
+        const store = ctx.getSqliteStore();
+        try {
+            store.migrateLegacy<QaapAgentConversation[]>(raw => [['conversations', JSON.parse(raw) as QaapAgentConversation[]]]);
+        } catch {
+            // A malformed legacy file must not hide valid SQLite state.
+        }
+        const stored = store.get<QaapAgentConversation[]>('conversations') ?? [];
         let anyChanged = false;
         for (const conv of stored) {
             // Leave a persisted 'streaming' status as-is here — sweepZombieStreamingTurns below

@@ -52,6 +52,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Test infrastructure:** Tests use Mocha + NYC (Istanbul) for coverage. Config at `configs/mocharc.yml` and `configs/nyc.json`. Each package's `npm test` runs via the `theiaext test` wrapper defined in `dev-packages/private-ext-scripts`, which executes `nyc mocha --config ../../configs/mocharc.yml "./lib/**/*.*spec.js"`.
 
+**Qaap persistence:** Node-owned persistent `qaap-*-store.ts` implementations use `@theia/qaap-persistence` and the built-in `node:sqlite` runtime with WAL and `synchronous=FULL`. Legacy JSON/JSONL files are imported once and retained for rollback; see `doc/qaap-sqlite-persistence.md`. Node.js 22.5+ is required by this runtime.
+
 ## Architecture
 
 **Monorepo Structure:**

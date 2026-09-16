@@ -4,10 +4,9 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
-import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import {
     applyMonthlyReset,
     canStartNewAgentJob,
@@ -49,6 +48,7 @@ export class QaapBillingStore {
     protected filePath = process.env.QAAP_BILLING_STORE_PATH?.trim()
         || path.join(os.homedir(), '.qaap', 'billing-accounts.json');
     protected writeChain: Promise<void> = Promise.resolve();
+    protected sqliteStore: QaapSqliteStore | undefined;
     /** Warm sync peek for concurrency / catalog gates (keyed by normalized login). */
     protected entitlementsCache = new Map<string, QaapBillingEntitlements>();
 
@@ -351,14 +351,24 @@ export class QaapBillingStore {
 
     protected async readAll(): Promise<Record<string, QaapBillingAccount>> {
         try {
-            const raw = await fs.readFile(this.filePath, 'utf8');
-            const parsed = JSON.parse(raw) as Record<string, QaapBillingAccount>;
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                return {};
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<QaapBillingAccount>(raw => {
+                    const parsed = JSON.parse(raw) as Record<string, QaapBillingAccount>;
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                        return [];
+                    }
+                    // Migrate legacy mixed-case keys to lowercase.
+                    return Object.entries(parsed).map(([key, account]) => {
+                        const login = QaapBillingStore.normalizeLogin(account?.login || key);
+                        return [login, { ...account, login }] as const;
+                    });
+                });
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
             }
-            // Migrate legacy mixed-case keys to lowercase.
             const normalized: Record<string, QaapBillingAccount> = {};
-            for (const [key, account] of Object.entries(parsed)) {
+            for (const [key, account] of store.list<QaapBillingAccount>()) {
                 const login = QaapBillingStore.normalizeLogin(account?.login || key);
                 normalized[login] = { ...account, login };
             }
@@ -369,7 +379,14 @@ export class QaapBillingStore {
     }
 
     protected async writeAll(data: Record<string, QaapBillingAccount>): Promise<void> {
-        await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-        await writeJsonAtomic(this.filePath, data, { mode: 0o600 });
+        this.getSqliteStore().replace(Object.entries(data));
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: resolveQaapSqlitePath(this.filePath),
+            namespace: 'billing-accounts',
+            legacyPath: this.filePath,
+        });
     }
 }

@@ -4,14 +4,12 @@
 // *****************************************************************************
 
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type { QaapProjectSessionSummary, QaapProjectSessionUpsertRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 
 const PERSIST_DEBOUNCE_MS = 100;
-const STORE_FILE_MODE = 0o600;
-const STORE_DIR_MODE = 0o700;
 
 function resolveProjectSessionStorePath(): string {
     if (process.env.QAAP_PROJECT_SESSION_STORE_PATH?.trim()) {
@@ -35,6 +33,8 @@ export class QaapProjectSessionStore {
 
     protected readonly byUser = new Map<string, Map<string, QaapProjectSessionSummary>>();
     protected readonly storePath = resolveProjectSessionStorePath();
+    protected readonly sqlitePath = resolveQaapSqlitePath(this.storePath);
+    protected sqliteStore: QaapSqliteStore | undefined;
     protected persistTimer: NodeJS.Timeout | undefined;
     protected loaded = false;
 
@@ -89,32 +89,42 @@ export class QaapProjectSessionStore {
 
     protected loadFromDisk(): void {
         try {
-            const raw = fs.readFileSync(this.storePath, 'utf8');
-            const parsed = JSON.parse(raw) as Partial<PersistedProjectSessions>;
-            if (Array.isArray(parsed.users)) {
-                for (const userEntry of parsed.users) {
-                    if (!Array.isArray(userEntry) || userEntry.length !== 2 || typeof userEntry[0] !== 'string') {
-                        continue;
-                    }
-                    const repos = new Map<string, QaapProjectSessionSummary>();
-                    if (Array.isArray(userEntry[1])) {
-                        for (const repoEntry of userEntry[1]) {
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<QaapProjectSessionSummary>(raw => {
+                    const parsed = JSON.parse(raw) as Partial<PersistedProjectSessions>;
+                    const entries: Array<[string, QaapProjectSessionSummary]> = [];
+                    for (const userEntry of parsed.users ?? []) {
+                        if (!Array.isArray(userEntry) || userEntry.length !== 2 || typeof userEntry[0] !== 'string') {
+                            continue;
+                        }
+                        for (const repoEntry of userEntry[1] ?? []) {
                             if (Array.isArray(repoEntry) && repoEntry.length === 2
                                 && typeof repoEntry[0] === 'string'
                                 && repoEntry[1]
                                 && typeof repoEntry[1].repoKey === 'string') {
-                                repos.set(repoEntry[0], repoEntry[1] as QaapProjectSessionSummary);
+                                entries.push([this.storageKey(userEntry[0], repoEntry[0]), repoEntry[1] as QaapProjectSessionSummary]);
                             }
                         }
                     }
-                    this.byUser.set(userEntry[0], repos);
+                    return entries;
+                });
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            for (const [key, session] of store.list<QaapProjectSessionSummary>()) {
+                const separator = key.indexOf('\0');
+                if (separator < 0) {
+                    continue;
                 }
+                const login = key.slice(0, separator);
+                const repoKey = key.slice(separator + 1);
+                const repos = this.byUser.get(login) ?? new Map<string, QaapProjectSessionSummary>();
+                repos.set(repoKey, session);
+                this.byUser.set(login, repos);
             }
         } catch (err) {
-            const code = (err as NodeJS.ErrnoException).code;
-            if (code !== 'ENOENT') {
-                console.warn('[qaap] Could not read project session store:', err);
-            }
+            console.warn('[qaap] Could not read project session store:', err);
         }
         this.loaded = true;
     }
@@ -134,20 +144,28 @@ export class QaapProjectSessionStore {
     }
 
     protected persistNow(): void {
-        const users: PersistedProjectSessions['users'] = [];
+        const entries: Array<[string, QaapProjectSessionSummary]> = [];
         for (const [login, repos] of this.byUser.entries()) {
-            users.push([login, [...repos.entries()]]);
+            for (const [repoKey, session] of repos) {
+                entries.push([this.storageKey(login, repoKey), session]);
+            }
         }
-        const dir = path.dirname(this.storePath);
-        const tmpPath = `${this.storePath}.${process.pid}.tmp`;
         try {
-            fs.mkdirSync(dir, { recursive: true, mode: STORE_DIR_MODE });
-            fs.writeFileSync(tmpPath, JSON.stringify({ users }), { mode: STORE_FILE_MODE });
-            fs.renameSync(tmpPath, this.storePath);
-            try { fs.chmodSync(this.storePath, STORE_FILE_MODE); } catch { /* best-effort */ }
+            this.getSqliteStore().replace(entries);
         } catch (err) {
             console.warn('[qaap] Could not persist project session store:', err);
-            try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
         }
+    }
+
+    protected storageKey(login: string, repoKey: string): string {
+        return `${login}\0${repoKey}`;
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: this.sqlitePath,
+            namespace: 'project-sessions',
+            legacyPath: this.storePath,
+        });
     }
 }

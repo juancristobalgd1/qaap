@@ -59,6 +59,21 @@ migration in `doc/qaap-runtime-state-migration.md`; the updater blocks an unmigr
 container. Backups and restore rehearsals cover six roots. The actual migration and
 restart/recovery exercise on the VPS remain release blockers.
 
+### SQLite store migration complete
+
+The persistent Node stores under `packages/qaap-*` now use the embedded
+`@theia/qaap-persistence` package with SQLite WAL and `synchronous=FULL`.
+Conversations, billing, workspaces, previews, push subscriptions, research,
+terminal sessions, routines, workflow/parallel runs, and GitHub/project
+sessions no longer write their primary state as JSON. On first access, the
+backend imports the previous JSON/JSONL file and records the migration without
+deleting the source. Backups must retain the complete directories containing
+the `.sqlite`, `-wal`, and `-shm` files; see
+`doc/qaap-sqlite-persistence.md` for the inventory and restore model.
+
+The task/job control-plane indexes described below are a separate legacy JSON
+surface and are not included in this store migration.
+
 ## Remaining reproducibility limitations
 
 The base Node images, apt repositories, package-manager installers and Grok's

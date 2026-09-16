@@ -6,10 +6,9 @@
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import { writeJsonAtomicSync } from './qaap-write-json-atomic';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import {
     normalizeRoutineCronExpression,
     normalizeRoutineTimezone,
@@ -23,10 +22,8 @@ import {
     type QaapWorkHubRoutineLastRunState,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-routine';
 
-const STORE_DIR = path.join(os.homedir(), '.qaap');
-const STORE_PATH = path.join(STORE_DIR, 'work-hub-routines.json');
-const STORE_FILE_MODE = 0o600;
-const STORE_DIR_MODE = 0o700;
+const STORE_PATH = path.join(os.homedir(), '.qaap', 'work-hub-routines.json');
+const SQLITE_PATH = resolveQaapSqlitePath(STORE_PATH);
 
 interface PersistedRoutines {
     routines: QaapWorkHubRoutine[];
@@ -115,6 +112,7 @@ function seedRoutines(cwd: string): QaapWorkHubRoutine[] {
 export class QaapWorkHubRoutineStore {
 
     protected readonly routines = new Map<string, QaapWorkHubRoutine>();
+    protected sqliteStore: QaapSqliteStore | undefined;
     protected readonly onDidChangeEmitter = new Emitter<void>();
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
 
@@ -248,12 +246,17 @@ export class QaapWorkHubRoutineStore {
 
     protected loadFromDisk(): void {
         try {
-            if (!fs.existsSync(STORE_PATH)) {
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy<PersistedRoutines>(raw => [['routines', JSON.parse(raw) as PersistedRoutines]]);
+            } catch {
+                // A malformed legacy file must not hide valid SQLite state.
+            }
+            const parsed = store.get<PersistedRoutines>('routines');
+            if (!parsed) {
                 this.seedIfEmpty();
                 return;
             }
-            const raw = fs.readFileSync(STORE_PATH, 'utf8');
-            const parsed = JSON.parse(raw) as PersistedRoutines;
             for (const routine of parsed.routines ?? []) {
                 if (routine?.id && routine.title && routine.prompt && routine.cwd) {
                     this.routines.set(routine.id, this.normalizeLoadedRoutine(routine));
@@ -295,14 +298,21 @@ export class QaapWorkHubRoutineStore {
 
     protected persist(seeded = false): void {
         try {
-            fs.mkdirSync(STORE_DIR, { recursive: true, mode: STORE_DIR_MODE });
             const payload: PersistedRoutines = {
                 routines: this.list(),
                 seeded: seeded || undefined,
             };
-            writeJsonAtomicSync(STORE_PATH, payload, { mode: STORE_FILE_MODE });
+            this.getSqliteStore().replace([['routines', payload]]);
         } catch (error) {
             console.warn('[qaap-work-hub-routines] failed to persist:', error);
         }
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: SQLITE_PATH,
+            namespace: 'work-hub-routines',
+            legacyPath: STORE_PATH,
+        });
     }
 }

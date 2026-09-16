@@ -7,6 +7,7 @@ import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import type { QaapAuthSessionUser } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { nls } from '@theia/core/lib/common';
 import { QaapBetaAccessPolicy } from './qaap-beta-access-policy';
@@ -25,8 +26,6 @@ interface PersistedState {
 const STORE_SCHEMA_VERSION = 1;
 const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const PERSIST_DEBOUNCE_MS = 100;
-const STORE_FILE_MODE = 0o600;
-const STORE_DIR_MODE = 0o700;
 const SHUTDOWN_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 /** Docker/VPS: persist next to cloned repos on the mounted /workspace volume. */
@@ -43,7 +42,8 @@ export function resolveQaapAuthStorePath(): string {
 }
 
 /**
- * In-memory sessions + OAuth state map persisted to `~/.qaap/auth/sessions.json`.
+ * In-memory sessions + OAuth state map persisted to an embedded SQLite database
+ * alongside the legacy `~/.qaap/auth/sessions.json` path.
  *
  * Persistence matters because the OAuth callback URL from GitHub can arrive
  * after the backend has restarted (very common during local dev). Without it,
@@ -58,7 +58,8 @@ export class QaapGithubSessionStore {
     protected readonly sessions = new Map<string, QaapGithubStoredSession>();
     protected readonly oauthStates = new Map<string, number>();
     protected readonly storePath: string = resolveQaapAuthStorePath();
-    protected readonly backupPath: string = `${resolveQaapAuthStorePath()}.bak`;
+    protected readonly sqlitePath: string = resolveQaapSqlitePath(this.storePath);
+    protected sqliteStore: QaapSqliteStore | undefined;
     protected persistTimer: NodeJS.Timeout | undefined;
     protected loaded = false;
     protected shutdownHandlersInstalled = false;
@@ -136,52 +137,61 @@ export class QaapGithubSessionStore {
     }
 
     protected loadFromDisk(): void {
-        if (!this.tryLoadFile(this.storePath) && !this.tryLoadFile(this.backupPath)) {
-            // Either no file exists yet, or both primary and backup are unreadable.
+        try {
+            const store = this.getSqliteStore();
+            try {
+                store.migrateLegacy(this.parseLegacyState.bind(this));
+            } catch (error) {
+                // Preserve the previous JSON store's primary/backup recovery behavior.
+                console.warn(`[qaap-auth] Could not read session store at ${this.storePath}:`, error);
+                const backupPath = `${this.storePath}.bak`;
+                if (fs.existsSync(backupPath)) {
+                    try {
+                        store.migrateLegacy(this.parseLegacyState.bind(this), backupPath);
+                    } catch (backupError) {
+                        console.warn(`[qaap-auth] Could not read session store backup at ${backupPath}:`, backupError);
+                    }
+                }
+            }
+            for (const [key, value] of store.list<QaapGithubStoredSession | number>()) {
+                if (key.startsWith('session:') && this.isValidSession(value)) {
+                    this.sessions.set(key.slice('session:'.length), value);
+                } else if (key.startsWith('oauth:') && typeof value === 'number') {
+                    if (Date.now() - value <= OAUTH_STATE_MAX_AGE_MS) {
+                        this.oauthStates.set(key.slice('oauth:'.length), value);
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('[qaap-auth] Could not restore SQLite session store:', error);
         }
         this.loaded = true;
     }
 
-    protected tryLoadFile(filePath: string): boolean {
-        let raw: string;
-        try {
-            raw = fs.readFileSync(filePath, 'utf8');
-        } catch (err) {
-            const code = (err as NodeJS.ErrnoException).code;
-            if (code !== 'ENOENT') {
-                console.warn(`[qaap-auth] Could not read session store at ${filePath}:`, err);
-            }
-            return false;
+    protected parseLegacyState(raw: string): Array<[string, QaapGithubStoredSession | number]> {
+        const parsed = JSON.parse(raw) as Partial<PersistedState>;
+        if (typeof parsed.version === 'number' && parsed.version > STORE_SCHEMA_VERSION) {
+            throw new Error(`Session store has newer schema v${parsed.version}`);
         }
-        try {
-            const parsed = JSON.parse(raw) as Partial<PersistedState>;
-            // version is currently informational; future migrations can branch on it here.
-            if (typeof parsed.version === 'number' && parsed.version > STORE_SCHEMA_VERSION) {
-                console.warn(`[qaap-auth] Session store ${filePath} has newer schema v${parsed.version}; ignoring.`);
-                return false;
+        const entries: Array<[string, QaapGithubStoredSession | number]> = [];
+        for (const entry of parsed.sessions ?? []) {
+            if (this.isValidSessionEntry(entry)) {
+                entries.push([`session:${entry[0]}`, entry[1]]);
             }
-            if (Array.isArray(parsed.sessions)) {
-                for (const entry of parsed.sessions) {
-                    if (this.isValidSessionEntry(entry)) {
-                        this.sessions.set(entry[0], entry[1]);
-                    }
-                }
-            }
-            if (Array.isArray(parsed.oauthStates)) {
-                const now = Date.now();
-                for (const entry of parsed.oauthStates) {
-                    if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'number') {
-                        if (now - entry[1] <= OAUTH_STATE_MAX_AGE_MS) {
-                            this.oauthStates.set(entry[0], entry[1]);
-                        }
-                    }
-                }
-            }
-            return true;
-        } catch (err) {
-            console.warn(`[qaap-auth] Session store ${filePath} is corrupt, trying fallback:`, err);
-            return false;
         }
+        for (const entry of parsed.oauthStates ?? []) {
+            if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'number'
+                && Date.now() - entry[1] <= OAUTH_STATE_MAX_AGE_MS) {
+                entries.push([`oauth:${entry[0]}`, entry[1]]);
+            }
+        }
+        return entries;
+    }
+
+    protected isValidSession(value: unknown): value is QaapGithubStoredSession {
+        const session = value as Partial<QaapGithubStoredSession> | undefined;
+        return !!session && typeof session.accessToken === 'string'
+            && !!session.user && typeof session.user.login === 'string';
     }
 
     protected isValidSessionEntry(entry: unknown): entry is [string, QaapGithubStoredSession] {
@@ -224,46 +234,23 @@ export class QaapGithubSessionStore {
     }
 
     protected persistNow(): void {
-        const payload: PersistedState = {
-            version: STORE_SCHEMA_VERSION,
-            sessions: [...this.sessions.entries()],
-            oauthStates: [...this.oauthStates.entries()],
-        };
-        const dir = path.dirname(this.storePath);
-        const tmpPath = `${this.storePath}.${process.pid}.tmp`;
         try {
-            fs.mkdirSync(dir, { recursive: true, mode: STORE_DIR_MODE });
-            // Write + fsync the data file before rename, so the rename can't
-            // expose a zero-length file after a power loss.
-            const fd = fs.openSync(tmpPath, 'w', STORE_FILE_MODE);
-            try {
-                fs.writeSync(fd, JSON.stringify(payload));
-                try { fs.fsyncSync(fd); } catch { /* fsync may be unsupported on some filesystems */ }
-            } finally {
-                fs.closeSync(fd);
-            }
-            // Roll the previous good copy to .bak so a corrupt write still has a fallback.
-            try {
-                if (fs.existsSync(this.storePath)) {
-                    fs.copyFileSync(this.storePath, this.backupPath);
-                    try { fs.chmodSync(this.backupPath, STORE_FILE_MODE); } catch { /* best-effort */ }
-                }
-            } catch (err) {
-                console.warn('[qaap-auth] Could not refresh session store backup:', err);
-            }
-            fs.renameSync(tmpPath, this.storePath);
-            // Tighten perms in case mkdir/write honored umask instead of mode.
-            try { fs.chmodSync(this.storePath, STORE_FILE_MODE); } catch { /* best-effort */ }
-            // fsync the parent dir so the rename itself survives a crash.
-            try {
-                const dirFd = fs.openSync(dir, 'r');
-                try { fs.fsyncSync(dirFd); } catch { /* not supported everywhere */ }
-                fs.closeSync(dirFd);
-            } catch { /* best-effort */ }
+            const entries: Array<readonly [string, QaapGithubStoredSession | number]> = [
+                ...[...this.sessions.entries()].map(([id, session]) => [`session:${id}`, session] as const),
+                ...[...this.oauthStates.entries()].map(([state, createdAt]) => [`oauth:${state}`, createdAt] as const),
+            ];
+            this.getSqliteStore().replace(entries);
         } catch (err) {
             console.warn('[qaap-auth] Could not persist session store:', err);
-            try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
         }
+    }
+
+    protected getSqliteStore(): QaapSqliteStore {
+        return this.sqliteStore ??= new QaapSqliteStore({
+            databasePath: this.sqlitePath,
+            namespace: 'github-sessions',
+            legacyPath: this.storePath,
+        });
     }
 
     protected installShutdownHandlers(): void {

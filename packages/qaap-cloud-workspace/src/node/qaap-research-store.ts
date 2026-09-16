@@ -6,11 +6,9 @@
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { writeJsonAtomicSync } from './qaap-write-json-atomic';
+import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
 import {
     normalizeResearchGoal,
     type ResearchGoal,
@@ -21,8 +19,6 @@ import type { QaapCreateResearchGoalBody } from '@theia/qaap-mobile-shell/lib/co
 
 const GOALS_STORE_DIR = path.join(os.homedir(), '.qaap');
 const GOALS_STORE_PATH = path.join(GOALS_STORE_DIR, 'research-goals.json');
-const GOALS_FILE_MODE = 0o600;
-const GOALS_DIR_MODE = 0o700;
 
 interface PersistedResearchGoals {
     readonly goals: ResearchGoal[];
@@ -31,24 +27,24 @@ interface PersistedResearchGoals {
 }
 
 /**
- * Node-owned persistence for the auto-researcher v1: goal metadata in `~/.qaap/research-goals.json`
- * (mirrors {@link QaapWorkHubRoutineStore}), and a per-repo, append-mostly JSONL experiment ledger
- * at `<goal.cwd>/.qaap/experiments.jsonl` (mirrors the round-by-round shape defined in
- * `qaap-research-ledger.ts`).
+ * Node-owned persistence for the auto-researcher v1: goal metadata in an embedded SQLite database
+ * next to the legacy `~/.qaap/research-goals.json`, and a per-repo SQLite experiment ledger next
+ * to the legacy `<goal.cwd>/.qaap/experiments.jsonl` path (mirrors the round-by-round shape
+ * defined in `qaap-research-ledger.ts`).
  *
- * The ledger is rewritten atomically (temp file + rename) on every write rather than truly
- * append-only, because a round's record is written as a skeleton BEFORE each phase and rewritten
- * IN PLACE as the phase advances — the ledger file itself is the runner's checkpoint, so a
- * half-written file after a crash would be worse than a slightly more expensive full rewrite.
+ * Each record update is committed transactionally with SQLite WAL and FULL synchronous mode,
+ * because a round's record is written as a skeleton BEFORE each phase and updated IN PLACE as
+ * the phase advances.
  */
 @injectable()
 export class QaapResearchStore {
 
     protected readonly goals = new Map<string, ResearchGoal>();
     protected readonly ownerByGoalId = new Map<string, string>();
-    /** Serializes RMW ledger writes per repository so concurrent rounds never corrupt JSONL. */
+    /** Serializes RMW ledger writes per repository so concurrent rounds do not lose updates. */
     protected readonly ledgerChains = new Map<string, Promise<void>>();
-    protected ledgerTempCounter = 0;
+    protected ledgerStores: Map<string, QaapSqliteStore> | undefined;
+    protected goalsStore: QaapSqliteStore | undefined;
     protected readonly onDidChangeEmitter = new Emitter<void>();
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
 
@@ -155,13 +151,24 @@ export class QaapResearchStore {
 
     /** All records for `cwd`, oldest round first. Never cached — the runner is the only writer. */
     readLedger(cwd: string): ResearchExperimentRecord[] {
-        return this.parseLedgerRaw(this.readLedgerRawSync(cwd));
+        try {
+            const store = this.getLedgerStore(cwd);
+            try {
+                store.migrateLegacy<ResearchExperimentRecord[]>(raw => [['records', this.parseLedgerRaw(raw)]]);
+            } catch (error) {
+                console.warn('[qaap-research] failed to migrate legacy ledger:', error);
+            }
+            return store.get<ResearchExperimentRecord[]>('records') ?? [];
+        } catch (error) {
+            console.warn('[qaap-research] failed to read ledger:', error);
+            return [];
+        }
     }
 
     /** Await pending writes for `cwd`, then read — use from HTTP handlers after async upserts. */
     async readLedgerAsync(cwd: string): Promise<ResearchExperimentRecord[]> {
         await this.ledgerChains.get(cwd);
-        return this.parseLedgerRaw(await this.readLedgerRawAsync(cwd));
+        return this.readLedger(cwd);
     }
 
     /** {@link readLedger} scoped to one goal, in case two goals ever share a `cwd`. */
@@ -181,12 +188,18 @@ export class QaapResearchStore {
      */
     async upsertRecord(cwd: string, record: ResearchExperimentRecord): Promise<void> {
         return this.enqueueLedgerOp(cwd, async () => {
-            const records = this.parseLedgerRaw(await this.readLedgerRawAsync(cwd));
+            const store = this.getLedgerStore(cwd);
+            try {
+                store.migrateLegacy<ResearchExperimentRecord[]>(raw => [['records', this.parseLedgerRaw(raw)]]);
+            } catch (error) {
+                console.warn('[qaap-research] failed to migrate legacy ledger:', error);
+            }
+            const records = store.get<ResearchExperimentRecord[]>('records') ?? [];
             const index = records.findIndex(existing => existing.id === record.id);
             const next = index >= 0
                 ? records.map((existing, i) => (i === index ? record : existing))
                 : [...records, record];
-            await this.writeLedgerAtomic(cwd, next);
+            store.replace([['records', next]]);
         });
     }
 
@@ -212,22 +225,6 @@ export class QaapResearchStore {
         return next;
     }
 
-    protected readLedgerRawSync(cwd: string): string {
-        try {
-            return fs.readFileSync(this.ledgerPath(cwd), 'utf8');
-        } catch {
-            return '';
-        }
-    }
-
-    protected async readLedgerRawAsync(cwd: string): Promise<string> {
-        try {
-            return await fsp.readFile(this.ledgerPath(cwd), 'utf8');
-        } catch {
-            return '';
-        }
-    }
-
     protected parseLedgerRaw(raw: string): ResearchExperimentRecord[] {
         if (!raw) {
             return [];
@@ -247,29 +244,20 @@ export class QaapResearchStore {
         return records;
     }
 
-    protected async writeLedgerAtomic(cwd: string, records: readonly ResearchExperimentRecord[]): Promise<void> {
-        const ledgerPath = this.ledgerPath(cwd);
-        await fsp.mkdir(path.dirname(ledgerPath), { recursive: true });
-        const tmp = `${ledgerPath}.${process.pid}.${++this.ledgerTempCounter}.tmp`;
-        const body = records.map(record => JSON.stringify(record)).join('\n');
-        try {
-            await fsp.writeFile(tmp, records.length > 0 ? `${body}\n` : '', 'utf8');
-            await fsp.rename(tmp, ledgerPath);
-        } catch (error) {
-            await fsp.rm(tmp, { force: true }).catch(() => undefined);
-            throw error;
-        }
-    }
-
     // ---- persistence (goal metadata only — the ledger lives per-repo) ------
 
     protected loadFromDisk(): void {
         try {
-            if (!fs.existsSync(GOALS_STORE_PATH)) {
+            const store = this.getGoalsStore();
+            try {
+                store.migrateLegacy<PersistedResearchGoals>(raw => [['metadata', JSON.parse(raw) as PersistedResearchGoals]]);
+            } catch (error) {
+                console.warn('[qaap-research] failed to migrate legacy goals:', error);
+            }
+            const parsed = store.get<PersistedResearchGoals>('metadata');
+            if (!parsed) {
                 return;
             }
-            const raw = fs.readFileSync(GOALS_STORE_PATH, 'utf8');
-            const parsed = JSON.parse(raw) as PersistedResearchGoals;
             for (const goal of parsed.goals ?? []) {
                 if (goal?.id && goal.cwd && goal.description) {
                     this.goals.set(goal.id, goal);
@@ -287,14 +275,36 @@ export class QaapResearchStore {
 
     protected persistGoals(): void {
         try {
-            fs.mkdirSync(GOALS_STORE_DIR, { recursive: true, mode: GOALS_DIR_MODE });
             const payload: PersistedResearchGoals = {
                 goals: this.list(),
                 owners: Object.fromEntries(this.ownerByGoalId),
             };
-            writeJsonAtomicSync(GOALS_STORE_PATH, payload, { mode: GOALS_FILE_MODE });
+            this.getGoalsStore().replace([['metadata', payload]]);
         } catch (error) {
             console.warn('[qaap-research] failed to persist goal store:', error);
         }
+    }
+
+    protected getGoalsStore(): QaapSqliteStore {
+        return this.goalsStore ??= new QaapSqliteStore({
+            databasePath: resolveQaapSqlitePath(GOALS_STORE_PATH),
+            namespace: 'research-goals',
+            legacyPath: GOALS_STORE_PATH,
+        });
+    }
+
+    protected getLedgerStore(cwd: string): QaapSqliteStore {
+        const stores = this.ledgerStores ??= new Map<string, QaapSqliteStore>();
+        const existing = stores.get(cwd);
+        if (existing) {
+            return existing;
+        }
+        const store = new QaapSqliteStore({
+            databasePath: resolveQaapSqlitePath(this.ledgerPath(cwd)),
+            namespace: `research-ledger:${path.resolve(cwd)}`,
+            legacyPath: this.ledgerPath(cwd),
+        });
+        stores.set(cwd, store);
+        return store;
     }
 }
