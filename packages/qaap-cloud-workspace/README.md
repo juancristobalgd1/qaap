@@ -27,6 +27,38 @@ external proxy.
 
 Workspace records include `containerRef` (Docker container id).
 
+### Pool de Docker remoto
+
+Para repartir tenants entre varias máquinas, el mismo `QaapDockerOrchestrator` acepta un pool de
+daemons. La asignación usa rendezvous hashing por login, por lo que añadir un nodo mueve sólo los
+tenants cuyo nodo ganador cambia; `docker exec`, `stop`, `destroy` y el reaper usan el nodo correcto.
+Los endpoints remotos requieren TLS verificado y certificados de cliente (`ca.pem`, `cert.pem` y
+`key.pem`):
+
+```bash
+export QAAP_CLOUD_MODE=docker
+export QAAP_DOCKER_NODES='[
+  {"id":"worker-a","dockerHost":"tcp://docker-a.internal:2376","advertiseHost":"10.0.0.11","publishHostIp":"10.0.0.11","certPath":"/etc/qaap/docker/worker-a","tlsVerify":true},
+  {"id":"worker-b","dockerHost":"tcp://docker-b.internal:2376","advertiseHost":"10.0.0.12","publishHostIp":"10.0.0.12","certPath":"/etc/qaap/docker/worker-b","tlsVerify":true}
+]'
+```
+
+`advertiseHost` es la dirección que el control plane usa para alcanzar el backend Theia publicado
+en el nodo. `publishHostIp` debe ser una interfaz privada protegida por firewall, nunca una dirección
+pública sin restricciones. En modo `QAAP_BACKEND_PER_TENANT=1`, `publishHostIp` es obligatorio para
+un nodo TCP remoto; configura también `advertiseHost` explícitamente cuando difiera del host del
+endpoint Docker.
+
+Todos los nodos deben ver el almacenamiento persistente de cada tenant con las mismas rutas
+canónicas (NFS/Ceph suele ser lo más sencillo). Si el prefijo remoto difiere del del control plane,
+se pueden definir `QAAP_DOCKER_REMOTE_REPOS_ROOT`, `QAAP_DOCKER_REMOTE_WORKTREES_ROOT`,
+`QAAP_DOCKER_REMOTE_PARALLEL_ROOT` y `QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT`. Estas variables sólo
+traducen la ruta del bind mount; no sincronizan datos ni sustituyen un volumen compartido.
+
+El arranque hospedado rechaza cualquier nodo TCP sin TLS verificado, certificado de cliente o
+daemon rootless. Para un despliegue Kubernetes, esta API queda como seam de sustitución: el futuro
+adaptador debe conservar el mismo aislamiento por tenant y el contrato de almacenamiento compartido.
+
 ## Tenant runtime reaper (FinOps)
 
 The reaper treats the worker and the per-tenant Theia backend as one ephemeral runtime. It is

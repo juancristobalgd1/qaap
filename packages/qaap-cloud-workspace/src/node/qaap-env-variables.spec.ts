@@ -14,6 +14,9 @@ describe('qaap-env-variables', () => {
         expect(isQaapSensitiveEnvKey('OPENAI_API_KEY')).to.equal(true);
         expect(isQaapSensitiveEnvKey('QAAP_TASK_TOKEN')).to.equal(true);
         expect(isQaapSensitiveEnvKey('DOCKER_HOST')).to.equal(true);
+        expect(isQaapSensitiveEnvKey('QAAP_DOCKER_NODES')).to.equal(true);
+        expect(isQaapSensitiveEnvKey('DOCKER_TLS_VERIFY')).to.equal(true);
+        expect(isQaapSensitiveEnvKey('DOCKER_CERT_PATH')).to.equal(true);
         expect(isQaapSensitiveEnvKey('PATH')).to.equal(false);
         expect(isQaapSensitiveEnvKey('QAAP_PUBLIC_ORIGIN')).to.equal(false);
     });

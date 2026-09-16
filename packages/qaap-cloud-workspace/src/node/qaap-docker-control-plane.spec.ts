@@ -8,6 +8,7 @@ import {
     assertQaapDockerControlPlane,
     assertQaapHostedTenantIsolation,
     evaluateQaapDockerControlPlane,
+    resolveQaapDockerNodes,
 } from './qaap-docker-control-plane';
 
 describe('qaap-docker-control-plane', () => {
@@ -75,6 +76,41 @@ describe('qaap-docker-control-plane', () => {
         });
         expect(result.ready).to.equal(false);
         expect(result.fatalReason).to.match(/unencrypted TCP/i);
+    });
+
+    it('accepts a pool of verified TLS Docker nodes', () => {
+        const result = evaluateQaapDockerControlPlane({
+            NODE_ENV: 'production',
+            QAAP_CLOUD_MODE: 'docker',
+            QAAP_DOCKER_NODES: JSON.stringify([
+                { id: 'worker-b', dockerHost: 'tcp://docker-b.internal:2376', advertiseHost: '10.0.0.12', certPath: '/etc/qaap/docker/b', tlsVerify: true },
+                { id: 'worker-a', dockerHost: 'tcp://docker-a.internal:2376', advertiseHost: '10.0.0.11', certPath: '/etc/qaap/docker/a', tlsVerify: true },
+            ]),
+        });
+        expect(result.ready).to.equal(true);
+        expect(result.dockerHosts).to.deep.equal([
+            'tcp://docker-a.internal:2376',
+            'tcp://docker-b.internal:2376',
+        ]);
+        expect(resolveQaapDockerNodes({
+            QAAP_DOCKER_NODES: JSON.stringify([
+                { id: 'b', dockerHost: 'tcp://b:2376' },
+                { id: 'a', dockerHost: 'tcp://a:2376' },
+            ]),
+        }).map(node => node.id)).to.deep.equal(['a', 'b']);
+    });
+
+    it('rejects a pool containing one plaintext remote node', () => {
+        const result = evaluateQaapDockerControlPlane({
+            NODE_ENV: 'production',
+            QAAP_CLOUD_MODE: 'docker',
+            QAAP_DOCKER_NODES: JSON.stringify([
+                { id: 'secure', dockerHost: 'tcp://docker-a.internal:2376', certPath: '/etc/qaap/docker/a', tlsVerify: true },
+                { id: 'unsafe', dockerHost: 'tcp://docker-b.internal:2375' },
+            ]),
+        });
+        expect(result.ready).to.equal(false);
+        expect(result.fatalReason).to.match(/verified TLS|remote Docker/i);
     });
 
     it('rejects hosted startup when the tenant worker boundary is disabled', () => {

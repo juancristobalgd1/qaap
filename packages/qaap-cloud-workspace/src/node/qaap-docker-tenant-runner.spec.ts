@@ -93,6 +93,50 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             }
         });
 
+        it('assigns tenants deterministically across a remote Docker node pool', () => {
+            const previousEnv = process.env;
+            process.env = {
+                ...previousEnv,
+                NODE_ENV: 'development',
+                QAAP_CLOUD_MODE: 'docker',
+                DOCKER_TLS_VERIFY: '',
+                QAAP_DOCKER_NODES: JSON.stringify([
+                    { id: 'node-b', dockerHost: 'http://docker-b.internal:2375', advertiseHost: '10.0.0.12' },
+                    { id: 'node-a', dockerHost: 'http://docker-a.internal:2375', advertiseHost: '10.0.0.11' },
+                ]),
+            };
+            try {
+                const first = new QaapDockerOrchestrator();
+                const second = new QaapDockerOrchestrator();
+                const assignment = (orchestrator: QaapDockerOrchestrator, login: string): string =>
+                    (orchestrator as any).dockerNodeForTenant(login).config.id;
+                const logins = ['alice', 'bob', 'carol', 'dave', 'erin', 'frank', 'grace', 'heidi'];
+                const firstAssignments = logins.map(login => assignment(first, login));
+                expect(firstAssignments).to.include('node-a');
+                expect(firstAssignments).to.include('node-b');
+                expect(logins.map(login => assignment(second, login))).to.deep.equal(firstAssignments);
+
+                const wrapped = first.wrapShellForTenantContainer('alice', aliceCwd, '/bin/bash', ['-c', 'echo ok'], aliceRoot);
+                const node = (first as any).dockerNodeForTenant('alice').config;
+                expect(wrapped.args.slice(0, 2)).to.deep.equal(['--host', node.dockerHost]);
+                expect(wrapped.args).to.include('exec');
+            } finally {
+                process.env = previousEnv;
+            }
+        });
+
+        it('maps canonical storage roots for remote Docker nodes', () => {
+            const previousEnv = process.env;
+            process.env = { ...previousEnv, QAAP_DOCKER_REMOTE_REPOS_ROOT: '/srv/qaap/repos' };
+            try {
+                const orchestrator = new QaapDockerOrchestrator();
+                expect((orchestrator as any).dockerMountSource(aliceRoot, 'repos'))
+                    .to.equal('/srv/qaap/repos/users/alice');
+            } finally {
+                process.env = previousEnv;
+            }
+        });
+
         it('creates one non-root container with only that tenant storage roots mounted and hardening enabled', async () => {
             const previousEnv = process.env;
             process.env = {

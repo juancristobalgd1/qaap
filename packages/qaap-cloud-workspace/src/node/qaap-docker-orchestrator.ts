@@ -18,9 +18,15 @@ import {
     QAAP_USER_REPOS_SEGMENT,
     safeUserIdSegment,
     resolveQaapTenantUserRoot,
+    resolveQaapTenantConfigRoot,
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { assertQaapDockerControlPlane, isQaapHostedRuntime } from './qaap-docker-control-plane';
+import {
+    assertQaapDockerControlPlane,
+    isQaapHostedRuntime,
+    resolveQaapDockerNodes,
+    type QaapDockerNodeConfig,
+} from './qaap-docker-control-plane';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 
@@ -51,6 +57,12 @@ const TENANT_WORKER_ENV_DENYLIST = new Set([
     'DOCKER_CONTEXT',
     'QAAP_DOCKER_SOCKET_SOURCE',
     'QAAP_DOCKER_SOCKET_TARGET',
+    'QAAP_DOCKER_NODES',
+    'QAAP_DOCKER_PUBLISH_HOST_IP',
+    'QAAP_DOCKER_REMOTE_REPOS_ROOT',
+    'QAAP_DOCKER_REMOTE_WORKTREES_ROOT',
+    'QAAP_DOCKER_REMOTE_PARALLEL_ROOT',
+    'QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT',
     'QAAP_ALLOW_ROOTFUL_DOCKER_SOCKET_IN_PRODUCTION',
     'QAAP_GITHUB_CLIENT_SECRET',
     'QAAP_VAPID_PRIVATE_KEY',
@@ -93,6 +105,12 @@ export interface QaapManagedTenantContainer {
     readonly containerId: string;
     readonly containerName: string;
     readonly running: boolean;
+    readonly nodeId?: string;
+}
+
+interface QaapDockerNodeClient {
+    readonly config: QaapDockerNodeConfig;
+    readonly docker: Dockerode;
 }
 
 /** One hardened worker container per tenant when `QAAP_CLOUD_MODE=docker`. */
@@ -106,8 +124,10 @@ export class QaapDockerOrchestrator {
     protected readonly runtimeStore: QaapTenantRuntimeStore | undefined;
 
     protected docker: Dockerode | undefined;
-    /** A path-shaped socket is not proof of rootless Docker; verify the daemon once per process. */
-    protected dockerControlPlaneVerified = false;
+    /** Per-node verification is needed when a tenant pool uses more than one remote daemon. */
+    protected readonly verifiedDockerNodeIds = new Set<string>();
+    protected dockerNodeConfigs: readonly QaapDockerNodeConfig[] | undefined;
+    protected readonly dockerNodeClients = new Map<string, QaapDockerNodeClient>();
     /** Canonical host-side repository roots for containers validated during this backend lifetime. */
     protected readonly tenantRoots = new Map<string, string>();
     /** All host-side roots mounted into each validated tenant worker. */
@@ -210,13 +230,21 @@ export class QaapDockerOrchestrator {
         if (!tenant) {
             return;
         }
-        const docker = await this.getDocker();
         const name = this.backendContainerNameForTenant(ownerLogin);
+        const nodes = await this.verifiedDockerNodesForTenant(ownerLogin);
         try {
-            await docker.getContainer(name).stop({ t: 10 });
-        } catch (error) {
-            if (!this.isDockerNotFound(error) && !this.isDockerAlreadyStopped(error)) {
-                throw error;
+            for (const node of nodes) {
+                try {
+                    await node.docker.getContainer(name).stop({ t: 10 });
+                    break;
+                } catch (error) {
+                    if (this.isDockerAlreadyStopped(error)) {
+                        break;
+                    }
+                    if (!this.isDockerNotFound(error)) {
+                        throw error;
+                    }
+                }
             }
         } finally {
             this.tenantBackendTargets.delete(tenant);
@@ -236,28 +264,36 @@ export class QaapDockerOrchestrator {
 
     /** Discover only Qaap-managed tenant containers; discovery survives backend restarts. */
     async listManagedTenantContainers(): Promise<QaapManagedTenantContainer[]> {
-        const docker = await this.getDocker();
-        const containers = await docker.listContainers({
-            all: true,
-            filters: { label: ['com.qaap.managed=true'] },
-        });
-        return containers.flatMap(container => {
-            const labels = container.Labels ?? {};
-            const tenantLogin = labels['com.qaap.tenant-login']?.trim().toLowerCase();
-            const kind = labels['com.qaap.tenant-backend'] === 'true'
-                ? 'backend'
-                : labels['com.qaap.tenant-container'] === 'true' ? 'worker' : undefined;
-            if (!kind) {
-                return [];
-            }
-            return [{
-                ...(tenantLogin ? { tenantLogin } : {}),
-                kind,
-                containerId: container.Id,
-                containerName: (container.Names?.[0] ?? '').replace(/^\//, ''),
-                running: container.State === 'running',
-            } satisfies QaapManagedTenantContainer];
-        });
+        assertQaapDockerControlPlane(process.env);
+        const nodes = this.getDockerNodeClients();
+        if (isQaapHostedRuntime(process.env)) {
+            await Promise.all(nodes.map(node => this.verifyDockerNode(node)));
+        }
+        const discovered = await Promise.all(nodes.map(async node => {
+            const containers = await node.docker.listContainers({
+                all: true,
+                filters: { label: ['com.qaap.managed=true'] },
+            });
+            return containers.flatMap(container => {
+                const labels = container.Labels ?? {};
+                const tenantLogin = labels['com.qaap.tenant-login']?.trim().toLowerCase();
+                const kind = labels['com.qaap.tenant-backend'] === 'true'
+                    ? 'backend'
+                    : labels['com.qaap.tenant-container'] === 'true' ? 'worker' : undefined;
+                if (!kind) {
+                    return [];
+                }
+                return [{
+                    ...(tenantLogin ? { tenantLogin } : {}),
+                    kind,
+                    containerId: container.Id,
+                    containerName: (container.Names?.[0] ?? '').replace(/^\//, ''),
+                    running: container.State === 'running',
+                    nodeId: node.config.id,
+                } satisfies QaapManagedTenantContainer];
+            });
+        }));
+        return discovered.flat();
     }
 
     async stopTenantRuntime(ownerLogin: string): Promise<void> {
@@ -270,17 +306,20 @@ export class QaapDockerOrchestrator {
 
     /** Remove only the ephemeral containers and their dedicated network, never tenant bind mounts. */
     async destroyTenantRuntime(ownerLogin: string): Promise<void> {
-        const docker = await this.getDocker();
+        const nodes = await this.verifiedDockerNodesForTenant(ownerLogin);
         const names = [this.containerNameForTenant(ownerLogin)];
         if (this.isBackendPerTenantEnabled()) {
             names.push(this.backendContainerNameForTenant(ownerLogin));
         }
         for (const name of names) {
-            try {
-                await docker.getContainer(name).remove({ force: true, v: false });
-            } catch (error) {
-                if (!this.isDockerNotFound(error)) {
-                    throw error;
+            for (const node of nodes) {
+                try {
+                    await node.docker.getContainer(name).remove({ force: true, v: false });
+                    break;
+                } catch (error) {
+                    if (!this.isDockerNotFound(error)) {
+                        throw error;
+                    }
                 }
             }
         }
@@ -291,15 +330,18 @@ export class QaapDockerOrchestrator {
         this.tenantBackendConnectionTokens.delete(tenant);
         const networkMode = this.getTenantNetworkMode(ownerLogin);
         if (networkMode !== 'none') {
-            try {
-                const network = docker.getNetwork(networkMode);
-                const inspect = await network.inspect() as { Labels?: Record<string, string> };
-                if (inspect.Labels?.['com.qaap.tenant-network'] === 'true') {
-                    await network.remove();
-                }
-            } catch (error) {
-                if (!this.isDockerNotFound(error)) {
-                    console.warn(`[qaap-runtime] could not remove tenant network ${networkMode}: ${error instanceof Error ? error.message : String(error)}`);
+            for (const node of nodes) {
+                try {
+                    const network = node.docker.getNetwork(networkMode);
+                    const inspect = await network.inspect() as { Labels?: Record<string, string> };
+                    if (inspect.Labels?.['com.qaap.tenant-network'] === 'true') {
+                        await network.remove();
+                    }
+                    break;
+                } catch (error) {
+                    if (!this.isDockerNotFound(error)) {
+                        console.warn(`[qaap-runtime] could not remove tenant network ${networkMode} on ${node.config.id}: ${error instanceof Error ? error.message : String(error)}`);
+                    }
                 }
             }
         }
@@ -310,37 +352,150 @@ export class QaapDockerOrchestrator {
         return this.tenantBackendSecret(ownerLogin);
     }
 
-    protected async getDocker(): Promise<Dockerode> {
+    protected async getDocker(ownerLogin?: string): Promise<Dockerode> {
         assertQaapDockerControlPlane(process.env);
-        if (!this.docker) {
-            const configured = process.env.DOCKER_HOST?.trim();
-            if (configured?.startsWith('unix://')) {
-                this.docker = new Dockerode({ socketPath: configured.slice('unix://'.length) });
-            } else if (configured?.startsWith('npipe://')) {
-                // Docker Desktop on Windows exposes its engine through a named pipe. Dockerode
-                // expects the Win32 pipe path without the `npipe:` URI scheme.
-                this.docker = new Dockerode({ socketPath: configured.slice('npipe://'.length) });
-            } else if (configured?.startsWith('tcp://')) {
-                const endpoint = new URL(configured);
-                this.docker = new Dockerode({
-                    host: endpoint.hostname,
-                    port: Number.parseInt(endpoint.port || '2375', 10),
-                });
-            } else {
-                this.docker = new Dockerode({
-                    socketPath: configured || (process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock'),
-                });
-            }
-        }
-        if (isQaapHostedRuntime(process.env) && !this.dockerControlPlaneVerified) {
-            const info = await this.docker.info() as { SecurityOptions?: readonly string[] };
+        const node = this.dockerNodeForTenant(ownerLogin);
+        await this.verifyDockerNode(node);
+        return node.docker;
+    }
+
+    protected async verifyDockerNode(node: QaapDockerNodeClient): Promise<void> {
+        if (isQaapHostedRuntime(process.env) && !this.verifiedDockerNodeIds.has(node.config.id)) {
+            const info = await node.docker.info() as { SecurityOptions?: readonly string[] };
             const rootless = (info.SecurityOptions ?? []).some(option => /rootless/i.test(option));
             if (!rootless) {
-                throw new Error('Refusing hosted Docker control-plane access: the daemon did not report rootless mode.');
+                throw new Error(`Refusing hosted Docker control-plane access: Docker node ${node.config.id} did not report rootless mode.`);
             }
-            this.dockerControlPlaneVerified = true;
+            this.verifiedDockerNodeIds.add(node.config.id);
         }
-        return this.docker;
+    }
+
+    protected async verifiedDockerNodesForTenant(ownerLogin?: string): Promise<readonly QaapDockerNodeClient[]> {
+        assertQaapDockerControlPlane(process.env);
+        const nodes = this.orderDockerNodesForTenant(ownerLogin);
+        if (isQaapHostedRuntime(process.env)) {
+            await Promise.all(nodes.map(node => this.verifyDockerNode(node)));
+        }
+        return nodes;
+    }
+
+    protected getDockerNodeClients(): readonly QaapDockerNodeClient[] {
+        if (!process.env.QAAP_DOCKER_NODES?.trim() && this.docker) {
+            return [{
+                config: {
+                    id: 'default',
+                    dockerHost: process.env.DOCKER_HOST?.trim() || '',
+                    ...(process.env.DOCKER_CERT_PATH?.trim() ? { certPath: process.env.DOCKER_CERT_PATH.trim() } : {}),
+                    ...(process.env.DOCKER_TLS_VERIFY !== undefined ? { tlsVerify: this.isTruthy(process.env.DOCKER_TLS_VERIFY) } : {}),
+                    ...(process.env.QAAP_DOCKER_PUBLISH_HOST_IP?.trim() ? { publishHostIp: process.env.QAAP_DOCKER_PUBLISH_HOST_IP.trim() } : {}),
+                },
+                docker: this.docker,
+            }];
+        }
+        if (!this.dockerNodeConfigs) {
+            this.dockerNodeConfigs = resolveQaapDockerNodes(process.env);
+        }
+        return this.dockerNodeConfigs.map(config => {
+            const existing = this.dockerNodeClients.get(config.id);
+            if (existing) {
+                return existing;
+            }
+            const client = { config, docker: this.createDockerClient(config) };
+            this.dockerNodeClients.set(config.id, client);
+            if (config.id === 'default') {
+                this.docker = client.docker;
+            }
+            return client;
+        });
+    }
+
+    protected dockerNodeForTenant(ownerLogin?: string): QaapDockerNodeClient {
+        const nodes = this.getDockerNodeClients();
+        if (nodes.length === 1) {
+            return nodes[0];
+        }
+        return this.orderDockerNodesForTenant(ownerLogin)[0];
+    }
+
+    /** Rendezvous hashing keeps an existing tenant on its node when another node is added. */
+    protected orderDockerNodesForTenant(ownerLogin?: string): readonly QaapDockerNodeClient[] {
+        const tenant = ownerLogin?.trim().toLowerCase() || '__anonymous__';
+        return [...this.getDockerNodeClients()].sort((left, right) => {
+            const leftScore = crypto.createHash('sha256').update(`${tenant}\u0000${left.config.id}`).digest('hex');
+            const rightScore = crypto.createHash('sha256').update(`${tenant}\u0000${right.config.id}`).digest('hex');
+            return rightScore.localeCompare(leftScore);
+        });
+    }
+
+    protected createDockerClient(config: QaapDockerNodeConfig): Dockerode {
+        const configured = config.dockerHost;
+        if (configured.startsWith('unix://')) {
+            return new Dockerode({ socketPath: configured.slice('unix://'.length) });
+        }
+        if (configured.startsWith('npipe://')) {
+            // Docker Desktop exposes its engine through a named pipe. Dockerode expects the Win32
+            // pipe path without the `npipe:` URI scheme.
+            return new Dockerode({ socketPath: configured.slice('npipe://'.length) });
+        }
+        const endpoint = new URL(configured);
+        const tls = endpoint.protocol === 'https:'
+            || config.tlsVerify === true
+            || this.isTruthy(process.env.DOCKER_TLS_VERIFY);
+        const certPath = config.certPath || process.env.DOCKER_CERT_PATH?.trim();
+        const tlsOptions = tls && certPath ? {
+            ca: fs.readFileSync(path.join(certPath, 'ca.pem')),
+            cert: fs.readFileSync(path.join(certPath, 'cert.pem')),
+            key: fs.readFileSync(path.join(certPath, 'key.pem')),
+        } : {};
+        return new Dockerode({
+            protocol: tls ? 'https' : 'http',
+            host: endpoint.hostname,
+            port: Number.parseInt(endpoint.port || (tls ? '2376' : '2375'), 10),
+            ...tlsOptions,
+        });
+    }
+
+    protected isTruthy(value: string | undefined): boolean {
+        const normalized = value?.trim().toLowerCase();
+        return normalized === '1' || normalized === 'true' || normalized === 'yes';
+    }
+
+    protected dockerAdvertiseHost(config: QaapDockerNodeConfig): string {
+        if (config.advertiseHost) {
+            return config.advertiseHost;
+        }
+        try {
+            const endpoint = new URL(config.dockerHost);
+            return endpoint.hostname || '127.0.0.1';
+        } catch {
+            return '127.0.0.1';
+        }
+    }
+
+    protected dockerCliGlobalArgs(ownerLogin?: string): string[] {
+        const node = this.dockerNodeForTenant(ownerLogin).config;
+        if (!/^(tcp|http|https):\/\//i.test(node.dockerHost)) {
+            return [];
+        }
+        const args = ['--host', node.dockerHost];
+        const tls = node.dockerHost.startsWith('https://') || node.tlsVerify === true || this.isTruthy(process.env.DOCKER_TLS_VERIFY);
+        if (tls) {
+            args.push('--tlsverify');
+            const certPath = node.certPath || process.env.DOCKER_CERT_PATH?.trim();
+            if (certPath) {
+                args.push('--tlscacert', path.join(certPath, 'ca.pem'), '--tlscert', path.join(certPath, 'cert.pem'), '--tlskey', path.join(certPath, 'key.pem'));
+            }
+        }
+        return args;
+    }
+
+    protected dockerPublishHostIp(config: QaapDockerNodeConfig): string {
+        const configured = config.publishHostIp || process.env.QAAP_DOCKER_PUBLISH_HOST_IP?.trim();
+        const remote = /^(tcp|http|https):\/\//i.test(config.dockerHost);
+        if (remote && !configured) {
+            throw new Error(`Docker node ${config.id} requires publishHostIp or QAAP_DOCKER_PUBLISH_HOST_IP for backend-per-tenant routing.`);
+        }
+        return configured || '127.0.0.1';
     }
 
     /** Legacy repo container API retained for compatibility with explicit callers. */
@@ -460,7 +615,8 @@ export class QaapDockerOrchestrator {
         networkMode: string,
         ownerLogin?: string,
     ): Promise<QaapDockerEnsureResult> {
-        const docker = await this.getDocker();
+        const docker = await this.getDocker(ownerLogin);
+        const dockerMounts = this.tenantMountsForDocker(mounts);
         for (const root of Object.values(mounts)) {
             fs.mkdirSync(root, { recursive: true });
         }
@@ -502,9 +658,9 @@ export class QaapDockerOrchestrator {
                     // Mount only this tenant's three storage roots. The worker never receives the
                     // shared parent, another tenant's root, or the backend's host filesystem.
                     Binds: [
-                        `${mounts.reposRoot}:${WORKSPACE_MOUNT}:rw`,
-                        `${mounts.worktreesRoot}:${WORKTREES_MOUNT}:rw`,
-                        `${mounts.parallelRoot}:${PARALLEL_MOUNT}:rw`,
+                        `${dockerMounts.reposRoot}:${WORKSPACE_MOUNT}:rw`,
+                        `${dockerMounts.worktreesRoot}:${WORKTREES_MOUNT}:rw`,
+                        `${dockerMounts.parallelRoot}:${PARALLEL_MOUNT}:rw`,
                     ],
                     Memory: this.getTenantMemoryLimit(),
                     NanoCpus: this.getTenantCpuLimit(),
@@ -546,9 +702,11 @@ export class QaapDockerOrchestrator {
         ownerLogin: string,
         tenantRootHostPath: string,
     ): Promise<QaapTenantBackendTarget> {
-        const docker = await this.getDocker();
+        const node = this.dockerNodeForTenant(ownerLogin);
+        const docker = await this.getDocker(ownerLogin);
         const name = this.backendContainerNameForTenant(ownerLogin);
         const mounts = this.tenantMountsForRoot(tenantRootHostPath);
+        const dockerMounts = this.tenantMountsForDocker(mounts);
         const expectedSegment = safeUserIdSegment(ownerLogin).toLowerCase();
         const actualSegment = path.basename(mounts.reposRoot).toLowerCase();
         if (actualSegment !== expectedSegment) {
@@ -560,6 +718,9 @@ export class QaapDockerOrchestrator {
         }
         const tenantDataRoot = this.normalizeHostPath(resolveQaapTenantUserRoot(ownerLogin));
         const theiaHome = path.join(tenantDataRoot, 'theia-home');
+        const publishHostIp = this.dockerPublishHostIp(node.config);
+        const dockerTenantDataRoot = this.dockerMountSource(tenantDataRoot, 'tenant-config');
+        const dockerTheiaHome = this.dockerMountSource(theiaHome, 'tenant-config');
         for (const root of [...Object.values(mounts), tenantDataRoot, theiaHome]) {
             fs.mkdirSync(root, { recursive: true });
         }
@@ -569,7 +730,7 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)) {
+            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)) {
                 throw new Error(`Tenant backend ${name} has an unexpected security or mount configuration; refusing to reuse it.`);
             }
             if (!inspect.State.Running) {
@@ -599,9 +760,9 @@ export class QaapDockerOrchestrator {
                 'THEIA_PLUGINS_DIR=/app/plugins',
                 'QAAP_SYSTEM_SKILLS_DIR=/opt/qaap/system-skills',
             ];
-            const repoMount = `${mounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
-            const worktreeMount = `${mounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
-            const parallelMount = `${mounts.parallelRoot}:${TENANT_BACKEND_PARALLEL_MOUNT}/${expectedSegment}:rw`;
+            const repoMount = `${dockerMounts.reposRoot}:${TENANT_BACKEND_REPOS_MOUNT}/${expectedSegment}:rw`;
+            const worktreeMount = `${dockerMounts.worktreesRoot}:${TENANT_BACKEND_WORKTREES_MOUNT}/${expectedSegment}:rw`;
+            const parallelMount = `${dockerMounts.parallelRoot}:${TENANT_BACKEND_PARALLEL_MOUNT}/${expectedSegment}:rw`;
             container = await docker.createContainer({
                 name,
                 Image: this.getTenantImage(),
@@ -631,14 +792,14 @@ export class QaapDockerOrchestrator {
                         repoMount,
                         worktreeMount,
                         parallelMount,
-                        `${tenantDataRoot}:${TENANT_BACKEND_QAAP_HOME_MOUNT}:rw`,
-                        `${theiaHome}:${TENANT_BACKEND_THEIA_HOME_MOUNT}:rw`,
+                        `${dockerTenantDataRoot}:${TENANT_BACKEND_QAAP_HOME_MOUNT}:rw`,
+                        `${dockerTheiaHome}:${TENANT_BACKEND_THEIA_HOME_MOUNT}:rw`,
                     ],
                     PortBindings: {
-                        // Empty HostPort asks Docker for an ephemeral loopback port. A fixed port
-                        // would make two tenants collide; publishing on 0 is not portable across
-                        // Docker Desktop/rootless daemon versions.
-                        [`${TENANT_BACKEND_PORT}/tcp`]: [{ HostIp: '127.0.0.1', HostPort: '' }],
+                        // Empty HostPort asks Docker for an ephemeral port. A fixed port would make
+                        // two tenants collide; publishing on 0 is not portable across Docker
+                        // Desktop/rootless daemon versions.
+                        [`${TENANT_BACKEND_PORT}/tcp`]: [{ HostIp: publishHostIp, HostPort: '' }],
                     },
                     Memory: this.getTenantMemoryLimit(),
                     NanoCpus: this.getTenantCpuLimit(),
@@ -654,15 +815,15 @@ export class QaapDockerOrchestrator {
             await container.start();
         }
         inspect = await container.inspect();
-        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode)) {
+        if (!inspect.State.Running || !this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)) {
             throw new Error(`Tenant backend ${name} did not start with the required isolated configuration.`);
         }
         const ports = (inspect.NetworkSettings?.Ports as Record<string, Array<{ HostIp?: string; HostPort?: string }> | null> | undefined)?.[`${TENANT_BACKEND_PORT}/tcp`];
-        const hostPort = Number.parseInt(ports?.find(entry => entry.HostIp === '127.0.0.1' || entry.HostIp === '0.0.0.0')?.HostPort ?? '', 10);
+        const hostPort = Number.parseInt(ports?.find(entry => entry.HostIp === publishHostIp)?.HostPort ?? '', 10);
         if (!Number.isInteger(hostPort) || hostPort <= 0) {
-            throw new Error(`Tenant backend ${name} has no loopback-only published port.`);
+            throw new Error(`Tenant backend ${name} has no published port on ${publishHostIp}.`);
         }
-        const target = { containerId: inspect.Id, containerName: name, host: '127.0.0.1', port: hostPort, tenantLogin: ownerLogin };
+        const target = { containerId: inspect.Id, containerName: name, host: this.dockerAdvertiseHost(node.config), port: hostPort, tenantLogin: ownerLogin };
         await this.waitForTenantBackendReady(target);
         return target;
     }
@@ -738,6 +899,7 @@ export class QaapDockerOrchestrator {
         tenantDataRoot: string,
         theiaHome: string,
         networkMode: string,
+        publishHostIp: string,
     ): boolean {
         const raw = inspect as Dockerode.ContainerInspectInfo & {
             Config?: { User?: string; Image?: string; Cmd?: string[]; Env?: string[]; WorkingDir?: string; Labels?: Record<string, string> };
@@ -759,11 +921,11 @@ export class QaapDockerOrchestrator {
             };
         };
         const expectedMounts = [
-            { source: mounts.reposRoot, destination: `${TENANT_BACKEND_REPOS_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
-            { source: mounts.worktreesRoot, destination: `${TENANT_BACKEND_WORKTREES_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
-            { source: mounts.parallelRoot, destination: `${TENANT_BACKEND_PARALLEL_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
-            { source: tenantDataRoot, destination: TENANT_BACKEND_QAAP_HOME_MOUNT },
-            { source: theiaHome, destination: TENANT_BACKEND_THEIA_HOME_MOUNT },
+            { source: this.dockerMountSource(mounts.reposRoot, 'repos'), destination: `${TENANT_BACKEND_REPOS_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
+            { source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'), destination: `${TENANT_BACKEND_WORKTREES_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
+            { source: this.dockerMountSource(mounts.parallelRoot, 'parallel'), destination: `${TENANT_BACKEND_PARALLEL_MOUNT}/${safeUserIdSegment(ownerLogin).toLowerCase()}` },
+            { source: this.dockerMountSource(tenantDataRoot, 'tenant-config'), destination: TENANT_BACKEND_QAAP_HOME_MOUNT },
+            { source: this.dockerMountSource(theiaHome, 'tenant-config'), destination: TENANT_BACKEND_THEIA_HOME_MOUNT },
         ];
         const hostConfig = raw.HostConfig ?? {};
         const labels = raw.Config?.Labels ?? {};
@@ -804,7 +966,7 @@ export class QaapDockerOrchestrator {
             && raw.Mounts?.length === expectedMounts.length
             && expectedMounts.every(expected => raw.Mounts?.some(actual =>
                 actual.Destination === expected.destination
-                && this.normalizeHostPath(actual.Source ?? '') === this.normalizeHostPath(expected.source)
+                && this.normalizeDockerMountPath(actual.Source ?? '') === this.normalizeDockerMountPath(expected.source)
                 && actual.RW === true) === true)
             && hostConfig.Memory === this.getTenantMemoryLimit()
             && hostConfig.NanoCpus === this.getTenantCpuLimit()
@@ -817,19 +979,26 @@ export class QaapDockerOrchestrator {
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
             && hostConfig.NetworkMode === networkMode
             && ports?.length === 1
-            && ports[0]?.HostIp === '127.0.0.1'
+            && ports[0]?.HostIp === publishHostIp
             && Number.parseInt(ports[0]?.HostPort ?? '', 10) > 0;
     }
 
     async stopTenantContainer(ownerLogin?: string): Promise<void> {
-        const docker = await this.getDocker();
         const name = this.containerNameForTenant(ownerLogin);
+        const nodes = await this.verifiedDockerNodesForTenant(ownerLogin);
         try {
-            const container = docker.getContainer(name);
-            await container.stop({ t: 10 });
-        } catch (error) {
-            if (!this.isDockerNotFound(error) && !this.isDockerAlreadyStopped(error)) {
-                throw error;
+            for (const node of nodes) {
+                try {
+                    await node.docker.getContainer(name).stop({ t: 10 });
+                    break;
+                } catch (error) {
+                    if (this.isDockerAlreadyStopped(error)) {
+                        break;
+                    }
+                    if (!this.isDockerNotFound(error)) {
+                        throw error;
+                    }
+                }
             }
         } finally {
             this.tenantRoots.delete(name);
@@ -852,6 +1021,7 @@ export class QaapDockerOrchestrator {
         return {
             file: 'docker',
             args: [
+                ...this.dockerCliGlobalArgs(ownerLogin),
                 'exec',
                 '-i',
                 ...this.buildTenantEnvironmentArgs(environment),
@@ -879,6 +1049,7 @@ export class QaapDockerOrchestrator {
         return {
             file: 'docker',
             args: [
+                ...this.dockerCliGlobalArgs(ownerLogin),
                 'exec',
                 '-it',
                 ...this.buildTenantEnvironmentArgs(environment),
@@ -946,6 +1117,57 @@ export class QaapDockerOrchestrator {
         return `${WORKSPACE_MOUNT}/${normalized.slice(prefix.length)}`;
     }
 
+    protected tenantMountsForDocker(mounts: QaapTenantMountSet): QaapTenantMountSet {
+        return {
+            reposRoot: this.dockerMountSource(mounts.reposRoot, 'repos'),
+            worktreesRoot: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'),
+            parallelRoot: this.dockerMountSource(mounts.parallelRoot, 'parallel'),
+        };
+    }
+
+    /**
+     * Translate control-plane paths to the path visible on a remote Docker node. The default is an
+     * identical path, which is appropriate when every node mounts the same NFS/ Ceph volume at the
+     * canonical location. Explicit mappings are useful when the backend and Docker nodes use
+     * different mount prefixes.
+     */
+    protected dockerMountSource(hostPath: string, kind: 'repos' | 'worktrees' | 'parallel' | 'tenant-config'): string {
+        const localRoot = kind === 'repos'
+            ? resolveQaapReposRoot()
+            : kind === 'worktrees'
+                ? resolveQaapWorktreesRoot()
+                : kind === 'parallel'
+                    ? resolveQaapParallelRoot()
+                    : resolveQaapTenantConfigRoot();
+        const remoteRoot = kind === 'repos'
+            ? process.env.QAAP_DOCKER_REMOTE_REPOS_ROOT?.trim()
+            : kind === 'worktrees'
+                ? process.env.QAAP_DOCKER_REMOTE_WORKTREES_ROOT?.trim()
+                : kind === 'parallel'
+                    ? process.env.QAAP_DOCKER_REMOTE_PARALLEL_ROOT?.trim()
+                    : process.env.QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT?.trim();
+        const normalizedHost = this.normalizeHostPath(hostPath);
+        if (!remoteRoot) {
+            return normalizedHost;
+        }
+        const relative = path.relative(this.normalizeHostPath(localRoot), normalizedHost);
+        if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+            throw new Error(`Docker mount ${hostPath} is outside the configured ${kind} root.`);
+        }
+        const normalizedRemoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+        if (!normalizedRemoteRoot.startsWith('/')) {
+            const setting = kind === 'tenant-config' ? 'TENANT_CONFIG' : kind.toUpperCase();
+            throw new Error(`QAAP_DOCKER_REMOTE_${setting}_ROOT must be an absolute path on the Docker node.`);
+        }
+        return normalizedRemoteRoot === '/'
+            ? `/${relative.replace(/\\/g, '/')}`
+            : `${normalizedRemoteRoot}/${relative.replace(/\\/g, '/')}`;
+    }
+
+    protected normalizeDockerMountPath(hostPath: string): string {
+        return hostPath.replace(/\\/g, '/').replace(/\/$/, '');
+    }
+
     protected tenantContainerMatches(inspect: Dockerode.ContainerInspectInfo, mounts: QaapTenantMountSet, networkMode: string): boolean {
         const raw = inspect as Dockerode.ContainerInspectInfo & {
             Config?: { User?: string; Image?: string; Labels?: Record<string, string> };
@@ -964,9 +1186,9 @@ export class QaapDockerOrchestrator {
             Mounts?: Array<{ Source?: string; Destination?: string; RW?: boolean }>;
         };
         const expectedMounts = [
-            { source: mounts.reposRoot, destination: WORKSPACE_MOUNT },
-            { source: mounts.worktreesRoot, destination: WORKTREES_MOUNT },
-            { source: mounts.parallelRoot, destination: PARALLEL_MOUNT },
+            { source: this.dockerMountSource(mounts.reposRoot, 'repos'), destination: WORKSPACE_MOUNT },
+            { source: this.dockerMountSource(mounts.worktreesRoot, 'worktrees'), destination: WORKTREES_MOUNT },
+            { source: this.dockerMountSource(mounts.parallelRoot, 'parallel'), destination: PARALLEL_MOUNT },
         ];
         const hostConfig = raw.HostConfig ?? {};
         const labels = raw.Config?.Labels ?? {};
@@ -977,7 +1199,7 @@ export class QaapDockerOrchestrator {
             && raw.Mounts?.length === expectedMounts.length
             && expectedMounts.every(expected => raw.Mounts?.some(actual =>
                 actual.Destination === expected.destination
-                && this.normalizeHostPath(actual.Source ?? '') === this.normalizeHostPath(expected.source)
+                && this.normalizeDockerMountPath(actual.Source ?? '') === this.normalizeDockerMountPath(expected.source)
                 && actual.RW === true) === true)
             && hostConfig.Memory === this.getTenantMemoryLimit()
             && hostConfig.NanoCpus === this.getTenantCpuLimit()
