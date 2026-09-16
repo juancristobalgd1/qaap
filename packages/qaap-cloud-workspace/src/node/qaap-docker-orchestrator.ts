@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { FileUri } from '@theia/core/lib/node';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -18,8 +18,11 @@ import {
     QAAP_USER_REPOS_SEGMENT,
     safeUserIdSegment,
     resolveQaapTenantUserRoot,
+    resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { assertQaapDockerControlPlane, isQaapHostedRuntime } from './qaap-docker-control-plane';
+import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
+import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 
 const QAAP_CONTAINER_PREFIX = 'qaap-ws-';
 const QAAP_TENANT_NETWORK_PREFIX = 'qaap-net-';
@@ -84,9 +87,23 @@ export interface QaapTenantBackendTarget {
     readonly tenantLogin: string;
 }
 
+export interface QaapManagedTenantContainer {
+    readonly tenantLogin?: string;
+    readonly kind: 'worker' | 'backend';
+    readonly containerId: string;
+    readonly containerName: string;
+    readonly running: boolean;
+}
+
 /** One hardened worker container per tenant when `QAAP_CLOUD_MODE=docker`. */
 @injectable()
 export class QaapDockerOrchestrator {
+
+    @inject(QaapTenantRuntimeMetrics) @optional()
+    protected readonly runtimeMetrics: QaapTenantRuntimeMetrics | undefined;
+
+    @inject(QaapTenantRuntimeStore) @optional()
+    protected readonly runtimeStore: QaapTenantRuntimeStore | undefined;
 
     protected docker: Dockerode | undefined;
     /** A path-shaped socket is not proof of rootless Docker; verify the daemon once per process. */
@@ -135,10 +152,29 @@ export class QaapDockerOrchestrator {
         if (inFlight) {
             return inFlight;
         }
+        const coldStartAt = Date.now();
+        const wasReady = this.tenantBackendTargets.has(key);
+        this.runtimeStore?.setState(ownerLogin, 'starting', {
+            lastActivityAt: new Date().toISOString(),
+            idleSince: undefined,
+            stoppedAt: undefined,
+            destroyAfter: undefined,
+        });
         const promise = this.createOrValidateTenantBackend(tenant, tenantRootHostPath);
         this.tenantBackendEnsurePromises.set(key, promise);
         try {
             const target = await promise;
+            if (!wasReady) {
+                this.runtimeMetrics?.recordColdStart(Date.now() - coldStartAt);
+            }
+            this.runtimeStore?.setState(ownerLogin, 'active', {
+                backendContainerId: target.containerId,
+                lastActivityAt: new Date().toISOString(),
+                idleSince: undefined,
+                stoppedAt: undefined,
+                destroyAfter: undefined,
+                lastError: undefined,
+            });
             this.tenantBackendTargets.set(key, target);
             return target;
         } finally {
@@ -178,8 +214,10 @@ export class QaapDockerOrchestrator {
         const name = this.backendContainerNameForTenant(ownerLogin);
         try {
             await docker.getContainer(name).stop({ t: 10 });
-        } catch {
-            /* already stopped or removed */
+        } catch (error) {
+            if (!this.isDockerNotFound(error) && !this.isDockerAlreadyStopped(error)) {
+                throw error;
+            }
         } finally {
             this.tenantBackendTargets.delete(tenant);
             this.tenantBackendConnectionTokens.delete(tenant);
@@ -189,6 +227,82 @@ export class QaapDockerOrchestrator {
     getTenantBackendConnectionToken(ownerLogin: string | undefined): string | undefined {
         const tenant = ownerLogin?.trim().toLowerCase();
         return tenant ? this.tenantBackendConnectionTokens.get(tenant) : undefined;
+    }
+
+    /** Canonical host root used to recreate a tenant runtime after a cold start. */
+    tenantRootForLogin(ownerLogin: string): string {
+        return this.normalizeHostPath(resolveUserReposRoot(resolveQaapReposRoot(), ownerLogin));
+    }
+
+    /** Discover only Qaap-managed tenant containers; discovery survives backend restarts. */
+    async listManagedTenantContainers(): Promise<QaapManagedTenantContainer[]> {
+        const docker = await this.getDocker();
+        const containers = await docker.listContainers({
+            all: true,
+            filters: { label: ['com.qaap.managed=true'] },
+        });
+        return containers.flatMap(container => {
+            const labels = container.Labels ?? {};
+            const tenantLogin = labels['com.qaap.tenant-login']?.trim().toLowerCase();
+            const kind = labels['com.qaap.tenant-backend'] === 'true'
+                ? 'backend'
+                : labels['com.qaap.tenant-container'] === 'true' ? 'worker' : undefined;
+            if (!kind) {
+                return [];
+            }
+            return [{
+                ...(tenantLogin ? { tenantLogin } : {}),
+                kind,
+                containerId: container.Id,
+                containerName: (container.Names?.[0] ?? '').replace(/^\//, ''),
+                running: container.State === 'running',
+            } satisfies QaapManagedTenantContainer];
+        });
+    }
+
+    async stopTenantRuntime(ownerLogin: string): Promise<void> {
+        const stops: Array<Promise<void>> = [this.stopTenantContainer(ownerLogin)];
+        if (this.isBackendPerTenantEnabled()) {
+            stops.push(this.stopTenantBackend(ownerLogin));
+        }
+        await Promise.all(stops);
+    }
+
+    /** Remove only the ephemeral containers and their dedicated network, never tenant bind mounts. */
+    async destroyTenantRuntime(ownerLogin: string): Promise<void> {
+        const docker = await this.getDocker();
+        const names = [this.containerNameForTenant(ownerLogin)];
+        if (this.isBackendPerTenantEnabled()) {
+            names.push(this.backendContainerNameForTenant(ownerLogin));
+        }
+        for (const name of names) {
+            try {
+                await docker.getContainer(name).remove({ force: true, v: false });
+            } catch (error) {
+                if (!this.isDockerNotFound(error)) {
+                    throw error;
+                }
+            }
+        }
+        this.tenantRoots.delete(this.containerNameForTenant(ownerLogin));
+        this.tenantMounts.delete(this.containerNameForTenant(ownerLogin));
+        const tenant = ownerLogin.trim().toLowerCase();
+        this.tenantBackendTargets.delete(tenant);
+        this.tenantBackendConnectionTokens.delete(tenant);
+        const networkMode = this.getTenantNetworkMode(ownerLogin);
+        if (networkMode !== 'none') {
+            try {
+                const network = docker.getNetwork(networkMode);
+                const inspect = await network.inspect() as { Labels?: Record<string, string> };
+                if (inspect.Labels?.['com.qaap.tenant-network'] === 'true') {
+                    await network.remove();
+                }
+            } catch (error) {
+                if (!this.isDockerNotFound(error)) {
+                    console.warn(`[qaap-runtime] could not remove tenant network ${networkMode}: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+        }
     }
 
     /** The proxy and the tenant container must use the same tenant-scoped assertion secret. */
@@ -310,14 +424,29 @@ export class QaapDockerOrchestrator {
             return existing;
         }
         const networkMode = this.getTenantNetworkMode(ownerLogin);
+        const coldStartAt = Date.now();
+        const wasReady = this.isTenantContainerReady(ownerLogin, mounts.reposRoot);
         const promise = this.createOrValidateTenantContainer(
             name,
             mounts,
             networkMode,
+            ownerLogin,
         );
         this.tenantEnsurePromises.set(name, promise);
         try {
-            return await promise;
+            const result = await promise;
+            if (!wasReady) {
+                this.runtimeMetrics?.recordColdStart(Date.now() - coldStartAt);
+            }
+            this.runtimeStore?.setState(ownerLogin || name, 'active', {
+                workerContainerId: result.containerId,
+                lastActivityAt: new Date().toISOString(),
+                idleSince: undefined,
+                stoppedAt: undefined,
+                destroyAfter: undefined,
+                lastError: undefined,
+            });
+            return result;
         } finally {
             if (this.tenantEnsurePromises.get(name) === promise) {
                 this.tenantEnsurePromises.delete(name);
@@ -329,6 +458,7 @@ export class QaapDockerOrchestrator {
         name: string,
         mounts: QaapTenantMountSet,
         networkMode: string,
+        ownerLogin?: string,
     ): Promise<QaapDockerEnsureResult> {
         const docker = await this.getDocker();
         for (const root of Object.values(mounts)) {
@@ -366,6 +496,7 @@ export class QaapDockerOrchestrator {
                     'com.qaap.managed': 'true',
                     'com.qaap.tenant-container': 'true',
                     'com.qaap.tenant-name': name,
+                    'com.qaap.tenant-login': (ownerLogin?.trim() || '__anonymous__').toLowerCase(),
                 },
                 HostConfig: {
                     // Mount only this tenant's three storage roots. The worker never receives the
@@ -696,8 +827,10 @@ export class QaapDockerOrchestrator {
         try {
             const container = docker.getContainer(name);
             await container.stop({ t: 10 });
-        } catch {
-            /* already stopped */
+        } catch (error) {
+            if (!this.isDockerNotFound(error) && !this.isDockerAlreadyStopped(error)) {
+                throw error;
+            }
         } finally {
             this.tenantRoots.delete(name);
             this.tenantMounts.delete(name);
@@ -892,6 +1025,10 @@ export class QaapDockerOrchestrator {
 
     protected isDockerNotFound(error: unknown): boolean {
         return (error as { statusCode?: number } | undefined)?.statusCode === 404;
+    }
+
+    protected isDockerAlreadyStopped(error: unknown): boolean {
+        return (error as { statusCode?: number } | undefined)?.statusCode === 304;
     }
 
     protected getTenantMemoryLimit(): number {

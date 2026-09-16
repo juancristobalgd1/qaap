@@ -3,10 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { ManagedProcess } from '@theia/process/lib/common/process-manager-types';
 import { TerminalProcess } from '@theia/process/lib/node';
 import { isQaapHostedRuntime } from './qaap-docker-control-plane';
+import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 
 /**
  * Ownership index for Theia terminal processes.
@@ -19,6 +20,9 @@ import { isQaapHostedRuntime } from './qaap-docker-control-plane';
 @injectable()
 export class QaapTerminalOwnership {
 
+    @inject(QaapTenantActivityTracker) @optional()
+    protected readonly activity: QaapTenantActivityTracker | undefined;
+
     protected readonly ownerByProcessId = new Map<number, string>();
 
     bind(process: ManagedProcess, ownerLogin: string | undefined, processId = process.id): void {
@@ -30,6 +34,7 @@ export class QaapTerminalOwnership {
             return;
         }
         this.ownerByProcessId.set(processId, owner);
+        this.activity?.touch(owner, 'terminal');
         const forget = (): void => {
             this.ownerByProcessId.delete(processId);
         };

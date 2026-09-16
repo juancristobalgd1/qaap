@@ -24,6 +24,8 @@ describe('QaapTenantBackendProxyContribution', () => {
         expect(proxy.isControlPlanePath('/qaap/api/health')).to.equal(true);
         expect(proxy.isControlPlanePath('/qaap/api/auth/session')).to.equal(true);
         expect(proxy.isControlPlanePath('/qaap/api/auth/github/start?next=/')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/cloud/runtime/status')).to.equal(true);
+        expect(proxy.isControlPlanePath('/qaap/api/cloud/runtime/wake')).to.equal(true);
         expect(proxy.isControlPlanePath('/services')).to.equal(false);
     });
 

@@ -27,6 +27,32 @@ external proxy.
 
 Workspace records include `containerRef` (Docker container id).
 
+## Tenant runtime reaper (FinOps)
+
+The reaper treats the worker and the per-tenant Theia backend as one ephemeral runtime. It is
+enabled by default when Docker mode is active (set `QAAP_TENANT_REAPER_ENABLED=false` to disable).
+It records activity in the tenant-scoped SQLite state, stops idle containers to release RAM, and
+destroys them after a retention window without deleting the persistent tenant workspace. A request
+to the worker or backend recreates/starts the runtime through the existing single-flight ensure path.
+
+```bash
+export QAAP_TENANT_REAPER_ENABLED=true
+export QAAP_TENANT_IDLE_TIMEOUT_MS=1800000       # 30 minutes
+export QAAP_TENANT_DESTROY_AFTER_MS=86400000     # 24 hours after stop
+export QAAP_TENANT_REAPER_INTERVAL_MS=300000     # 5 minutes
+```
+
+The control-plane endpoints are:
+
+- `POST /qaap/api/cloud/runtime/activity` — authenticated activity heartbeat.
+- `GET /qaap/api/cloud/runtime/status` — current tenant lifecycle state.
+- `POST /qaap/api/cloud/runtime/wake` — explicitly wake the tenant runtime.
+- `GET /qaap/api/cloud/runtime/metrics` — process-local reaper and cold-start counters.
+
+Only containers carrying Qaap management labels are eligible. Unknown containers and tenant bind
+mounts are never removed. `stop` is used instead of Docker `pause` because the FinOps goal is to
+release memory, not only CPU.
+
 ## Backend Theia por tenant
 
 El worker de código y el backend Theia son límites separados. Para ofrecer Qaap a

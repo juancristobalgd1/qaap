@@ -4,6 +4,8 @@
 // *****************************************************************************
 
 export const QAAP_CLOUD_API_PATH = '/qaap/api/cloud';
+/** Tenant runtime lifecycle, activity and FinOps control-plane API. */
+export const QAAP_TENANT_RUNTIME_API_PATH = `${QAAP_CLOUD_API_PATH}/runtime`;
 /** Signed-in billing entitlements + Codex hosted credit wallet. */
 export const QAAP_BILLING_API_PATH = '/qaap/api/billing';
 /** Create a Stripe Checkout session for Pro / Team monthly subscription. */
@@ -28,6 +30,50 @@ export interface QaapCdpStatusResponse {
 }
 
 export type QaapCloudWorkspaceStatus = 'provisioning' | 'ready' | 'stopped' | 'error';
+
+export type QaapTenantRuntimeState =
+    | 'active'
+    | 'idle'
+    | 'starting'
+    | 'stopped'
+    | 'destroyed'
+    | 'error';
+
+export type QaapTenantActivityReason =
+    | 'agent'
+    | 'terminal'
+    | 'websocket'
+    | 'workspace'
+    | 'preview'
+    | 'job'
+    | 'deploy'
+    | 'user';
+
+export interface QaapTenantRuntimeStatus {
+    readonly tenantLogin: string;
+    readonly state: QaapTenantRuntimeState;
+    readonly lastActivityAt?: string;
+    readonly idleSince?: string;
+    readonly stoppedAt?: string;
+    readonly destroyAfter?: string;
+    readonly protectedUntil?: string;
+    readonly workerContainerId?: string;
+    readonly backendContainerId?: string;
+    readonly lastError?: string;
+    readonly reaperEnabled: boolean;
+}
+
+export interface QaapTenantRuntimeMetrics {
+    readonly scans: number;
+    readonly candidates: number;
+    readonly stops: number;
+    readonly destroys: number;
+    readonly stopFailures: number;
+    readonly destroyFailures: number;
+    readonly coldStarts: number;
+    readonly coldStartTotalMs: number;
+    readonly lastScanAt?: string;
+}
 
 export interface QaapCloudWorkspaceSummary {
     readonly id: string;

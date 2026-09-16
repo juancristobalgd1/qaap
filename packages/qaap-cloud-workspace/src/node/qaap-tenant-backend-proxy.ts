@@ -15,7 +15,9 @@ import {
     QAAP_TENANT_BACKEND_ASSERTION_HEADER,
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
 import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { QaapDockerOrchestrator, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
+import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 
 const HOP_BY_HOP_HEADERS = new Set([
     'connection',
@@ -45,6 +47,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     @inject(WsRequestValidator)
     protected readonly wsRequestValidator: WsRequestValidator;
 
+    @inject(QaapTenantActivityTracker)
+    protected readonly activity: QaapTenantActivityTracker;
+
     configure(app: Application): void {
         app.use((req: Request, res: Response, next: NextFunction) => {
             if (!this.docker.isBackendPerTenantEnabled() || this.isControlPlanePath(req.url)) {
@@ -67,6 +72,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             next();
             return;
         }
+        this.activity.touch(context.userLogin, 'user');
         try {
             const root = this.auth.userWorkspaceRoot(context);
             if (!root) {
@@ -141,13 +147,19 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         originalListeners: readonly Function[],
         server: http.Server,
     ): Promise<void> {
+        const release = this.activity.beginOperation(userLogin, `websocket:${request.url ?? '/'}:${Date.now()}`, 'websocket');
+        socket.once('close', release);
+        socket.once('error', release);
         try {
             const root = this.auth.userWorkspaceRoot({ kind: 'authenticated', userLogin, session, sessionId: '' });
             if (!root) {
                 socket.destroy();
                 return;
             }
-            const target = await this.docker.ensureTenantBackendReady(userLogin);
+            // A WebSocket can be the first request after the reaper stopped or destroyed the
+            // backend. Ensure from the authenticated tenant root so cold start is complete for
+            // both HTTP and upgrade paths.
+            const target = await this.docker.ensureTenantBackend(userLogin, root);
             const tenantConnectionToken = this.docker.getTenantBackendConnectionToken(userLogin);
             if (!tenantConnectionToken) {
                 socket.destroy();
@@ -182,11 +194,18 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 upstreamSocket.pipe(socket);
                 socket.pipe(upstreamSocket);
             });
-            upstream.once('response', () => socket.destroy());
-            upstream.once('error', () => socket.destroy());
+            upstream.once('response', () => {
+                release();
+                socket.destroy();
+            });
+            upstream.once('error', () => {
+                release();
+                socket.destroy();
+            });
             socket.once('error', () => upstream.destroy());
             upstream.end();
         } catch {
+            release();
             socket.destroy();
             // Keep the original listener list referenced so a future refactor cannot accidentally
             // turn a failed tenant lookup into a silent fallback to the shared backend.
@@ -274,7 +293,9 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         return pathname === QAAP_HEALTH_API_PATH
             || pathname.startsWith(`${QAAP_AUTH_API_PATH}/`)
             || pathname === QAAP_GITHUB_OAUTH_START_PATH
-            || pathname === QAAP_GITHUB_OAUTH_CALLBACK_PATH;
+            || pathname === QAAP_GITHUB_OAUTH_CALLBACK_PATH
+            || pathname === QAAP_TENANT_RUNTIME_API_PATH
+            || pathname.startsWith(`${QAAP_TENANT_RUNTIME_API_PATH}/`);
     }
 
     protected writeProxyError(res: Response, error: unknown): void {

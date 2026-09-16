@@ -90,6 +90,12 @@ import { QaapWorkflowService } from './qaap-workflow-service';
 import { ProcessManager } from '@theia/process/lib/node';
 import { QaapTerminalOwnership, installQaapTerminalOwnership } from './qaap-terminal-ownership';
 import { QaapDockerControlPlaneContribution } from './qaap-docker-control-plane-contribution';
+import { QaapTenantActivityContribution } from './qaap-tenant-activity-contribution';
+import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
+import { QaapTenantContainerReaper } from './qaap-tenant-container-reaper';
+import { QaapTenantRuntimeEndpoint } from './qaap-tenant-runtime-endpoint';
+import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
+import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
 import { isQaapHostedRuntime } from './qaap-docker-control-plane';
 import { QaapTenantProcessExecutor } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
@@ -110,6 +116,15 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapTerminalOwnership).toSelf().inSingletonScope();
     bind(QaapDockerControlPlaneContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapDockerControlPlaneContribution);
+    bind(QaapTenantRuntimeStore).toSelf().inSingletonScope();
+    bind(QaapTenantRuntimeMetrics).toSelf().inSingletonScope();
+    bind(QaapTenantActivityTracker).toSelf().inSingletonScope();
+    bind(QaapTenantActivityContribution).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantActivityContribution);
+    bind(QaapTenantContainerReaper).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantContainerReaper);
+    bind(QaapTenantRuntimeEndpoint).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(QaapTenantRuntimeEndpoint);
     bind(QaapTenantBackendProxyContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapTenantBackendProxyContribution);
     bind(QaapWebsocketAuthListener).toSelf().inSingletonScope();
@@ -376,6 +391,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
                     tenantEnvironment[key] = value;
                 }
             }
+            // TerminalServer.create is async even though the shell wrapper itself is synchronous.
+            // Await the same lifecycle gate used by agents so a terminal is also a valid cold-start
+            // entry point after the reaper stopped or destroyed the worker.
+            await tenantSpawn.prepareTenantIsolationAsync(cwd);
             const wrapped = tenantSpawn.wrapShellForTenant(cwd, shell, shellArgs, tenantEnvironment);
             options.shell = wrapped.file;
             options.args = wrapped.args;

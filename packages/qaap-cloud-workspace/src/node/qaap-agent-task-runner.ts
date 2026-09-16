@@ -86,6 +86,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
 import { localizeMissingQaiqMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
 import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 
@@ -161,6 +162,9 @@ export class QaapAgentTaskRunner {
     @inject(QaapAgentHealthTracker) @optional()
     protected readonly agentHealth: QaapAgentHealthTracker | undefined;
 
+    @inject(QaapTenantActivityTracker) @optional()
+    protected readonly tenantActivity: QaapTenantActivityTracker | undefined;
+
     protected cachedNativeModelRoutingTable: QaapNativeModelRoutingTable | undefined;
 
     protected readonly tasks = new Map<string, QaapAgentTask>();
@@ -204,6 +208,8 @@ export class QaapAgentTaskRunner {
     protected readonly clientRequestTaskIds = new Map<string, string>();
     /** Prevents two rapid Continue clicks from starting two replacements for one interrupted task. */
     protected readonly resumingTaskIds = new Map<string, string>();
+    /** Releases the runtime protection lease when a queued/running task finishes or is cancelled. */
+    protected readonly tenantOperationReleases = new Map<string, () => void>();
     /** Serializes whole-index snapshots so an older, slower write can never overwrite a newer one. */
     protected persistChain: Promise<void> = Promise.resolve();
     protected recoveryState: 'loading' | 'ready' | 'failed' = 'ready';
@@ -460,7 +466,18 @@ export class QaapAgentTaskRunner {
     }
 
     create(request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
-        return createExtracted(this, request, ownerLogin);
+        const task = createExtracted(this, request, ownerLogin);
+        const owner = ownerLogin ?? task.ownerLogin;
+        const tenantActivity = this.tenantActivity;
+        tenantActivity?.touch(owner, 'agent');
+        if (tenantActivity && (task.state === 'running' || task.state === 'queued')) {
+            const releases = this.tenantOperationReleases ?? new Map<string, () => void>();
+            if (!this.tenantOperationReleases) {
+                Object.assign(this, { tenantOperationReleases: releases });
+            }
+            releases.set(task.id, tenantActivity.beginOperation(owner, `agent:${task.id}`, 'agent'));
+        }
+        return task;
     }
 
     protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
@@ -613,7 +630,9 @@ export class QaapAgentTaskRunner {
     }
 
     cancel(id: string): QaapAgentTask | undefined {
-        return cancelExtracted(this, id);
+        const task = cancelExtracted(this, id);
+        this.releaseTenantOperation(id);
+        return task;
     }
 
     retry(id: string, ownerLogin?: string): QaapAgentTask | undefined {
@@ -953,7 +972,18 @@ export class QaapAgentTaskRunner {
     }
 
     protected finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
-        return finishTaskExtracted(this, id, state, exitCode);
+        const task = finishTaskExtracted(this, id, state, exitCode);
+        this.releaseTenantOperation(id);
+        return task;
+    }
+
+    protected releaseTenantOperation(id: string): void {
+        const release = this.tenantOperationReleases?.get(id);
+        if (!release) {
+            return;
+        }
+        this.tenantOperationReleases.delete(id);
+        release();
     }
 
     /**
