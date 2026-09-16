@@ -9,6 +9,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { isRealPathUnder, resolveRealPathWithinExisting } from './qaap-realpath-guard';
 
+function createDirectoryLink(target: string, link: string): void {
+    fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
 describe('qaap-realpath-guard', () => {
     let root: string;
     let alice: string;
@@ -33,7 +37,7 @@ describe('qaap-realpath-guard', () => {
 
     it('rejects a symlink inside the user root that points into another tenant (the C3 escape)', () => {
         const link = path.join(alice, 'evil');
-        fs.symlinkSync(path.join(bob, 'secret'), link);
+        createDirectoryLink(path.join(bob, 'secret'), link);
         // Lexically `.../alice/evil` starts with alice's root, but its real target is bob's tree.
         expect(isRealPathUnder(link, alice)).to.equal(false);
         expect(isRealPathUnder(path.join(link, 'file.txt'), alice)).to.equal(false);
@@ -41,7 +45,7 @@ describe('qaap-realpath-guard', () => {
 
     it('rejects a symlink pointing outside the workspace entirely', () => {
         const link = path.join(alice, 'escape');
-        fs.symlinkSync(root, link); // -> repos root, above the user dir
+        createDirectoryLink(root, link); // -> repos root, above the user dir
         expect(isRealPathUnder(link, alice)).to.equal(false);
     });
 

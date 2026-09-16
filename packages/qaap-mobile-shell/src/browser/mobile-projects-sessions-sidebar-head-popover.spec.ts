@@ -12,8 +12,8 @@ enableJSDOM();
 import {
     toggleSessionsSidebarProjectSortPopoverExtracted,
     toggleSessionsSidebarStatusLegendPopoverExtracted,
-} from './mobile-projects-sessions-sidebar-ui-streaming2';
-import { stampSessionsSidebarRowFingerprintsExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
+} from './mobile-projects-sessions-sidebar-ui-streaming';
+import { stampSessionsSidebarRowFingerprintsExtracted } from './mobile-projects-sessions-sidebar-ui-render';
 
 describe('sessions sidebar head popovers', () => {
     let disableJSDOM: (() => void) | undefined;

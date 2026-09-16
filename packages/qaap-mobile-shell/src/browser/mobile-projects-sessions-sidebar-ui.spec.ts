@@ -5,8 +5,8 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { renderWorkHubSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-streaming2';
-import { mergeSessionsSidebarProjectsExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
+import { renderWorkHubSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-streaming';
+import { mergeSessionsSidebarProjectsExtracted } from './mobile-projects-sessions-sidebar-ui-render';
 
 enableJSDOM();
 

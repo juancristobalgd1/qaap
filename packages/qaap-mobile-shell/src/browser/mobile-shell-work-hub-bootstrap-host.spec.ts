@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { initWorkHubBootstrapControllerExtracted } from './mobile-one-column-shell-contribution-render2';
+import { initWorkHubBootstrapControllerExtracted } from './mobile-one-column-shell-contribution-render';
 import { MobileShellSessionState } from './mobile-shell-session-state';
 
 describe('mobile-shell-work-hub-bootstrap host wiring', () => {

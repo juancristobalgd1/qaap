@@ -180,7 +180,7 @@ import {
     appendFreeModelTimeoutHint as appendFreeModelTimeoutHintHelper,
     syncTranscriptStreamTimeoutBanner as syncTranscriptStreamTimeoutBannerHelper,
     resolveTranscriptActivityRowContext as resolveTranscriptActivityRowContextHelper,
-} from './mobile-projects-transcript-messages-artifacts-helpers2';
+} from './mobile-projects-transcript-messages-artifacts-helpers';
 
 export function removeTranscriptLiveStatusWithOrbExtracted(ctx: any, root: ParentNode): void {
         removeTranscriptLiveStatusElement(root, {

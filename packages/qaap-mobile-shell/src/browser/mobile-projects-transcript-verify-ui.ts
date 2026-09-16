@@ -186,8 +186,9 @@ export class MobileProjectsTranscriptVerifyUi {
     getCommitReadinessInput(): EvaluateVerifyCommitReadinessInput {
         return {
             checksLoading: this.host.verifyChecksLoading,
-            checksError: this.checksLoadError?.summaryId === this.verificationSummaryId
-                && this.checksLoadError?.cwd === this.host.verifyChecksCwd,
+            checksError: !!this.checksLoadError
+                && this.checksLoadError.summaryId === this.verificationSummaryId
+                && this.checksLoadError.cwd === this.host.verifyChecksCwd,
             running: this.host.verifyRunning,
             results: this.host.verifyResults,
         };
@@ -207,8 +208,9 @@ export class MobileProjectsTranscriptVerifyUi {
         if (this.host.verifyChecksLoading) {
             return { text: nls.localize('qaap/mobileProjects/verifyLoadingChecks', 'Loading…'), fail: false };
         }
-        if (this.checksLoadError?.summaryId === this.verificationSummaryId
-            && this.checksLoadError?.cwd === this.host.verifyChecksCwd) {
+        if (this.checksLoadError
+            && this.checksLoadError.summaryId === this.verificationSummaryId
+            && this.checksLoadError.cwd === this.host.verifyChecksCwd) {
             return { text: nls.localize('qaap/mobileProjects/verifyChecksUnavailable', 'Checks unavailable — retry'), fail: true };
         }
         if (failed > 0) {

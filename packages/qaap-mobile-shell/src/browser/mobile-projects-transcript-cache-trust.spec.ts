@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { isTrustedOpenTranscriptCache } from './mobile-projects-transcript-live-ui-activity2';
+import { isTrustedOpenTranscriptCache } from './mobile-projects-transcript-live-ui-activity';
 
 describe('isTrustedOpenTranscriptCache', () => {
     const summary = (overrides: Partial<QaapAgentConversationSummaryDTO> = {}): QaapAgentConversationSummaryDTO => ({

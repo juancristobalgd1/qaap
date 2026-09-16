@@ -16,7 +16,7 @@ import {
     isDesktopSessionsSidebarLayout,
     shouldKeepSessionsSidebarOpenAfterNavigation,
 } from './mobile-work-hub-sessions-sidebar';
-import { ensureWorkHubSessionsSidebarExtracted } from './mobile-projects-sessions-sidebar-ui-render2';
+import { ensureWorkHubSessionsSidebarExtracted } from './mobile-projects-sessions-sidebar-ui-render';
 
 describe('mobile-work-hub-sessions-sidebar', () => {
 

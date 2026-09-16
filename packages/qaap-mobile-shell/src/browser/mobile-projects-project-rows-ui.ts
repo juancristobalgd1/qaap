@@ -25,10 +25,10 @@ import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-
 import type { MobileProjectsService } from './mobile-projects-service';
 import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
 import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
-import { appendConversationDiffFootExtracted, appendConversationFootMetricsExtracted, appendTaskFootSeparatorExtracted, computeTaskFootFingerprintExtracted, formatConversationRunDurationExtracted, formatDurationShortExtracted, formatTaskSinceExtracted, hasConversationDiffStatsExtracted, localizeActivityLabelExtracted, patchSidebarCompactTaskRowExtracted, patchWorkHubTaskRowContentExtracted, patchWorkHubTaskRowExtracted, populateWorkHubTaskFootRowExtracted, registerTaskElapsedTickersExtracted, resolveConversationAgentLabelExtracted } from './mobile-projects-project-rows-ui-activity2';
-import { createHomeRowAvatarExtracted, createHomeRowStatusExtracted, createRowExtracted, createSidebarStatusChipExtracted, createTaskLeadingGlyphExtracted, createWorkspaceBlockExtracted, createWorkspaceOpenControlExtracted } from './mobile-projects-project-rows-ui-render2';
-import { createTaskBlockExtracted, detailComposerSurfaceForProjectExtracted, groupConversationTasksExtracted } from './mobile-projects-project-rows-ui-streaming2';
-import { createConversationActivityChipExtracted, createConversationActivityRowExtracted, createTaskItemExtracted, renderConversationTurnProgressExtracted } from './mobile-projects-project-rows-ui-timeline2';
+import { appendConversationDiffFootExtracted, appendConversationFootMetricsExtracted, appendTaskFootSeparatorExtracted, computeTaskFootFingerprintExtracted, formatConversationRunDurationExtracted, formatDurationShortExtracted, formatTaskSinceExtracted, hasConversationDiffStatsExtracted, localizeActivityLabelExtracted, patchSidebarCompactTaskRowExtracted, patchWorkHubTaskRowContentExtracted, patchWorkHubTaskRowExtracted, populateWorkHubTaskFootRowExtracted, registerTaskElapsedTickersExtracted, resolveConversationAgentLabelExtracted } from './mobile-projects-project-rows-ui-activity';
+import { createHomeRowAvatarExtracted, createHomeRowStatusExtracted, createRowExtracted, createSidebarStatusChipExtracted, createTaskLeadingGlyphExtracted, createWorkspaceBlockExtracted, createWorkspaceOpenControlExtracted } from './mobile-projects-project-rows-ui-render';
+import { createTaskBlockExtracted, detailComposerSurfaceForProjectExtracted, groupConversationTasksExtracted } from './mobile-projects-project-rows-ui-streaming';
+import { createConversationActivityChipExtracted, createConversationActivityRowExtracted, createTaskItemExtracted, renderConversationTurnProgressExtracted } from './mobile-projects-project-rows-ui-timeline';
 
 export const MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT = 6;
 

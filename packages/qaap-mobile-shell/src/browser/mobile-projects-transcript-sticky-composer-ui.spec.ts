@@ -17,8 +17,8 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     // The composer module pulls @lumino/widgets, which reads `document` at load time — it can
     // only be required once JSDOM is up, so it is loaded here instead of at module scope.
     let composerModule: typeof import('./mobile-projects-transcript-sticky-composer-ui');
-    let liveStatusModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-live-status2');
-    let timelineModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-timeline2');
+    let liveStatusModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-live-status');
+    let timelineModule: typeof import('./mobile-projects-transcript-sticky-composer-ui-timeline');
 
     before(() => {
         // Deliberately not torn down: sibling suites in this package enable JSDOM at module
@@ -31,8 +31,8 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             globals.DragEvent = class DragEvent {};
         }
         composerModule = require('./mobile-projects-transcript-sticky-composer-ui');
-        liveStatusModule = require('./mobile-projects-transcript-sticky-composer-ui-live-status2');
-        timelineModule = require('./mobile-projects-transcript-sticky-composer-ui-timeline2');
+        liveStatusModule = require('./mobile-projects-transcript-sticky-composer-ui-live-status');
+        timelineModule = require('./mobile-projects-transcript-sticky-composer-ui-timeline');
     });
 
     it('merges a failed send with text entered while the request was in flight', () => {

@@ -141,6 +141,7 @@ describe('MobileProjectsTranscriptVerifyUi', () => {
         await pending;
         await Promise.resolve();
         await Promise.resolve();
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
 
         expect(hostEl.querySelectorAll('.theia-mobile-transcript-checks-control')).to.have.lengthOf(1);
         expect(hostEl.textContent).to.contain('Run Build');

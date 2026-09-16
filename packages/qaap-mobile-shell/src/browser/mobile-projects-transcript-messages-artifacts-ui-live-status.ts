@@ -178,7 +178,7 @@ import {
     appendFreeModelTimeoutHint as appendFreeModelTimeoutHintHelper,
     syncTranscriptStreamTimeoutBanner as syncTranscriptStreamTimeoutBannerHelper,
     resolveTranscriptActivityRowContext as resolveTranscriptActivityRowContextHelper,
-} from './mobile-projects-transcript-messages-artifacts-helpers2';
+} from './mobile-projects-transcript-messages-artifacts-helpers';
 
 export function ensureLobeTranscriptWorkflowClassesExtracted(ctx: any, timeline: HTMLDetailsElement): void {
         timeline.classList.add('theia-mobile-agent-lobe-workflow');

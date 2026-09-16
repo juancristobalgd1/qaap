@@ -177,7 +177,7 @@ import {
     appendFreeModelTimeoutHint as appendFreeModelTimeoutHintHelper,
     syncTranscriptStreamTimeoutBanner as syncTranscriptStreamTimeoutBannerHelper,
     resolveTranscriptActivityRowContext as resolveTranscriptActivityRowContextHelper,
-} from './mobile-projects-transcript-messages-artifacts-helpers2';
+} from './mobile-projects-transcript-messages-artifacts-helpers';
 
 export function createTranscriptStreamTimeoutBannerExtracted(ctx: any, cause?: TranscriptStreamTimeoutCause,): HTMLElement {
         const banner = document.createElement('div');

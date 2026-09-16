@@ -166,7 +166,7 @@ describe('MobileProjectsService.canRemove', () => {
 
 describe('MobileProjectsService.removeProject', () => {
     it('removes a custom project and its matching recent workspace', async () => {
-        const { removeProjectExtracted } = require('./mobile-projects-service-streaming2') as typeof import('./mobile-projects-service-streaming2');
+        const { removeProjectExtracted } = require('./mobile-projects-service-streaming') as typeof import('./mobile-projects-service-streaming');
         const removedProject = {
             ...project('custom:file:///workspace/laaaaa'),
             uri: new URI('file:///workspace/laaaaa'),

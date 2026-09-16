@@ -34,6 +34,8 @@ export function refreshTaskTitleMarquee(titleViewport: HTMLElement): void {
 /** Installs the hover/focus measurement used by the sidebar's title marquee. */
 export function attachTaskTitleMarquee(row: HTMLElement, titleViewport: HTMLElement): void {
     const scheduleRefresh = (): void => {
+        // Update immediately for interaction-driven callers, then measure again after layout settles.
+        refreshTaskTitleMarquee(titleViewport);
         const view = row.ownerDocument.defaultView;
         if (view?.requestAnimationFrame) {
             view.requestAnimationFrame(() => refreshTaskTitleMarquee(titleViewport));
