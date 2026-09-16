@@ -97,6 +97,7 @@ import { QaapTenantRuntimeEndpoint } from './qaap-tenant-runtime-endpoint';
 import { QaapTenantRuntimeMetrics } from './qaap-tenant-runtime-metrics';
 import { QaapTenantRuntimeStore } from './qaap-tenant-runtime-store';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
+import { QaapObservability } from './qaap-observability';
 import { isQaapHostedRuntime } from './qaap-docker-control-plane';
 import { QaapTenantProcessExecutor } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import {
@@ -117,6 +118,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
     bind(QaapDockerControlPlaneContribution).toSelf().inSingletonScope();
     bind(BackendApplicationContribution).toService(QaapDockerControlPlaneContribution);
     bind(QaapTenantRuntimeStore).toSelf().inSingletonScope();
+    bind(QaapObservability).toSelf().inSingletonScope();
     bind(QaapTenantRuntimeMetrics).toSelf().inSingletonScope();
     bind(QaapTenantActivityTracker).toSelf().inSingletonScope();
     bind(QaapTenantActivityContribution).toSelf().inSingletonScope();

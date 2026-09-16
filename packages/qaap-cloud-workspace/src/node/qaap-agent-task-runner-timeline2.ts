@@ -224,6 +224,18 @@ export function respondToApprovalPromptExtracted(ctx: any, taskId: string, actio
             } catch {
                 return false;
             }
+            const task = ctx.tasks.get(taskId);
+            const command = typeof entry.toolInput?.command === 'string' ? entry.toolInput.command : undefined;
+            ctx.observability?.recordAgentToolCommand({
+                taskId,
+                tenantLogin: task?.ownerLogin,
+                agentId: task?.agentId,
+                requestId: entry.requestId,
+                toolUseId: entry.toolUseId,
+                toolName: entry.toolName,
+                command,
+                decision: action,
+            });
             pending.splice(pending.indexOf(entry), 1);
             ctx.clearQueuedApprovalTimer(taskId, entry.requestId);
             return true;
@@ -264,6 +276,18 @@ export function scheduleQueuedApprovalTimeoutExtracted(ctx: any, taskId: string,
             const toolName = request.toolName ?? 'Tool';
             logStream.write(`\n[qaap] approval for ${toolName} not granted within `
                 + `${Math.round(QUEUED_APPROVAL_GRACE_TIMEOUT_MS / 1000)}s — auto-denied.\n`);
+            const task = ctx.tasks.get(taskId);
+            const command = typeof request.toolInput?.command === 'string' ? request.toolInput.command : undefined;
+            ctx.observability?.recordAgentToolCommand({
+                taskId,
+                tenantLogin: task?.ownerLogin,
+                agentId: task?.agentId,
+                requestId: request.requestId,
+                toolUseId: request.toolUseId,
+                toolName: request.toolName,
+                command,
+                decision: 'reject',
+            });
             try {
                 ctx.processes.get(taskId)?.stdin?.write(buildQaiqControlResponseLine(
                     request,
@@ -440,6 +464,7 @@ export async function spawnProcessExtracted(ctx: any, task: QaapAgentTask): Prom
             ctx.enforceAgentIsolationPolicy();
             await ctx.ensureAgentCwdOwnershipAsync(task.cwd);
             ctx.recordTaskLatencyMark(task.id, 'spawn_start');
+            ctx.observability?.recordAgentCommandStarted(task, 'agent-cli');
             // Pipes stay attached (no unref()), so logging and stdio approvals are unaffected.
             child = ctx.spawnAgentCommand(task.command, {
                 cwd: task.cwd,
@@ -521,6 +546,19 @@ export async function spawnProcessExtracted(ctx: any, task: QaapAgentTask): Prom
                         task.autoApprove,
                         event.request,
                     );
+                    const command = typeof event.request.toolInput?.command === 'string'
+                        ? event.request.toolInput.command
+                        : undefined;
+                    ctx.observability?.recordAgentToolCommand({
+                        taskId: task.id,
+                        tenantLogin: task.ownerLogin,
+                        agentId: task.agentId,
+                        requestId: event.request.requestId,
+                        toolUseId: event.request.toolUseId,
+                        toolName: event.request.toolName,
+                        command,
+                        decision: autoAction === 'allow' ? 'approve' : autoAction === 'deny' ? 'reject' : 'queue',
+                    });
                     if (autoAction !== 'queue') {
                         const devServerDenial = findQaiqDevServerGuardDenial(event.request);
                         const destructiveDenial = findQaiqDestructiveCommandGuardDenial(event.request);

@@ -173,6 +173,17 @@ export async function runGenericCommandExtracted(ctx: any, command: string,
             /** Owner for ephemeral commands that do not have a persisted QaapAgentTask entry. */
             readonly ownerLogin?: string;
         } = {},): Promise<QaapGenericCommandResult> {
+        const persistedTask = ctx.tasks.get(taskId);
+        const auditTask = {
+            id: taskId,
+            command,
+            cwd,
+            agentId: persistedTask?.agentId,
+            ownerLogin: persistedTask?.ownerLogin ?? options.ownerLogin,
+        };
+        const executionKind = persistedTask ? 'verification' : 'shell';
+        const auditStartedAt = Date.now();
+        ctx.observability?.recordAgentCommandStarted(auditTask, executionKind);
         if (options.header) {
             ctx.appendAndFireOutput(taskId, options.header, options.ownerLogin);
         }
@@ -183,6 +194,13 @@ export async function runGenericCommandExtracted(ctx: any, command: string,
                 : ctx.ensureAgentCwdOwnership(cwd));
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            ctx.observability?.recordAgentCommandFinished(
+                auditTask,
+                'failed',
+                1,
+                Date.now() - auditStartedAt,
+                executionKind,
+            );
             return { exitCode: 1, stdout: '', stderr: message, timedOut: false };
         }
         return new Promise(resolve => {
@@ -191,6 +209,13 @@ export async function runGenericCommandExtracted(ctx: any, command: string,
             let timedOut = false;
             let child: ChildProcess;
             const finish = (exitCode: number): void => {
+                ctx.observability?.recordAgentCommandFinished(
+                    auditTask,
+                    exitCode === 0 ? 'completed' : 'failed',
+                    exitCode,
+                    Date.now() - auditStartedAt,
+                    executionKind,
+                );
                 if (options.tailOutput) {
                     const combined = `${stdout}${stderr}`;
                     const tail = ctx.truncateHead(combined, QAAP_AGENT_VERIFY_OUTPUT_TAIL_CHARS);
@@ -461,6 +486,12 @@ export function finishTaskExtracted(ctx: any, id: string, state: QaapAgentTaskSt
         const finished: QaapAgentTask = { ...task, state, exitCode, finishedAt: Date.now(), worktreeFinishedFingerprint };
         ctx.tasks.set(id, finished);
         void ctx.persist();
+        ctx.observability?.recordAgentCommandFinished(
+            finished,
+            state,
+            exitCode,
+            finished.startedAt === undefined ? undefined : finished.finishedAt! - finished.startedAt,
+        );
         const durationMs = billableAgentDurationMs(finished);
         if (durationMs > 0 && finished.ownerLogin && ctx.billingStore) {
             void ctx.billingStore.debitRuntime(finished.ownerLogin, durationMs).catch(() => undefined);

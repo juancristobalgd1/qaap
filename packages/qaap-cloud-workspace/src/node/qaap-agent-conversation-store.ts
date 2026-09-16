@@ -39,6 +39,7 @@ import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } fr
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapBillingStore } from './qaap-billing-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import { QaapObservability } from './qaap-observability';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 import { QaapConversationStreamMetricsCollector } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import { type QaapAgentMessageWireSnapshot, } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
@@ -113,6 +114,8 @@ export class QaapAgentConversationStore {
     protected readonly taskRunner!: QaapAgentTaskRunner;
     @inject(QaapBillingStore) @optional()
     protected readonly billingStore: QaapBillingStore | undefined;
+    @inject(QaapObservability) @optional()
+    protected readonly observability: QaapObservability | undefined;
 
     @inject(QaapTenantSpawnService)
     protected readonly tenantSpawn!: QaapTenantSpawnService;

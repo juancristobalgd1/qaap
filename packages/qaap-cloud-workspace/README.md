@@ -53,6 +53,25 @@ Only containers carrying Qaap management labels are eligible. Unknown containers
 mounts are never removed. `stop` is used instead of Docker `pause` because the FinOps goal is to
 release memory, not only CPU.
 
+## Observabilidad y auditoría estructurada
+
+El backend emite un objeto JSON por línea para cada evento de auditoría mediante Winston. Los
+eventos `session.started`, `agent.command.started`, `agent.command.finished`,
+`agent.tool.command` y `quota.consumption` incluyen tenant, ids de sesión/tarea, resultado,
+duración y hash SHA-256 de la orden. Las órdenes de herramientas se registran redactadas para no
+persistir tokens o contraseñas; los prompts no se almacenan como texto completo.
+
+```bash
+export QAAP_AUDIT_LOG_ENABLED=true       # false desactiva la emisión
+export QAAP_AUDIT_LOG_LEVEL=info         # info, warn o error
+export QAAP_AUDIT_LOG_PATH=/var/log/qaap/audit.jsonl  # opcional; consola sigue activa
+```
+
+Si el proceso se ejecuta con un SDK de OpenTelemetry, las entradas heredan `traceId` y `spanId`
+del contexto activo y los débitos de cuota crean spans `qaap.quota.hosted_debit` y
+`qaap.quota.runtime_debit`. Esto permite reenviar la consola JSON a un colector central sin
+acoplar el paquete a un proveedor concreto.
+
 ## Backend Theia por tenant
 
 El worker de código y el backend Theia son límites separados. Para ofrecer Qaap a

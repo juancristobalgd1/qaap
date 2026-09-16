@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/lib/node/qaap-sqlite-store';
@@ -25,6 +25,7 @@ import {
     type QaapBillingEntitlements,
     type QaapBillingPlanId,
 } from '../common/qaap-billing-plans';
+import { QaapObservability } from './qaap-observability';
 
 export type QaapBillingDebitResult =
     | { readonly ok: true; readonly account: QaapBillingAccount; readonly creditsCharged: number }
@@ -44,6 +45,9 @@ export type QaapRuntimeDebitResult = {
 
 @injectable()
 export class QaapBillingStore {
+
+    @inject(QaapObservability) @optional()
+    protected readonly observability: QaapObservability | undefined;
 
     protected filePath = process.env.QAAP_BILLING_STORE_PATH?.trim()
         || path.join(os.homedir(), '.qaap', 'billing-accounts.json');
@@ -129,42 +133,58 @@ export class QaapBillingStore {
         now: Date = new Date(),
     ): Promise<QaapBillingDebitResult> {
         const key = QaapBillingStore.normalizeLogin(login);
-        return this.withLock(async () => {
+        const debit = (): Promise<QaapBillingDebitResult> => this.withLock(async () => {
             const all = await this.readAll();
             const current = applyMonthlyReset(
                 this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
                 now,
             );
+            const creditsBefore = current.includedCreditsRemaining + current.purchasedCredits;
             const plan = getQaapBillingPlan(current.planId);
             if (!plan.hostedModels) {
                 this.rememberEntitlements(key, current);
-                return { ok: false, reason: 'not_hosted' as const, account: current };
+                const result = { ok: false as const, reason: 'not_hosted' as const, account: current };
+                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result);
+                return result;
             }
             const creditsCharged = creditsForTokenUsage(modelId, inputTokens, outputTokens);
             if (creditsCharged === undefined) {
                 this.rememberEntitlements(key, current);
-                return { ok: false, reason: 'unknown_model' as const, account: current };
+                const result = { ok: false as const, reason: 'unknown_model' as const, account: current };
+                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result);
+                return result;
             }
             if (creditsCharged === 0) {
                 all[key] = current;
                 await this.writeAll(all);
                 this.rememberEntitlements(key, current);
-                return { ok: true, account: current, creditsCharged: 0 };
+                const result = { ok: true as const, account: current, creditsCharged: 0 };
+                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result, creditsCharged);
+                return result;
             }
             const spent = spendCreditsUpTo(current, creditsCharged);
             all[key] = spent.account;
             await this.writeAll(all);
             this.rememberEntitlements(key, spent.account);
             if (spent.charged < creditsCharged) {
-                return {
-                    ok: false,
+                const result = {
+                    ok: false as const,
                     reason: 'insufficient_credits' as const,
                     account: spent.account,
                     creditsCharged: spent.charged,
                 };
+                this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result, creditsCharged);
+                return result;
             }
-            return { ok: true, account: spent.account, creditsCharged: spent.charged };
+            const result = { ok: true as const, account: spent.account, creditsCharged: spent.charged };
+            this.recordHostedUsage(key, modelId, inputTokens, outputTokens, creditsBefore, result, creditsCharged);
+            return result;
         });
+        return this.observability?.withSpan(
+            'qaap.quota.hosted_debit',
+            { tenantLogin: key, modelId },
+            debit,
+        ) ?? debit();
     }
 
     async canStartAgent(login: string, now: Date = new Date()): Promise<boolean> {
@@ -182,35 +202,96 @@ export class QaapBillingStore {
         now: Date = new Date(),
     ): Promise<QaapRuntimeDebitResult> {
         const key = QaapBillingStore.normalizeLogin(login);
-        return this.withLock(async () => {
+        const debit = (): Promise<QaapRuntimeDebitResult> => this.withLock(async () => {
             const all = await this.readAll();
             const current = applyMonthlyReset(
                 this.normalizeAccount(all[key] ?? this.createDefaultAccount(key, now)),
                 now,
             );
+            const runtimeBefore = current.includedRuntimeMinutesRemaining + current.purchasedRuntimeMinutes;
             if (isRuntimeFairUse(current.planId)) {
                 all[key] = current;
                 await this.writeAll(all);
                 this.rememberEntitlements(key, current);
-                return { ok: true as const, account: current, minutesCharged: 0, fairUse: true };
+                const result = { ok: true as const, account: current, minutesCharged: 0, fairUse: true };
+                this.recordRuntimeUsage(key, durationMs, runtimeBefore, result, 0);
+                return result;
             }
             const minutesRequested = runtimeMinutesForDurationMs(durationMs);
             if (minutesRequested === 0) {
                 all[key] = current;
                 await this.writeAll(all);
                 this.rememberEntitlements(key, current);
-                return { ok: true as const, account: current, minutesCharged: 0, fairUse: false };
+                const result = { ok: true as const, account: current, minutesCharged: 0, fairUse: false };
+                this.recordRuntimeUsage(key, durationMs, runtimeBefore, result, minutesRequested);
+                return result;
             }
             const spent = spendRuntimeMinutes(current, minutesRequested);
             all[key] = spent;
             await this.writeAll(all);
             this.rememberEntitlements(key, spent);
-            return {
+            const result = {
                 ok: true as const,
                 account: spent,
                 minutesCharged: chargedRuntimeMinutes(current, spent),
                 fairUse: false,
             };
+            this.recordRuntimeUsage(key, durationMs, runtimeBefore, result, minutesRequested);
+            return result;
+        });
+        return this.observability?.withSpan(
+            'qaap.quota.runtime_debit',
+            { tenantLogin: key, durationMs },
+            debit,
+        ) ?? debit();
+    }
+
+    protected recordHostedUsage(
+        tenantLogin: string,
+        modelId: string,
+        inputTokens: number,
+        outputTokens: number,
+        creditsBefore: number,
+        result: QaapBillingDebitResult,
+        requestedCredits?: number,
+    ): void {
+        const chargedCredits = result.creditsCharged ?? 0;
+        this.observability?.recordQuotaConsumption({
+            tenantLogin,
+            resource: 'hosted-credits',
+            outcome: result.ok ? 'charged' : 'denied',
+            planId: result.account.planId,
+            modelId,
+            inputTokens,
+            outputTokens,
+            requestedCredits,
+            chargedCredits,
+            remainingCredits: result.account.includedCreditsRemaining + result.account.purchasedCredits,
+            creditsBefore,
+            creditsAfter: result.account.includedCreditsRemaining + result.account.purchasedCredits,
+            ...(result.ok ? {} : { reason: result.reason }),
+        });
+    }
+
+    protected recordRuntimeUsage(
+        tenantLogin: string,
+        durationMs: number,
+        runtimeBefore: number,
+        result: QaapRuntimeDebitResult,
+        requestedMinutes: number,
+    ): void {
+        this.observability?.recordQuotaConsumption({
+            tenantLogin,
+            resource: 'runtime-minutes',
+            outcome: result.fairUse ? 'fair-use' : 'charged',
+            planId: result.account.planId,
+            requestedMinutes,
+            chargedMinutes: result.minutesCharged,
+            remainingRuntimeMinutes: result.account.includedRuntimeMinutesRemaining + result.account.purchasedRuntimeMinutes,
+            runtimeBefore,
+            runtimeAfter: result.account.includedRuntimeMinutesRemaining + result.account.purchasedRuntimeMinutes,
+            durationMs,
+            ...(result.fairUse ? { reason: 'fair_use' } : {}),
         });
     }
 

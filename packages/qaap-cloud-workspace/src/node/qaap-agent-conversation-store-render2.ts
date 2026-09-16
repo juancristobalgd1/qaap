@@ -383,6 +383,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentConversationRe
         contextWindowSize: DEFAULT_QAAP_CONTEXT_WINDOW,
     };
     ctx.conversations.set(id, conversation);
+    ctx.observability?.recordSessionStarted(conversation);
     ctx.fire({ type: 'created', conversation: toConversationSummary(conversation) });
     void ctx.persist();
     if (request.message?.trim()) {
