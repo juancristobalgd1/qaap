@@ -125,11 +125,41 @@ run_runtime_state_check() {
         exit 1
     fi
 
-    local container_id compose_config
+    local container_id compose_config docker_host docker_socket docker_socket_target docker_socket_owner=''
     container_id="${container_ids[0]}"
     compose_config="$(docker compose config --format json)"
+    docker_host="${DOCKER_HOST:-}"
+    if [[ -z "$docker_host" ]]; then
+        docker_host="$(docker context inspect --format '{{ .Endpoints.docker.Host }}' 2>/dev/null | sed -n '1p' || true)"
+    fi
+    if [[ -z "$docker_host" ]]; then
+        docker_host='unix:///var/run/docker.sock'
+    fi
+    if [[ "$docker_host" == unix://* ]]; then
+        docker_socket="${docker_host#unix://}"
+        if [[ ! -S "$docker_socket" ]]; then
+            echo "Docker endpoint is not a local socket accessible to the temporary container: $docker_host" >&2
+            exit 1
+        fi
+        docker_socket_owner="$(stat -c '%u' "$docker_socket")"
+    fi
     echo '[qaap-vps-update] host Node.js not found; running runtime-state check in a temporary Theia container'
-    printf '%s' "$compose_config" | docker compose run --rm --no-deps -T \
+    local -a docker_socket_args=(-e "DOCKER_HOST=$docker_host")
+    # Rootful Docker sockets are normally owned by uid 0, while the supported rootless socket is
+    # owned by uid 1000 (theia). Match the temporary container user to the socket owner so either
+    # daemon can be queried without weakening the permanent service's isolation policy.
+    if [[ "$docker_host" == unix://* && "$docker_socket_owner" == 0 ]]; then
+        docker_socket_args+=(--user 0)
+    else
+        docker_socket_args+=(--user 1000)
+    fi
+    if [[ "$docker_host" == unix://* ]]; then
+        docker_socket_target="${QAAP_DOCKER_SOCKET_TARGET:-/run/user/1000/docker.sock}"
+        if [[ "$docker_socket" != "$docker_socket_target" ]]; then
+            docker_socket_args+=(-v "$docker_socket:$docker_socket")
+        fi
+    fi
+    printf '%s' "$compose_config" | docker compose run --rm --no-deps -T "${docker_socket_args[@]}" \
         -v "$REPO_DIR/scripts:/tmp/qaap-migration-scripts:ro" \
         theia node /tmp/qaap-migration-scripts/qaap-persist-runtime-state.mjs \
         --check --container-id "$container_id" --compose-config-stdin
