@@ -144,7 +144,11 @@ RUN groupadd --gid 1001 qaap-agent \
     && (getent group node >/dev/null 2>&1 && groupmod -n theia node || true) \
     && mkdir -p /home/theia/.theia /home/theia/.qaap \
     && chown -R 1000:1000 /home/theia /workspace 2>/dev/null || true \
-    && chmod -R a+rX /app
+    # Files copied into the runtime image already have the standard 0644/0755
+    # permissions needed by the non-root Theia user. Avoid recursively touching
+    # the entire dependency tree here: on large deployments that turns image
+    # export into a multi-minute metadata-only operation.
+    && chmod a+rX /app
 
 ARG QAAP_IDE_PORT=4873
 # Deployed-build identity: the short git SHA the image was built from. Surfaced via
