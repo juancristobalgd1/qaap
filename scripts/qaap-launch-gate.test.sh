@@ -17,6 +17,8 @@ cat > "$TEST_ROOT/bin/docker" <<'MOCK'
 #!/usr/bin/env bash
 case "$*" in
     *' sh -c id') echo 'uid=1000(theia)' ;;
+    *'command -v'* )
+        if [[ "${TEST_HARNESSES:-1}" == 1 ]]; then exit 0; else printf 'missing-harness\n'; exit 1; fi ;;
     *QAAP_TENANT_CONTAINER_ISOLATION*) printf 1 ;;
     *DOCKER_HOST*) printf 'unix:///run/user/1000/docker.sock' ;;
     *QAAP_AGENT_UID_PER_USER*) printf 1 ;;
@@ -56,6 +58,9 @@ export TEST_TENANTS=2 TEST_ISOLATION_EXIT=1
 expect_status 1 qaap-vps-launch-gate.sh
 export TEST_ISOLATION_EXIT=0
 expect_status 0 qaap-vps-launch-gate.sh
+export TEST_HARNESSES=0
+expect_status 1 qaap-vps-launch-gate.sh
+export TEST_HARNESSES=1
 export TEST_BETA_ALLOWED_LOGINS=alice TEST_BACKEND_ISOLATION_MODE=shared-control-plane
 expect_status 1 qaap-vps-launch-gate.sh
 export TEST_BACKEND_ISOLATION_MODE=per-tenant TEST_BACKEND_PER_TENANT=1 TEST_BACKEND_SECRET_LEN=32

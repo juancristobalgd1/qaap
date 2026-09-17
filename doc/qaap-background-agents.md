@@ -25,9 +25,13 @@ browser tab is closed. The server auto-detects these CLIs on `PATH`:
 - `qwen` -> `qwen -p --approval-mode yolo {prompt}`
 - `kimi` -> `kimi -p {prompt}` (prompt mode auto-approves tool calls)
 
-The Docker runtime image builds and installs **[QAIQ](https://github.com/juancristobalgd1/qaiq)**
-(QAAP's fork of the OpenClaude coding-agent CLI), Codex CLI, and Grok Build. Codex still needs
-auth/API-key setup if you want to use `@codex`; Claude Code still needs its own CLI/auth setup.
+The Docker runtime image builds and installs the required core harnesses: **[QAIQ](https://github.com/juancristobalgd1/qaiq)**
+(QAAP's fork of the OpenClaude coding-agent CLI), Codex CLI, Claude Code, Antigravity CLI,
+OpenCode, Copilot CLI, and Grok Build. Goose, Hermes, OpenClaw, Cursor Agent, Qwen Code, and
+Kimi CLI are recognized when an operator installs them separately or exposes them through
+`QAAP_AGENT_COMMANDS`. The image build and VPS launch gate fail if a core harness is missing.
+Codex still needs auth/API-key setup if you want to use `@codex`; Claude Code still needs its own
+CLI/auth setup.
 
 QAIQ is the generic BYOK/free-tier path: it can run non-interactively in the server with
 providers such as `openai`, `gemini`, `ollama`, and other OpenAI-compatible routes. Select it

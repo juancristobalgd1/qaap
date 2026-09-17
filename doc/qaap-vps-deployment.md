@@ -7,6 +7,8 @@ single Docker host (Hetzner CX/CPX, Contabo, etc.).
 
 - Ubuntu 22.04+ (or Debian bookworm) on the VPS
 - Docker Engine + Docker Compose v2
+- Node.js is not required on the VPS host; the update script uses the Node.js runtime bundled in
+  the Theia image for its persistence preflight
 - At least **4 GB RAM** for the container (`docker-compose.yml` limit); **8 GB** recommended if
   you run heavy `@qaiq` jobs on large repos
 - One **provider API key** (OpenRouter, Gemini, NVIDIA NIM, OpenAI, Anthropic, or Ollama on
@@ -23,6 +25,13 @@ sudo usermod -aG docker "$USER"   # re-login once
 git clone https://github.com/juancristobalgd1/qaap.git /opt/qaap
 cd /opt/qaap
 cp .env.docker.example .env
+```
+
+The repository must be checked out with Unix line endings. If this checkout was copied from a
+Windows machine and Bash reports `bash\r`, repair the deployment scripts once before running them:
+
+```bash
+find scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
 ```
 
 Edit `.env`:
@@ -184,6 +193,12 @@ The runtime stage of `Dockerfile` installs:
 - **Grok Build** → `/opt/grok/bin/grok` (`curl -fsSL https://x.ai/cli/install.sh | bash`)
 - `git`, `curl`, `bun`, `pnpm`, `yarn`, `build-essential`, `ripgrep` for agent shell work
 
+These harnesses are runtime dependencies of the task runner, not optional frontend npm
+dependencies. The Dockerfile fails the build if one of the required harnesses is absent, and
+`QAAP_TENANT_DOCKER_IMAGE` defaults to the same image as `QAAP_THEIA_IMAGE` so isolated tenant
+workers receive them too. Do not point `QAAP_TENANT_DOCKER_IMAGE` at a bare `node:20-bookworm`
+image.
+
 At container start, the backend logs detected agents, for example:
 
 ```text
@@ -259,6 +274,15 @@ docker compose exec theia copilot --version
 docker compose exec theia which qaiq grok codex claude antigravity opencode copilot
 docker compose exec theia grok version
 docker compose logs theia 2>&1 | grep 'qaap-agent-tasks'
+```
+
+After changing the Dockerfile or pulling a new release, recreate the service so the VPS does not
+keep an old image:
+
+```bash
+docker compose build --pull theia
+docker compose up -d --force-recreate theia
+docker compose exec theia sh -c 'for h in qaiq openclaude codex claude opencode copilot antigravity grok; do command -v "$h" || exit 1; done'
 ```
 
 ## Build args (optional)

@@ -46,9 +46,9 @@ export function migrationPlan(config, container) {
     });
 }
 
-export function migrate({ mode = 'plan', docker, helper }) {
-    const config = JSON.parse(docker(['compose', 'config', '--format', 'json']));
-    const id = docker(['compose', 'ps', '-aq', 'theia']).trim();
+export function migrate({ mode = 'plan', docker, helper, composeConfigJson, containerId }) {
+    const config = JSON.parse(composeConfigJson ?? docker(['compose', 'config', '--format', 'json']));
+    const id = String(containerId ?? docker(['compose', 'ps', '-aq', 'theia'])).trim();
     if (id && !/^[0-9a-f]{12,64}$/.test(id)) { throw new Error('Expected exactly one Theia container'); }
     const container = id ? JSON.parse(docker(['inspect', id]))[0] : undefined;
     if (id && (!container || !/^[0-9a-f]{64}$/.test(container.Id) || typeof container.State?.Running !== 'boolean' || !Array.isArray(container.Mounts))) {
@@ -106,16 +106,30 @@ export function migrate({ mode = 'plan', docker, helper }) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-    const mode = process.argv[2]?.replace(/^--/, '') ?? 'plan';
-    if (!['plan', 'check', 'apply'].includes(mode) || process.argv.length > 3) {
-        console.error('Usage: node scripts/qaap-persist-runtime-state.mjs [--plan|--check|--apply]');
+    const args = process.argv.slice(2);
+    const mode = args.shift()?.replace(/^--/, '') ?? 'plan';
+    let composeConfigJson;
+    let containerId;
+    while (args.length) {
+        const arg = args.shift();
+        if (arg === '--compose-config-stdin') {
+            composeConfigJson = readFileSync(0, 'utf8');
+        } else if (arg === '--container-id' && args.length) {
+            containerId = args.shift();
+        } else {
+            console.error('Usage: node scripts/qaap-persist-runtime-state.mjs [--plan|--check|--apply] [--container-id <id>] [--compose-config-stdin]');
+            process.exit(2);
+        }
+    }
+    if (!['plan', 'check', 'apply'].includes(mode) || (containerId && !/^[0-9a-f]{12,64}$/.test(containerId))) {
+        console.error('Usage: node scripts/qaap-persist-runtime-state.mjs [--plan|--check|--apply] [--container-id <id>] [--compose-config-stdin]');
         process.exit(2);
     }
     try {
         const cwd = fileURLToPath(new URL('../', import.meta.url));
         const docker = (args, input) => execFileSync('docker', args, { cwd, input, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
         const helper = readFileSync(new URL('./qaap-runtime-state-copy.js', import.meta.url), 'utf8');
-        console.log(JSON.stringify(migrate({ mode, docker, helper }), undefined, 2));
+        console.log(JSON.stringify(migrate({ mode, docker, helper, composeConfigJson, containerId }), undefined, 2));
     } catch (error) {
         console.error(`Runtime state migration blocked: ${error.message}`);
         console.error('No source data was deleted. After --apply, keep the source stopped until verified deployment; do not prune migration snapshots.');

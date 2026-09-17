@@ -105,6 +105,36 @@ refresh_caddy() {
     docker compose up -d --no-deps --force-recreate caddy
 }
 
+run_runtime_state_check() {
+    if command -v node >/dev/null 2>&1; then
+        node scripts/qaap-persist-runtime-state.mjs --check
+        return
+    fi
+
+    # Node.js is a runtime dependency of the image, not of the VPS host. Run the exact migration
+    # check from the current checkout in a temporary Theia container when the host has no Node.
+    # This also works before the new image is built because the scripts directory is bind-mounted.
+    local container_ids
+    mapfile -t container_ids < <(docker compose ps -aq theia | tr -d '\r' | sed '/^$/d')
+    if (( ${#container_ids[@]} == 0 )); then
+        echo '[qaap-vps-update] host Node.js not found; no existing Theia container, skipping runtime-state migration check'
+        return
+    fi
+    if (( ${#container_ids[@]} != 1 )); then
+        echo '[qaap-vps-update] expected exactly one existing Theia container for runtime-state migration' >&2
+        exit 1
+    fi
+
+    local container_id compose_config
+    container_id="${container_ids[0]}"
+    compose_config="$(docker compose config --format json)"
+    echo '[qaap-vps-update] host Node.js not found; running runtime-state check in a temporary Theia container'
+    printf '%s' "$compose_config" | docker compose run --rm --no-deps -T \
+        -v "$REPO_DIR/scripts:/tmp/qaap-migration-scripts:ro" \
+        theia node /tmp/qaap-migration-scripts/qaap-persist-runtime-state.mjs \
+        --check --container-id "$container_id" --compose-config-stdin
+}
+
 echo "[qaap-vps-update] repo: $REPO_DIR"
 echo "[qaap-vps-update] branch: $BRANCH"
 
@@ -134,7 +164,7 @@ echo "[qaap-vps-update] commit: $BEFORE"
 export QAAP_BUILD_SHA="$BEFORE"
 
 # Fail before replacing the old container if runtime state is still in its writable layer.
-node scripts/qaap-persist-runtime-state.mjs --check
+run_runtime_state_check
 
 # Pin this build to the exact upstream QAIQ commit so the image is reproducible and never frozen:
 # same SHA → the qaiq layer stays cached, an advanced SHA → a fresh clone. The Dockerfile clones

@@ -73,6 +73,12 @@ else
     bad "setpriv missing"
 fi
 
+if dexec 'for harness in qaiq openclaude codex claude opencode copilot antigravity grok; do command -v "$harness" >/dev/null 2>&1 || exit 1; done'; then
+    ok "coding-agent harnesses are installed in the serving image"
+else
+    bad "one or more coding-agent harnesses are missing from the serving image; rebuild/pull the Qaap image"
+fi
+
 # Public beta must use the compiled backend-per-tenant router. A tenant worker
 # alone is insufficient because Theia singletons, memory, operator logs and
 # in-process indexes otherwise remain shared.

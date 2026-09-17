@@ -55,6 +55,12 @@ test('already mounted persistent state needs no copy or downtime', () => {
     assert.equal(migrate({ ...f, mode: 'check' }).ready, true);
     assert.ok(!f.calls.some(args => args[0] === 'stop'));
 });
+test('accepts externally resolved Compose state for containerized Node runners', () => {
+    const f = fixture({ mounted: true });
+    const result = migrate({ ...f, mode: 'check', composeConfigJson: JSON.stringify(f.config), containerId: id });
+    assert.equal(result.ready, true);
+    assert.ok(!f.calls.some(args => args[0] === 'compose'));
+});
 test('copies from a stopped snapshot, preserves paths and verifies prepared volumes', () => {
     const f = fixture();
     const result = migrate({ ...f, mode: 'apply' });

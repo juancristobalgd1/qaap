@@ -195,6 +195,9 @@ services:
       # The worker must use the same image so qaiq/codex/claude binaries and the non-root uid exist
       # inside the tenant container. In production set this to the immutable deployed image tag.
       QAAP_THEIA_IMAGE: ${QAAP_THEIA_IMAGE:-qaap-theia:local}
+      # An explicit worker image is supported for split deployments, but defaults to the exact
+      # serving image. Both images must contain the harnesses validated by the Dockerfile gate.
+      QAAP_TENANT_DOCKER_IMAGE: ${QAAP_TENANT_DOCKER_IMAGE:-${QAAP_THEIA_IMAGE:-qaap-theia:local}}
     depends_on:
       - searxng
     volumes:

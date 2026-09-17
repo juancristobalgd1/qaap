@@ -103,6 +103,14 @@ RUN test -n "${QAIQ_COMMIT}" \
 ENV PATH="/opt/grok/bin:/root/.local/bin:${PATH}" \
     QAAP_DEFAULT_AGENT=qaiq
 
+# These executables are runtime dependencies of Jobs / Background tasks. Keep the image build
+# fail-fast: a worker based on a partially built image must never reach a VPS and silently accept
+# tasks without a coding harness.
+RUN for harness in qaiq openclaude codex claude opencode copilot antigravity grok; do \
+        command -v "$harness" >/dev/null 2>&1 \
+            || { echo "Required Qaap harness is missing: $harness" >&2; exit 1; }; \
+    done
+
 WORKDIR /app/examples/browser
 
 COPY --from=build /app /app
