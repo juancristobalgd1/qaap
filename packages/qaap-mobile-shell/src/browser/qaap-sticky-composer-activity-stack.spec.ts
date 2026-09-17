@@ -380,6 +380,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(button?.disabled).to.equal(true);
             expect(button?.getAttribute('aria-busy')).to.equal('true');
             expect(button?.querySelector('.codicon-loading')).to.not.equal(null);
+            expect(button?.querySelector('.qaap-border-beam-bloom')).to.not.equal(null);
         });
 
         it('hides preview and run actions when the composer has no file activity', () => {

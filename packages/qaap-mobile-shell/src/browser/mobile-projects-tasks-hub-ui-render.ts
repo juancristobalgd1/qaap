@@ -191,6 +191,12 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: any): HTMLElement
                 btn.setAttribute('aria-busy', 'true');
             }
             btn.append(iconWrap, label);
+            if (previewStarting) {
+                const borderBeamBloom = document.createElement('div');
+                borderBeamBloom.className = 'qaap-border-beam-bloom';
+                borderBeamBloom.setAttribute('aria-hidden', 'true');
+                btn.append(borderBeamBloom);
+            }
             bindStickyComposerControlClick(btn, () => {
                 if (action.id === 'run-app') {
                     const project = ctx.host.transcriptOpenProject

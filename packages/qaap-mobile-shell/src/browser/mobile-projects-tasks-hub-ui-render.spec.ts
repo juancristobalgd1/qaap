@@ -29,5 +29,6 @@ describe('mobile-projects-tasks-hub-ui-render', () => {
         expect(runApp?.classList.contains('theia-mod-preview-starting')).to.equal(true);
         expect(runApp?.getAttribute('aria-busy')).to.equal('true');
         expect(runApp?.querySelector('.codicon-loading')).to.not.equal(null);
+        expect(runApp?.querySelector('.qaap-border-beam-bloom')).to.not.equal(null);
     });
 });

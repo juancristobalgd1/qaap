@@ -1073,6 +1073,12 @@ function createChangesNextActionButton(options: {
         btn.setAttribute('aria-busy', 'true');
     }
     btn.append(createNextActionIcon(options.iconClass), document.createTextNode(options.label));
+    if (options.busy) {
+        const borderBeamBloom = document.createElement('div');
+        borderBeamBloom.className = 'qaap-border-beam-bloom';
+        borderBeamBloom.setAttribute('aria-hidden', 'true');
+        btn.append(borderBeamBloom);
+    }
     btn.addEventListener('click', ev => {
         ev.preventDefault();
         ev.stopPropagation();
