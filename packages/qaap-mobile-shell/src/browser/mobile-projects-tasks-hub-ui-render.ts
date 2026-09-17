@@ -206,6 +206,7 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: any): HTMLElement
                         ?? ctx.host.transcriptComposerSummary
                         ?? (project ? ctx.host.resolveShellSummary?.(project) : undefined);
                     if (project && summary) {
+                        setAgentsHubQuickActionPreviewStarting(btn);
                         void ctx.host.transcriptStickyComposerUi.launchComposerDevPreview(project, summary);
                         return;
                     }
@@ -220,6 +221,28 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: any): HTMLElement
             container.append(btn);
         }
         return container;
+}
+
+function setAgentsHubQuickActionPreviewStarting(btn: HTMLButtonElement): void {
+        const actionLabel = nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…');
+        const icon = btn.querySelector<HTMLElement>('.theia-mobile-agent-transcript-empty-action-icon > i');
+        icon?.classList.remove('codicon-rocket');
+        icon?.classList.add('codicon-loading');
+        const label = btn.querySelector<HTMLElement>('.theia-mobile-agent-transcript-empty-action-label');
+        if (label) {
+            label.textContent = actionLabel;
+        }
+        btn.classList.add('theia-mod-preview-starting');
+        btn.disabled = true;
+        btn.title = actionLabel;
+        btn.setAttribute('aria-label', actionLabel);
+        btn.setAttribute('aria-busy', 'true');
+        if (!btn.querySelector('.qaap-border-beam-bloom')) {
+            const borderBeamBloom = document.createElement('div');
+            borderBeamBloom.className = 'qaap-border-beam-bloom';
+            borderBeamBloom.setAttribute('aria-hidden', 'true');
+            btn.append(borderBeamBloom);
+        }
 }
 
 export function applyComposerQuickActionPromptExtracted(ctx: any, prompt: string): void {
