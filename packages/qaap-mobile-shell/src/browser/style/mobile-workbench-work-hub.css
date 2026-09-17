@@ -5620,7 +5620,8 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
 }
 
-.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting {
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting,
+.theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting {
   border-color: color-mix(in srgb, var(--theia-focusBorder) 65%, transparent);
   background: color-mix(in srgb, var(--theia-focusBorder) 20%, var(--theia-editor-background));
   color: var(--theia-foreground);
@@ -5628,7 +5629,8 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   pointer-events: none;
 }
 
-.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .codicon-loading {
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .codicon-loading,
+.theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting .codicon-loading {
   animation: qaap-sticky-composer-preview-spin 1s linear infinite;
 }
 
@@ -5638,7 +5640,8 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .codicon-loading {
+  .theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .codicon-loading,
+  .theia-mobile-agent-transcript-empty-action.theia-mod-preview-starting .codicon-loading {
     animation: none;
   }
 }

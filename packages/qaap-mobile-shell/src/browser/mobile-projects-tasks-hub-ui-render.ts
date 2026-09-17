@@ -172,12 +172,24 @@ export function createAgentsHubQuickActionsBlockExtracted(ctx: any): HTMLElement
             const iconWrap = document.createElement('span');
             iconWrap.className = 'theia-mobile-agent-transcript-empty-action-icon';
             const icon = document.createElement('i');
-            icon.className = `codicon codicon-${action.icon}`;
+            const previewStarting = action.id === 'run-app'
+                && (!!ctx.host.transcriptPreviewRequestRunning || !!ctx.host.transcriptPreviewRequestPending);
+            const actionLabel = previewStarting
+                ? nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…')
+                : nls.localize(action.labelKey, action.labelDefault);
+            icon.className = `codicon codicon-${previewStarting ? 'loading' : action.icon}`;
             icon.setAttribute('aria-hidden', 'true');
             iconWrap.append(icon);
             const label = document.createElement('span');
             label.className = 'theia-mobile-agent-transcript-empty-action-label';
-            label.textContent = nls.localize(action.labelKey, action.labelDefault);
+            label.textContent = actionLabel;
+            if (previewStarting) {
+                btn.classList.add('theia-mod-preview-starting');
+                btn.disabled = true;
+                btn.title = actionLabel;
+                btn.setAttribute('aria-label', actionLabel);
+                btn.setAttribute('aria-busy', 'true');
+            }
             btn.append(iconWrap, label);
             bindStickyComposerControlClick(btn, () => {
                 if (action.id === 'run-app') {

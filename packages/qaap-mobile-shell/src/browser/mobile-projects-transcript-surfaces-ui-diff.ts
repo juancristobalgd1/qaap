@@ -103,6 +103,7 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
             ctx.host.executionSurfaceTabsUi.selectTranscriptTab?.('preview', project, summary);
         };
         const refreshPreviewComposer = (): void => {
+            ctx.host.transcriptStickyComposerUi?.refreshComposerQuickActions?.();
             ctx.host.transcriptStickyComposerUi?.refreshComposerActivityStack?.();
         };
         if (options?.revealPreviewTab && !options.deferPreviewTabUntilReady) {

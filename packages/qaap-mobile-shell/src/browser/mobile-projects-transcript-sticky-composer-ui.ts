@@ -533,6 +533,18 @@ export class MobileProjectsTranscriptStickyComposerUi {
         refreshComposerActivityStackExtracted(this);
     }
 
+    /** Refresh only the empty-composer quick actions when preview startup changes state. */
+    refreshComposerQuickActions(): void {
+        const composerHost = this.host.transcriptComposerHost;
+        const quickActions = composerHost?.querySelector<HTMLElement>(
+            '.theia-mobile-projects-sticky-composer > .theia-mobile-agent-transcript-empty-actions',
+        );
+        if (!quickActions) {
+            return;
+        }
+        quickActions.replaceWith(this.workHub.createAgentsHubQuickActionsBlock());
+    }
+
     /**
      * Keeps same-session queued follow-ups visible in the transcript footer (`pendingUserMessages`)
      * in lockstep with the composer queue — including optimistic local rows before the mirror POST.
