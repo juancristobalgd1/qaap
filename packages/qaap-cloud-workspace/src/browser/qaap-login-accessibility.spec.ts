@@ -21,6 +21,9 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('href="/legal/privacy.html"');
         expect(source).to.include('id="qaap-login-local"');
         expect(source).to.include('id="qaap-login-retry"');
+        expect(source).to.include('productionRuntime = config.productionRuntime === true');
+        expect(source).to.include('!productionRuntime && config.skipAuth === true');
+        expect(source).to.include('retryButton && !productionRuntime');
         expect(source).to.include("host.querySelectorAll<HTMLElement>(");
         expect(source).to.not.include("githubButton.addEventListener('keydown'");
         expect(source).to.not.include('data-qaap-link');
@@ -37,9 +40,13 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('href="/legal/privacy.html"');
         expect(source).to.include('id="qaap-login-local"');
         expect(source).to.include('id="qaap-login-retry"');
+        expect(source).to.include('productionRuntime = config.productionRuntime === true');
+        expect(source).to.include('!productionRuntime && config.skipAuth === true');
+        expect(source).to.include('retry && !productionRuntime');
         expect(source).to.include('.qaap-login-footer a:focus-visible');
         expect(source).to.include('cursor:not-allowed');
         expect(source).to.include('.qaap-login-btn[aria-busy="true"]{cursor:wait}');
+        expect(source).to.include('.qaap-login-btn[hidden]{display:none}');
         expect(source).to.include('var AUTH_CONFIG_TIMEOUT_MS = 4000');
         expect(source).to.include('var AUTH_SESSION_TIMEOUT_MS = 6000');
         expect(source).to.include('function showGateAndLoadBundle()');
@@ -56,6 +63,7 @@ describe('Qaap login gate accessibility contract', () => {
         expect(css).to.include('@media (prefers-reduced-motion: reduce)');
         expect(css).to.not.include('transition: all');
         expect(css).to.include('cursor: not-allowed');
+        expect(css).to.match(/\.qaap-login-btn\[hidden\]\s*\{\s*display:\s*none;/);
         expect(css).to.match(/\.qaap-login-btn\[aria-busy="true"\][\s\S]*cursor:\s*wait/);
     });
 

@@ -111,6 +111,11 @@ body.qaap-login-active .theia-preload {
     touch-action: manipulation;
 }
 
+/* Author-level flex styling must not override the native hidden attribute. */
+.qaap-login-btn[hidden] {
+    display: none;
+}
+
 .qaap-login-btn:hover:not(:disabled) {
     opacity: 0.92;
 }

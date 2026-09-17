@@ -169,6 +169,7 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
     const localButton = host.querySelector<HTMLButtonElement>('#qaap-login-local');
     const retryButton = host.querySelector<HTMLButtonElement>('#qaap-login-retry');
     const status = host.querySelector<HTMLElement>('#qaap-login-status');
+    let productionRuntime = false;
     if (localButton) {
         localButton.hidden = true;
     }
@@ -187,7 +188,16 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
     }
     try {
         const config = await fetchQaapAuthConfig();
-        if (config.skipAuth === true && localButton) {
+        productionRuntime = config.productionRuntime === true;
+        if (productionRuntime) {
+            if (localButton) {
+                localButton.hidden = true;
+            }
+            if (retryButton) {
+                retryButton.hidden = true;
+            }
+        }
+        if (!productionRuntime && config.skipAuth === true && localButton) {
             localButton.hidden = false;
             if (status) {
                 status.textContent = nls.localize(
@@ -199,7 +209,7 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
         if (config.githubOAuth === true) {
             return;
         }
-        if (config.skipAuth === true) {
+        if (!productionRuntime && config.skipAuth === true) {
             setGithubUnavailable(
                 host,
                 nls.localize(
@@ -224,7 +234,7 @@ async function reflectGithubAvailability(host: HTMLElement): Promise<void> {
                 'The Qaap server is not responding. Check the VPS, proxy, or firewall, then retry.'
             )
         );
-        if (retryButton) {
+        if (retryButton && !productionRuntime) {
             retryButton.hidden = false;
         }
     }

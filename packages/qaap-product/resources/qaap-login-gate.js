@@ -356,6 +356,7 @@
             '.qaap-login-spacer{flex:1;min-height:24px}',
             '.qaap-login-actions{display:flex;flex-direction:column;gap:10px}',
             '.qaap-login-btn{width:100%;min-height:44px;height:48px;border-radius:10px;cursor:pointer;font:inherit;font-size:15px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:10px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}',
+            '.qaap-login-btn[hidden]{display:none}',
             '.qaap-login-btn--primary{border:none;background:var(--qaap-ink);color:var(--qaap-surface)}',
             '.qaap-login-btn--secondary{height:44px;border:1px solid var(--qaap-border);background:transparent;color:var(--qaap-ink);font-size:14px;font-weight:500}',
             '.qaap-login-btn:disabled{opacity:.85;cursor:not-allowed}',
@@ -519,6 +520,7 @@
         var local = host.querySelector('#qaap-login-local');
         var retry = host.querySelector('#qaap-login-retry');
         var status = host.querySelector('#qaap-login-status');
+        var productionRuntime = false;
         if (local) {
             local.hidden = true;
         }
@@ -543,7 +545,16 @@
                 if (!config) {
                     throw new Error('config');
                 }
-                if (config.skipAuth === true && local) {
+                productionRuntime = config.productionRuntime === true;
+                if (productionRuntime) {
+                    if (local) {
+                        local.hidden = true;
+                    }
+                    if (retry) {
+                        retry.hidden = true;
+                    }
+                }
+                if (!productionRuntime && config.skipAuth === true && local) {
                     local.hidden = false;
                     if (status) {
                         status.textContent = 'Local development mode is enabled on this server.';
@@ -552,13 +563,13 @@
                 if (config.githubOAuth === true) {
                     return;
                 }
-                setGithubUnavailable(host, config.skipAuth === true
+                setGithubUnavailable(host, !productionRuntime && config.skipAuth === true
                     ? 'GitHub sign-in is unavailable. Continue in local mode or configure GitHub OAuth.'
                     : 'GitHub sign-in isn’t configured on this server yet. Ask the administrator to set the GitHub OAuth credentials.');
             })
             .catch(function () {
                 setGithubUnavailable(host, 'The Qaap server is not responding. Check the VPS, proxy, or firewall, then retry.');
-                if (retry) {
+                if (retry && !productionRuntime) {
                     retry.hidden = false;
                 }
             });

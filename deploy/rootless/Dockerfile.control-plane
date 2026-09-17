@@ -1,0 +1,17 @@
+ARG QAAP_BASE_IMAGE=qaap-theia:local
+FROM ${QAAP_BASE_IMAGE}
+
+# The rootful control plane must own shared files with the host UID/GID to which
+# the rootless daemon maps the tenant's UID/GID 1000. Tenant images stay unchanged.
+USER root
+ARG QAAP_CONTROL_UID=100999
+ARG QAAP_CONTROL_GID=100999
+RUN groupmod --gid ${QAAP_CONTROL_GID} theia \
+    && usermod --uid ${QAAP_CONTROL_UID} --gid ${QAAP_CONTROL_GID} theia \
+    && chown -R ${QAAP_CONTROL_UID}:${QAAP_CONTROL_GID} /home/theia
+
+# Login is served by the control plane before a tenant backend is selected.
+# Keep the early gate (including its hidden-button CSS) aligned with this checkout.
+COPY packages/qaap-product/resources/qaap-login-gate.js /app/examples/browser/lib/frontend/qaap-login-gate.js
+RUN gzip --keep --force /app/examples/browser/lib/frontend/qaap-login-gate.js
+USER theia
