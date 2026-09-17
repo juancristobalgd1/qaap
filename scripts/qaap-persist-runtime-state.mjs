@@ -27,10 +27,6 @@ export function migrationPlan(config, container) {
     }
     return destinations.map(destination => {
         const desired = service.volumes.find(volume => volume.target === destination);
-        if (desired?.type !== 'volume' || !config.volumes[desired.source]?.name) {
-            throw new Error(`Expected a named persistent volume for ${destination}`);
-        }
-        const volume = config.volumes[desired.source].name;
         const mounted = container?.Mounts?.find(mount => mount.Destination === destination);
         if (container?.Mounts?.some(mount => mount.Destination.startsWith(destination + '/')) ||
             service.volumes.some(mount => mount.target?.startsWith(destination + '/'))) {
@@ -39,6 +35,19 @@ export function migrationPlan(config, container) {
         if (container?.Mounts?.some(mount => destination.startsWith(mount.Destination.replace(/\/$/, '') + '/'))) {
             throw new Error(`An ancestor mount contains ${destination}; snapshot migration cannot copy it safely`);
         }
+        if (desired?.type === 'bind') {
+            if (container && !mounted) {
+                throw new Error(`Existing container is missing the required bind mount at ${destination}; a reviewed migration is required`);
+            }
+            if (mounted && (mounted.Type !== 'bind' || mounted.Source !== desired.source || !mounted.RW)) {
+                throw new Error(`Unexpected existing bind mount at ${destination}; refusing to replace it`);
+            }
+            return { destination, source: desired.source, key: desired.source, required: false };
+        }
+        if (desired?.type !== 'volume' || !config.volumes[desired.source]?.name) {
+            throw new Error(`Expected a named persistent volume for ${destination}`);
+        }
+        const volume = config.volumes[desired.source].name;
         if (mounted && (mounted.Type !== 'volume' || mounted.Name !== volume || !mounted.RW)) {
             throw new Error(`Unexpected existing mount at ${destination}; refusing to replace it`);
         }

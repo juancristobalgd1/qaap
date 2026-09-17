@@ -61,6 +61,22 @@ test('accepts externally resolved Compose state for containerized Node runners',
     assert.equal(result.ready, true);
     assert.ok(!f.calls.some(args => args[0] === 'compose'));
 });
+test('preserves legacy bind-mounted runtime roots when Compose keeps the same sources', () => {
+    const f = fixture({ mounted: true });
+    const sources = destinations.map((_, index) => `/opt/qaap-runtime/${['worktrees', 'parallel', 'tenant-homes'][index]}`);
+    f.config.services.theia.volumes.forEach((volume, index) => {
+        volume.type = 'bind';
+        volume.source = sources[index];
+    });
+    f.container.Mounts.forEach((mount, index) => {
+        mount.Type = 'bind';
+        mount.Name = '';
+        mount.Source = sources[index];
+    });
+    const result = migrate({ ...f, mode: 'check', composeConfigJson: JSON.stringify(f.config), containerId: id });
+    assert.equal(result.ready, true);
+    assert.ok(result.plan.every(item => item.required === false));
+});
 test('copies from a stopped snapshot, preserves paths and verifies prepared volumes', () => {
     const f = fixture();
     const result = migrate({ ...f, mode: 'apply' });

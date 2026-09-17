@@ -201,16 +201,18 @@ services:
     depends_on:
       - searxng
     volumes:
-      - theia-workspace:/workspace
+      - ${QAAP_WORKSPACE_SOURCE:-theia-workspace}:/workspace
       # Persist GitHub OAuth, agent-task index, qaap-task helper token.
-      - qaap-auth-data:/home/theia/.qaap
+      - ${QAAP_AUTH_DATA_SOURCE:-qaap-auth-data}:/home/theia/.qaap
       # Persist Settings → AI keys and user preferences across rebuilds.
-      - qaap-theia-user:/home/theia/.theia
+      - ${QAAP_THEIA_USER_SOURCE:-qaap-theia-user}:/home/theia/.theia
       # Preserve absolute worktree paths used by Git and persisted conversations.
-      # Existing deployments MUST run qaap-persist-runtime-state.mjs --apply first.
-      - theia-worktrees:/tmp/qaap-worktrees
-      - theia-parallel:/tmp/qaap-parallel
-      - qaap-tenant-homes:/home/qaap-tenants
+      # Existing deployments with state in the writable layer MUST run
+      # qaap-persist-runtime-state.mjs --apply first. The updater preserves the legacy
+      # /opt/qaap-runtime bind layout automatically.
+      - ${QAAP_WORKTREES_SOURCE:-theia-worktrees}:/tmp/qaap-worktrees
+      - ${QAAP_PARALLEL_SOURCE:-theia-parallel}:/tmp/qaap-parallel
+      - ${QAAP_TENANT_HOMES_SOURCE:-qaap-tenant-homes}:/home/qaap-tenants
       # Rootless default: /run/user/1000/docker.sock:/run/user/1000/docker.sock. Never make a
       # rootful host socket the compose fallback; hosted admission rejects it, but the mount itself
       # would still expose a dangerous control-plane capability to a compromised backend.

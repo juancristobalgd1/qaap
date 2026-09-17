@@ -105,7 +105,46 @@ refresh_caddy() {
     docker compose up -d --no-deps --force-recreate caddy
 }
 
+preserve_legacy_bind_mounts() {
+    local container_id="$1"
+    local legacy_root='/opt/qaap-runtime'
+    local workspace_mount auth_mount theia_user_mount worktrees_mount parallel_mount tenant_homes_mount
+    workspace_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    auth_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/home/theia/.qaap"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    theia_user_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/home/theia/.theia"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    worktrees_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/tmp/qaap-worktrees"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    parallel_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/tmp/qaap-parallel"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+    tenant_homes_mount="$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/home/qaap-tenants"}}{{.Type}}|{{.Source}}|{{.RW}}{{end}}{{end}}')"
+
+    if [[ "$workspace_mount" == "bind|$legacy_root/workspace|true" &&
+        "$auth_mount" == "bind|$legacy_root/auth|true" &&
+        "$theia_user_mount" == "bind|$legacy_root/theia-user|true" &&
+        "$worktrees_mount" == "bind|$legacy_root/worktrees|true" &&
+        "$parallel_mount" == "bind|$legacy_root/parallel|true" &&
+        "$tenant_homes_mount" == "bind|$legacy_root/tenant-homes|true" ]]; then
+        # These directories are already persistent. Keep the old sources so an update does not
+        # replace populated auth, settings, workspace or task state with empty named volumes.
+        export QAAP_WORKSPACE_SOURCE="$legacy_root/workspace"
+        export QAAP_AUTH_DATA_SOURCE="$legacy_root/auth"
+        export QAAP_THEIA_USER_SOURCE="$legacy_root/theia-user"
+        export QAAP_WORKTREES_SOURCE="$legacy_root/worktrees"
+        export QAAP_PARALLEL_SOURCE="$legacy_root/parallel"
+        export QAAP_TENANT_HOMES_SOURCE="$legacy_root/tenant-homes"
+        echo "[qaap-vps-update] preserving legacy bind-mounted runtime at $legacy_root"
+    fi
+}
+
 run_runtime_state_check() {
+    local container_ids
+    mapfile -t container_ids < <(docker compose ps -aq theia | tr -d '\r' | sed '/^$/d')
+    if (( ${#container_ids[@]} > 1 )); then
+        echo '[qaap-vps-update] expected exactly one existing Theia container for runtime-state migration' >&2
+        exit 1
+    fi
+    if (( ${#container_ids[@]} == 1 )); then
+        preserve_legacy_bind_mounts "${container_ids[0]}"
+    fi
+
     if command -v node >/dev/null 2>&1; then
         node scripts/qaap-persist-runtime-state.mjs --check
         return
@@ -114,19 +153,14 @@ run_runtime_state_check() {
     # Node.js is a runtime dependency of the image, not of the VPS host. Run the exact migration
     # check from the current checkout in a temporary Theia container when the host has no Node.
     # This also works before the new image is built because the scripts directory is bind-mounted.
-    local container_ids
-    mapfile -t container_ids < <(docker compose ps -aq theia | tr -d '\r' | sed '/^$/d')
     if (( ${#container_ids[@]} == 0 )); then
         echo '[qaap-vps-update] host Node.js not found; no existing Theia container, skipping runtime-state migration check'
         return
     fi
-    if (( ${#container_ids[@]} != 1 )); then
-        echo '[qaap-vps-update] expected exactly one existing Theia container for runtime-state migration' >&2
-        exit 1
-    fi
 
     local container_id compose_config docker_host docker_socket docker_socket_target docker_socket_owner=''
     container_id="${container_ids[0]}"
+    preserve_legacy_bind_mounts "$container_id"
     compose_config="$(docker compose config --format json)"
     docker_host="${DOCKER_HOST:-}"
     if [[ -z "$docker_host" ]]; then

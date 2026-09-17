@@ -77,6 +77,11 @@ cd /opt/qaap
 ./scripts/qaap-vps-update.sh
 ```
 
+Existing installations created with the legacy `/opt/qaap-runtime` bind mounts are detected and
+kept automatically, including workspace, authentication, settings and task state. Deployments
+that kept state only in the old container writable layer must still follow the runtime-state
+migration procedure before recreating the container.
+
 Deploy a feature branch (e.g. before merge to `master`):
 
 ```bash
