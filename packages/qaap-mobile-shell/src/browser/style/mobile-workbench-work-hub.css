@@ -5620,6 +5620,29 @@ body.qaap-theme-light .qaap-working-agents-popover-row-status.theia-mod-shimmer 
   border-color: color-mix(in srgb, var(--theia-foreground) 18%, transparent);
 }
 
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting {
+  border-color: color-mix(in srgb, var(--theia-focusBorder) 65%, transparent);
+  background: color-mix(in srgb, var(--theia-focusBorder) 20%, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  cursor: wait;
+  pointer-events: none;
+}
+
+.theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .codicon-loading {
+  animation: qaap-sticky-composer-preview-spin 1s linear infinite;
+}
+
+@keyframes qaap-sticky-composer-preview-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-sticky-composer-next-action.theia-mod-preview-starting .codicon-loading {
+    animation: none;
+  }
+}
+
 /* Split-button group around the Changes pill: pill (opens review) + chevron
    menu (Accept / Discard). The pill keeps its look; the group carries the
    shared border so the chevron reads as part of one control. */

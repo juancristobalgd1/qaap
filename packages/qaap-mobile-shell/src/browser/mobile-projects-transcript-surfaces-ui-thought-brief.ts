@@ -322,6 +322,7 @@ export function beginTranscriptDevPreviewRequestExtracted(ctx: any, project: Mob
             ctx.host.transcriptOpenProject = cleared;
         }
         ctx.syncHeaderPreviewRunButton(cleared, summary);
+        ctx.host.transcriptStickyComposerUi?.refreshComposerActivityStack?.();
 }
 
 export function resolveTranscriptPreviewUrlExtracted(ctx: any, project: MobileProjectEntry,

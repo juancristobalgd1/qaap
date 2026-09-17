@@ -393,6 +393,8 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, projec
         onRunApp: () => {
             void ctx.launchComposerDevPreview(project, summary);
         },
+        previewStarting: !!ctx.host.transcriptPreviewRequestRunning
+            || !!ctx.host.transcriptPreviewRequestPending,
         onOpenPreview: verifiedPreviewUrl
             ? () => { void ctx.openComposerPreview(project.id); }
             : undefined,
@@ -413,6 +415,7 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
         // Never fall through to an LLM prompt from Run app.
         await ctx.host.requestTranscriptPreview(project, summary, {
             revealPreviewTab: true,
+            deferPreviewTabUntilReady: true,
             allowAgentFallback: false,
         });
         return;

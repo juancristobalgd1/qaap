@@ -365,6 +365,23 @@ describe('qaap-sticky-composer-activity-stack', () => {
             expect(actions).to.deep.equal(['run']);
         });
 
+        it('shows Run app as a busy colored pill while preview startup is pending', () => {
+            const host = renderStickyComposerChangesPill({
+                diffStats: { added: 10, removed: 1 },
+                onReview: () => undefined,
+                onRunApp: () => undefined,
+                previewStarting: true,
+            });
+            document.body.append(host!);
+
+            const button = host!.querySelector<HTMLButtonElement>('.theia-mobile-sticky-composer-next-action');
+            expect(button?.textContent).to.equal('Starting preview…');
+            expect(button?.classList.contains('theia-mod-preview-starting')).to.equal(true);
+            expect(button?.disabled).to.equal(true);
+            expect(button?.getAttribute('aria-busy')).to.equal('true');
+            expect(button?.querySelector('.codicon-loading')).to.not.equal(null);
+        });
+
         it('hides preview and run actions when the composer has no file activity', () => {
             const host = renderStickyComposerChangesPill({
                 onRunApp: () => undefined,

@@ -280,7 +280,11 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     requestTranscriptPreview?(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
-        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean },
+        options?: {
+            readonly revealPreviewTab?: boolean;
+            readonly deferPreviewTabUntilReady?: boolean;
+            readonly allowAgentFallback?: boolean;
+        },
     ): Promise<void>;
 }
 

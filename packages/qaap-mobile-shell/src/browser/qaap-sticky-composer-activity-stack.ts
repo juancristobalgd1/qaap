@@ -112,6 +112,8 @@ export interface StickyComposerActivityStackOptions {
     changedFilesBulkBusy?: boolean;
     onReview?: () => void;
     onRunApp?: () => void;
+    /** True while Run app is waiting for the managed dev server to become reachable. */
+    previewStarting?: boolean;
     onOpenPreview?: () => void;
     /** When set, a commit split-button (primary action + options menu) renders beside the Changes pill. */
     onCommitAction?: (action: QaapGitCommitWorkflowAction) => void;
@@ -267,6 +269,7 @@ export function buildStickyComposerChangesPillFingerprint(options: StickyCompose
         options.commitBusy ? 1 : 0,
         options.onCommitAction ? 1 : 0,
         options.onRunApp ? 1 : 0,
+        options.previewStarting ? 1 : 0,
         options.onOpenPreview ? 1 : 0,
         options.onKeepAll ? 1 : 0,
         options.onUndoAll ? 1 : 0,
@@ -1040,10 +1043,14 @@ function patchChangesNextActions(group: HTMLElement, options: StickyComposerActi
             onClick: options.onOpenPreview,
         }));
     } else if (options.onRunApp) {
+        const label = options.previewStarting
+            ? nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…')
+            : nls.localize('qaap/agentsHub/quickAction/runApp', 'Run app');
         group.append(createChangesNextActionButton({
-            className: 'theia-mod-run',
-            label: nls.localize('qaap/agentsHub/quickAction/runApp', 'Run app'),
-            iconClass: 'codicon-rocket',
+            className: options.previewStarting ? 'theia-mod-run theia-mod-preview-starting' : 'theia-mod-run',
+            label,
+            iconClass: options.previewStarting ? 'codicon-loading' : 'codicon-rocket',
+            busy: options.previewStarting,
             onClick: options.onRunApp,
         }));
     }
@@ -1053,6 +1060,7 @@ function createChangesNextActionButton(options: {
     readonly className: string;
     readonly label: string;
     readonly iconClass: string;
+    readonly busy?: boolean;
     readonly onClick: () => void;
 }): HTMLButtonElement {
     const btn = document.createElement('button');
@@ -1060,6 +1068,10 @@ function createChangesNextActionButton(options: {
     btn.className = `theia-mobile-sticky-composer-next-action ${options.className}`;
     btn.title = options.label;
     btn.setAttribute('aria-label', options.label);
+    if (options.busy) {
+        btn.disabled = true;
+        btn.setAttribute('aria-busy', 'true');
+    }
     btn.append(createNextActionIcon(options.iconClass), document.createTextNode(options.label));
     btn.addEventListener('click', ev => {
         ev.preventDefault();

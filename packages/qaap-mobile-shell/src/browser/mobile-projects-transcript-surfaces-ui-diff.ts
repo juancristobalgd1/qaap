@@ -86,17 +86,27 @@ import {
 
 export async function requestTranscriptPreviewExtracted(ctx: any, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
-        options?: { readonly revealPreviewTab?: boolean; readonly allowAgentFallback?: boolean; },): Promise<void> {
+        options?: {
+            readonly revealPreviewTab?: boolean;
+            readonly deferPreviewTabUntilReady?: boolean;
+            readonly allowAgentFallback?: boolean;
+        },): Promise<void> {
         if (ctx.host.transcriptPreviewRequestRunning) {
             return;
         }
         ctx.host.transcriptPreviewSuppressedByUser = false;
         const launchGeneration = ++ctx.previewLaunchGeneration;
         const allowAgentFallback = options?.allowAgentFallback !== false;
-        if (options?.revealPreviewTab) {
+        const revealPreviewTab = (): void => {
             ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
             ctx.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab?.('preview');
             ctx.host.executionSurfaceTabsUi.selectTranscriptTab?.('preview', project, summary);
+        };
+        const refreshPreviewComposer = (): void => {
+            ctx.host.transcriptStickyComposerUi?.refreshComposerActivityStack?.();
+        };
+        if (options?.revealPreviewTab && !options.deferPreviewTabUntilReady) {
+            revealPreviewTab();
         }
         MobileSnackbar.show(
             nls.localize('qaap/mobileProjects/previewStarting', 'Starting preview…'),
@@ -138,6 +148,7 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
                     ctx.host.transcriptPreviewRequestRunning = false;
                     ctx.host.transcriptPreviewRequestPending = false;
                     ctx.syncHeaderPreviewRunButton(project, summary);
+                    refreshPreviewComposer();
                     MobileSnackbar.dismiss();
                     return;
                 }
@@ -155,7 +166,11 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
                 return;
             }
             if (readyUrl) {
+                if (options?.revealPreviewTab && options.deferPreviewTabUntilReady) {
+                    revealPreviewTab();
+                }
                 ctx.adoptReadyTranscriptPreview(project, summary, readyUrl);
+                refreshPreviewComposer();
                 return;
             }
             if (detected.descriptor) {
@@ -172,6 +187,7 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
                 ctx.host.transcriptPreviewRequestRunning = false;
                 ctx.host.transcriptPreviewRequestPending = false;
                 ctx.syncHeaderPreviewRunButton(project, summary);
+                refreshPreviewComposer();
                 return;
             }
             if (!allowAgentFallback) {
@@ -185,12 +201,14 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
                 ctx.host.transcriptPreviewRequestRunning = false;
                 ctx.host.transcriptPreviewRequestPending = false;
                 ctx.syncHeaderPreviewRunButton(project, summary);
+                refreshPreviewComposer();
                 return;
             }
         } else if (!allowAgentFallback) {
             ctx.host.transcriptPreviewRequestRunning = false;
             ctx.host.transcriptPreviewRequestPending = false;
             ctx.syncHeaderPreviewRunButton(project, summary);
+            refreshPreviewComposer();
             return;
         }
 
@@ -200,15 +218,20 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
         );
         ctx.host.transcriptPreviewRequestRunning = true;
         ctx.host.transcriptPreviewRequestPending = true;
-        // Pin Preview before submit — create/open conversation paths force Messages and would
-        // otherwise tear the header play control out mid-click.
-        ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
+        refreshPreviewComposer();
+        // Header Play keeps its historical immediate reveal. The composer Run app pill can defer
+        // the surface change so the current pill visibly processes until the server is reachable.
+        if (!options?.deferPreviewTabUntilReady) {
+            ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
+        }
         ctx.updateTranscriptPreviewRunButtonState();
         if (summary.cwd) {
             ctx.host.setAutoVerifyEnabled(summary.cwd, true);
             ctx.host.refreshTranscriptChecksViews(project, summary);
         }
-        ctx.renderPreviewTab(project, summary);
+        if (!options?.deferPreviewTabUntilReady) {
+            ctx.renderPreviewTab(project, summary);
+        }
         ctx.syncHeaderPreviewRunButton(project, summary);
         try {
             await ctx.host.submitTranscriptViaBackendConversation(project, summary, message, {
@@ -236,17 +259,16 @@ export async function requestTranscriptPreviewExtracted(ctx: any, project: Mobil
         } finally {
             if (launchGeneration === ctx.previewLaunchGeneration && !ctx.host.transcriptPreviewSuppressedByUser) {
                 ctx.host.transcriptPreviewRequestRunning = false;
-                ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'preview');
-                ctx.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('preview');
-                ctx.host.root.classList.toggle('theia-mod-project-surface-chat', false);
-                ctx.host.root.classList.toggle('theia-mod-project-surface-tools', true);
-                if (ctx.matchesActivePreviewSummary(summary) && ctx.transcriptPreviewProjectId === project.id) {
+                if (ctx.host.executionSurfaceTabsUi.executionSurfaceTabForProject(project) === 'preview'
+                    && ctx.matchesActivePreviewSummary(summary)
+                    && ctx.transcriptPreviewProjectId === project.id) {
                     ctx.renderPreviewTab(project, summary);
                 }
                 ctx.syncHeaderPreviewRunButton(project, summary);
             } else {
                 ctx.host.transcriptPreviewRequestRunning = false;
             }
+            refreshPreviewComposer();
         }
 }
 
