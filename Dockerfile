@@ -119,7 +119,7 @@ COPY packages/qaap-product/resources/qaap-system-skills /opt/qaap/system-skills
 RUN groupadd --gid 1001 qaap-agent \
     && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/qaap-agent --shell /usr/sbin/nologin qaap-agent \
     && chmod 700 /root \
-    && chmod -R a+rX /opt/qaiq /opt/grok \
+    && chmod a+rX /opt/qaiq /opt/grok \
     && mkdir -p /workspace \
     && chown -R 1001:1001 /workspace /home/qaap-agent \
     # uid-per-user mode (QAAP_AGENT_UID_PER_USER=1): each tenant gets a private agent HOME under here.
