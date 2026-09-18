@@ -32,6 +32,9 @@ services:
     ports:
       # Not world-reachable. Public traffic should hit Caddy on :443.
       - "127.0.0.1:${THEIA_PORT:-4873}:${THEIA_PORT:-4873}"
+    extra_hosts:
+      # Lets the control plane reach tenant backends published by the rootless host daemon.
+      - "host.docker.internal:host-gateway"
     environment:
       # Theia backend defaults to production. For a private Docker Desktop smoke test, set
       # NODE_ENV=development and QAAP_CLOUD_MODE=local; hosted production requires a rootless
@@ -192,6 +195,13 @@ services:
       # Hosted deployments must use a rootless Docker socket. The secure default is the usual
       # rootless-per-user socket; local Docker Desktop users must override this explicitly in .env.
       DOCKER_HOST: ${DOCKER_HOST:-unix:///run/user/1000/docker.sock}
+      # When the control plane runs in a container, translate its mounted paths to the paths
+      # visible to the rootless Docker daemon on the VPS host.
+      QAAP_DOCKER_REMOTE_REPOS_ROOT: ${QAAP_DOCKER_REMOTE_REPOS_ROOT:-}
+      QAAP_DOCKER_REMOTE_WORKTREES_ROOT: ${QAAP_DOCKER_REMOTE_WORKTREES_ROOT:-}
+      QAAP_DOCKER_REMOTE_PARALLEL_ROOT: ${QAAP_DOCKER_REMOTE_PARALLEL_ROOT:-}
+      QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT: ${QAAP_DOCKER_REMOTE_TENANT_CONFIG_ROOT:-}
+      QAAP_DOCKER_NODES: ${QAAP_DOCKER_NODES:-}
       # The worker must use the same image so qaiq/codex/claude binaries and the non-root uid exist
       # inside the tenant container. In production set this to the immutable deployed image tag.
       QAAP_THEIA_IMAGE: ${QAAP_THEIA_IMAGE:-qaap-theia:local}
