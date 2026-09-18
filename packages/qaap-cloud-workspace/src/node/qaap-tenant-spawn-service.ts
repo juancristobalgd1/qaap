@@ -673,11 +673,13 @@ export class QaapTenantSpawnService {
      */
     tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
         cwd = this.canonicalizeCwd(cwd);
-        if (this.isContainerIsolationEnabled()) {
+        if (this.isContainerIsolationEnabled() || this.isTenantBackendMode()) {
             // The host-side per-uid HOME is not mounted into a tenant worker. Passing it through
             // docker exec would make the child point at a nonexistent/shared host path and could
             // accidentally bypass the worker's private HOME. The orchestrator seeds this HOME
-            // when it creates the container; exec must keep using the same worker-local value.
+            // when it creates the container; exec must keep using the same worker-local value. A
+            // backend running inside that worker uses the same rule even though its own
+            // QAAP_CLOUD_MODE is local and it therefore does not enable host-side Docker routing.
             const home = process.env.QAAP_TENANT_CONTAINER_HOME?.trim() || '/tmp/qaap-home';
             return { HOME: home, USER: 'qaap-tenant', LOGNAME: 'qaap-tenant' };
         }

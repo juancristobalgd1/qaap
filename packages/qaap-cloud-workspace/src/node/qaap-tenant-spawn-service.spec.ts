@@ -363,6 +363,7 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
 
     const original = process.env.QAAP_AGENT_UID_PER_USER;
     const originalContainerHome = process.env.QAAP_TENANT_CONTAINER_HOME;
+    const originalTenantBackendMode = process.env.QAAP_TENANT_BACKEND_MODE;
     afterEach(() => {
         if (original === undefined) {
             delete process.env.QAAP_AGENT_UID_PER_USER;
@@ -373,6 +374,11 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
             delete process.env.QAAP_TENANT_CONTAINER_HOME;
         } else {
             process.env.QAAP_TENANT_CONTAINER_HOME = originalContainerHome;
+        }
+        if (originalTenantBackendMode === undefined) {
+            delete process.env.QAAP_TENANT_BACKEND_MODE;
+        } else {
+            process.env.QAAP_TENANT_BACKEND_MODE = originalTenantBackendMode;
         }
     });
 
@@ -402,6 +408,15 @@ describe('QaapTenantSpawnService.resolveProcessEnv', () => {
         svc.identity = { uid: 20005, gid: 20005 };
         const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin', HOME: '/root' });
         expect(env.HOME).to.equal('/tmp/alice-home');
+        expect(env.USER).to.equal('qaap-tenant');
+        expect(env.LOGNAME).to.equal('qaap-tenant');
+    });
+
+    it('keeps a backend running inside a tenant worker on the worker-local HOME', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        const svc = new TestTenantSpawnService();
+        const env = svc.resolveProcessEnv(tenantCwd, { PATH: '/usr/bin', HOME: '/home/theia' });
+        expect(env.HOME).to.equal('/tmp/qaap-home');
         expect(env.USER).to.equal('qaap-tenant');
         expect(env.LOGNAME).to.equal('qaap-tenant');
     });
