@@ -9,9 +9,11 @@
  */
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import {
+    QAAP_HARNESS_DEFINITIONS,
     isUiHiddenVpsAgent,
     resolveQaapBuiltinAgentMentionId,
 } from './qaap-builtin-agents';
+import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
 import {
     readStoredAgentModel,
     resolveStoredAgentModelForSubmit,
@@ -666,6 +668,43 @@ export async function cancelAgentTask(id: string): Promise<void> {
     if (!response.ok) {
         throw new Error(response.statusText);
     }
+}
+
+/**
+ * Catalog for the Work Hub picker. Unlike the submit/reconciliation list, this keeps known
+ * harnesses that are not detected on the server so the UI can explain how to connect or
+ * configure them instead of silently hiding them.
+ */
+export function listQaapComposerPickerAgents(
+    agents: readonly QaapAgentTaskAgentOption[],
+    disabledIds: readonly string[] = [],
+): QaapAgentTaskAgentOption[] {
+    const disabled = readDisabledHarnessIds(disabledIds);
+    const merged = new Map<string, QaapAgentTaskAgentOption>();
+    for (const agent of filterUiSelectableVpsAgents(agents)) {
+        const id = agent.id.trim();
+        if (!id || !isQaapHarnessEnabled(id, disabled)) {
+            continue;
+        }
+        const key = id.toLowerCase();
+        const existing = merged.get(key);
+        if (!existing || agent.available && !existing.available) {
+            merged.set(key, { ...agent, id });
+        }
+    }
+    for (const definition of QAAP_HARNESS_DEFINITIONS) {
+        if (!isQaapHarnessEnabled(definition.id, disabled) || isUiHiddenVpsAgent(definition.id)) {
+            continue;
+        }
+        if (!merged.has(definition.id)) {
+            merged.set(definition.id, {
+                id: definition.id,
+                label: definition.label,
+                available: false,
+            });
+        }
+    }
+    return Array.from(merged.values()).sort(compareComposerAgentPickerOrder);
 }
 
 /** Move a queued task up or down in its owner's durable queue. */

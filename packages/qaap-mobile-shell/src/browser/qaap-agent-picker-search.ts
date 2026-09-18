@@ -11,6 +11,7 @@ export interface QaapAgentPickerSearchEntry {
     readonly id: string;
     readonly label: string;
     readonly models: readonly QaapQaiqModelOption[];
+    readonly available?: boolean;
 }
 
 export interface QaapAgentPickerModelGroup {

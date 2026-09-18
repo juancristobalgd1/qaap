@@ -8365,6 +8365,58 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   opacity: 0.85;
 }
 
+.theia-qaap-agent-sheet-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  margin-bottom: 2px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theia-foreground) 3%, transparent);
+}
+
+.theia-qaap-agent-sheet-unavailable-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  opacity: 0.42;
+  filter: grayscale(0.8);
+}
+
+.theia-qaap-agent-sheet-unavailable-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.theia-qaap-agent-sheet-unavailable-status {
+  overflow: hidden;
+  color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.58));
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-qaap-agent-sheet-connect {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 60%, transparent);
+  border-radius: 6px;
+  padding: 4px 9px;
+  background: transparent;
+  color: var(--q-accent, var(--qaap-accent, #e58e40));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.theia-qaap-agent-sheet-connect:hover,
+.theia-qaap-agent-sheet-connect:focus-visible {
+  background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 14%, transparent);
+}
+
 .theia-mobile-sticky-composer-sheet-loading,
 .theia-qaap-agent-sheet-empty-models,
 .theia-qaap-agent-sheet-default-hint {

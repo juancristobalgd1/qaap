@@ -1684,8 +1684,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         retryOpenFailedConversationTaskExtracted(this);
     }
 
-    openAgentSignInTerminal(agentId?: string): void {
-        openAgentSignInTerminalExtracted(this, agentId);
+    openAgentSignInTerminal(agentId?: string, project?: MobileProjectEntry): void {
+        openAgentSignInTerminalExtracted(this, agentId, project);
     }
 
     protected notifyAgentUsesSettingsApiKey(agentId: string): void {

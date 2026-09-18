@@ -22,6 +22,7 @@ import {
     filterQaapComposerAgents,
     mergeAgentTaskAgentOptions,
     mergeComposerAgentPickerOptions,
+    listQaapComposerPickerAgents,
     filterUiSelectableVpsAgents,
     migrateQaapProductAgentId,
     QAAP_PRIMARY_AGENT_ID,
@@ -130,6 +131,22 @@ describe('qaap-agent-task-client', () => {
         ];
         const ids = mergeComposerAgentPickerOptions(agents).map(agent => agent.id);
         expect(ids).to.deep.equal(['qaiq']);
+    });
+
+    it('listQaapComposerPickerAgents keeps known unavailable harnesses for connection actions', () => {
+        const agents = listQaapComposerPickerAgents([
+            { id: 'qaiq', label: 'QAIQ', available: true },
+        ]);
+        const codex = agents.find(agent => agent.id === 'codex');
+        expect(codex).to.deep.include({ id: 'codex', label: 'Codex', available: false });
+        expect(agents.find(agent => agent.id === 'qaiq')?.available).to.equal(true);
+    });
+
+    it('listQaapComposerPickerAgents honors harnesses disabled in AI Configuration', () => {
+        const agents = listQaapComposerPickerAgents([], ['codex', 'qaiq']);
+        expect(agents.some(agent => agent.id === 'codex')).to.equal(false);
+        expect(agents.some(agent => agent.id === 'qaiq')).to.equal(false);
+        expect(agents.some(agent => agent.id === 'claude')).to.equal(true);
     });
 
     it('reconcileSelectedAgent prefers QAIQ as the composer default', () => {

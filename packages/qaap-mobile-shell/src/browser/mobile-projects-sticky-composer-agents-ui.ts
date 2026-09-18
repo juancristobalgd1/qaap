@@ -17,6 +17,7 @@ import {
     readStoredAgent,
     readStoredAgentModel,
     reconcileStickyComposerAgent,
+    listQaapComposerPickerAgents,
     SHELL_AGENT_ID,
     THEIA_CODER_AGENT_ID,
     writeStoredAgent,
@@ -25,6 +26,7 @@ import {
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
+import { QAAP_DISABLED_HARNESSES_PREF, readDisabledHarnessIds } from '../common/qaap-harness-preferences';
 import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
 import { localizeHostedInstallCodingAgentLabel, readQaapHostedRuntime } from '../common/qaap-hosted-agent-auth-policy';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -42,6 +44,7 @@ export interface MobileProjectsStickyComposerAgentsHost {
     projectsService: MobileProjectsService;
     chatAgentService?: ChatAgentService;
     activeTasks?: MobileProjectsActiveTasks;
+    readPreference?: (key: string) => unknown;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot>;
     resolveConversationAgentLabel(agentId: string | undefined): string;
@@ -237,20 +240,30 @@ export class MobileProjectsStickyComposerAgentsUi {
     ): QaapAgentTaskAgentOption[] {
         return filterQaapComposerAgents(agents);
     }
+    getComposerAgentPickerAgents(
+        agents: readonly QaapAgentTaskAgentOption[],
+    ): QaapAgentTaskAgentOption[] {
+        const disabledIds = readDisabledHarnessIds(
+            this.host.readPreference?.(QAAP_DISABLED_HARNESSES_PREF),
+        );
+        return listQaapComposerPickerAgents(agents, disabledIds);
+    }
     async refreshStickyComposerAgents(project: MobileProjectEntry): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot();
-            let filteredAgents = this.filterSelectableComposerAgents(snapshot.agents);
+            let pickerAgents = this.getComposerAgentPickerAgents(snapshot.agents);
+            let filteredAgents = this.filterSelectableComposerAgents(pickerAgents);
             if (filteredAgents.length === 0) {
                 await this.waitForSelectableActiveTaskAgents(3000);
                 const liveAgents = this.filterSelectableComposerAgents(this.host.activeTasks?.getAgents() ?? []);
                 if (liveAgents.length > 0) {
                     filteredAgents = liveAgents;
+                    pickerAgents = this.getComposerAgentPickerAgents([...pickerAgents, ...liveAgents]);
                 }
             }
-            this.host.stickyComposerBackendAgents = filteredAgents;
+            this.host.stickyComposerBackendAgents = pickerAgents;
             this.host.stickyComposerQaiqModels = snapshot.qaiqModels;
             const resolved = this.reconcileStickyComposerPinnedAgent(
                 this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
@@ -285,7 +298,7 @@ export class MobileProjectsStickyComposerAgentsUi {
             return true;
         } catch {
             await this.waitForSelectableActiveTaskAgents(1500);
-            this.host.stickyComposerBackendAgents = this.filterSelectableComposerAgents(this.host.activeTasks?.getAgents() ?? []);
+            this.host.stickyComposerBackendAgents = this.getComposerAgentPickerAgents(this.host.activeTasks?.getAgents() ?? []);
             this.host.stickyComposerQaiqModels = [];
             return this.host.stickyComposerBackendAgents.length > 0;
         }
@@ -309,7 +322,7 @@ export class MobileProjectsStickyComposerAgentsUi {
                 throw new Error('Agent catalog unavailable');
             }
         }
-        return this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents);
+        return this.getComposerAgentPickerAgents(this.host.stickyComposerBackendAgents);
     }
 
     async waitForSelectableActiveTaskAgents(timeoutMs: number): Promise<void> {

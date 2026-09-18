@@ -133,8 +133,34 @@ export function createProactiveLoginRowExtracted(ctx: any, agentLabel: string, o
         labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
         labelEl.textContent = nls.localize(
             'qaap/mobileProjects/stickyComposerSignInWithAgent',
-            'Sign in with {0}',
+            'Connect {0}',
             agentLabel,
+        );
+        content.append(labelEl);
+        btn.append(content);
+        btn.addEventListener('click', event => {
+            event.stopPropagation();
+            event.preventDefault();
+            onSelect();
+        });
+        return btn;
+}
+
+export function createProactiveByokRowExtracted(ctx: any, onSelect: () => void): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-agent-sheet-login-option';
+        const content = document.createElement('span');
+        content.className = 'theia-mobile-sticky-composer-sheet-option-content';
+        const icon = document.createElement('span');
+        icon.className = 'codicon codicon-key theia-qaap-agent-sheet-login-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        content.append(icon);
+        const labelEl = document.createElement('span');
+        labelEl.className = 'theia-mobile-sticky-composer-sheet-option-label';
+        labelEl.textContent = nls.localize(
+            'qaap/mobileProjects/stickyComposerAddByok',
+            'Add BYOK in AI Configuration',
         );
         content.append(labelEl);
         btn.append(content);

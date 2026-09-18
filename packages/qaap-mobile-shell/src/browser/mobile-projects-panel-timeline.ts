@@ -576,10 +576,13 @@ export function retryOpenFailedConversationTaskExtracted(ctx: any): void {
     void ctx.onRetryConversation(project, summary);
 }
 
-export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string): void {
+export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string, requestedProject?: MobileProjectEntry): void {
     const state = ctx.transcriptController.state;
-    const project = state.transcriptOpenProject ?? state.transcriptComposerProject;
-    const summary = state.transcriptOpenSummary ?? state.transcriptComposerSummary;
+    const stateProject = state.transcriptOpenProject ?? state.transcriptComposerProject;
+    const project = requestedProject ?? stateProject;
+    let summary = requestedProject && stateProject?.id !== requestedProject.id
+        ? undefined
+        : state.transcriptOpenSummary ?? state.transcriptComposerSummary;
     const resolvedAgentId = agentId?.trim()
         || summary?.agentId
         || state.transcriptLastConv?.agentId;
@@ -600,8 +603,30 @@ export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string): vo
         ctx.notifyAgentUsesSettingsApiKey(resolvedAgentId);
         return;
     }
-    if (!project || !summary) {
+    if (!project) {
         return;
+    }
+    if (!summary) {
+        const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
+        if (!cwd) {
+            return;
+        }
+        const now = Date.now();
+        summary = {
+            id: `qaap-agent-login:${project.id}:${resolvedAgentId}`,
+            source: 'qaap-agent',
+            cwd,
+            agentId: resolvedAgentId,
+            title: nls.localize(
+                'qaap/agentLogin/connectTitle',
+                'Connect {0}',
+                resolveAgentDisplayLabel(resolvedAgentId),
+            ),
+            status: 'idle',
+            createdAt: now,
+            updatedAt: now,
+            messageCount: 0,
+        } satisfies QaapAgentConversationSummaryDTO;
     }
     void ctx.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(
         project,

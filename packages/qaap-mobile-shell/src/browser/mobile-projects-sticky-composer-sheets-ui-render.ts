@@ -300,6 +300,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: any, project: MobileP
                 agents,
                 selectedAgentId: ctx.host.stickyComposerPinnedAgentId,
                 includeCoder: true,
+                project,
                 onSelectAgent: (agentId, model) => {
                     ctx.host.stickyComposerPinnedAgentId = agentId;
                     void (async (): Promise<void> => {
@@ -321,9 +322,9 @@ export function openStickyComposerAgentSheetExtracted(ctx: any, project: MobileP
                     })();
                 },
                 onProactiveLogin: ctx.host.openAgentSignInTerminal
-                    ? agentId => {
+                    ? (agentId, pickerProject) => {
                         ctx.closeAllComposerSheets();
-                        void ctx.host.openAgentSignInTerminal?.(agentId);
+                        void ctx.host.openAgentSignInTerminal?.(agentId, pickerProject);
                     }
                     : undefined,
                 onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
@@ -392,6 +393,7 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: any, project: Mob
                     agents,
                     selectedAgentId: ctx.host.stickyComposerAgentsUi.resolveStickyComposerPinnedAgentId(project),
                     includeCoder: false,
+                    project,
                     agentsTitle,
                     agentsIntro,
                     onSelectAgent: (agentId, model) => {
@@ -415,6 +417,18 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: any, project: Mob
                             });
                         })();
                     },
+                    onProactiveLogin: ctx.host.openAgentSignInTerminal
+                        ? (agentId, pickerProject) => {
+                            ctx.closeAllComposerSheets();
+                            void ctx.host.openAgentSignInTerminal?.(agentId, pickerProject);
+                        }
+                        : undefined,
+                    onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
+                        ? () => {
+                            ctx.closeAllComposerSheets();
+                            void ctx.host.openPreferencesSheet?.('ai-features');
+                        }
+                        : undefined,
                 });
             }).catch(() => {
                 if (ctx.host.stickyComposerAgentSheet === chrome.sheet) {

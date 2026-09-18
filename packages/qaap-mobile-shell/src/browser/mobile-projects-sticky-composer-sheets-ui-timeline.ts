@@ -40,6 +40,7 @@ import {
 import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
+    createUnavailableAgentSheetOption,
     createApprovalPolicySheetOptionButton,
     createModeSheetOptionButton,
     createPickerSheetOptionButton,
@@ -53,7 +54,7 @@ import {
     resolveModelTurnStats,
 } from '../common/qaap-model-latency-stats';
 import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
-import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
+import { formatQaiqModelProviderLabel, hasAnyConfiguredByokCredential } from '../common/qaap-qaiq-byok-provider-registry';
 import {
     formatQaiqModelSelectionLabel,
     filterQaiqModelsWithConfiguredCredentials,
@@ -62,7 +63,7 @@ import {
     listQaiqModelsFromRegisteredLanguageModels,
     mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
-import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
+import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
 import {
     reconcileModelCapabilityLevel,
     writeStoredModelCapabilityLevel,
@@ -221,6 +222,7 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         readonly includeCoder: boolean;
         readonly agentsTitle?: string;
         readonly agentsIntro?: string;
+        readonly project?: MobileProjectEntry;
         readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void;
         /**
          * When set, agents with a real CLI OAuth login get a proactive
@@ -228,7 +230,9 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
          * first running a task that fails. Omitted for one-shot pickers
          * (e.g. Generate UI variant) where no transcript is open.
          */
-        readonly onProactiveLogin?: (agentId: string) => void;
+        readonly onProactiveLogin?: (agentId: string, project?: MobileProjectEntry) => void;
+        readonly onOpenAiFeaturesSettings?: (agentId?: string) => void;
+        readonly onOpenAiConfiguration?: (agentId?: string) => void;
     },): Promise<void> {
     const renderGeneration = Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1;
     chrome.sheet.dataset.agentPickerRenderGeneration = String(renderGeneration);
@@ -320,7 +324,8 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
     chrome.header.classList.remove('theia-mod-drilldown');
     chrome.backBtn.hidden = true;
     chrome.backBtn.onclick = null;
-    chrome.intro.hidden = true;
+    chrome.intro.hidden = !options.agentsIntro;
+    chrome.intro.textContent = options.agentsIntro ?? '';
     chrome.title.textContent = options.agentsTitle
         ?? nls.localize('qaap/mobileProjects/stickyComposerPickAgent', 'Choose agent');
 
@@ -328,11 +333,11 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
     if (options.includeCoder) {
         const coder = ctx.host.stickyComposerAgentsUi.getOfferableCoderAgent();
         if (coder) {
-            agentEntries.push({ id: THEIA_CODER_AGENT_ID, label: coder.name, models: [] });
+            agentEntries.push({ id: THEIA_CODER_AGENT_ID, label: coder.name, models: [], available: true });
         }
     }
     for (const agent of options.agents) {
-        agentEntries.push({ id: agent.id, label: agent.label, models: [] });
+        agentEntries.push({ id: agent.id, label: agent.label, models: [], available: agent.available !== false });
     }
     if (agentEntries.some(entry => agentSupportsModelPicker(entry.id) && !chrome.modelsByAgent.has(entry.id))) {
         renderAgentPickerSkeleton(chrome.list);
@@ -340,7 +345,7 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
     await Promise.all(agentEntries.map(async entry => {
         let models = chrome.modelsByAgent.get(entry.id);
         if (models === undefined) {
-            if (agentSupportsModelPicker(entry.id)) {
+            if (entry.available !== false && agentSupportsModelPicker(entry.id)) {
                 const resolved = await ctx.resolveModelsForAgentPickerSafe(entry.id);
                 models = resolved.models;
                 if (chrome.sheet.dataset.agentPickerRenderGeneration === String(renderGeneration)) {
@@ -367,6 +372,41 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
     const content = document.createDocumentFragment();
     const appendAgent = (entry: QaapAgentPickerSearchEntry): void => {
         const { id: agentId, label } = entry;
+        if (entry.available === false) {
+            const canConnect = agentHasCliOAuthLogin(agentId);
+            const canConfigure = agentNeedsSettingsApiKeyPath(agentId);
+            const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
+                && !!ctx.host.readPreference
+                && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference(key));
+            content.append(createUnavailableAgentSheetOption({
+                agentId,
+                label,
+                status: nls.localize(
+                    missingQaiqByok
+                        ? 'qaap/mobileProjects/stickyComposerQaiqByokMissing'
+                        : 'qaap/mobileProjects/stickyComposerAgentNotConnected',
+                    missingQaiqByok ? 'Add a provider key to use QAIQ' : 'Not connected on this workspace',
+                ),
+                actionLabel: nls.localize(
+                    missingQaiqByok
+                        ? 'qaap/mobileProjects/stickyComposerAddByok'
+                        : canConnect
+                        ? 'qaap/mobileProjects/stickyComposerConnectAgent'
+                        : 'qaap/mobileProjects/stickyComposerConfigureAgent',
+                    missingQaiqByok ? 'Add BYOK' : canConnect ? 'Connect' : 'Configure',
+                ),
+                onAction: () => {
+                    if (canConnect) {
+                        options.onProactiveLogin?.(agentId, options.project);
+                    } else if (canConfigure) {
+                        options.onOpenAiFeaturesSettings?.(agentId);
+                    } else {
+                        options.onOpenAiConfiguration?.(agentId);
+                    }
+                },
+            }));
+            return;
+        }
         const hasModels = agentSupportsModelPicker(agentId);
         const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
         const storedModel = readStoredAgentModel(options.cwd, agentId);
@@ -419,7 +459,12 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
             },
         }));
         if (options.onProactiveLogin && agentHasCliOAuthLogin(agentId)) {
-            content.append(ctx.createProactiveLoginRow(label, () => options.onProactiveLogin!(agentId)));
+            content.append(ctx.createProactiveLoginRow(label, () => options.onProactiveLogin!(agentId, options.project)));
+        } else if (agentId.toLowerCase() === QAIQ_AGENT_ID
+            && options.onOpenAiFeaturesSettings
+            && ctx.host.readPreference
+            && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference(key))) {
+            content.append(ctx.createProactiveByokRow(() => options.onOpenAiFeaturesSettings!(agentId)));
         } else if (options.onOpenAiFeaturesSettings && agentNeedsSettingsApiKeyPath(agentId)) {
             content.append(ctx.createProactiveSettingsApiKeyRow(label, () => options.onOpenAiFeaturesSettings!(agentId)));
         }

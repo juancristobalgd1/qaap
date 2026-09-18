@@ -263,7 +263,14 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
                 return undefined;
             }
             // Prints a URL instead of opening a browser. Completes on desktop.
-            return process.platform === 'win32'
+            // This common module is bundled into the browser, where Node's `process` is not
+            // defined. Keep the optional platform probe guarded so merely opening the picker
+            // cannot crash the whole modal; the backend still receives the platform-specific
+            // command when Node is available.
+            const runtimeProcess = (globalThis as typeof globalThis & {
+                process?: { readonly platform?: string };
+            }).process;
+            return runtimeProcess?.platform === 'win32'
                 ? '$env:NO_OPEN_BROWSER=\'1\'; cursor-agent login'
                 : 'NO_OPEN_BROWSER=1 cursor-agent login';
         case QAIQ_AGENT_ID:

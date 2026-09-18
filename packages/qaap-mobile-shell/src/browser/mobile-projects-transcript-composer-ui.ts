@@ -77,6 +77,8 @@ export interface MobileProjectsTranscriptComposerHost {
     projectsService: MobileProjectsService;
     chatAgentService?: ChatAgentService;
     activeTasks?: MobileProjectsActiveTasks;
+    openAgentSignInTerminal?(agentId?: string, project?: MobileProjectEntry): void | Promise<void>;
+    openPreferencesSheet?(query?: string): Promise<void>;
     transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
     stickyComposerSheetsUi: MobileProjectsStickyComposerSheetsUi;
     stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
@@ -106,7 +108,7 @@ export class MobileProjectsTranscriptComposerUi {
                 throw new Error('Agent catalog unavailable');
             }
         }
-        return this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(this.host.transcriptComposerBackendAgents);
+        return this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(this.host.transcriptComposerBackendAgents);
     }
 
     resolveTranscriptComposerPinnedAgentId(
@@ -132,7 +134,9 @@ export class MobileProjectsTranscriptComposerUi {
         if (pinned && pinned !== 'task' && !isTheiaCoderAgent(pinned)) {
             return agentUsesSettingsModelCatalog(pinned) ? QAAP_PRIMARY_AGENT_ID : pinned;
         }
-        return this.host.transcriptComposerBackendAgents[0]?.id ?? '';
+        return this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
+            this.host.transcriptComposerBackendAgents,
+        )[0]?.id ?? '';
     }
 
     resolveTranscriptComposerAgentLabel(): string {
@@ -179,7 +183,8 @@ export class MobileProjectsTranscriptComposerUi {
             ?? this.host.preparedCwdByProjectId.get(project.id);
         try {
             const snapshot = await this.host.loadBackendAgentSnapshot();
-            let filteredAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(snapshot.agents);
+            let pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(snapshot.agents);
+            let filteredAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(pickerAgents);
             if (filteredAgents.length === 0) {
                 await this.host.stickyComposerAgentsUi.waitForSelectableActiveTaskAgents(3000);
                 const liveAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
@@ -187,9 +192,13 @@ export class MobileProjectsTranscriptComposerUi {
                 );
                 if (liveAgents.length > 0) {
                     filteredAgents = liveAgents;
+                    pickerAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents([
+                        ...pickerAgents,
+                        ...liveAgents,
+                    ]);
                 }
             }
-            this.host.transcriptComposerBackendAgents = filteredAgents;
+            this.host.transcriptComposerBackendAgents = pickerAgents;
             this.host.transcriptComposerQaiqModels = snapshot.qaiqModels;
             const resolved = this.host.stickyComposerAgentsUi.reconcileStickyComposerPinnedAgent(
                 this.host.transcriptComposerPinnedAgentId ?? readStoredAgent(cwd),
@@ -219,7 +228,7 @@ export class MobileProjectsTranscriptComposerUi {
             return true;
         } catch {
             await this.host.stickyComposerAgentsUi.waitForSelectableActiveTaskAgents(1500);
-            this.host.transcriptComposerBackendAgents = this.host.stickyComposerAgentsUi.filterSelectableComposerAgents(
+            this.host.transcriptComposerBackendAgents = this.host.stickyComposerAgentsUi.getComposerAgentPickerAgents(
                 this.host.activeTasks?.getAgents() ?? [],
             );
             this.host.transcriptComposerQaiqModels = [];
@@ -317,6 +326,7 @@ export class MobileProjectsTranscriptComposerUi {
                 agents,
                 selectedAgentId: this.resolveTranscriptComposerPinnedAgentId(project, summary),
                 includeCoder: true,
+                project,
                 onSelectAgent: (agentId, model) => {
                     this.host.transcriptComposerPinnedAgentId = agentId;
                     this.host.transcriptComposerPrefsConvId = summary.id;
@@ -344,6 +354,18 @@ export class MobileProjectsTranscriptComposerUi {
                         options?.onSelectionApplied?.();
                     })();
                 },
+                onProactiveLogin: this.host.openAgentSignInTerminal
+                    ? (agentId, pickerProject) => {
+                        this.closeAllComposerSheets();
+                        void this.host.openAgentSignInTerminal?.(agentId, pickerProject);
+                    }
+                    : undefined,
+                onOpenAiFeaturesSettings: this.host.openPreferencesSheet
+                    ? () => {
+                        this.closeAllComposerSheets();
+                        void this.host.openPreferencesSheet?.('ai-features');
+                    }
+                    : undefined,
                 });
             }).catch(() => {
                 if (this.host.transcriptComposerAgentSheet === chrome.sheet) {

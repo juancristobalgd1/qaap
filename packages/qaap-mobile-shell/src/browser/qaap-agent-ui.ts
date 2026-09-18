@@ -210,6 +210,47 @@ export function createAgentSheetOptionButton(options: {
     return btn;
 }
 
+/** Dimmed picker row for a known harness that is not connected or detected on the workspace. */
+export function createUnavailableAgentSheetOption(options: {
+    readonly agentId: string;
+    readonly label: string;
+    readonly status: string;
+    readonly actionLabel: string;
+    readonly onAction: () => void;
+}): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'theia-qaap-agent-sheet-unavailable';
+    row.dataset.agentId = options.agentId;
+
+    const content = document.createElement('span');
+    content.className = 'theia-qaap-agent-sheet-unavailable-content';
+    appendAgentBrandIcon(content, options.agentId, 'sm');
+    const text = document.createElement('span');
+    text.className = 'theia-qaap-agent-sheet-unavailable-text';
+    const label = document.createElement('span');
+    label.className = 'theia-qaap-agent-sheet-option-label';
+    label.textContent = options.label;
+    const status = document.createElement('span');
+    status.className = 'theia-qaap-agent-sheet-unavailable-status';
+    status.textContent = options.status;
+    text.append(label, status);
+    content.append(text);
+
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'theia-qaap-agent-sheet-connect';
+    action.textContent = options.actionLabel;
+    action.setAttribute('aria-label', `${options.actionLabel} ${options.label}`);
+    action.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        options.onAction();
+    });
+
+    row.append(content, action);
+    return row;
+}
+
 /** Agent approval policy row (icon + title + description + optional check). */
 export function createApprovalPolicySheetOptionButton(options: {
     readonly policy: QaapAgentApprovalPolicyOption;
