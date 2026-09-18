@@ -242,7 +242,12 @@ export class QaapTenantSpawnService {
     }
 
     protected shouldApplyResourceLimits(): boolean {
-        return this.isLinuxResourceLimitPlatform() && !this.isContainerIsolationEnabled();
+        // Backend-per-tenant runs inside its own Docker cgroup even though the backend itself uses
+        // local spawning. Wrapping its setpriv invocation in the host's portable ulimit shell would
+        // split the argv at `--reuid` and fail with "exec: --reuid: not found". The container's
+        // Memory/NanoCpus/PidsLimit boundary is the resource boundary for this mode.
+        const tenantBackendMode = /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
+        return this.isLinuxResourceLimitPlatform() && !this.isContainerIsolationEnabled() && !tenantBackendMode;
     }
 
     /**

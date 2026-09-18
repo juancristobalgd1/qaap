@@ -119,6 +119,7 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
     const originalMemoryLimit = process.env.QAAP_AGENT_MEMORY_LIMIT;
     const originalCpuLimit = process.env.QAAP_AGENT_CPU_LIMIT;
     const originalNodeEnv = process.env.NODE_ENV;
+    const originalTenantBackendMode = process.env.QAAP_TENANT_BACKEND_MODE;
     afterEach(() => {
         if (originalMemoryLimit === undefined) {
             delete process.env.QAAP_AGENT_MEMORY_LIMIT;
@@ -134,6 +135,11 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
             delete process.env.NODE_ENV;
         } else {
             process.env.NODE_ENV = originalNodeEnv;
+        }
+        if (originalTenantBackendMode === undefined) {
+            delete process.env.QAAP_TENANT_BACKEND_MODE;
+        } else {
+            process.env.QAAP_TENANT_BACKEND_MODE = originalTenantBackendMode;
         }
     });
 
@@ -161,6 +167,18 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         expect(svc.launches[0].args[0]).to.equal('-c');
         expect(svc.launches[0].args[1]).to.contain('ulimit -v');
         expect(svc.launches[0].args.slice(-3)).to.deep.equal(['node', '-e', 'process.exit(0)']);
+    });
+
+    it('does not add a host resource wrapper inside a backend-per-tenant container', () => {
+        process.env.QAAP_TENANT_BACKEND_MODE = '1';
+        const svc = new TestTenantSpawnService();
+        svc.identity = { uid: 20005, gid: 20005 };
+        svc.linuxResourceLimits = true;
+        svc.systemdRun = false;
+        svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
+        expect(svc.launches[0].file).to.equal('setpriv');
+        expect(svc.launches[0].args.slice(0, 7)).to.deep.equal(
+            ['--reuid', '20005', '--regid', '20005', '--clear-groups', '--', 'npm']);
     });
 
     it('fails closed instead of spawning without limits in production host mode', () => {
