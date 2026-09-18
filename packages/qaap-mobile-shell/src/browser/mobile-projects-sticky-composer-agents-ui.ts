@@ -72,7 +72,7 @@ export class MobileProjectsStickyComposerAgentsUi {
         // The hosted composer advertises @shell while the tenant agent catalog is warming.
         // Keep that fallback actionable: an empty id makes submit wait for the catalog and
         // roll back after 20s even though the shell runner is already available.
-        return resolved ?? (readQaapHostedRuntime() && selectable.length === 0 ? SHELL_AGENT_ID : '');
+        return resolved ?? (selectable.length === 0 ? SHELL_AGENT_ID : '');
     }
     resolveStickyComposerAgentLabel(project?: MobileProjectEntry): string {
         const pinned = this.host.stickyComposerPinnedAgentId;
