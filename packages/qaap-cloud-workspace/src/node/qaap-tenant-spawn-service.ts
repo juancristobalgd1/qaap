@@ -92,6 +92,17 @@ export class QaapTenantSpawnService {
         return isContainerIsolationEnabled(process.env);
     }
 
+    /**
+     * Whether this backend is already running inside a dedicated tenant worker. Worker containers
+     * are the isolation boundary, so their configured container uid must not be treated as a host
+     * uid to drop to. In particular, rootless Docker maps container uid 0 to the daemon owner and
+     * the worker deliberately drops all capabilities; calling setpriv there cannot change uid and
+     * fails with `setresuid: Operation not permitted`.
+     */
+    protected isTenantBackendMode(): boolean {
+        return /^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '');
+    }
+
     /** Resolve the tenant segment (sanitized login) from a workspace or repo working directory. */
     resolveTenantSegment(cwd: string): string | undefined {
         const canonical = this.canonicalizeCwd(cwd);
@@ -331,6 +342,9 @@ export class QaapTenantSpawnService {
      */
     resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
         cwd = this.canonicalizeCwd(cwd);
+        if (this.isTenantBackendMode()) {
+            return {};
+        }
         const isRoot = this.isBackendRoot();
         const tenant = resolvePerTenantSpawnIdentity({
             enabled: isTenantUidPerUserEnabled(process.env),

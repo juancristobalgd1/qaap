@@ -29,7 +29,12 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
         return this.container;
     }
 
-    override resolveSpawnIdentity(): { uid?: number; gid?: number } {
+    override resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
+        // Exercise the production backend-mode guard instead of the pinned test identity for the
+        // dedicated worker case below.
+        if (/^(1|true)$/i.test(process.env.QAAP_TENANT_BACKEND_MODE?.trim() ?? '')) {
+            return super.resolveSpawnIdentity(cwd);
+        }
         return this.identity;
     }
     protected override isSetprivAvailable(): boolean {
@@ -169,16 +174,15 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         expect(svc.launches[0].args.slice(-3)).to.deep.equal(['node', '-e', 'process.exit(0)']);
     });
 
-    it('does not add a host resource wrapper inside a backend-per-tenant container', () => {
+    it('does not add a host uid or resource wrapper inside a backend-per-tenant container', () => {
         process.env.QAAP_TENANT_BACKEND_MODE = '1';
         const svc = new TestTenantSpawnService();
         svc.identity = { uid: 20005, gid: 20005 };
         svc.linuxResourceLimits = true;
         svc.systemdRun = false;
         svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
-        expect(svc.launches[0].file).to.equal('setpriv');
-        expect(svc.launches[0].args.slice(0, 7)).to.deep.equal(
-            ['--reuid', '20005', '--regid', '20005', '--clear-groups', '--', 'npm']);
+        expect(svc.launches[0].file).to.equal('npm');
+        expect(svc.launches[0].args).to.deep.equal(['run', 'dev']);
     });
 
     it('fails closed instead of spawning without limits in production host mode', () => {
