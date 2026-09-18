@@ -43,6 +43,7 @@ const TENANT_BACKEND_WORKTREES_MOUNT = '/tmp/qaap-worktrees';
 const TENANT_BACKEND_PARALLEL_MOUNT = '/tmp/qaap-parallel';
 const TENANT_BACKEND_QAAP_HOME_MOUNT = '/home/theia/.qaap';
 const TENANT_BACKEND_THEIA_HOME_MOUNT = '/home/theia/.theia';
+const TENANT_BACKEND_SQLITE_STORE_PATH = `${TENANT_BACKEND_QAAP_HOME_MOUNT}/tenant.sqlite`;
 
 /**
  * Environment variables that belong to the shared backend/control plane. They may be needed by
@@ -750,6 +751,7 @@ export class QaapDockerOrchestrator {
                 `QAAP_TENANT_BACKEND_MODE=1`,
                 `QAAP_TENANT_BACKEND_SECRET=${secret}`,
                 `QAAP_TENANT_LOGIN=${ownerLogin}`,
+                `QAAP_SQLITE_STORE_PATH=${TENANT_BACKEND_SQLITE_STORE_PATH}`,
                 `HOME=${TENANT_BACKEND_QAAP_HOME_MOUNT.replace('/.qaap', '')}`,
                 'USER=theia',
                 'LOGNAME=theia',
@@ -939,6 +941,7 @@ export class QaapDockerOrchestrator {
             'QAAP_TENANT_BACKEND_MODE=1',
             `QAAP_TENANT_BACKEND_SECRET=${this.tenantBackendSecret(ownerLogin)}`,
             `QAAP_TENANT_LOGIN=${ownerLogin}`,
+            `QAAP_SQLITE_STORE_PATH=${TENANT_BACKEND_SQLITE_STORE_PATH}`,
             `HOME=${TENANT_BACKEND_QAAP_HOME_MOUNT.replace('/.qaap', '')}`,
             'USER=theia',
             'LOGNAME=theia',
@@ -1284,8 +1287,19 @@ export class QaapDockerOrchestrator {
     }
 
     protected getTenantContainerUser(): string {
-        const uid = this.parsePositiveInteger(process.env.QAAP_TENANT_CONTAINER_UID, 1000);
-        const gid = this.parsePositiveInteger(process.env.QAAP_TENANT_CONTAINER_GID, uid);
+        const rootlessDocker = /^(1|true)$/i.test(process.env.QAAP_DOCKER_ROOTLESS?.trim() ?? '');
+        const configuredUid = Number.parseInt(process.env.QAAP_TENANT_CONTAINER_UID?.trim() ?? '', 10);
+        // Root inside a rootless daemon maps to the unprivileged host account that owns the
+        // persistent bind mounts. It is therefore the only container uid that can share the
+        // rootful control-plane's 0700 tenant state without weakening those permissions. Never
+        // allow the same setting against a rootful daemon; it would be a real root escape.
+        const uid = rootlessDocker && configuredUid === 0
+            ? 0
+            : this.parsePositiveInteger(process.env.QAAP_TENANT_CONTAINER_UID, 1000);
+        const configuredGid = Number.parseInt(process.env.QAAP_TENANT_CONTAINER_GID?.trim() ?? '', 10);
+        const gid = rootlessDocker && configuredUid === 0 && configuredGid === 0
+            ? 0
+            : this.parsePositiveInteger(process.env.QAAP_TENANT_CONTAINER_GID, uid);
         return `${uid}:${gid}`;
     }
 

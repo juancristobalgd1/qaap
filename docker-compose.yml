@@ -146,6 +146,9 @@ services:
       QAAP_TENANT_PIDS_LIMIT: ${QAAP_TENANT_PIDS_LIMIT:-256}
       QAAP_TENANT_CONTAINER_UID: ${QAAP_TENANT_CONTAINER_UID:-1000}
       QAAP_TENANT_CONTAINER_GID: ${QAAP_TENANT_CONTAINER_GID:-1000}
+      # Set only when DOCKER_HOST points at a rootless daemon. Container uid 0 then maps to the
+      # unprivileged host account owning the persistent bind mounts, allowing shared 0700 state.
+      QAAP_DOCKER_ROOTLESS: ${QAAP_DOCKER_ROOTLESS:-0}
       # Never use Docker's shared default bridge for untrusted tenant workers. The backend creates
       # one managed bridge per tenant (or use `none` with an external egress proxy).
       QAAP_TENANT_NETWORK_MODE: ${QAAP_TENANT_NETWORK_MODE:-isolated-bridge}
