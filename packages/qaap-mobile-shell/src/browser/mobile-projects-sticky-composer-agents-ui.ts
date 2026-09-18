@@ -17,6 +17,7 @@ import {
     readStoredAgent,
     readStoredAgentModel,
     reconcileStickyComposerAgent,
+    SHELL_AGENT_ID,
     THEIA_CODER_AGENT_ID,
     writeStoredAgent,
     type QaapAgentTaskAgentOption,
@@ -62,12 +63,16 @@ export class MobileProjectsStickyComposerAgentsUi {
     resolveStickyComposerPinnedAgentId(project: MobileProjectEntry): string {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         const selectable = this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents);
-        return this.reconcileStickyComposerPinnedAgent(
+        const resolved = this.reconcileStickyComposerPinnedAgent(
             this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
             selectable,
             undefined,
             cwd,
-        ) ?? '';
+        );
+        // The hosted composer advertises @shell while the tenant agent catalog is warming.
+        // Keep that fallback actionable: an empty id makes submit wait for the catalog and
+        // roll back after 20s even though the shell runner is already available.
+        return resolved ?? (readQaapHostedRuntime() && selectable.length === 0 ? SHELL_AGENT_ID : '');
     }
     resolveStickyComposerAgentLabel(project?: MobileProjectEntry): string {
         const pinned = this.host.stickyComposerPinnedAgentId;
