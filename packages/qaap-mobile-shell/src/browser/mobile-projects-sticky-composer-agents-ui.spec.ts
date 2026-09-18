@@ -66,4 +66,10 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
 
         expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
     });
+
+    it('keeps the visible shell fallback stable until a coding agent is explicitly selected', () => {
+        const ui = new MobileProjectsStickyComposerAgentsUi(createHost());
+
+        expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
+    });
 });

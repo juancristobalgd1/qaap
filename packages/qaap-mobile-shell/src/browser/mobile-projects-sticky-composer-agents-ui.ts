@@ -62,7 +62,14 @@ export class MobileProjectsStickyComposerAgentsUi {
 
     resolveStickyComposerPinnedAgentId(project: MobileProjectEntry): string {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
-        const current = this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd);
+        const stored = readStoredAgent(cwd);
+        const current = this.host.stickyComposerPinnedAgentId ?? stored;
+        // An empty selection is rendered as @shell while the hosted catalog warms. Keep that
+        // fallback stable for submit as well; otherwise a catalog that arrives between render
+        // and click can silently turn the visible Shell action into an unauthenticated cloud CLI.
+        if (!current) {
+            return SHELL_AGENT_ID;
+        }
         // `@shell` is a real local harness, not merely a loading placeholder. Preserve an
         // explicit shell choice even after the VPS catalog arrives; otherwise the toolbar can
         // continue displaying @shell while submit silently falls through to the first detected
