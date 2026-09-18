@@ -1,0 +1,69 @@
+// *****************************************************************************
+// Copyright (C) 2026 Theia contributors and Qaap product fork.
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+// *****************************************************************************
+
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+enableJSDOM();
+
+import { expect } from 'chai';
+import { writeStoredAgent } from '../common/qaap-agent-task-client';
+import type { MobileProjectEntry } from './mobile-projects-types';
+import { MobileProjectsStickyComposerAgentsUi, type MobileProjectsStickyComposerAgentsHost } from './mobile-projects-sticky-composer-agents-ui';
+
+describe('MobileProjectsStickyComposerAgentsUi', () => {
+    const project: MobileProjectEntry = {
+        id: 'project',
+        name: 'Project',
+        color: '#8EB5DC',
+        branch: 'main',
+        status: 'idle',
+        task: '',
+        progress: 0,
+        agents: [],
+        lastActive: 'now',
+        tokens: '0',
+        cost: '$0',
+        pinned: false,
+        isCurrent: true,
+    };
+
+    function createHost(stickyComposerPinnedAgentId?: string): MobileProjectsStickyComposerAgentsHost {
+        return {
+            stickyComposerPinnedAgentId,
+            stickyComposerBackendAgents: [{ id: 'copilot', label: 'Copilot CLI', available: true }],
+            stickyComposerQaiqModels: [],
+            preparedCwdByProjectId: new Map(),
+            projectsService: {
+                getProjectCwd: () => '/workspace/project',
+            } as unknown as MobileProjectsStickyComposerAgentsHost['projectsService'],
+            stickyComposerRenderUi: {} as MobileProjectsStickyComposerAgentsHost['stickyComposerRenderUi'],
+            loadBackendAgentSnapshot: async () => ({
+                agents: [],
+                agentConfigured: false,
+                qaiqInstalled: false,
+                qaiqModels: [],
+            }),
+            resolveConversationAgentLabel: () => 'Copilot CLI',
+            projectRowsUi: {} as MobileProjectsStickyComposerAgentsHost['projectRowsUi'],
+        };
+    }
+
+    beforeEach(() => {
+        window.localStorage.clear();
+    });
+
+    it('keeps an explicit shell selection when the VPS catalog contains coding agents', () => {
+        const ui = new MobileProjectsStickyComposerAgentsUi(createHost('shell'));
+
+        expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
+    });
+
+    it('keeps a stored shell fallback actionable while the catalog is warming', () => {
+        writeStoredAgent('/workspace/project', 'shell');
+        const ui = new MobileProjectsStickyComposerAgentsUi(createHost());
+
+        expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
+    });
+});

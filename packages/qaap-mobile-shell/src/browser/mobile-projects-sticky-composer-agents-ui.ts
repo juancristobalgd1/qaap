@@ -62,9 +62,18 @@ export class MobileProjectsStickyComposerAgentsUi {
 
     resolveStickyComposerPinnedAgentId(project: MobileProjectEntry): string {
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
+        const current = this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd);
+        // `@shell` is a real local harness, not merely a loading placeholder. Preserve an
+        // explicit shell choice even after the VPS catalog arrives; otherwise the toolbar can
+        // continue displaying @shell while submit silently falls through to the first detected
+        // coding agent (usually Copilot), which makes an unconfigured provider look like a dead
+        // submit button on a fresh mobile session.
+        if (current?.trim().replace(/^@/, '').toLowerCase() === SHELL_AGENT_ID) {
+            return SHELL_AGENT_ID;
+        }
         const selectable = this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents);
         const resolved = this.reconcileStickyComposerPinnedAgent(
-            this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd),
+            current,
             selectable,
             undefined,
             cwd,
