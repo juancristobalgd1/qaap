@@ -75,13 +75,22 @@ export class MobileProjectsStickyComposerAgentsUi {
         return resolved ?? SHELL_AGENT_ID;
     }
     resolveStickyComposerAgentLabel(project?: MobileProjectEntry): string {
-        const pinned = this.host.stickyComposerPinnedAgentId;
+        const cwd = project
+            ? this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id)
+            : undefined;
+        const pinned = this.host.stickyComposerPinnedAgentId ?? readStoredAgent(cwd)
+            ?? (project ? this.resolveStickyComposerPinnedAgentId(project) : undefined);
         if (isTheiaCoderAgent(pinned)) {
             return this.host.chatAgentService?.getAgent(THEIA_CODER_AGENT_ID)?.name ?? 'Coder';
         }
-        const fromList = this.host.stickyComposerBackendAgents.find(a => a.id === pinned)?.label;
+        const fromList = this.host.stickyComposerBackendAgents.find(
+            a => a.id.toLowerCase() === pinned?.toLowerCase(),
+        )?.label;
         if (fromList) {
             return fromList;
+        }
+        if (pinned) {
+            return pinned.startsWith('@') ? pinned : `@${pinned}`;
         }
         if (this.filterSelectableComposerAgents(this.host.stickyComposerBackendAgents).length === 0) {
             return readQaapHostedRuntime()

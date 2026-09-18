@@ -19,6 +19,7 @@ import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-off
 import {
     fetchAgentTaskListAll,
     mergeAgentTaskAgentOptions,
+    normalizeBackendAgentId,
     readStoredAgent,
     resolveAgentModelForSubmit,
     resolveBackendAgentForTurn,
@@ -452,6 +453,15 @@ export class MobileProjectsBackgroundTaskUi {
         if (explicitAgent === SHELL_AGENT_ID) {
             writeStoredAgent(cwd, SHELL_AGENT_ID);
             return SHELL_AGENT_ID;
+        }
+        // A picker selection is already an explicit user choice. Do not re-fetch the VPS
+        // catalog before every submit: the catalog can still be warming even though the
+        // selected harness is installed and runnable. The backend remains the authority for
+        // whether the executable is usable when the conversation is created.
+        const normalizedExplicitAgent = normalizeBackendAgentId(explicitAgent);
+        if (normalizedExplicitAgent) {
+            writeStoredAgent(cwd, normalizedExplicitAgent);
+            return normalizedExplicitAgent;
         }
         const snapshot = await this.loadBackendAgentSnapshot();
         const resolved = resolveBackendAgentForTurn(prompt, snapshot.agents, {

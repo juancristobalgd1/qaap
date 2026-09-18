@@ -69,7 +69,24 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect(catalogRead).to.equal(false);
     });
 
-    it('keeps the localized QAIQ error when the resolved agent is QAIQ', async () => {
+    it('accepts an explicit builtin harness without waiting for the VPS agent catalog', async () => {
+        const ui = withAgentSnapshot({
+            agents: [],
+            agentConfigured: false,
+            qaiqInstalled: false,
+            qaiqModels: [],
+        });
+        let catalogRead = false;
+        ui.loadBackendAgentSnapshot = async () => {
+            catalogRead = true;
+            throw new Error('catalog should not be needed for an explicit harness');
+        };
+
+        expect(await ui.selectBackendConversationAgent('/repo', 'fix it', '@codex')).to.equal('codex');
+        expect(catalogRead).to.equal(false);
+    });
+
+    it('keeps the localized QAIQ error when the resolved default agent is QAIQ', async () => {
         const ui = withAgentSnapshot({
             agents: [{ id: 'qaiq', label: 'QAIQ', available: true }],
             agentConfigured: true,
@@ -79,7 +96,7 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         });
 
         try {
-            await ui.selectBackendConversationAgent('/repo', 'fix it', 'qaiq');
+            await ui.selectBackendConversationAgent('/repo', 'fix it');
             expect.fail('expected missing QAIQ error');
         } catch (error) {
             expect(error).to.be.an('error');
