@@ -318,7 +318,7 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             const containerName = orchestrator.containerNameForTenant('bob');
             const expectedCwd = orchestrator.toContainerPath(bobCwd, bobRoot);
 
-            expect(wrapped.file).to.equal('docker');
+            expect(wrapped.file).to.match(/(?:^|[\\/])docker(?:\.exe)?$/);
             expect(wrapped.args).to.deep.equal([
                 'exec',
                 '-it',

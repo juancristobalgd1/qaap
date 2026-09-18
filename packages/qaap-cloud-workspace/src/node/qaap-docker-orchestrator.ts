@@ -494,6 +494,36 @@ export class QaapDockerOrchestrator {
         return args;
     }
 
+    /**
+     * Resolve Docker to an executable path for terminal PTYs. Theia validates the requested
+     * terminal shell with fs.accessSync; a bare `docker` therefore gets rejected as an invalid
+     * shell before the PTY starts, while its arguments still contain `docker exec ...`.
+     * Keep the bare command as a portable fallback for development environments where Docker is
+     * only resolved by the process PATH (and for Windows, where Theia accepts command names).
+     */
+    protected dockerCliExecutable(): string {
+        if (process.platform === 'win32') {
+            return 'docker';
+        }
+        const configured = process.env.QAAP_DOCKER_CLI_PATH?.trim();
+        const candidates = [
+            ...(configured ? [configured] : []),
+            ...(process.env.PATH ?? '').split(path.delimiter).filter(Boolean).map(directory => path.join(directory, 'docker')),
+        ];
+        for (const candidate of candidates) {
+            if (!path.isAbsolute(candidate)) {
+                continue;
+            }
+            try {
+                fs.accessSync(candidate, fs.constants.X_OK);
+                return candidate;
+            } catch {
+                // Keep searching; the Docker CLI may be installed in a later PATH entry.
+            }
+        }
+        return 'docker';
+    }
+
     protected dockerPublishHostIp(config: QaapDockerNodeConfig): string {
         const configured = config.publishHostIp || process.env.QAAP_DOCKER_PUBLISH_HOST_IP?.trim();
         const remote = /^(tcp|http|https):\/\//i.test(config.dockerHost);
@@ -1056,7 +1086,7 @@ export class QaapDockerOrchestrator {
         const containerName = this.containerNameForTenant(ownerLogin);
         const containerCwd = this.toContainerPath(cwd, tenantRootHostPath ?? this.tenantRoots.get(containerName));
         return {
-            file: 'docker',
+            file: this.dockerCliExecutable(),
             args: [
                 ...this.dockerCliGlobalArgs(ownerLogin),
                 'exec',
