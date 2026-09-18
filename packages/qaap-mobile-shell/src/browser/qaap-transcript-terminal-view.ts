@@ -275,6 +275,10 @@ export function createTranscriptTerminalViewServices(
         cwd,
         destroyTermOnClose: true,
         useServerTitle: true,
+        // Work Hub persists terminals per project/conversation below. Do not let Theia's
+        // global shell-layout persistence restore the same widget with a stale PTY id after a
+        // VPS/backend restart; restoreOrCreateTranscriptTerminal owns that recovery path.
+        isTransient: true,
     });
     const loadStore = async (): Promise<TranscriptTerminalPersistedStore> => {
         const stored = await storageService.getData<TranscriptTerminalPersistedStore>(
