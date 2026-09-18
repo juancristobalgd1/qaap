@@ -44,6 +44,10 @@ const TENANT_BACKEND_PARALLEL_MOUNT = '/tmp/qaap-parallel';
 const TENANT_BACKEND_QAAP_HOME_MOUNT = '/home/theia/.qaap';
 const TENANT_BACKEND_THEIA_HOME_MOUNT = '/home/theia/.theia';
 const TENANT_BACKEND_SQLITE_STORE_PATH = `${TENANT_BACKEND_QAAP_HOME_MOUNT}/tenant.sqlite`;
+// Agent CLIs such as Copilot extract native addons under HOME. Keep the worker scratch space
+// executable while retaining the other hardening flags; a noexec tmpfs makes those addons look
+// missing even when the extracted .node file is present.
+const TENANT_TMPFS_OPTIONS = 'rw,exec,nosuid,nodev,size=512m';
 
 /**
  * Environment variables that belong to the shared backend/control plane. They may be needed by
@@ -669,7 +673,7 @@ export class QaapDockerOrchestrator {
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
                     ReadonlyRootfs: true,
-                    Tmpfs: { '/tmp': 'rw,nosuid,nodev,size=512m' },
+                    Tmpfs: { '/tmp': TENANT_TMPFS_OPTIONS },
                     NetworkMode: networkMode,
                     AutoRemove: false,
                 },
@@ -809,7 +813,7 @@ export class QaapDockerOrchestrator {
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
                     ReadonlyRootfs: true,
-                    Tmpfs: { '/tmp': 'rw,nosuid,nodev,size=512m' },
+                    Tmpfs: { '/tmp': TENANT_TMPFS_OPTIONS },
                     NetworkMode: networkMode,
                     AutoRemove: false,
                 },
@@ -912,6 +916,7 @@ export class QaapDockerOrchestrator {
                 SecurityOpt?: string[];
                 CapDrop?: string[];
                 ReadonlyRootfs?: boolean;
+                Tmpfs?: Record<string, string>;
                 NetworkMode?: string;
                 Privileged?: boolean;
                 PidMode?: string;
@@ -977,6 +982,7 @@ export class QaapDockerOrchestrator {
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.ReadonlyRootfs === true
+            && hostConfig.Tmpfs?.['/tmp'] === TENANT_TMPFS_OPTIONS
             && hostConfig.Privileged !== true
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
@@ -1181,6 +1187,7 @@ export class QaapDockerOrchestrator {
                 SecurityOpt?: string[];
                 CapDrop?: string[];
                 ReadonlyRootfs?: boolean;
+                Tmpfs?: Record<string, string>;
                 NetworkMode?: string;
                 Privileged?: boolean;
                 PidMode?: string;
@@ -1210,6 +1217,7 @@ export class QaapDockerOrchestrator {
             && hostConfig.SecurityOpt?.includes('no-new-privileges:true') === true
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.ReadonlyRootfs === true
+            && hostConfig.Tmpfs?.['/tmp'] === TENANT_TMPFS_OPTIONS
             && hostConfig.Privileged !== true
             // Docker Desktop reports the default IPC namespace as `private`; reject only
             // host/container namespace sharing, not the safe private default.

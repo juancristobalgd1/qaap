@@ -224,6 +224,7 @@ describe('Container-per-Tenant Runner (Option A)', () => {
                 expect(createOptions.HostConfig.CapDrop).to.deep.equal(['ALL']);
                 expect(createOptions.HostConfig.SecurityOpt).to.include('no-new-privileges:true');
                 expect(createOptions.HostConfig.ReadonlyRootfs).to.equal(true);
+                expect(createOptions.HostConfig.Tmpfs).to.deep.equal({ '/tmp': 'rw,exec,nosuid,nodev,size=512m' });
                 expect(createOptions.HostConfig.PidsLimit).to.be.greaterThan(0);
                 expect(networkOptions.Name).to.equal(orchestrator.tenantNetworkNameFor('alice'));
                 expect(networkOptions.Options['com.docker.network.bridge.enable_icc']).to.equal('false');
