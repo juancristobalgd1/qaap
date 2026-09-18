@@ -52,6 +52,23 @@ describe('MobileProjectsBackgroundTaskUi', () => {
         expect(await ui.selectBackendConversationAgent('/repo', 'fix it', 'codex')).to.equal('codex');
     });
 
+    it('accepts an explicit shell selection without waiting for the VPS agent catalog', async () => {
+        const ui = withAgentSnapshot({
+            agents: [],
+            agentConfigured: false,
+            qaiqInstalled: false,
+            qaiqModels: [],
+        });
+        let catalogRead = false;
+        ui.loadBackendAgentSnapshot = async () => {
+            catalogRead = true;
+            throw new Error('catalog should not be needed for shell');
+        };
+
+        expect(await ui.selectBackendConversationAgent('/repo', 'printf ok', '@shell')).to.equal('shell');
+        expect(catalogRead).to.equal(false);
+    });
+
     it('keeps the localized QAIQ error when the resolved agent is QAIQ', async () => {
         const ui = withAgentSnapshot({
             agents: [{ id: 'qaiq', label: 'QAIQ', available: true }],

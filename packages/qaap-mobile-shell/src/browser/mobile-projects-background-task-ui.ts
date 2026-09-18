@@ -24,6 +24,7 @@ import {
     resolveBackendAgentForTurn,
     writeStoredAgent,
     QAIQ_AGENT_ID,
+    SHELL_AGENT_ID,
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
 } from '../common/qaap-agent-task-client';
@@ -443,6 +444,15 @@ export class MobileProjectsBackgroundTaskUi {
         selectedAgentId?: string,
         conversationAgentId?: string,
     ): Promise<string> {
+        // Shell is a local builtin and does not depend on the VPS agent catalog. In hosted mode
+        // the catalog request can be delayed while the tenant backend is warming; waiting for it
+        // here made an explicit @shell submit roll back after 20s even though the command runner
+        // was already available. Honour the user's explicit builtin selection immediately.
+        const explicitAgent = selectedAgentId?.trim().replace(/^@/, '').toLowerCase();
+        if (explicitAgent === SHELL_AGENT_ID) {
+            writeStoredAgent(cwd, SHELL_AGENT_ID);
+            return SHELL_AGENT_ID;
+        }
         const snapshot = await this.loadBackendAgentSnapshot();
         const resolved = resolveBackendAgentForTurn(prompt, snapshot.agents, {
             explicitAgentId: selectedAgentId,
