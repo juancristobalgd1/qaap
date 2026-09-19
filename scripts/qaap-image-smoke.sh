@@ -59,6 +59,9 @@ bash "$SCRIPT_DIR/qaap-verify-launch-readiness.sh"
 bash "$SCRIPT_DIR/qaap-verify-auth-api-gate.sh"
 curl -fsS --max-time 10 "$QAAP_BASE_URL/" > "$ARTIFACT_DIR/index.html"
 grep -qi '<html' "$ARTIFACT_DIR/index.html" || { echo 'Frontend HTML missing' >&2; exit 1; }
-docker exec -i "$CONTAINER" node < "$SCRIPT_DIR/qaap-image-runtime-check.js"
+# The application itself runs as the non-root `theia` user. The runtime probe
+# needs root only to create/chown its disposable uid-boundary fixtures; the
+# probe then drops to the tenant uids with setpriv and validates the boundary.
+docker exec --user 0 -i "$CONTAINER" node < "$SCRIPT_DIR/qaap-image-runtime-check.js"
 [[ "$(docker inspect --format '{{.RestartCount}}' "$CONTAINER")" == 0 ]] || { echo 'Candidate restarted' >&2; exit 1; }
 echo "PASS: candidate $IMAGE ($SOURCE_SHA) boots with production auth and uid boundaries"
