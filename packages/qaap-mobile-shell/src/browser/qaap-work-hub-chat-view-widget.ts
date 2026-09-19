@@ -12,10 +12,10 @@ import { ChatViewTreeWidget } from '@theia/ai-chat-ui/lib/browser/chat-tree-view
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import { AI_CHAT_SHOW_CHATS_COMMAND, ChatCommands } from '@theia/ai-chat-ui/lib/browser/chat-view-commands';
-import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { ApplicationShell, LabelProvider, PanelLayout } from '@theia/core/lib/browser';
+import { ThemeService } from '@theia/core/lib/browser/theming';
 import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
 import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
@@ -48,7 +48,6 @@ import { markPreferDesktopIde } from './mobile-projects-open';
 import type { MobileProjectsHubView } from './mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
-import { MobileWorkHubAiConfigurationSheet } from './mobile-work-hub-ai-configuration-sheet';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
@@ -59,6 +58,7 @@ import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
+import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 
 /**
  * Product replacement for Theia's AI Chat panel body.
@@ -121,6 +121,10 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly clipboardService: ClipboardService;
     @inject(PreferenceService)
     protected readonly preferences: PreferenceService;
+    @inject(QaapAppearanceModeService)
+    protected readonly appearanceModeService: QaapAppearanceModeService;
+    @inject(ThemeService)
+    protected readonly themeService: ThemeService;
     @inject(MCPFrontendService) @optional()
     protected readonly mcpFrontendService?: MCPFrontendService;
     @inject(FrontendLanguageModelRegistry) @optional()
@@ -149,13 +153,9 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
     protected readonly inboxStream: MobileWorkHubInboxStream;
     @inject(MobileProjectsConversationFlags)
     protected readonly conversationFlags: MobileProjectsConversationFlags;
-    @inject(AIConfigurationSelectionService)
-    protected readonly aiConfigurationSelectionService: AIConfigurationSelectionService;
-
     protected workHubPanel: MobileProjectsPanel | undefined;
     protected preferencesSheet: MobileWorkHubPreferencesSheet | undefined;
     protected billingSheet: MobileWorkHubBillingSheet | undefined;
-    protected aiConfigurationSheet: MobileWorkHubAiConfigurationSheet | undefined;
     protected toolbarMenuButton: HTMLButtonElement | undefined;
     protected toolbarMenu: HTMLElement | undefined;
     protected toolbarMenuDismiss: Disposable = Disposable.NULL;
@@ -326,7 +326,13 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
 
     protected async openWorkHubPreferencesSheet(query?: string): Promise<void> {
         if (!this.preferencesSheet) {
-            this.preferencesSheet = new MobileWorkHubPreferencesSheet(this.widgetManager, this.preferences);
+            this.preferencesSheet = new MobileWorkHubPreferencesSheet(
+                this.widgetManager,
+                this.preferences,
+                this.appearanceModeService,
+                this.themeService,
+                () => this.openWorkHubBillingSheet(),
+            );
             document.body.appendChild(this.preferencesSheet.node);
             this.toDispose.push(Disposable.create(() => {
                 this.preferencesSheet?.dispose();
@@ -350,17 +356,10 @@ export class QaapWorkHubChatViewWidget extends ChatViewWidget {
         await this.billingSheet.show();
     }
 
-    protected async openWorkHubAiConfigurationSheet(tabId?: string): Promise<void> {
-        if (!this.aiConfigurationSheet) {
-            this.aiConfigurationSheet = new MobileWorkHubAiConfigurationSheet(this.widgetManager, this.aiConfigurationSelectionService);
-            document.body.appendChild(this.aiConfigurationSheet.node);
-            this.toDispose.push(Disposable.create(() => {
-                this.aiConfigurationSheet?.dispose();
-                this.aiConfigurationSheet?.node.parentElement?.removeChild(this.aiConfigurationSheet.node);
-                this.aiConfigurationSheet = undefined;
-            }));
-        }
-        await this.aiConfigurationSheet.show(tabId);
+    protected async openWorkHubAiConfigurationSheet(_tabId?: string): Promise<void> {
+        // Legacy composer actions continue to work, but all configuration now lives
+        // in the organized AI Features settings surface.
+        await this.openWorkHubPreferencesSheet('ai-features');
     }
 
     protected createIdeHeaderOverflowMenuGroups(): MobileProjectsHeaderOverflowMenuItem[][] {

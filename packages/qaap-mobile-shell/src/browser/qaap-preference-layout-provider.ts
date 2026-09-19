@@ -34,10 +34,19 @@ export class QaapPreferenceLayoutProvider extends PreferenceLayoutProvider {
     protected buildAiFeaturesChildren(): PreferenceLayout[] {
         return [
             {
-                id: 'ai-features.workHub',
-                label: nls.localize('qaap/preferences/ai-features/workHub', 'Work Hub'),
+                id: 'ai-features.agents',
+                label: nls.localize('qaap/preferences/ai-features/agents', 'Agents & runtimes'),
                 settings: [
+                    'ai-features.agentSettings',
                     'ai-features.agentSettings.details',
+                    'ai-features.harness.*',
+                    'ai-features.skills.disabledSkills',
+                ],
+            },
+            {
+                id: 'ai-features.workHub',
+                label: nls.localize('qaap/preferences/ai-features/workHub', 'Work Hub guidance'),
+                settings: [
                     'ai-features.modelSelection.details',
                     'ai-features.promptTemplates.details',
                 ],
@@ -83,34 +92,39 @@ export class QaapPreferenceLayoutProvider extends PreferenceLayoutProvider {
                 settings: ['ai-features.ollama.*', 'ai-features.ollama'],
             },
             {
-                id: 'ai-features.mcp',
-                label: nls.localizeByDefault('MCP'),
-                settings: ['ai-features.mcp.*'],
+                id: 'ai-features.routing',
+                label: nls.localize('qaap/preferences/ai-features/routing', 'Model routing & behavior'),
+                settings: [
+                    'ai-features.modelSettings.*',
+                    'ai-features.languageModelAliases',
+                    'ai-features.reasoning.*',
+                ],
             },
             {
-                id: 'ai-features.modelSettings',
-                label: nls.localize('qaap/preferences/ai-features/modelAliases', 'Model aliases (QAIQ)'),
-                settings: ['ai-features.modelSettings.*', 'ai-features.languageModelAliases'],
+                id: 'ai-features.integrations',
+                label: nls.localize('qaap/preferences/ai-features/integrations', 'Tools, skills & prompts'),
+                children: [
+                    {
+                        id: 'ai-features.mcp',
+                        label: nls.localizeByDefault('MCP'),
+                        settings: ['ai-features.mcp.*'],
+                    },
+                    {
+                        id: 'ai-features.skills',
+                        label: nls.localizeByDefault('Skills'),
+                        settings: ['ai-features.skills.*'],
+                    },
+                    {
+                        id: 'ai-features.promptTemplates',
+                        label: nls.localize('qaap/preferences/ai-features/idePromptFolders', 'Prompt folders (IDE chat)'),
+                        settings: ['ai-features.promptTemplates.*'],
+                    },
+                ],
             },
             {
-                id: 'ai-features.skills',
-                label: nls.localizeByDefault('Skills'),
-                settings: ['ai-features.skills.*'],
-            },
-            {
-                id: 'ai-features.promptTemplates',
-                label: nls.localize('qaap/preferences/ai-features/idePromptFolders', 'Prompt folders (IDE chat)'),
-                settings: ['ai-features.promptTemplates.*'],
-            },
-            {
-                id: 'ai-features.claudeCode',
-                label: nls.localize('qaap/preferences/ai-features/claudeIdeBridge', 'Claude IDE bridge'),
-                settings: ['ai-features.claudeCode.*'],
-            },
-            {
-                id: 'ai-features.codex',
-                label: nls.localize('qaap/preferences/ai-features/codexIdeBridge', 'Codex IDE bridge'),
-                settings: ['ai-features.codex.*'],
+                id: 'ai-features.ideBridges',
+                label: nls.localize('qaap/preferences/ai-features/ideBridges', 'IDE bridges'),
+                settings: ['ai-features.claudeCode.*', 'ai-features.codex.*'],
             },
         ];
     }

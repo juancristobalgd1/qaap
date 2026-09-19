@@ -6,11 +6,27 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { animationFrame, UnsafeWidgetUtilities, Widget, WidgetManager } from '@theia/core/lib/browser';
+import { ThemeService } from '@theia/core/lib/browser/theming';
+import { PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE } from '@theia/ai-core/lib/common/ai-core-preferences';
+import {
+    NOTIFICATION_TYPE_OFF,
+    NOTIFICATION_TYPE_OS_NOTIFICATION,
+} from '@theia/ai-core/lib/common/notification-types';
 import { MessageLoop } from '@lumino/messaging';
 import { Widget as LuminoWidget } from '@lumino/widgets';
 import { PreferencesWidget } from '@theia/preferences/lib/browser/views/preference-widget';
 import { PreferencesSearchbarWidget } from '@theia/preferences/lib/browser/views/preference-searchbar-widget';
+import {
+    qaapAuthUserInitials,
+    readQaapAuthUser,
+} from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import {
+    fetchQaapBilling,
+    type QaapBillingApiResponse,
+} from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
+import type { QaapAppearanceMode } from '../common/qaap-appearance-mode';
+import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -19,6 +35,11 @@ const AI_FEATURES_SEARCH_LOCKED_CLASS = 'theia-mod-ai-features-search-locked';
 const DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 262;
 const MIN_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 180;
 const MAX_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 420;
+const WORK_HUB_COMPLETION_SOUND_KEY = 'qaap.workHub.settings.completionSound';
+const WORK_HUB_TELEMETRY_PREFERENCE = 'telemetry.telemetryLevel';
+const WORK_HUB_WORKTREE_MAX_COUNT_KEY = 'qaap.workHub.worktrees.maxCount';
+const WORK_HUB_WORKTREE_MAX_SIZE_KEY = 'qaap.workHub.worktrees.maxSizeGb';
+const CUSTOM_SETTINGS_SECTIONS = new Set(['general', 'profile', 'appearance', 'plan-usage', 'worktrees']);
 
 interface WorkHubSettingsSection {
     readonly id: string;
@@ -38,14 +59,8 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
     { id: 'appearance', label: nls.localize('qaap/workHubSettings/appearance', 'Appearance'), icon: 'symbol-color', query: 'workbench' },
     { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
     { id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Agents'), icon: 'hubot', query: 'ai-features.agentSettings' },
-    { id: 'cloud-agents', label: nls.localize('qaap/workHubSettings/cloudAgents', 'Cloud Agents'), icon: 'cloud', query: 'qaap' },
     { id: 'models', label: nls.localize('qaap/workHubSettings/models', 'Models'), icon: 'symbol-method', query: 'ai-features' },
-    { id: 'git-prs', label: nls.localize('qaap/workHubSettings/gitPrs', 'Git & PRs'), icon: 'git-branch', query: 'git' },
-    { id: 'worktrees', label: nls.localize('qaap/workHubSettings/worktrees', 'Worktrees'), icon: 'repo', query: 'workbench' },
-    { id: 'browser-network', label: nls.localize('qaap/workHubSettings/browserNetwork', 'Browser & Network'), icon: 'globe', query: 'http' },
-    { id: 'tab', label: nls.localize('qaap/workHubSettings/tab', 'Tab'), icon: 'multiple-windows', query: 'workbench.editor' },
-    { id: 'code-intelligence', label: nls.localize('qaap/workHubSettings/codeIntelligence', 'Code Intelligence'), icon: 'lightbulb', query: 'editor' },
-    { id: 'beta', label: nls.localize('qaap/workHubSettings/beta', 'Beta'), icon: 'beaker', query: 'experimental' },
+    { id: 'worktrees', label: nls.localize('qaap/workHubSettings/worktrees', 'Worktrees'), icon: 'repo', query: '' },
     { id: 'docs', label: nls.localize('qaap/workHubSettings/docs', 'Docs'), icon: 'book', query: '' },
 ];
 
@@ -58,6 +73,7 @@ export class MobileWorkHubPreferencesSheet {
 
     readonly node: HTMLElement;
     protected readonly widgetHost: HTMLElement;
+    protected readonly customContentHost: HTMLElement;
     protected readonly titleEl: HTMLElement;
     protected readonly settingsSearchInput: HTMLInputElement;
     protected readonly settingsNav: HTMLElement;
@@ -78,6 +94,7 @@ export class MobileWorkHubPreferencesSheet {
     protected settingsSidebarResizePointerId: number | undefined;
     protected settingsSidebarResizeStartX = 0;
     protected settingsSidebarResizeStartWidth = DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH;
+    protected planUsageRenderToken = 0;
 
     protected readonly onSettingsSidebarResizePointerDown = (ev: PointerEvent): void => {
         if (ev.pointerType === 'mouse' && ev.button !== 0) {
@@ -156,6 +173,9 @@ export class MobileWorkHubPreferencesSheet {
     constructor(
         protected readonly widgetManager: WidgetManager,
         protected readonly preferenceService?: PreferenceService,
+        protected readonly appearanceModeService?: QaapAppearanceModeService,
+        protected readonly themeService?: ThemeService,
+        protected readonly openBilling?: () => Promise<void>,
     ) {
         this.node = document.createElement('div');
         this.node.className = 'theia-mobile-work-hub-preferences';
@@ -201,13 +221,7 @@ export class MobileWorkHubPreferencesSheet {
             if (searchInput.readOnly) {
                 return;
             }
-            const value = searchInput.value;
-            this.activeSettingsSectionId = value ? 'search' : 'general';
-            this.titleEl.textContent = value
-                ? nls.localize('qaap/workHubSettings/searchResults', 'Search results')
-                : this.getSettingsSection('general').label;
-            this.updateSettingsNavigation();
-            void this.applyWorkHubSearch(value);
+            void this.handleSettingsSearch(searchInput.value);
         });
         this.settingsSearchInput = searchInput;
         searchLabel.append(searchIcon, searchInput);
@@ -272,7 +286,11 @@ export class MobileWorkHubPreferencesSheet {
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
 
-        content.append(header, this.widgetHost);
+        this.customContentHost = document.createElement('div');
+        this.customContentHost.className = 'theia-mobile-work-hub-settings-custom-content';
+        this.customContentHost.hidden = true;
+
+        content.append(header, this.customContentHost, this.widgetHost);
         settingsLayout.append(sidebar, sidebarResizer, content);
         sheet.append(settingsLayout);
         this.node.append(backdrop, sheet);
@@ -292,9 +310,10 @@ export class MobileWorkHubPreferencesSheet {
         const section = this.resolveSettingsSection(query);
         this.activeSettingsSectionId = section.id;
         this.titleEl.textContent = section.label;
-        this.settingsSearchInput.value = typeof query === 'string' ? query : section.query;
+        this.settingsSearchInput.value = typeof query === 'string'
+            ? query
+            : (this.isCustomSettingsSection(section.id) ? '' : section.query);
         this.updateSettingsNavigation();
-        this.attachWidget(widget);
         this.node.hidden = false;
         this.node.classList.add('theia-mod-visible');
         this.node.setAttribute('aria-hidden', 'false');
@@ -312,9 +331,14 @@ export class MobileWorkHubPreferencesSheet {
         await animationFrame(2);
         if (this.visible) {
             this.unlockAiFeaturesSearch();
-            await this.applyPreferencesQuery(widget, typeof query === 'string' ? query : section.query);
-            if (aiFeatures && this.visible) {
-                this.lockAiFeaturesSearch(widget, WORK_HUB_AI_FEATURES_PREFERENCES_QUERY);
+            if (this.isCustomSettingsSection(section.id)) {
+                this.showCustomSettingsSection(section.id);
+            } else {
+                this.showPreferencesSection(widget);
+                await this.applyPreferencesQuery(widget, typeof query === 'string' ? query : section.query);
+                if (aiFeatures && this.visible) {
+                    this.lockAiFeaturesSearch(widget, WORK_HUB_AI_FEATURES_PREFERENCES_QUERY);
+                }
             }
         }
         if (this.visible) {
@@ -448,10 +472,70 @@ export class MobileWorkHubPreferencesSheet {
         this.unlockAiFeaturesSearch();
         this.activeSettingsSectionId = section.id;
         this.titleEl.textContent = section.label;
-        this.settingsSearchInput.value = section.query;
+        this.settingsSearchInput.value = this.isCustomSettingsSection(section.id) ? '' : section.query;
         this.updateSettingsNavigation();
         if (this.visible && this.preferencesWidget) {
-            await this.applyPreferencesQuery(this.preferencesWidget, section.query);
+            if (this.isCustomSettingsSection(section.id)) {
+                this.showCustomSettingsSection(section.id);
+            } else {
+                this.showPreferencesSection(this.preferencesWidget);
+                await this.applyPreferencesQuery(this.preferencesWidget, section.query);
+            }
+        }
+    }
+
+    protected isCustomSettingsSection(sectionId: string): boolean {
+        return CUSTOM_SETTINGS_SECTIONS.has(sectionId);
+    }
+
+    protected showPreferencesSection(widget: PreferencesWidget): void {
+        this.customContentHost.hidden = true;
+        this.widgetHost.hidden = false;
+        this.attachWidget(widget);
+    }
+
+    protected showCustomSettingsSection(sectionId: string): void {
+        this.detachWidget();
+        this.widgetHost.hidden = true;
+        this.customContentHost.hidden = false;
+        this.renderCustomSettingsSection(sectionId);
+    }
+
+    protected renderCustomSettingsSection(sectionId: string): void {
+        this.customContentHost.replaceChildren();
+        switch (sectionId) {
+            case 'profile':
+                this.renderProfileSection();
+                break;
+            case 'appearance':
+                this.renderAppearanceSection();
+                break;
+            case 'plan-usage':
+                void this.renderPlanUsageSection();
+                break;
+            case 'worktrees':
+                this.renderWorktreesSection();
+                break;
+            case 'general':
+            default:
+                this.renderGeneralSection();
+                break;
+        }
+    }
+
+    protected async handleSettingsSearch(value: string): Promise<void> {
+        const query = value.trim();
+        if (!query) {
+            await this.selectSettingsSection(this.getSettingsSection('general'));
+            return;
+        }
+        this.unlockAiFeaturesSearch();
+        this.activeSettingsSectionId = 'search';
+        this.titleEl.textContent = nls.localize('qaap/workHubSettings/searchResults', 'Search results');
+        this.updateSettingsNavigation();
+        if (this.visible && this.preferencesWidget) {
+            this.showPreferencesSection(this.preferencesWidget);
+            await this.applyWorkHubSearch(query);
         }
     }
 
@@ -462,6 +546,538 @@ export class MobileWorkHubPreferencesSheet {
         await this.preferenceService?.ready;
         await this.preferencesWidget.setSearchTerm(value);
         this.scheduleLayoutSync(this.preferencesWidget);
+    }
+
+    protected renderGeneralSection(): void {
+        const panel = this.createCustomPanel();
+        panel.append(this.createCustomHeading(
+            nls.localize('qaap/workHubSettings/general/notifications', 'Notifications'),
+        ));
+
+        const notificationsCard = this.createSettingsCard();
+        const systemNotifications = this.preferenceService?.get<string>(
+            PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE,
+            NOTIFICATION_TYPE_OFF,
+        ) === NOTIFICATION_TYPE_OS_NOTIFICATION;
+        notificationsCard.append(this.createSettingsRow(
+            nls.localize('qaap/workHubSettings/general/systemNotifications', 'System Notifications'),
+            nls.localize(
+                'qaap/workHubSettings/general/systemNotificationsDescription',
+                'Show a notification when an agent completes or needs your attention.',
+            ),
+            this.createToggle(systemNotifications, nls.localize(
+                'qaap/workHubSettings/general/systemNotificationsLabel',
+                'System notifications',
+            ), checked => {
+                void this.preferenceService?.set(
+                    PREFERENCE_NAME_DEFAULT_NOTIFICATION_TYPE,
+                    checked ? NOTIFICATION_TYPE_OS_NOTIFICATION : NOTIFICATION_TYPE_OFF,
+                );
+            }),
+        ));
+        const completionSound = this.readLocalBoolean(WORK_HUB_COMPLETION_SOUND_KEY, false);
+        notificationsCard.append(this.createSettingsRow(
+            nls.localize('qaap/workHubSettings/general/completionSound', 'Completion Sound'),
+            nls.localize(
+                'qaap/workHubSettings/general/completionSoundDescription',
+                'Play a sound when agents finish or need your attention.',
+            ),
+            this.createToggle(completionSound, nls.localize(
+                'qaap/workHubSettings/general/completionSoundLabel',
+                'Completion sound',
+            ), checked => this.writeLocalBoolean(WORK_HUB_COMPLETION_SOUND_KEY, checked)),
+        ));
+        panel.append(notificationsCard);
+
+        panel.append(this.createCustomHeading(
+            nls.localize('qaap/workHubSettings/general/privacy', 'Privacy'),
+        ));
+        const privacyCard = this.createSettingsCard();
+        const telemetryLevel = this.preferenceService?.get<string>(WORK_HUB_TELEMETRY_PREFERENCE, 'off');
+        const dataSharing = telemetryLevel !== 'off';
+        privacyCard.append(this.createSettingsRow(
+            nls.localize('qaap/workHubSettings/general/dataSharing', 'Data Sharing'),
+            nls.localize(
+                'qaap/workHubSettings/general/dataSharingDescription',
+                'Share anonymous product usage data to help improve Qaap.',
+            ),
+            this.createToggle(dataSharing, nls.localize(
+                'qaap/workHubSettings/general/dataSharingLabel',
+                'Data sharing',
+            ), checked => {
+                void this.preferenceService?.set(WORK_HUB_TELEMETRY_PREFERENCE, checked ? 'all' : 'off');
+            }),
+        ));
+        panel.append(privacyCard);
+        this.customContentHost.append(panel);
+    }
+
+    protected renderProfileSection(): void {
+        const panel = this.createCustomPanel();
+        const user = readQaapAuthUser();
+        const card = this.createSettingsCard('theia-mobile-work-hub-settings-profile-card');
+        const identity = document.createElement('div');
+        identity.className = 'theia-mobile-work-hub-settings-profile-identity';
+
+        const avatar = document.createElement('div');
+        avatar.className = 'theia-mobile-work-hub-settings-profile-avatar';
+        if (user?.avatarUrl) {
+            const image = document.createElement('img');
+            image.src = user.avatarUrl;
+            image.alt = '';
+            image.draggable = false;
+            image.referrerPolicy = 'no-referrer';
+            image.decoding = 'async';
+            avatar.append(image);
+        } else {
+            avatar.textContent = user ? qaapAuthUserInitials(user) : '?';
+        }
+
+        const details = document.createElement('div');
+        details.className = 'theia-mobile-work-hub-settings-profile-details';
+        const name = document.createElement('strong');
+        name.textContent = user?.name || user?.login || nls.localize(
+            'qaap/workHubSettings/profile/notSignedIn',
+            'Not signed in',
+        );
+        const login = document.createElement('span');
+        login.textContent = user?.login ? `@${user.login}` : nls.localize(
+            'qaap/workHubSettings/profile/connectAccount',
+            'Connect a GitHub account to sync your profile.',
+        );
+        details.append(name, login);
+        identity.append(avatar, details);
+
+        const provider = document.createElement('span');
+        provider.className = 'theia-mobile-work-hub-settings-profile-provider';
+        provider.textContent = user?.provider === 'gitlab'
+            ? 'GitLab'
+            : nls.localize('qaap/workHubSettings/profile/github', 'GitHub');
+        card.append(identity, provider);
+        panel.append(card);
+        this.customContentHost.append(panel);
+    }
+
+    protected renderAppearanceSection(): void {
+        const panel = this.createCustomPanel();
+        panel.append(this.createCustomHeading(
+            nls.localize('qaap/workHubSettings/appearance/theme', 'Theme'),
+        ));
+
+        const modeCard = this.createSettingsCard();
+        const modeDescription = document.createElement('p');
+        modeDescription.className = 'theia-mobile-work-hub-settings-description';
+        modeDescription.textContent = nls.localize(
+            'qaap/workHubSettings/appearance/modeDescription',
+            'Choose how Qaap follows your preferred light and dark themes.',
+        );
+        const modeGroup = document.createElement('div');
+        modeGroup.className = 'theia-mobile-work-hub-settings-mode-group';
+        modeGroup.setAttribute('role', 'radiogroup');
+        modeGroup.setAttribute('aria-label', nls.localize(
+            'qaap/workHubSettings/appearance/modeLabel',
+            'Color mode',
+        ));
+        const currentMode = this.appearanceModeService?.getMode() ?? 'system';
+        const modes: ReadonlyArray<{ readonly id: QaapAppearanceMode; readonly label: string }> = [
+            { id: 'system', label: nls.localize('qaap/workHubSettings/appearance/system', 'System') },
+            { id: 'light', label: nls.localize('qaap/workHubSettings/appearance/light', 'Light') },
+            { id: 'dark', label: nls.localize('qaap/workHubSettings/appearance/dark', 'Dark') },
+        ];
+        for (const mode of modes) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'theia-mobile-work-hub-settings-mode-button';
+            button.textContent = mode.label;
+            button.setAttribute('role', 'radio');
+            button.setAttribute('aria-checked', String(currentMode === mode.id));
+            button.classList.toggle('theia-mod-selected', currentMode === mode.id);
+            button.addEventListener('click', () => {
+                this.appearanceModeService?.setMode(mode.id);
+                this.renderCustomSettingsSection('appearance');
+            });
+            modeGroup.append(button);
+        }
+        modeCard.append(modeDescription, modeGroup);
+        panel.append(modeCard);
+
+        const themeCard = this.createSettingsCard();
+        const themeLabel = document.createElement('label');
+        themeLabel.className = 'theia-mobile-work-hub-settings-field-label';
+        themeLabel.textContent = nls.localize('qaap/workHubSettings/appearance/colorTheme', 'Color theme');
+        const themeSelect = document.createElement('select');
+        themeSelect.className = 'theia-mobile-work-hub-settings-select';
+        themeSelect.setAttribute('aria-label', themeLabel.textContent);
+        const themes = this.themeService?.getThemes() ?? [];
+        const currentThemeId = this.themeService?.getCurrentTheme()?.id;
+        for (const theme of themes) {
+            const option = document.createElement('option');
+            option.value = theme.id;
+            option.textContent = theme.label;
+            option.selected = theme.id === currentThemeId;
+            themeSelect.append(option);
+        }
+        themeSelect.addEventListener('change', () => {
+            if (themeSelect.value) {
+                this.themeService?.setCurrentTheme(themeSelect.value);
+                this.renderCustomSettingsSection('appearance');
+            }
+        });
+        themeCard.append(themeLabel, themeSelect);
+        panel.append(themeCard);
+        this.customContentHost.append(panel);
+    }
+
+    protected renderWorktreesSection(): void {
+        const panel = this.createCustomPanel();
+        panel.append(this.createCustomHeading(
+            nls.localize('qaap/workHubSettings/worktrees/cleanup', 'Cleanup'),
+        ));
+
+        const description = document.createElement('p');
+        description.className = 'theia-mobile-work-hub-settings-description';
+        description.textContent = nls.localize(
+            'qaap/workHubSettings/worktrees/cleanupDescription',
+            'Qaap periodically removes old, clean worktrees to keep workspace storage healthy. Active or modified worktrees are always preserved.',
+        );
+        panel.append(description);
+
+        const card = this.createSettingsCard();
+        const maxCount = this.readLocalNumber(WORK_HUB_WORKTREE_MAX_COUNT_KEY, 25);
+        const maxSizeGb = this.readLocalNumber(WORK_HUB_WORKTREE_MAX_SIZE_KEY, 50);
+        card.append(
+            this.createSettingsRow(
+                nls.localize('qaap/workHubSettings/worktrees/maxCount', 'Max Worktrees'),
+                nls.localize(
+                    'qaap/workHubSettings/worktrees/maxCountDescription',
+                    'Maximum number of Qaap-managed worktrees to retain for this account. Older clean worktrees are removed first.',
+                ),
+                this.createNumberStepper(
+                    maxCount,
+                    1,
+                    100,
+                    nls.localize('qaap/workHubSettings/worktrees/maxCountLabel', 'Maximum worktrees'),
+                    value => this.writeLocalNumber(WORK_HUB_WORKTREE_MAX_COUNT_KEY, value),
+                ),
+            ),
+            this.createSettingsRow(
+                nls.localize('qaap/workHubSettings/worktrees/maxSize', 'Max Total Size (GB)'),
+                nls.localize(
+                    'qaap/workHubSettings/worktrees/maxSizeDescription',
+                    'Maximum storage budget for Qaap-managed worktrees. Set to 0 to disable the size limit.',
+                ),
+                this.createNumberStepper(
+                    maxSizeGb,
+                    0,
+                    500,
+                    nls.localize('qaap/workHubSettings/worktrees/maxSizeLabel', 'Maximum worktree storage in gigabytes'),
+                    value => this.writeLocalNumber(WORK_HUB_WORKTREE_MAX_SIZE_KEY, value),
+                ),
+            ),
+        );
+        panel.append(card);
+        this.customContentHost.append(panel);
+    }
+
+    protected async renderPlanUsageSection(): Promise<void> {
+        const token = ++this.planUsageRenderToken;
+        const panel = this.createCustomPanel();
+        const loading = document.createElement('p');
+        loading.className = 'theia-mobile-work-hub-settings-status';
+        loading.textContent = nls.localize('qaap/workHubSettings/planUsage/loading', 'Loading plan and usage…');
+        panel.append(loading);
+        this.customContentHost.append(panel);
+
+        let data: QaapBillingApiResponse | undefined;
+        try {
+            data = await fetchQaapBilling();
+        } catch {
+            data = undefined;
+        }
+        if (!this.visible || token !== this.planUsageRenderToken || this.activeSettingsSectionId !== 'plan-usage') {
+            return;
+        }
+        panel.replaceChildren();
+        if (!data) {
+            this.renderPlanUsageFallback(panel);
+            return;
+        }
+        this.renderPlanUsageData(panel, data);
+    }
+
+    protected renderPlanUsageFallback(panel: HTMLElement): void {
+        panel.append(this.createCustomHeading(
+            nls.localize('qaap/workHubSettings/planUsage/currentPlan', 'Current plan'),
+        ));
+        const card = this.createSettingsCard();
+        const title = document.createElement('h3');
+        title.textContent = nls.localize('qaap/workHubSettings/planUsage/starter', 'Starter');
+        const description = document.createElement('p');
+        description.textContent = nls.localize(
+            'qaap/workHubSettings/planUsage/unavailable',
+            'Usage details will appear here when your Qaap account is connected.',
+        );
+        card.append(title, description);
+        panel.append(card);
+        this.appendBillingButton(panel);
+    }
+
+    protected renderPlanUsageData(panel: HTMLElement, data: QaapBillingApiResponse): void {
+        const currentPlan = data.catalog.plans.find(plan => plan.id === data.entitlements.planId);
+        const currentPlanName = this.planName(data.entitlements.planId);
+        panel.append(this.createCustomHeading(
+            nls.localize('qaap/workHubSettings/planUsage/currentPlan', 'Current plan'),
+        ));
+        const planCard = this.createSettingsCard('theia-mobile-work-hub-settings-plan-card');
+        const planMeta = document.createElement('span');
+        planMeta.className = 'theia-mobile-work-hub-settings-eyebrow';
+        planMeta.textContent = nls.localize('qaap/workHubSettings/planUsage/active', 'Active plan');
+        const planTitle = document.createElement('h3');
+        planTitle.textContent = currentPlanName;
+        const planDescription = document.createElement('p');
+        planDescription.textContent = currentPlan
+            ? this.planSummary(currentPlan)
+            : nls.localize('qaap/workHubSettings/planUsage/qaapPlan', 'Qaap agent workspace plan');
+        planCard.append(planMeta, planTitle, planDescription);
+        panel.append(planCard);
+
+        panel.append(this.createCustomHeading(
+            nls.localize('qaap/workHubSettings/planUsage/usage', 'Usage'),
+        ));
+        const usageCard = this.createSettingsCard();
+        usageCard.append(
+            this.createUsageMeter(
+                nls.localize('qaap/workHubSettings/planUsage/runtime', 'Agent runtime'),
+                data.entitlements.runtimeHoursRemaining,
+                data.entitlements.includedRuntimeHoursPerMonth,
+                data.entitlements.runtimeFairUse
+                    ? nls.localize('qaap/workHubSettings/planUsage/fairUse', 'Fair use')
+                    : nls.localize('qaap/workHubSettings/planUsage/hoursRemaining', '{0} hours remaining', this.formatNumber(data.entitlements.runtimeHoursRemaining)),
+                data.entitlements.runtimeFairUse ? undefined : data.entitlements.runtimeUsageRatio,
+            ),
+            this.createUsageMeter(
+                nls.localize('qaap/workHubSettings/planUsage/credits', 'Hosted model credits'),
+                data.entitlements.creditsRemaining,
+                data.entitlements.includedCreditsPerMonth,
+                nls.localize('qaap/workHubSettings/planUsage/creditsRemaining', '{0} credits remaining', this.formatNumber(data.entitlements.creditsRemaining)),
+            ),
+        );
+        panel.append(usageCard);
+        this.appendBillingButton(panel);
+    }
+
+    protected appendBillingButton(panel: HTMLElement): void {
+        if (!this.openBilling) {
+            return;
+        }
+        const actions = document.createElement('div');
+        actions.className = 'theia-mobile-work-hub-settings-actions';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mobile-work-hub-settings-primary-button';
+        button.textContent = nls.localize('qaap/workHubSettings/planUsage/manage', 'Manage plan');
+        button.addEventListener('click', () => {
+            this.hide();
+            void this.openBilling?.();
+        });
+        actions.append(button);
+        panel.append(actions);
+    }
+
+    protected createCustomPanel(): HTMLElement {
+        const panel = document.createElement('div');
+        panel.className = 'theia-mobile-work-hub-settings-custom-panel';
+        return panel;
+    }
+
+    protected createCustomHeading(text: string): HTMLElement {
+        const heading = document.createElement('h2');
+        heading.className = 'theia-mobile-work-hub-settings-custom-heading';
+        heading.textContent = text;
+        return heading;
+    }
+
+    protected createSettingsCard(className = ''): HTMLElement {
+        const card = document.createElement('div');
+        card.className = `theia-mobile-work-hub-settings-card${className ? ` ${className}` : ''}`;
+        return card;
+    }
+
+    protected createSettingsRow(title: string, description: string, control: HTMLElement): HTMLElement {
+        const row = document.createElement('div');
+        row.className = 'theia-mobile-work-hub-settings-row';
+        const copy = document.createElement('div');
+        copy.className = 'theia-mobile-work-hub-settings-row-copy';
+        const titleEl = document.createElement('strong');
+        titleEl.textContent = title;
+        const descriptionEl = document.createElement('span');
+        descriptionEl.textContent = description;
+        copy.append(titleEl, descriptionEl);
+        row.append(copy, control);
+        return row;
+    }
+
+    protected createToggle(checked: boolean, label: string, onChange: (checked: boolean) => void): HTMLElement {
+        const wrapper = document.createElement('label');
+        wrapper.className = 'theia-mobile-work-hub-settings-toggle';
+        wrapper.title = label;
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = checked;
+        input.setAttribute('aria-label', label);
+        const track = document.createElement('span');
+        track.className = 'theia-mobile-work-hub-settings-toggle-track';
+        track.setAttribute('aria-hidden', 'true');
+        input.addEventListener('change', () => onChange(input.checked));
+        wrapper.append(input, track);
+        return wrapper;
+    }
+
+    protected createNumberStepper(
+        value: number,
+        min: number,
+        max: number,
+        label: string,
+        onChange: (value: number) => void,
+    ): HTMLElement {
+        const stepper = document.createElement('div');
+        stepper.className = 'theia-mobile-work-hub-settings-stepper';
+        stepper.setAttribute('role', 'group');
+        stepper.setAttribute('aria-label', label);
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = String(min);
+        input.max = String(max);
+        input.step = '1';
+        input.value = String(Math.min(max, Math.max(min, Math.round(value))));
+        input.setAttribute('aria-label', label);
+        const update = (): void => {
+            const next = Math.min(max, Math.max(min, Math.round(Number(input.value) || min)));
+            input.value = String(next);
+            onChange(next);
+        };
+        const decrement = this.createStepperButton(
+            '−',
+            nls.localize('qaap/workHubSettings/worktrees/decrease', 'Decrease value'),
+            () => {
+                input.value = String(Math.max(min, Number(input.value) - 1));
+                update();
+            },
+        );
+        const increment = this.createStepperButton(
+            '+',
+            nls.localize('qaap/workHubSettings/worktrees/increase', 'Increase value'),
+            () => {
+                input.value = String(Math.min(max, Number(input.value) + 1));
+                update();
+            },
+        );
+        input.addEventListener('change', update);
+        input.addEventListener('blur', update);
+        stepper.append(decrement, input, increment);
+        return stepper;
+    }
+
+    protected createStepperButton(text: string, label: string, onClick: () => void): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'theia-mobile-work-hub-settings-stepper-button';
+        button.textContent = text;
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        button.addEventListener('click', onClick);
+        return button;
+    }
+
+    protected createUsageMeter(
+        title: string,
+        remaining: number,
+        total: number,
+        caption: string,
+        usageRatio?: number,
+    ): HTMLElement {
+        const meter = document.createElement('div');
+        meter.className = 'theia-mobile-work-hub-settings-usage-meter';
+        const header = document.createElement('div');
+        header.className = 'theia-mobile-work-hub-settings-usage-header';
+        const titleEl = document.createElement('strong');
+        titleEl.textContent = title;
+        const value = document.createElement('span');
+        value.textContent = caption;
+        header.append(titleEl, value);
+        const progress = document.createElement('div');
+        progress.className = 'theia-mobile-work-hub-settings-progress';
+        const fill = document.createElement('span');
+        const ratio = usageRatio ?? (total > 0 ? 1 - remaining / total : 0);
+        fill.style.width = `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
+        progress.append(fill);
+        meter.append(header, progress);
+        return meter;
+    }
+
+    protected planName(planId: string): string {
+        switch (planId) {
+            case 'pro':
+                return nls.localize('qaap/workHubSettings/planUsage/pro', 'Pro');
+            case 'team':
+                return nls.localize('qaap/workHubSettings/planUsage/team', 'Team');
+            default:
+                return nls.localize('qaap/workHubSettings/planUsage/starter', 'Starter');
+        }
+    }
+
+    protected planSummary(plan: QaapBillingApiResponse['catalog']['plans'][number]): string {
+        if (plan.runtimeFairUse) {
+            return nls.localize('qaap/workHubSettings/planUsage/fairUseSummary', 'Fair-use agent runtime with your own model keys.');
+        }
+        return nls.localize(
+            'qaap/workHubSettings/planUsage/planSummary',
+            '{0} agent hours/month · {1} GB workspace storage',
+            this.formatNumber(plan.includedRuntimeHoursPerMonth),
+            this.formatNumber(plan.storageGb),
+        );
+    }
+
+    protected formatNumber(value: number): string {
+        return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
+    }
+
+    protected readLocalBoolean(key: string, fallback: boolean): boolean {
+        try {
+            const value = window.localStorage.getItem(key);
+            return value === null ? fallback : value === '1';
+        } catch {
+            return fallback;
+        }
+    }
+
+    protected writeLocalBoolean(key: string, value: boolean): void {
+        try {
+            window.localStorage.setItem(key, value ? '1' : '0');
+        } catch {
+            // Private browsing / quota errors should not block the settings UI.
+        }
+    }
+
+    protected readLocalNumber(key: string, fallback: number): number {
+        try {
+            const storedValue = window.localStorage.getItem(key);
+            if (storedValue === null) {
+                return fallback;
+            }
+            const value = Number(storedValue);
+            return Number.isFinite(value) ? value : fallback;
+        } catch {
+            return fallback;
+        }
+    }
+
+    protected writeLocalNumber(key: string, value: number): void {
+        try {
+            window.localStorage.setItem(key, String(value));
+        } catch {
+            // Private browsing / quota errors should not block the settings UI.
+        }
     }
 
     protected detachWidget(): void {

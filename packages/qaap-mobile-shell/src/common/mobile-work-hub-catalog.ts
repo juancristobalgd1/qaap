@@ -6,6 +6,7 @@
 /** Same command ids as the IDE welcome quick actions / settings. */
 export const QAAP_WORK_HUB_COLOR_THEME_COMMAND = 'workbench.action.selectTheme';
 export const QAAP_WORK_HUB_AI_FEATURES_COMMAND = 'ai-chat-ui.show-settings';
+/** Legacy command id kept as a compatibility redirect to AI Features. */
 export const QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND = 'aiConfiguration:open';
 /** Harness tab used to enable or disable the CLI integrations shown by the composer. */
 export const QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB = 'qaap-harness-configuration-widget';
@@ -67,15 +68,6 @@ export const QAAP_WORK_HUB_GETTING_STARTED: WorkHubCatalogSection = {
             iconClass: 'codicon-sparkle',
             action: { type: 'command', commandId: QAAP_WORK_HUB_AI_FEATURES_COMMAND },
             searchText: 'ai features settings api keys models openrouter nvidia anthropic byok qaiq',
-        },
-        {
-            id: 'workflow-ai-configuration',
-            sectionId: 'start',
-            title: 'AI Configuration',
-            subtitle: 'MCP, skills, and model aliases for Work Hub. Pick @qaiq / @codex in the composer.',
-            iconClass: 'codicon-hubot',
-            action: { type: 'command', commandId: QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND },
-            searchText: 'ai configuration mcp skills model aliases qaiq codex composer work hub',
         },
     ],
 };

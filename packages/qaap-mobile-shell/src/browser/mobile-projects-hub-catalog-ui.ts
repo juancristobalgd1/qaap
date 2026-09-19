@@ -8,7 +8,6 @@ import { CommandRegistry } from '@theia/core/lib/common/command';
 import {
     filterCatalogSections,
     QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND,
-    QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB,
     QAAP_WORK_HUB_AI_FEATURES_COMMAND,
     QAAP_WORK_HUB_WORKFLOWS,
     type WorkHubCatalogAction,
@@ -140,8 +139,8 @@ export class MobileProjectsHubCatalogUi {
                     await this.host.openPreferencesSheet('ai-features');
                     return;
                 }
-                if (action.commandId === QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND && this.host.openAiConfigurationSheet) {
-                    await this.host.openAiConfigurationSheet(QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB);
+                if (action.commandId === QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND && this.host.openPreferencesSheet) {
+                    await this.host.openPreferencesSheet('ai-features');
                     return;
                 }
                 if (this.host.commands.getCommand(action.commandId)) {

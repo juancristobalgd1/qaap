@@ -30,10 +30,12 @@ import { QaapAiConfigurationNavigationWidget } from './qaap-ai-configuration-nav
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
 import { AIAgentConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/agent-configuration-widget';
+import { AIAgentConfigurationViewContribution } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-view-contribution';
 import { AIConfigurationContainerWidget } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-widget';
 import { AISkillsConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/skills-configuration-widget';
 import { QaapAiAgentConfigurationWidget } from './qaap-ai-agent-configuration-widget';
 import { QaapAiConfigurationContainerWidget } from './qaap-ai-configuration-container-widget';
+import { QaapAiConfigurationViewContribution } from './qaap-ai-configuration-view-contribution';
 import { QaapAiSkillsConfigurationWidget } from './qaap-ai-skills-configuration-widget';
 import { DefaultSkillService, SkillService } from '@theia/ai-core/lib/browser/skill-service';
 import { QaapSkillService } from './qaap-skill-service';
@@ -64,6 +66,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapAiConfigurationContainerWidget).toSelf().inSingletonScope();
     rebind(AIConfigurationContainerWidget).toService(QaapAiConfigurationContainerWidget);
+
+    bind(QaapAiConfigurationViewContribution).toSelf().inSingletonScope();
+    rebind(AIAgentConfigurationViewContribution).toService(QaapAiConfigurationViewContribution);
 
     bind(QaapAiSkillsConfigurationWidget).toSelf();
     rebind(AISkillsConfigurationWidget).toService(QaapAiSkillsConfigurationWidget);

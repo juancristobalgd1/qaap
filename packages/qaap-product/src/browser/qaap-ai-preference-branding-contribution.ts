@@ -5,20 +5,16 @@
 
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { PreferenceDataProperty } from '@theia/core/lib/common/preferences';
+import { nls } from '@theia/core/lib/common/nls';
 import { PreferenceSchemaService } from '@theia/core/lib/common/preferences/preference-schema';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { shouldHideQaapAiFeaturesPreference } from '@theia/qaap-mobile-shell/lib/common/qaap-ai-features-visibility';
-import { buildAiConfigurationCommandLink } from '@theia/qaap-mobile-shell/lib/common/qaap-ai-configuration-command-link';
-import {
-    QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB,
-    QAAP_WORK_HUB_AI_CONFIGURATION_MODEL_ALIASES_TAB,
-    QAAP_WORK_HUB_AI_CONFIGURATION_SKILLS_TAB,
-} from '@theia/qaap-mobile-shell/lib/common/mobile-work-hub-catalog';
 
 const HOST_MACHINE_FROM = 'on the machine running Theia.';
 const HOST_MACHINE_TO = 'on the machine running this application.';
 
 const ENABLE_AI_PREF = 'ai-features.AiEnable.enableAI';
+const AGENT_SETTINGS_PREF = 'ai-features.agentSettings';
 const LANGUAGE_MODEL_ALIASES_PREF = 'ai-features.languageModelAliases';
 
 const IDE_BRIDGE_PREFIX =
@@ -29,20 +25,17 @@ const IDE_BRIDGE_PREFIX =
  */
 const WORK_HUB_PREF_MARKDOWN: Readonly<Record<string, string>> = {
     'ai-features.agentSettings.details':
-        'Work Hub agents (`@qaiq`, `@codex`, `@claude`, …) are chosen in the **composer**, not here. '
-        + `Use [AI Configuration → MCP](${buildAiConfigurationCommandLink(QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB)}) for servers, `
-        + `or [Skills](${buildAiConfigurationCommandLink(QAAP_WORK_HUB_AI_CONFIGURATION_SKILLS_TAB)}) for slash skills. `
-        + 'The **IDE Agents** tab is only for classic IDE chat agents (Coder / Architect).',
+        'Work Hub agents (`@qaiq`, `@codex`, `@claude`, …) are chosen in the **composer**. '
+        + 'Use **AI Features → Agents & runtimes** for agent behavior and runtime availability.',
     'ai-features.promptTemplates.details':
         'Prompt folders apply to **classic IDE chat** agents. '
-        + `For Work Hub slash skills, open [AI Configuration → Skills](${buildAiConfigurationCommandLink(QAAP_WORK_HUB_AI_CONFIGURATION_SKILLS_TAB)}).`,
+        + 'Work Hub skills and prompt locations are organized under **AI Features → Tools, skills & prompts**.',
     'ai-features.modelSelection.details':
         'Model aliases (for example `default/code`) drive **QAIQ** routing in Work Hub. '
-        + `Configure them in [AI Configuration → Model Aliases](${buildAiConfigurationCommandLink(QAAP_WORK_HUB_AI_CONFIGURATION_MODEL_ALIASES_TAB)}).`,
+        + 'Configure them under **AI Features → Model routing & behavior**.',
     [LANGUAGE_MODEL_ALIASES_PREF]:
         'Aliases used by **QAIQ** in Work Hub (and IDE chat agents). '
-        + `Edit them in [AI Configuration → Model Aliases](${buildAiConfigurationCommandLink(QAAP_WORK_HUB_AI_CONFIGURATION_MODEL_ALIASES_TAB)}), `
-        + 'or set them in `settings.json`, for example:\n'
+        + 'Edit them directly in this setting or in `settings.json`, for example:\n'
         + '```\n'
         + '"default/code": {\n'
         + '  "selectedModel": "openrouter/openai/gpt-4.1"\n'
@@ -94,6 +87,20 @@ export class QaapAiPreferenceBrandingStartup implements FrontendApplicationContr
 
             if (shouldHideQaapAiFeaturesPreference(key) && !next.hidden) {
                 next = { ...next, hidden: true };
+                changed = true;
+            }
+
+            // The standalone AI Configuration view is no longer a user-facing surface. Keep
+            // agent preferences available in the organized AI Features settings tree instead.
+            if (key === AGENT_SETTINGS_PREF && next.hidden) {
+                next = {
+                    ...next,
+                    hidden: false,
+                    markdownDescription: nls.localize(
+                        'qaap/preferences/agentSettings/description',
+                        'Configure agent enablement, model requirements, prompt variants, and capability selections under **AI Features → Agents & runtimes**.',
+                    ),
+                };
                 changed = true;
             }
 

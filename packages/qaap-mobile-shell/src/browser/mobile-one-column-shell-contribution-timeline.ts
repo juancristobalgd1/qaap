@@ -69,7 +69,6 @@ import { MobileSnackbar } from './mobile-snackbar';
 import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
-import { MobileWorkHubAiConfigurationSheet } from './mobile-work-hub-ai-configuration-sheet';
 import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import {
@@ -105,10 +104,8 @@ import {
 } from './qaap-workbench-account-menu';
 import {
     QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND,
-    QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB,
     QAAP_WORK_HUB_AI_FEATURES_COMMAND,
 } from '../common/mobile-work-hub-catalog';
-import { resolveAiConfigurationTabArg } from '../common/qaap-ai-configuration-command-link';
 import {
     QAAP_WORK_HUB_NEW_AGENT_COMMAND,
     QAAP_WORK_HUB_OPEN_BILLING_COMMAND,
@@ -265,9 +262,8 @@ export function registerCommandsExtracted(ctx: any, registry: CommandRegistry): 
         isVisible: () => !peekPreferDesktopIde(),
     });
     registry.registerHandler(QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND, {
-        execute: (tabId?: unknown) => ctx.openWorkHubAiConfigurationSheet(
-            resolveAiConfigurationTabArg(tabId, QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB),
-        ),
+        // Keep old deep links working, but land them in the organized AI Features settings.
+        execute: () => ctx.openWorkHubPreferencesSheet('ai-features'),
         isEnabled: () => !peekPreferDesktopIde(),
         isVisible: () => !peekPreferDesktopIde(),
     });
@@ -419,7 +415,13 @@ export async function openAgentTaskComposerExtracted(ctx: any, project: MobilePr
 
 export async function openWorkHubPreferencesSheetExtracted(ctx: any, query?: string): Promise<void> {
     if (!ctx.workHubPreferencesSheet) {
-        ctx.workHubPreferencesSheet = new MobileWorkHubPreferencesSheet(ctx.widgetManager, ctx.preferenceService);
+        ctx.workHubPreferencesSheet = new MobileWorkHubPreferencesSheet(
+            ctx.widgetManager,
+            ctx.preferenceService,
+            ctx.appearanceModeService,
+            ctx.themeService,
+            () => ctx.openWorkHubBillingSheet(),
+        );
         document.body.appendChild(ctx.workHubPreferencesSheet.node);
         ctx.toDispose.push(Disposable.create(() => {
             ctx.workHubPreferencesSheet?.dispose();
@@ -441,19 +443,10 @@ export async function openWorkHubBillingSheetExtracted(ctx: any, options?: { rea
     await ctx.workHubBillingSheet.show(options);
 }
 
-export async function openWorkHubAiConfigurationSheetExtracted(ctx: any, tabId?: string): Promise<void> {
-    if (!ctx.workHubAiConfigurationSheet) {
-        ctx.workHubAiConfigurationSheet = new MobileWorkHubAiConfigurationSheet(
-            ctx.widgetManager,
-            ctx.aiConfigurationSelectionService,
-        );
-        document.body.appendChild(ctx.workHubAiConfigurationSheet.node);
-        ctx.toDispose.push(Disposable.create(() => {
-            ctx.workHubAiConfigurationSheet?.dispose();
-            ctx.workHubAiConfigurationSheet = undefined;
-        }));
-    }
-    await ctx.workHubAiConfigurationSheet.show(tabId);
+export async function openWorkHubAiConfigurationSheetExtracted(ctx: any, _tabId?: string): Promise<void> {
+    // Preserve callers used by the composer and old deep links while removing the
+    // standalone AI Configuration surface from the product UI.
+    await openWorkHubPreferencesSheetExtracted(ctx, 'ai-features');
 }
 
 export async function toggleProjectsPanelExtracted(ctx: any): Promise<void> {

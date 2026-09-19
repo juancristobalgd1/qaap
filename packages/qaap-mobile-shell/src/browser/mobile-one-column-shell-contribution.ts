@@ -27,6 +27,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { ThemeService } from '@theia/core/lib/browser/theming';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { RESET_LAYOUT } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
@@ -84,8 +85,6 @@ import { MobileSnackbar } from './mobile-snackbar';
 import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
-import { MobileWorkHubAiConfigurationSheet } from './mobile-work-hub-ai-configuration-sheet';
-import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import {
     clearMobileWorkHubBootGuard,
@@ -265,6 +264,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(QaapAppearanceModeService)
     protected readonly appearanceModeService: QaapAppearanceModeService;
 
+    @inject(ThemeService)
+    protected readonly themeService: ThemeService;
+
     @inject(MCPFrontendService) @optional()
     protected readonly mcpFrontendService?: MCPFrontendService;
 
@@ -337,9 +339,6 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     @inject(StorageService)
     protected readonly storageService: StorageService;
 
-    @inject(AIConfigurationSelectionService)
-    protected readonly aiConfigurationSelectionService: AIConfigurationSelectionService;
-
     protected readonly toDispose = new DisposableCollection();
     protected readonly mobileMq: MediaQueryList | undefined =
         typeof window !== 'undefined' ? window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY) : undefined;
@@ -369,7 +368,6 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
     protected agentTaskComposer: MobileAgentTaskComposer | undefined;
     protected workHubPreferencesSheet: MobileWorkHubPreferencesSheet | undefined;
     protected workHubBillingSheet: MobileWorkHubBillingSheet | undefined;
-    protected workHubAiConfigurationSheet: MobileWorkHubAiConfigurationSheet | undefined;
     protected projectsCount = 0;
     protected landing!: MobileShellLandingController;
     private landingHost!: MobileShellLandingHost;
