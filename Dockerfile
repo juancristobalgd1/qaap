@@ -38,7 +38,15 @@ WORKDIR /app/examples/browser
 RUN npm run build:production && node scripts/copy-frontend-static.mjs
 
 # --- Runtime -----------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS python-runtime
+
 FROM node:22-bookworm-slim AS runtime
+
+# Debian Bookworm's system Python is 3.11, but Qaap's backup restore guard uses
+# tarfile.data_filter, which was introduced in Python 3.12. Copy the official
+# Python runtime into the Node image so `python3` has the same safety contract
+# in the deployed image and in the CI smoke verifier.
+COPY --from=python-runtime /usr/local /usr/local
 
 # Connect the GHCR package to this repository and make the image provenance discoverable.
 LABEL org.opencontainers.image.source="https://github.com/juancristobalgd1/qaap"
@@ -75,7 +83,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && claude --version \
     && opencode --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
-    && antigravity --version
+    && antigravity --version \
+    && python3 -c "import tarfile; assert hasattr(tarfile, 'data_filter')"
 
 # Fetch and verify the reviewed commit itself, rather than using its SHA only as a cache key.
 ARG CACHE_BUST=unpinned
