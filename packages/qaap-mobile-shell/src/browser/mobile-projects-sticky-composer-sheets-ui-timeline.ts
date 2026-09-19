@@ -40,7 +40,6 @@ import {
 import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
-    createAgentSheetOptionRow,
     createUnavailableAgentSheetOption,
     createApprovalPolicySheetOptionButton,
     createModeSheetOptionButton,
@@ -459,40 +458,10 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
                 });
             },
         });
-        const actionLabel = options.onProactiveLogin && agentHasCliOAuthLogin(agentId)
-            ? nls.localize('qaap/mobileProjects/stickyComposerConnectAgent', 'Connect')
-            : agentId.toLowerCase() === QAIQ_AGENT_ID
-                && options.onOpenAiFeaturesSettings
-                && ctx.host.readPreference
-                && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference(key))
-                ? nls.localize('qaap/mobileProjects/stickyComposerAddByok', 'Add BYOK')
-                : options.onOpenAiFeaturesSettings && agentNeedsSettingsApiKeyPath(agentId)
-                    ? nls.localize('qaap/mobileProjects/stickyComposerConfigureAgent', 'Configure')
-                    : undefined;
-        const actionTitle = actionLabel
-            ? nls.localize(
-                'qaap/mobileProjects/stickyComposerAgentActionAria',
-                '{0} {1}',
-                actionLabel,
-                label,
-            )
-            : undefined;
-        content.append(createAgentSheetOptionRow({
-            primary,
-            actionLabel,
-            actionTitle,
-            onAction: actionLabel
-                ? () => {
-                    if (options.onProactiveLogin && agentHasCliOAuthLogin(agentId)) {
-                        options.onProactiveLogin(agentId, options.project);
-                    } else if (agentId.toLowerCase() === QAIQ_AGENT_ID && options.onOpenAiFeaturesSettings) {
-                        options.onOpenAiFeaturesSettings(agentId);
-                    } else {
-                        options.onOpenAiFeaturesSettings?.(agentId);
-                    }
-                }
-                : undefined,
-        }));
+        // A detected/connected harness is ready to use, so keep its row clean. The
+        // connect/configure action is rendered by the unavailable branch above only
+        // when the backend reports that the harness still needs setup.
+        content.append(primary);
     };
 
     for (const entry of searchResults.directAgents) {

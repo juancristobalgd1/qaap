@@ -13260,6 +13260,14 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   cursor: pointer;
 }
 
+.theia-mobile-execution-surface-sidebar-header-divider {
+  flex: 0 0 1px;
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--theia-widget-border, var(--theia-editorWidget-border, rgba(128, 128, 128, 0.32)));
+}
+
 .theia-mobile-execution-surface-sidebar-close:hover,
 .theia-mobile-execution-surface-sidebar-close:focus-visible {
   border-color: var(--theia-focusBorder, var(--theia-focus-border));

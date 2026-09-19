@@ -617,7 +617,10 @@ export function openExecutionSurfaceSidebarExtracted(ctx: any, tab: TranscriptTa
             header.append(candidate);
         }
     }
-    header.append(close);
+    const closeDivider = document.createElement('span');
+    closeDivider.className = 'theia-mobile-execution-surface-sidebar-header-divider';
+    closeDivider.setAttribute('aria-hidden', 'true');
+    header.append(closeDivider, close);
 
     const content = document.createElement('div');
     content.className = 'theia-mobile-execution-surface-sidebar-content';
