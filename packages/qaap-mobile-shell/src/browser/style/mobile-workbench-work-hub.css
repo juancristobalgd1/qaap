@@ -12937,6 +12937,53 @@ body.theia-mod-work-hub-settings-resizing * {
   padding-bottom: 24px;
 }
 
+.theia-mobile-work-hub-settings-custom-content.theia-mod-embedded-settings {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.theia-mobile-work-hub-settings-embedded-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  width: min(100%, 1040px);
+  padding-bottom: 0;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-configuration-container,
+.theia-mobile-work-hub-settings-embedded-widget .ai-skills-configuration-container {
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-configuration-container {
+  flex: 1 1 auto;
+  padding: 18px 20px 24px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .ai-skills-configuration-container {
+  flex: 1 1 auto;
+  padding: 16px 20px 24px;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-configuration-content {
+  padding-top: 16px;
+}
+
 .theia-mobile-work-hub-settings-custom-heading {
   margin: 18px 0 10px;
   color: var(--theia-foreground);
@@ -12958,6 +13005,22 @@ body.theia-mod-work-hub-settings-resizing * {
 .theia-mobile-work-hub-settings-mode-card,
 .theia-mobile-work-hub-settings-theme-card {
   padding: 18px 20px 20px;
+}
+
+.theia-mobile-work-hub-settings-plan-card {
+  padding: 18px 20px 20px;
+}
+
+.theia-mobile-work-hub-settings-plan-card > .theia-mobile-work-hub-settings-eyebrow {
+  margin-bottom: 12px;
+}
+
+.theia-mobile-work-hub-settings-plan-card > h3 {
+  padding: 0;
+}
+
+.theia-mobile-work-hub-settings-plan-card > h3 + p {
+  padding: 6px 0 0;
 }
 
 .theia-mobile-work-hub-settings-mode-card .theia-mobile-work-hub-settings-description {
@@ -13360,6 +13423,20 @@ body.theia-mod-work-hub-settings-resizing * {
   .theia-mobile-work-hub-settings-mode-card,
   .theia-mobile-work-hub-settings-theme-card {
     padding: 16px;
+  }
+
+  .theia-mobile-work-hub-settings-plan-card {
+    padding: 16px;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-panel {
+    width: 100%;
+  }
+
+  .theia-mobile-work-hub-settings-embedded-widget .mcp-configuration-container,
+  .theia-mobile-work-hub-settings-embedded-widget .ai-skills-configuration-container {
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
   .theia-mobile-work-hub-settings-row {

@@ -39,7 +39,23 @@ const WORK_HUB_COMPLETION_SOUND_KEY = 'qaap.workHub.settings.completionSound';
 const WORK_HUB_TELEMETRY_PREFERENCE = 'telemetry.telemetryLevel';
 const WORK_HUB_WORKTREE_MAX_COUNT_KEY = 'qaap.workHub.worktrees.maxCount';
 const WORK_HUB_WORKTREE_MAX_SIZE_KEY = 'qaap.workHub.worktrees.maxSizeGb';
-const CUSTOM_SETTINGS_SECTIONS = new Set(['general', 'profile', 'appearance', 'plan-usage', 'worktrees', 'docs']);
+const CUSTOM_SETTINGS_SECTIONS = new Set([
+    'general',
+    'profile',
+    'appearance',
+    'plan-usage',
+    'agents',
+    'mcp',
+    'skills',
+    'worktrees',
+    'docs',
+]);
+
+const EMBEDDED_AI_SETTINGS_WIDGET_IDS: Readonly<Record<string, string>> = {
+    agents: 'qaap-harness-configuration-widget',
+    mcp: 'ai-mcp-configuration-container-widget',
+    skills: 'ai-skills-configuration-widget',
+};
 
 interface WorkHubSettingsSection {
     readonly id: string;
@@ -97,6 +113,8 @@ export class MobileWorkHubPreferencesSheet {
     protected settingsSidebarResizeStartX = 0;
     protected settingsSidebarResizeStartWidth = DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH;
     protected planUsageRenderToken = 0;
+    protected embeddedSettingsRenderToken = 0;
+    protected embeddedSettingsWidget: Widget | undefined;
 
     protected readonly onSettingsSidebarResizePointerDown = (ev: PointerEvent): void => {
         if (ev.pointerType === 'mouse' && ev.button !== 0) {
@@ -326,9 +344,14 @@ export class MobileWorkHubPreferencesSheet {
         }
         this.applySettingsSidebarWidth(this.settingsSidebarWidth);
         document.addEventListener('keydown', this.onKeyDown, true);
-        this.windowResizeListener = () => { this.scheduleLayoutSync(widget); };
+        this.windowResizeListener = () => {
+            const activeWidget = this.embeddedSettingsWidget ?? this.preferencesWidget;
+            if (activeWidget) {
+                this.scheduleLayoutSync(activeWidget);
+            }
+        };
         window.addEventListener('resize', this.windowResizeListener, { passive: true });
-        this.observeWidgetHostResize(widget);
+        this.observeWidgetHostResize(widget, this.widgetHost);
         this.scheduleLayoutSync(widget);
         await animationFrame(2);
         if (this.visible) {
@@ -365,6 +388,8 @@ export class MobileWorkHubPreferencesSheet {
         this.activeSettingsSectionId = 'general';
         this.updateSettingsNavigation();
         this.detachWidget();
+        this.detachEmbeddedSettingsWidget();
+        this.customContentHost.classList.remove('theia-mod-embedded-settings');
         this.node.classList.remove('theia-mod-visible');
         this.node.hidden = true;
         this.node.setAttribute('aria-hidden', 'true');
@@ -491,16 +516,62 @@ export class MobileWorkHubPreferencesSheet {
     }
 
     protected showPreferencesSection(widget: PreferencesWidget): void {
+        this.detachEmbeddedSettingsWidget();
         this.customContentHost.hidden = true;
+        this.customContentHost.classList.remove('theia-mod-embedded-settings');
         this.widgetHost.hidden = false;
         this.attachWidget(widget);
+        this.observeWidgetHostResize(widget, this.widgetHost);
     }
 
     protected showCustomSettingsSection(sectionId: string): void {
         this.detachWidget();
+        this.detachEmbeddedSettingsWidget();
         this.widgetHost.hidden = true;
         this.customContentHost.hidden = false;
+        const embeddedWidgetId = EMBEDDED_AI_SETTINGS_WIDGET_IDS[sectionId];
+        this.customContentHost.classList.toggle('theia-mod-embedded-settings', !!embeddedWidgetId);
+        if (embeddedWidgetId) {
+            void this.showEmbeddedSettingsSection(sectionId, embeddedWidgetId);
+            return;
+        }
         this.renderCustomSettingsSection(sectionId);
+    }
+
+    protected async showEmbeddedSettingsSection(sectionId: string, widgetId: string): Promise<void> {
+        const token = ++this.embeddedSettingsRenderToken;
+        const panel = this.createCustomPanel();
+        panel.classList.add('theia-mobile-work-hub-settings-embedded-panel');
+        this.customContentHost.replaceChildren(panel);
+        try {
+            const widget = await this.widgetManager.getOrCreateWidget<Widget>(widgetId, {
+                id: `qaap-work-hub-settings-${sectionId}`,
+            });
+            if (!this.visible || token !== this.embeddedSettingsRenderToken
+                || this.activeSettingsSectionId !== sectionId) {
+                return;
+            }
+            this.embeddedSettingsWidget = widget;
+            if (widget.isAttached) {
+                UnsafeWidgetUtilities.detach(widget);
+            }
+            UnsafeWidgetUtilities.attach(widget, panel);
+            widget.node.classList.add('theia-mobile-work-hub-settings-embedded-widget');
+            widget.node.style.flex = '1 1 auto';
+            widget.node.style.minHeight = '0';
+            widget.node.style.height = '100%';
+            widget.node.style.width = '100%';
+            if (widget.isHidden) {
+                widget.show();
+            }
+            widget.update();
+            this.observeWidgetHostResize(widget, this.customContentHost);
+            this.scheduleLayoutSync(widget);
+        } catch {
+            if (token === this.embeddedSettingsRenderToken) {
+                this.customContentHost.replaceChildren();
+            }
+        }
     }
 
     protected renderCustomSettingsSection(sectionId: string): void {
@@ -514,6 +585,10 @@ export class MobileWorkHubPreferencesSheet {
                 break;
             case 'plan-usage':
                 void this.renderPlanUsageSection();
+                break;
+            case 'agents':
+            case 'mcp':
+            case 'skills':
                 break;
             case 'worktrees':
                 this.renderWorktreesSection();
@@ -1097,6 +1172,23 @@ export class MobileWorkHubPreferencesSheet {
         }
     }
 
+    protected detachEmbeddedSettingsWidget(): void {
+        this.embeddedSettingsRenderToken++;
+        const widget = this.embeddedSettingsWidget;
+        this.embeddedSettingsWidget = undefined;
+        if (!widget) {
+            return;
+        }
+        widget.node.classList.remove('theia-mobile-work-hub-settings-embedded-widget');
+        widget.node.style.removeProperty('flex');
+        widget.node.style.removeProperty('min-height');
+        widget.node.style.removeProperty('height');
+        widget.node.style.removeProperty('width');
+        if (widget.isAttached) {
+            UnsafeWidgetUtilities.detach(widget);
+        }
+    }
+
     protected scheduleLayoutSync(widget: Widget, attempt = 0): void {
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -1109,7 +1201,10 @@ export class MobileWorkHubPreferencesSheet {
         if (!this.visible || !this.widgetHost.isConnected) {
             return;
         }
-        const rect = this.widgetHost.getBoundingClientRect();
+        const host = widget === this.embeddedSettingsWidget
+            ? this.customContentHost
+            : this.widgetHost;
+        const rect = host.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) {
             if (attempt < 16) {
                 this.scheduleLayoutSync(widget, attempt + 1);
@@ -1145,7 +1240,7 @@ export class MobileWorkHubPreferencesSheet {
         editorNode?.style.removeProperty('box-sizing');
     }
 
-    protected observeWidgetHostResize(widget: PreferencesWidget): void {
+    protected observeWidgetHostResize(widget: Widget, host: HTMLElement): void {
         this.unobserveWidgetHostResize();
         if (typeof ResizeObserver === 'undefined') {
             return;
@@ -1153,7 +1248,7 @@ export class MobileWorkHubPreferencesSheet {
         this.widgetHostResizeObserver = new ResizeObserver(() => {
             this.scheduleLayoutSync(widget);
         });
-        this.widgetHostResizeObserver.observe(this.widgetHost);
+        this.widgetHostResizeObserver.observe(host);
     }
 
     protected unobserveWidgetHostResize(): void {
