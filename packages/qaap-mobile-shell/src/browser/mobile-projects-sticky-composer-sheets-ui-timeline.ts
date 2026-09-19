@@ -388,8 +388,10 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
                     missingQaiqByok ? 'Add a provider key to use QAIQ' : 'Not connected on this workspace',
                 ),
                 actionLabel: nls.localize(
-                    'qaap/mobileProjects/stickyComposerConnectAgent',
-                    'Connect',
+                    missingQaiqByok
+                        ? 'qaap/mobileProjects/stickyComposerAddByok'
+                        : 'qaap/mobileProjects/stickyComposerConnectAgent',
+                    missingQaiqByok ? 'Add BYOK' : 'Connect',
                 ),
                 onAction: () => {
                     if (canConnect) {
