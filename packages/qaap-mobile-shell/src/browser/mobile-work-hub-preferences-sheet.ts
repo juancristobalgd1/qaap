@@ -74,10 +74,10 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
     { id: 'profile', label: nls.localize('qaap/workHubSettings/profile', 'Profile'), icon: 'account', query: '' },
     { id: 'appearance', label: nls.localize('qaap/workHubSettings/appearance', 'Appearance'), icon: 'symbol-color', query: 'workbench' },
     { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
-    { id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Agents'), icon: 'hubot', query: 'Agents' },
+    { id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Harness'), icon: 'hubot', query: 'Agents' },
     { id: 'mcp', label: nls.localize('qaap/workHubSettings/mcp', 'MCP'), icon: 'plug', query: 'MCP' },
     { id: 'skills', label: nls.localize('qaap/workHubSettings/skills', 'Skills'), icon: 'lightbulb', query: 'Skills' },
-    { id: 'models', label: nls.localize('qaap/workHubSettings/models', 'Models'), icon: 'symbol-method', query: 'ai-features' },
+    { id: 'models', label: nls.localize('qaap/workHubSettings/models', 'BYOK'), icon: 'symbol-method', query: 'ai-features' },
     { id: 'worktrees', label: nls.localize('qaap/workHubSettings/worktrees', 'Worktrees'), icon: 'repo', query: '' },
     { id: 'docs', label: nls.localize('qaap/workHubSettings/docs', 'Docs'), icon: 'book', query: '' },
 ];
