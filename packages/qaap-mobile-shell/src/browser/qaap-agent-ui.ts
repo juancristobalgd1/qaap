@@ -210,6 +210,35 @@ export function createAgentSheetOptionButton(options: {
     return btn;
 }
 
+/** Agent row with an optional compact trailing action (connect, configure, or BYOK). */
+export function createAgentSheetOptionRow(options: {
+    readonly primary: HTMLButtonElement;
+    readonly actionLabel?: string;
+    readonly actionTitle?: string;
+    readonly onAction?: () => void;
+}): HTMLElement {
+    if (!options.actionLabel || !options.onAction) {
+        return options.primary;
+    }
+    const row = document.createElement('div');
+    row.className = 'theia-qaap-agent-sheet-row';
+    row.append(options.primary);
+
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'theia-qaap-agent-sheet-inline-action';
+    action.textContent = options.actionLabel;
+    action.title = options.actionTitle ?? options.actionLabel;
+    action.setAttribute('aria-label', action.title);
+    action.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        options.onAction!();
+    });
+    row.append(action);
+    return row;
+}
+
 /** Dimmed picker row for a known harness that is not connected or detected on the workspace. */
 export function createUnavailableAgentSheetOption(options: {
     readonly agentId: string;
@@ -219,7 +248,7 @@ export function createUnavailableAgentSheetOption(options: {
     readonly onAction: () => void;
 }): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'theia-qaap-agent-sheet-unavailable';
+    row.className = 'theia-qaap-agent-sheet-row theia-qaap-agent-sheet-unavailable';
     row.dataset.agentId = options.agentId;
 
     const content = document.createElement('span');
@@ -238,7 +267,7 @@ export function createUnavailableAgentSheetOption(options: {
 
     const action = document.createElement('button');
     action.type = 'button';
-    action.className = 'theia-qaap-agent-sheet-connect';
+    action.className = 'theia-qaap-agent-sheet-inline-action theia-qaap-agent-sheet-connect';
     action.textContent = options.actionLabel;
     action.setAttribute('aria-label', `${options.actionLabel} ${options.label}`);
     action.addEventListener('click', event => {
@@ -360,6 +389,8 @@ export function createPickerSheetOptionButton(options: {
     readonly badgeLabel?: string;
     /** Renders {@link badgeLabel} in the warning treatment. */
     readonly badgeWarning?: boolean;
+    readonly available?: boolean;
+    readonly unavailableTitle?: string;
     readonly menuItem?: boolean;
     readonly onSelect: () => void;
 }): HTMLButtonElement {
@@ -371,6 +402,14 @@ export function createPickerSheetOptionButton(options: {
     }
     if (options.selected) {
         btn.classList.add('theia-mod-selected');
+    }
+    if (options.available === false) {
+        btn.classList.add('theia-mod-disabled');
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        if (options.unavailableTitle) {
+            btn.title = options.unavailableTitle;
+        }
     }
     const content = document.createElement('span');
     content.className = 'theia-mobile-sticky-composer-sheet-option-content';
@@ -406,7 +445,9 @@ export function createPickerSheetOptionButton(options: {
         content.append(check);
     }
     btn.append(content);
-    btn.addEventListener('click', options.onSelect);
+    if (options.available !== false) {
+        btn.addEventListener('click', options.onSelect);
+    }
     return btn;
 }
 

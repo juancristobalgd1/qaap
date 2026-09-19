@@ -94,7 +94,7 @@ import {
     type QaapAgentPickerSearchEntry,
 } from './qaap-agent-picker-search';
 import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from './qaap-agent-picker-loading';
-import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtracted, createProactiveByokRowExtracted, createProactiveLoginRowExtracted, createProactiveSettingsApiKeyRowExtracted } from './mobile-projects-sticky-composer-sheets-ui-activity';
+import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtracted } from './mobile-projects-sticky-composer-sheets-ui-activity';
 import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, openStickyComposerModelCapabilityPopoverExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownCapabilityPresentationExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render';
 import { createAgentSheetOptionExtracted, createModeSheetOptionExtracted, mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openComposerModeSheetExtracted, openStickyComposerApprovalPolicySheetExtracted, openStickyComposerModeSheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming';
 import { createComposerAgentPickerChromeExtracted, renderComposerAgentPickerExtracted } from './mobile-projects-sticky-composer-sheets-ui-timeline';
@@ -284,15 +284,6 @@ export class MobileProjectsStickyComposerSheetsUi {
     }
     async renderComposerAgentPicker(chrome: ComposerAgentPickerChrome, options: { readonly view: ComposerAgentPickerView; readonly modelPickerAgentId?: string; readonly cwd: string | undefined; readonly agents: readonly QaapAgentTaskAgentOption[]; readonly selectedAgentId: string | undefined; readonly includeCoder: boolean; readonly agentsTitle?: string; readonly agentsIntro?: string; readonly project?: MobileProjectEntry; readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void; readonly onProactiveLogin?: (agentId: string, project?: MobileProjectEntry) => void; readonly onOpenAiFeaturesSettings?: (agentId?: string) => void; readonly onOpenAiConfiguration?: (agentId?: string) => void; },): Promise<void> {
         return renderComposerAgentPickerExtracted(this, chrome, options);
-    }
-    protected createProactiveLoginRow(agentLabel: string, onSelect: () => void): HTMLButtonElement {
-        return createProactiveLoginRowExtracted(this, agentLabel, onSelect);
-    }
-    protected createProactiveSettingsApiKeyRow(agentLabel: string, onSelect: () => void): HTMLButtonElement {
-        return createProactiveSettingsApiKeyRowExtracted(this, agentLabel, onSelect);
-    }
-    protected createProactiveByokRow(onSelect: () => void): HTMLButtonElement {
-        return createProactiveByokRowExtracted(this, onSelect);
     }
     protected createAgentPickerNoResultsHint(): HTMLElement {
         return createAgentPickerNoResultsHintExtracted(this);

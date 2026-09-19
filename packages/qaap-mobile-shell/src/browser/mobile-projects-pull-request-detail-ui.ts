@@ -158,16 +158,18 @@ export class MobileProjectsPullRequestDetailUi {
         external.title = nls.localize('qaap/pullRequests/openOnGithub', 'Open on GitHub');
         external.setAttribute('aria-label', external.title);
         external.innerHTML = '<span class="codicon codicon-link-external" aria-hidden="true"></span>';
-        const chatButton = this.createButton(
+        const chatButton = this.createIconButton(
             nls.localize('qaap/pullRequests/openChat', 'Open chat'),
             'theia-mobile-work-hub-pull-request-chat-button',
+            'codicon-comment-discussion',
         );
         chatButton.addEventListener('click', () => this.openChat());
-        const mergeButton = this.createButton(
+        const mergeButton = this.createIconButton(
             this.merged
                 ? nls.localize('qaap/pullRequests/merged', 'Merged')
                 : nls.localize('qaap/pullRequests/merge', 'Merge'),
             'theia-mobile-work-hub-pull-request-merge-button',
+            'codicon-git-merge',
         );
         mergeButton.disabled = this.merged || this.merging || pullRequest.mergeable === false;
         mergeButton.addEventListener('click', () => {
@@ -565,6 +567,19 @@ export class MobileProjectsPullRequestDetailUi {
         button.type = 'button';
         button.className = className;
         button.textContent = label;
+        return button;
+    }
+
+    protected createIconButton(label: string, className: string, iconClass: string): HTMLButtonElement {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `${className} theia-mobile-work-hub-pull-request-icon-button`;
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        const icon = document.createElement('span');
+        icon.className = `codicon ${iconClass}`;
+        icon.setAttribute('aria-hidden', 'true');
+        button.append(icon);
         return button;
     }
 

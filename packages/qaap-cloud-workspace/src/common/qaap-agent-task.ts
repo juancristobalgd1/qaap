@@ -273,6 +273,8 @@ export interface QaapQaiqModelOption {
     readonly vendor: string;
     readonly modelId: string;
     readonly label: string;
+    /** Present for native catalogs when a model is visible but gated by the account plan. */
+    readonly available?: boolean;
 }
 
 /** QAIQ model binding selected by the user in the agent picker submenu. */

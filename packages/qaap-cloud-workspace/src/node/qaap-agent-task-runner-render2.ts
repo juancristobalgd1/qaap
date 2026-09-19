@@ -49,7 +49,7 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { filterModelsForHostedPlan } from '../common/qaap-billing-plans';
+import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { listNativeAgentModels } from './qaap-agent-native-models';
 import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
@@ -666,7 +666,12 @@ export function listModelsForAgentExtracted(
         }
         // Cold cache → treat as Starter (no hosted) so the picker never offers Pro-only models by default.
         const hostedModelsAllowed = ctx.billingStore?.peekEntitlements?.(owner)?.hostedModels === true;
-        return filterModelsForHostedPlan(normalized, models, hostedModelsAllowed);
+        // Keep the native catalog visible when Starter cannot use hosted Codex models.
+        // The picker can then explain the lock instead of opening an empty submenu;
+        // task startup still enforces the same hosted-model entitlement.
+        return models.map(model => hostedModelsAllowed || !isHostedCodexUsage(normalized, model.modelId)
+            ? model
+            : { ...model, available: false });
 }
 
 export function defaultAgentExtracted(ctx: any, isAgentEnabled: (agentId: string) => boolean = () => true): string {

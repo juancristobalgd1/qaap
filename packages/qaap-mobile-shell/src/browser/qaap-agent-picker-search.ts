@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import type { QaapQaiqModelOption } from '../common/qaap-agent-task-client';
+import { nls } from '@theia/core/lib/common/nls';
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
 import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
 
@@ -121,6 +122,15 @@ export function createAgentPickerInlineModelButton(options: {
     if (options.selected) {
         button.classList.add('theia-mod-selected');
     }
+    if (model.available === false) {
+        button.classList.add('theia-mod-disabled');
+        button.disabled = true;
+        button.setAttribute('aria-disabled', 'true');
+        button.title = nls.localize(
+            'qaap/mobileProjects/modelPickerUnavailableByPlan',
+            'This model requires a plan with hosted model access.',
+        );
+    }
 
     const content = document.createElement('span');
     content.className = 'theia-mobile-sticky-composer-sheet-option-content';
@@ -145,7 +155,9 @@ export function createAgentPickerInlineModelButton(options: {
     provider.textContent = formatQaiqModelProviderLabel(model.vendor || model.provider);
     content.append(subavatar, text, provider);
     button.append(content);
-    button.addEventListener('click', () => options.onSelect(agentId, model));
+    if (model.available !== false) {
+        button.addEventListener('click', () => options.onSelect(agentId, model));
+    }
     return button;
 }
 

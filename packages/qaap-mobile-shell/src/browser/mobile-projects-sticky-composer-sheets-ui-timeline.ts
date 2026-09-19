@@ -40,6 +40,7 @@ import {
 import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
+    createAgentSheetOptionRow,
     createUnavailableAgentSheetOption,
     createApprovalPolicySheetOptionButton,
     createModeSheetOptionButton,
@@ -414,7 +415,7 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         if (storedModel?.modelId && agentSelected) {
             displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;
         }
-        content.append(createAgentSheetOptionButton({
+        const primary = createAgentSheetOptionButton({
             agentId,
             label: displayLabel,
             selected: agentSelected,
@@ -457,17 +458,41 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
                     onSelectDirect: () => options.onSelectAgent(agentId),
                 });
             },
+        });
+        const actionLabel = options.onProactiveLogin && agentHasCliOAuthLogin(agentId)
+            ? nls.localize('qaap/mobileProjects/stickyComposerConnectAgent', 'Connect')
+            : agentId.toLowerCase() === QAIQ_AGENT_ID
+                && options.onOpenAiFeaturesSettings
+                && ctx.host.readPreference
+                && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference(key))
+                ? nls.localize('qaap/mobileProjects/stickyComposerAddByok', 'Add BYOK')
+                : options.onOpenAiFeaturesSettings && agentNeedsSettingsApiKeyPath(agentId)
+                    ? nls.localize('qaap/mobileProjects/stickyComposerConfigureAgent', 'Configure')
+                    : undefined;
+        const actionTitle = actionLabel
+            ? nls.localize(
+                'qaap/mobileProjects/stickyComposerAgentActionAria',
+                '{0} {1}',
+                actionLabel,
+                label,
+            )
+            : undefined;
+        content.append(createAgentSheetOptionRow({
+            primary,
+            actionLabel,
+            actionTitle,
+            onAction: actionLabel
+                ? () => {
+                    if (options.onProactiveLogin && agentHasCliOAuthLogin(agentId)) {
+                        options.onProactiveLogin(agentId, options.project);
+                    } else if (agentId.toLowerCase() === QAIQ_AGENT_ID && options.onOpenAiFeaturesSettings) {
+                        options.onOpenAiFeaturesSettings(agentId);
+                    } else {
+                        options.onOpenAiFeaturesSettings?.(agentId);
+                    }
+                }
+                : undefined,
         }));
-        if (options.onProactiveLogin && agentHasCliOAuthLogin(agentId)) {
-            content.append(ctx.createProactiveLoginRow(label, () => options.onProactiveLogin!(agentId, options.project)));
-        } else if (agentId.toLowerCase() === QAIQ_AGENT_ID
-            && options.onOpenAiFeaturesSettings
-            && ctx.host.readPreference
-            && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference(key))) {
-            content.append(ctx.createProactiveByokRow(() => options.onOpenAiFeaturesSettings!(agentId)));
-        } else if (options.onOpenAiFeaturesSettings && agentNeedsSettingsApiKeyPath(agentId)) {
-            content.append(ctx.createProactiveSettingsApiKeyRow(label, () => options.onOpenAiFeaturesSettings!(agentId)));
-        }
     };
 
     for (const entry of searchResults.directAgents) {

@@ -275,6 +275,7 @@ export class MobileProjectsHubHeaderUi {
             nls.localize('qaap/pullRequests/openChat', 'Open chat'),
             'theia-mobile-work-hub-pull-request-chat-button',
             () => this.host.openPullRequestChat?.(),
+            'codicon-comment-discussion',
         );
         const merge = this.createPullRequestHeaderButton(
             pullRequest.state === 'merged'
@@ -282,21 +283,27 @@ export class MobileProjectsHubHeaderUi {
                 : nls.localize('qaap/pullRequests/merge', 'Merge'),
             'theia-mobile-work-hub-pull-request-merge-button',
             () => this.host.togglePullRequestMerge?.(),
+            'codicon-git-merge',
         );
         merge.disabled = pullRequest.state === 'merged' || pullRequest.mergeable === false;
-        const mergeChevron = document.createElement('span');
-        mergeChevron.className = 'codicon codicon-chevron-down';
-        mergeChevron.setAttribute('aria-hidden', 'true');
-        merge.append(mergeChevron);
         actions.append(external, chat, merge);
         header.append(leading, actions);
     }
 
-    protected createPullRequestHeaderButton(label: string, className: string, onClick: () => void): HTMLButtonElement {
+    protected createPullRequestHeaderButton(label: string, className: string, onClick: () => void, iconClass?: string): HTMLButtonElement {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = className;
-        button.textContent = label;
+        button.className = `${className}${iconClass ? ' theia-mobile-work-hub-pull-request-icon-button' : ''}`;
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        if (iconClass) {
+            const icon = document.createElement('span');
+            icon.className = `codicon ${iconClass}`;
+            icon.setAttribute('aria-hidden', 'true');
+            button.append(icon);
+        } else {
+            button.textContent = label;
+        }
         button.addEventListener('click', onClick);
         return button;
     }
