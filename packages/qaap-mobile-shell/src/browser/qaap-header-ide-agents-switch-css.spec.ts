@@ -89,6 +89,15 @@ describe('header IDE/Agents switch CSS', () => {
         );
     });
 
+    it('only shows the Settings sidebar opener while the sidebar is collapsed', () => {
+        expect(workHubCss).to.match(
+            /\.theia-mobile-work-hub-settings-sidebar-toggle-open\s*\{[^}]*display:\s*none\s*!important/s,
+        );
+        expect(workHubCss).to.match(
+            /\.theia-mobile-work-hub-settings-layout\.theia-mod-sidebar-collapsed\s+\.theia-mobile-work-hub-settings-sidebar-toggle-open\s*\{[^}]*display:\s*inline-flex\s*!important/s,
+        );
+    });
+
     it('keeps compact project labels short on narrow headers', () => {
         expect(workHubCss).to.match(
             /@media \(max-width:\s*767px\)[\s\S]*?\.theia-mobile-projects-header-project\.theia-mod-compact-project \.theia-mobile-projects-header-project-label\s*\{[\s\S]*?max-width:\s*clamp\(96px,\s*34vw,\s*148px\)/,

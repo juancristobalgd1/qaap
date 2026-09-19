@@ -330,6 +330,7 @@ export class MobileWorkHubPreferencesSheet {
         openSidebarButton.title = openSidebarLabel;
         openSidebarButton.setAttribute('aria-label', openSidebarLabel);
         openSidebarButton.setAttribute('aria-expanded', 'false');
+        openSidebarButton.hidden = true;
         openSidebarButton.addEventListener('click', () => this.setSettingsSidebarCollapsed(false));
         this.settingsSidebarOpenButton = openSidebarButton;
 
@@ -521,6 +522,8 @@ export class MobileWorkHubPreferencesSheet {
         this.settingsSidebar.setAttribute('aria-hidden', String(collapsed));
         this.settingsSidebarCollapseButton.setAttribute('aria-expanded', String(!collapsed));
         this.settingsSidebarOpenButton.setAttribute('aria-expanded', String(!collapsed));
+        this.settingsSidebarCollapseButton.hidden = collapsed;
+        this.settingsSidebarOpenButton.hidden = !collapsed;
         if (collapsed) {
             this.stopSettingsSidebarResize();
             this.settingsSidebarOpenButton.focus();

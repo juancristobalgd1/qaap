@@ -12974,11 +12974,11 @@ body.theia-mod-work-hub-settings-resizing * {
 }
 
 .theia-mobile-work-hub-settings-sidebar-toggle-open {
-  display: none;
+  display: none !important;
 }
 
 .theia-mobile-work-hub-settings-layout.theia-mod-sidebar-collapsed .theia-mobile-work-hub-settings-sidebar-toggle-open {
-  display: inline-flex;
+  display: inline-flex !important;
 }
 
 .theia-mobile-projects.theia-mod-work-hub-settings-active .theia-mobile-projects-sticky-composer,
