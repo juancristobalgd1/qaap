@@ -423,7 +423,10 @@ export async function openWorkHubPreferencesSheetExtracted(ctx: any, query?: str
             () => ctx.openWorkHubBillingSheet(),
             () => {
                 const panel = ctx.projectsPanel;
-                return panel?.isVisible() ? panel.node : undefined;
+                if (!panel?.isVisible()) {
+                    return undefined;
+                }
+                return panel.node.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? panel.node;
             },
         );
         ctx.toDispose.push(Disposable.create(() => {

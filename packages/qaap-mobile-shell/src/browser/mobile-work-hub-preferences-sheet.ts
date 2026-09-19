@@ -99,7 +99,10 @@ export class MobileWorkHubPreferencesSheet {
     protected readonly settingsSidebar: HTMLElement;
     protected readonly settingsLayout: HTMLElement;
     protected readonly settingsSidebarResizer: HTMLElement;
+    protected readonly settingsSidebarCollapseButton: HTMLButtonElement;
+    protected readonly settingsSidebarOpenButton: HTMLButtonElement;
     protected visible = false;
+    protected settingsSidebarCollapsed = false;
     protected preferencesWidget: PreferencesWidget | undefined;
     protected activeSettingsSectionId = 'general';
     protected widgetHostResizeObserver: ResizeObserver | undefined;
@@ -118,6 +121,7 @@ export class MobileWorkHubPreferencesSheet {
     protected embeddedSettingsWidget: Widget | undefined;
 
     protected readonly resolveWorkHubHost: (() => HTMLElement | undefined) | undefined;
+    protected workHubRootWithSettings: HTMLElement | undefined;
 
     protected readonly onSettingsSidebarResizePointerDown = (ev: PointerEvent): void => {
         if (ev.pointerType === 'mouse' && ev.button !== 0) {
@@ -224,6 +228,9 @@ export class MobileWorkHubPreferencesSheet {
         sidebar.className = 'theia-mobile-work-hub-settings-sidebar';
         this.settingsSidebar = sidebar;
 
+        const sidebarHeader = document.createElement('div');
+        sidebarHeader.className = 'theia-mobile-work-hub-settings-sidebar-header';
+
         const backBtn = document.createElement('button');
         backBtn.type = 'button';
         backBtn.className = 'theia-mobile-work-hub-settings-back';
@@ -232,6 +239,20 @@ export class MobileWorkHubPreferencesSheet {
         backBtn.innerHTML = '<span class="codicon codicon-chevron-left" aria-hidden="true"></span>'
             + `<span>${nls.localize('qaap/mobileProjects/back', 'Back')}</span>`;
         backBtn.addEventListener('click', () => this.hide());
+
+        const collapseSidebarLabel = nls.localize(
+            'qaap/workHubSettings/collapseSidebar',
+            'Collapse settings sidebar',
+        );
+        const collapseSidebarButton = document.createElement('button');
+        collapseSidebarButton.type = 'button';
+        collapseSidebarButton.className = 'theia-mobile-work-hub-settings-sidebar-toggle codicon codicon-layout-sidebar-left-off';
+        collapseSidebarButton.title = collapseSidebarLabel;
+        collapseSidebarButton.setAttribute('aria-label', collapseSidebarLabel);
+        collapseSidebarButton.setAttribute('aria-expanded', 'true');
+        collapseSidebarButton.addEventListener('click', () => this.setSettingsSidebarCollapsed(true));
+        this.settingsSidebarCollapseButton = collapseSidebarButton;
+        sidebarHeader.append(backBtn, collapseSidebarButton);
 
         const searchLabel = document.createElement('label');
         searchLabel.className = 'theia-mobile-work-hub-settings-search';
@@ -271,7 +292,7 @@ export class MobileWorkHubPreferencesSheet {
             settingsNav.append(item);
         }
 
-        sidebar.append(backBtn, searchLabel, settingsSectionLabel, settingsNav);
+        sidebar.append(sidebarHeader, searchLabel, settingsSectionLabel, settingsNav);
 
         const sidebarResizer = document.createElement('div');
         sidebarResizer.className = 'theia-mobile-work-hub-settings-sidebar-resizer';
@@ -299,6 +320,19 @@ export class MobileWorkHubPreferencesSheet {
         title.textContent = this.getSettingsSection('general').label;
         this.titleEl = title;
 
+        const openSidebarLabel = nls.localize(
+            'qaap/workHubSettings/openSidebar',
+            'Open settings sidebar',
+        );
+        const openSidebarButton = document.createElement('button');
+        openSidebarButton.type = 'button';
+        openSidebarButton.className = 'theia-mobile-work-hub-settings-sidebar-toggle theia-mobile-work-hub-settings-sidebar-toggle-open codicon codicon-layout-sidebar-left';
+        openSidebarButton.title = openSidebarLabel;
+        openSidebarButton.setAttribute('aria-label', openSidebarLabel);
+        openSidebarButton.setAttribute('aria-expanded', 'false');
+        openSidebarButton.addEventListener('click', () => this.setSettingsSidebarCollapsed(false));
+        this.settingsSidebarOpenButton = openSidebarButton;
+
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.className = 'theia-mobile-work-hub-preferences-close codicon codicon-close';
@@ -306,7 +340,7 @@ export class MobileWorkHubPreferencesSheet {
         closeBtn.setAttribute('aria-label', closeBtn.title);
         closeBtn.addEventListener('click', () => this.hide());
 
-        header.append(title, closeBtn);
+        header.append(openSidebarButton, title, closeBtn);
 
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
@@ -334,6 +368,12 @@ export class MobileWorkHubPreferencesSheet {
             mountHost.appendChild(this.node);
         }
         const inline = mountHost !== document.body;
+        const workHubRoot = mountHost.closest<HTMLElement>('.theia-mobile-projects') ?? undefined;
+        if (this.workHubRootWithSettings && this.workHubRootWithSettings !== workHubRoot) {
+            this.workHubRootWithSettings.classList.remove('theia-mod-work-hub-settings-active');
+        }
+        this.workHubRootWithSettings = workHubRoot;
+        workHubRoot?.classList.toggle('theia-mod-work-hub-settings-active', inline);
         this.node.classList.toggle('theia-mod-work-hub-inline', inline);
         this.node.setAttribute('aria-modal', inline ? 'false' : 'true');
         const aiFeatures = isWorkHubAiFeaturesPreferencesQuery(query);
@@ -403,6 +443,8 @@ export class MobileWorkHubPreferencesSheet {
         this.node.classList.remove('theia-mod-visible');
         this.node.hidden = true;
         this.node.setAttribute('aria-hidden', 'true');
+        this.workHubRootWithSettings?.classList.remove('theia-mod-work-hub-settings-active');
+        this.workHubRootWithSettings = undefined;
         this.visible = false;
         document.removeEventListener('keydown', this.onKeyDown, true);
     }
@@ -471,6 +513,23 @@ export class MobileWorkHubPreferencesSheet {
             `${Math.round(clampedWidth)}px`,
         );
         this.settingsSidebarResizer.setAttribute('aria-valuenow', String(Math.round(clampedWidth)));
+    }
+
+    protected setSettingsSidebarCollapsed(collapsed: boolean): void {
+        this.settingsSidebarCollapsed = collapsed;
+        this.settingsLayout.classList.toggle('theia-mod-sidebar-collapsed', collapsed);
+        this.settingsSidebar.setAttribute('aria-hidden', String(collapsed));
+        this.settingsSidebarCollapseButton.setAttribute('aria-expanded', String(!collapsed));
+        this.settingsSidebarOpenButton.setAttribute('aria-expanded', String(!collapsed));
+        if (collapsed) {
+            this.stopSettingsSidebarResize();
+            this.settingsSidebarOpenButton.focus();
+        } else {
+            this.settingsSidebarCollapseButton.focus();
+        }
+        if (this.visible && this.preferencesWidget) {
+            this.scheduleLayoutSync(this.preferencesWidget);
+        }
     }
 
     protected stopSettingsSidebarResize(): void {

@@ -12113,6 +12113,11 @@ body.theia-mobile-mod-workhub-no-bottom-chrome .theia-mobile-projects.theia-mod-
   z-index: 20;
 }
 
+.theia-mobile-projects-scroll:has(> .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline) {
+  position: relative;
+  overflow: hidden;
+}
+
 .theia-mobile-work-hub-preferences.theia-mod-work-hub-inline .theia-mobile-work-hub-preferences-backdrop {
   display: none;
 }
@@ -12753,6 +12758,18 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   border-right: 1px solid var(--theia-sideBar-border, rgba(128, 128, 128, 0.24));
 }
 
+.theia-mobile-work-hub-settings-layout.theia-mod-sidebar-collapsed .theia-mobile-work-hub-settings-sidebar,
+.theia-mobile-work-hub-settings-layout.theia-mod-sidebar-collapsed .theia-mobile-work-hub-settings-sidebar-resizer {
+  display: none;
+}
+
+.theia-mobile-work-hub-settings-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+}
+
 .theia-mobile-work-hub-settings-sidebar-resizer {
   position: relative;
   z-index: 1;
@@ -12806,6 +12823,34 @@ body.theia-mod-work-hub-settings-resizing * {
   text-align: left;
   font-size: 13px;
   cursor: pointer;
+}
+
+.theia-mobile-work-hub-settings-sidebar-header .theia-mobile-work-hub-settings-back {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.theia-mobile-work-hub-settings-sidebar-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: var(--theia-descriptionForeground);
+  background: transparent;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-settings-sidebar-toggle:hover,
+.theia-mobile-work-hub-settings-sidebar-toggle:focus-visible {
+  color: var(--theia-foreground);
+  background: var(--theia-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+  outline: none;
 }
 
 .theia-mobile-work-hub-settings-back:hover,
@@ -12926,6 +12971,19 @@ body.theia-mod-work-hub-settings-resizing * {
   font-size: 24px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.theia-mobile-work-hub-settings-sidebar-toggle-open {
+  display: none;
+}
+
+.theia-mobile-work-hub-settings-layout.theia-mod-sidebar-collapsed .theia-mobile-work-hub-settings-sidebar-toggle-open {
+  display: inline-flex;
+}
+
+.theia-mobile-projects.theia-mod-work-hub-settings-active .theia-mobile-projects-sticky-composer,
+.theia-mobile-projects.theia-mod-work-hub-settings-active .theia-mobile-projects-fab {
+  display: none !important;
 }
 
 .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-close {
