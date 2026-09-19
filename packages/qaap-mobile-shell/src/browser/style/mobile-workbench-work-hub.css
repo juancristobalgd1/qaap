@@ -12986,6 +12986,12 @@ body.theia-mod-work-hub-settings-resizing * {
   display: none !important;
 }
 
+/* Settings is a Work Hub surface, not a Chat surface. Keep the project/chat
+   chrome out of the settings layout while preserving it for Chat. */
+.theia-mobile-projects.theia-mod-work-hub-settings-active > .theia-mobile-projects-header {
+  display: none !important;
+}
+
 .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-close {
   width: 32px;
   height: 32px;

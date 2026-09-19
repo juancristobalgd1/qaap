@@ -83,6 +83,12 @@ describe('header IDE/Agents switch CSS', () => {
         }
     });
 
+    it('removes Chat chrome while the Work Hub Settings surface is active', () => {
+        expect(workHubCss).to.match(
+            /\.theia-mobile-projects\.theia-mod-work-hub-settings-active\s*>\s*\.theia-mobile-projects-header\s*\{[^}]*display:\s*none\s*!important/s,
+        );
+    });
+
     it('keeps compact project labels short on narrow headers', () => {
         expect(workHubCss).to.match(
             /@media \(max-width:\s*767px\)[\s\S]*?\.theia-mobile-projects-header-project\.theia-mod-compact-project \.theia-mobile-projects-header-project-label\s*\{[\s\S]*?max-width:\s*clamp\(96px,\s*34vw,\s*148px\)/,
