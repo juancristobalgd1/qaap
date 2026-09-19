@@ -27,6 +27,10 @@ import {
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
 import type { QaapAppearanceMode } from '../common/qaap-appearance-mode';
 import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
+import type {
+    MobileWorkHubSessionsSidebar,
+    MobileWorkHubSettingsSidebarOptions,
+} from './mobile-work-hub-sessions-sidebar';
 
 /** Work Hub AI Features sheet scopes Settings to this search term. */
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
@@ -119,8 +123,10 @@ export class MobileWorkHubPreferencesSheet {
     protected planUsageRenderToken = 0;
     protected embeddedSettingsRenderToken = 0;
     protected embeddedSettingsWidget: Widget | undefined;
+    protected settingsSidebarController: MobileWorkHubSessionsSidebar | undefined;
 
     protected readonly resolveWorkHubHost: (() => HTMLElement | undefined) | undefined;
+    protected readonly resolveSettingsSidebar: (() => MobileWorkHubSessionsSidebar | undefined) | undefined;
     protected workHubRootWithSettings: HTMLElement | undefined;
 
     protected readonly onSettingsSidebarResizePointerDown = (ev: PointerEvent): void => {
@@ -204,8 +210,10 @@ export class MobileWorkHubPreferencesSheet {
         protected readonly themeService?: ThemeService,
         protected readonly openBilling?: () => Promise<void>,
         resolveWorkHubHost?: () => HTMLElement | undefined,
+        resolveSettingsSidebar?: () => MobileWorkHubSessionsSidebar | undefined,
     ) {
         this.resolveWorkHubHost = resolveWorkHubHost;
+        this.resolveSettingsSidebar = resolveSettingsSidebar;
         this.node = document.createElement('div');
         this.node.className = 'theia-mobile-work-hub-preferences';
         this.node.setAttribute('role', 'dialog');
@@ -351,7 +359,9 @@ export class MobileWorkHubPreferencesSheet {
         this.customContentHost.hidden = true;
 
         content.append(header, this.customContentHost, this.widgetHost);
-        settingsLayout.append(sidebar, sidebarResizer, content);
+        // Settings navigation is owned by the shared Work Hub sidebar used by
+        // Chat and Pull Requests. Keep only the content surface in this sheet.
+        settingsLayout.append(content);
         sheet.append(settingsLayout);
         this.node.append(backdrop, sheet);
     }
@@ -377,6 +387,10 @@ export class MobileWorkHubPreferencesSheet {
         workHubRoot?.classList.toggle('theia-mod-work-hub-settings-active', inline);
         this.node.classList.toggle('theia-mod-work-hub-inline', inline);
         this.node.setAttribute('aria-modal', inline ? 'false' : 'true');
+        this.settingsSidebarCollapsed = false;
+        this.settingsLayout.classList.remove('theia-mod-sidebar-collapsed');
+        this.settingsSidebarOpenButton.hidden = true;
+        this.settingsSidebarController = inline ? this.resolveSettingsSidebar?.() : undefined;
         const aiFeatures = isWorkHubAiFeaturesPreferencesQuery(query);
         const section = this.resolveSettingsSection(query);
         this.activeSettingsSectionId = section.id;
@@ -389,6 +403,7 @@ export class MobileWorkHubPreferencesSheet {
         this.node.classList.add('theia-mod-visible');
         this.node.setAttribute('aria-hidden', 'false');
         this.visible = true;
+        this.settingsSidebarController?.showSettings(this.createSettingsSidebarOptions());
         const renderedSidebarWidth = this.settingsSidebar.getBoundingClientRect().width;
         if (renderedSidebarWidth > 0) {
             this.settingsSidebarWidth = renderedSidebarWidth;
@@ -440,6 +455,8 @@ export class MobileWorkHubPreferencesSheet {
         this.updateSettingsNavigation();
         this.detachWidget();
         this.detachEmbeddedSettingsWidget();
+        this.settingsSidebarController?.hide();
+        this.settingsSidebarController = undefined;
         this.customContentHost.classList.remove('theia-mod-embedded-settings');
         this.node.classList.remove('theia-mod-visible');
         this.node.hidden = true;
@@ -525,6 +542,11 @@ export class MobileWorkHubPreferencesSheet {
         this.settingsSidebarCollapseButton.hidden = collapsed;
         this.settingsSidebarOpenButton.hidden = !collapsed;
         if (collapsed) {
+            this.settingsSidebarController?.hide();
+        } else {
+            this.settingsSidebarController?.showSettings(this.createSettingsSidebarOptions());
+        }
+        if (collapsed) {
             this.stopSettingsSidebarResize();
             this.settingsSidebarOpenButton.focus();
         } else {
@@ -533,6 +555,24 @@ export class MobileWorkHubPreferencesSheet {
         if (this.visible && this.preferencesWidget) {
             this.scheduleLayoutSync(this.preferencesWidget);
         }
+    }
+
+    protected createSettingsSidebarOptions(): MobileWorkHubSettingsSidebarOptions {
+        return {
+            sections: WORK_HUB_SETTINGS_SECTIONS,
+            activeSectionId: () => this.activeSettingsSectionId,
+            searchValue: () => this.settingsSearchInput.value,
+            searchReadOnly: () => this.settingsSearchInput.readOnly,
+            onBack: () => this.hide(),
+            onClose: () => this.setSettingsSidebarCollapsed(true),
+            onSectionSelected: sectionId => {
+                void this.selectSettingsSection(this.getSettingsSection(sectionId));
+            },
+            onSearch: query => {
+                this.settingsSearchInput.value = query;
+                void this.handleSettingsSearch(query);
+            },
+        };
     }
 
     protected stopSettingsSidebarResize(): void {

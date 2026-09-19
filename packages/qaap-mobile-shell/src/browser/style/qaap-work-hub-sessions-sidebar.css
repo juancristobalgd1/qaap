@@ -733,6 +733,36 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   white-space: nowrap;
 }
 
+/* Settings uses the same Work Hub sidebar shell as Chat and Pull Requests.  Its
+ * navigation is rendered in the shared panel so the header, spacing, focus
+ * states, and responsive overlay behavior stay consistent across surfaces. */
+.theia-mobile-work-hub-sessions-sidebar-settings {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 10px;
+  padding: 0 10px 16px;
+  overflow: hidden;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-settings .theia-mobile-work-hub-settings-search {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-settings .theia-mobile-work-hub-settings-section-label {
+  flex: 0 0 auto;
+  padding-left: 12px;
+}
+
+.theia-mobile-work-hub-sessions-sidebar-settings .theia-mobile-work-hub-settings-nav {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding-bottom: 4px;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-list .theia-mobile-projects-task-title-text {
   display: block;
   width: 100%;

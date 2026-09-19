@@ -8,6 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import {
     MobileWorkHubSessionsSidebar,
+    type MobileWorkHubSettingsSidebarOptions,
     QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY,
     QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS,
     QAAP_SESSIONS_SIDEBAR_DISMISS_HINT_KEY,
@@ -116,6 +117,46 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         document.body.append(sidebar.node);
         expect(sidebar.node.querySelector('.theia-qaap-appearance-mode-switch')).to.equal(null);
         expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-btn')).to.not.equal(null);
+    });
+
+    it('renders Settings inside the shared Work Hub sidebar shell', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        const selected: string[] = [];
+        const options: MobileWorkHubSettingsSidebarOptions = {
+            sections: [
+                { id: 'general', label: 'General', icon: 'settings-gear' },
+                { id: 'models', label: 'BYOK', icon: 'symbol-method' },
+            ],
+            activeSectionId: () => 'general',
+            searchValue: () => '',
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onSectionSelected: sectionId => { selected.push(sectionId); },
+            onSearch: () => undefined,
+        };
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+
+        sidebar.showSettings(options);
+
+        expect(sidebar.isSettingsModeActive()).to.equal(true);
+        expect(sidebar.node.classList.contains('theia-mod-settings')).to.equal(true);
+        expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-settings')).to.not.equal(null);
+        expect(sidebar.node.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar-settings .theia-mobile-work-hub-settings-nav-item')).to.have.length(2);
+        (sidebar.node.querySelector('[data-qaap-settings-section="models"]') as HTMLButtonElement).click();
+        expect(selected).to.deep.equal(['models']);
+
+        sidebar.hide();
     });
 
     it('keeps Pull requests active while the sidebar is collapsed', () => {

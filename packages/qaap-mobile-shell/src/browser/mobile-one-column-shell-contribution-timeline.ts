@@ -428,6 +428,13 @@ export async function openWorkHubPreferencesSheetExtracted(ctx: any, query?: str
                 }
                 return panel.node.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? panel.node;
             },
+            () => {
+                const panel = ctx.projectsPanel;
+                if (!panel?.isVisible()) {
+                    return undefined;
+                }
+                return (panel as any).ensureWorkHubSessionsSidebar?.();
+            },
         );
         ctx.toDispose.push(Disposable.create(() => {
             ctx.workHubPreferencesSheet?.dispose();

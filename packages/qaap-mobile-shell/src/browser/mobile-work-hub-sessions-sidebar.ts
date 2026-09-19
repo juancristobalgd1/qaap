@@ -64,6 +64,23 @@ export interface MobileWorkHubSessionsSidebarDelegate {
     onSessionListHostReady?(listHost: HTMLElement): void;
 }
 
+export interface MobileWorkHubSettingsSidebarSection {
+    readonly id: string;
+    readonly label: string;
+    readonly icon: string;
+}
+
+export interface MobileWorkHubSettingsSidebarOptions {
+    readonly sections: readonly MobileWorkHubSettingsSidebarSection[];
+    readonly activeSectionId: () => string;
+    readonly searchValue?: () => string;
+    readonly searchReadOnly?: () => boolean;
+    readonly onBack: () => void;
+    readonly onClose: () => void;
+    readonly onSectionSelected: (sectionId: string) => void;
+    readonly onSearch: (query: string) => void;
+}
+
 /**
  * Full-screen sessions sidebar. List rows are rendered by the
  * delegate via {@link MobileProjectsPanel.createTaskItem} so behaviour matches Tasks inbox.
@@ -71,7 +88,7 @@ export interface MobileWorkHubSessionsSidebarDelegate {
 export class MobileWorkHubSessionsSidebar {
 
     protected visible = false;
-    protected sidebarMode: 'sessions' | 'pullRequests' = 'sessions';
+    protected sidebarMode: 'sessions' | 'pullRequests' | 'settings' = 'sessions';
     protected scrollTouchDispose: Disposable = Disposable.NULL;
     protected edgeSwipeDispose: Disposable = Disposable.NULL;
     protected dismissHintTimer: number | undefined;
@@ -85,6 +102,10 @@ export class MobileWorkHubSessionsSidebar {
     protected readonly backBtn: HTMLButtonElement;
     protected readonly brand: HTMLElement;
     protected readonly nav: HTMLElement;
+    protected readonly settingsHost: HTMLElement;
+    protected readonly settingsSearchInput: HTMLInputElement;
+    protected readonly settingsSectionLabel: HTMLElement;
+    protected readonly settingsNav: HTMLElement;
     protected readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly accountLabel: HTMLSpanElement;
@@ -92,6 +113,7 @@ export class MobileWorkHubSessionsSidebar {
     protected deployedBuildSha: string | undefined;
     protected readonly scrollHost: HTMLElement;
     protected readonly listHost: HTMLElement;
+    protected settingsOptions: MobileWorkHubSettingsSidebarOptions | undefined;
     protected readonly resizeHandle: HTMLElement;
     protected readonly onProjectsScroll = (): void => {
         this.updateProjectsHeading();
@@ -133,7 +155,13 @@ export class MobileWorkHubSessionsSidebar {
         this.backBtn.title = nls.localize('qaap/sessionsSidebar/back', 'Back');
         this.backBtn.setAttribute('aria-label', this.backBtn.title);
         this.backBtn.hidden = true;
-        this.backBtn.addEventListener('click', () => this.showSessions());
+        this.backBtn.addEventListener('click', () => {
+            if (this.sidebarMode === 'settings') {
+                this.settingsOptions?.onBack();
+            } else {
+                this.showSessions();
+            }
+        });
         this.closeBtn = document.createElement('button');
         this.closeBtn.type = 'button';
         this.closeBtn.className = 'theia-mobile-work-hub-sessions-sidebar-close codicon codicon-layout-sidebar-left-off';
@@ -203,6 +231,30 @@ export class MobileWorkHubSessionsSidebar {
                 () => this.showPullRequests(),
             ),
         );
+        this.settingsHost = document.createElement('div');
+        this.settingsHost.className = 'theia-mobile-work-hub-sessions-sidebar-settings';
+        this.settingsHost.hidden = true;
+        const settingsSearch = document.createElement('label');
+        settingsSearch.className = 'theia-mobile-work-hub-settings-search';
+        const settingsSearchIcon = document.createElement('span');
+        settingsSearchIcon.className = 'codicon codicon-search';
+        settingsSearchIcon.setAttribute('aria-hidden', 'true');
+        this.settingsSearchInput = document.createElement('input');
+        this.settingsSearchInput.type = 'search';
+        this.settingsSearchInput.placeholder = nls.localize('qaap/workHubSettings/searchPlaceholder', 'Search settings');
+        this.settingsSearchInput.setAttribute('aria-label', nls.localize('qaap/workHubSettings/searchLabel', 'Search settings'));
+        this.settingsSearchInput.addEventListener('input', () => {
+            this.settingsOptions?.onSearch(this.settingsSearchInput.value);
+            this.renderSettingsSidebar();
+        });
+        settingsSearch.append(settingsSearchIcon, this.settingsSearchInput);
+        this.settingsSectionLabel = document.createElement('div');
+        this.settingsSectionLabel.className = 'theia-mobile-work-hub-settings-section-label';
+        this.settingsSectionLabel.textContent = nls.localize('qaap/workHubSettings/sectionLabel', 'Settings');
+        this.settingsNav = document.createElement('nav');
+        this.settingsNav.className = 'theia-mobile-work-hub-settings-nav';
+        this.settingsNav.setAttribute('aria-label', nls.localize('qaap/workHubSettings/navigationLabel', 'Work Hub settings sections'));
+        this.settingsHost.append(settingsSearch, this.settingsSectionLabel, this.settingsNav);
         this.scrollHost = document.createElement('div');
         this.scrollHost.className = 'theia-mobile-work-hub-sessions-sidebar-scroll';
         this.scrollHost.addEventListener('scroll', this.onProjectsScroll, { passive: true });
@@ -211,7 +263,7 @@ export class MobileWorkHubSessionsSidebar {
         this.scrollHost.append(this.listHost);
         this.delegate.onSessionListHostReady?.(this.listHost);
 
-        this.panel.append(head, this.nav, this.scrollHost, footer);
+        this.panel.append(head, this.nav, this.settingsHost, this.scrollHost, footer);
 
         this.leftEdgeZone = document.createElement('div');
         this.leftEdgeZone.className = 'theia-mobile-work-hub-sessions-sidebar-edge-zone';
@@ -253,6 +305,10 @@ export class MobileWorkHubSessionsSidebar {
         return this.sidebarMode === 'pullRequests';
     }
 
+    isSettingsModeActive(): boolean {
+        return this.sidebarMode === 'settings';
+    }
+
     showPullRequests(): void {
         this.showPullRequestsModeWithoutRefresh();
         this.refreshList({ force: true });
@@ -263,6 +319,12 @@ export class MobileWorkHubSessionsSidebar {
         this.showSessionsModeWithoutRefresh();
         this.delegate.onPullRequestsBack?.();
         this.refreshList({ force: true });
+    }
+
+    showSettings(options: MobileWorkHubSettingsSidebarOptions): void {
+        this.settingsOptions = options;
+        this.showSettingsModeWithoutRefresh();
+        this.show();
     }
 
     /**
@@ -280,11 +342,17 @@ export class MobileWorkHubSessionsSidebar {
 
     show(): void {
         if (this.visible) {
-            this.refreshList();
+            if (this.sidebarMode === 'settings') {
+                this.renderSettingsSidebar();
+            } else {
+                this.refreshList();
+            }
             return;
         }
         if (this.sidebarMode === 'pullRequests') {
             this.showPullRequestsModeWithoutRefresh();
+        } else if (this.sidebarMode === 'settings') {
+            this.showSettingsModeWithoutRefresh();
         } else {
             this.showSessionsModeWithoutRefresh();
         }
@@ -300,7 +368,9 @@ export class MobileWorkHubSessionsSidebar {
         this.installLeftEdgeSwipeDismiss();
         this.installDesktopResize();
         this.updateAccountAvatar();
-        this.refreshList();
+        if (this.sidebarMode !== 'settings') {
+            this.refreshList();
+        }
         this.maybeShowDismissHint();
         this.notifyShellResize();
     }
@@ -371,6 +441,7 @@ export class MobileWorkHubSessionsSidebar {
             document.body.classList.remove(QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS);
             return;
         }
+        const isSettings = this.sidebarMode === 'settings';
         dismissQaapAccountMenu();
         this.delegate.onPullRequestSearchClose?.();
         this.scrollTouchDispose.dispose();
@@ -391,18 +462,26 @@ export class MobileWorkHubSessionsSidebar {
                 this.root.hidden = true;
             }
         }, 280);
-        this.delegate.onClose();
+        if (isSettings) {
+            this.settingsOptions?.onClose();
+        } else {
+            this.delegate.onClose();
+        }
         this.notifyShellResize();
     }
 
     protected showSessionsModeWithoutRefresh(): void {
         this.sidebarMode = 'sessions';
+        this.settingsOptions = undefined;
+        this.root.classList.remove('theia-mod-settings');
         this.root.classList.remove('theia-mod-pull-requests');
         this.root.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/label', 'Sessions and projects'));
         this.backBtn.hidden = true;
         this.searchBtn.hidden = false;
         this.pullRequestSearchBtn.hidden = true;
         this.nav.hidden = false;
+        this.settingsHost.hidden = true;
+        this.scrollHost.hidden = false;
         this.delegate.onPullRequestSearchClose?.();
         this.brand.textContent = FrontendApplicationConfigProvider.get().applicationName?.trim()
             || nls.localize('qaap/mobileProjects/title', 'Work Hub');
@@ -410,13 +489,60 @@ export class MobileWorkHubSessionsSidebar {
 
     protected showPullRequestsModeWithoutRefresh(): void {
         this.sidebarMode = 'pullRequests';
+        this.settingsOptions = undefined;
+        this.root.classList.remove('theia-mod-settings');
         this.root.classList.add('theia-mod-pull-requests');
         this.root.setAttribute('aria-label', nls.localize('qaap/pullRequests/sidebarLabel', 'Pull requests'));
         this.backBtn.hidden = false;
         this.searchBtn.hidden = true;
         this.pullRequestSearchBtn.hidden = false;
         this.nav.hidden = true;
+        this.settingsHost.hidden = true;
+        this.scrollHost.hidden = false;
         this.brand.textContent = nls.localize('qaap/sessionsSidebar/pullRequests', 'Pull requests');
+    }
+
+    protected showSettingsModeWithoutRefresh(): void {
+        this.sidebarMode = 'settings';
+        this.root.classList.add('theia-mod-settings');
+        this.root.classList.remove('theia-mod-pull-requests');
+        this.root.setAttribute('aria-label', nls.localize('qaap/workHubSettings/label', 'Settings'));
+        this.backBtn.hidden = false;
+        this.searchBtn.hidden = true;
+        this.pullRequestSearchBtn.hidden = true;
+        this.nav.hidden = true;
+        this.settingsHost.hidden = false;
+        this.scrollHost.hidden = true;
+        this.delegate.onPullRequestSearchClose?.();
+        this.brand.textContent = nls.localize('qaap/workHubSettings/title', 'Settings');
+        this.renderSettingsSidebar();
+    }
+
+    protected renderSettingsSidebar(): void {
+        const options = this.settingsOptions;
+        if (!options) {
+            this.settingsNav.replaceChildren();
+            return;
+        }
+        this.settingsSearchInput.value = options.searchValue?.() ?? '';
+        this.settingsSearchInput.readOnly = options.searchReadOnly?.() === true;
+        this.settingsNav.replaceChildren(...options.sections.map(section => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'theia-mobile-work-hub-settings-nav-item';
+            item.dataset.qaapSettingsSection = section.id;
+            item.title = section.label;
+            item.setAttribute('aria-label', section.label);
+            item.innerHTML = `<span class="codicon codicon-${section.icon}" aria-hidden="true"></span><span>${section.label}</span>`;
+            const selected = section.id === options.activeSectionId();
+            item.classList.toggle('theia-mod-selected', selected);
+            item.setAttribute('aria-current', selected ? 'page' : 'false');
+            item.addEventListener('click', () => {
+                options.onSectionSelected(section.id);
+                this.hideForMobileOverlay();
+            });
+            return item;
+        }));
     }
 
     /** Close after navigation on mobile overlays and in the IDE's embedded chat sidebar.
