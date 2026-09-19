@@ -117,6 +117,8 @@ export class MobileWorkHubPreferencesSheet {
     protected embeddedSettingsRenderToken = 0;
     protected embeddedSettingsWidget: Widget | undefined;
 
+    protected readonly resolveWorkHubHost: (() => HTMLElement | undefined) | undefined;
+
     protected readonly onSettingsSidebarResizePointerDown = (ev: PointerEvent): void => {
         if (ev.pointerType === 'mouse' && ev.button !== 0) {
             return;
@@ -197,7 +199,9 @@ export class MobileWorkHubPreferencesSheet {
         protected readonly appearanceModeService?: QaapAppearanceModeService,
         protected readonly themeService?: ThemeService,
         protected readonly openBilling?: () => Promise<void>,
+        resolveWorkHubHost?: () => HTMLElement | undefined,
     ) {
+        this.resolveWorkHubHost = resolveWorkHubHost;
         this.node = document.createElement('div');
         this.node.className = 'theia-mobile-work-hub-preferences';
         this.node.setAttribute('role', 'dialog');
@@ -324,9 +328,14 @@ export class MobileWorkHubPreferencesSheet {
     async show(query?: string): Promise<void> {
         const widget = await this.widgetManager.getOrCreateWidget<PreferencesWidget>(PreferencesWidget.ID);
         this.preferencesWidget = widget;
-        if (!this.node.parentElement) {
-            document.body.appendChild(this.node);
+        const workHubHost = this.resolveWorkHubHost?.();
+        const mountHost = workHubHost?.isConnected ? workHubHost : document.body;
+        if (this.node.parentElement !== mountHost) {
+            mountHost.appendChild(this.node);
         }
+        const inline = mountHost !== document.body;
+        this.node.classList.toggle('theia-mod-work-hub-inline', inline);
+        this.node.setAttribute('aria-modal', inline ? 'false' : 'true');
         const aiFeatures = isWorkHubAiFeaturesPreferencesQuery(query);
         const section = this.resolveSettingsSection(query);
         this.activeSettingsSectionId = section.id;

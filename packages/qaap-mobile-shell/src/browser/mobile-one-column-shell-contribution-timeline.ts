@@ -421,8 +421,11 @@ export async function openWorkHubPreferencesSheetExtracted(ctx: any, query?: str
             ctx.appearanceModeService,
             ctx.themeService,
             () => ctx.openWorkHubBillingSheet(),
+            () => {
+                const panel = ctx.projectsPanel;
+                return panel?.isVisible() ? panel.node : undefined;
+            },
         );
-        document.body.appendChild(ctx.workHubPreferencesSheet.node);
         ctx.toDispose.push(Disposable.create(() => {
             ctx.workHubPreferencesSheet?.dispose();
             ctx.workHubPreferencesSheet = undefined;
