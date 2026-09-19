@@ -35,7 +35,7 @@ else
     case "$*" in
         */legal/*) echo '<h1>Legal</h1>' ;;
         */auth/config|*/api/health)
-            printf '{"ok":true,"ready":true,"skipAuth":false,"productionRuntime":true,"agentUidPerUser":true,"oauthConfigured":true,"betaAccessRequired":true,"betaAccessConfigured":true,"build":"%s"}' "${TEST_BUILD:-abcdef123456}" ;;
+            printf '{"ok":true,"ready":true,"skipAuth":false,"productionRuntime":true,"agentUidPerUser":true,"oauthConfigured":true,"backendIsolationReady":true,"betaAccessRequired":true,"betaAccessConfigured":true,"build":"%s"}' "${TEST_BUILD:-abcdef123456}" ;;
         *) echo '<html>Qaap</html>' ;;
     esac
 fi

@@ -23,11 +23,17 @@ trap 'exit 143' TERM
 docker pull "$IMAGE"
 REVISION="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")"
 [[ "$REVISION" == "$SOURCE_SHA" ]] || { echo 'Image label does not match source commit' >&2; exit 1; }
+# The smoke image exercises the invited-tenant path, so provide the same
+# isolation prerequisites that a production deployment must provide. These
+# are throwaway values used only inside the ephemeral verification container.
 CONTAINER="$(docker run --detach --init --memory=4g --cpus=2 \
     --publish 127.0.0.1::4873 \
     --env PORT=4873 --env NODE_ENV=production --env QAAP_SKIP_AUTH=false \
-    --env QAAP_CLOUD_MODE=local --env QAAP_AGENT_UID_PER_USER=1 \
+    --env QAAP_CLOUD_MODE=docker --env DOCKER_HOST=unix:///run/user/1000/docker.sock \
+    --env QAAP_AGENT_UID_PER_USER=1 \
     --env QAAP_BETA_ALLOWED_LOGINS=qaap-smoke-a,qaap-smoke-b \
+    --env QAAP_BACKEND_PER_TENANT=1 \
+    --env QAAP_TENANT_BACKEND_MASTER_SECRET=qaap-image-smoke-master-secret-0123456789abcdef \
     --env QAAP_GITHUB_CLIENT_ID=qaap-image-smoke \
     --env QAAP_GITHUB_CLIENT_SECRET=not-a-real-secret \
     --env QAAP_OAUTH_PUBLIC_URL=http://127.0.0.1:4873 \
