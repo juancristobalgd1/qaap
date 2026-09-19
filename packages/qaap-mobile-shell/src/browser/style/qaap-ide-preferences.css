@@ -1,0 +1,53 @@
+/* Qaap-only affordance for resizing the native IDE Preferences categories tree. */
+
+.theia-settings-container.qaap-ide-preferences-resizable {
+  position: relative;
+}
+
+.qaap-ide-preferences-resizer {
+  position: fixed;
+  z-index: 4;
+  width: 10px;
+  margin-left: -5px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.qaap-ide-preferences-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--theia-widget-border, var(--theia-editorGroup-border));
+  opacity: 0.55;
+  transition: width 120ms ease, left 120ms ease, background-color 120ms ease, opacity 120ms ease;
+}
+
+.qaap-ide-preferences-resizer:hover::after,
+.qaap-ide-preferences-resizer:focus-visible::after,
+.qaap-ide-preferences-resizer.theia-mod-resizing::after {
+  left: 3px;
+  width: 3px;
+  background: var(--theia-focusBorder, var(--theia-button-background));
+  opacity: 1;
+}
+
+.theia-settings-container.qaap-ide-preferences-resizable .preferences-tree-widget,
+.theia-settings-container.qaap-ide-preferences-resizable .preferences-editor-widget {
+  min-width: 0;
+}
+
+body.qaap-ide-preferences-resizing,
+body.qaap-ide-preferences-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qaap-ide-preferences-resizer::after {
+    transition: none;
+  }
+}

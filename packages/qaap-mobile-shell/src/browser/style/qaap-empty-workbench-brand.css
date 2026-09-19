@@ -8,7 +8,7 @@
 
 html.theia-splash-branded {
   --qaap-empty-brand-gap: clamp(16px, 4vmin, 28px);
-  --qaap-empty-brand-logo-size: clamp(96px, min(36vmin, 28vh), 180px);
+  --qaap-empty-brand-logo-size: clamp(72px, min(24vmin, 18vh), 128px);
   --qaap-empty-brand-shortcuts-max: min(360px, calc(100% - 32px));
   --qaap-empty-brand-pad-inline: clamp(16px, 5vw, 28px);
 }
@@ -96,8 +96,8 @@ html.theia-splash-branded .qaap-empty-workbench-brand .qaap-empty-workbench-bran
   flex: 0 0 auto;
   width: var(--qaap-empty-brand-logo-size);
   height: var(--qaap-empty-brand-logo-size);
-  max-width: 180px;
-  max-height: 180px;
+  max-width: 128px;
+  max-height: 128px;
   background-image: var(--theia-workbench-brand-logo-url);
   background-position: center;
   background-repeat: no-repeat;

@@ -18,6 +18,7 @@ import '../../src/browser/style/mobile-workbench-ide-chrome.css';
 import '../../src/browser/style/qaap-catalog-card-tap-feedback.css';
 import '../../src/browser/style/qaap-mobile-touch-scroll.css';
 import '../../src/browser/style/qaap-empty-workbench-brand.css';
+import '../../src/browser/style/qaap-ide-preferences.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
 import '../../src/browser/style/qaap-agent-cli-update-toast.css';
 import '../../src/browser/style/qaap-chat-mic.css';
@@ -73,6 +74,7 @@ import { MobileThemeChromeContribution } from './mobile-theme-chrome-contributio
 import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 import { MobileEditorGestureContribution } from './mobile-editor-gesture-contribution';
 import { QaapEmptyWorkbenchBrandingContribution } from './qaap-empty-workbench-branding-contribution';
+import { QaapIdePreferencesResizer } from './qaap-ide-preferences-resizer';
 import { QaapWatermarkCommandsContribution } from './qaap-watermark-commands-contribution';
 import { LongPressContextMenuContribution } from './long-press-context-menu';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
@@ -247,6 +249,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapEmptyWorkbenchBrandingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapEmptyWorkbenchBrandingContribution);
+
+    bind(QaapIdePreferencesResizer).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(QaapIdePreferencesResizer);
 
     bind(LongPressContextMenuContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(LongPressContextMenuContribution);
