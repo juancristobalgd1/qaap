@@ -7,13 +7,15 @@ import { nls } from '@theia/core';
 import { codicon, ReactWidget } from '@theia/core/lib/browser';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { MessageService } from '@theia/core/lib/common/message-service';
+import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import * as React from '@theia/core/shared/react';
 import {
     QAAP_HARNESS_DEFINITIONS,
     type QaapHarnessDefinition,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import { resolveAgentBrand } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-branding';
+import { requestAgentCliUpdate } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-cli-update';
 import {
     isQaapHarnessEnabled,
     QAAP_DISABLED_HARNESSES_PREF,
@@ -27,6 +29,8 @@ interface HarnessAgentResponse {
 
 type HarnessAvailabilityState = 'loading' | 'ready' | 'unavailable';
 
+const MIN_INSTALL_FEEDBACK_MS = 900;
+
 /** Work Hub configuration for the agent runtimes supported by Qaap. */
 @injectable()
 export class QaapHarnessConfigurationWidget extends ReactWidget {
@@ -37,8 +41,12 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
     @inject(PreferenceService)
     protected readonly preferenceService: PreferenceService;
 
+    @inject(MessageService) @optional()
+    protected readonly messageService: MessageService | undefined;
+
     protected availableHarnessIds = new Set<string>();
     protected availabilityState: HarnessAvailabilityState = 'loading';
+    protected readonly installingHarnessIds = new Set<string>();
 
     @postConstruct()
     protected init(): void {
@@ -94,11 +102,13 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
     ): React.ReactNode {
         const enabled = isQaapHarnessEnabled(definition.id, disabledIds);
         const available = this.availableHarnessIds.has(definition.id);
+        const unavailable = !available && this.availabilityState !== 'loading';
         const status = this.renderAvailabilityStatus(available);
+        const installing = this.installingHarnessIds.has(definition.id);
         return (
             <div
                 key={definition.id}
-                className={`qaap-harness-card${enabled ? '' : ' theia-mod-disabled'}${available ? '' : ' qaap-harness-card-unavailable'}`}
+                className={`qaap-harness-card${enabled && !unavailable ? '' : ' theia-mod-disabled'}${available ? '' : ' qaap-harness-card-unavailable'}${installing ? ' qaap-harness-card-installing' : ''}`}
                 role="listitem"
                 data-harness-id={definition.id}
             >
@@ -110,25 +120,80 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
                         <span className="qaap-harness-card-name">{definition.label}</span>
                         <span className="qaap-harness-card-bin">{definition.bin}</span>
                     </div>
-                    <span className={`qaap-harness-card-status${available ? ' theia-mod-available' : ''}`}>
-                        {status}
+                    <span
+                        className={`qaap-harness-card-status${available ? ' theia-mod-available' : ''}${installing ? ' qaap-harness-status-installing' : ''}`}
+                        aria-live={installing ? 'polite' : undefined}
+                    >
+                        {installing
+                            ? nls.localize(
+                                'qaap/aiConfiguration/harnessInstallingStatus',
+                                'Installing in background…',
+                            )
+                            : status}
                     </span>
+                    {installing && <div
+                        className="qaap-harness-install-progress"
+                        role="progressbar"
+                        aria-label={nls.localize(
+                            'qaap/aiConfiguration/harnessInstallProgress',
+                            'Installing {0}',
+                            definition.label,
+                        )}
+                    >
+                        <span className="qaap-harness-install-progress-bar" />
+                    </div>}
                 </div>
-                <button
-                    type="button"
-                    className={`qaap-harness-toggle${enabled ? ' theia-mod-on' : ''}`}
-                    role="switch"
-                    aria-checked={enabled}
-                    aria-label={nls.localize(
-                        'qaap/aiConfiguration/toggleHarness',
-                        'Toggle {0} harness',
-                        definition.label,
-                    )}
-                    title={enabled
-                        ? nls.localize('qaap/aiConfiguration/disableHarness', 'Disable harness')
-                        : nls.localize('qaap/aiConfiguration/enableHarness', 'Enable harness')}
-                    onClick={() => void this.toggleHarness(definition.id, !enabled)}
-                />
+                {installing
+                    ? <button
+                        type="button"
+                        className="qaap-harness-install theia-mod-installing"
+                        aria-label={nls.localize(
+                            'qaap/aiConfiguration/installingHarness',
+                            'Installing harness…',
+                        )}
+                        title={nls.localize(
+                            'qaap/aiConfiguration/installingHarness',
+                            'Installing harness…',
+                        )}
+                        aria-busy={true}
+                        disabled={true}
+                    >
+                        <span className={codicon('loading')} aria-hidden={true} />
+                    </button>
+                    : available
+                    ? <button
+                        type="button"
+                        className={`qaap-harness-toggle${enabled ? ' theia-mod-on' : ''}`}
+                        role="switch"
+                        aria-checked={enabled}
+                        aria-label={nls.localize(
+                            'qaap/aiConfiguration/toggleHarness',
+                            'Toggle {0} harness',
+                            definition.label,
+                        )}
+                        title={enabled
+                            ? nls.localize('qaap/aiConfiguration/disableHarness', 'Disable harness')
+                            : nls.localize('qaap/aiConfiguration/enableHarness', 'Enable harness')}
+                        onClick={() => void this.toggleHarness(definition.id, !enabled)}
+                    />
+                    : <button
+                        type="button"
+                        className="qaap-harness-install"
+                        aria-label={nls.localize(
+                            'qaap/aiConfiguration/installHarness',
+                            'Install {0} harness',
+                            definition.label,
+                        )}
+                        title={nls.localize(
+                            'qaap/aiConfiguration/installHarness',
+                            'Install {0} harness',
+                            definition.label,
+                        )}
+                        disabled={this.availabilityState !== 'ready'}
+                        onClick={() => void this.installHarness(definition)}
+                    >
+                        <span className={codicon('download')} aria-hidden={true} />
+                    </button>}
             </div>
         );
     }
@@ -181,6 +246,46 @@ export class QaapHarnessConfigurationWidget extends ReactWidget {
             PreferenceScope.User,
         );
         this.update();
+    }
+
+    protected async installHarness(definition: QaapHarnessDefinition): Promise<void> {
+        if (this.installingHarnessIds.has(definition.id)) {
+            return;
+        }
+        this.installingHarnessIds.add(definition.id);
+        this.update();
+        try {
+            const [result] = await Promise.all([
+                requestAgentCliUpdate(definition.id),
+                new Promise<void>(resolve => setTimeout(resolve, MIN_INSTALL_FEEDBACK_MS)),
+            ]);
+            if (!result.ok) {
+                throw new Error(result.message || nls.localize(
+                    'qaap/aiConfiguration/installHarnessFailed',
+                    'Could not install {0}.',
+                    definition.label,
+                ));
+            }
+            const disabledIds = readDisabledHarnessIds(this.preferenceService.get(QAAP_DISABLED_HARNESSES_PREF));
+            await this.preferenceService.set(
+                QAAP_DISABLED_HARNESSES_PREF,
+                withQaapHarnessEnabled(disabledIds, definition.id, false),
+                PreferenceScope.User,
+            );
+            this.availableHarnessIds.add(definition.id);
+            this.availabilityState = 'ready';
+            this.messageService?.info(nls.localize(
+                'qaap/aiConfiguration/harnessInstalled',
+                '{0} installed. It is disabled until you enable it.',
+                definition.label,
+            ));
+            await this.loadAvailability();
+        } catch (error) {
+            this.messageService?.error(error instanceof Error ? error.message : String(error));
+        } finally {
+            this.installingHarnessIds.delete(definition.id);
+            this.update();
+        }
     }
 
     protected async loadAvailability(): Promise<void> {

@@ -50,6 +50,7 @@ describe('qaap-ai-features-visibility', () => {
 
     it('hides IDE Agents and Prompt Fragments only in the Work Hub sheet', () => {
         expect(isQaapWorkHubHiddenAiConfigurationTab('ai-agent-configuration-container-widget')).to.equal(true);
+        expect(isQaapWorkHubHiddenAiConfigurationTab('qaap-harness-configuration-widget')).to.equal(false);
         expect(isQaapWorkHubHiddenAiConfigurationTab('ai-prompt-fragments-configuration')).to.equal(true);
         // Model Aliases stays in Work Hub (BYOK routing).
         expect(isQaapWorkHubHiddenAiConfigurationTab('ai-model-aliases-configuration-widget')).to.equal(false);

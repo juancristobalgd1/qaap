@@ -73,7 +73,7 @@ else
     bad "setpriv missing"
 fi
 
-if dexec 'for harness in qaiq openclaude codex claude opencode copilot antigravity grok; do command -v "$harness" >/dev/null 2>&1 || exit 1; done'; then
+if dexec 'for harness in qaiq openclaude codex claude opencode antigravity; do command -v "$harness" >/dev/null 2>&1 || exit 1; done'; then
     ok "coding-agent harnesses are installed in the serving image"
 else
     bad "one or more coding-agent harnesses are missing from the serving image; rebuild/pull the Qaap image"

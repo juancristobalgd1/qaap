@@ -5,6 +5,8 @@
     flex-direction: column;
     min-height: 0;
     overflow: hidden;
+    --qaap-harness-accent: #3b82f6;
+    --qaap-harness-accent-strong: #2563eb;
 }
 
 .qaap-ai-harness-configuration .qaap-harness-configuration-content {
@@ -161,6 +163,33 @@
     color: var(--theia-testing-iconPassed, #73c991);
 }
 
+.qaap-ai-harness-configuration .qaap-harness-status-installing {
+    color: var(--qaap-harness-accent);
+    font-weight: 600;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-status-installing::before {
+    animation: qaap-harness-pulse 1.2s ease-in-out infinite;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install-progress {
+    width: 100%;
+    height: 3px;
+    margin-top: 3px;
+    overflow: hidden;
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--qaap-harness-accent) 16%, transparent);
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install-progress-bar {
+    display: block;
+    width: 38%;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--qaap-harness-accent);
+    animation: qaap-harness-progress 1.25s ease-in-out infinite;
+}
+
 .qaap-ai-harness-configuration .qaap-harness-toggle {
     display: inline-flex;
     align-items: center;
@@ -170,7 +199,7 @@
     margin-top: 3px;
     padding: 0;
     position: relative;
-    border: 1px solid color-mix(in srgb, var(--theia-foreground) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theia-foreground) 22%, transparent);
     border-radius: 99px;
     background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
     cursor: pointer;
@@ -186,8 +215,8 @@
 }
 
 .qaap-ai-harness-configuration .qaap-harness-toggle.theia-mod-on {
-    border-color: transparent;
-    background: var(--theia-button-background, #0e639c);
+    border-color: var(--qaap-harness-accent-strong);
+    background: var(--qaap-harness-accent);
 }
 
 .qaap-ai-harness-configuration .qaap-harness-toggle::after {
@@ -205,7 +234,94 @@
 }
 
 .qaap-ai-harness-configuration .qaap-harness-toggle.theia-mod-on::after {
+    background: #ffffff;
     transform: translateX(16px);
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-top: 0;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--qaap-harness-accent) 55%, var(--theia-foreground));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--qaap-harness-accent) 12%, transparent);
+    color: var(--qaap-harness-accent-strong);
+    cursor: pointer;
+    flex-shrink: 0;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install:hover:not(:disabled) {
+    border-color: var(--qaap-harness-accent);
+    background: color-mix(in srgb, var(--qaap-harness-accent) 22%, transparent);
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install:focus-visible {
+    outline: 2px solid var(--theia-focusBorder, var(--theia-button-background, #0e639c));
+    outline-offset: 2px;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install:disabled {
+    cursor: wait;
+    opacity: 0.75;
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install.theia-mod-installing {
+    border-color: var(--qaap-harness-accent);
+    background: color-mix(in srgb, var(--qaap-harness-accent) 22%, transparent);
+    color: var(--qaap-harness-accent);
+}
+
+.qaap-ai-harness-configuration .qaap-harness-install.theia-mod-installing .codicon {
+    animation: qaap-harness-spin 900ms linear infinite;
+}
+
+@keyframes qaap-harness-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes qaap-harness-pulse {
+    50% {
+        opacity: 0.45;
+    }
+}
+
+@keyframes qaap-harness-progress {
+    0% {
+        transform: translateX(-115%);
+    }
+    100% {
+        transform: translateX(285%);
+    }
+}
+
+body.qaap-theme-light .qaap-ai-harness-configuration .qaap-harness-toggle {
+    border-color: color-mix(in srgb, var(--theia-foreground) 24%, transparent);
+    background: color-mix(in srgb, var(--theia-foreground) 10%, var(--theia-editor-background));
+}
+
+body.qaap-theme-light .qaap-ai-harness-configuration,
+body[data-theia-theme-mode='light'] .qaap-ai-harness-configuration {
+    --qaap-harness-accent: #2563eb;
+    --qaap-harness-accent-strong: #1d4ed8;
+}
+
+body.qaap-theme-light .qaap-ai-harness-configuration .qaap-harness-toggle.theia-mod-on,
+body[data-theia-theme-mode='light'] .qaap-ai-harness-configuration .qaap-harness-toggle.theia-mod-on {
+    border-color: var(--qaap-harness-accent-strong);
+    background: var(--qaap-harness-accent);
+}
+
+body.qaap-theme-light .qaap-ai-harness-configuration .qaap-harness-toggle::after {
+    background: var(--theia-editor-background, #ffffff);
 }
 
 @media (max-width: 520px) {

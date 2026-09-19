@@ -140,7 +140,6 @@ export interface MobileProjectsStickyComposerSheetsHost {
     closeTranscriptComposerSheets(): void;
     openAgentSignInTerminal?(agentId?: string, project?: MobileProjectEntry): void | Promise<void>;
     openPreferencesSheet?(query?: string): Promise<void>;
-    openAiConfigurationSheet?(tabId?: string): Promise<void>;
     agentsHubShellActive?: boolean;
     submitExternalComposerPrompt?(
         draft: string,
@@ -282,7 +281,7 @@ export class MobileProjectsStickyComposerSheetsUi {
     createComposerAgentPickerChrome(options: { readonly closeTitle: string; readonly onClose: () => void; readonly anchor?: HTMLElement; readonly transcriptOverlay?: boolean; readonly sheetModifierClass?: string; }): ComposerAgentPickerChrome {
         return createComposerAgentPickerChromeExtracted(this, options);
     }
-    async renderComposerAgentPicker(chrome: ComposerAgentPickerChrome, options: { readonly view: ComposerAgentPickerView; readonly modelPickerAgentId?: string; readonly cwd: string | undefined; readonly agents: readonly QaapAgentTaskAgentOption[]; readonly selectedAgentId: string | undefined; readonly includeCoder: boolean; readonly agentsTitle?: string; readonly agentsIntro?: string; readonly project?: MobileProjectEntry; readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void; readonly onProactiveLogin?: (agentId: string, project?: MobileProjectEntry) => void; readonly onOpenAiFeaturesSettings?: (agentId?: string) => void; readonly onOpenAiConfiguration?: (agentId?: string) => void; },): Promise<void> {
+    async renderComposerAgentPicker(chrome: ComposerAgentPickerChrome, options: { readonly view: ComposerAgentPickerView; readonly modelPickerAgentId?: string; readonly cwd: string | undefined; readonly agents: readonly QaapAgentTaskAgentOption[]; readonly selectedAgentId: string | undefined; readonly includeCoder: boolean; readonly agentsTitle?: string; readonly agentsIntro?: string; readonly project?: MobileProjectEntry; readonly onSelectAgent: (agentId: string, model?: QaapQaiqModelOption) => void; readonly onProactiveLogin?: (agentId: string, project?: MobileProjectEntry) => void; readonly onOpenAiFeaturesSettings?: (agentId?: string) => void; },): Promise<void> {
         return renderComposerAgentPickerExtracted(this, chrome, options);
     }
     protected createAgentPickerNoResultsHint(): HTMLElement {

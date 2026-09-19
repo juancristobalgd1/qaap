@@ -49,7 +49,6 @@ ARG CODEX_CLI_VERSION=0.144.5
 ARG CLAUDE_CODE_VERSION=2.1.261
 ARG ANTIGRAVITY_CLI_VERSION=0.1.1
 ARG OPENCODE_CLI_VERSION=1.18.28
-ARG COPILOT_CLI_VERSION=1.0.83
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -71,17 +70,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         @anthropic-ai/claude-code@"${CLAUDE_CODE_VERSION}" \
         @sanchaymittal/antigravity-cli@"${ANTIGRAVITY_CLI_VERSION}" \
         opencode-ai@"${OPENCODE_CLI_VERSION}" \
-        @github/copilot@"${COPILOT_CLI_VERSION}" \
     && npm install -g bun \
     && codex --version \
     && claude --version \
     && opencode --version \
-    && copilot --version \
     && ln -sf "$(command -v ag)" /usr/local/bin/antigravity \
-    && antigravity --version \
-    && mkdir -p /opt/grok \
-    && HOME=/opt/grok GROK_BIN_DIR=/opt/grok/bin bash -c 'curl -fsSL https://x.ai/cli/install.sh | bash' \
-    && /opt/grok/bin/grok version
+    && antigravity --version
 
 # Fetch and verify the reviewed commit itself, rather than using its SHA only as a cache key.
 ARG CACHE_BUST=unpinned
@@ -100,13 +94,13 @@ RUN test -n "${QAIQ_COMMIT}" \
     && qaiq --version \
     && openclaude --version
 
-ENV PATH="/opt/grok/bin:/root/.local/bin:${PATH}" \
+ENV PATH="/root/.local/bin:${PATH}" \
     QAAP_DEFAULT_AGENT=qaiq
 
 # These executables are runtime dependencies of Jobs / Background tasks. Keep the image build
 # fail-fast: a worker based on a partially built image must never reach a VPS and silently accept
 # tasks without a coding harness.
-RUN for harness in qaiq openclaude codex claude opencode copilot antigravity grok; do \
+RUN for harness in qaiq openclaude codex claude opencode antigravity; do \
         command -v "$harness" >/dev/null 2>&1 \
             || { echo "Required Qaap harness is missing: $harness" >&2; exit 1; }; \
     done
@@ -127,7 +121,7 @@ COPY packages/qaap-product/resources/qaap-system-skills /opt/qaap/system-skills
 RUN groupadd --gid 1001 qaap-agent \
     && useradd --uid 1001 --gid 1001 --create-home --home-dir /home/qaap-agent --shell /usr/sbin/nologin qaap-agent \
     && chmod 700 /root \
-    && chmod a+rX /opt/qaiq /opt/grok \
+    && chmod a+rX /opt/qaiq \
     && mkdir -p /workspace \
     && chown -R 1001:1001 /workspace /home/qaap-agent \
     # uid-per-user mode (QAAP_AGENT_UID_PER_USER=1): each tenant gets a private agent HOME under here.
@@ -156,7 +150,7 @@ RUN groupadd --gid 1001 qaap-agent \
     # permissions needed by the non-root Theia user. Avoid recursively touching
     # the dependency trees here: on large deployments that turns image export
     # into a multi-minute metadata-only operation.
-    && chmod a+rX /opt/qaiq /opt/grok /app
+    && chmod a+rX /opt/qaiq /app
 
 ARG QAAP_IDE_PORT=4873
 # Deployed-build identity: the short git SHA the image was built from. Surfaced via

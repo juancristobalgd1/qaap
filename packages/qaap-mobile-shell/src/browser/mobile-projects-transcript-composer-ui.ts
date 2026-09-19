@@ -41,6 +41,7 @@ import {
     type QaapAgentToolApprovalRules,
 } from '../common/qaap-agent-tool-approval-rules';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '../common/qaap-agent-auth-login';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -363,7 +364,7 @@ export class MobileProjectsTranscriptComposerUi {
                 onOpenAiFeaturesSettings: this.host.openPreferencesSheet
                     ? () => {
                         this.closeAllComposerSheets();
-                        void this.host.openPreferencesSheet?.('ai-features');
+                        void this.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                     }
                     : undefined,
                 });

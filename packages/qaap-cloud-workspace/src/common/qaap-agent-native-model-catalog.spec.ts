@@ -28,7 +28,7 @@ describe('qaap-agent-native-model-catalog', () => {
         expect(agentUsesNativeModelCatalog('qaiq')).to.equal(false);
         expect(agentUsesNativeModelCatalog('openclaude')).to.equal(true);
         expect(agentUsesNativeModelCatalog('shell')).to.equal(false);
-        expect(agentUsesNativeModelCatalog('cursor')).to.equal(false);
+        expect(agentUsesNativeModelCatalog('cursor')).to.equal(true);
         expect(agentUsesNativeModelCatalog('goose')).to.equal(false);
         expect(agentUsesNativeModelCatalog('hermes')).to.equal(true);
     });

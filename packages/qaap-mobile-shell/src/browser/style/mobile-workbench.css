@@ -10839,6 +10839,7 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   gap: 6px;
   width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   margin-bottom: 2px;
   border-radius: 8px;
 }
@@ -14806,6 +14807,27 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
   box-sizing: border-box;
 }
 
+/* Qaap AI Configuration uses one Cursor-style navigation shell in the IDE and
+   in Work Hub. The classic IDE-only pages stay hidden in the Work Hub embed. */
+.theia-mobile-work-hub-ai-config-embed .qaap-ai-configuration-navigation {
+  flex: 0 0 236px;
+  min-width: 236px;
+  max-width: 236px;
+  height: 100%;
+  min-height: 0;
+}
+
+.theia-mobile-work-hub-ai-config-embed .qaap-ai-configuration-dock {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  height: 100%;
+}
+
+.theia-mobile-work-hub-ai-config-embed .qaap-ai-configuration-nav-item.qaap-work-hub-ide-only-tab {
+  display: none !important;
+}
+
 .theia-mobile-work-hub-ai-config-embed .ai-skills-configuration-container,
 .theia-mobile-work-hub-ai-config-embed .ai-configuration-card-grid {
   max-width: none;
@@ -14816,6 +14838,12 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
 
 @media (max-width: 767px),
 (pointer: coarse) {
+  .theia-mobile-work-hub-ai-config-embed .qaap-ai-configuration-navigation {
+    flex-basis: 178px;
+    min-width: 178px;
+    max-width: 178px;
+  }
+
   .theia-mobile-work-hub-ai-config-embed .ai-configuration-list {
     max-height: min(38vh, 280px);
   }

@@ -56,7 +56,6 @@ import {
 } from '../common/qaap-agent-conversation-client';
 import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
 import {
-    agentHasCliOAuthLogin,
     QAAP_AI_FEATURES_SETTINGS_QUERY,
     localizeAgentSettingsApiKeyLoginMessage,
 } from '../common/qaap-agent-auth-login';
@@ -596,10 +595,10 @@ export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string, req
         }
         return;
     }
-    // BYOK / Settings-catalog agents (qaiq, and any agent without a CLI login
-    // subcommand) have no terminal sign-in — opening the TUI would sign no one
-    // in. Point the user to the API key in Settings instead.
-    if (!agentHasCliOAuthLogin(resolvedAgentId)) {
+    // QAIQ is the only BYOK / Settings-catalog harness. Every other harness connects
+    // through its own CLI flow in the transcript terminal, even when it has no dedicated
+    // `login` subcommand (the interactive CLI owns that onboarding flow).
+    if (resolvedAgentId.toLowerCase() === 'qaiq') {
         ctx.notifyAgentUsesSettingsApiKey(resolvedAgentId);
         return;
     }

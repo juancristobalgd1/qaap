@@ -39,6 +39,8 @@ const NPM_FETCH_TIMEOUT_MS = 4_000;
 const NPM_CACHE_TTL_MS = 30 * 60_000;
 /** Cap in-place `npm install -g` so a hung registry cannot wedge the UI action. */
 const NPM_INSTALL_TIMEOUT_MS = 120_000;
+/** Windows exposes npm through a `.cmd` shim when spawned without a shell. */
+const NPM_EXECUTABLE = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 interface TrackedAgentCli {
     readonly id: string;
@@ -178,9 +180,15 @@ export class QaapAgentCliUpdateService {
             };
         }
         const install = spawnSync(
-            'npm',
+            NPM_EXECUTABLE,
             ['install', '-g', `${tracked.npmPackage}@latest`],
-            { encoding: 'utf8', timeout: NPM_INSTALL_TIMEOUT_MS, env: process.env },
+            {
+                encoding: 'utf8',
+                timeout: NPM_INSTALL_TIMEOUT_MS,
+                env: process.env,
+                // Windows npm is a cmd shim and cannot be spawned directly without a shell.
+                shell: process.platform === 'win32',
+            },
         );
         if (install.error || (install.status !== null && install.status !== 0)) {
             const detail = (install.stderr || install.stdout || install.error?.message || 'npm install failed').trim();

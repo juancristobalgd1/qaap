@@ -401,6 +401,11 @@ export class QaapAgentTaskRunner {
         return this.detectedAgents.has(QAIQ_AGENT_ID) || this.isOnPath(QAIQ_AGENT_ID);
     }
 
+    /** Re-probe CLI harnesses after a local install from the configuration UI. */
+    refreshAgentCatalog(): void {
+        this.detectAgents();
+    }
+
     /** Fail before a conversation can enter the streaming/planning state without a runnable QAIQ. */
     assertQaiqInstalled(): void {
         if (!this.isQaiqInstalled()) {

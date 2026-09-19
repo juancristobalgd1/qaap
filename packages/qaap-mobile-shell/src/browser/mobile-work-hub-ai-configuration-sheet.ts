@@ -184,8 +184,8 @@ export class MobileWorkHubAiConfigurationSheet {
     }
 
     /**
-     * Hide IDE-only tabs (IDE Agents, Prompt Fragments) while the shared AI Configuration
-     * widget is embedded in Work Hub; restore them when the sheet closes so classic IDE keeps them.
+     * Hide tabs that are only meaningful in the classic IDE while the shared AI Configuration
+     * widget is embedded in Work Hub; restore them when the sheet closes.
      */
     protected setWorkHubIdeOnlyTabsHidden(container: AIConfigurationContainerWidget, hidden: boolean): void {
         const hideClass = 'qaap-work-hub-ide-only-tab';

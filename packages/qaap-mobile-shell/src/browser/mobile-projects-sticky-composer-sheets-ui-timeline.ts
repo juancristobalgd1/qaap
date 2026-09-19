@@ -3,7 +3,6 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatMode } from '@theia/ai-chat';
-import { agentHasCliOAuthLogin, agentNeedsSettingsApiKeyPath } from '../common/qaap-agent-auth-login';
 import {
     localizeHostedComposerNoAgentsFilteredMessage,
     localizeHostedComposerNoAgentsMessage,
@@ -12,6 +11,7 @@ import {
 import {
     agentSupportsModelPicker,
     agentUsesSettingsModelCatalog,
+    ensureStoredAgentModel,
     fetchAgentModelsForAgent,
     isSameAgentModel,
     isStickyComposerAgentSelected,
@@ -232,7 +232,6 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
          */
         readonly onProactiveLogin?: (agentId: string, project?: MobileProjectEntry) => void;
         readonly onOpenAiFeaturesSettings?: (agentId?: string) => void;
-        readonly onOpenAiConfiguration?: (agentId?: string) => void;
     },): Promise<void> {
     const renderGeneration = Number(chrome.sheet.dataset.agentPickerRenderGeneration ?? '0') + 1;
     chrome.sheet.dataset.agentPickerRenderGeneration = String(renderGeneration);
@@ -282,7 +281,9 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         if (chrome.sheet.dataset.agentPickerRenderGeneration !== String(renderGeneration)) {
             return;
         }
-        const storedModel = readStoredAgentModel(options.cwd, modelAgentId);
+        const storedModel = options.cwd
+            ? ensureStoredAgentModel(options.cwd, modelAgentId, pickerModels ?? [])
+            : undefined;
         chrome.header.classList.add('theia-mod-drilldown');
         chrome.backBtn.hidden = false;
         chrome.intro.hidden = true;
@@ -373,8 +374,6 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
     const appendAgent = (entry: QaapAgentPickerSearchEntry): void => {
         const { id: agentId, label } = entry;
         if (entry.available === false) {
-            const canConnect = agentHasCliOAuthLogin(agentId);
-            const canConfigure = agentNeedsSettingsApiKeyPath(agentId);
             const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
                 && !!ctx.host.readPreference
                 && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference(key));
@@ -394,12 +393,10 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
                     missingQaiqByok ? 'Add BYOK' : 'Connect',
                 ),
                 onAction: () => {
-                    if (canConnect) {
-                        options.onProactiveLogin?.(agentId, options.project);
-                    } else if (canConfigure) {
+                    if (agentId.toLowerCase() === QAIQ_AGENT_ID) {
                         options.onOpenAiFeaturesSettings?.(agentId);
                     } else {
-                        options.onOpenAiConfiguration?.(agentId);
+                        options.onProactiveLogin?.(agentId, options.project);
                     }
                 },
             }));
@@ -407,7 +404,9 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         }
         const hasModels = agentSupportsModelPicker(agentId);
         const agentSelected = isStickyComposerAgentSelected(agentId, options.selectedAgentId, options.cwd);
-        const storedModel = readStoredAgentModel(options.cwd, agentId);
+        const storedModel = options.cwd
+            ? ensureStoredAgentModel(options.cwd, agentId, entry.models)
+            : undefined;
         let displayLabel = label;
         if (storedModel?.modelId && agentSelected) {
             displayLabel = `${label} · ${formatQaiqModelSelectionLabel(storedModel)}`;

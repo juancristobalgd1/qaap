@@ -12,7 +12,7 @@ assert.equal(process.platform, 'linux');
 assert.equal(process.getuid(), 0);
 // Compilation cannot detect a native terminal binary built for the wrong Node ABI.
 require(require.resolve('node-pty', { paths: ['/app/packages/process'] }));
-const requiredHarnesses = ['qaiq', 'openclaude', 'codex', 'claude', 'opencode', 'copilot', 'antigravity', 'grok'];
+const requiredHarnesses = ['qaiq', 'openclaude', 'codex', 'claude', 'opencode', 'antigravity'];
 for (const harness of requiredHarnesses) {
     const result = spawnSync('sh', ['-lc', `command -v ${harness}`], { encoding: 'utf8', timeout: 10000 });
     assert.equal(result.status, 0, `Required Qaap harness is missing from the runtime image: ${harness}`);

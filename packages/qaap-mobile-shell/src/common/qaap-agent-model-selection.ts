@@ -259,8 +259,10 @@ export function pickDefaultAgentModel(
 }
 
 /**
- * Persist a usable model when a model-capable agent has none selected.
- * Returns the existing or newly written selection (undefined if catalog empty).
+ * Persist a usable model when a model-capable agent has none selected, or when
+ * the live native catalog no longer contains the stored selection.
+ * Returns the existing, replaced, or newly written selection (undefined if
+ * catalog empty).
  */
 export function ensureStoredAgentModel(
     cwd: string | undefined,
@@ -271,7 +273,7 @@ export function ensureStoredAgentModel(
         return undefined;
     }
     const existing = readStoredAgentModel(cwd, agentId);
-    if (existing) {
+    if (existing && (models.length === 0 || models.some(model => isSameAgentModel(existing, model)))) {
         return existing;
     }
     const picked = pickDefaultAgentModel(models);

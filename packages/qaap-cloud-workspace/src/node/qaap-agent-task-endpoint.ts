@@ -419,6 +419,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         }
         try {
             const result = await this.cliUpdates.installUpdate(agentId);
+            if (result.ok) {
+                this.runner.refreshAgentCatalog();
+            }
             res.status(result.ok ? 200 : 400).json(result);
         } catch (error) {
             res.status(500).json({

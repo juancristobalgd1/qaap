@@ -51,14 +51,12 @@ describe('resolveInteractiveAgentLoginCommand', () => {
         expect(resolveInteractiveAgentLoginCommand('grok')).to.equal('grok login --device-auth');
     });
 
-    it('does NOT fall back to the bare interactive binary for BYOK/Settings agents', () => {
-        // Regression guard: launching the bare TUI never signs anyone in, so login
-        // intent must resolve to undefined (the UI then points to Settings).
+    it('falls back to the interactive CLI for non-QAIQ harnesses without a login subcommand', () => {
+        // QAIQ is the only Settings/BYOK exception. Other harnesses own their
+        // onboarding flow inside the interactive CLI terminal.
         expect(resolveInteractiveAgentLoginCommand('qaiq')).to.equal(undefined);
-        expect(resolveInteractiveAgentLoginCommand('opencode')).to.equal(undefined);
-        expect(resolveInteractiveAgentLoginCommand('gemini')).to.equal(undefined);
-        // The bare interactive binary still exists for opencode — proving the
-        // login path deliberately declines it rather than there being no binary.
+        expect(resolveInteractiveAgentLoginCommand('opencode')).to.equal('opencode');
+        expect(resolveInteractiveAgentLoginCommand('gemini')).to.equal('agy');
         expect(resolveInteractiveAgentCliBin('opencode')).to.equal('opencode');
     });
 

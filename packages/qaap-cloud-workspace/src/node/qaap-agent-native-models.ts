@@ -36,6 +36,15 @@ function discoverNativeAgentModels(agentId: string): QaapQaiqModelOption[] {
     switch (agentId) {
         case 'opencode':
             return discoverFromCommand('opencode', ['models'], agentId);
+        case 'cursor':
+            // Cursor Agent exposes the account-scoped catalog through both the modern
+            // `agent models` command and the backwards-compatible `cursor-agent` alias.
+            {
+                const models = discoverFromCommand('cursor-agent', ['models'], agentId);
+                return models.length > 0
+                    ? models
+                    : discoverFromCommand('cursor-agent', ['--list-models'], agentId);
+            }
         default:
             return [];
     }
@@ -43,7 +52,16 @@ function discoverNativeAgentModels(agentId: string): QaapQaiqModelOption[] {
 
 function discoverFromCommand(bin: string, args: string[], agentId: string): QaapQaiqModelOption[] {
     try {
-        const result = spawnSync(bin, args, { encoding: 'utf8', timeout: 15_000 });
+        // npm-installed CLIs are `.cmd` shims on Windows and cannot be spawned by
+        // their extensionless name from Node without a shell. Use the same
+        // Windows-safe resolution as the CLI installer so native model discovery
+        // does not silently fall back to a partial static catalog.
+        const executable = process.platform === 'win32' ? `${bin}.cmd` : bin;
+        const result = spawnSync(executable, args, {
+            encoding: 'utf8',
+            timeout: 15_000,
+            shell: process.platform === 'win32',
+        });
         const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
         const lines = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
         return parseNativeModelLines(agentId, lines);

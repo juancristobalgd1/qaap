@@ -48,7 +48,6 @@ Edit `.env`:
 | `CLAUDE_CODE_VERSION` | `latest` | Claude Code CLI version for a source build |
 | `ANTIGRAVITY_CLI_VERSION` | `latest` | Antigravity CLI version for a source build |
 | `OPENCODE_CLI_VERSION` | `latest` | OpenCode CLI (`opencode-ai`) version for a source build |
-| `COPILOT_CLI_VERSION` | `latest` | GitHub Copilot CLI (`@github/copilot`) installed during Docker build |
 
 Open the firewall port (example with UFW):
 
@@ -194,8 +193,6 @@ The runtime stage of `Dockerfile` installs:
 - **Claude Code** → `claude` (`@anthropic-ai/claude-code`)
 - **Antigravity CLI** → `antigravity` (installed from `@sanchaymittal/antigravity-cli` with `antigravity` alias)
 - **OpenCode** → `opencode` (`opencode-ai`)
-- **GitHub Copilot CLI** → `copilot` (`@github/copilot`)
-- **Grok Build** → `/opt/grok/bin/grok` (`curl -fsSL https://x.ai/cli/install.sh | bash`)
 - `git`, `curl`, `bun`, `pnpm`, `yarn`, `build-essential`, `ripgrep` for agent shell work
 
 These harnesses are runtime dependencies of the task runner, not optional frontend npm
@@ -207,7 +204,7 @@ image.
 At container start, the backend logs detected agents, for example:
 
 ```text
-[qaap-agent-tasks] detected agents: qaiq, grok
+[qaap-agent-tasks] detected agents: qaiq, codex, claude, opencode, antigravity
 [qaap-agent-tasks] qaiq: 0.15.0-qaap.1 (QAIQ)
 ```
 
@@ -275,9 +272,7 @@ docker compose exec theia codex --version
 docker compose exec theia claude --version
 docker compose exec theia antigravity --version
 docker compose exec theia opencode --version
-docker compose exec theia copilot --version
-docker compose exec theia which qaiq grok codex claude antigravity opencode copilot
-docker compose exec theia grok version
+docker compose exec theia which qaiq openclaude codex claude antigravity opencode
 docker compose logs theia 2>&1 | grep 'qaap-agent-tasks'
 ```
 
@@ -287,7 +282,7 @@ keep an old image:
 ```bash
 docker compose build --pull theia
 docker compose up -d --force-recreate theia
-docker compose exec theia sh -c 'for h in qaiq openclaude codex claude opencode copilot antigravity grok; do command -v "$h" || exit 1; done'
+docker compose exec theia sh -c 'for h in qaiq openclaude codex claude opencode antigravity; do command -v "$h" || exit 1; done'
 ```
 
 ## Build args (optional)

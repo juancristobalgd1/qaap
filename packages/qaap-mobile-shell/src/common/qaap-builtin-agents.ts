@@ -26,7 +26,6 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
     { id: 'openclaude', label: 'OpenClaude', bin: 'openclaude', template: 'openclaude --print --output-format stream-json --verbose --include-partial-messages {qaiq_flags} {prompt}' },
     { id: 'grok', label: 'Grok Build', bin: 'grok', template: 'grok --always-approve {model_flags} -p {prompt}' },
     { id: 'opencode', label: 'OpenCode', bin: 'opencode', template: 'opencode run --format json --dangerously-skip-permissions {model_flags} {prompt}' },
-    { id: 'goose', label: 'Goose', bin: 'goose', template: 'goose run --no-session -t {prompt}' },
     // `--model` is a top-level Hermes flag (`hermes --model <slug> chat`). Putting it after
     // `chat` is accepted by argparse, but a stale ~/.hermes/config.yaml still supplies the
     // main/auxiliary model when `{model_flags}` is empty — including dead OpenRouter `:free`
@@ -34,7 +33,7 @@ export const QAAP_BUILTIN_AGENT_DEFINITIONS: readonly QaapBuiltinAgentDefinition
     // picker (or Hermes's silent default) while still loading credentials from `.env`.
     { id: 'hermes', label: 'Hermes', bin: 'hermes', template: 'hermes --yolo --ignore-user-config --provider openrouter {model_flags} chat -Q -q {prompt}' },
     { id: 'openclaw', label: 'OpenClaw', bin: 'openclaw', template: 'openclaw agent --local --message {prompt}' },
-    { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p --force --trust --approve-mcps {prompt}' },
+    { id: 'cursor', label: 'Cursor Agent', bin: 'cursor-agent', template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}' },
     { id: 'antigravity', label: 'Antigravity CLI', bin: 'agy', template: 'agy -p {prompt}' },
     { id: 'copilot', label: 'Copilot CLI', bin: 'copilot', template: 'copilot --autopilot --yolo --max-autopilot-continues 20 -p {prompt}' },
     { id: 'qwen', label: 'Qwen Code', bin: 'qwen', template: 'qwen -p --approval-mode yolo {model_flags} {prompt}' },
@@ -64,8 +63,8 @@ export const CURSOR_AGENT_ID = 'cursor';
 /** Optional denylist for detected CLIs that should stay out of the composer picker. */
 export const UI_HIDDEN_VPS_AGENT_IDS = new Set<string>();
 
-/** VPS agents whose CLI model list is not API-selectable in headless runs (no `{model_flags}`). */
-export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set([CURSOR_AGENT_ID]);
+/** VPS agents whose CLI model list is not API-selectable in headless runs. */
+export const NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS = new Set<string>();
 
 /**
  * VPS agents that expose a selectable model catalog in the composer picker.
@@ -82,6 +81,7 @@ export const NATIVE_MODEL_PICKER_AGENT_IDS = new Set([
     'copilot',
     'antigravity',
     'gemini',
+    CURSOR_AGENT_ID,
 ]);
 
 export function isUiHiddenVpsAgent(agentId: string | undefined): boolean {

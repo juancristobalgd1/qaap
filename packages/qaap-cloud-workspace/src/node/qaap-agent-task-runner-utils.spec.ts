@@ -151,9 +151,10 @@ describe('Windows-safe prompt transport', () => {
             { kind: 'plain-stdin', placeholder: 'omit' },
         )).to.equal('claude --print --output-format stream-json -p');
         expect(applyTemplateForPromptTransport(
-            'cursor-agent -p --force {prompt}',
+            'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}',
             { kind: 'plain-stdin', placeholder: 'omit' },
-        )).to.equal('cursor-agent -p --force');
+            { model_flags: '' },
+        )).to.equal('cursor-agent -p --force --trust --approve-mcps');
     });
 
     it('uses - as the Codex / flag-value stdin marker', () => {
@@ -208,9 +209,9 @@ describe('Cursor Agent prompt transport', () => {
                 id: 'cursor',
                 label: 'Cursor Agent',
                 bin: 'cursor-agent',
-                template: 'cursor-agent -p --force {prompt}',
+                template: 'cursor-agent -p --force --trust --approve-mcps {model_flags} {prompt}',
             }]]),
-            buildTemplateVars: () => ({}),
+            buildTemplateVars: () => ({ model_flags: '' }),
         };
 
         const result = buildAgentCommandExtracted(

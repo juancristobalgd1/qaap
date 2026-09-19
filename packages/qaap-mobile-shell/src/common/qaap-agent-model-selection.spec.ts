@@ -54,8 +54,8 @@ describe('qaap-agent-model-selection', () => {
         expect(agentSupportsModelPicker('hermes')).to.be.true;
         expect(agentUsesNativeModelCatalog(QAIQ_AGENT_ID)).to.be.false;
         expect(agentUsesNativeModelCatalog(OPENCLAUDE_AGENT_ID)).to.be.true;
-        expect(agentUsesNativeModelCatalog('cursor')).to.be.false;
-        expect(agentSupportsModelPicker('cursor')).to.be.false;
+        expect(agentUsesNativeModelCatalog('cursor')).to.be.true;
+        expect(agentSupportsModelPicker('cursor')).to.be.true;
         expect(agentSupportsModelPicker('goose')).to.be.false;
     });
 
@@ -130,7 +130,8 @@ describe('qaap-agent-model-selection', () => {
         const again = ensureStoredAgentModel(cwd, 'opencode', [
             { provider: 'openai' as const, vendor: 'opencode', modelId: 'opencode/gpt-5', label: 'GPT-5' },
         ]);
-        expect(again?.modelId).to.equal('opencode/claude-sonnet-4-6');
+        expect(again?.modelId).to.equal('opencode/gpt-5');
+        expect(readStoredAgentModel(cwd, 'opencode')?.modelId).to.equal('opencode/gpt-5');
     });
 
     it('scopes stored model picks per authenticated user', () => {

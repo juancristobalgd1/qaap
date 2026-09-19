@@ -3,7 +3,6 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatMode } from '@theia/ai-chat';
-import { agentHasCliOAuthLogin } from '../common/qaap-agent-auth-login';
 import {
     agentSupportsModelPicker,
     agentUsesSettingsModelCatalog,
@@ -58,6 +57,7 @@ import {
     mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
 import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
+import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '../common/qaap-agent-auth-login';
 import {
     reconcileModelCapabilityLevel,
     writeStoredModelCapabilityLevel,
@@ -330,7 +330,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: any, project: MobileP
                 onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
                     ? () => {
                         ctx.closeAllComposerSheets();
-                        void ctx.host.openPreferencesSheet?.('ai-features');
+                        void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                     }
                     : undefined,
                 });
@@ -426,7 +426,7 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: any, project: Mob
                     onOpenAiFeaturesSettings: ctx.host.openPreferencesSheet
                         ? () => {
                             ctx.closeAllComposerSheets();
-                            void ctx.host.openPreferencesSheet?.('ai-features');
+                            void ctx.host.openPreferencesSheet?.(QAAP_AI_FEATURES_SETTINGS_QUERY);
                         }
                         : undefined,
                 });

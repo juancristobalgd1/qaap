@@ -6,6 +6,7 @@
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from './qaap-builtin-agents';
 import { OPENCLAUDE_AGENT_ID, QAIQ_AGENT_ID, migrateQaapProductAgentId } from './qaap-agent-task-client';
 import { resolveAgentLoginCliCommand } from './qaap-agent-auth-login';
+import { isAgentHiddenOnHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 /**
  * Interactive TUI CLI binary for an agent id — the bare executable to type into a PTY,
@@ -30,15 +31,16 @@ export function resolveInteractiveAgentCliBin(agentId: string | undefined): stri
 }
 
 /**
- * Text to send into the transcript terminal to start CLI session login
- * (device-auth / OAuth), matching the agent TUI login flow.
+ * Text to send into the transcript terminal to start an agent connection.
+ * Prefer a dedicated device/OAuth command; for harnesses without one, launch the
+ * interactive CLI so its own login/onboarding flow is available in the terminal.
  *
- * Returns `undefined` for BYOK / Settings-catalog agents (qaiq and any agent
- * without a dedicated login subcommand). We deliberately do NOT fall back to the
- * bare interactive binary: launching the agent TUI does not sign anyone in and
- * only confuses the user. The caller should instead surface a "configure the API
- * key in Settings" affordance (see {@link agentHasCliOAuthLogin}).
+ * QAIQ is the only Settings/BYOK harness and therefore remains the sole exception.
  */
 export function resolveInteractiveAgentLoginCommand(agentId: string | undefined): string | undefined {
-    return resolveAgentLoginCliCommand(agentId);
+    const normalized = migrateQaapProductAgentId(agentId?.trim());
+    if (!normalized || normalized === QAIQ_AGENT_ID || isAgentHiddenOnHostedRuntime(normalized)) {
+        return undefined;
+    }
+    return resolveAgentLoginCliCommand(normalized) ?? resolveInteractiveAgentCliBin(normalized);
 }

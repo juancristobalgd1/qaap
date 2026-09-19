@@ -126,6 +126,17 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
             return [
                 nativeOption(id, 'grok-4.5', 'Grok 4.5'),
             ];
+        case 'cursor':
+            // Cursor replaces this fallback with the account-scoped result of `cursor-agent models`
+            // whenever the CLI is authenticated. These are the stable public IDs documented by
+            // Cursor for a cold picker, so the row remains useful before the first refresh.
+            return [
+                nativeOption(id, 'auto', 'Auto'),
+                nativeOption(id, 'gpt-5', 'GPT-5'),
+                nativeOption(id, 'sonnet-4-thinking', 'Sonnet 4 Thinking'),
+                nativeOption(id, 'composer-2.5', 'Composer 2.5'),
+                nativeOption(id, 'grok-4.5', 'Grok 4.5'),
+            ];
         default:
             return [];
     }

@@ -6,6 +6,7 @@
 import '../../src/browser/style/qaap-ai-model-options.css';
 import '../../src/browser/style/qaap-ai-skills-configuration.css';
 import '../../src/browser/style/qaap-ai-harness-configuration.css';
+import '../../src/browser/style/qaap-ai-configuration.css';
 
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution, WidgetFactory } from '@theia/core/lib/browser';
@@ -24,6 +25,7 @@ import { QaapTerminalPreferenceContribution } from './qaap-terminal-preferences'
 import { QaapSkillsPreferenceContribution } from './qaap-skills-preferences';
 import { QaapHarnessPreferenceContribution } from './qaap-harness-preferences';
 import { QaapHarnessConfigurationWidget } from './qaap-harness-configuration-widget';
+import { QaapAiConfigurationNavigationWidget } from './qaap-ai-configuration-navigation-widget';
 
 import { CodexChatAgent } from '@theia/ai-codex/lib/browser/codex-chat-agent';
 import { QaapCodexChatAgent } from './qaap-codex-chat-agent';
@@ -90,6 +92,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
         .toDynamicValue(ctx => ({
             id: QaapHarnessConfigurationWidget.ID,
             createWidget: () => ctx.container.get(QaapHarnessConfigurationWidget)
+        }))
+        .inSingletonScope();
+
+    bind(QaapAiConfigurationNavigationWidget).toSelf();
+    bind(WidgetFactory)
+        .toDynamicValue(ctx => ({
+            id: QaapAiConfigurationNavigationWidget.ID,
+            createWidget: () => ctx.container.get(QaapAiConfigurationNavigationWidget)
         }))
         .inSingletonScope();
 

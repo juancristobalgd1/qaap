@@ -56,7 +56,6 @@ describe('qaap-agent-task-client', () => {
     it('normalizeBackendAgentId recognizes expanded built-in coding agents', () => {
         expect(normalizeBackendAgentId('qaiq')).to.equal('qaiq');
         expect(normalizeBackendAgentId('opencode')).to.equal('opencode');
-        expect(normalizeBackendAgentId('goose')).to.equal('goose');
         expect(normalizeBackendAgentId('hermes')).to.equal('hermes');
         expect(normalizeBackendAgentId('openclaw')).to.equal('openclaw');
         expect(normalizeBackendAgentId('cursor')).to.equal('cursor');
@@ -133,17 +132,22 @@ describe('qaap-agent-task-client', () => {
         expect(ids).to.deep.equal(['qaiq']);
     });
 
-    it('listQaapComposerPickerAgents keeps known unavailable harnesses for connection actions', () => {
+    it('listQaapComposerPickerAgents only lists detected enabled harnesses', () => {
         const agents = listQaapComposerPickerAgents([
             { id: 'qaiq', label: 'QAIQ', available: true },
+            { id: 'codex', label: 'Codex', available: false },
         ]);
         const codex = agents.find(agent => agent.id === 'codex');
-        expect(codex).to.deep.include({ id: 'codex', label: 'Codex', available: false });
+        expect(codex).to.equal(undefined);
         expect(agents.find(agent => agent.id === 'qaiq')?.available).to.equal(true);
     });
 
     it('listQaapComposerPickerAgents honors harnesses disabled in AI Configuration', () => {
-        const agents = listQaapComposerPickerAgents([], ['codex', 'qaiq']);
+        const agents = listQaapComposerPickerAgents([
+            { id: 'codex', label: 'Codex', available: true },
+            { id: 'qaiq', label: 'QAIQ', available: true },
+            { id: 'claude', label: 'Claude Code', available: true },
+        ], ['codex', 'qaiq']);
         expect(agents.some(agent => agent.id === 'codex')).to.equal(false);
         expect(agents.some(agent => agent.id === 'qaiq')).to.equal(false);
         expect(agents.some(agent => agent.id === 'claude')).to.equal(true);

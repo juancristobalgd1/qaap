@@ -64,7 +64,8 @@ export const QAAP_HIDDEN_AI_CONFIGURATION_TAB_IDS: readonly string[] = [
 
 /**
  * Tabs that remain available in classic IDE AI Configuration, but must not appear in the
- * Work Hub overlay (agents/prompts are chosen in the composer / IDE chat only).
+ * Work Hub overlay. Harness stays visible because Work Hub uses it to enable the CLI
+ * integrations shown by the composer.
  * Model Aliases stays visible in Work Hub (BYOK routing).
  * Skills tab stays visible (SkillService / SKILL.md for composer `/`); only the embedded
  * `.ai-slash-commands-section` (Theia PromptFragment commands) is CSS-hidden in Work Hub.

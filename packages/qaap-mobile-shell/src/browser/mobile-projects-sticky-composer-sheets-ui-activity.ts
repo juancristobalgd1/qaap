@@ -41,6 +41,7 @@ import {
     createToolApprovalRuleToggle,
 } from './qaap-agent-ui';
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
+import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
 import {
     canonicalModelStatsKey,
     formatTurnDuration,
@@ -156,8 +157,14 @@ export function appendAgentModelPickerListExtracted(ctx: any, list: HTMLElement,
             section.className = 'theia-qaap-agent-sheet-provider';
             const label = document.createElement('div');
             label.className = 'theia-qaap-agent-sheet-provider-label';
-            // Section header: BYOK/gateway brand only (model rows use slug-aware icons).
-            appendLlmProviderIcon(label, vendor, undefined, 'sm');
+            // Native harness catalogs use the harness identity as their vendor. Keep that
+            // header consistent with the agent picker; only QAIQ/provider-backed groups use
+            // the BYOK/gateway logo.
+            if (vendor.trim().toLowerCase() === agentId.trim().toLowerCase()) {
+                appendAgentBrandIcon(label, agentId, 'sm');
+            } else {
+                appendLlmProviderIcon(label, vendor, undefined, 'sm');
+            }
             const labelText = document.createElement('span');
             labelText.textContent = formatQaiqModelProviderLabel(vendor);
             label.append(labelText);
