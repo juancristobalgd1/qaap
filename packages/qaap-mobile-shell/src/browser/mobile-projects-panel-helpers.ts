@@ -170,7 +170,7 @@ export function renderHeaderOverflowMenuItems(
             'codicon-settings-gear',
             () => {
                 if (deps.openPreferencesSheet) {
-                    void deps.openPreferencesSheet('ai-features');
+                    void deps.openPreferencesSheet();
                     return;
                 }
                 deps.openAiConfigurationSheet?.();

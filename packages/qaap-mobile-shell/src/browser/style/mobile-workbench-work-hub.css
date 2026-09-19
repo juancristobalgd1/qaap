@@ -12710,6 +12710,284 @@ body:has(.theia-mobile-work-hub-preferences.theia-mod-visible) .lm-Widget.dialog
 }
 
 /*-----------------------------------------------------------------------------
+| Work Hub Cursor-style Settings shell.
+| The embedded PreferencesWidget remains the data/editor layer; this shell owns
+| only the Work Hub navigation and presentation so the IDE editor stays intact.
+|-----------------------------------------------------------------------------*/
+
+.theia-mobile-work-hub-settings-layout {
+  --qaap-work-hub-settings-sidebar-width: 262px;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--theia-editor-background);
+}
+
+.theia-mobile-work-hub-settings-sidebar {
+  display: flex;
+  flex: 0 0 var(--qaap-work-hub-settings-sidebar-width);
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 20px 10px 16px;
+  overflow: hidden auto;
+  background: var(--theia-sideBar-background, #1b1b1b);
+  border-right: 1px solid var(--theia-sideBar-border, rgba(128, 128, 128, 0.24));
+}
+
+.theia-mobile-work-hub-settings-sidebar-resizer {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 10px;
+  min-width: 10px;
+  margin: 0 -5px;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.theia-mobile-work-hub-settings-sidebar-resizer::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: transparent;
+  content: '';
+  transition: background-color 120ms ease;
+}
+
+.theia-mobile-work-hub-settings-sidebar-resizer:hover::after,
+.theia-mobile-work-hub-settings-sidebar-resizer:focus-visible::after,
+.theia-mobile-work-hub-settings-sidebar-resizer.theia-mod-resizing::after {
+  background: var(--theia-focusBorder, #3794ff);
+}
+
+.theia-mobile-work-hub-settings-sidebar-resizer:focus-visible {
+  outline: none;
+}
+
+body.theia-mod-work-hub-settings-resizing,
+body.theia-mod-work-hub-settings-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+.theia-mobile-work-hub-settings-back {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--theia-foreground);
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-settings-back:hover,
+.theia-mobile-work-hub-settings-back:focus-visible {
+  background: var(--theia-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+  outline: none;
+}
+
+.theia-mobile-work-hub-settings-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--theia-input-border, rgba(128, 128, 128, 0.36));
+  border-radius: 8px;
+  background: var(--theia-input-background, rgba(0, 0, 0, 0.16));
+  color: var(--theia-descriptionForeground);
+}
+
+.theia-mobile-work-hub-settings-search:focus-within {
+  border-color: var(--theia-focusBorder);
+}
+
+.theia-mobile-work-hub-settings-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--theia-input-foreground, var(--theia-foreground));
+  background: transparent;
+  font: inherit;
+}
+
+.theia-mobile-work-hub-settings-search input::placeholder {
+  color: var(--theia-input-placeholderForeground, var(--theia-descriptionForeground));
+}
+
+.theia-mobile-work-hub-settings-section-label {
+  padding: 10px 12px 2px;
+  color: var(--theia-descriptionForeground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.theia-mobile-work-hub-settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.theia-mobile-work-hub-settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--theia-descriptionForeground);
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.theia-mobile-work-hub-settings-nav-item:hover,
+.theia-mobile-work-hub-settings-nav-item:focus-visible {
+  color: var(--theia-foreground);
+  background: var(--theia-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+  outline: none;
+}
+
+.theia-mobile-work-hub-settings-nav-item.theia-mod-selected {
+  color: var(--theia-foreground);
+  background: var(--theia-list-activeSelectionBackground, rgba(255, 255, 255, 0.09));
+  box-shadow: inset 2px 0 var(--theia-focusBorder);
+}
+
+.theia-mobile-work-hub-settings-nav-item .codicon {
+  width: 16px;
+  color: var(--theia-descriptionForeground);
+  text-align: center;
+}
+
+.theia-mobile-work-hub-settings-nav-item.theia-mod-selected .codicon {
+  color: var(--theia-foreground);
+}
+
+.theia-mobile-work-hub-settings-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.theia-mobile-work-hub-settings-content-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 20px 32px 12px;
+}
+
+.theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--theia-foreground);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-close {
+  width: 32px;
+  height: 32px;
+}
+
+.theia-mobile-work-hub-preferences-widget-host {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.theia-mobile-work-hub-preferences-embed .preferences-searchbar-widget,
+.theia-mobile-work-hub-preferences-embed .preferences-tabbar-widget,
+.theia-mobile-work-hub-preferences-embed .preferences-tree-widget {
+  display: none !important;
+}
+
+.theia-mobile-work-hub-preferences-embed .preferences-editor-widget,
+.theia-mobile-work-hub-preferences-embed .preferences-editor-widget.settings-main {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0 32px 24px;
+  box-sizing: border-box;
+}
+
+.theia-mobile-work-hub-preferences-embed .settings-main-scroll-container {
+  padding: 0 0 24px;
+}
+
+.theia-mobile-work-hub-preferences-embed .settings-section-category-title {
+  margin: 18px 0 10px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--theia-foreground);
+  background: var(--theia-sideBar-background, rgba(255, 255, 255, 0.06));
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.theia-mobile-work-hub-preferences-embed li.single-pref {
+  margin: 0 0 1px;
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--theia-sideBarSectionHeader-border, rgba(128, 128, 128, 0.2));
+  background: color-mix(in srgb, var(--theia-editorWidget-background, #202020) 86%, transparent);
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .theia-mobile-work-hub-settings-layout {
+    --qaap-work-hub-settings-sidebar-width: 188px;
+  }
+
+  .theia-mobile-work-hub-settings-sidebar {
+    flex-basis: var(--qaap-work-hub-settings-sidebar-width);
+    padding: 14px 8px 12px;
+  }
+
+  .theia-mobile-work-hub-settings-content-header {
+    min-height: 60px;
+    padding: 14px 16px 10px;
+  }
+
+  .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-title {
+    font-size: 20px;
+  }
+
+  .theia-mobile-work-hub-preferences-embed .preferences-editor-widget,
+  .theia-mobile-work-hub-preferences-embed .preferences-editor-widget.settings-main {
+    padding: 0 16px 18px;
+  }
+}
+
+/*-----------------------------------------------------------------------------
 | Work Hub embedded AI Configuration (agents / MCP / prompts from account menu).
 |-----------------------------------------------------------------------------*/
 
