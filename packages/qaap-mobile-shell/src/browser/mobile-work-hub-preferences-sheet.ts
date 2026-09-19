@@ -39,7 +39,7 @@ const WORK_HUB_COMPLETION_SOUND_KEY = 'qaap.workHub.settings.completionSound';
 const WORK_HUB_TELEMETRY_PREFERENCE = 'telemetry.telemetryLevel';
 const WORK_HUB_WORKTREE_MAX_COUNT_KEY = 'qaap.workHub.worktrees.maxCount';
 const WORK_HUB_WORKTREE_MAX_SIZE_KEY = 'qaap.workHub.worktrees.maxSizeGb';
-const CUSTOM_SETTINGS_SECTIONS = new Set(['general', 'profile', 'appearance', 'plan-usage', 'worktrees']);
+const CUSTOM_SETTINGS_SECTIONS = new Set(['general', 'profile', 'appearance', 'plan-usage', 'worktrees', 'docs']);
 
 interface WorkHubSettingsSection {
     readonly id: string;
@@ -58,7 +58,9 @@ const WORK_HUB_SETTINGS_SECTIONS: readonly WorkHubSettingsSection[] = [
     { id: 'profile', label: nls.localize('qaap/workHubSettings/profile', 'Profile'), icon: 'account', query: '' },
     { id: 'appearance', label: nls.localize('qaap/workHubSettings/appearance', 'Appearance'), icon: 'symbol-color', query: 'workbench' },
     { id: 'plan-usage', label: nls.localize('qaap/workHubSettings/planUsage', 'Plan & Usage'), icon: 'credit-card', query: '' },
-    { id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Agents'), icon: 'hubot', query: 'ai-features.agentSettings' },
+    { id: 'agents', label: nls.localize('qaap/workHubSettings/agents', 'Agents'), icon: 'hubot', query: 'Agents' },
+    { id: 'mcp', label: nls.localize('qaap/workHubSettings/mcp', 'MCP'), icon: 'plug', query: 'MCP' },
+    { id: 'skills', label: nls.localize('qaap/workHubSettings/skills', 'Skills'), icon: 'lightbulb', query: 'Skills' },
     { id: 'models', label: nls.localize('qaap/workHubSettings/models', 'Models'), icon: 'symbol-method', query: 'ai-features' },
     { id: 'worktrees', label: nls.localize('qaap/workHubSettings/worktrees', 'Worktrees'), icon: 'repo', query: '' },
     { id: 'docs', label: nls.localize('qaap/workHubSettings/docs', 'Docs'), icon: 'book', query: '' },
@@ -516,6 +518,9 @@ export class MobileWorkHubPreferencesSheet {
             case 'worktrees':
                 this.renderWorktreesSection();
                 break;
+            case 'docs':
+                // Docs is intentionally reserved for a future Work Hub surface.
+                break;
             case 'general':
             default:
                 this.renderGeneralSection();
@@ -664,7 +669,7 @@ export class MobileWorkHubPreferencesSheet {
             nls.localize('qaap/workHubSettings/appearance/theme', 'Theme'),
         ));
 
-        const modeCard = this.createSettingsCard();
+        const modeCard = this.createSettingsCard('theia-mobile-work-hub-settings-mode-card');
         const modeDescription = document.createElement('p');
         modeDescription.className = 'theia-mobile-work-hub-settings-description';
         modeDescription.textContent = nls.localize(
@@ -701,7 +706,7 @@ export class MobileWorkHubPreferencesSheet {
         modeCard.append(modeDescription, modeGroup);
         panel.append(modeCard);
 
-        const themeCard = this.createSettingsCard();
+        const themeCard = this.createSettingsCard('theia-mobile-work-hub-settings-theme-card');
         const themeLabel = document.createElement('label');
         themeLabel.className = 'theia-mobile-work-hub-settings-field-label';
         themeLabel.textContent = nls.localize('qaap/workHubSettings/appearance/colorTheme', 'Color theme');

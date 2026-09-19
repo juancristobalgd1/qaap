@@ -12955,6 +12955,24 @@ body.theia-mod-work-hub-settings-resizing * {
   background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 78%, var(--theia-editor-background, #151515));
 }
 
+.theia-mobile-work-hub-settings-mode-card,
+.theia-mobile-work-hub-settings-theme-card {
+  padding: 18px 20px 20px;
+}
+
+.theia-mobile-work-hub-settings-mode-card .theia-mobile-work-hub-settings-description {
+  margin: 0 0 14px;
+}
+
+.theia-mobile-work-hub-settings-theme-card > .theia-mobile-work-hub-settings-field-label {
+  margin: 0 0 8px;
+}
+
+.theia-mobile-work-hub-settings-theme-card > .theia-mobile-work-hub-settings-select {
+  width: 100%;
+  margin: 0;
+}
+
 .theia-mobile-work-hub-settings-row {
   display: flex;
   align-items: center;
@@ -13337,6 +13355,11 @@ body.theia-mod-work-hub-settings-resizing * {
 
   .theia-mobile-work-hub-settings-custom-content {
     padding: 0 16px 24px;
+  }
+
+  .theia-mobile-work-hub-settings-mode-card,
+  .theia-mobile-work-hub-settings-theme-card {
+    padding: 16px;
   }
 
   .theia-mobile-work-hub-settings-row {
