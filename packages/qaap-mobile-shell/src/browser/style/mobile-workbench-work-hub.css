@@ -12984,6 +12984,87 @@ body.theia-mod-work-hub-settings-resizing * {
   padding-top: 16px;
 }
 
+/* Keep the embedded Work Hub settings on the same card system as General.
+   The source widgets are also used by the IDE, so these overrides stay scoped
+   to this sheet and do not change their desktop presentation. */
+.theia-mobile-work-hub-settings-embedded-widget .qaap-harness-card,
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-card,
+.theia-mobile-work-hub-settings-embedded-widget .qaap-ai-skill-card {
+  border: 1px solid color-mix(in srgb, var(--theia-widget-border, #454545) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 78%, var(--theia-editor-background, #151515));
+  box-shadow: none;
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-header {
+  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 86%, var(--theia-editor-background, #151515));
+  border-bottom-color: color-mix(in srgb, var(--theia-widget-border, #454545) 52%, transparent);
+}
+
+.theia-mobile-work-hub-settings-embedded-widget .mcp-server-content,
+.theia-mobile-work-hub-settings-embedded-widget .mcp-tools-section {
+  background: transparent;
+}
+
+/* BYOK contains provider keys and model lists only. Harness, Work Hub,
+   routing, integrations and IDE bridge preferences have their own sections. */
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [id="ai-features.agents-editor"],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [id="ai-features.workHub-editor"],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [id="ai-features.routing-editor"],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [id="ai-features.integrations-editor"],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [id="ai-features.ideBridges-editor"],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.agentSettings"],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.harness."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.skills."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.mcp."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.promptTemplates."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.modelSelection."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.modelSettings."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id="ai-features.languageModelAliases"],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.reasoning."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.claudeCode."],
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings
+  [data-pref-id^="ai-features.codex."] {
+  display: none !important;
+}
+
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings .preferences-editor-widget,
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings .settings-main,
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings .settings-main-scroll-container {
+  background: transparent;
+}
+
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings .settings-section-category-title {
+  margin: 18px 0 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--theia-widget-border, #454545) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 78%, var(--theia-editor-background, #151515));
+}
+
+.theia-mobile-work-hub-preferences-embed.theia-mod-byok-settings li.single-pref {
+  margin: 0 0 8px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--theia-widget-border, #454545) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--theia-sideBar-background, #1b1b1b) 78%, var(--theia-editor-background, #151515));
+}
+
 .theia-mobile-work-hub-settings-custom-heading {
   margin: 18px 0 10px;
   color: var(--theia-foreground);

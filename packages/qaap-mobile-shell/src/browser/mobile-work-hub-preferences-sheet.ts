@@ -32,6 +32,7 @@ import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 export const WORK_HUB_AI_FEATURES_PREFERENCES_QUERY = 'ai-features';
 
 const AI_FEATURES_SEARCH_LOCKED_CLASS = 'theia-mod-ai-features-search-locked';
+const BYOK_SETTINGS_WIDGET_CLASS = 'theia-mod-byok-settings';
 const DEFAULT_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 262;
 const MIN_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 180;
 const MAX_WORK_HUB_SETTINGS_SIDEBAR_WIDTH = 420;
@@ -416,6 +417,10 @@ export class MobileWorkHubPreferencesSheet {
             this.widgetHost.appendChild(widget.node);
         }
         widget.node.classList.add('theia-mobile-work-hub-preferences-embed');
+        widget.node.classList.toggle(
+            BYOK_SETTINGS_WIDGET_CLASS,
+            this.activeSettingsSectionId === 'models',
+        );
         widget.node.style.flex = '1 1 auto';
         widget.node.style.minHeight = '0';
         widget.node.style.height = '100%';
@@ -1167,6 +1172,7 @@ export class MobileWorkHubPreferencesSheet {
         }
         this.clearMobilePreferencesEditorHeight(widget);
         widget.node.classList.remove('theia-mobile-work-hub-preferences-embed');
+        widget.node.classList.remove(BYOK_SETTINGS_WIDGET_CLASS);
         if (widget.isAttached) {
             UnsafeWidgetUtilities.detach(widget);
         }
