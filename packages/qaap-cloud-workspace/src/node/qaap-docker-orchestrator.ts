@@ -766,7 +766,17 @@ export class QaapDockerOrchestrator {
             container = docker.getContainer(name);
             inspect = await container.inspect();
             if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)) {
-                throw new Error(`Tenant backend ${name} has an unexpected security or mount configuration; refusing to reuse it.`);
+                if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
+                    throw new Error(`Tenant backend ${name} has an unexpected security or mount configuration; refusing to reuse it.`);
+                }
+                // Tenant backends are disposable data-plane containers: all user data lives in
+                // the bind-mounted tenant roots above. Recreate a managed backend when the
+                // serving image or hardening contract changed after a control-plane deploy.
+                // Unlabelled or differently-owned containers still fail closed below.
+                console.warn(`[qaap-docker] Recreating stale tenant backend ${name} for ${ownerLogin}.`);
+                await container.remove({ force: true });
+                const recreated = Object.assign(new Error(`Tenant backend ${name} was removed for recreation.`), { statusCode: 404 });
+                throw recreated;
             }
             if (!inspect.State.Running) {
                 await container.start();
@@ -862,6 +872,19 @@ export class QaapDockerOrchestrator {
         const target = { containerId: inspect.Id, containerName: name, host: this.dockerAdvertiseHost(node.config), port: hostPort, tenantLogin: ownerLogin };
         await this.waitForTenantBackendReady(target);
         return target;
+    }
+
+    protected isManagedTenantBackendFor(
+        inspect: Dockerode.ContainerInspectInfo,
+        ownerLogin: string,
+    ): boolean {
+        const raw = inspect as Dockerode.ContainerInspectInfo & {
+            Config?: { Labels?: Record<string, string> };
+        };
+        const labels = raw.Config?.Labels ?? {};
+        return labels['com.qaap.managed'] === 'true'
+            && labels['com.qaap.tenant-backend'] === 'true'
+            && labels['com.qaap.tenant-login'] === ownerLogin.toLowerCase();
     }
 
     /** Do not route the first browser request into a Theia process that is still deploying plugins. */
