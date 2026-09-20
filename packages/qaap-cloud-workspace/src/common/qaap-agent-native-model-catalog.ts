@@ -118,9 +118,13 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
             return listStaticAntigravityModels(id);
         case 'opencode':
             return [
-                nativeOption(id, 'opencode/claude-sonnet-4-6', 'Claude Sonnet 4.6'),
-                nativeOption(id, 'opencode/gpt-5.2-codex', 'GPT-5.2 Codex'),
-                nativeOption(id, 'opencode/gemini-3.1-pro', 'Gemini 3.1 Pro', 'gemini'),
+                nativeOption(id, 'opencode/big-pickle', 'Big Pickle'),
+                nativeOption(id, 'opencode/ling-3.0-flash-fin-free', 'Ling 3.0 Flash Fin Free'),
+                nativeOption(id, 'opencode/mimo-v2.5-free', 'MiMo V2.5 Free'),
+                nativeOption(id, 'opencode/muse-spark-1.2-contributor-free', 'Muse Spark 1.2 Contributor Free'),
+                nativeOption(id, 'opencode/muse-spark-1.3-contributor-free', 'Muse Spark 1.3 Contributor Free'),
+                nativeOption(id, 'opencode/nemotron-3-ultra-free', 'Nemotron 3 Ultra Free'),
+                nativeOption(id, 'opencode/nemotron-3.5-lightning-free', 'Nemotron 3.5 Lightning Free'),
             ];
         case 'grok':
             return [

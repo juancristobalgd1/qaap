@@ -62,8 +62,13 @@ function discoverFromCommand(bin: string, args: string[], agentId: string): Qaap
             timeout: 15_000,
             shell: process.platform === 'win32',
         });
-        const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-        const lines = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        // stderr is diagnostic output, never a model catalog. OpenCode can emit a
+        // multiline EROFS/permission error there; treating those lines as models made
+        // the picker display paths, syscalls, and Bun details as selectable models.
+        if (result.error || (typeof result.status === 'number' && result.status !== 0)) {
+            return [];
+        }
+        const lines = String(result.stdout ?? '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
         return parseNativeModelLines(agentId, lines);
     } catch {
         return [];

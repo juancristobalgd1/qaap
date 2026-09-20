@@ -42,6 +42,15 @@ describe('qaap-agent-native-model-catalog', () => {
     it('lists static fallbacks per agent', () => {
         expect(listStaticNativeAgentModels('codex').length).to.be.greaterThan(0);
         expect(listStaticNativeAgentModels('qwen').map(m => m.modelId)).to.include('qwen3-coder-plus');
+        expect(listStaticNativeAgentModels('opencode').map(m => m.modelId)).to.deep.equal([
+            'opencode/big-pickle',
+            'opencode/ling-3.0-flash-fin-free',
+            'opencode/mimo-v2.5-free',
+            'opencode/muse-spark-1.2-contributor-free',
+            'opencode/muse-spark-1.3-contributor-free',
+            'opencode/nemotron-3-ultra-free',
+            'opencode/nemotron-3.5-lightning-free',
+        ]);
         expect(listStaticNativeAgentModels('openclaude').map(m => m.modelId)).to.deep.equal([
             'claude-sonnet-4-6',
             'claude-opus-4-7',
