@@ -280,18 +280,10 @@ export function openQaapAccountMenu(
             gettingStarted.onCatalogAction,
             openOptions?.onMenuAction,
         ));
-        const sep = document.createElement('div');
-        sep.className = 'theia-qaap-account-menu-separator';
-        sep.setAttribute('role', 'separator');
-        panel.appendChild(sep);
     }
 
     for (const entry of entries) {
         if (entry.kind === 'separator') {
-            const sep = document.createElement('div');
-            sep.className = 'theia-qaap-account-menu-separator';
-            sep.setAttribute('role', 'separator');
-            panel.appendChild(sep);
             continue;
         }
         const commandId = entry.commandId;
@@ -464,11 +456,13 @@ function createAccountMenuCatalogCard(
     title.className = 'theia-qaap-account-menu-catalog-card-title';
     title.textContent = item.title;
 
-    const subtitle = document.createElement('span');
-    subtitle.className = 'theia-qaap-account-menu-catalog-card-subtitle';
-    subtitle.textContent = item.subtitle;
-
-    body.append(title, subtitle);
+    body.append(title);
+    if (item.subtitle) {
+        const subtitle = document.createElement('span');
+        subtitle.className = 'theia-qaap-account-menu-catalog-card-subtitle';
+        subtitle.textContent = item.subtitle;
+        body.append(subtitle);
+    }
 
     if (item.progress !== undefined) {
         const progressWrap = document.createElement('div');

@@ -57,11 +57,8 @@ export const QAAP_WORK_HUB_GETTING_STARTED: WorkHubCatalogSection = {
             id: 'workflow-ai-features',
             sectionId: 'start',
             title: nls.localize('qaap/workHubCatalog/configuration', 'Configuration'),
-            subtitle: nls.localize(
-                'qaap/workHubCatalog/configurationDescription',
-                'API keys and models for QAIQ (OpenRouter, NVIDIA, Anthropic, and more).',
-            ),
-            iconClass: 'codicon-sparkle',
+            subtitle: '',
+            iconClass: 'codicon-settings-gear',
             action: { type: 'command', commandId: QAAP_WORK_HUB_AI_FEATURES_COMMAND },
             searchText: 'configuration ai features settings api keys models openrouter nvidia anthropic byok qaiq',
         },

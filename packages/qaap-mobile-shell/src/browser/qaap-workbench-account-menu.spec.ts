@@ -14,6 +14,7 @@ import {
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
+import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 
 describe('buildQaapAccountMenuEntries', () => {
     describe('signed-in menu', () => {
@@ -193,6 +194,28 @@ describe('account menu controls', () => {
         expect(menu).to.not.equal(null);
         expect(switchRoot).to.equal(null);
         expect(document.querySelector('.theia-qaap-account-menu')).to.not.equal(null);
+    });
+
+    it('keeps the account menu flat and renders Configuration without a description', () => {
+        const anchor = document.createElement('button');
+        document.body.append(anchor);
+        const commands = {
+            getCommand: (id: string) => ({ id }),
+            isEnabled: () => true,
+            executeCommand: async () => undefined,
+        } as unknown as CommandRegistry;
+
+        openQaapAccountMenu(anchor, commands, buildQaapAccountMenuEntries(true), {
+            section: QAAP_WORK_HUB_GETTING_STARTED,
+            onCatalogAction: () => undefined,
+        });
+
+        const menu = document.querySelector('.theia-qaap-account-menu');
+        const configuration = menu?.querySelector('.theia-qaap-account-menu-catalog-card');
+        expect(menu?.querySelectorAll('.theia-qaap-account-menu-separator')).to.have.lengthOf(0);
+        expect(configuration?.textContent).to.equal('Configuration');
+        expect(configuration?.querySelector('.codicon-settings-gear')).to.not.equal(null);
+        expect(configuration?.querySelector('.theia-qaap-account-menu-catalog-card-subtitle')).to.equal(null);
     });
 
     it('renders the shared IDE/Agents switch with icons while preserving accessible labels and selection', () => {

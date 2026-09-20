@@ -38,6 +38,15 @@ describe('sessions sidebar selection CSS', () => {
         expect(css).to.match(/\.theia-mod-sessions-sidebar-projects-head\s*\{[^}]*background:\s*var\(--qaap-sessions-sidebar-background\)/s);
     });
 
+    it('keeps the embedded mobile sidebar narrower than the viewport', () => {
+        expect(css).to.match(
+            /@media \(max-width: 767px\),[\s\S]*?\.theia-mobile-projects>\.theia-mobile-work-hub-sessions-sidebar\.theia-mod-embedded\s*\{[^}]*width:\s*min\(360px, 86vw\)/s,
+        );
+        expect(css).not.to.match(
+            /@media \(max-width: 767px\),[\s\S]*?\.theia-mobile-projects>\.theia-mobile-work-hub-sessions-sidebar\.theia-mod-embedded\s*\{[^}]*width:\s*100%/s,
+        );
+    });
+
     it('animates only overflowing titles while keeping the normal ellipsis state', () => {
         expect(css).to.include('.theia-mobile-projects-task-title-text');
         expect(css).to.match(/\.theia-mobile-projects-task-title-text\s*\{[^}]*text-overflow:\s*ellipsis/s);

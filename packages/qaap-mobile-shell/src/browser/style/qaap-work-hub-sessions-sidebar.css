@@ -100,14 +100,14 @@
 @media (max-width: 767px),
 (pointer: coarse) {
   .theia-mobile-projects>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded {
-    inset: 0 !important;
-    width: 100% !important;
-    max-width: 100vw !important;
+    inset: 0 auto 0 0 !important;
+    width: min(360px, 86vw) !important;
+    max-width: min(360px, 86vw) !important;
   }
 
   .theia-mobile-projects>.theia-mobile-work-hub-sessions-sidebar.theia-mod-embedded .theia-mobile-work-hub-sessions-sidebar-panel {
     width: 100% !important;
-    max-width: 100vw !important;
+    max-width: 100% !important;
   }
 }
 
