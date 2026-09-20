@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { nls } from '@theia/core/lib/common/nls';
+
 /** Same command ids as the IDE welcome quick actions / settings. */
 export const QAAP_WORK_HUB_COLOR_THEME_COMMAND = 'workbench.action.selectTheme';
 export const QAAP_WORK_HUB_AI_FEATURES_COMMAND = 'ai-chat-ui.show-settings';
@@ -49,25 +51,19 @@ export interface WorkHubCatalogSection {
 /** Onboarding cards shown in the Work Hub account menu (avatar). */
 export const QAAP_WORK_HUB_GETTING_STARTED: WorkHubCatalogSection = {
     id: 'start',
-    title: 'Getting started',
+    title: nls.localize('qaap/workHubCatalog/gettingStarted', 'Getting started'),
     items: [
-        {
-            id: 'workflow-color-theme',
-            sectionId: 'start',
-            title: 'Color Theme',
-            subtitle: 'Switch light, dark, or high contrast color themes.',
-            iconClass: 'codicon-color-mode',
-            action: { type: 'command', commandId: QAAP_WORK_HUB_COLOR_THEME_COMMAND },
-            searchText: 'color theme light dark high contrast appearance',
-        },
         {
             id: 'workflow-ai-features',
             sectionId: 'start',
-            title: 'AI Features',
-            subtitle: 'API keys and models for QAIQ (OpenRouter, NVIDIA, Anthropic, and more).',
+            title: nls.localize('qaap/workHubCatalog/configuration', 'Configuration'),
+            subtitle: nls.localize(
+                'qaap/workHubCatalog/configurationDescription',
+                'API keys and models for QAIQ (OpenRouter, NVIDIA, Anthropic, and more).',
+            ),
             iconClass: 'codicon-sparkle',
             action: { type: 'command', commandId: QAAP_WORK_HUB_AI_FEATURES_COMMAND },
-            searchText: 'ai features settings api keys models openrouter nvidia anthropic byok qaiq',
+            searchText: 'configuration ai features settings api keys models openrouter nvidia anthropic byok qaiq',
         },
     ],
 };
