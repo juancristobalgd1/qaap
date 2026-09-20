@@ -88,6 +88,35 @@ export interface QaapQaiqModelOption {
     readonly available?: boolean;
 }
 
+/**
+ * Stable OpenCode rows for the composer picker. OpenCode can fail to list models when
+ * its user-data directory is read-only, so the picker must still have a useful catalog
+ * instead of exposing the CLI diagnostic or rendering an empty submenu.
+ */
+export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/big-pickle', label: 'Big Pickle' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/ling-3.0-flash-fin-free', label: 'Ling 3.0 Flash Fin Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/mimo-v2.5-free', label: 'MiMo V2.5 Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/muse-spark-1.2-contributor-free', label: 'Muse Spark 1.2 Contributor Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/muse-spark-1.3-contributor-free', label: 'Muse Spark 1.3 Contributor Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/nemotron-3-ultra-free', label: 'Nemotron 3 Ultra Free' },
+    { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/nemotron-3.5-lightning-free', label: 'Nemotron 3.5 Lightning Free' },
+];
+
+export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {
+    const knownModels = new Map(OPENCODE_FALLBACK_MODELS.map(model => [model.modelId, model]));
+    const validModels = models
+        .filter(model => /^opencode\/[a-z0-9][a-z0-9._-]*$/i.test(model.modelId))
+        .map(model => {
+            const known = knownModels.get(model.modelId.toLowerCase());
+            if (!known) {
+                return { ...model, vendor: OPENCODE_AGENT_ID };
+            }
+            return model.available === undefined ? known : { ...known, available: model.available };
+        });
+    return validModels.length > 0 ? validModels : [...OPENCODE_FALLBACK_MODELS];
+}
+
 export interface QaapCreateAgentTaskQaiqModel {
     readonly provider: 'openai' | 'gemini' | 'ollama' | 'anthropic' | 'mistral';
     readonly vendor: string;
@@ -614,7 +643,7 @@ export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQai
     // Do not let a CLI diagnostic become a selectable model if an older backend or a
     // proxy still returns OpenCode stderr as line-oriented catalog data.
     if (agentId.trim().toLowerCase() === 'opencode') {
-        return models.filter(model => /^opencode\/[a-z0-9][a-z0-9._-]*$/i.test(model.modelId));
+        return normalizeOpenCodeModelOptions(models);
     }
     return models;
 }

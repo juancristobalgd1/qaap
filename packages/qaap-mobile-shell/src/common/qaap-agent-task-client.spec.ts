@@ -34,6 +34,7 @@ import {
     resolveExplicitAgentForSubmit,
     resolveQaapAgentMentionToken,
     resolveStoredAgentModelForSubmit,
+    normalizeOpenCodeModelOptions,
     writeStoredAgentModel,
     SHELL_AGENT_ID,
     shellAgentFallback,
@@ -73,6 +74,23 @@ describe('qaap-agent-task-client', () => {
         expect(extractBackendAgentMention('@codex hola @qaiq adiós')).to.equal(QAIQ_AGENT_ID);
         expect(extractBackendAgentMention('@opencode revisa la app')).to.equal('opencode');
         expect(extractBackendAgentMention('@cursor-agent fix tests')).to.equal('cursor');
+    });
+
+    it('normalizes OpenCode diagnostics to friendly fallback model names', () => {
+        const models = normalizeOpenCodeModelOptions([
+            { provider: 'openai', vendor: 'opencode', modelId: 'EROFS: read-only file system', label: 'EROFS: read-only file system' },
+        ]);
+        expect(models.map(model => model.label)).to.include('Big Pickle');
+        expect(models.some(model => model.label.includes('EROFS'))).to.be.false;
+    });
+
+    it('canonicalizes known OpenCode model labels from a valid backend response', () => {
+        const models = normalizeOpenCodeModelOptions([
+            { provider: 'openai', vendor: 'opencode', modelId: 'opencode/big-pickle', label: 'opencode/big-pickle' },
+        ]);
+        expect(models).to.deep.equal([
+            { provider: 'openai', vendor: 'opencode', modelId: 'opencode/big-pickle', label: 'Big Pickle' },
+        ]);
     });
 
     it('migrateLegacyBackendAgentId preserves the OpenClaude agent id', () => {
