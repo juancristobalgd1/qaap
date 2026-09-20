@@ -132,13 +132,13 @@ describe('qaap-agent-task-client', () => {
         expect(ids).to.deep.equal(['qaiq']);
     });
 
-    it('listQaapComposerPickerAgents only lists detected enabled harnesses', () => {
+    it('listQaapComposerPickerAgents keeps enabled undetected harnesses for connection actions', () => {
         const agents = listQaapComposerPickerAgents([
             { id: 'qaiq', label: 'QAIQ', available: true },
             { id: 'codex', label: 'Codex', available: false },
         ]);
         const codex = agents.find(agent => agent.id === 'codex');
-        expect(codex).to.equal(undefined);
+        expect(codex?.available).to.equal(false);
         expect(agents.find(agent => agent.id === 'qaiq')?.available).to.equal(true);
     });
 

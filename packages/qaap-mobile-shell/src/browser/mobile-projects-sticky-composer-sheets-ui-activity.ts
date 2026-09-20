@@ -111,7 +111,8 @@ export function appendAgentModelPickerListExtracted(ctx: any, list: HTMLElement,
         storedModel: ReturnType<typeof readStoredAgentModel>,
         onSelect: (model: QaapQaiqModelOption) => void,
         loadFailed = false,
-        onRetry?: () => void,): void {
+        onRetry?: () => void,
+        onOpenAiFeaturesSettings?: () => void,): void {
         if (loadFailed) {
             const error = document.createElement('div');
             error.className = 'theia-qaap-agent-sheet-load-error';
@@ -140,7 +141,8 @@ export function appendAgentModelPickerListExtracted(ctx: any, list: HTMLElement,
         if (agentCapableModels.length === 0) {
             const hint = document.createElement('p');
             hint.className = 'theia-qaap-agent-sheet-empty-models';
-            hint.textContent = agentUsesSettingsModelCatalog(agentId)
+            const usesSettingsCatalog = agentUsesSettingsModelCatalog(agentId);
+            hint.textContent = usesSettingsCatalog
                 ? nls.localize(
                     'qaap/mobileProjects/stickyComposerNoQaiqModels',
                     'Add an API key in Settings → AI Features to choose a model.',
@@ -150,6 +152,21 @@ export function appendAgentModelPickerListExtracted(ctx: any, list: HTMLElement,
                     'No models are available for this agent on the workspace.',
                 );
             list.append(hint);
+            if (usesSettingsCatalog && onOpenAiFeaturesSettings) {
+                const settingsButton = document.createElement('button');
+                settingsButton.type = 'button';
+                settingsButton.className = 'theia-qaap-agent-sheet-settings-cta';
+                settingsButton.textContent = nls.localize(
+                    'qaap/mobileProjects/openAiFeaturesSettings',
+                    'Open AI Features settings',
+                );
+                settingsButton.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onOpenAiFeaturesSettings();
+                });
+                list.append(settingsButton);
+            }
             return;
         }
         for (const [vendor, providerModels] of groupQaiqModelsByProvider(agentCapableModels)) {

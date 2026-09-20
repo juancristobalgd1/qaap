@@ -10950,6 +10950,24 @@ body.theia-mobile-mod-keyboard-open .theia-mobile-sticky-composer-sheet-panel {
   color: var(--theia-descriptionForeground, rgba(255, 255, 255, 0.65));
 }
 
+.theia-qaap-agent-sheet-settings-cta {
+  align-self: flex-start;
+  margin: 4px 12px 12px;
+  padding: 7px 11px;
+  border: 1px solid var(--q-accent, var(--qaap-accent, #e58e40));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.theia-qaap-agent-sheet-settings-cta:hover,
+.theia-qaap-agent-sheet-settings-cta:focus-visible {
+  background: color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 12%, transparent);
+}
+
 .theia-mobile-sticky-composer-sheet.theia-mod-generate-variant .theia-mobile-sticky-composer-sheet-panel,
 .qaap-sticky-composer-sheet-popover.theia-mod-generate-variant .theia-mobile-sticky-composer-sheet-panel {
   border-top: 2px solid color-mix(in srgb, var(--q-accent, var(--qaap-accent, #e58e40)) 45%, transparent);

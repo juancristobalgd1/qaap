@@ -310,6 +310,9 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
                 chrome.modelLoadFailedByAgent.delete(modelAgentId);
                 rerender();
             },
+            options.onOpenAiFeaturesSettings
+                ? () => options.onOpenAiFeaturesSettings?.(modelAgentId)
+                : undefined,
         );
         if ((pickerModels?.length ?? 0) > 0 && filteredModels.length === 0) {
             replaceAgentPickerLoading(chrome.list, ctx.createAgentPickerNoResultsHint());
