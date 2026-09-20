@@ -5,6 +5,7 @@
 
 import { spawnSync } from 'child_process';
 import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import {
     agentUsesNativeModelCatalog,
     listStaticNativeAgentModels,
@@ -15,12 +16,20 @@ const cache = new Map<string, QaapQaiqModelOption[]>();
 
 export function listNativeAgentModels(agentId: string | undefined): QaapQaiqModelOption[] {
     const normalized = agentId?.trim().toLowerCase();
-    if (!normalized || !agentUsesNativeModelCatalog(normalized)) {
+    if (!normalized || NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS.has(normalized)) {
         return [];
     }
     const cached = cache.get(normalized);
     if (cached) {
         return cached;
+    }
+    // The browser and cloud packages can be rebuilt independently. If their capability
+    // sets are temporarily out of sync, keep a known native agent visible instead of
+    // returning an empty picker and making the CLI look uninstalled.
+    if (!agentUsesNativeModelCatalog(normalized)) {
+        const models = listStaticNativeAgentModels(normalized);
+        cache.set(normalized, models);
+        return models;
     }
     // OpenCode's `models` command may emit a multiline filesystem diagnostic when its
     // user-data directory is read-only. Keep the picker deterministic and user-facing:
