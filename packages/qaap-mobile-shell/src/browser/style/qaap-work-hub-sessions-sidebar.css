@@ -207,6 +207,13 @@
   touch-action: manipulation;
 }
 
+/* Keep the sessions sidebar subtly distinct from the Work Hub content in dark mode. */
+body.qaap-theme-dark .theia-mobile-work-hub-sessions-sidebar,
+body.theia-dark .theia-mobile-work-hub-sessions-sidebar,
+body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
+  --qaap-sessions-sidebar-background: #0b0908;
+}
+
 /* Pull Requests keeps the search and close controls in the same trailing
  * position as the normal chat sidebar. */
 .theia-mobile-work-hub-sessions-sidebar.theia-mod-pull-requests

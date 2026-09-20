@@ -30,9 +30,9 @@ describe('sessions sidebar selection CSS', () => {
         );
     });
 
-    it('uses the active theme surface for the sessions sidebar and panel', () => {
+    it('uses the active theme surface and restores dark sidebar contrast', () => {
         expect(css).to.include('--qaap-sessions-sidebar-background: var(--theia-sideBar-background, var(--theia-editor-background, #ffffff))');
-        expect(css).not.to.include('--qaap-sessions-sidebar-background: #0b0908');
+        expect(css).to.match(/body\.qaap-theme-dark \.theia-mobile-work-hub-sessions-sidebar[\s\S]*?--qaap-sessions-sidebar-background:\s*#0b0908/);
         expect(css).to.match(/\.theia-mobile-work-hub-sessions-sidebar\s*\{[^}]*background:\s*var\(--qaap-sessions-sidebar-background\)/s);
         expect(css).to.match(/\.theia-mobile-work-hub-sessions-sidebar-panel\s*\{[^}]*background:\s*var\(--qaap-sessions-sidebar-background\)/s);
         expect(css).to.match(/\.theia-mod-sessions-sidebar-projects-head\s*\{[^}]*background:\s*var\(--qaap-sessions-sidebar-background\)/s);
