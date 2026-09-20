@@ -147,6 +147,7 @@ export function listStaticNativeAgentModels(agentId: string): QaapQaiqModelOptio
 }
 
 export function parseNativeModelLines(agentId: string, lines: readonly string[]): QaapQaiqModelOption[] {
+    const normalizedAgentId = agentId.trim().toLowerCase();
     const deduped = new Map<string, QaapQaiqModelOption>();
     for (const raw of lines) {
         const line = raw.trim();
@@ -154,6 +155,11 @@ export function parseNativeModelLines(agentId: string, lines: readonly string[])
             continue;
         }
         const modelId = line;
+        // OpenCode can print a multiline filesystem error while probing its model
+        // catalog. Only its provider-qualified IDs are valid picker entries.
+        if (normalizedAgentId === 'opencode' && !/^opencode\/[a-z0-9][a-z0-9._-]*$/i.test(modelId)) {
+            continue;
+        }
         const key = modelId.toLowerCase();
         if (!deduped.has(key)) {
             deduped.set(key, nativeOption(agentId, modelId));

@@ -34,9 +34,21 @@ describe('qaap-agent-native-model-catalog', () => {
     });
 
     it('parses CLI model lines', () => {
-        const models = parseNativeModelLines('opencode', ['  opencode/foo  ', '# comment', 'opencode/foo', 'bar']);
-        expect(models.map(m => m.modelId)).to.deep.equal(['opencode/foo', 'bar']);
+        const models = parseNativeModelLines('opencode', ['  opencode/foo  ', '# comment', 'opencode/foo']);
+        expect(models.map(m => m.modelId)).to.deep.equal(['opencode/foo']);
         expect(models.every(m => m.vendor === 'opencode')).to.equal(true);
+    });
+
+    it('ignores OpenCode diagnostics when they are printed as model lines', () => {
+        const models = parseNativeModelLines('opencode', [
+            "EROFS: read-only file system, mkdir '/home/theia/.local'",
+            'path: "/home/theia/.local",',
+            'opencode/big-pickle',
+            'syscall: "mkdir",',
+            'code: "EROFS"',
+        ]);
+
+        expect(models.map(m => m.modelId)).to.deep.equal(['opencode/big-pickle']);
     });
 
     it('lists static fallbacks per agent', () => {
