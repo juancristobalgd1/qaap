@@ -383,6 +383,7 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // Fail closed in the picker: cold/missing entitlements hide hosted models.
             }
         }
+        res.setHeader('Cache-Control', 'no-store');
         res.json({ agent, models: this.runner.listModelsForAgent(agent, login) });
     }
 

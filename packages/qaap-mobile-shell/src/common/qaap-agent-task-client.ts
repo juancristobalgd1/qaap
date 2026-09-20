@@ -604,7 +604,7 @@ export async function warmAgentRunner(cwd: string): Promise<QaapAgentWarmResult 
 export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQaiqModelOption[]> {
     const response = await fetch(
         `${QAAP_AGENT_TASK_API_PATH}/agent-models?agent=${encodeURIComponent(agentId)}`,
-        { credentials: 'include' },
+        { credentials: 'include', cache: 'no-store' },
     );
     if (!response.ok) {
         throw new Error(response.statusText);
