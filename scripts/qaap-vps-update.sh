@@ -105,6 +105,39 @@ refresh_caddy() {
     docker compose up -d --no-deps --force-recreate caddy
 }
 
+preload_tenant_image() {
+    local container_id tenant_image rootless
+    container_id="$(docker compose ps -q theia | tr -d '\r' | sed -n '1p')"
+    if [[ -z "$container_id" ]]; then
+        echo '[qaap-vps-update] no Theia container available to preload the tenant image' >&2
+        return 1
+    fi
+
+    rootless="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        | sed -n 's/^QAAP_DOCKER_ROOTLESS=//p')"
+    if [[ ! "$rootless" =~ ^(1|true)$ ]]; then
+        return 0
+    fi
+
+    tenant_image="$(docker inspect "$container_id" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        | sed -n 's/^QAAP_TENANT_DOCKER_IMAGE=//p')"
+    if [[ -z "$tenant_image" ]]; then
+        echo '[qaap-vps-update] QAAP_DOCKER_ROOTLESS is enabled but QAAP_TENANT_DOCKER_IMAGE is empty' >&2
+        return 1
+    fi
+
+    # The serving image is pulled by the host Docker daemon, while tenant backends use the
+    # separate rootless daemon mounted inside Theia. Seed that daemon before the first request
+    # can ask the orchestrator to create a backend; otherwise it reports "No such image".
+    if docker exec "$container_id" docker image inspect "$tenant_image" >/dev/null 2>&1; then
+        echo "[qaap-vps-update] tenant image already present in rootless Docker: $tenant_image"
+        return 0
+    fi
+
+    echo "[qaap-vps-update] preloading tenant image into rootless Docker: $tenant_image"
+    docker exec "$container_id" docker pull "$tenant_image"
+}
+
 preserve_legacy_bind_mounts() {
     local container_id="$1"
     local legacy_root='/opt/qaap-runtime'
@@ -270,6 +303,7 @@ else
     fi
     docker compose up -d
 fi
+preload_tenant_image
 refresh_caddy
 docker compose ps
 
