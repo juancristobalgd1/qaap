@@ -127,8 +127,21 @@ preload_tenant_image() {
     fi
 
     # The serving image is pulled by the host Docker daemon, while tenant backends use the
-    # separate rootless daemon mounted inside Theia. Seed that daemon before the first request
-    # can ask the orchestrator to create a backend; otherwise it reports "No such image".
+    # separate rootless daemon mounted inside Theia. Wait for that daemon before seeding it;
+    # otherwise a freshly recreated Theia container can accept HTTP traffic before its Docker
+    # socket is ready and the first tenant request reports "No such image".
+    echo '[qaap-vps-update] waiting for rootless Docker before preloading tenant image'
+    for _ in $(seq 1 60); do
+        if docker exec "$container_id" docker info >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+    done
+    if ! docker exec "$container_id" docker info >/dev/null 2>&1; then
+        echo '[qaap-vps-update] rootless Docker did not become ready' >&2
+        return 1
+    fi
+
     if docker exec "$container_id" docker image inspect "$tenant_image" >/dev/null 2>&1; then
         echo "[qaap-vps-update] tenant image already present in rootless Docker: $tenant_image"
         return 0
