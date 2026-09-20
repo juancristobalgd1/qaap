@@ -13642,8 +13642,9 @@ body.theia-mod-work-hub-settings-resizing * {
   }
 
   .theia-mobile-work-hub-settings-content-header {
-    min-height: 60px;
-    padding: 14px 16px 10px;
+    min-height: 56px;
+    padding: 10px 16px 6px;
+    box-sizing: border-box;
   }
 
   .theia-mobile-work-hub-settings-content-header .theia-mobile-work-hub-preferences-title {
