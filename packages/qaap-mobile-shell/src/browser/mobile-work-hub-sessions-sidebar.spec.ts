@@ -159,6 +159,71 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         sidebar.hide();
     });
 
+    it('restores the normal sidebar controls when Settings is hidden', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        const options: MobileWorkHubSettingsSidebarOptions = {
+            sections: [{ id: 'general', label: 'General', icon: 'settings-gear' }],
+            activeSectionId: () => 'general',
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onSectionSelected: () => undefined,
+            onSearch: () => undefined,
+        };
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+
+        sidebar.showSettings(options);
+        expect((sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-settings') as HTMLElement).hidden).to.equal(false);
+
+        sidebar.showSessions();
+
+        const settingsHost = sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-settings') as HTMLElement;
+        expect(settingsHost.hidden).to.equal(true);
+        expect((sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-nav') as HTMLElement).hidden).to.equal(false);
+        sidebar.hide();
+    });
+
+    it('places the Settings close control at the trailing edge', () => {
+        const currentWindow = (global as { window?: Window }).window;
+        (global as { window?: Window }).window = {
+            ...currentWindow,
+            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
+                setTimeout(callback, delayMs ?? 0) as unknown as number,
+            clearTimeout: (id: number) => clearTimeout(id),
+        } as unknown as Window;
+        const options: MobileWorkHubSettingsSidebarOptions = {
+            sections: [],
+            activeSectionId: () => 'general',
+            onBack: () => undefined,
+            onClose: () => undefined,
+            onSectionSelected: () => undefined,
+            onSearch: () => undefined,
+        };
+        const sidebar = new MobileWorkHubSessionsSidebar({
+            renderSessionList: () => undefined,
+            onNewChat: () => undefined,
+            onClose: () => undefined,
+        });
+        document.body.append(sidebar.node);
+
+        sidebar.showSettings(options);
+
+        const closeButton = sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-close') as HTMLElement;
+        expect(closeButton.parentElement?.classList.contains('theia-mobile-work-hub-sessions-sidebar-head')).to.equal(true);
+        expect(sidebar.node.classList.contains('theia-mod-settings')).to.equal(true);
+        sidebar.hide();
+    });
+
     it('keeps Pull requests active while the sidebar is collapsed', () => {
         const currentWindow = (global as { window?: Window }).window;
         (global as { window?: Window }).window = {

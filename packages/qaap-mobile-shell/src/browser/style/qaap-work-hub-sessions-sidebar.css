@@ -220,6 +220,12 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   margin-left: 0;
 }
 
+/* Settings has no trailing search action, so its close control owns the far edge of the header. */
+.theia-mobile-work-hub-sessions-sidebar.theia-mod-settings
+  .theia-mobile-work-hub-sessions-sidebar-close {
+  margin-left: auto;
+}
+
 .theia-mobile-work-hub-sessions-sidebar-search {
   display: inline-flex !important;
   flex: 0 0 36px;
@@ -745,6 +751,12 @@ body[data-theia-theme-mode="dark"] .theia-mobile-work-hub-sessions-sidebar {
   gap: 10px;
   padding: 0 10px 16px;
   overflow: hidden;
+}
+
+/* The settings host is shared with the normal Work Hub sidebar but must never leak into the
+ * sessions/projects view when Settings is closed or when Back restores that view. */
+.theia-mobile-work-hub-sessions-sidebar-settings[hidden] {
+  display: none !important;
 }
 
 .theia-mobile-work-hub-sessions-sidebar-settings .theia-mobile-work-hub-settings-search {

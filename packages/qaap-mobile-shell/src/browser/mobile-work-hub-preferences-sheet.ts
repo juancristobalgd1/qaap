@@ -563,7 +563,16 @@ export class MobileWorkHubPreferencesSheet {
             activeSectionId: () => this.activeSettingsSectionId,
             searchValue: () => this.settingsSearchInput.value,
             searchReadOnly: () => this.settingsSearchInput.readOnly,
-            onBack: () => this.hide(),
+            onBack: () => {
+                // Back exits Settings to the parent Work Hub sidebar. Keep a reference before
+                // hide() clears the controller and restores the normal sidebar mode afterwards.
+                const sidebar = this.settingsSidebarController;
+                this.hide();
+                if (sidebar) {
+                    sidebar.showSessions();
+                    sidebar.show();
+                }
+            },
             onClose: () => this.setSettingsSidebarCollapsed(true),
             onSectionSelected: sectionId => {
                 void this.selectSettingsSection(this.getSettingsSection(sectionId));
