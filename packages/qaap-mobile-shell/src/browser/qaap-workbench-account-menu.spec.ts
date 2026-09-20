@@ -6,7 +6,6 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { CommandRegistry } from '@theia/core/lib/common/command';
-import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     buildQaapAccountMenuEntries,
     createQaapViewModeSwitch,
@@ -14,9 +13,7 @@ import {
     openQaapAccountMenu,
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-    qaapAccountMenuAppearanceFromService,
 } from './qaap-workbench-account-menu';
-import type { QaapAppearanceMode } from '../common/qaap-appearance-mode';
 
 describe('buildQaapAccountMenuEntries', () => {
     describe('signed-in menu', () => {
@@ -136,7 +133,7 @@ describe('buildQaapAccountMenuEntries', () => {
     });
 });
 
-describe('account menu appearance switch', () => {
+describe('account menu controls', () => {
 
     let disableJSDOM: (() => void) | undefined;
     let previousRequestAnimationFrame: typeof requestAnimationFrame | undefined;
@@ -180,8 +177,7 @@ describe('account menu appearance switch', () => {
         document.body.innerHTML = '';
     });
 
-    it('mounts the appearance switch in the avatar menu and keeps it out of the sidebar', () => {
-        let mode: QaapAppearanceMode = 'dark';
+    it('does not duplicate the theme selector in the avatar menu', () => {
         const anchor = document.createElement('button');
         document.body.append(anchor);
         const commands = {
@@ -190,22 +186,12 @@ describe('account menu appearance switch', () => {
             executeCommand: async () => undefined,
         } as unknown as CommandRegistry;
 
-        openQaapAccountMenu(anchor, commands, buildQaapAccountMenuEntries(true), undefined, {
-            appearance: qaapAccountMenuAppearanceFromService({
-                getMode: () => mode,
-                setMode: next => { mode = next; },
-                onDidChangeMode: () => Disposable.NULL,
-            }),
-        });
+        openQaapAccountMenu(anchor, commands, buildQaapAccountMenuEntries(true));
 
         const menu = document.querySelector('.theia-qaap-account-menu');
         const switchRoot = menu?.querySelector('.theia-qaap-appearance-mode-switch');
         expect(menu).to.not.equal(null);
-        expect(switchRoot).to.not.equal(null);
-        const light = switchRoot!.querySelector<HTMLButtonElement>('[data-mode="light"]');
-        expect(light).to.not.equal(null);
-        light!.click();
-        expect(mode).to.equal('light');
+        expect(switchRoot).to.equal(null);
         expect(document.querySelector('.theia-qaap-account-menu')).to.not.equal(null);
     });
 

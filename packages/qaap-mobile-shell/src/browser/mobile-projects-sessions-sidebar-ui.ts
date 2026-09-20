@@ -48,7 +48,6 @@ export interface MobileProjectsSessionsSidebarHost {
     sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;
     sessionsSidebarAccordionDefaultsApplied: boolean;
     sessionsSidebarContainer?: () => HTMLElement | undefined;
-    appearanceModeService?: import('./qaap-appearance-mode-service').QaapAppearanceModeService;
     projects: MobileProjectEntry[];
     query: string;
     transcriptOpenSummaryId: string | undefined;

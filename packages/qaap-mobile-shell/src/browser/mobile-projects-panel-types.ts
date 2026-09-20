@@ -122,8 +122,6 @@ export interface MobileProjectsPanelOptions {
     readPreference?: (key: string) => unknown;
     /** User preferences — MCP plugin install/remove from the composer slash menu. */
     preferenceService?: PreferenceService;
-    /** Light / Dark / System mode for the sessions sidebar foot switch. */
-    appearanceModeService?: import('./qaap-appearance-mode-service').QaapAppearanceModeService;
     /** Registered BYOK language models from AI Configuration (same source as the agents UI). */
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
     /** Monaco quick input — Work Hub search opens as a top overlay instead of an inline field. */

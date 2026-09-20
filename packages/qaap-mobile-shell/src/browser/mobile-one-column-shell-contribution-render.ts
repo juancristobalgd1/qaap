@@ -48,7 +48,6 @@ import { MobileProjectsConversationFlags } from './mobile-projects-conversation-
 import { MobileProjectsService } from './mobile-projects-service';
 import { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
-import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
@@ -229,7 +228,6 @@ export function initProjectsPanelFactoryExtracted(ctx: any): void {
             elementInspectorService: ctx.elementInspectorService,
             clipboardService: ctx.clipboardService,
             preferenceService: ctx.preferenceService,
-            appearanceModeService: ctx.appearanceModeService,
             mcpFrontendService: ctx.mcpFrontendService,
             languageModelRegistry: ctx.languageModelRegistry,
             commitMessageAi: ctx.commitMessageAi,

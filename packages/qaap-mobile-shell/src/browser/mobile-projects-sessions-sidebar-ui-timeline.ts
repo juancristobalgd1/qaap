@@ -16,7 +16,6 @@ import {
     buildQaapAccountMenuEntries,
     QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-    qaapAccountMenuAppearanceFromService,
     toggleQaapAccountMenu,
     type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
@@ -274,7 +273,6 @@ export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLBut
             placement: 'above',
             anchorGap: 2,
             onMenuAction: () => { ctx.host.sessionsSidebar?.hide(); },
-            appearance: qaapAccountMenuAppearanceFromService(ctx.host.appearanceModeService),
         },
     );
 }

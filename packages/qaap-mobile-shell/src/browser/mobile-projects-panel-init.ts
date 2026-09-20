@@ -42,7 +42,6 @@ export function applyPanelOptions(self: any, options: MobileProjectsPanelOptions
     self.previewClipboard = options.clipboard;
     self.readPreference = options.readPreference;
     self.preferenceService = options.preferenceService;
-    self.appearanceModeService = options.appearanceModeService;
     self.getRegisteredLanguageModels = options.getRegisteredLanguageModels;
     self.quickInputService = options.quickInputService;
     self.commitMessageAi = options.commitMessageAi;

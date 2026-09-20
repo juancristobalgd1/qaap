@@ -75,7 +75,6 @@ import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import {
     buildQaapAccountMenuEntries,
-    qaapAccountMenuAppearanceFromService,
     toggleQaapAccountMenu,
     type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
@@ -578,7 +577,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly previewClipboard: MobileProjectsPanelOptions['clipboard'];
     protected readonly readPreference: MobileProjectsPanelOptions['readPreference'];
     protected readonly preferenceService: PreferenceService | undefined;
-    readonly appearanceModeService: MobileProjectsPanelOptions['appearanceModeService'];
     protected readonly getRegisteredLanguageModels: MobileProjectsPanelOptions['getRegisteredLanguageModels'];
     protected readonly quickInputService: QuickInputService | undefined;
     protected readonly commitMessageAi: MobileProjectsPanelOptions['commitMessageAi'];
@@ -635,9 +633,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
             {
                 section: QAAP_WORK_HUB_GETTING_STARTED,
                 onCatalogAction: action => { void this.runCatalogAction(action); },
-            },
-            {
-                appearance: qaapAccountMenuAppearanceFromService(this.appearanceModeService),
             },
         );
     };
