@@ -13237,6 +13237,10 @@ body.theia-mod-work-hub-settings-resizing * {
   padding: 18px 20px 20px;
 }
 
+.theia-mobile-work-hub-settings-theme-card {
+  margin-top: 12px;
+}
+
 .theia-mobile-work-hub-settings-plan-card {
   padding: 18px 20px 20px;
 }

@@ -342,14 +342,7 @@ export class MobileWorkHubPreferencesSheet {
         openSidebarButton.addEventListener('click', () => this.setSettingsSidebarCollapsed(false));
         this.settingsSidebarOpenButton = openSidebarButton;
 
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = 'theia-mobile-work-hub-preferences-close codicon codicon-close';
-        closeBtn.title = nls.localize('qaap/mobileWorkHubPreferences/close', 'Close');
-        closeBtn.setAttribute('aria-label', closeBtn.title);
-        closeBtn.addEventListener('click', () => this.hide());
-
-        header.append(openSidebarButton, title, closeBtn);
+        header.append(openSidebarButton, title);
 
         this.widgetHost = document.createElement('div');
         this.widgetHost.className = 'theia-mobile-work-hub-preferences-widget-host';
