@@ -610,7 +610,13 @@ export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQai
         throw new Error(response.statusText);
     }
     const body = await response.json() as { models?: QaapQaiqModelOption[] };
-    return body.models ?? [];
+    const models = body.models ?? [];
+    // Do not let a CLI diagnostic become a selectable model if an older backend or a
+    // proxy still returns OpenCode stderr as line-oriented catalog data.
+    if (agentId.trim().toLowerCase() === 'opencode') {
+        return models.filter(model => /^opencode\/[a-z0-9][a-z0-9._-]*$/i.test(model.modelId));
+    }
+    return models;
 }
 
 export async function fetchAgentTaskList(cwd?: string): Promise<QaapAgentTaskListSnapshot> {

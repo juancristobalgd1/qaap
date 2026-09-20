@@ -22,6 +22,16 @@ export function listNativeAgentModels(agentId: string | undefined): QaapQaiqMode
     if (cached) {
         return cached;
     }
+    // OpenCode's `models` command may emit a multiline filesystem diagnostic when its
+    // user-data directory is read-only. Keep the picker deterministic and user-facing:
+    // the curated catalog contains the provider-qualified IDs and friendly names that
+    // OpenCode supports in the Work Hub, while the command output is still parsed for
+    // other native catalogs below.
+    if (normalized === 'opencode') {
+        const models = listStaticNativeAgentModels(normalized);
+        cache.set(normalized, models);
+        return models;
+    }
     const discovered = discoverNativeAgentModels(normalized);
     const models = discovered.length > 0 ? discovered : listStaticNativeAgentModels(normalized);
     cache.set(normalized, models);
