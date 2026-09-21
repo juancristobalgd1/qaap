@@ -1,6 +1,13 @@
 # Plan de recuperación: harnesses y modelos en el VPS
 
-Estado: IMPLEMENTACIÓN EN CURSO. Fecha: 2026-09-21.
+Estado: IMPLEMENTADO Y DESPLEGADO. Fecha: 2026-09-21.
+
+La corrección de Codex ya está compilada, publicada y activa en el VPS. La
+verificación visual muestra `Not connected on this workspace` y `Connect`
+cuando el CLI está instalado pero no existe una sesión de usuario. El gate de
+lanzamiento del VPS todavía requiere crear los backups iniciales y ejecutar la
+prueba de aislamiento con dos tenants antes de considerarlo completamente
+cerrado desde el punto de vista operativo.
 
 Este documento es el traspaso para un modelo de menor coste y conserva el checklist completo. La implementación actual ya verificó que el backend del tenant devuelve `codex login status: Not logged in`; está aplicando la separación entre CLI instalado, sesión propia y acceso hospedado. Al continuar, siguen vigentes las autorizaciones anteriores de commit, push a origin/master y actualización del VPS.
 
