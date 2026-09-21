@@ -58,13 +58,13 @@
       "path": "../qaap-adapters"
     },
     {
-      "path": "../qaap-persistence"
-    },
-    {
       "path": "../qaap-ai-openrouter"
     },
     {
       "path": "../qaap-element-inspector"
+    },
+    {
+      "path": "../qaap-persistence"
     },
     {
       "path": "../qaap-shell"
