@@ -23,6 +23,8 @@ import { createQaapTenantKeyStoreRpcTarget } from './qaap-key-store-tenant-scope
 
 let rpcHandlerPatched = false;
 let messagingPatched = false;
+let reconnectableChannelConnectPatched = false;
+let originalReconnectableChannelConnect: ((this: ReconnectableSocketChannel, socket: Socket) => void) | undefined;
 
 /** Wrap every backend RPC target so filesystem/workspace calls run under the caller login. */
 export function installQaapRpcAuthPatches(registry: QaapWebsocketAuthRegistry): void {
@@ -63,6 +65,7 @@ export function installQaapMessagingAuthPatches(
         return;
     }
     messagingPatched = true;
+    patchReconnectableChannelConnect(registry);
     const service = messaging as DefaultMessagingService & {
         handleConnection(channel: Channel): void;
         getConnectionChannelHandlers(mainChannel: Channel): ConnectionHandlers<Channel>;
@@ -87,6 +90,27 @@ export function installQaapMessagingAuthPatches(
             });
         };
         return handlers;
+    };
+}
+
+/**
+ * Theia keeps the main channel alive across frontend websocket reconnects. The channel's
+ * underlying Socket.IO socket changes, so refresh the channel-to-socket association whenever
+ * Theia reconnects it. Without this, a later RPC is executed without the authenticated owner
+ * after the old socket id has been removed from the registry.
+ */
+function patchReconnectableChannelConnect(registry: QaapWebsocketAuthRegistry): void {
+    if (reconnectableChannelConnectPatched) {
+        return;
+    }
+    reconnectableChannelConnectPatched = true;
+    const prototype = ReconnectableSocketChannel.prototype as ReconnectableSocketChannel & {
+        connect(socket: Socket): void;
+    };
+    originalReconnectableChannelConnect = prototype.connect;
+    prototype.connect = function patchedConnect(this: ReconnectableSocketChannel, socket: Socket): void {
+        originalReconnectableChannelConnect?.call(this, socket);
+        registry.bindMainChannel(this, socket.id);
     };
 }
 
@@ -163,6 +187,14 @@ function resolveSocketId(mainChannel: Channel): string | undefined {
 
 /** Test-only reset so specs can reinstall patches. */
 export function resetQaapAuthPatchStateForTests(): void {
+    if (reconnectableChannelConnectPatched && originalReconnectableChannelConnect) {
+        const prototype = ReconnectableSocketChannel.prototype as ReconnectableSocketChannel & {
+            connect(socket: Socket): void;
+        };
+        prototype.connect = originalReconnectableChannelConnect;
+    }
     rpcHandlerPatched = false;
     messagingPatched = false;
+    reconnectableChannelConnectPatched = false;
+    originalReconnectableChannelConnect = undefined;
 }
