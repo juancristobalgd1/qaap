@@ -14357,3 +14357,253 @@ body.theia-mod-work-hub-settings-resizing * {
     transition: none;
   }
 }
+
+/* In-Work-Hub agent sign-in. The terminal that performs the login is mounted
+ * in a hidden staging host; this dialog is the only surface exposed to users. */
+.theia-mobile-agent-login-dialog-overlay {
+  position: fixed;
+  z-index: 14000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: color-mix(in srgb, var(--theia-editor-background) 78%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.theia-mobile-agent-login-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(720px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--theia-widget-border, var(--theia-editorWidget-border));
+  border-radius: 18px;
+  background: var(--theia-sideBar-background, var(--theia-editor-background));
+  color: var(--theia-foreground);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.theia-mobile-agent-login-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 20px 22px 12px;
+}
+
+.theia-mobile-agent-login-dialog-header h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.theia-mobile-agent-login-dialog-close,
+.theia-mobile-agent-login-dialog-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-descriptionForeground);
+  cursor: pointer;
+}
+
+.theia-mobile-agent-login-dialog-close:hover,
+.theia-mobile-agent-login-dialog-close:focus-visible,
+.theia-mobile-agent-login-dialog-copy:hover,
+.theia-mobile-agent-login-dialog-copy:focus-visible {
+  border-color: var(--theia-focusBorder, var(--theia-focus-border));
+  color: var(--theia-foreground);
+  outline: none;
+}
+
+.theia-mobile-agent-login-dialog-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 22px 18px;
+}
+
+.theia-mobile-agent-login-dialog-subtitle {
+  margin: 0 0 18px;
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.theia-mobile-agent-login-dialog-challenge {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.theia-mobile-agent-login-dialog-waiting,
+.theia-mobile-agent-login-dialog-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--theia-descriptionForeground);
+  font-size: 14px;
+}
+
+.theia-mobile-agent-login-dialog-waiting {
+  padding: 20px 0;
+}
+
+.theia-mobile-agent-login-dialog-waiting .codicon-loading,
+.theia-mobile-agent-login-dialog-status .codicon-loading {
+  animation: qaap-agent-login-dialog-spin 1s linear infinite;
+}
+
+.theia-mobile-agent-login-dialog-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.theia-mobile-agent-login-dialog-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--theia-focusBorder, #3794ff) 18%, transparent);
+  color: var(--theia-foreground);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.theia-mobile-agent-login-dialog-step-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.theia-mobile-agent-login-dialog-step-title {
+  color: var(--theia-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.theia-mobile-agent-login-dialog-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--theia-widget-border, var(--theia-editorWidget-border));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--theia-foreground) 5%, transparent);
+}
+
+.theia-mobile-agent-login-dialog-code-row code {
+  overflow: hidden;
+  color: var(--theia-foreground);
+  font-family: var(--theia-codeFontFamily, monospace);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theia-mobile-agent-login-dialog-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid var(--theia-focusBorder, var(--theia-focus-border));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.theia-mobile-agent-login-dialog-url:hover,
+.theia-mobile-agent-login-dialog-url:focus-visible {
+  background: color-mix(in srgb, var(--theia-focusBorder, #3794ff) 14%, transparent);
+  outline: none;
+}
+
+.theia-mobile-agent-login-dialog-status {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--theia-foreground) 12%, transparent);
+}
+
+.theia-mobile-agent-login-dialog-status.theia-mod-success {
+  color: var(--theia-testing-iconPassed, #89d185);
+}
+
+.theia-mobile-agent-login-dialog-status.theia-mod-error {
+  color: var(--theia-errorForeground, #f48771);
+}
+
+.theia-mobile-agent-login-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  padding: 12px 22px 20px;
+}
+
+.theia-mobile-agent-login-dialog-cancel {
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--theia-foreground);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.theia-mobile-agent-login-dialog-cancel:hover,
+.theia-mobile-agent-login-dialog-cancel:focus-visible {
+  border-color: var(--theia-focusBorder, var(--theia-focus-border));
+  background: color-mix(in srgb, var(--theia-foreground) 8%, transparent);
+  outline: none;
+}
+
+@keyframes qaap-agent-login-dialog-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 560px), (pointer: coarse) {
+  .theia-mobile-agent-login-dialog-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .theia-mobile-agent-login-dialog {
+    width: 100%;
+    max-height: min(720px, 92dvh);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 18px 18px 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theia-mobile-agent-login-dialog-waiting .codicon-loading,
+  .theia-mobile-agent-login-dialog-status .codicon-loading {
+    animation: none;
+  }
+}

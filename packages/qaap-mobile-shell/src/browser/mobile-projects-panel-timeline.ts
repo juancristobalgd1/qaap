@@ -64,6 +64,7 @@ import {
     localizeHostedLocalhostOAuthAgentMessage,
 } from '../common/qaap-hosted-agent-auth-policy';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
 import { MobileSnackbar } from './mobile-snackbar';
 import { isConversationError } from './mobile-projects-transcript-messages-artifacts-helpers';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
@@ -627,11 +628,11 @@ export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string, req
             messageCount: 0,
         } satisfies QaapAgentConversationSummaryDTO;
     }
-    void ctx.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(
+    void openAgentLoginDialogInBackground(
+        ctx,
         project,
         summary,
         resolvedAgentId,
-        { login: true },
     );
 }
 
