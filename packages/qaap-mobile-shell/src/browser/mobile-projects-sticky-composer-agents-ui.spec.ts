@@ -72,4 +72,17 @@ describe('MobileProjectsStickyComposerAgentsUi', () => {
 
         expect(ui.resolveStickyComposerPinnedAgentId(project)).to.equal('shell');
     });
+
+    it('recognizes a harness as connected after the backend catalog refreshes', () => {
+        const host = createHost();
+        host.stickyComposerBackendAgents = [
+            { id: 'Codex', label: 'Codex', available: true, connectionState: 'connected' },
+            { id: 'opencode', label: 'OpenCode', available: false, connectionState: 'disconnected' },
+        ];
+        const ui = new MobileProjectsStickyComposerAgentsUi(host);
+
+        expect(ui.isAgentConnected('codex')).to.equal(true);
+        expect(ui.isAgentConnected('opencode')).to.equal(false);
+        expect(ui.isAgentConnected('missing')).to.equal(false);
+    });
 });

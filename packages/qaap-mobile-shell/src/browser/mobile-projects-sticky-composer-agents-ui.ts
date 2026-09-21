@@ -304,6 +304,18 @@ export class MobileProjectsStickyComposerAgentsUi {
         }
     }
 
+    /** Returns whether the backend catalog now considers one harness connected. */
+    isAgentConnected(agentId: string | undefined): boolean {
+        const normalizedAgentId = agentId?.trim().toLowerCase();
+        if (!normalizedAgentId) {
+            return false;
+        }
+        const agent = this.host.stickyComposerBackendAgents.find(
+            candidate => candidate.id.trim().toLowerCase() === normalizedAgentId,
+        );
+        return agent?.available === true && agent.connectionState !== 'disconnected';
+    }
+
     showComposerAgentPickerLoading(chrome: ComposerAgentPickerChrome): void {
         renderAgentPickerSkeleton(chrome.list);
     }

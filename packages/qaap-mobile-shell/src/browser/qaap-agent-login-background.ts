@@ -30,7 +30,7 @@ export async function openAgentLoginDialogInBackground(
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     agentId: string,
-    onConnected?: () => void | Promise<void>,
+    onConnected?: () => boolean | void | Promise<boolean | void>,
 ): Promise<void> {
     const command = resolveInteractiveAgentLoginCommand(agentId);
     if (!command) {
@@ -42,7 +42,10 @@ export async function openAgentLoginDialogInBackground(
     let surface: any;
     let outputListener: { dispose(): void } | undefined;
     let pollHandle: number | undefined;
+    let connectionPollHandle: number | undefined;
     let successCloseHandle: number | undefined;
+    let connectionPollInFlight = false;
+    let challengeSeen = false;
     let closed = false;
     let output = '';
 
@@ -50,6 +53,10 @@ export async function openAgentLoginDialogInBackground(
         if (pollHandle !== undefined) {
             window.clearInterval(pollHandle);
             pollHandle = undefined;
+        }
+        if (connectionPollHandle !== undefined) {
+            window.clearInterval(connectionPollHandle);
+            connectionPollHandle = undefined;
         }
         if (successCloseHandle !== undefined) {
             window.clearTimeout(successCloseHandle);
@@ -78,6 +85,14 @@ export async function openAgentLoginDialogInBackground(
         dialog?.dispose();
     };
 
+    const completeConnection = (): void => {
+        if (closed || successCloseHandle !== undefined) {
+            return;
+        }
+        dialog?.setConnected();
+        successCloseHandle = window.setTimeout(close, 1800);
+    };
+
     dialog = createQaapAgentLoginDialog({
         agentLabel: resolveAgentDisplayLabel(agentId),
         onClose: close,
@@ -103,6 +118,7 @@ export async function openAgentLoginDialogInBackground(
                 agentId,
             });
             if (challenge) {
+                challengeSeen = true;
                 dialog?.setChallenge(challenge);
             }
         });
@@ -112,6 +128,29 @@ export async function openAgentLoginDialogInBackground(
             return;
         }
         surface.terminal.sendText(`${command}\n`);
+
+        const refreshConnectionState = async (): Promise<void> => {
+            if (closed || !challengeSeen || connectionPollInFlight || !onConnected) {
+                return;
+            }
+            connectionPollInFlight = true;
+            try {
+                const connected = await onConnected();
+                if (connected === true && !closed) {
+                    completeConnection();
+                }
+            } catch (error) {
+                console.warn('[qaap] Agent login connection refresh failed:', error);
+            } finally {
+                connectionPollInFlight = false;
+            }
+        };
+
+        if (onConnected) {
+            connectionPollHandle = window.setInterval(() => {
+                void refreshConnectionState();
+            }, 2500);
+        }
 
         pollHandle = window.setInterval(() => {
             if (closed || !surface || surface.terminal.isDisposed) {
@@ -128,11 +167,10 @@ export async function openAgentLoginDialogInBackground(
             outputListener?.dispose();
             outputListener = undefined;
             if (exitCode === 0) {
-                dialog?.setConnected();
+                completeConnection();
                 void Promise.resolve(onConnected?.()).catch(error => {
                     console.warn('[qaap] Agent login UI refresh failed:', error);
                 });
-                successCloseHandle = window.setTimeout(close, 1800);
             } else {
                 dialog?.setFailed(nls.localize(
                     'qaap/mobileProjects/agentLoginDialogProcessFailed',

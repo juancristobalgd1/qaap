@@ -634,8 +634,9 @@ export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string, req
         summary,
         resolvedAgentId,
         async () => {
-            await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project);
+            const refreshed = await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project);
             ctx.stickyComposerRenderUi?.renderStickyComposer?.();
+            return refreshed === true && ctx.stickyComposerAgentsUi?.isAgentConnected?.(resolvedAgentId) === true;
         },
     );
 }
