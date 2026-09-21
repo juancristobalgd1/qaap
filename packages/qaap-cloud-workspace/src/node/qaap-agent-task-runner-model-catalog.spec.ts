@@ -87,9 +87,10 @@ describe('QAIQ/OpenClaude model routing', () => {
         }
     });
 
-    it('shows native models as locked instead of hiding them on Starter', () => {
+    it('keeps hosted models visible as locked on Starter when no user session is connected', () => {
         const ctx = {
             normalizeAgentId: () => undefined,
+            isAgentConnected: () => false,
             billingStore: {
                 peekEntitlements: () => ({ hostedModels: false }),
             },
@@ -97,5 +98,18 @@ describe('QAIQ/OpenClaude model routing', () => {
         const models = listModelsForAgentExtracted(ctx, 'codex', 'starter-user');
         expect(models).to.have.length(4);
         expect(models.every(model => model.available === false)).to.equal(true);
+    });
+
+    it('does not lock Codex models when the user has their own Codex session', () => {
+        const ctx = {
+            normalizeAgentId: () => undefined,
+            isAgentConnected: () => true,
+            billingStore: {
+                peekEntitlements: () => ({ hostedModels: false }),
+            },
+        };
+        const models = listModelsForAgentExtracted(ctx, 'codex', 'starter-user');
+        expect(models).to.have.length(4);
+        expect(models.every(model => model.available === true)).to.equal(true);
     });
 });

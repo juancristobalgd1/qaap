@@ -70,6 +70,7 @@ import {
     resolveProjectName as resolveProjectNameHelper,
     listAgents as listAgentsHelper,
     probeAgentBinOnce as probeAgentBinOnceHelper,
+    probeAgentConnectionState as probeAgentConnectionStateHelper,
     recordTaskLatencyMark as recordTaskLatencyMarkHelper,
 } from './qaap-agent-task-runner-utils3';
 import { countRunningTasksExtracted, defaultAgentExtracted, detailExtracted, detectAgentsExtracted, detectAntigravityAgentExtracted, detectCodexAgentExtracted, detectCursorAgentExtracted, detectQaiqAgentExtracted, drainQueuedTasksExtracted, ensureHelperCliExtracted, helperTokenForOwnerExtracted, initExtracted, listAllGroupedByCwdExtracted, listForCwdExtracted, listModelsForAgentExtracted, listQaiqModelsExtracted, loadHelperTokensExtracted, logDetectedAgentsExtracted, normalizeAgentIdExtracted, ownerAtConcurrencyCapExtracted, persistHelperTokensExtracted, readCustomAgentsExtracted, reorderQueuedTaskExtracted, resolveAntigravityBinExtracted, resolveCursorAgentBinExtracted, resolveHelperTokenOwnerExtracted, resolveQaiqBinExtracted, resolveTaskAgentIdExtracted, restoreFromDiskExtracted, restorePersistedIndexExtracted, runningTaskCountForOwnerExtracted, warmForCwdExtracted } from './qaap-agent-task-runner-render2';
@@ -227,6 +228,8 @@ export class QaapAgentTaskRunner {
     }
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
+    /** Short-lived auth probe cache; the Connect flow invalidates it through refreshAgentCatalog. */
+    protected readonly agentConnectionStates = new Map<string, { readonly state: QaapAgentDescriptor['connectionState']; readonly at: number }>();
 
     protected readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
     /**
@@ -403,6 +406,7 @@ export class QaapAgentTaskRunner {
 
     /** Re-probe CLI harnesses after a local install from the configuration UI. */
     refreshAgentCatalog(): void {
+        this.agentConnectionStates.clear();
         this.detectAgents();
     }
 
@@ -415,7 +419,45 @@ export class QaapAgentTaskRunner {
 
     /** Agents the UI can offer in its picker, in priority order. */
     listAgents(ownerLogin?: string): QaapAgentDescriptor[] {
-        return listAgentsHelper(this.detectedAgents).filter(agent => this.isAgentEnabled(agent.id, ownerLogin));
+        return listAgentsHelper(this.detectedAgents)
+            .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
+            .map(agent => {
+                const connectionState = this.agentConnectionState(agent.id);
+                const hostedCodexAvailable = agent.id.toLowerCase() === 'codex'
+                    && !!ownerLogin?.trim()
+                    && this.billingStore?.peekEntitlements?.(ownerLogin)?.hostedModels === true;
+                return {
+                    ...agent,
+                    // A disconnected Codex is still usable through Qaap-hosted access on Pro/Team.
+                    // Starter must connect its own Codex session before the picker becomes active.
+                    available: agent.available && (connectionState !== 'disconnected' || hostedCodexAvailable),
+                    connectionState,
+                };
+            });
+    }
+
+    /** Authentication state for the current tenant's CLI credentials. */
+    isAgentConnected(agentId: string): boolean {
+        return this.agentConnectionState(agentId) === 'connected';
+    }
+
+    protected agentConnectionState(agentId: string): QaapAgentDescriptor['connectionState'] {
+        const normalized = agentId.trim().toLowerCase();
+        const candidate = this.detectedAgents.get(normalized);
+        if (!candidate) {
+            return 'unknown';
+        }
+        if (normalized !== 'codex') {
+            return 'unknown';
+        }
+        const now = Date.now();
+        const cached = this.agentConnectionStates.get(normalized);
+        if (cached && now - cached.at < 15_000) {
+            return cached.state;
+        }
+        const state = probeAgentConnectionStateHelper(normalized, candidate.bin);
+        this.agentConnectionStates.set(normalized, { state, at: now });
+        return state;
     }
 
     warmForCwd(cwd: string): QaapAgentWarmResult {
@@ -435,7 +477,10 @@ export class QaapAgentTaskRunner {
     }
 
     defaultAgent(ownerLogin?: string): string {
-        return defaultAgentExtracted(this, agentId => this.isAgentEnabled(agentId, ownerLogin));
+        return defaultAgentExtracted(
+            this,
+            agentId => this.isAgentEnabled(agentId, ownerLogin) && this.agentConnectionState(agentId) !== 'disconnected',
+        );
     }
 
     isAgentEnabled(agentId: string, ownerLogin?: string): boolean {

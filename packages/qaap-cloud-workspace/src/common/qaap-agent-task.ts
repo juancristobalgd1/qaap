@@ -258,6 +258,8 @@ export interface QaapCreateAgentTaskRequest {
 }
 
 /** A coding agent the runner knows how to invoke. */
+export type QaapAgentConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
+
 export interface QaapAgentDescriptor {
     /** Stable identifier sent back in {@link QaapCreateAgentTaskRequest.agent}. */
     readonly id: string;
@@ -265,6 +267,8 @@ export interface QaapAgentDescriptor {
     readonly label: string;
     /** True when the agent's CLI was detected on the server's PATH (or env template is set). */
     readonly available: boolean;
+    /** Authentication state is reported separately from CLI installation. */
+    readonly connectionState?: QaapAgentConnectionState;
 }
 
 /** Selectable QAIQ model option exposed to the frontend picker. */
@@ -275,6 +279,8 @@ export interface QaapQaiqModelOption {
     readonly label: string;
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
+    /** Why a visible model cannot currently be selected, when it is unavailable. */
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
 }
 
 /** QAIQ model binding selected by the user in the agent picker submenu. */

@@ -288,7 +288,8 @@ export async function applyTaskOutcomeExtracted(ctx: any, ref: QaapConversationT
         && !usageFinalized.contextUsageEstimated
     ) {
         const modelId = task.agentModel?.modelId ?? task.qaiqModel?.modelId;
-        if (isHostedCodexUsage(turnAgentId, modelId)) {
+        const usesUserCodexSession = ctx.taskRunner?.isAgentConnected?.(turnAgentId) === true;
+        if (isHostedCodexUsage(turnAgentId, modelId) && !usesUserCodexSession) {
             void ctx.billingStore.debitHostedUsage(
                 task.ownerLogin,
                 modelId!,
@@ -608,4 +609,3 @@ export async function maybeRetryTurnWithFallbackExtracted(ctx: any, conversation
         conversationId, userMessageId, agentMessageId, task, conv, agentMessage, turnAgentId, startSha,
     );
 }
-

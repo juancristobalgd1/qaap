@@ -17,7 +17,7 @@ import {
     isUiHiddenVpsAgent,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
-import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentTaskReview, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
+import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentConnectionState, QaapAgentTaskReview, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {
     buildAgentReviewPrompt,
@@ -174,6 +174,38 @@ export function probeAgentBinOnce(
         return true;
     } catch {
         return false;
+    }
+}
+
+/**
+ * Probe the authentication state that belongs to the current tenant user. Installation is not
+ * enough for a hosted picker: Codex can be present on PATH while its per-user login is absent.
+ * Keep this intentionally small and read-only; the Connect action remains responsible for login.
+ */
+export function probeAgentConnectionState(
+    agentId: string,
+    bin = agentId,
+): QaapAgentConnectionState {
+    const normalized = agentId.trim().toLowerCase();
+    if (normalized !== 'codex') {
+        return 'unknown';
+    }
+    try {
+        const probe = spawnSync(bin, ['login', 'status'], {
+            encoding: 'utf8',
+            timeout: 4000,
+            windowsHide: true,
+        });
+        const output = `${probe.stdout ?? ''}\n${probe.stderr ?? ''}`.toLowerCase();
+        if (/not logged in|not authenticated|logged out|no active login/.test(output)) {
+            return 'disconnected';
+        }
+        if (probe.error || probe.status === null) {
+            return 'unknown';
+        }
+        return probe.status === 0 ? 'connected' : 'disconnected';
+    } catch {
+        return 'unknown';
     }
 }
 

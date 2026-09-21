@@ -64,10 +64,14 @@ export function resolveQaapAgentMentionToken(token: string): string {
 export const SELECTED_AGENT_STORAGE_KEY = 'qaap.agentTasks.selectedAgent';
 export const SELECTED_QAIQ_MODEL_STORAGE_KEY = 'qaap.agentTasks.selectedQaiqModel';
 
+export type QaapAgentConnectionState = 'connected' | 'disconnected' | 'unknown' | 'not-required';
+
 export interface QaapAgentTaskAgentOption {
     readonly id: string;
     readonly label: string;
     readonly available: boolean;
+    /** Installation and authentication are separate: an installed CLI may still need Connect. */
+    readonly connectionState?: QaapAgentConnectionState;
 }
 
 export interface QaapAgentTaskListSnapshot {
@@ -86,6 +90,8 @@ export interface QaapQaiqModelOption {
     readonly label: string;
     /** Present for native catalogs when a model is visible but gated by the account plan. */
     readonly available?: boolean;
+    /** Why a visible model cannot currently be selected, when it is unavailable. */
+    readonly unavailableReason?: 'plan' | 'not-connected' | 'unknown';
 }
 
 /**
@@ -108,10 +114,10 @@ export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
  * The backend returns the same rows, including plan availability, once its catalog is ready.
  */
 export const CODEX_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', available: false },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', available: false },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', available: false },
-    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legado', available: false },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legado' },
 ];
 
 export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {

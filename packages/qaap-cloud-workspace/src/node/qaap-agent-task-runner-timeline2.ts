@@ -348,7 +348,8 @@ export async function spawnProcessWhenReadyExtracted(ctx: any, task: QaapAgentTa
                 const agentModel = ctx.resolveAgentModelForRequest(request, (request.prompt ?? '').trim(), task.ownerLogin);
                 const modelId = agentModel?.modelId ?? task.agentModel?.modelId ?? task.qaiqModel?.modelId;
                 const agentId = ctx.resolveAgentId?.(request.prompt ?? '', request.agent, task.ownerLogin) ?? request.agent ?? task.agentId;
-                const hostedDenial = isHostedCodexUsage(agentId, modelId)
+                const usesUserCodexSession = ctx.isAgentConnected?.(agentId) === true;
+                const hostedDenial = isHostedCodexUsage(agentId, modelId) && !usesUserCodexSession
                     ? hostedModelDenialReason(account, modelId)
                     : undefined;
                 if (hostedDenial) {

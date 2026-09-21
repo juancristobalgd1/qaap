@@ -674,9 +674,20 @@ export function listModelsForAgentExtracted(
         // Keep the native catalog visible when Starter cannot use hosted Codex models.
         // The picker can then explain the lock instead of opening an empty submenu;
         // task startup still enforces the same hosted-model entitlement.
-        return models.map(model => hostedModelsAllowed || !isHostedCodexUsage(normalized, model.modelId)
-            ? model
-            : { ...model, available: false });
+        const userSessionConnected = ctx.isAgentConnected?.(normalized) === true;
+        return models.map(model => {
+            if (!isHostedCodexUsage(normalized, model.modelId)) {
+                return model;
+            }
+            // A user's own Codex login is BYOK/user-session usage. It must not be locked merely
+            // because the Qaap account is on Starter; only Qaap-hosted execution is plan-gated.
+            if (userSessionConnected) {
+                return { ...model, available: true };
+            }
+            return hostedModelsAllowed
+                ? model
+                : { ...model, available: false, unavailableReason: 'plan' as const };
+        });
 }
 
 export function defaultAgentExtracted(ctx: any, isAgentEnabled: (agentId: string) => boolean = () => true): string {
