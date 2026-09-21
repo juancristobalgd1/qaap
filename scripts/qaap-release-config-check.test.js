@@ -7,6 +7,7 @@ const { validateReleaseConfig } = require('./qaap-release-config-check');
 const sha = 'abcdef123456' + '0'.repeat(28);
 const config = {
     skipAuth: false, productionRuntime: true, agentUidPerUser: true, oauthConfigured: true,
+    backendIsolationReady: true,
     betaAccessRequired: true, betaAccessConfigured: true, build: sha.slice(0, 12),
 };
 const health = { ...config, ok: true, ready: true };
