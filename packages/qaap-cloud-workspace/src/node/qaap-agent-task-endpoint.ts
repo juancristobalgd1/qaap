@@ -23,6 +23,7 @@ import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 import { QaapAgentCliUpdateService } from './qaap-agent-cli-update-service';
 import { QaapBillingStore } from './qaap-billing-store';
+import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
@@ -383,8 +384,13 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
                 // Fail closed in the picker: cold/missing entitlements hide hosted models.
             }
         }
+        // A freshly-created hosted runner can briefly have an empty detected-agent cache even
+        // though the native catalog is already available. Keep the read-only picker endpoint
+        // useful during that window instead of turning a valid native harness into `models: []`.
+        const runnerModels = this.runner.listModelsForAgent(agent, login);
+        const models = runnerModels.length > 0 ? runnerModels : listNativeAgentModels(agent);
         res.setHeader('Cache-Control', 'no-store');
-        res.json({ agent, models: this.runner.listModelsForAgent(agent, login) });
+        res.json({ agent, models });
     }
 
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
