@@ -182,16 +182,26 @@ export function probeAgentBinOnce(
  * enough for a hosted picker: Codex can be present on PATH while its per-user login is absent.
  * Keep this intentionally small and read-only; the Connect action remains responsible for login.
  */
+export interface QaapAgentConnectionProbeOptions {
+    readonly file?: string;
+    readonly args?: readonly string[];
+    readonly cwd?: string;
+    readonly env?: NodeJS.ProcessEnv;
+}
+
 export function probeAgentConnectionState(
     agentId: string,
     bin = agentId,
+    options?: QaapAgentConnectionProbeOptions,
 ): QaapAgentConnectionState {
     const normalized = agentId.trim().toLowerCase();
     if (normalized !== 'codex') {
         return 'unknown';
     }
     try {
-        const probe = spawnSync(bin, ['login', 'status'], {
+        const probe = spawnSync(options?.file ?? bin, options?.args ?? ['login', 'status'], {
+            cwd: options?.cwd,
+            env: options?.env,
             encoding: 'utf8',
             timeout: 4000,
             windowsHide: true,

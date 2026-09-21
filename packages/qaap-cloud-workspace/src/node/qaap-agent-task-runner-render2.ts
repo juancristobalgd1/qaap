@@ -674,7 +674,7 @@ export function listModelsForAgentExtracted(
         // Keep the native catalog visible when Starter cannot use hosted Codex models.
         // The picker can then explain the lock instead of opening an empty submenu;
         // task startup still enforces the same hosted-model entitlement.
-        const userSessionConnected = ctx.isAgentConnected?.(normalized) === true;
+        const userSessionConnected = ctx.isAgentConnected?.(normalized, owner) === true;
         return models.map(model => {
             if (!isHostedCodexUsage(normalized, model.modelId)) {
                 return model;

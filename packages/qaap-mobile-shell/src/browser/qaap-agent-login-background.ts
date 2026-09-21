@@ -45,7 +45,7 @@ export async function openAgentLoginDialogInBackground(
     let connectionPollHandle: number | undefined;
     let successCloseHandle: number | undefined;
     let connectionPollInFlight = false;
-    let challengeSeen = false;
+    let refreshConnectionState: (() => Promise<void>) | undefined;
     let closed = false;
     let output = '';
 
@@ -61,6 +61,11 @@ export async function openAgentLoginDialogInBackground(
         if (successCloseHandle !== undefined) {
             window.clearTimeout(successCloseHandle);
             successCloseHandle = undefined;
+        }
+        if (refreshConnectionState) {
+            window.removeEventListener('focus', refreshConnectionState);
+            window.removeEventListener('pageshow', refreshConnectionState);
+            refreshConnectionState = undefined;
         }
         outputListener?.dispose();
         outputListener = undefined;
@@ -118,7 +123,6 @@ export async function openAgentLoginDialogInBackground(
                 agentId,
             });
             if (challenge) {
-                challengeSeen = true;
                 dialog?.setChallenge(challenge);
             }
         });
@@ -129,8 +133,8 @@ export async function openAgentLoginDialogInBackground(
         }
         surface.terminal.sendText(`${command}\n`);
 
-        const refreshConnectionState = async (): Promise<void> => {
-            if (closed || !challengeSeen || connectionPollInFlight || !onConnected) {
+        refreshConnectionState = async (): Promise<void> => {
+            if (closed || connectionPollInFlight || !onConnected) {
                 return;
             }
             connectionPollInFlight = true;
@@ -147,9 +151,15 @@ export async function openAgentLoginDialogInBackground(
         };
 
         if (onConnected) {
+            // The browser can return from device authorization before the CLI prints its final
+            // line. Start immediately and keep polling; waiting for the challenge parser made the
+            // VPS miss successful callbacks when a provider changed its terminal wording.
+            void refreshConnectionState();
             connectionPollHandle = window.setInterval(() => {
-                void refreshConnectionState();
+                void refreshConnectionState?.();
             }, 2500);
+            window.addEventListener('focus', refreshConnectionState);
+            window.addEventListener('pageshow', refreshConnectionState);
         }
 
         pollHandle = window.setInterval(() => {

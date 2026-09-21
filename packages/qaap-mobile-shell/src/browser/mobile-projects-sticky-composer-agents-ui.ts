@@ -46,7 +46,7 @@ export interface MobileProjectsStickyComposerAgentsHost {
     activeTasks?: MobileProjectsActiveTasks;
     readPreference?: (key: string) => unknown;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-    loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot>;
+    loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot>;
     resolveConversationAgentLabel(agentId: string | undefined): string;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
 }
@@ -248,11 +248,11 @@ export class MobileProjectsStickyComposerAgentsUi {
         );
         return listQaapComposerPickerAgents(agents, disabledIds);
     }
-    async refreshStickyComposerAgents(project: MobileProjectEntry): Promise<boolean> {
+    async refreshStickyComposerAgents(project: MobileProjectEntry, options?: { readonly forceRefresh?: boolean }): Promise<boolean> {
         this.host.activeTasks?.start();
         const cwd = this.host.projectsService.getProjectCwd(project) ?? this.host.preparedCwdByProjectId.get(project.id);
         try {
-            const snapshot = await this.host.loadBackendAgentSnapshot();
+            const snapshot = await this.host.loadBackendAgentSnapshot(options);
             let pickerAgents = this.getComposerAgentPickerAgents(snapshot.agents);
             let filteredAgents = this.filterSelectableComposerAgents(pickerAgents);
             if (filteredAgents.length === 0) {

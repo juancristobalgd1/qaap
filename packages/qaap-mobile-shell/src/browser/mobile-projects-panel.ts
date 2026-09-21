@@ -1521,8 +1521,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return shouldUseTheiaCoderExtracted(this, content, selectedAgentId, options);
     }
 
-    protected async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
-        return this.backgroundTaskUi.loadBackendAgentSnapshot();
+    protected async loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
+        return this.backgroundTaskUi.loadBackendAgentSnapshot(options);
     }
 
     protected async selectBackendConversationAgent(cwd: string, prompt: string, selectedAgentId?: string, conversationAgentId?: string,): Promise<string> {

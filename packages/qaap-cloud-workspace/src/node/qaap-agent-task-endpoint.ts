@@ -116,6 +116,9 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
             if (!ctx) {
                 return;
             }
+            if (req.query.refresh === '1' || req.query.refresh === 'true') {
+                this.runner.refreshAgentCatalog();
+            }
             // `groups` intentionally omitted: the only HTTP consumer reads agents/models and the
             // full task history (with whole prompts) multiplies into tens of MB per call. Live
             // task groups arrive over the WebSocket snapshot instead.

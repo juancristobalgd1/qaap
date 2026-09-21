@@ -414,10 +414,10 @@ export class MobileProjectsBackgroundTaskUi {
             isLegacyTheiaChat: options.isLegacyTheiaChat,
         });
     }
-    async loadBackendAgentSnapshot(): Promise<QaapAgentTaskListSnapshot> {
+    async loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
         this.host.activeTasks?.start();
         try {
-            const snapshot = await fetchAgentTaskListAll();
+            const snapshot = await fetchAgentTaskListAll(options);
             const agents = mergeAgentTaskAgentOptions(snapshot.agents, this.host.activeTasks?.getAgents() ?? []);
             return {
                 ...snapshot,

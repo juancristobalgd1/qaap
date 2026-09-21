@@ -86,7 +86,11 @@ import {
     readDisabledHarnessIds,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
 import { localizeMissingQaiqMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
-import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import {
+    resolveQaapReposRoot,
+    resolveUserReposRoot,
+    safeUserIdSegment,
+} from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
@@ -228,7 +232,7 @@ export class QaapAgentTaskRunner {
     }
     /** Agent bins probed once per backend process (`qaiq --version`, etc.). */
     protected readonly probedAgentBins = new Set<string>();
-    /** Short-lived auth probe cache; the Connect flow invalidates it through refreshAgentCatalog. */
+    /** Short-lived, per-tenant auth probe cache; Connect invalidates it through refreshAgentCatalog. */
     protected readonly agentConnectionStates = new Map<string, { readonly state: QaapAgentDescriptor['connectionState']; readonly at: number }>();
 
     protected readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
@@ -422,7 +426,7 @@ export class QaapAgentTaskRunner {
         return listAgentsHelper(this.detectedAgents)
             .filter(agent => this.isAgentEnabled(agent.id, ownerLogin))
             .map(agent => {
-                const connectionState = this.agentConnectionState(agent.id);
+                const connectionState = this.agentConnectionState(agent.id, ownerLogin);
                 const hostedCodexAvailable = agent.id.toLowerCase() === 'codex'
                     && !!ownerLogin?.trim()
                     && this.billingStore?.peekEntitlements?.(ownerLogin)?.hostedModels === true;
@@ -437,11 +441,11 @@ export class QaapAgentTaskRunner {
     }
 
     /** Authentication state for the current tenant's CLI credentials. */
-    isAgentConnected(agentId: string): boolean {
-        return this.agentConnectionState(agentId) === 'connected';
+    isAgentConnected(agentId: string, ownerLogin?: string): boolean {
+        return this.agentConnectionState(agentId, ownerLogin) === 'connected';
     }
 
-    protected agentConnectionState(agentId: string): QaapAgentDescriptor['connectionState'] {
+    protected agentConnectionState(agentId: string, ownerLogin?: string): QaapAgentDescriptor['connectionState'] {
         const normalized = agentId.trim().toLowerCase();
         const candidate = this.detectedAgents.get(normalized);
         if (!candidate) {
@@ -451,13 +455,53 @@ export class QaapAgentTaskRunner {
             return 'unknown';
         }
         const now = Date.now();
-        const cached = this.agentConnectionStates.get(normalized);
+        const owner = ownerLogin?.trim().toLowerCase() ?? '';
+        const cacheKey = `${normalized}:${owner}`;
+        const cached = this.agentConnectionStates.get(cacheKey);
         if (cached && now - cached.at < 15_000) {
             return cached.state;
         }
-        const state = probeAgentConnectionStateHelper(normalized, candidate.bin);
-        this.agentConnectionStates.set(normalized, { state, at: now });
+        const state = this.probeAgentConnectionState(normalized, candidate.bin ?? normalized, ownerLogin);
+        this.agentConnectionStates.set(cacheKey, { state, at: now });
         return state;
+    }
+
+    /**
+     * Probe the same tenant HOME/container that owns the interactive login. The backend process is
+     * shared and its own HOME is intentionally not allowed to answer a user's auth question: on the
+     * VPS that always reports the operator container as logged out even after the tenant completed
+     * device authentication.
+     */
+    protected probeAgentConnectionState(
+        agentId: string,
+        bin: string,
+        ownerLogin?: string,
+    ): QaapAgentDescriptor['connectionState'] {
+        const owner = ownerLogin?.trim();
+        if (!owner) {
+            return probeAgentConnectionStateHelper(agentId, bin);
+        }
+
+        const tenantCwd = resolveUserReposRoot(resolveQaapReposRoot(), owner);
+        if (process.env.QAAP_CLOUD_MODE === 'docker' && !fs.existsSync(tenantCwd)) {
+            return 'unknown';
+        }
+        try {
+            const wrapped = this.tenantSpawn.wrapArgvForTenant(tenantCwd, bin, ['login', 'status']);
+            const env = {
+                ...process.env,
+                ...this.tenantSpawn.tenantHomeEnvOverlay(tenantCwd),
+            };
+            return probeAgentConnectionStateHelper(agentId, bin, {
+                file: wrapped.file,
+                args: wrapped.args,
+                cwd: tenantCwd,
+                env,
+            });
+        } catch (error) {
+            console.warn(`[qaap] Unable to probe ${agentId} for tenant ${safeUserIdSegment(owner)}:`, error);
+            return 'unknown';
+        }
     }
 
     warmForCwd(cwd: string): QaapAgentWarmResult {
@@ -479,7 +523,7 @@ export class QaapAgentTaskRunner {
     defaultAgent(ownerLogin?: string): string {
         return defaultAgentExtracted(
             this,
-            agentId => this.isAgentEnabled(agentId, ownerLogin) && this.agentConnectionState(agentId) !== 'disconnected',
+            agentId => this.isAgentEnabled(agentId, ownerLogin) && this.agentConnectionState(agentId, ownerLogin) !== 'disconnected',
         );
     }
 

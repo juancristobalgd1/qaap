@@ -607,8 +607,9 @@ export function resolveAgentOptionId(agentId: string | undefined, agents: readon
     return normalizeBackendAgentId(trimmed) ?? migrateLegacyBackendAgentId(trimmed);
 }
 
-export async function fetchAgentTaskListAll(): Promise<QaapAgentTaskListSnapshot> {
-    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}/all`, { credentials: 'include' });
+export async function fetchAgentTaskListAll(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot> {
+    const endpoint = options?.forceRefresh ? `${QAAP_AGENT_TASK_API_PATH}/all?refresh=1` : `${QAAP_AGENT_TASK_API_PATH}/all`;
+    const response = await fetch(endpoint, { credentials: 'include', cache: 'no-store' });
     if (!response.ok) {
         throw new Error(response.statusText);
     }
