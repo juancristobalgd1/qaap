@@ -30,6 +30,7 @@ export async function openAgentLoginDialogInBackground(
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     agentId: string,
+    onConnected?: () => void | Promise<void>,
 ): Promise<void> {
     const command = resolveInteractiveAgentLoginCommand(agentId);
     if (!command) {
@@ -128,6 +129,9 @@ export async function openAgentLoginDialogInBackground(
             outputListener = undefined;
             if (exitCode === 0) {
                 dialog?.setConnected();
+                void Promise.resolve(onConnected?.()).catch(error => {
+                    console.warn('[qaap] Agent login UI refresh failed:', error);
+                });
                 successCloseHandle = window.setTimeout(close, 1800);
             } else {
                 dialog?.setFailed(nls.localize(

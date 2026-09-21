@@ -633,6 +633,10 @@ export function openAgentSignInTerminalExtracted(ctx: any, agentId?: string, req
         project,
         summary,
         resolvedAgentId,
+        async () => {
+            await ctx.stickyComposerAgentsUi?.refreshStickyComposerAgents?.(project);
+            ctx.stickyComposerRenderUi?.renderStickyComposer?.();
+        },
     );
 }
 
