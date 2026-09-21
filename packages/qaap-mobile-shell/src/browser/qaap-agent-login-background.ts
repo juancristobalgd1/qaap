@@ -82,7 +82,20 @@ export async function openAgentLoginDialogInBackground(
     });
 
     try {
-        const cwd = ctx.projectsService.getProjectCwd(project) ?? ctx.preparedCwdByProjectId.get(project.id);
+        // Hosted projects do not always have a project cwd cached yet. The visible
+        // transcript terminal resolves the cwd from the conversation first (and
+        // filters the shared container path), so use that same source here. Without
+        // it the hidden login terminal fails on the VPS even though the conversation
+        // itself has a valid workspace.
+        let cwd = ctx.transcriptSurfacesUi?.resolveTranscriptProjectCwd?.(project, summary)
+            ?? ctx.projectsService.getProjectCwd(project)
+            ?? ctx.preparedCwdByProjectId.get(project.id);
+        if (!cwd && project.github && ctx.projectsService.prepareProjectCwd) {
+            cwd = await ctx.projectsService.prepareProjectCwd(project);
+            if (cwd) {
+                ctx.preparedCwdByProjectId.set(project.id, cwd);
+            }
+        }
         const services = ctx.createTranscriptTerminalViewServices?.();
         if (!cwd || !services) {
             throw new Error('workspace terminal unavailable');
