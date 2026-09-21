@@ -28,6 +28,7 @@ import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
 } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 
@@ -371,11 +372,16 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         if (!ctx) {
             return;
         }
-        const agent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
-        if (!agent) {
+        const requestedAgent = typeof req.query.agent === 'string' ? req.query.agent.trim() : '';
+        if (!requestedAgent) {
             res.status(400).json({ error: '"agent" query parameter is required.' });
             return;
         }
+        // Keep the endpoint tolerant of the mention form used by some hosted composer paths.
+        // The native catalogs are keyed by canonical ids (`codex`, `claude`, ...), while a
+        // client may send `@codex` or a builtin alias when it drills into the same picker.
+        const normalizedAgent = requestedAgent.replace(/^@/, '').trim().toLowerCase();
+        const agent = resolveQaapBuiltinAgentMentionId(normalizedAgent) ?? normalizedAgent;
         const login = this.auth.resolveUserLogin(ctx);
         if (this.billingStore && login) {
             try {
@@ -388,9 +394,10 @@ export class QaapAgentTaskEndpoint implements BackendApplicationContribution {
         // though the native catalog is already available. Keep the read-only picker endpoint
         // useful during that window instead of turning a valid native harness into `models: []`.
         const runnerModels = this.runner.listModelsForAgent(agent, login);
-        const models = runnerModels.length > 0 ? runnerModels : listNativeAgentModels(agent);
+        const nativeModels = listNativeAgentModels(agent);
+        const models = runnerModels.length > 0 ? runnerModels : nativeModels;
         res.setHeader('Cache-Control', 'no-store');
-        res.json({ agent, models });
+        res.json({ agent: requestedAgent, models });
     }
 
     protected async handleListCliUpdates(req: Request, res: Response): Promise<void> {
