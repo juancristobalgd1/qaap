@@ -103,6 +103,17 @@ export const OPENCODE_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
     { provider: 'openai', vendor: OPENCODE_AGENT_ID, modelId: 'opencode/nemotron-3.5-lightning-free', label: 'Nemotron 3.5 Lightning Free' },
 ];
 
+/**
+ * Keep Codex's native rows visible if a hosted API responds before its runner catalog is warm.
+ * The backend returns the same rows, including plan availability, once its catalog is ready.
+ */
+export const CODEX_FALLBACK_MODELS: readonly QaapQaiqModelOption[] = [
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', available: false },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', available: false },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', available: false },
+    { provider: 'openai', vendor: 'codex', modelId: 'gpt-5.5', label: 'GPT-5.5 Legado', available: false },
+];
+
 export function normalizeOpenCodeModelOptions(models: readonly QaapQaiqModelOption[]): QaapQaiqModelOption[] {
     const knownModels = new Map(OPENCODE_FALLBACK_MODELS.map(model => [model.modelId, model]));
     const validModels = models
@@ -644,6 +655,9 @@ export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQai
     // proxy still returns OpenCode stderr as line-oriented catalog data.
     if (agentId.trim().toLowerCase() === 'opencode') {
         return normalizeOpenCodeModelOptions(models);
+    }
+    if (agentId.trim().toLowerCase() === 'codex' && models.length === 0) {
+        return [...CODEX_FALLBACK_MODELS];
     }
     return models;
 }
