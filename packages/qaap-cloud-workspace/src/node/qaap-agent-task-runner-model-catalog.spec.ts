@@ -89,7 +89,7 @@ describe('QAIQ/OpenClaude model routing', () => {
 
     it('shows native models as locked instead of hiding them on Starter', () => {
         const ctx = {
-            normalizeAgentId: (agentId: string) => agentId.trim().toLowerCase(),
+            normalizeAgentId: () => undefined,
             billingStore: {
                 peekEntitlements: () => ({ hostedModels: false }),
             },

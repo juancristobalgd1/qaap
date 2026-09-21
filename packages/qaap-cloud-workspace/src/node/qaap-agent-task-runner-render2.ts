@@ -655,7 +655,12 @@ export function listModelsForAgentExtracted(
         agentId: string | undefined,
         ownerLogin?: string,
 ): QaapQaiqModelOption[] {
-        const normalized = ctx.normalizeAgentId(agentId ?? '');
+        // Model catalogs are requested after the agent list has already been rendered. Do not
+        // make this read-only endpoint depend on the runner's detected-agent cache being an
+        // exact match for the browser's canonical id: a cold hosted workspace can expose the
+        // harness while that cache is still warming, which used to make the VPS return [] for
+        // Codex even though its native catalog was available.
+        const normalized = agentId?.trim().toLowerCase();
         if (!normalized || agentUsesSettingsModelCatalog(normalized)) {
             return [];
         }
