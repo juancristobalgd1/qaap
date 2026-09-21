@@ -43,11 +43,16 @@ const TENANT_BACKEND_WORKTREES_MOUNT = '/tmp/qaap-worktrees';
 const TENANT_BACKEND_PARALLEL_MOUNT = '/tmp/qaap-parallel';
 const TENANT_BACKEND_QAAP_HOME_MOUNT = '/home/theia/.qaap';
 const TENANT_BACKEND_THEIA_HOME_MOUNT = '/home/theia/.theia';
+const TENANT_BACKEND_LOGS_MOUNT = `${TENANT_BACKEND_THEIA_HOME_MOUNT}/logs`;
 const TENANT_BACKEND_SQLITE_STORE_PATH = `${TENANT_BACKEND_QAAP_HOME_MOUNT}/tenant.sqlite`;
 // Agent CLIs such as Copilot extract native addons under HOME. Keep the worker scratch space
 // executable while retaining the other hardening flags; a noexec tmpfs makes those addons look
 // missing even when the extracted .node file is present.
 const TENANT_TMPFS_OPTIONS = 'rw,exec,nosuid,nodev,size=512m';
+// Plugin session logs are disposable runtime state. Keeping them on a tmpfs prevents a
+// rootless-runtime UID migration from making Theia's asynchronous old-log cleanup fail with
+// EACCES on a directory that was created by an older worker namespace.
+const TENANT_BACKEND_LOGS_TMPFS_OPTIONS = 'rw,exec,nosuid,nodev,size=64m';
 
 /**
  * Environment variables that belong to the shared backend/control plane. They may be needed by
@@ -877,7 +882,10 @@ export class QaapDockerOrchestrator {
                     SecurityOpt: ['no-new-privileges:true'],
                     CapDrop: ['ALL'],
                     ReadonlyRootfs: true,
-                    Tmpfs: { '/tmp': TENANT_TMPFS_OPTIONS },
+                    Tmpfs: {
+                        '/tmp': TENANT_TMPFS_OPTIONS,
+                        [TENANT_BACKEND_LOGS_MOUNT]: TENANT_BACKEND_LOGS_TMPFS_OPTIONS,
+                    },
                     NetworkMode: networkMode,
                     AutoRemove: false,
                 },
@@ -1060,6 +1068,7 @@ export class QaapDockerOrchestrator {
             && hostConfig.CapDrop?.includes('ALL') === true
             && hostConfig.ReadonlyRootfs === true
             && hostConfig.Tmpfs?.['/tmp'] === TENANT_TMPFS_OPTIONS
+            && hostConfig.Tmpfs?.[TENANT_BACKEND_LOGS_MOUNT] === TENANT_BACKEND_LOGS_TMPFS_OPTIONS
             && hostConfig.Privileged !== true
             && (!hostConfig.PidMode || hostConfig.PidMode === 'private')
             && (!hostConfig.IpcMode || hostConfig.IpcMode === 'private')
