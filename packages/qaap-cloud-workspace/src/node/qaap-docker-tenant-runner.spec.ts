@@ -234,6 +234,71 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             }
         });
 
+        it('recreates a managed stale tenant container after a deployment changes its contract', async () => {
+            const previousEnv = process.env;
+            process.env = {
+                ...previousEnv,
+                NODE_ENV: 'development',
+                QAAP_CLOUD_MODE: 'local',
+                QAAP_TENANT_CONTAINER_ISOLATION: '1',
+                QAAP_TENANT_NETWORK_MODE: 'none',
+                QAAP_TENANT_DOCKER_IMAGE: 'qaap-test-worker:local',
+            };
+            try {
+                let current: any = {
+                    inspect: async (): Promise<any> => ({
+                        Id: 'stale-tenant-container-id',
+                        State: { Running: true },
+                        Config: {
+                            Labels: {
+                                'com.qaap.managed': 'true',
+                                'com.qaap.tenant-container': 'true',
+                                'com.qaap.tenant-login': 'alice',
+                            },
+                        },
+                    }),
+                    remove: async (): Promise<void> => {
+                        current = undefined;
+                    },
+                };
+                let createCalls = 0;
+                const fakeDocker = {
+                    getContainer: (): any => current,
+                    createContainer: async (options: any): Promise<any> => {
+                        createCalls += 1;
+                        current = {
+                            start: async (): Promise<void> => undefined,
+                            inspect: async (): Promise<any> => ({
+                                Id: 'fresh-tenant-container-id',
+                                State: { Running: true },
+                                Config: {
+                                    User: options.User,
+                                    Image: options.Image,
+                                    Labels: options.Labels,
+                                },
+                                HostConfig: { ...options.HostConfig, PidMode: 'private', IpcMode: 'private' },
+                                Mounts: [
+                                    { Source: aliceRoot, Destination: '/workspace', RW: true },
+                                    { Source: aliceWorktreesRoot, Destination: '/workspace/.qaap-worktrees', RW: true },
+                                    { Source: aliceParallelRoot, Destination: '/workspace/.qaap-parallel', RW: true },
+                                ],
+                            }),
+                        };
+                        return current;
+                    },
+                };
+                const freshOrchestrator = new QaapDockerOrchestrator();
+                (freshOrchestrator as any).docker = fakeDocker;
+
+                const result = await freshOrchestrator.ensureTenantContainer('alice', aliceRoot);
+
+                expect(createCalls).to.equal(1);
+                expect(result.containerId).to.equal('fresh-tenant-container-id');
+            } finally {
+                process.env = previousEnv;
+            }
+        });
+
         it('rejects a hosted daemon that does not report rootless mode', async () => {
             const previousEnv = process.env;
             process.env = {

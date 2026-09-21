@@ -664,7 +664,17 @@ export class QaapDockerOrchestrator {
             container = docker.getContainer(name);
             inspect = await container.inspect();
             if (!this.tenantContainerMatches(inspect, mounts, networkMode)) {
-                throw new Error(`Tenant container ${name} has an unexpected mount or security configuration; refusing to reuse it.`);
+                if (!this.isManagedTenantContainerFor(inspect, ownerLogin)) {
+                    throw new Error(`Tenant container ${name} has an unexpected mount or security configuration; refusing to reuse it.`);
+                }
+                // Tenant workers are disposable data-plane containers: all user data lives in the
+                // three bind-mounted roots above. Recreate a managed worker when the serving image
+                // or hardening contract changed after a control-plane deploy. Unlabelled or
+                // differently-owned containers still fail closed below.
+                console.warn(`[qaap-docker] Recreating stale tenant container ${name}.`);
+                await container.remove({ force: true });
+                const recreated = Object.assign(new Error(`Tenant container ${name} was removed for recreation.`), { statusCode: 404 });
+                throw recreated;
             }
             if (!inspect.State.Running) {
                 await container.start();
@@ -717,6 +727,20 @@ export class QaapDockerOrchestrator {
         this.tenantRoots.set(name, mounts.reposRoot);
         this.tenantMounts.set(name, mounts);
         return { containerId: inspect.Id, containerName: name, workspaceMount: WORKSPACE_MOUNT, hostPath: mounts.reposRoot };
+    }
+
+    protected isManagedTenantContainerFor(
+        inspect: Dockerode.ContainerInspectInfo,
+        ownerLogin?: string,
+    ): boolean {
+        const raw = inspect as Dockerode.ContainerInspectInfo & {
+            Config?: { Labels?: Record<string, string> };
+        };
+        const labels = raw.Config?.Labels ?? {};
+        const tenantLogin = (ownerLogin?.trim() || '__anonymous__').toLowerCase();
+        return labels['com.qaap.managed'] === 'true'
+            && labels['com.qaap.tenant-container'] === 'true'
+            && labels['com.qaap.tenant-login'] === tenantLogin;
     }
 
     protected backendContainerNameForTenant(ownerLogin?: string): string {
