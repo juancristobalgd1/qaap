@@ -179,6 +179,26 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         expect(descriptor!.devCommand).to.equal(undefined);
     });
 
+    it('detects multiple Vite apps in bounded nested project folders', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addDir('/ws/projects');
+        mock.addDir('/ws/projects/admin');
+        mock.addDir('/ws/projects/store');
+        mock.addFile('/ws/projects/admin/package.json', VITE_PKG.replace('rioja-wines-landing-page', 'admin'));
+        mock.addFile('/ws/projects/store/package.json', VITE_PKG.replace('rioja-wines-landing-page', 'store'));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor?.apps.map(app => app.relativePath)).to.deep.equal([
+            'projects/admin',
+            'projects/store',
+        ]);
+        expect(descriptor?.monorepoFlavor).to.equal('implicit');
+    });
+
     it('detects Vite from the dev script when dependencies do not declare it', async () => {
         const mock = new MockFileService();
         mock.addDir('/ws');
@@ -193,6 +213,26 @@ describe('QaapProjectBootstrapDetector scaffold subfolders', () => {
         const descriptor = await detector.detect(URI.fromFilePath('/ws'));
         expect(descriptor!.kind).to.equal('node-vite');
         expect(descriptor!.expectedPort).to.equal(5173);
+    });
+
+    it('bypasses a portless wrapper when a direct Next CLI is available', async () => {
+        const mock = new MockFileService();
+        mock.addDir('/ws');
+        mock.addFile('/ws/package.json', JSON.stringify({
+            name: 'portless-next-app',
+            packageManager: 'pnpm@10.32.1',
+            scripts: {
+                dev: 'concurrently "portless proxy start --https" "portless run --force next dev --webpack"',
+            },
+            dependencies: { next: '^16.1.3', react: '^19.0.0', 'react-dom': '^19.0.0' },
+        }));
+
+        const detector = new QaapProjectBootstrapDetector();
+        bindMockFileService(detector, mock);
+
+        const descriptor = await detector.detect(URI.fromFilePath('/ws'));
+        expect(descriptor!.kind).to.equal('node-next');
+        expect(descriptor!.devCommand).to.equal('npm exec -- next dev --webpack');
     });
 
     it('prefers the explicit dev-script port over the framework default', async () => {

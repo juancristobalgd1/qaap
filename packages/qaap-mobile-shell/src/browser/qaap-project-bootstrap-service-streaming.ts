@@ -301,11 +301,19 @@ export async function startDevServerExtracted(ctx: any, plan: { command: string;
                     return;
                 }
                 if (ctx._phase === 'starting' || ctx._phase === 'running') {
-                    void ctx.failDevRun(nls.localize(
-                        'qaap/projectBootstrap/devServerExited',
-                        'Dev server exited with code {0}.',
-                        String(event.code ?? '?'),
-                    ), plan, runId);
+                    // The process can exit before the output listener receives its final chunk.
+                    // Read the terminal buffer here so a fast startup failure is diagnosable
+                    // instead of collapsing to the generic exit-code message.
+                    const terminalTail = ctx.readTerminalTail(terminal);
+                    void ctx.failDevRun(
+                        terminalTail || nls.localize(
+                            'qaap/projectBootstrap/devServerExited',
+                            'Dev server exited with code {0}.',
+                            String(event.code ?? '?'),
+                        ),
+                        plan,
+                        runId,
+                    );
                 }
             });
             const onWidgetClose = terminal.onTerminalDidClose(() => {

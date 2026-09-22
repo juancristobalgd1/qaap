@@ -10,7 +10,7 @@ describe('qaap-project-bootstrap-install', () => {
 
     it('buildBootstrapInstallCommand forces dev dependencies for npm', () => {
         expect(buildBootstrapInstallCommand('npm')).to.equal(
-            'NODE_ENV=development HUSKY=0 CI=true npm install --include=dev',
+            'NODE_ENV=development HUSKY=0 CI=true npm install --include=dev --include=optional --force --no-package-lock',
         );
     });
 

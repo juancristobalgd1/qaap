@@ -24,7 +24,10 @@ export function buildBootstrapInstallCommand(pm: QaapPackageManager): string {
         case 'bun':
             return `${env} bun install`;
         default:
-            // `--include=dev` still applies when npm honors production omit via config.
-            return `${env} npm install --include=dev`;
+            // `--include=optional` and `--force` repair platform-specific optional packages
+            // when a workspace was prepared on another OS (for example Rollup's Linux binary
+            // missing from a node_modules tree created on Windows). Keep the lockfile untouched:
+            // preview bootstrap must repair the runtime tree, not create review noise in the repo.
+            return `${env} npm install --include=dev --include=optional --force --no-package-lock`;
     }
 }

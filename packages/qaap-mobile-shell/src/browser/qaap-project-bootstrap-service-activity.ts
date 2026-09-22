@@ -492,11 +492,16 @@ export function watchAttachedDevTerminalExtracted(ctx: any, terminal: TerminalWi
         const onOutput = terminal.onOutput(data => ctx.appendDevOutput(data));
         const onProcessExit = ctx.terminalWatcher.onTerminalExit(event => {
             if (event.terminalId === terminal.terminalId && runId === ctx.devRunGeneration) {
-                void ctx.failDevRun(nls.localize(
-                    'qaap/projectBootstrap/devServerExited',
-                    'Dev server exited with code {0}.',
-                    String(event.code ?? '?'),
-                ), plan, runId);
+                const terminalTail = ctx.readTerminalTail(terminal);
+                void ctx.failDevRun(
+                    terminalTail || nls.localize(
+                        'qaap/projectBootstrap/devServerExited',
+                        'Dev server exited with code {0}.',
+                        String(event.code ?? '?'),
+                    ),
+                    plan,
+                    runId,
+                );
             }
         });
         const onWidgetClose = terminal.onTerminalDidClose(() => {

@@ -122,6 +122,12 @@ describe('qaap-project-bootstrap-port', () => {
         expect(command).not.to.include(' -- -p');
     });
 
+    it('wrapDevCommandForPort skips the second `--` for npm exec+Next', () => {
+        const command = wrapDevCommandForPort('npm exec -- next dev --webpack', 3001, 'node-next');
+        expect(command).to.match(/npm exec -- next dev --webpack -p 3001$/);
+        expect(command).not.to.include(' -- -p');
+    });
+
     it('forces the allocated port when an npm script overwrites PORT inline', function (): void {
         if (process.platform === 'win32') {
             this.skip();

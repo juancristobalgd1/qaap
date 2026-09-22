@@ -6,6 +6,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import type { FileStat } from '@theia/filesystem/lib/common/files';
 import { buildBootstrapInstallCommand } from './qaap-project-bootstrap-install';
 import {
     parseDeclaredPackageManager,
@@ -56,6 +57,9 @@ const MAX_MONOREPO_APPS = 32;
 /** Hard cap on direct-child scaffold folders probed when the workspace root has no manifest. */
 const MAX_SCAFFOLD_SUBFOLDER_APPS = 16;
 
+/** Keep nested-project discovery bounded while supporting nested projects under projects/. */
+const MAX_SCAFFOLD_DISCOVERY_DEPTH = 2;
+
 /** Directories skipped when scanning for orphan scaffold projects under the workspace root. */
 const SCAFFOLD_SUBFOLDER_SKIP = new Set(['node_modules', '.git', '.qaap', 'dist', 'build', 'out']);
 
@@ -63,7 +67,9 @@ const SCAFFOLD_SUBFOLDER_SKIP = new Set(['node_modules', '.git', '.qaap', 'dist'
 const NESTED_STATIC_INDEX_SEGMENTS = ['demo', 'public', 'dist'] as const;
 
 /** Fallback directories scanned when no explicit workspaces config exists ("implicit" layout). */
-const IMPLICIT_MONOREPO_DIRS = ['apps', 'packages', 'examples', 'sites', 'services', 'artifacts'];
+const IMPLICIT_MONOREPO_DIRS = [
+    'apps', 'packages', 'examples', 'sites', 'services', 'artifacts', 'projects', 'frontends', 'backends',
+];
 
 /** Scripts the detector will pick up as a "dev server" entry point, in priority order. */
 const DEV_SCRIPT_PRIORITY = ['dev', 'start', 'serve', 'develop'];
@@ -148,7 +154,11 @@ export class QaapProjectBootstrapDetector {
         let devCommand: string | undefined;
         let devCommandLabel: string | undefined;
         if (devScriptKey) {
-            devCommand = this.buildRunCommand(packageManager, devScriptKey);
+            const script = scripts[devScriptKey];
+            const directFrameworkCommand = typeof script === 'string'
+                ? this.buildDirectFrameworkCommand(kind, script)
+                : undefined;
+            devCommand = directFrameworkCommand ?? this.buildRunCommand(packageManager, devScriptKey);
             devCommandLabel = devCommand;
         }
 
@@ -607,29 +617,48 @@ export class QaapProjectBootstrapDetector {
 
     protected async enumerateScaffoldSubfolderApps(workspaceRoot: URI): Promise<QaapMonorepoAppCandidate[]> {
         const apps: QaapMonorepoAppCandidate[] = [];
-        try {
-            const stat = await this.fileService.resolve(workspaceRoot);
-            for (const child of stat.children ?? []) {
-                if (apps.length >= MAX_SCAFFOLD_SUBFOLDER_APPS) {
-                    break;
-                }
-                if (!child.isDirectory) {
-                    continue;
-                }
-                if (child.name.startsWith('.') || SCAFFOLD_SUBFOLDER_SKIP.has(child.name)) {
-                    continue;
-                }
-                const pm = await this.detectPackageManager(child.resource, await this.readPackageJson(child.resource));
-                const candidate = await this.toAppCandidate(workspaceRoot, child.resource, pm);
-                if (candidate) {
-                    apps.push(candidate);
-                }
-            }
-        } catch {
-            return [];
-        }
+        await this.collectScaffoldSubfolderApps(workspaceRoot, workspaceRoot, 0, apps);
         apps.sort((a, b) => this.compareScaffoldCandidates(a, b));
         return apps;
+    }
+
+    /**
+     * Finds runnable projects below a workspace that has no usable root dev script. Agents often
+     * create `projects/<name>/web` or `apps/<name>` layouts before the user asks for a preview;
+     * limiting this walk to two levels keeps detection predictable without requiring a monorepo
+     * marker or scanning dependencies/build output.
+     */
+    protected async collectScaffoldSubfolderApps(
+        workspaceRoot: URI,
+        directory: URI,
+        depth: number,
+        apps: QaapMonorepoAppCandidate[],
+    ): Promise<void> {
+        if (apps.length >= MAX_SCAFFOLD_SUBFOLDER_APPS || depth >= MAX_SCAFFOLD_DISCOVERY_DEPTH) {
+            return;
+        }
+        let children: FileStat[] = [];
+        try {
+            const stat = await this.fileService.resolve(directory);
+            children = stat.children ?? [];
+        } catch {
+            return;
+        }
+        for (const child of children) {
+            if (apps.length >= MAX_SCAFFOLD_SUBFOLDER_APPS) {
+                return;
+            }
+            if (!child.isDirectory || child.name.startsWith('.') || SCAFFOLD_SUBFOLDER_SKIP.has(child.name)) {
+                continue;
+            }
+            const pm = await this.detectPackageManager(child.resource, await this.readPackageJson(child.resource));
+            const candidate = await this.toAppCandidate(workspaceRoot, child.resource, pm);
+            if (candidate) {
+                apps.push(candidate);
+                continue;
+            }
+            await this.collectScaffoldSubfolderApps(workspaceRoot, child.resource, depth + 1, apps);
+        }
     }
 
     protected compareScaffoldCandidates(a: QaapMonorepoAppCandidate, b: QaapMonorepoAppCandidate): number {
@@ -1015,6 +1044,47 @@ export class QaapProjectBootstrapDetector {
             case 'bun': return `bun run ${script}`;
             default: return `npm run ${script}`;
         }
+    }
+
+    /**
+     * Development wrappers are not always portable to the Qaap host. For example, a project can
+     * use `portless` to provision HTTPS certificates before delegating to Next, but the preview
+     * already provides its own proxied origin and may not have OpenSSL installed. Run the detected
+     * framework CLI directly in that case, preserving the project's framework flags.
+     */
+    protected buildDirectFrameworkCommand(
+        kind: QaapProjectKind,
+        script: string,
+    ): string | undefined {
+        if (!/\bportless\b/i.test(script)) {
+            return undefined;
+        }
+        const framework = (() => {
+            switch (kind) {
+                case 'node-next': return { binary: 'next', command: 'dev' };
+                case 'node-vite': return { binary: 'vite', command: '' };
+                case 'node-astro': return { binary: 'astro', command: 'dev' };
+                case 'node-svelte': return { binary: 'svelte-kit', command: 'dev' };
+                case 'node-cra': return { binary: 'react-scripts', command: 'start' };
+                default: return undefined;
+            }
+        })();
+        if (!framework) {
+            return undefined;
+        }
+        const escapedBinary = framework.binary.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const match = new RegExp(`\\b${escapedBinary}\\b(?:\\s+${framework.command})?([^"';&|]*)`, 'i').exec(script);
+        const frameworkArgs = match?.[1]?.trim() ?? '';
+        const command = framework.command.length > 0
+            ? `${framework.binary} ${framework.command}`
+            : framework.binary;
+        // Use npm's built-in local-bin resolver for the fallback. The detected package manager is
+        // still used for installation and ordinary scripts, but `pnpm exec`/`yarn exec`/`bun x`
+        // are not guaranteed to be available in the terminal service's non-interactive PATH. A
+        // framework CLI is already installed in node_modules at this point, so npm exec is the
+        // portable launcher across Windows, Linux containers, and remote VPS workspaces.
+        const executor = 'npm exec --';
+        return frameworkArgs.length > 0 ? `${executor} ${command} ${frameworkArgs}` : `${executor} ${command}`;
     }
 
     /**
