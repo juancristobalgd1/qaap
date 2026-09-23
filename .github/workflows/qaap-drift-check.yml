@@ -68,6 +68,10 @@ jobs:
       - name: Run qaap:drift-check
         run: npm run qaap:drift-check
 
+      # The @ts-nocheck allowlist may only shrink; see scripts/qaap-ts-nocheck-ratchet.js.
+      - name: Run qaap:ts-nocheck-check
+        run: npm run qaap:ts-nocheck-check
+
       - name: Verify drift guard failure modes
         run: node --test scripts/qaap-drift-check.test.js
 
