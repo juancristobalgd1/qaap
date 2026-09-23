@@ -45,6 +45,7 @@ import {
 import { normalizeQaapPublicUrl, resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
+import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { QAAP_PREVIEW_ACCESS_QUERY } from './qaap-dev-preview-endpoint';
@@ -305,11 +306,7 @@ export function previewBaseDomainExtracted(ctx: any): string | undefined {
         if (!process.env.QAAP_OAUTH_PUBLIC_URL?.trim()) {
             return undefined;
         }
-        const raw = process.env.QAAP_PREVIEW_BASE_DOMAIN?.trim().toLowerCase()
-            .replace(/^https?:\/\//, '')
-            .replace(/^\*\./, '')
-            .replace(/\/+$/, '');
-        return raw && /^[a-z0-9.-]+(?::\d+)?$/.test(raw) ? raw : undefined;
+        return normalizeQaapPreviewBaseDomain(process.env.QAAP_PREVIEW_BASE_DOMAIN);
 }
 
 export function previewIdFromHostExtracted(ctx: any, req: Request | http.IncomingMessage): string | undefined {

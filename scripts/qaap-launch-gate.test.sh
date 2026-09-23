@@ -25,6 +25,7 @@ case "$*" in
     *QAAP_BETA_ALLOWED_LOGINS*) printf '%s' "${TEST_BETA_ALLOWED_LOGINS:-}" ;;
     *QAAP_BACKEND_PER_TENANT*) printf '%s' "${TEST_BACKEND_PER_TENANT:-}" ;;
     *QAAP_TENANT_BACKEND_MASTER_SECRET*) printf '%s' "${TEST_BACKEND_SECRET_LEN:-0}" ;;
+    *QAAP_PREVIEW_BASE_DOMAIN*) printf '%s' "${TEST_PREVIEW_BASE_DOMAIN:-}" ;;
     *qaap-backend-isolation.js*) printf '%s' "${TEST_BACKEND_ISOLATION_MODE:-per-tenant}" ;;
     *Object.keys*length*) printf '%s' "${TEST_TENANTS:-2}" ;;
     *Object.keys*join*) printf 'alice bob' ;;
@@ -64,12 +65,14 @@ export TEST_HARNESSES=1
 export TEST_BETA_ALLOWED_LOGINS=alice TEST_BACKEND_ISOLATION_MODE=shared-control-plane
 expect_status 1 qaap-vps-launch-gate.sh
 export TEST_BACKEND_ISOLATION_MODE=per-tenant TEST_BACKEND_PER_TENANT=1 TEST_BACKEND_SECRET_LEN=32
+expect_status 1 qaap-vps-launch-gate.sh
+export TEST_PREVIEW_BASE_DOMAIN=qaap-previews.example
 expect_status 0 qaap-vps-launch-gate.sh
 export TEST_BACKEND_SECRET_LEN=31
 expect_status 1 qaap-vps-launch-gate.sh
-unset TEST_BETA_ALLOWED_LOGINS TEST_BACKEND_ISOLATION_MODE TEST_BACKEND_PER_TENANT TEST_BACKEND_SECRET_LEN
+unset TEST_BETA_ALLOWED_LOGINS TEST_BACKEND_ISOLATION_MODE TEST_BACKEND_PER_TENANT TEST_BACKEND_SECRET_LEN TEST_PREVIEW_BASE_DOMAIN
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":false}'
 expect_status 1 qaap-verify-launch-readiness.sh
 export TEST_AUTH_CONFIG='{"ok":true,"ready":true,"skipAuth":false,"oauthConfigured":true,"githubOAuth":true,"productionRuntime":true,"agentUidPerUser":true,"backendIsolationReady":true,"backendIsolationMode":"per-tenant","build":"abcdef123456","betaAccessRequired":true,"betaAccessConfigured":true}'
 expect_status 0 qaap-verify-launch-readiness.sh
-echo 'PASS: missing tenants, failed isolation, successful isolation, missing invitations, configured invitations'
+echo 'PASS: missing tenants, failed isolation, successful isolation, missing preview domain, missing invitations, configured invitations'

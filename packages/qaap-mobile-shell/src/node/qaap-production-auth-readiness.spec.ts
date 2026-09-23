@@ -63,6 +63,58 @@ describe('evaluateQaapProductionAuthReadiness', () => {
         expect(result.fatalReason).to.match(/backend-per-tenant/i);
     });
 
+    describe('isolated preview origins for invited tenants', () => {
+        const publicBeta = {
+            NODE_ENV: 'production',
+            QAAP_CLOUD_MODE: 'docker',
+            QAAP_BETA_ALLOWED_LOGINS: 'alice,bob',
+            QAAP_BACKEND_PER_TENANT: '1',
+            QAAP_TENANT_BACKEND_MASTER_SECRET: '0123456789abcdef0123456789abcdef',
+            QAAP_GITHUB_CLIENT_ID: 'client',
+            QAAP_GITHUB_CLIENT_SECRET: 'secret',
+            QAAP_OAUTH_PUBLIC_URL: 'https://app.qaap.example',
+        };
+
+        it('refuses a public beta without QAAP_PREVIEW_BASE_DOMAIN', () => {
+            const result = evaluateQaapProductionAuthReadiness(publicBeta);
+            expect(result.ready).to.equal(false);
+            expect(result.fatalReason).to.match(/isolated preview origins.*not set/i);
+        });
+
+        it('accepts a preview domain on a separate site', () => {
+            for (const domain of ['qaap-previews.example', 'https://*.qaap-previews.example/', 'p.qaap-usercontent.example:8443']) {
+                const result = evaluateQaapProductionAuthReadiness({ ...publicBeta, QAAP_PREVIEW_BASE_DOMAIN: domain });
+                expect(result.ready, domain).to.equal(true);
+            }
+        });
+
+        it('refuses a preview domain equal to, under, or above the IDE host', () => {
+            for (const domain of ['app.qaap.example', 'previews.app.qaap.example', 'qaap.example']) {
+                const result = evaluateQaapProductionAuthReadiness({ ...publicBeta, QAAP_PREVIEW_BASE_DOMAIN: domain });
+                expect(result.ready, domain).to.equal(false);
+                expect(result.fatalReason, domain).to.match(/overlaps/);
+            }
+        });
+
+        it('refuses a same-site sibling unless explicitly acknowledged', () => {
+            const sibling = { ...publicBeta, QAAP_PREVIEW_BASE_DOMAIN: 'previews.qaap.example' };
+            const refused = evaluateQaapProductionAuthReadiness(sibling);
+            expect(refused.ready).to.equal(false);
+            expect(refused.fatalReason).to.match(/same-site/);
+            expect(evaluateQaapProductionAuthReadiness({ ...sibling, QAAP_PREVIEW_ALLOW_SAME_SITE: '1' }).ready).to.equal(true);
+        });
+
+        it('refuses an invalid preview domain', () => {
+            const result = evaluateQaapProductionAuthReadiness({ ...publicBeta, QAAP_PREVIEW_BASE_DOMAIN: 'evil.example/path' });
+            expect(result.ready).to.equal(false);
+            expect(result.fatalReason).to.match(/not a valid domain/);
+        });
+
+        it('does not require a preview domain without invited tenants', () => {
+            expect(evaluateQaapProductionAuthReadiness({ ...publicBeta, QAAP_BETA_ALLOWED_LOGINS: '' }).ready).to.equal(true);
+        });
+    });
+
     it('rejects placeholder OAuth client ids', () => {
         const result = evaluateQaapProductionAuthReadiness({
             NODE_ENV: 'production',

@@ -80,6 +80,17 @@ per-user workspaces. Understand the isolation model before exposing it publicly:
     containers receive only a short-lived tenant-bound HMAC assertion plus the
     user's GitHub token—not the shared session store, Docker socket, OAuth
     client secret or host keystore.
+  - Serve previews from an **isolated site** with `QAAP_PREVIEW_BASE_DOMAIN`
+    (wildcard DNS/TLS for `*.<domain>` to this server). Without it, previewed
+    apps run under the IDE origin (`/qaap-preview/<id>/…`) where their JavaScript
+    can call the Qaap API with the user's session cookie. The domain must be a
+    different registrable domain than `QAAP_OAUTH_PUBLIC_URL`: a sibling
+    subdomain is same-site, so the `SameSite=Lax` session cookie is still sent and
+    the preview can set cookies on the shared parent. The launch gate refuses to
+    accept `QAAP_BETA_ALLOWED_LOGINS` otherwise (`QAAP_PREVIEW_ALLOW_SAME_SITE=1`
+    only overrides the heuristic for multi-label public suffixes such as `co.uk`).
+    Independently of the domain, the preview proxy never forwards Qaap cookies or
+    `x-qaap-*` headers to the dev server and drops `Set-Cookie` for Qaap cookie names.
   - The frontend-facing `EnvVariablesServer` filters secret-like variables and
     Docker control-plane settings in hosted mode; new sensitive environment
     variables must retain the same deny-list coverage.

@@ -86,12 +86,16 @@ BETA_ALLOWED_LOGINS="$(dexec 'printf %s "${QAAP_BETA_ALLOWED_LOGINS:-}"')"
 BACKEND_ISOLATION_MODE="$(dexec 'node -e "const m=require(\"/app/packages/qaap-adapters/lib/common/qaap-backend-isolation.js\"); process.stdout.write(m.QAAP_BACKEND_ISOLATION_MODE)"')"
 BACKEND_PER_TENANT="$(dexec 'printf %s "${QAAP_BACKEND_PER_TENANT:-}"')"
 BACKEND_SECRET_LENGTH="$(dexec 'printf %s "${#QAAP_TENANT_BACKEND_MASTER_SECRET}"')"
+PREVIEW_BASE_DOMAIN="$(dexec 'printf %s "${QAAP_PREVIEW_BASE_DOMAIN:-}"')"
 if [[ -n "${BETA_ALLOWED_LOGINS//[[:space:],]/}" && "$BACKEND_ISOLATION_MODE" != "per-tenant" ]]; then
     bad "public beta is configured but the compiled backend isolation mode is '$BACKEND_ISOLATION_MODE'; backend-per-tenant is required"
 elif [[ -n "${BETA_ALLOWED_LOGINS//[[:space:],]/}" && ! "$BACKEND_PER_TENANT" =~ ^(1|true)$ ]]; then
     bad "public beta is configured but QAAP_BACKEND_PER_TENANT='$BACKEND_PER_TENANT'"
 elif [[ -n "${BETA_ALLOWED_LOGINS//[[:space:],]/}" && "$BACKEND_SECRET_LENGTH" -lt 32 ]]; then
     bad "public beta requires QAAP_TENANT_BACKEND_MASTER_SECRET with at least 32 characters"
+elif [[ -n "${BETA_ALLOWED_LOGINS//[[:space:],]/}" && -z "${PREVIEW_BASE_DOMAIN//[[:space:]]/}" ]]; then
+    # The backend readiness gate also validates that the domain is a separate site.
+    bad "public beta requires QAAP_PREVIEW_BASE_DOMAIN (isolated preview origins; see SECURITY.md)"
 else
     ok "compiled backend isolation mode is '$BACKEND_ISOLATION_MODE'"
 fi

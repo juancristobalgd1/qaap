@@ -54,6 +54,11 @@ services:
       QAAP_SKIP_AUTH: ${QAAP_SKIP_AUTH:-false}
       # Production denies admission until actual invited GitHub logins are configured.
       QAAP_BETA_ALLOWED_LOGINS: ${QAAP_BETA_ALLOWED_LOGINS:-}
+      # Isolated preview origins (*.<domain> must reach this server). Required with invited
+      # tenants: the launch gate refuses to start without it. Must be a different site than
+      # QAAP_OAUTH_PUBLIC_URL (see SECURITY.md).
+      QAAP_PREVIEW_BASE_DOMAIN: ${QAAP_PREVIEW_BASE_DOMAIN:-}
+      QAAP_PREVIEW_ALLOW_SAME_SITE: ${QAAP_PREVIEW_ALLOW_SAME_SITE:-0}
       # Complete backend-per-tenant mode. Public beta refuses to start unless this is enabled
       # and the master secret is at least 32 characters; the secret is only used to derive the
       # loopback proxy assertion for each tenant backend.

@@ -37,6 +37,7 @@ CONTAINER="$(docker run --detach --init --memory=4g --cpus=2 \
     --env QAAP_GITHUB_CLIENT_ID=qaap-image-smoke \
     --env QAAP_GITHUB_CLIENT_SECRET=not-a-real-secret \
     --env QAAP_OAUTH_PUBLIC_URL=http://127.0.0.1:4873 \
+    --env QAAP_PREVIEW_BASE_DOMAIN=qaap-smoke-previews.test \
     --env QAAP_AGENT_CLI_UPDATE_CHECK=0 --env QAAP_IMAGE_SMOKE=1 \
     "$IMAGE")"
 [[ "$CONTAINER" =~ ^[0-9a-f]{64}$ ]] || { echo 'Invalid container id' >&2; exit 1; }

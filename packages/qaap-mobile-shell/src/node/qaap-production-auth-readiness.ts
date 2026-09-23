@@ -49,6 +49,70 @@ export function isQaapOauthConfigured(env: NodeJS.ProcessEnv = process.env): boo
     );
 }
 
+/**
+ * Normalizes `QAAP_PREVIEW_BASE_DOMAIN` (`https://*.previews.example/` → `previews.example`).
+ * Returns `undefined` for an empty or syntactically invalid value.
+ */
+export function normalizeQaapPreviewBaseDomain(raw: string | undefined): string | undefined {
+    const value = raw?.trim().toLowerCase()
+        .replace(/^https?:\/\//, '')
+        .replace(/^\*\./, '')
+        .replace(/\/+$/, '');
+    return value && /^[a-z0-9.-]+(?::\d+)?$/.test(value) ? value : undefined;
+}
+
+function hostnameWithoutPort(host: string): string {
+    return host.replace(/:\d+$/, '');
+}
+
+function isSameOrSubdomain(host: string, parent: string): boolean {
+    return host === parent || host.endsWith(`.${parent}`);
+}
+
+/** Last two DNS labels. A heuristic for the registrable domain (no Public Suffix List available). */
+function approximateSite(host: string): string {
+    return host.split('.').filter(Boolean).slice(-2).join('.');
+}
+
+/**
+ * Why preview isolation is not ready for untrusted tenant code, or `undefined` when it is.
+ *
+ * Without an isolated preview domain, previewed apps are served under the Qaap origin
+ * (`/qaap-preview/<id>/…`): their JavaScript runs same-origin with the IDE and every
+ * `fetch('/qaap/api/…')` carries the user's `qaap_sid` session cookie. Previews must therefore
+ * live on a different *site*: a sibling subdomain of the IDE host is same-site, so the
+ * `SameSite=Lax` session cookie is still attached to its requests and it can toss cookies for the
+ * shared parent domain.
+ */
+export function qaapPreviewIsolationProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    const rawBaseDomain = env.QAAP_PREVIEW_BASE_DOMAIN?.trim();
+    if (!rawBaseDomain) {
+        return 'QAAP_PREVIEW_BASE_DOMAIN is not set, so previews would run on the Qaap origin.';
+    }
+    const baseDomain = normalizeQaapPreviewBaseDomain(rawBaseDomain);
+    if (!baseDomain) {
+        return `QAAP_PREVIEW_BASE_DOMAIN "${rawBaseDomain}" is not a valid domain.`;
+    }
+    const publicUrl = env.QAAP_OAUTH_PUBLIC_URL?.trim();
+    let publicHost: string;
+    try {
+        publicHost = new URL(publicUrl ?? '').hostname.toLowerCase();
+    } catch {
+        return 'QAAP_OAUTH_PUBLIC_URL must be a valid URL for isolated previews to be enabled.';
+    }
+    const previewHost = hostnameWithoutPort(baseDomain);
+    if (isSameOrSubdomain(previewHost, publicHost) || isSameOrSubdomain(publicHost, previewHost)) {
+        return `QAAP_PREVIEW_BASE_DOMAIN "${baseDomain}" overlaps the Qaap host "${publicHost}"; `
+            + 'preview subdomains would share its cookies.';
+    }
+    if (approximateSite(previewHost) === approximateSite(publicHost) && !isTruthyEnv(env.QAAP_PREVIEW_ALLOW_SAME_SITE)) {
+        return `QAAP_PREVIEW_BASE_DOMAIN "${baseDomain}" is same-site with the Qaap host "${publicHost}"; `
+            + 'use a separate registrable domain (e.g. qaap-previews.example). If the shared suffix is a '
+            + 'public suffix (e.g. co.uk), set QAAP_PREVIEW_ALLOW_SAME_SITE=1.';
+    }
+    return undefined;
+}
+
 export function evaluateQaapProductionAuthReadiness(
     env: NodeJS.ProcessEnv = process.env,
 ): QaapProductionAuthReadiness {
@@ -73,6 +137,22 @@ export function evaluateQaapProductionAuthReadiness(
                 + 'Set QAAP_BACKEND_PER_TENANT=1 and a 32-character QAAP_TENANT_BACKEND_MASTER_SECRET '
                 + 'so each authenticated session is routed to its own hardened Theia container. '
                 + 'See MULTI_TENANCY_AUDIT.md.',
+        };
+    }
+    const previewIsolationProblem = isQaapPublicMultiTenantRuntime(env) ? qaapPreviewIsolationProblem(env) : undefined;
+    if (previewIsolationProblem) {
+        return {
+            productionRuntime,
+            skipAuth,
+            oauthConfigured,
+            agentUidPerUser,
+            backendIsolationMode: QAAP_BACKEND_ISOLATION_MODE,
+            backendIsolationReady,
+            ready: false,
+            fatalReason: 'Refusing to serve third-party tenants without isolated preview origins. '
+                + `${previewIsolationProblem} `
+                + 'Point wildcard DNS/TLS for *.QAAP_PREVIEW_BASE_DOMAIN at this server so untrusted '
+                + 'preview code cannot use the IDE session. See SECURITY.md.',
         };
     }
     if (productionRuntime && !skipAuth && !oauthConfigured) {
