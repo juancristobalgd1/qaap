@@ -1,57 +1,29 @@
-// @ts-nocheck
 // Extracted from qaap-dev-preview-endpoint.ts
 
-import { inject, injectable } from '@theia/core/shared/inversify';
-import { Application, NextFunction, Request, Response } from '@theia/core/shared/express';
-import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
+import type { Request, Response } from '@theia/core/shared/express';
 import * as http from 'http';
-import * as net from 'net';
-import * as fs from 'fs';
-import * as path from 'path';
 import { timingSafeEqual } from 'crypto';
-import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
-import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
+import { isQaapPreviewId } from '../common/qaap-preview-identity';
+import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
+import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
+import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
+import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
+import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import {
-    QAAP_DEV_PREVIEW_CLAIM_PATH,
-    QAAP_DEV_PREVIEW_CURRENT_PATH,
-    QAAP_DEV_PREVIEW_RELEASE_PATH,
     QAAP_DEV_PREVIEW_PREFIX,
-    QAAP_DEV_PREVIEW_PROBE_PATH,
     QAAP_IDENTITY_PREVIEW_PREFIX,
-    QAAP_IDENTITY_PREVIEW_PROBE_PATH,
     buildDevPreviewWaitingHtml,
-    buildQaapDevPreviewOpenUrl,
     buildQaapIdentityPreviewUrl,
     injectQaapPreviewViteEnvBootstrap,
     injectQaapPreviewDiagnostics,
     injectQaapPreviewHistoryBase,
     isAllowedDevPreviewPort,
-    parseQaapDevPreviewPort,
-    parseQaapIdentityPreviewRequestPath,
-    parseQaapDevPreviewRequestPath,
-    type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
-import {
-    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
-    isQaapPreviewIdentity,
-    isQaapPreviewId,
-    isQaapProcessPreviewClaimIdentity,
-    isQaapProcessPreviewIdentity,
-    normalizeQaapPreviewConversationId,
-    qaapPreviewProjectIdMatches,
-    resolveQaapPreviewIdentity,
-    type QaapPreviewIdentity,
-} from '../common/qaap-preview-identity';
-import { normalizeQaapPublicUrl, resolveQaapPublicOrigin } from './qaap-github-oauth-config';
-import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
-import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
-import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness';
-import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
-import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { QAAP_PREVIEW_ACCESS_QUERY } from './qaap-dev-preview-endpoint';
-import { TEXT_RESPONSE_PATTERN,LOCAL_TARGET_HOSTNAMES,PROBE_TIMEOUT_MS,QAAP_PREVIEW_ACCESS_COOKIE } from './qaap-dev-preview-endpoint';
+import { TEXT_RESPONSE_PATTERN, LOCAL_TARGET_HOSTNAMES, PROBE_TIMEOUT_MS, QAAP_PREVIEW_ACCESS_COOKIE } from './qaap-dev-preview-endpoint';
+import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 
-export async function forwardHttpExtracted(ctx: any, incoming: Request,
+export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, incoming: Request,
         outgoing: Response,
         targetPort: number,
         targetPath: string,
@@ -153,7 +125,7 @@ export function rewriteNextPreviewDocument(body: string, publicPrefix: string): 
     return body.replace(/(__webpack_require__\.p\s*=\s*["'`])\/_next\//g, `$1${prefixPath}/_next/`);
 }
 
-export function shouldRewriteProxyBodyExtracted(ctx: any, proxyRes: http.IncomingMessage): boolean {
+export function shouldRewriteProxyBodyExtracted(ctx: QaapDevPreviewEndpointContext, proxyRes: http.IncomingMessage): boolean {
         const encoding = proxyRes.headers['content-encoding'];
         if (encoding && encoding !== 'identity') {
             return false;
@@ -162,7 +134,7 @@ export function shouldRewriteProxyBodyExtracted(ctx: any, proxyRes: http.Incomin
         return typeof contentType === 'string' && TEXT_RESPONSE_PATTERN.test(contentType);
 }
 
-export function rewriteDevPreviewLocationExtracted(ctx: any, location: string,
+export function rewriteDevPreviewLocationExtracted(ctx: QaapDevPreviewEndpointContext, location: string,
         targetPort: number,
         publicPrefix: string = `${QAAP_DEV_PREVIEW_PREFIX}/${targetPort}`,): string {
         if (location.startsWith(`${QAAP_DEV_PREVIEW_PREFIX}/`) || location.startsWith(`${QAAP_IDENTITY_PREVIEW_PREFIX}/`)) {
@@ -183,7 +155,7 @@ export function rewriteDevPreviewLocationExtracted(ctx: any, location: string,
         return location;
 }
 
-export function rewriteDevPreviewBodyExtracted(ctx: any, body: string,
+export function rewriteDevPreviewBodyExtracted(ctx: QaapDevPreviewEndpointContext, body: string,
         targetPort: number,
         publicPrefix: string = `${QAAP_DEV_PREVIEW_PREFIX}/${targetPort}`,): string {
         const prefix = publicPrefix;
@@ -215,7 +187,7 @@ export function rewriteDevPreviewBodyExtracted(ctx: any, body: string,
         return ctx.rewriteViteHmrClient(rewritten, prefix);
 }
 
-export function rewriteViteHmrClientExtracted(ctx: any, body: string, publicPrefix: string): string {
+export function rewriteViteHmrClientExtracted(ctx: QaapDevPreviewEndpointContext, body: string, publicPrefix: string): string {
         if (!publicPrefix
             || !body.includes('[vite] connecting')
             || !body.includes('vite-hmr')
@@ -229,8 +201,11 @@ export function rewriteViteHmrClientExtracted(ctx: any, body: string, publicPref
             .replace(/^const base = .*;$/m, `const base = ${JSON.stringify(publicBase)};`);
 }
 
-export function rewritePreviewCspExtracted(ctx: any, raw: string | string[] | undefined, parentOrigin: string): string {
-        const source = Array.isArray(raw) ? raw.join('; ') : raw ?? '';
+export function rewritePreviewCspExtracted(ctx: QaapDevPreviewEndpointContext, raw: string | number | string[] | undefined, parentOrigin: string): string {
+        // `http.OutgoingHttpHeaders` values are typed as `string | number | string[]`, but a CSP
+        // header is never legitimately a bare number; normalize defensively instead of calling
+        // `.split` on a number (an @ts-nocheck-era bug that would throw at runtime).
+        const source = Array.isArray(raw) ? raw.join('; ') : typeof raw === 'string' ? raw : '';
         const directives = source.split(';').map(item => item.trim()).filter(Boolean);
         let frameAncestorsSeen = false;
         let scriptSourceSeen = false;
@@ -258,7 +233,7 @@ export function rewritePreviewCspExtracted(ctx: any, raw: string | string[] | un
         return rewritten.join('; ');
 }
 
-export async function probeLocalDevServerExtracted(ctx: any, port: number): Promise<boolean> {
+export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointContext, port: number): Promise<boolean> {
         if (!isAllowedDevPreviewPort(port) || ctx.isIdeListenPort(port)) {
             return false;
         }
@@ -285,11 +260,11 @@ export async function probeLocalDevServerExtracted(ctx: any, port: number): Prom
         });
 }
 
-export function resolvePublicOriginExtracted(ctx: any, req: Request): string {
+export function resolvePublicOriginExtracted(ctx: QaapDevPreviewEndpointContext, req: Request): string {
         return resolveQaapPublicOrigin(req);
 }
 
-export function buildIdentityPreviewUrlExtracted(ctx: any, req: Request, record: Pick<QaapDevPreviewRecord, 'previewId' | 'accessToken'>): string {
+export function buildIdentityPreviewUrlExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, record: Pick<QaapDevPreviewRecord, 'previewId' | 'accessToken'>): string {
         const baseDomain = ctx.previewBaseDomain();
         if (!baseDomain) {
             return buildQaapIdentityPreviewUrl(ctx.resolvePublicOrigin(req), record.previewId);
@@ -300,7 +275,7 @@ export function buildIdentityPreviewUrlExtracted(ctx: any, req: Request, record:
         return url.toString();
 }
 
-export function previewBaseDomainExtracted(ctx: any): string | undefined {
+export function previewBaseDomainExtracted(ctx: QaapDevPreviewEndpointContext): string | undefined {
         // The main origin is also baked into the bridge loader and frame-ancestors policy. Refuse
         // isolated-host mode unless it is explicit; deriving it from the preview Host is unsafe.
         if (!process.env.QAAP_OAUTH_PUBLIC_URL?.trim()) {
@@ -309,7 +284,7 @@ export function previewBaseDomainExtracted(ctx: any): string | undefined {
         return normalizeQaapPreviewBaseDomain(process.env.QAAP_PREVIEW_BASE_DOMAIN);
 }
 
-export function previewIdFromHostExtracted(ctx: any, req: Request | http.IncomingMessage): string | undefined {
+export function previewIdFromHostExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage): string | undefined {
         const baseDomain = ctx.previewBaseDomain();
         if (!baseDomain) {
             return undefined;
@@ -334,7 +309,7 @@ export function previewIdFromHostExtracted(ctx: any, req: Request | http.Incomin
         return isQaapPreviewId(previewId) ? previewId : undefined;
 }
 
-export function authorizePreviewHostRequestExtracted(ctx: any, req: Request,
+export function authorizePreviewHostRequestExtracted(ctx: QaapDevPreviewEndpointContext, req: Request,
         res: Response,
         record: QaapDevPreviewRecord,): 'allowed' | 'redirected' | 'denied' {
         if (ctx.hasPreviewCapability(req, record)) {
@@ -353,7 +328,7 @@ export function authorizePreviewHostRequestExtracted(ctx: any, req: Request,
         return 'redirected';
 }
 
-export function hasPreviewCapabilityExtracted(ctx: any, req: Request | http.IncomingMessage, record: QaapDevPreviewRecord): boolean {
+export function hasPreviewCapabilityExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage, record: QaapDevPreviewRecord): boolean {
         const cookieHeader = ctx.firstHeaderValue(req.headers.cookie);
         if (!cookieHeader) {
             return false;
@@ -371,7 +346,7 @@ export function hasPreviewCapabilityExtracted(ctx: any, req: Request | http.Inco
         return false;
 }
 
-export function matchesPreviewTokenExtracted(ctx: any, candidate: string | null | undefined, expected: string): boolean {
+export function matchesPreviewTokenExtracted(ctx: QaapDevPreviewEndpointContext, candidate: string | null | undefined, expected: string): boolean {
         if (!candidate) {
             return false;
         }
@@ -380,7 +355,7 @@ export function matchesPreviewTokenExtracted(ctx: any, candidate: string | null 
         return left.length === right.length && timingSafeEqual(left, right);
 }
 
-export function firstHeaderValueExtracted(ctx: any, value: string | string[] | undefined): string | undefined {
+export function firstHeaderValueExtracted(ctx: QaapDevPreviewEndpointContext, value: string | string[] | undefined): string | undefined {
         if (Array.isArray(value)) {
             return value[0]?.split(',')[0]?.trim();
         }

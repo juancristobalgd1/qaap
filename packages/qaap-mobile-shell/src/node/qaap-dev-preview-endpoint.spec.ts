@@ -485,7 +485,7 @@ describe('QaapDevPreviewEndpoint', () => {
                 await this.reapStoppedPreviews();
             }
 
-            protected override probeLocalDevServer(port: number): Promise<boolean> {
+            override probeLocalDevServer(port: number): Promise<boolean> {
                 this.probedPorts.push(port);
                 return Promise.resolve(this.listeningPorts.size > 0 ? this.listeningPorts.has(port) : this.listening);
             }
@@ -1087,7 +1087,7 @@ describe('QaapDevPreviewEndpoint', () => {
                 return this.handleCurrentProjectPreview(req as never, res as never);
             }
 
-            protected override probeLocalDevServer(): Promise<boolean> {
+            override probeLocalDevServer(): Promise<boolean> {
                 return Promise.resolve(this.listening);
             }
 

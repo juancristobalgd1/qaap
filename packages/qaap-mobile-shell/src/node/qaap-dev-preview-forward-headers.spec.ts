@@ -88,7 +88,7 @@ describe('qaap-dev-preview-forward-headers', () => {
 
     describe('dev preview HTTP proxy (end to end)', () => {
         class LoopbackPreviewEndpoint extends QaapDevPreviewEndpoint {
-            protected override resolveTargetHost(): Promise<string | undefined> {
+            override resolveTargetHost(): Promise<string | undefined> {
                 return Promise.resolve('127.0.0.1');
             }
             forward(req: express.Request, res: express.Response, port: number): Promise<void> {

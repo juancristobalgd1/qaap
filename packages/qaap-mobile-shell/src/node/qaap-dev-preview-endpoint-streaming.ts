@@ -1,55 +1,29 @@
-// @ts-nocheck
 // Extracted from qaap-dev-preview-endpoint.ts
 
-import { inject, injectable } from '@theia/core/shared/inversify';
-import { Application, NextFunction, Request, Response } from '@theia/core/shared/express';
-import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
+import type { Request, Response } from '@theia/core/shared/express';
 import * as http from 'http';
 import * as net from 'net';
-import * as fs from 'fs';
-import * as path from 'path';
-import { timingSafeEqual } from 'crypto';
-import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
-import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import {
-    QAAP_DEV_PREVIEW_CLAIM_PATH,
-    QAAP_DEV_PREVIEW_CURRENT_PATH,
-    QAAP_DEV_PREVIEW_RELEASE_PATH,
-    QAAP_DEV_PREVIEW_PREFIX,
-    QAAP_DEV_PREVIEW_PROBE_PATH,
     QAAP_IDENTITY_PREVIEW_PREFIX,
-    QAAP_IDENTITY_PREVIEW_PROBE_PATH,
-    buildDevPreviewWaitingHtml,
     buildQaapDevPreviewOpenUrl,
-    buildQaapIdentityPreviewUrl,
-    injectQaapPreviewViteEnvBootstrap,
-    injectQaapPreviewDiagnostics,
-    isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
     parseQaapIdentityPreviewRequestPath,
     parseQaapDevPreviewRequestPath,
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 import {
-    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
-    isQaapPreviewIdentity,
     isQaapPreviewId,
-    isQaapProcessPreviewClaimIdentity,
     isQaapProcessPreviewIdentity,
     normalizeQaapPreviewConversationId,
     qaapPreviewProjectIdMatches,
-    resolveQaapPreviewIdentity,
-    type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import { normalizeQaapPublicUrl } from './qaap-github-oauth-config';
-import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
+import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
-import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
-import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint';
 import { PREVIEW_REAPER_INTERVAL_MS } from './qaap-dev-preview-endpoint';
+import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 
-export function isPreviewProcessDeadExtracted(ctx: any, record: { readonly osProcessId?: number }): boolean {
+export function isPreviewProcessDeadExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number }): boolean {
         if (record.osProcessId === undefined) {
             return false;
         }
@@ -61,7 +35,7 @@ export function isPreviewProcessDeadExtracted(ctx: any, record: { readonly osPro
         }
 }
 
-export function nextAllocationCandidateExtracted(ctx: any, preferredPort: number, offset: number): number {
+export function nextAllocationCandidateExtracted(ctx: QaapDevPreviewEndpointContext, preferredPort: number, offset: number): number {
         const candidate = preferredPort + offset;
         if (candidate <= 65535) {
             return candidate;
@@ -69,7 +43,7 @@ export function nextAllocationCandidateExtracted(ctx: any, preferredPort: number
         return 1024 + ((candidate - 1024) % (65535 - 1024 + 1));
 }
 
-export function handleReleaseExtracted(ctx: any, req: Request, res: Response): void {
+export function handleReleaseExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): void {
         const authResult = ctx.auth.authenticate(req);
         if (authResult.kind === 'unauthorized') {
             res.sendStatus(401);
@@ -94,8 +68,8 @@ export function handleReleaseExtracted(ctx: any, req: Request, res: Response): v
         res.sendStatus(204);
 }
 
-export function mayProxyPortExtracted(ctx: any, req: Request | http.IncomingMessage, port: number): boolean {
-        const authResult = ctx.auth.authenticate(req as unknown as Request);
+export function mayProxyPortExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage, port: number): boolean {
+        const authResult = ctx.auth.authenticate(req);
         if (authResult.kind === 'skip') {
             return true;
         }
@@ -113,8 +87,8 @@ export function mayProxyPortExtracted(ctx: any, req: Request | http.IncomingMess
         return true;
 }
 
-export function previewForRequestExtracted(ctx: any, req: Request | http.IncomingMessage, previewId: string): QaapDevPreviewRecord | undefined {
-        const authResult = ctx.auth.authenticate(req as unknown as Request);
+export function previewForRequestExtracted(ctx: QaapDevPreviewEndpointContext, req: Request | http.IncomingMessage, previewId: string): QaapDevPreviewRecord | undefined {
+        const authResult = ctx.auth.authenticate(req);
         if (authResult.kind === 'unauthorized') {
             return undefined;
         }
@@ -138,7 +112,7 @@ export function previewForRequestExtracted(ctx: any, req: Request | http.Incomin
         return record;
 }
 
-export function onStartExtracted(ctx: any, server: http.Server): void {
+export function onStartExtracted(ctx: QaapDevPreviewEndpointContext, server: http.Server): void {
         server.on('upgrade', (req, socket, head) => {
             ctx.handleWebSocketUpgrade(req, socket as net.Socket, head);
         });
@@ -146,7 +120,7 @@ export function onStartExtracted(ctx: any, server: http.Server): void {
         reaper.unref?.();
 }
 
-export async function reapStoppedPreviewsExtracted(ctx: any): Promise<void> {
+export async function reapStoppedPreviewsExtracted(ctx: QaapDevPreviewEndpointContext): Promise<void> {
         if (ctx.reaperRunning) {
             return;
         }
@@ -175,7 +149,7 @@ export async function reapStoppedPreviewsExtracted(ctx: any): Promise<void> {
         }
 }
 
-export async function handleProbeExtracted(ctx: any, req: Request, res: Response): Promise<void> {
+export async function handleProbeExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): Promise<void> {
         const port = parseQaapDevPreviewPort(req.params.port);
         const origin = ctx.resolvePublicOrigin(req);
         if (port === undefined) {
@@ -218,7 +192,7 @@ export async function handleProbeExtracted(ctx: any, req: Request, res: Response
         res.json(body);
 }
 
-export async function handleCurrentProjectPreviewExtracted(ctx: any, req: Request, res: Response): Promise<void> {
+export async function handleCurrentProjectPreviewExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): Promise<void> {
         const raw = req.query.projectId;
         const projectCandidates = (Array.isArray(raw) ? raw : [raw])
             .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
@@ -294,7 +268,7 @@ export async function handleCurrentProjectPreviewExtracted(ctx: any, req: Reques
         } satisfies QaapDevPreviewProbeResponse);
 }
 
-export async function handleIdentityProbeExtracted(ctx: any, req: Request, res: Response): Promise<void> {
+export async function handleIdentityProbeExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): Promise<void> {
         const previewId = req.params.previewId;
         const record = ctx.previewForRequest(req, previewId);
         if (!record) {
@@ -320,7 +294,7 @@ export async function handleIdentityProbeExtracted(ctx: any, req: Request, res: 
         } satisfies QaapDevPreviewProbeResponse);
 }
 
-export function handleProxyExtracted(ctx: any, req: Request, res: Response): void {
+export function handleProxyExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): void {
         const port = parseQaapDevPreviewPort(req.params.port);
         if (port === undefined) {
             res.status(400).send('Invalid dev preview port');
@@ -338,7 +312,7 @@ export function handleProxyExtracted(ctx: any, req: Request, res: Response): voi
         void ctx.forwardHttp(req, res, port, targetPath);
 }
 
-export function handleIdentityProxyExtracted(ctx: any, req: Request, res: Response): void {
+export function handleIdentityProxyExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): void {
         const previewId = req.params.previewId;
         const record = ctx.previewForRequest(req, previewId);
         if (!record) {
@@ -353,7 +327,7 @@ export function handleIdentityProxyExtracted(ctx: any, req: Request, res: Respon
         void ctx.forwardHttp(req, res, record.port, targetPath, `${QAAP_IDENTITY_PREVIEW_PREFIX}/${previewId}`);
 }
 
-export function handleWebSocketUpgradeExtracted(ctx: any, req: http.IncomingMessage,
+export function handleWebSocketUpgradeExtracted(ctx: QaapDevPreviewEndpointContext, req: http.IncomingMessage,
         socket: net.Socket,
         head: Buffer,): void {
         const pathname = (req.url ?? '').split('?')[0];
@@ -377,7 +351,7 @@ export function handleWebSocketUpgradeExtracted(ctx: any, req: http.IncomingMess
         }
         // Reject anonymous WebSocket upgrades before resolving a tenant record. Previously an
         // identity-scoped request without access returned early with an open/hanging socket.
-        if (ctx.auth.authenticate(req as unknown as Request).kind === 'unauthorized') {
+        if (ctx.auth.authenticate(req).kind === 'unauthorized') {
             socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
             socket.destroy();
             return;
@@ -405,7 +379,7 @@ export function handleWebSocketUpgradeExtracted(ctx: any, req: http.IncomingMess
         void ctx.proxyWebSocket(req, socket, head, targetPort, path);
 }
 
-export async function proxyWebSocketExtracted(ctx: any, req: http.IncomingMessage,
+export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext, req: http.IncomingMessage,
         socket: net.Socket,
         head: Buffer,
         port: number,

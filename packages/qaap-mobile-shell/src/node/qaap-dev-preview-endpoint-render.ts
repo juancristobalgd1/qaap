@@ -1,16 +1,9 @@
-// @ts-nocheck
 // Extracted from qaap-dev-preview-endpoint.ts
 
-import { inject, injectable } from '@theia/core/shared/inversify';
-import { Application, NextFunction, Request, Response } from '@theia/core/shared/express';
-import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
-import * as http from 'http';
-import * as net from 'net';
+import type { Application, NextFunction, Request, Response } from '@theia/core/shared/express';
+import { FileUri } from '@theia/core/lib/node';
 import * as fs from 'fs';
 import * as path from 'path';
-import { timingSafeEqual } from 'crypto';
-import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
-import { QaapDevPreviewPortRegistry, type QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import {
     QAAP_DEV_PREVIEW_CLAIM_PATH,
     QAAP_DEV_PREVIEW_CURRENT_PATH,
@@ -19,36 +12,24 @@ import {
     QAAP_DEV_PREVIEW_PROBE_PATH,
     QAAP_IDENTITY_PREVIEW_PREFIX,
     QAAP_IDENTITY_PREVIEW_PROBE_PATH,
-    buildDevPreviewWaitingHtml,
-    buildQaapDevPreviewOpenUrl,
-    buildQaapIdentityPreviewUrl,
-    injectQaapPreviewViteEnvBootstrap,
-    injectQaapPreviewDiagnostics,
-    isAllowedDevPreviewPort,
     parseQaapDevPreviewPort,
     parseQaapIdentityPreviewRequestPath,
-    parseQaapDevPreviewRequestPath,
-    type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 import {
     QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
     isQaapPreviewIdentity,
-    isQaapPreviewId,
     isQaapProcessPreviewClaimIdentity,
     isQaapProcessPreviewIdentity,
     normalizeQaapPreviewConversationId,
-    qaapPreviewProjectIdMatches,
     resolveQaapPreviewIdentity,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import { normalizeQaapPublicUrl } from './qaap-github-oauth-config';
-import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
-import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { PREVIEW_RESERVATION_START_GRACE_MS, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
+import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 
-export function configureExtracted(ctx: any, app: Application): void {
+export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Application): void {
     // Optional isolated-origin mode. DNS/TLS should route `*.QAAP_PREVIEW_BASE_DOMAIN` here;
     // access uses a host-only preview capability, never the IDE's broad session cookie.
     app.use((req: Request, res: Response, next: NextFunction) => {
@@ -178,7 +159,7 @@ export function configureExtracted(ctx: any, app: Application): void {
     });
 }
 
-export function requireHttpAuthExtracted(ctx: any, req: Request, res: Response): boolean {
+export function requireHttpAuthExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): boolean {
     if (ctx.auth.authenticate(req).kind === 'unauthorized') {
         res.status(401).type('text/plain').send('Not signed in');
         return false;
@@ -186,7 +167,7 @@ export function requireHttpAuthExtracted(ctx: any, req: Request, res: Response):
     return true;
 }
 
-export async function handleClaimExtracted(ctx: any, req: Request, res: Response): Promise<void> {
+export async function handleClaimExtracted(ctx: QaapDevPreviewEndpointContext, req: Request, res: Response): Promise<void> {
     const authResult = ctx.auth.authenticate(req);
     if (authResult.kind === 'unauthorized') {
         res.sendStatus(401);
@@ -266,7 +247,7 @@ export async function handleClaimExtracted(ctx: any, req: Request, res: Response
     res.sendStatus(204);
 }
 
-export async function handleProcessClaimExtracted(ctx: any, req: Request,
+export async function handleProcessClaimExtracted(ctx: QaapDevPreviewEndpointContext, req: Request,
     res: Response,
     owner: string,
     root: string,
@@ -434,7 +415,7 @@ export async function handleProcessClaimExtracted(ctx: any, req: Request,
     res.status(503).type('text/plain').send('No safe dev-preview port is currently available.');
 }
 
-export function supersedeConversationPreviewsExtracted(ctx: any, scope: {
+export function supersedeConversationPreviewsExtracted(ctx: QaapDevPreviewEndpointContext, scope: {
     readonly previewId: string;
     readonly workspaceId: string;
     readonly projectId: string;
@@ -466,7 +447,7 @@ export function supersedeConversationPreviewsExtracted(ctx: any, scope: {
     }
 }
 
-export function supersedeProjectPreviewsExtracted(ctx: any, project: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string },
+export function supersedeProjectPreviewsExtracted(ctx: QaapDevPreviewEndpointContext, project: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string },
     owner: string): void {
     ctx.supersedeConversationPreviews({
         ...project,
@@ -474,7 +455,7 @@ export function supersedeProjectPreviewsExtracted(ctx: any, project: { readonly 
     }, owner);
 }
 
-export function terminatePreviewProcessExtracted(ctx: any, record: { readonly osProcessId?: number; readonly port?: number }): void {
+export function terminatePreviewProcessExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number; readonly port?: number }): void {
     if (record.osProcessId !== undefined) {
         try {
             process.kill(record.osProcessId, 'SIGTERM');

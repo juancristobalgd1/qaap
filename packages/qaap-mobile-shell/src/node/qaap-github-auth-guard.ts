@@ -70,7 +70,11 @@ export class QaapGithubAuthGuard {
 
     protected readonly reposRoot = resolveQaapReposRoot();
 
-    authenticate(req: Request): QaapGithubAuthContext {
+    // Only `req.headers` is ever read on this path (see `authenticateTenantBackend` and
+    // `resolveGithubSession` → `resolveSessionId` → `readSessionIdFromCookie`), so a plain
+    // `http.IncomingMessage` (no Express-specific members) is accepted here too — the dev-preview
+    // WebSocket-upgrade and legacy-port paths authenticate raw Node requests, not Express ones.
+    authenticate(req: Pick<Request, 'headers'>): QaapGithubAuthContext {
         const tenantBackend = this.authenticateTenantBackend(req);
         if (tenantBackend) {
             return tenantBackend;
@@ -95,7 +99,7 @@ export class QaapGithubAuthGuard {
      * shared session store or the browser's authority to choose an owner; the proxy supplies a
      * short-lived HMAC assertion whose tenant is fixed by the container environment.
      */
-    protected authenticateTenantBackend(req: Request): Extract<QaapGithubAuthContext, { kind: 'authenticated' }> | undefined {
+    protected authenticateTenantBackend(req: Pick<Request, 'headers'>): Extract<QaapGithubAuthContext, { kind: 'authenticated' }> | undefined {
         if (!/^(1|true)$/i.test(process.env[QAAP_TENANT_BACKEND_MODE_ENV]?.trim() ?? '')) {
             return undefined;
         }
@@ -383,7 +387,7 @@ export class QaapGithubAuthGuard {
     }
 
     /** Returns a persisted GitHub OAuth session, ignoring stale cookie/header ids. */
-    resolveGithubSession(req: Request): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
+    resolveGithubSession(req: Pick<Request, 'headers'>): { stored: QaapGithubStoredSession; sessionId: string } | undefined {
         const sessionId = this.resolveSessionId(req);
         if (!sessionId) {
             return undefined;
@@ -392,7 +396,7 @@ export class QaapGithubAuthGuard {
         return stored ? { stored, sessionId } : undefined;
     }
 
-    resolveSessionId(req: Request): string | undefined {
+    resolveSessionId(req: Pick<Request, 'headers'>): string | undefined {
         // Cookie-only: the legacy x-qaap-session-id header fallback was removed (July 2026)
         // so a session id exfiltrated from an old localStorage copy is no longer usable.
         const cookieId = this.readSessionIdFromCookie(req);
@@ -402,7 +406,7 @@ export class QaapGithubAuthGuard {
         return undefined;
     }
 
-    protected readSessionIdFromCookie(req: Request): string | undefined {
+    protected readSessionIdFromCookie(req: Pick<Request, 'headers'>): string | undefined {
         const cookieHeader = req.headers.cookie;
         if (!cookieHeader || typeof cookieHeader !== 'string') {
             return undefined;
