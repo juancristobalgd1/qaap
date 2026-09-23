@@ -1,39 +1,20 @@
-// @ts-nocheck
 // Extracted from qaap-job-runtime.ts
+import type { LegacyPersistedJobIndex, NormalizedJobRequest, PersistedJobIndex, QaapJobRuntimeContext } from './qaap-job-runtime-context';
 
-import { Emitter, Event, nls } from '@theia/core';
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { ChildProcess } from 'child_process';
-import { randomUUID } from 'crypto';
+import { nls } from '@theia/core';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import {
-    didQaapJobSucceed,
     isQaapJobFinished,
-    isQaapJobResourceClass,
-    QaapCreateJobGraphRequest,
-    QaapCreateJobGraphResult,
-    QaapCreateJobRequest,
-    QaapCreateJobResult,
     QaapJob,
-    QaapJobDetail,
-    QaapJobEvent,
-    QaapJobFunctionDescriptor,
-    QaapJobGraph,
-    QaapJobResourceClass,
     QaapJobRetryPolicy,
-    QaapJobState,
-    QaapJobWorkspaceAccess,
 } from '../common/qaap-job';
-import { QaapJobFunctionRegistry } from './qaap-job-function-registry';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { INDEX_MODE, JOB_PRUNE_START_DELAY_MS, MAX_RETRY_ATTEMPTS, STORE_MODE } from './qaap-job-runtime';
 import { QaapJobRequestError } from './qaap-job-runtime';
 
-export function buildChildEnvExtracted(ctx: any, job: QaapJob): NodeJS.ProcessEnv {
+export function buildChildEnvExtracted(ctx: QaapJobRuntimeContext, job: QaapJob): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = {};
         for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM', 'TMPDIR', 'TMP', 'TEMP']) {
             if (process.env[key] !== undefined) {
@@ -47,7 +28,7 @@ export function buildChildEnvExtracted(ctx: any, job: QaapJob): NodeJS.ProcessEn
         return ctx.tenantSpawn.resolveProcessEnv(job.cwd, env);
 }
 
-export async function resolveFunctionWorkspacePathExtracted(ctx: any, cwd: string, relativePath: string): Promise<string> {
+export async function resolveFunctionWorkspacePathExtracted(ctx: QaapJobRuntimeContext, cwd: string, relativePath: string): Promise<string> {
         const relative = typeof relativePath === 'string' ? relativePath.trim() : '';
         if (!relative || path.isAbsolute(relative)) {
             throw new QaapJobRequestError(nls.localize('qaap/jobs/functions/invalidWorkspacePath', 'Invalid function workspace path.'));
@@ -65,7 +46,7 @@ export async function resolveFunctionWorkspacePathExtracted(ctx: any, cwd: strin
         return realTarget;
 }
 
-export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void {
+export function restorePersistedIndexExtracted(ctx: QaapJobRuntimeContext, stored: unknown): void {
         const index = stored as Partial<PersistedJobIndex | LegacyPersistedJobIndex> | undefined;
         if ((index?.version !== 1 && index?.version !== 2) || !Array.isArray(index.jobs) || !index.requests || typeof index.requests !== 'object') {
             throw new Error('Invalid persisted job index.');
@@ -114,7 +95,7 @@ export function restorePersistedIndexExtracted(ctx: any, stored: unknown): void 
         }
 }
 
-export function persistExtracted(ctx: any): Promise<void> {
+export function persistExtracted(ctx: QaapJobRuntimeContext): Promise<void> {
         const requests: Record<string, NormalizedJobRequest> = {};
         const logs: Record<string, string> = {};
         const results: Record<string, unknown> = {};
@@ -147,7 +128,7 @@ export function persistExtracted(ctx: any): Promise<void> {
         return ctx.persistChain;
 }
 
-export function normalizeIdempotencyKeyExtracted(ctx: any, value: string | undefined): string | undefined {
+export function normalizeIdempotencyKeyExtracted(ctx: QaapJobRuntimeContext, value: string | undefined): string | undefined {
         const key = value?.trim() || undefined;
         if (key && (key.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(key))) {
             throw new QaapJobRequestError(nls.localize('qaap/jobs/invalidIdempotencyKey', 'Invalid idempotency key.'));
@@ -155,7 +136,7 @@ export function normalizeIdempotencyKeyExtracted(ctx: any, value: string | undef
         return key;
 }
 
-export function normalizeRetryPolicyExtracted(ctx: any, value: QaapJobRetryPolicy | undefined): Required<QaapJobRetryPolicy> | undefined {
+export function normalizeRetryPolicyExtracted(ctx: QaapJobRuntimeContext, value: QaapJobRetryPolicy | undefined): Required<QaapJobRetryPolicy> | undefined {
         if (value === undefined) {
             return undefined;
         }
@@ -180,7 +161,7 @@ export function normalizeRetryPolicyExtracted(ctx: any, value: QaapJobRetryPolic
         return { maxAttempts, initialBackoffMs, multiplier, maxBackoffMs };
 }
 
-export function assertJsonSizeExtracted(ctx: any, value: unknown, maxChars: number, label: string): void {
+export function assertJsonSizeExtracted(ctx: QaapJobRuntimeContext, value: unknown, maxChars: number, label: string): void {
         let serialized: string | undefined;
         try {
             serialized = JSON.stringify(value);
@@ -200,7 +181,7 @@ export function assertJsonSizeExtracted(ctx: any, value: unknown, maxChars: numb
         }
 }
 
-export function stableJsonExtracted(ctx: any, value: unknown): string {
+export function stableJsonExtracted(ctx: QaapJobRuntimeContext, value: unknown): string {
         const normalize = (candidate: unknown): unknown => {
             if (Array.isArray(candidate)) {
                 return candidate.map(normalize);
@@ -220,7 +201,7 @@ export function stableJsonExtracted(ctx: any, value: unknown): string {
         return JSON.stringify(normalize(value));
 }
 
-export function isDirectoryExtracted(ctx: any, candidate: string): boolean {
+export function isDirectoryExtracted(ctx: QaapJobRuntimeContext, candidate: string): boolean {
         try {
             return fs.statSync(candidate).isDirectory();
         } catch {
@@ -228,7 +209,7 @@ export function isDirectoryExtracted(ctx: any, candidate: string): boolean {
         }
 }
 
-export function envIntOrExtracted(ctx: any, name: string, fallback: number): number {
+export function envIntOrExtracted(ctx: QaapJobRuntimeContext, name: string, fallback: number): number {
         const raw = process.env[name]?.trim();
         if (raw === undefined || raw === '') {
             return fallback;
@@ -237,7 +218,7 @@ export function envIntOrExtracted(ctx: any, name: string, fallback: number): num
         return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export function scheduleRetentionPruneExtracted(ctx: any): void {
+export function scheduleRetentionPruneExtracted(ctx: QaapJobRuntimeContext): void {
         if (ctx.retentionDays() <= 0 && ctx.maxJobsPerUser() <= 0) {
             return;
         }
@@ -252,7 +233,7 @@ export function scheduleRetentionPruneExtracted(ctx: any): void {
         ctx.pruneStartTimer.unref?.();
 }
 
-export function clearRetentionPruneTimersExtracted(ctx: any): void {
+export function clearRetentionPruneTimersExtracted(ctx: QaapJobRuntimeContext): void {
         if (ctx.pruneStartTimer) {
             clearTimeout(ctx.pruneStartTimer);
             ctx.pruneStartTimer = undefined;
@@ -263,7 +244,7 @@ export function clearRetentionPruneTimersExtracted(ctx: any): void {
         }
 }
 
-export function collectProtectedJobIdsExtracted(ctx: any): Set<string> {
+export function collectProtectedJobIdsExtracted(ctx: QaapJobRuntimeContext): Set<string> {
         const protectedIds = new Set<string>();
         for (const job of ctx.jobs.values()) {
             if (!isQaapJobFinished(job.state)) {
@@ -276,7 +257,7 @@ export function collectProtectedJobIdsExtracted(ctx: any): Set<string> {
         return protectedIds;
 }
 
-export function removeJobRecordExtracted(ctx: any, id: string): void {
+export function removeJobRecordExtracted(ctx: QaapJobRuntimeContext, id: string): void {
         const job = ctx.jobs.get(id);
         ctx.jobs.delete(id);
         ctx.requests.delete(id);
@@ -287,7 +268,7 @@ export function removeJobRecordExtracted(ctx: any, id: string): void {
         }
 }
 
-export function removeGraphRecordExtracted(ctx: any, id: string): void {
+export function removeGraphRecordExtracted(ctx: QaapJobRuntimeContext, id: string): void {
         const persisted = ctx.graphs.get(id);
         ctx.graphs.delete(id);
         if (persisted?.graph.idempotencyKey) {

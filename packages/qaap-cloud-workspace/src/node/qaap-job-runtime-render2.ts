@@ -1,16 +1,11 @@
-// @ts-nocheck
 // Extracted from qaap-job-runtime.ts
+import type { NormalizedJobRequest, QaapJobRuntimeContext } from './qaap-job-runtime-context';
 
-import { Emitter, Event, nls } from '@theia/core';
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { ChildProcess } from 'child_process';
+import { nls } from '@theia/core';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import * as os from 'os';
 import * as path from 'path';
 import {
-    didQaapJobSucceed,
     isQaapJobFinished,
     isQaapJobResourceClass,
     QaapCreateJobGraphRequest,
@@ -18,23 +13,13 @@ import {
     QaapCreateJobRequest,
     QaapCreateJobResult,
     QaapJob,
-    QaapJobDetail,
-    QaapJobEvent,
-    QaapJobFunctionDescriptor,
     QaapJobGraph,
-    QaapJobResourceClass,
-    QaapJobRetryPolicy,
-    QaapJobState,
-    QaapJobWorkspaceAccess,
 } from '../common/qaap-job';
-import { QaapJobFunctionRegistry } from './qaap-job-function-registry';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
 import { DEFAULT_TIMEOUT_MS, MAX_FUNCTION_INPUT_CHARS, MAX_GRAPH_NODES, STORE_MODE } from './qaap-job-runtime';
 import { QaapJobConflictError } from './qaap-job-runtime';
 import { QaapJobRequestError } from './qaap-job-runtime';
 
-export function initExtracted(ctx: any): void {
+export function initExtracted(ctx: QaapJobRuntimeContext): void {
         let stateIsWritable = true;
         try {
             fs.mkdirSync(ctx.storeDirectory(), { recursive: true, mode: STORE_MODE });
@@ -56,7 +41,7 @@ export function initExtracted(ctx: any): void {
         ctx.scheduleRetentionPrune();
 }
 
-export function createExtracted(ctx: any, request: QaapCreateJobRequest, ownerLogin?: string): QaapCreateJobResult {
+export function createExtracted(ctx: QaapJobRuntimeContext, request: QaapCreateJobRequest, ownerLogin?: string): QaapCreateJobResult {
         if (ctx.stopping) {
             throw new QaapJobRequestError(nls.localize('qaap/jobs/stopping', 'The job runtime is stopping.'));
         }
@@ -87,7 +72,7 @@ export function createExtracted(ctx: any, request: QaapCreateJobRequest, ownerLo
         return { job: ctx.jobs.get(job.id) ?? job, created: true };
 }
 
-export function createGraphExtracted(ctx: any, request: QaapCreateJobGraphRequest, ownerLogin?: string): QaapCreateJobGraphResult {
+export function createGraphExtracted(ctx: QaapJobRuntimeContext, request: QaapCreateJobGraphRequest, ownerLogin?: string): QaapCreateJobGraphResult {
         if (ctx.stopping) {
             throw new QaapJobRequestError(nls.localize('qaap/jobs/stopping', 'The job runtime is stopping.'));
         }
@@ -180,7 +165,7 @@ export function createGraphExtracted(ctx: any, request: QaapCreateJobGraphReques
         return { graph, jobs: ctx.jobsForGraph(graph), created: true };
 }
 
-export function listGraphsExtracted(ctx: any, ownerLogin?: string): QaapJobGraph[] {
+export function listGraphsExtracted(ctx: QaapJobRuntimeContext, ownerLogin?: string): QaapJobGraph[] {
         const owner = ownerLogin?.trim() || undefined;
         return [...ctx.graphs.values()]
             .map(persisted => persisted.graph)
@@ -188,14 +173,14 @@ export function listGraphsExtracted(ctx: any, ownerLogin?: string): QaapJobGraph
             .sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function listExtracted(ctx: any, ownerLogin?: string): QaapJob[] {
+export function listExtracted(ctx: QaapJobRuntimeContext, ownerLogin?: string): QaapJob[] {
         const owner = ownerLogin?.trim() || undefined;
         return [...ctx.jobs.values()]
             .filter(job => job.ownerLogin === owner)
             .sort((left, right) => right.createdAt - left.createdAt);
 }
 
-export function cancelExtracted(ctx: any, id: string, ownerLogin?: string): QaapJob | undefined {
+export function cancelExtracted(ctx: QaapJobRuntimeContext, id: string, ownerLogin?: string): QaapJob | undefined {
         const job = ctx.jobs.get(id);
         if (job && ownerLogin !== undefined && job.ownerLogin !== ctx.normalizeOwner(ownerLogin)) {
             return undefined;
@@ -213,7 +198,7 @@ export function cancelExtracted(ctx: any, id: string, ownerLogin?: string): Qaap
         return cancelled;
 }
 
-export async function shutdownExtracted(ctx: any): Promise<void> {
+export async function shutdownExtracted(ctx: QaapJobRuntimeContext): Promise<void> {
         ctx.stopping = true;
         ctx.clearRetentionPruneTimers();
         for (const timer of ctx.retryTimers.values()) {
@@ -233,7 +218,7 @@ export async function shutdownExtracted(ctx: any): Promise<void> {
         await ctx.persist();
 }
 
-export function pruneRetainedJobsExtracted(ctx: any, nowMs = Date.now()): { prunedJobs: number; prunedGraphs: number } {
+export function pruneRetainedJobsExtracted(ctx: QaapJobRuntimeContext, nowMs = Date.now()): { prunedJobs: number; prunedGraphs: number } {
         const retentionDays = ctx.retentionDays();
         const maxPerUser = ctx.maxJobsPerUser();
         if (retentionDays <= 0 && maxPerUser <= 0) {
@@ -304,7 +289,7 @@ export function pruneRetainedJobsExtracted(ctx: any, nowMs = Date.now()): { prun
         return { prunedJobs: toDelete.size, prunedGraphs };
 }
 
-export function normalizeRequestExtracted(ctx: any, request: QaapCreateJobRequest): NormalizedJobRequest {
+export function normalizeRequestExtracted(ctx: QaapJobRuntimeContext, request: QaapCreateJobRequest): NormalizedJobRequest {
         const rawCwd = typeof request.cwd === 'string' ? request.cwd.trim() : '';
         const cwd = rawCwd ? path.resolve(rawCwd) : '';
         if (!cwd || !path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
@@ -397,7 +382,7 @@ export function normalizeRequestExtracted(ctx: any, request: QaapCreateJobReques
         };
 }
 
-export function assertDependenciesExtracted(ctx: any, dependencyIds: readonly string[], ownerLogin?: string): void {
+export function assertDependenciesExtracted(ctx: QaapJobRuntimeContext, dependencyIds: readonly string[], ownerLogin?: string): void {
         for (const dependencyId of dependencyIds) {
             const dependency = ctx.jobs.get(dependencyId);
             if (!dependency) {
@@ -416,7 +401,7 @@ export function assertDependenciesExtracted(ctx: any, dependencyIds: readonly st
         }
 }
 
-export function buildJobExtracted(ctx: any, id: string, request: NormalizedJobRequest, ownerLogin: string | undefined, createdAt: number): QaapJob {
+export function buildJobExtracted(ctx: QaapJobRuntimeContext, id: string, request: NormalizedJobRequest, ownerLogin: string | undefined, createdAt: number): QaapJob {
         return {
             id,
             kind: request.kind,
@@ -438,7 +423,7 @@ export function buildJobExtracted(ctx: any, id: string, request: NormalizedJobRe
         };
 }
 
-export function insertJobExtracted(ctx: any, job: QaapJob, request: NormalizedJobRequest): void {
+export function insertJobExtracted(ctx: QaapJobRuntimeContext, job: QaapJob, request: NormalizedJobRequest): void {
         ctx.jobs.set(job.id, job);
         ctx.requests.set(job.id, request);
         ctx.logs.set(job.id, '');

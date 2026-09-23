@@ -2,20 +2,13 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
-import { Emitter, Event, nls } from '@theia/core';
+import { Emitter, Event } from '@theia/core';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { ChildProcess } from 'child_process';
-import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
-    didQaapJobSucceed,
-    isQaapJobFinished,
-    isQaapJobResourceClass,
     QaapCreateJobGraphRequest,
     QaapCreateJobGraphResult,
     QaapCreateJobRequest,
@@ -27,12 +20,10 @@ import {
     QaapJobGraph,
     QaapJobResourceClass,
     QaapJobRetryPolicy,
-    QaapJobState,
-    QaapJobWorkspaceAccess,
 } from '../common/qaap-job';
 import { QaapJobFunctionRegistry } from './qaap-job-function-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
+import type { NormalizedJobRequest, PersistedJobGraph, QaapJobRuntimeContext, QaapJobTerminalState } from './qaap-job-runtime-context';
 import { assertDependenciesExtracted, buildJobExtracted, cancelExtracted, createExtracted, createGraphExtracted, initExtracted, insertJobExtracted, listExtracted, listGraphsExtracted, normalizeRequestExtracted, pruneRetainedJobsExtracted, shutdownExtracted } from './qaap-job-runtime-render2';
 import { appendOutputExtracted, assertAcyclicGraphExtracted, canStartExtracted, clearActiveAttemptExtracted, drainQueueExtracted, finishJobExtracted, handleAttemptFailureExtracted, handleProcessCloseExtracted, hasEarlierQueuedWriterExtracted, jobsForGraphExtracted, reapProcessGroupAfterExitExtracted, replaceJobExtracted, runCommandJobExtracted, runFunctionJobExtracted, runJobExtracted, scheduleRetryWakeExtracted, startAttemptTimeoutExtracted, terminateProcessTreeExtracted } from './qaap-job-runtime-streaming2';
 import { assertJsonSizeExtracted, buildChildEnvExtracted, clearRetentionPruneTimersExtracted, collectProtectedJobIdsExtracted, envIntOrExtracted, isDirectoryExtracted, normalizeIdempotencyKeyExtracted, normalizeRetryPolicyExtracted, persistExtracted, removeGraphRecordExtracted, removeJobRecordExtracted, resolveFunctionWorkspacePathExtracted, restorePersistedIndexExtracted, scheduleRetentionPruneExtracted, stableJsonExtracted } from './qaap-job-runtime-timeline2';
@@ -67,39 +58,6 @@ const RESOURCE_LIMIT_ENV: Readonly<Record<QaapJobResourceClass, string>> = {
     deployment: 'QAAP_JOB_LIMIT_DEPLOYMENT',
 };
 
-interface NormalizedJobRequest {
-    readonly kind: 'command' | 'function';
-    readonly title: string;
-    readonly command?: string;
-    readonly functionId?: string;
-    readonly input?: unknown;
-    readonly cwd: string;
-    readonly resourceClass: QaapJobResourceClass;
-    readonly workspaceAccess: QaapJobWorkspaceAccess;
-    readonly dependsOn: readonly string[];
-    readonly timeoutMs: number;
-    readonly retryPolicy?: Required<QaapJobRetryPolicy>;
-    readonly idempotencyKey?: string;
-}
-
-interface PersistedJobIndex {
-    readonly version: 2;
-    readonly jobs: readonly QaapJob[];
-    readonly requests: Readonly<Record<string, NormalizedJobRequest>>;
-    readonly logs: Readonly<Record<string, string>>;
-    readonly results: Readonly<Record<string, unknown>>;
-    readonly graphs: readonly PersistedJobGraph[];
-}
-
-interface LegacyPersistedJobIndex extends Omit<PersistedJobIndex, 'version' | 'results' | 'graphs'> {
-    readonly version: 1;
-}
-
-interface PersistedJobGraph {
-    readonly graph: QaapJobGraph;
-    readonly fingerprint: string;
-}
-
 export class QaapJobRequestError extends Error { }
 export class QaapJobConflictError extends Error { }
 
@@ -112,33 +70,53 @@ export class QaapJobConflictError extends Error { }
  * the same fail-closed uid isolation as agents, terminals, previews and deploys.
  */
 @injectable()
-export class QaapJobRuntime {
+export class QaapJobRuntime implements QaapJobRuntimeContext {
 
     @inject(QaapTenantSpawnService)
-    protected readonly tenantSpawn: QaapTenantSpawnService;
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly tenantSpawn: QaapTenantSpawnService;
 
     @inject(QaapJobFunctionRegistry)
-    protected readonly functionRegistry: QaapJobFunctionRegistry;
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly functionRegistry: QaapJobFunctionRegistry;
 
-    protected readonly jobs = new Map<string, QaapJob>();
-    protected readonly requests = new Map<string, NormalizedJobRequest>();
-    protected readonly logs = new Map<string, string>();
-    protected readonly results = new Map<string, unknown>();
-    protected readonly processes = new Map<string, ChildProcess>();
-    protected readonly abortControllers = new Map<string, AbortController>();
-    protected readonly timeoutTimers = new Map<string, NodeJS.Timeout>();
-    protected readonly terminationTimers = new Map<string, NodeJS.Timeout>();
-    protected readonly retryTimers = new Map<string, NodeJS.Timeout>();
-    protected readonly idempotencyIndex = new Map<string, string>();
-    protected readonly graphs = new Map<string, PersistedJobGraph>();
-    protected readonly graphIdempotencyIndex = new Map<string, string>();
-    protected persistChain: Promise<void> = Promise.resolve();
-    protected draining = false;
-    protected stopping = false;
-    protected pruneStartTimer: NodeJS.Timeout | undefined;
-    protected pruneIntervalTimer: NodeJS.Timeout | undefined;
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly jobs = new Map<string, QaapJob>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly requests = new Map<string, NormalizedJobRequest>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly logs = new Map<string, string>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly results = new Map<string, unknown>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly processes = new Map<string, ChildProcess>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly abortControllers = new Map<string, AbortController>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly timeoutTimers = new Map<string, NodeJS.Timeout>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly terminationTimers = new Map<string, NodeJS.Timeout>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly retryTimers = new Map<string, NodeJS.Timeout>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly idempotencyIndex = new Map<string, string>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly graphs = new Map<string, PersistedJobGraph>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly graphIdempotencyIndex = new Map<string, string>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public persistChain: Promise<void> = Promise.resolve();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public draining = false;
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public stopping = false;
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public pruneStartTimer: NodeJS.Timeout | undefined;
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public pruneIntervalTimer: NodeJS.Timeout | undefined;
 
-    protected readonly onDidChangeJobEmitter = new Emitter<QaapJobEvent>();
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public readonly onDidChangeJobEmitter = new Emitter<QaapJobEvent>();
     readonly onDidChangeJob: Event<QaapJobEvent> = this.onDidChangeJobEmitter.event;
 
     @postConstruct()
@@ -196,143 +174,187 @@ export class QaapJobRuntime {
         return pruneRetainedJobsExtracted(this, nowMs);
     }
 
-    protected normalizeRequest(request: QaapCreateJobRequest): NormalizedJobRequest {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public normalizeRequest(request: QaapCreateJobRequest): NormalizedJobRequest {
         return normalizeRequestExtracted(this, request);
     }
 
-    protected assertDependencies(dependencyIds: readonly string[], ownerLogin?: string): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public assertDependencies(dependencyIds: readonly string[], ownerLogin?: string): void {
         assertDependenciesExtracted(this, dependencyIds, ownerLogin);
     }
 
-    protected buildJob(id: string, request: NormalizedJobRequest, ownerLogin: string | undefined, createdAt: number): QaapJob {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public buildJob(id: string, request: NormalizedJobRequest, ownerLogin: string | undefined, createdAt: number): QaapJob {
         return buildJobExtracted(this, id, request, ownerLogin, createdAt);
     }
 
-    protected insertJob(job: QaapJob, request: NormalizedJobRequest): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public insertJob(job: QaapJob, request: NormalizedJobRequest): void {
         insertJobExtracted(this, job, request);
     }
 
-    protected assertAcyclicGraph(dependenciesByKey: ReadonlyMap<string, readonly string[]>): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public assertAcyclicGraph(dependenciesByKey: ReadonlyMap<string, readonly string[]>): void {
         assertAcyclicGraphExtracted(this, dependenciesByKey);
     }
 
-    protected jobsForGraph(graph: QaapJobGraph): Record<string, QaapJob> {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public jobsForGraph(graph: QaapJobGraph): Record<string, QaapJob> {
         return jobsForGraphExtracted(this, graph);
     }
 
-    protected drainQueue(): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public drainQueue(): void {
         drainQueueExtracted(this);
     }
 
-    protected canStart(candidate: QaapJob): boolean {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public canStart(candidate: QaapJob): boolean {
         return canStartExtracted(this, candidate);
     }
 
-    protected hasEarlierQueuedWriter(candidate: QaapJob): boolean {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public hasEarlierQueuedWriter(candidate: QaapJob): boolean {
         return hasEarlierQueuedWriterExtracted(this, candidate);
     }
 
-    protected runJob(job: QaapJob): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public runJob(job: QaapJob): void {
         runJobExtracted(this, job);
     }
 
-    protected runCommandJob(job: QaapJob): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public runCommandJob(job: QaapJob): void {
         runCommandJobExtracted(this, job);
     }
 
-    protected runFunctionJob(job: QaapJob): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public runFunctionJob(job: QaapJob): void {
         runFunctionJobExtracted(this, job);
     }
 
-    protected startAttemptTimeout(job: QaapJob, onTimeout: () => void): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public startAttemptTimeout(job: QaapJob, onTimeout: () => void): void {
         startAttemptTimeoutExtracted(this, job, onTimeout);
     }
 
-    protected handleProcessClose(id: string, child: ChildProcess, code: number | null): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public handleProcessClose(id: string, child: ChildProcess, code: number | null): void {
         handleProcessCloseExtracted(this, id, child, code);
     }
 
-    protected handleAttemptFailure(id: string, finalState: 'failed' | 'timed_out', exitCode?: number): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public handleAttemptFailure(id: string, finalState: 'failed' | 'timed_out', exitCode?: number): void {
         handleAttemptFailureExtracted(this, id, finalState, exitCode);
     }
 
-    protected scheduleRetryWake(job: QaapJob): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public scheduleRetryWake(job: QaapJob): void {
         scheduleRetryWakeExtracted(this, job);
     }
 
-    protected appendOutput(id: string, chunk: string): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public appendOutput(id: string, chunk: string): void {
         appendOutputExtracted(this, id, chunk);
     }
 
-    protected clearActiveAttempt(id: string): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public clearActiveAttempt(id: string): void {
         clearActiveAttemptExtracted(this, id);
     }
 
-    protected finishJob(id: string, state: Exclude<QaapJobState, 'waiting' | 'queued' | 'running' | 'retry_wait'>, exitCode?: number,): QaapJob | undefined {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public finishJob(id: string, state: QaapJobTerminalState, exitCode?: number,): QaapJob | undefined {
         return finishJobExtracted(this, id, state, exitCode);
     }
 
-    protected replaceJob(id: string, patch: Partial<QaapJob>): QaapJob {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public replaceJob(id: string, patch: Partial<QaapJob>): QaapJob {
         return replaceJobExtracted(this, id, patch);
     }
 
-    protected terminateProcessTree(id: string, child: ChildProcess): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public terminateProcessTree(id: string, child: ChildProcess): void {
         terminateProcessTreeExtracted(this, id, child);
     }
 
-    protected reapProcessGroupAfterExit(child: ChildProcess): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public reapProcessGroupAfterExit(child: ChildProcess): void {
         reapProcessGroupAfterExitExtracted(this, child);
     }
 
-    protected buildChildEnv(job: QaapJob): NodeJS.ProcessEnv {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public buildChildEnv(job: QaapJob): NodeJS.ProcessEnv {
         return buildChildEnvExtracted(this, job);
     }
 
-    protected async resolveFunctionWorkspacePath(cwd: string, relativePath: string): Promise<string> {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public async resolveFunctionWorkspacePath(cwd: string, relativePath: string): Promise<string> {
         return resolveFunctionWorkspacePathExtracted(this, cwd, relativePath);
     }
 
-    protected restorePersistedIndex(stored: unknown): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public restorePersistedIndex(stored: unknown): void {
         restorePersistedIndexExtracted(this, stored);
     }
 
-    protected persist(): Promise<void> {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public persist(): Promise<void> {
         return persistExtracted(this);
     }
 
-    protected requestFingerprint(request: NormalizedJobRequest): string {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public requestFingerprint(request: NormalizedJobRequest): string {
         return this.stableJson({ ...request, dependsOn: [...request.dependsOn].sort() });
     }
 
-    protected normalizeIdempotencyKey(value: string | undefined): string | undefined {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public normalizeIdempotencyKey(value: string | undefined): string | undefined {
         return normalizeIdempotencyKeyExtracted(this, value);
     }
 
-    protected normalizeRetryPolicy(value: QaapJobRetryPolicy | undefined): Required<QaapJobRetryPolicy> | undefined {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public normalizeRetryPolicy(value: QaapJobRetryPolicy | undefined): Required<QaapJobRetryPolicy> | undefined {
         return normalizeRetryPolicyExtracted(this, value);
     }
 
-    protected assertJsonSize(value: unknown, maxChars: number, label: string): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public assertJsonSize(value: unknown, maxChars: number, label: string): void {
         assertJsonSizeExtracted(this, value, maxChars, label);
     }
 
-    protected stableJson(value: unknown): string {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public stableJson(value: unknown): string {
         return stableJsonExtracted(this, value);
     }
 
-    protected ownerIdempotencyKey(ownerLogin: string | undefined, key: string): string {
+    /**
+     * Canonical owner key, matching how `create`/`list` store and filter owners. `get`, `getGraph`
+     * and `cancel` called this before it existed, so any owner-scoped lookup of an existing job threw.
+     * @internal Used by the extracted qaap-job-runtime-* modules.
+     */
+    public normalizeOwner(ownerLogin: string | undefined): string | undefined {
+        return ownerLogin?.trim() || undefined;
+    }
+
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public ownerIdempotencyKey(ownerLogin: string | undefined, key: string): string {
         return `${ownerLogin ?? ''}\0${key}`;
     }
 
-    protected isDirectory(candidate: string): boolean {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public isDirectory(candidate: string): boolean {
         return isDirectoryExtracted(this, candidate);
     }
 
-    protected storeDirectory(): string {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public storeDirectory(): string {
         return path.join(os.homedir(), '.qaap', 'jobs');
     }
 
-    protected indexPath(): string {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public indexPath(): string {
         return path.join(this.storeDirectory(), 'index.json');
     }
 
@@ -341,35 +363,43 @@ export class QaapJobRuntime {
         return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
     }
 
-    protected maxConcurrentJobs(): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public maxConcurrentJobs(): number {
         return this.positiveEnv('QAAP_JOB_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
     }
 
-    protected maxConcurrentJobsPerUser(): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public maxConcurrentJobsPerUser(): number {
         return this.positiveEnv('QAAP_JOB_MAX_CONCURRENT_PER_USER', DEFAULT_MAX_CONCURRENT_PER_USER);
     }
 
-    protected resourceLimit(resourceClass: QaapJobResourceClass): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public resourceLimit(resourceClass: QaapJobResourceClass): number {
         return this.positiveEnv(RESOURCE_LIMIT_ENV[resourceClass], DEFAULT_RESOURCE_LIMITS[resourceClass]);
     }
 
-    protected maxTimeoutMs(): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public maxTimeoutMs(): number {
         return this.positiveEnv('QAAP_JOB_MAX_TIMEOUT_MS', DEFAULT_MAX_TIMEOUT_MS);
     }
 
-    protected maxLogChars(): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public maxLogChars(): number {
         return this.positiveEnv('QAAP_JOB_MAX_LOG_CHARS', DEFAULT_MAX_LOG_CHARS);
     }
 
-    protected retentionDays(): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public retentionDays(): number {
         return this.envIntOr('QAAP_JOB_RETENTION_DAYS', DEFAULT_JOB_RETENTION_DAYS);
     }
 
-    protected maxJobsPerUser(): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public maxJobsPerUser(): number {
         return this.envIntOr('QAAP_JOB_MAX_PER_USER', DEFAULT_JOB_MAX_PER_USER);
     }
 
-    protected pruneIntervalMs(): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public pruneIntervalMs(): number {
         return this.positiveEnv('QAAP_JOB_PRUNE_INTERVAL_MS', DEFAULT_JOB_PRUNE_INTERVAL_MS);
     }
 
@@ -377,27 +407,33 @@ export class QaapJobRuntime {
         return envIntOrExtracted(this, name, fallback);
     }
 
-    protected scheduleRetentionPrune(): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public scheduleRetentionPrune(): void {
         scheduleRetentionPruneExtracted(this);
     }
 
-    protected clearRetentionPruneTimers(): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public clearRetentionPruneTimers(): void {
         clearRetentionPruneTimersExtracted(this);
     }
 
-    protected jobAgeMs(job: QaapJob): number {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public jobAgeMs(job: QaapJob): number {
         return job.finishedAt ?? job.createdAt;
     }
 
-    protected collectProtectedJobIds(): Set<string> {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public collectProtectedJobIds(): Set<string> {
         return collectProtectedJobIdsExtracted(this);
     }
 
-    protected removeJobRecord(id: string): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public removeJobRecord(id: string): void {
         removeJobRecordExtracted(this, id);
     }
 
-    protected removeGraphRecord(id: string): void {
+    /** @internal Used by the extracted qaap-job-runtime-* modules. */
+    public removeGraphRecord(id: string): void {
         removeGraphRecordExtracted(this, id);
     }
 }
