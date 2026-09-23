@@ -1,46 +1,23 @@
-// @ts-nocheck
-import { SHELL_AGENT_ID, QAIQ_AGENT_ID, SHELL_AGENT_ID,QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS,REPO_MAP_MAX_CHARS } from './qaap-agent-task-runner';
-import { AGENT_STOP_GRACE_TIMEOUT_MS } from './qaap-agent-task-runner-constants';
+import { AGENT_STOP_GRACE_TIMEOUT_MS, SHELL_AGENT_ID, QAIQ_AGENT_ID, REPO_MAP_CACHE_TTL_MS, REPO_MAP_MAX_CHARS } from './qaap-agent-task-runner-constants';
+import type { QaapAgentCommandBuildResult, QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { QaapAgentQueuePolicy } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';
 // Extracted from qaap-agent-task-runner.ts
 
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
-import { ChildProcess, spawnSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
-import { writeJsonAtomic, writeJsonAtomicSync } from './qaap-write-json-atomic';
-import * as os from 'os';
 import * as path from 'path';
 import {
-    buildImproveComposerPromptRequest,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
-import {
     isQaapAgentTaskFinished,
-    type QaapAgentDescriptor,
     type QaapCreateAgentTaskQaiqModel,
-    type QaapQaiqModelOption,
     type QaapAgentTask,
-    type QaapAgentTaskCwdGroup,
-    type QaapAgentTaskDetail,
-    type QaapAgentTaskEvent,
-    type QaapAgentTaskReview,
-    type QaapAgentTaskState,
-    type QaapAgentTaskVerification,
     type QaapCreateAgentTaskRequest,
-    type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
 import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
 import {
-    QAAP_BUILTIN_AGENT_DEFINITIONS,
     QAAP_BUILTIN_AGENT_IDS,
-    isUiHiddenVpsAgent,
     resolveQaapBuiltinAgentMentionId,
-    resolveQaapCodexTemplate,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
 import { localizeMissingCodingAgentMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
@@ -51,47 +28,27 @@ import {
 } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { listNativeAgentModels } from './qaap-agent-native-models';
-import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
 import { vendorHasByokCredential } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,
 } from '../common/qaap-agent-approval-flags';
 import {
-    type QaapAgentReadOnlyEnforcement,
-} from '../common/qaap-agent-readonly-workspace';
-import {
     QAIQ_STDIO_APPROVAL_FLAGS,
-    buildQaiqControlResponseLine,
-    buildQaiqStdioPromptLine,
-    parseQaiqStdioEvent,
-    type QaapQaiqPendingControlRequest,
 } from '../common/qaap-qaiq-stdio-approvals';
-import { findQaiqDestructiveCommandGuardDenial } from '../common/qaap-agent-destructive-command-guard';
-import { findQaiqDevServerGuardDenial } from '../common/qaap-agent-dev-server-guard';
-import { detectEmptyAgentTurn, type QaapEmptyAgentTurnResult } from '../common/qaap-agent-empty-turn';
-import {
-    buildQaiqAutoDeniedToolMessage,
-    buildQaiqQueuedApprovalTimeoutMessage,
-    resolveQaiqControlRequestAutoAction,
-} from '../common/qaap-qaiq-control-auto-response';
 import {
     resolveAgentAutoApprove,
 } from '../common/qaap-agent-auto-approve';
-import { filterAgentProcessLogChunk } from '../common/qaap-agent-log-filter';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
 import {
-    applyQaapQaiqCredentialEnv,
-    applyQaapQaiqModelEnv,
     bindingFromQaiqModelSelection,
     formatQaiqProviderFlags,
     normalizeQaiqModelBinding,
     resolveQaapQaiqModelBinding,
     type QaapQaiqModelBinding,
 } from '../common/qaap-qaiq-model-binding';
-import { resolveRequestAgentModel, resolveTaskAgentModel } from '../common/qaap-agent-task';
+import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import { coerceRunnableAgentModel, resolveEffectiveRequestAgentModel } from '../common/qaap-agent-task-model-routing';
 import {
     parseQaapNativeModelRoutingTable,
@@ -100,73 +57,16 @@ import {
 } from '../common/qaap-agent-native-model-routing';
 import { appendAgentDefaultWorkflowToPrompt } from '../common/qaap-agent-default-workflow';
 import { prependAgentTaskContextToPrompt, type QaapAgentRepoContext } from '../common/qaap-agent-task-context';
-import {
-    applyAntigravityModelSetting,
-    isAntigravityCliCommand,
-} from './qaap-antigravity-settings';
-import { QaapWebPushService } from './qaap-web-push-service';
-import { QaapWorkflowRoutingPolicy } from '../common/qaap-workflow-routing';
-import { QaapAgentHealthTracker } from './qaap-agent-health';
-import { hashSensitiveFiles, restoreSensitiveFiles, snapshotSensitiveFiles } from './qaap-sensitive-files';
 import { buildQaapAgentRepoProfile } from './qaap-agent-repo-profile';
 import {
-    readCodexHelp as readCodexHelpHelper,
-    isQaiqRunner as isQaiqRunnerHelper,
-    isOnPath as isOnPathHelper,
-    applyTemplateVars as applyTemplateVarsHelper,
-    shellQuote as shellQuoteHelper,
-    applyTemplate as applyTemplateHelper,
-    applyTemplateWithoutPrompt as applyTemplateWithoutPromptHelper,
     applyTemplateForPromptTransport as applyTemplateForPromptTransportHelper,
     resolveAgentPromptTransport as resolveAgentPromptTransportHelper,
     writeAgentPromptFile as writeAgentPromptFileHelper,
-    removeAgentPromptTempDir as removeAgentPromptTempDirHelper,
     quoteShellArg as quoteShellArgHelper,
-    truncateForPrompt as truncateForPromptHelper,
-    truncateHead as truncateHeadHelper,
-    loadProjectInfoFromDisk as loadProjectInfoFromDiskHelper,
-    loadAgentInstructionsFromDisk as loadAgentInstructionsFromDiskHelper,
-    readRepoMemory as readRepoMemoryHelper,
-    readResearchLedger as readResearchLedgerHelper,
-    isDirectory as isDirectoryHelper,
     resolveQaiqEnvFallbackModel as resolveQaiqEnvFallbackModelHelper,
-    resolveQaiqProviderFlagsFromEnv as resolveQaiqProviderFlagsFromEnvHelper,
-    applyOpenRouterOpenAiCompatEnv as applyOpenRouterOpenAiCompatEnvHelper,
-    applyNvidiaOpenAiCompatEnv as applyNvidiaOpenAiCompatEnvHelper,
-    applyHuggingfaceOpenAiCompatEnv as applyHuggingfaceOpenAiCompatEnvHelper,
-    noteReadOnlyEnforcement as noteReadOnlyEnforcementHelper,
-    changedSensitiveFiles as changedSensitiveFilesHelper,
-    findPendingControlRequestEntry as findPendingControlRequestEntryHelper,
 } from './qaap-agent-task-runner-utils';
-import {
-    parseCustomAgent as parseCustomAgentHelper,
-    maxConcurrentAgents as maxConcurrentAgentsHelper,
-    maxConcurrentAgentsPerUser as maxConcurrentAgentsPerUserHelper,
-    buildRepoTree as buildRepoTreeHelper,
-    buildRecentlyChangedFiles as buildRecentlyChangedFilesHelper,
-    readGitStatusSnapshot as readGitStatusSnapshotHelper,
-    captureWorktreeStatus as captureWorktreeStatusHelper,
-    captureWorktreeFingerprint as captureWorktreeFingerprintHelper,
-    resolveVerificationScriptsForCwd as resolveVerificationScriptsForCwdHelper,
-    appendBoundedCommandOutput as appendBoundedCommandOutputHelper,
-    readUserSettingsFromDisk as readUserSettingsFromDiskHelper,
-    stripSharedProviderEnv as stripSharedProviderEnvHelper,
-} from './qaap-agent-task-runner-utils2';
-import {
-    readRelevantFiles as readRelevantFilesHelper,
-    reapAgentProcessGroupAfterExit as reapAgentProcessGroupAfterExitHelper,
-    resolveProjectName as resolveProjectNameHelper,
-    listAgents as listAgentsHelper,
-    probeAgentBinOnce as probeAgentBinOnceHelper,
-    recordTaskLatencyMark as recordTaskLatencyMarkHelper,
-    reviewSuccessfulAgentTask as reviewSuccessfulAgentTaskHelper,
-    runOneShotCommand as runOneShotCommandHelper,
-    verifySuccessfulAgentTask as verifySuccessfulAgentTaskHelper,
-    QAAP_AGENT_VERIFY_MAX_ATTEMPTS,
-    QAAP_AGENT_VERIFY_WALL_CLOCK_MS,
-} from './qaap-agent-task-runner-utils3';
 
-export function resolveAgentModelForRequestExtracted(ctx: any, request: QaapCreateAgentTaskRequest,
+export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCreateAgentTaskRequest,
         prompt: string, ownerLogin?: string,): QaapCreateAgentTaskQaiqModel | undefined {
         const agentId = ctx.resolveAgentId(prompt, request.agent, ownerLogin);
         const readPref = (key: string): unknown => ctx.preferenceService?.get(key);
@@ -194,7 +94,7 @@ export function resolveAgentModelForRequestExtracted(ctx: any, request: QaapCrea
         );
 }
 
-export function nativeModelRoutingTableExtracted(ctx: any): QaapNativeModelRoutingTable {
+export function nativeModelRoutingTableExtracted(ctx: QaapAgentTaskRunnerContext): QaapNativeModelRoutingTable {
         if (!ctx.cachedNativeModelRoutingTable) {
             ctx.cachedNativeModelRoutingTable = parseQaapNativeModelRoutingTable(
                 process.env[QAAP_AGENT_TASK_MODELS_ENV],
@@ -203,7 +103,7 @@ export function nativeModelRoutingTableExtracted(ctx: any): QaapNativeModelRouti
         return ctx.cachedNativeModelRoutingTable;
 }
 
-export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
+export function createExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCreateAgentTaskRequest, ownerLogin?: string): QaapAgentTask {
         if (ctx.recoveryState === 'loading' || ctx.recoveryState === 'failed' || ctx.storageWriteFailed) {
             throw new QaapAgentStorageUnavailableError();
         }
@@ -318,7 +218,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentTaskRequest, o
  * command is the original prompt for coding agents and the original shell command for `shell`;
  * retrying from the browser must never depend on a truncated WebSocket payload.
  */
-export function retryExtracted(ctx: any, id: string, ownerLogin?: string): QaapAgentTask | undefined {
+export function retryExtracted(ctx: QaapAgentTaskRunnerContext, id: string, ownerLogin?: string): QaapAgentTask | undefined {
         const task = ctx.tasks.get(id) as QaapAgentTask | undefined;
         if (!task || (task.state !== 'failed' && task.state !== 'interrupted')) {
             return undefined;
@@ -350,7 +250,7 @@ export function retryExtracted(ctx: any, id: string, ownerLogin?: string): QaapA
 }
 
 /** Continue an interrupted task once, rebuilding it from the durable original request. */
-export function resumeExtracted(ctx: any, id: string, ownerLogin?: string): QaapAgentTask | undefined {
+export function resumeExtracted(ctx: QaapAgentTaskRunnerContext, id: string, ownerLogin?: string): QaapAgentTask | undefined {
         const task = ctx.tasks.get(id) as QaapAgentTask | undefined;
         if (!task || task.state !== 'interrupted') {
             return undefined;
@@ -399,7 +299,7 @@ export function resumeExtracted(ctx: any, id: string, ownerLogin?: string): Qaap
         return resumed;
 }
 
-export function buildAgentCommandExtracted(ctx: any, prompt: string,
+export function buildAgentCommandExtracted(ctx: QaapAgentTaskRunnerContext, prompt: string,
         agentId: string | undefined,
         autoApprove: boolean,
         agentModel?: QaapCreateAgentTaskQaiqModel,
@@ -410,7 +310,7 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
         toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'],
         userQuery?: string,
         readOnlyWorkspace?: boolean,
-        ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string } {
+        ownerLogin?: string,): QaapAgentCommandBuildResult {
         const id = ctx.resolveAgentId(prompt, agentId, ownerLogin);
         const runnerPrompt = ctx.stripLeadingAgentMention(prompt);
         if (id === SHELL_AGENT_ID) {
@@ -517,7 +417,7 @@ export function buildAgentCommandExtracted(ctx: any, prompt: string,
         return { command, agentId: id, promptTempDir };
 }
 
-export function readProjectInfoExtracted(ctx: any, cwd: string): string | undefined {
+export function readProjectInfoExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): string | undefined {
         const resolved = path.resolve(cwd);
         if (ctx.projectInfoCache.has(resolved)) {
             return ctx.projectInfoCache.get(resolved);
@@ -527,7 +427,7 @@ export function readProjectInfoExtracted(ctx: any, cwd: string): string | undefi
         return info;
 }
 
-export function readAgentInstructionsExtracted(ctx: any, cwd: string): string | undefined {
+export function readAgentInstructionsExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): string | undefined {
         const resolved = path.resolve(cwd);
         if (ctx.agentInstructionsCache.has(resolved)) {
             return ctx.agentInstructionsCache.get(resolved);
@@ -537,7 +437,7 @@ export function readAgentInstructionsExtracted(ctx: any, cwd: string): string | 
         return info;
 }
 
-export function readRepoMapExtracted(ctx: any, cwd: string): string | undefined {
+export function readRepoMapExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): string | undefined {
         const resolved = path.resolve(cwd);
         const cached = ctx.repoMapCache.get(resolved);
         if (cached && Date.now() - cached.at < REPO_MAP_CACHE_TTL_MS) {
@@ -548,7 +448,7 @@ export function readRepoMapExtracted(ctx: any, cwd: string): string | undefined 
         return text;
 }
 
-export function buildRepoMapExtracted(ctx: any, cwd: string): string | undefined {
+export function buildRepoMapExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): string | undefined {
         const sections: string[] = [];
         const profile = buildQaapAgentRepoProfile(cwd);
         if (profile) {
@@ -571,7 +471,7 @@ export function buildRepoMapExtracted(ctx: any, cwd: string): string | undefined
             : text;
 }
 
-export function resolveAgentIdExtracted(ctx: any, prompt: string, agentId: string | undefined, ownerLogin?: string): string {
+export function resolveAgentIdExtracted(ctx: QaapAgentTaskRunnerContext, prompt: string, agentId: string | undefined, ownerLogin?: string): string {
         const ensureEnabled = (resolved: string): string => {
             assertAgentAllowedOnHostedRuntime(resolved);
             if (ctx.isAgentEnabled && !ctx.isAgentEnabled(resolved, ownerLogin)) {
@@ -601,7 +501,7 @@ export function resolveAgentIdExtracted(ctx: any, prompt: string, agentId: strin
         return fallback;
 }
 
-export function extractLastAgentMentionExtracted(ctx: any, prompt: string): string | undefined {
+export function extractLastAgentMentionExtracted(ctx: QaapAgentTaskRunnerContext, prompt: string): string | undefined {
         const regex = /@([a-z][\w-]*)/gi;
         let last: string | undefined;
         let match: RegExpExecArray | null;
@@ -614,7 +514,7 @@ export function extractLastAgentMentionExtracted(ctx: any, prompt: string): stri
         return last;
 }
 
-export function extractLastAgentMentionTokenExtracted(ctx: any, prompt: string): string | undefined {
+export function extractLastAgentMentionTokenExtracted(ctx: QaapAgentTaskRunnerContext, prompt: string): string | undefined {
         const regex = /@([a-z][\w-]*)/gi;
         let last: string | undefined;
         let match: RegExpExecArray | null;
@@ -633,7 +533,7 @@ export function extractLastAgentMentionTokenExtracted(ctx: any, prompt: string):
         return last;
 }
 
-export function stripLeadingAgentMentionExtracted(ctx: any, prompt: string): string {
+export function stripLeadingAgentMentionExtracted(ctx: QaapAgentTaskRunnerContext, prompt: string): string {
         const match = /^@([a-z][\w-]*)\b\s*/i.exec(prompt);
         if (match && ctx.normalizeMentionToken(match[1])) {
             return prompt.slice(match[0].length).trim() || prompt.trim();
@@ -641,7 +541,7 @@ export function stripLeadingAgentMentionExtracted(ctx: any, prompt: string): str
         return prompt.trim();
 }
 
-export function buildTemplateVarsExtracted(ctx: any, agentId: string,
+export function buildTemplateVarsExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string,
         agentModel?: QaapCreateAgentTaskQaiqModel,
         interaction?: QaapQaiqInteractionFlagOptions,): Record<string, string> {
         const empty = { qaiq_flags: '', model_flags: '' };
@@ -667,7 +567,7 @@ export function buildTemplateVarsExtracted(ctx: any, agentId: string,
         return empty;
 }
 
-export function resolveQaiqProviderFlagsExtracted(ctx: any): string {
+export function resolveQaiqProviderFlagsExtracted(ctx: QaapAgentTaskRunnerContext): string {
         const env = ctx.previewProviderEnv();
         const binding = ctx.resolveQaapQaiqBinding();
         if (binding && vendorHasByokCredential(
@@ -680,11 +580,11 @@ export function resolveQaiqProviderFlagsExtracted(ctx: any): string {
         return ctx.resolveQaiqProviderFlagsFromEnv(env);
 }
 
-export function resolveQaapQaiqBindingExtracted(ctx: any, ownerLogin?: string): QaapQaiqModelBinding | undefined {
+export function resolveQaapQaiqBindingExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): QaapQaiqModelBinding | undefined {
         return resolveQaapQaiqModelBinding(ctx.preferenceReaderForOwner(ownerLogin));
 }
 
-export function resolveAgentBindingForTaskExtracted(ctx: any, task: QaapAgentTask): QaapQaiqModelBinding | undefined {
+export function resolveAgentBindingForTaskExtracted(ctx: QaapAgentTaskRunnerContext, task: QaapAgentTask): QaapQaiqModelBinding | undefined {
         const selected = resolveTaskAgentModel(task);
         if (selected?.provider && selected.modelId?.trim()) {
             return ctx.normalizeAgentBinding(bindingFromQaiqModelSelection(selected), task.ownerLogin);
@@ -699,17 +599,17 @@ export function resolveAgentBindingForTaskExtracted(ctx: any, task: QaapAgentTas
         return undefined;
 }
 
-export function normalizeAgentBindingExtracted(ctx: any, binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding {
+export function normalizeAgentBindingExtracted(ctx: QaapAgentTaskRunnerContext, binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding {
         return normalizeQaiqModelBinding(binding, ctx.preferenceReaderForOwner(ownerLogin));
 }
 
-export function previewProviderEnvExtracted(ctx: any): NodeJS.ProcessEnv {
+export function previewProviderEnvExtracted(ctx: QaapAgentTaskRunnerContext): NodeJS.ProcessEnv {
         const env: NodeJS.ProcessEnv = { ...process.env };
         ctx.applyProviderPreferenceEnv(env, undefined);
         return env;
 }
 
-export function assertQaiqConfiguredExtracted(ctx: any, agentId: string): void {
+export function assertQaiqConfiguredExtracted(ctx: QaapAgentTaskRunnerContext, agentId: string): void {
         // OpenClaude has its own model/auth configuration. The shared stream protocol does not
         // make QAIQ's Settings catalog a prerequisite for running it.
         if (!agentUsesSettingsModelCatalog(agentId)) {
@@ -729,7 +629,7 @@ export function assertQaiqConfiguredExtracted(ctx: any, agentId: string): void {
         );
 }
 
-export function cancelExtracted(ctx: any, id: string): QaapAgentTask | undefined {
+export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string): QaapAgentTask | undefined {
         const child = ctx.processes.get(id);
         ctx.queuedCreateRequests.delete(id);
         const task = ctx.tasks.get(id);
@@ -760,14 +660,14 @@ export function cancelExtracted(ctx: any, id: string): QaapAgentTask | undefined
 }
 
 /** Remove every persisted task rooted in a project after the user confirms project deletion. */
-export function deleteForCwdExtracted(ctx: any, cwd: string): number {
+export function deleteForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): number {
         const root = cwd.trim().replace(/\\+$/, '');
         if (!root) {
             return 0;
         }
         const ids = [...ctx.tasks.values()]
-            .filter((task: any) => task.cwd === root || task.cwd.startsWith(`${root}/`))
-            .map((task: any) => task.id);
+            .filter(task => task.cwd === root || task.cwd.startsWith(`${root}/`))
+            .map(task => task.id);
         for (const id of ids) {
             const task = ctx.tasks.get(id);
             if (!task) {

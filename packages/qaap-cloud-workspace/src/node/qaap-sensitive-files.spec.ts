@@ -87,7 +87,7 @@ class TestableRunner extends QaapAgentTaskRunner {
         return this.restoreBaselineSensitiveFiles(task);
     }
     /** No-op log sink so restore does not touch ~/.qaap/agent-tasks. */
-    protected override appendAndFireOutput(_taskId: string, _chunk: string): void { /* test stub */ }
+    public override appendAndFireOutput(_taskId: string, _chunk: string): void { /* test stub */ }
 }
 
 describe('runner edit detection for gitignored secrets', () => {

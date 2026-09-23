@@ -5,6 +5,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -926,9 +927,9 @@ describe('Multi-tenancy isolation', () => {
                 },
             };
             const { applyProviderPreferenceEnvExtracted } = require('./qaap-agent-task-runner-tool-pills2') as typeof import('./qaap-agent-task-runner-tool-pills2');
-            applyProviderPreferenceEnvExtracted(ctx, env, userB);
+            applyProviderPreferenceEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, env, userB);
             expect(env.OPENROUTER_API_KEY).to.equal(undefined);
-            applyProviderPreferenceEnvExtracted(ctx, env, userA);
+            applyProviderPreferenceEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, env, userA);
             expect(env.OPENROUTER_API_KEY).to.equal('alice-secret');
         });
     });

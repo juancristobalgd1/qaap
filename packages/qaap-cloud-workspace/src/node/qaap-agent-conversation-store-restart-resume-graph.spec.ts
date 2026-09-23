@@ -24,7 +24,7 @@ import { runQaapConversationRestoreStep } from './qaap-agent-conversation-store-
 /** In-memory run store: mutations run the real reducer/persist ordering, disk writes are counted. */
 class TestRunStore extends QaapWorkflowRunStore {
     persistCalls = 0;
-    protected override async persist(): Promise<void> {
+    public override async persist(): Promise<void> {
         this.persistCalls++;
     }
 }
@@ -53,7 +53,7 @@ class TestTaskRunner extends QaapAgentTaskRunner {
         return [];
     }
 
-    protected override async persist(): Promise<void> {
+    public override async persist(): Promise<void> {
         /* no-op */
     }
 }

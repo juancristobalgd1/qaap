@@ -50,7 +50,7 @@ class TestTaskRunner extends QaapAgentTaskRunner {
         return [];
     }
 
-    protected override async persist(): Promise<void> {
+    public override async persist(): Promise<void> {
         /* no-op — keep ~/.qaap/agent-tasks out of the tests */
     }
 }

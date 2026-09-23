@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -92,7 +93,7 @@ describe('Codex prompt transport', () => {
         };
 
         const result = buildAgentCommandExtracted(
-            ctx,
+            ctx as unknown as QaapAgentTaskRunnerContext,
             prompt,
             'codex',
             true,
@@ -215,7 +216,7 @@ describe('Cursor Agent prompt transport', () => {
         };
 
         const result = buildAgentCommandExtracted(
-            ctx,
+            ctx as unknown as QaapAgentTaskRunnerContext,
             prompt,
             'cursor',
             true,
@@ -256,7 +257,7 @@ describe('Cursor Agent prompt transport', () => {
                     template: 'agent -p --force {prompt}',
                 }]]),
                 buildTemplateVars: () => ({}),
-            },
+            } as unknown as QaapAgentTaskRunnerContext,
             prompt,
             'cursor',
             true,
@@ -320,7 +321,7 @@ describe('other harness prompt transport', () => {
         ];
         for (const entry of cases) {
             const result = buildAgentCommandExtracted(
-                commandCtx(entry.id, entry.template),
+                commandCtx(entry.id, entry.template) as unknown as QaapAgentTaskRunnerContext,
                 longPrompt,
                 entry.id,
                 true,
@@ -340,7 +341,7 @@ describe('other harness prompt transport', () => {
 
     it('writes a Grok prompt file instead of overflowing argv', () => {
         const result = buildAgentCommandExtracted(
-            commandCtx('grok', 'grok --always-approve -p {prompt}'),
+            commandCtx('grok', 'grok --always-approve -p {prompt}') as unknown as QaapAgentTaskRunnerContext,
             longPrompt,
             'grok',
             true,

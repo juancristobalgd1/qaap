@@ -9,7 +9,7 @@ import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 
 class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
     // Concurrency fixtures do not initialize provider discovery or spawn real agents.
-    protected override resolveAgentId(): string {
+    public override resolveAgentId(): string {
         return 'qaiq';
     }
 

@@ -4,6 +4,7 @@
 // ****************************************************************************
 
 import { expect } from 'chai';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { NATIVE_MODEL_PICKER_AGENT_IDS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
 import { bindingFromQaiqModelSelection } from '../common/qaap-qaiq-model-binding';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
@@ -22,11 +23,11 @@ describe('QAIQ/OpenClaude model routing', () => {
             normalizeAgentBinding: (binding: unknown) => binding,
         };
 
-        expect(buildTemplateVarsExtracted(ctx, 'openclaude')).to.deep.equal({
+        expect(buildTemplateVarsExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'openclaude')).to.deep.equal({
             qaiq_flags: '',
             model_flags: '',
         });
-        expect(buildTemplateVarsExtracted(ctx, 'qaiq')).to.deep.equal({
+        expect(buildTemplateVarsExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'qaiq')).to.deep.equal({
             qaiq_flags: '--dangerously-skip-permissions --provider openai --model qaiq/custom-model',
             model_flags: '',
         });
@@ -39,11 +40,11 @@ describe('QAIQ/OpenClaude model routing', () => {
             normalizeAgentBinding: (binding: unknown) => binding,
         };
 
-        expect(resolveAgentBindingForTaskExtracted(ctx, {
+        expect(resolveAgentBindingForTaskExtracted(ctx as unknown as QaapAgentTaskRunnerContext, {
             agentId: 'openclaude',
             command: 'openclaude --print prompt',
         } as any)).to.equal(undefined);
-        expect(resolveAgentBindingForTaskExtracted(ctx, {
+        expect(resolveAgentBindingForTaskExtracted(ctx as unknown as QaapAgentTaskRunnerContext, {
             agentId: 'qaiq',
             command: 'qaiq --print prompt',
         } as any)).to.deep.equal(qaiqBinding);
@@ -58,7 +59,7 @@ describe('QAIQ/OpenClaude model routing', () => {
             vendor: 'unknown',
             modelId: 'xiaomi/mimo-v2.5-pro',
         };
-        const vars = buildTemplateVarsExtracted(ctx, 'hermes', agentModel);
+        const vars = buildTemplateVarsExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'hermes', agentModel);
         expect(vars.model_flags).to.equal('--model xiaomi/mimo-v2.5-pro');
         const flags = formatModelFlagsForAgent('hermes', bindingFromQaiqModelSelection(agentModel));
         const command = applyTemplate(
@@ -95,7 +96,7 @@ describe('QAIQ/OpenClaude model routing', () => {
                 peekEntitlements: () => ({ hostedModels: false }),
             },
         };
-        const models = listModelsForAgentExtracted(ctx, 'codex', 'starter-user');
+        const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
         expect(models).to.have.length(4);
         expect(models.every(model => model.available === false)).to.equal(true);
     });
@@ -108,7 +109,7 @@ describe('QAIQ/OpenClaude model routing', () => {
                 peekEntitlements: () => ({ hostedModels: false }),
             },
         };
-        const models = listModelsForAgentExtracted(ctx, 'codex', 'starter-user');
+        const models = listModelsForAgentExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'codex', 'starter-user');
         expect(models).to.have.length(4);
         expect(models.every(model => model.available === true)).to.equal(true);
     });

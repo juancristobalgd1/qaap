@@ -37,7 +37,7 @@ class TestRunStore extends QaapWorkflowRunStore {
     persistCalls = 0;
     failNextPersist = false;
 
-    protected override async persist(): Promise<void> {
+    public override async persist(): Promise<void> {
         this.persistCalls++;
         if (this.failNextPersist) {
             this.failNextPersist = false;
@@ -83,7 +83,7 @@ class TestTaskRunner extends QaapAgentTaskRunner {
 
     override cancel(): QaapAgentTask | undefined { return undefined; }
     override list(): QaapAgentTask[] { return []; }
-    protected override async persist(): Promise<void> { /* no-op */ }
+    public override async persist(): Promise<void> { /* no-op */ }
 }
 
 class TestConversationStore extends QaapAgentConversationStore {

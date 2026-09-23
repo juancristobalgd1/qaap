@@ -92,6 +92,8 @@ import {
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
+import { QaapObservability } from './qaap-observability';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 
 /** Built-in coding agents the runner can auto-detect on the server's PATH. */
 
@@ -149,76 +151,113 @@ import {
  * even with no tab open. This is the execution substrate the autonomous agent loop plugs into.
  */
 @injectable()
-export class QaapAgentTaskRunner {
+export class QaapAgentTaskRunner implements QaapAgentTaskRunnerContext {
 
     @inject(QaapWebPushService)
-    protected readonly webPush: QaapWebPushService;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly webPush: QaapWebPushService;
 
     @inject(QaapBillingStore) @optional()
-    protected readonly billingStore: QaapBillingStore | undefined;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly billingStore: QaapBillingStore | undefined;
 
     @inject(PreferenceService) @optional()
-    protected readonly preferenceService: PreferenceService | undefined;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly preferenceService: PreferenceService | undefined;
 
     /** Judge routing shared with workflow runs; optional so bare test harnesses keep old behavior. */
     @inject(QaapWorkflowRoutingPolicy) @optional()
-    protected readonly workflowRouting: QaapWorkflowRoutingPolicy | undefined;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly workflowRouting: QaapWorkflowRoutingPolicy | undefined;
 
     @inject(QaapAgentHealthTracker) @optional()
-    protected readonly agentHealth: QaapAgentHealthTracker | undefined;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly agentHealth: QaapAgentHealthTracker | undefined;
 
     @inject(QaapTenantActivityTracker) @optional()
     protected readonly tenantActivity: QaapTenantActivityTracker | undefined;
 
-    protected cachedNativeModelRoutingTable: QaapNativeModelRoutingTable | undefined;
+    /**
+     * Structured agent-command audit. The extracted modules always called `ctx.observability?.…`,
+     * but the runner never injected it, so every call was a silent no-op.
+     */
+    @inject(QaapObservability) @optional()
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly observability: QaapObservability | undefined;
 
-    protected readonly tasks = new Map<string, QaapAgentTask>();
-    protected readonly processes = new Map<string, ChildProcess>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public cachedNativeModelRoutingTable: QaapNativeModelRoutingTable | undefined;
+
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly tasks = new Map<string, QaapAgentTask>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly processes = new Map<string, ChildProcess>();
     /** Task ids removed with their project; late process output must not recreate their logs. */
-    protected readonly deletedTaskIds = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly deletedTaskIds = new Set<string>();
     /** Cancelled process groups still consuming a concurrency slot during graceful shutdown. */
-    protected readonly stoppingTaskIds = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly stoppingTaskIds = new Set<string>();
     /** Tasks spawned with stdin piped for manual approval mode. */
-    protected readonly stdinInteractiveTasks = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly stdinInteractiveTasks = new Set<string>();
     /** Prompts to deliver over stdin, either as plain CLI input or QAIQ `stream-json`. */
-    protected readonly stdinPrompts = new Map<string, QaapAgentStdinPrompt>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly stdinPrompts = new Map<string, QaapAgentStdinPrompt>();
     /** Temp dirs from `--prompt-file` (Grok) — deleted when the child exits. */
-    protected readonly promptTempDirs = new Map<string, string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly promptTempDirs = new Map<string, string>();
     /** Unanswered `can_use_tool` control requests per task — the pause-and-wait approval queue. */
-    protected readonly pendingQaiqControlRequests = new Map<string, QaapQaiqPendingControlRequest[]>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly pendingQaiqControlRequests = new Map<string, QaapQaiqPendingControlRequest[]>();
     /** Grace timers (per task, per requestId) auto-denying queued approvals of auto-approve runs. */
-    protected readonly queuedApprovalTimers = new Map<string, Map<string, NodeJS.Timeout>>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly queuedApprovalTimers = new Map<string, Map<string, NodeJS.Timeout>>();
     /** Tasks using QAIQ stream-json stdin — never answer with legacy `y`/`n` lines. */
-    protected readonly qaiqStdioTasks = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly qaiqStdioTasks = new Set<string>();
     /** Agents whose CLI was found on PATH at startup, keyed by id. */
-    protected readonly detectedAgents = new Map<string, AgentCandidate>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly detectedAgents = new Map<string, AgentCandidate>();
     /**
      * Per-owner helper-CLI tokens so a spawned agent can only call back as its own user.
      * Key is the owner login (`''` for shared/anonymous/skip-auth); value is the secret token.
      */
-    protected readonly helperTokens = new Map<string, string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly helperTokens = new Map<string, string>();
     /** URL spawned agents POST sub-tasks to. Bound from the backend's listen port. */
-    protected helperApiUrl = '';
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public helperApiUrl = '';
     /** Best-effort `package.json#name` per cwd; lazily populated. */
-    protected readonly projectNameCache = new Map<string, string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly projectNameCache = new Map<string, string>();
     /** Cached `.prompts/project-info.prompttemplate` per cwd — primed by {@link warmForCwd}. */
-    protected readonly projectInfoCache = new Map<string, string | undefined>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly projectInfoCache = new Map<string, string | undefined>();
     /** Cached workspace agent-instructions (CLAUDE.md / AGENTS.md) per cwd — primed by {@link warmForCwd}. */
-    protected readonly agentInstructionsCache = new Map<string, string | undefined>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly agentInstructionsCache = new Map<string, string | undefined>();
     /** Cached shallow repo map per cwd — primed by {@link warmForCwd}, refreshed lazily on expiry. */
-    protected readonly repoMapCache = new Map<string, { readonly text: string | undefined; readonly at: number }>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly repoMapCache = new Map<string, { readonly text: string | undefined; readonly at: number }>();
     /** Original create requests for tasks waiting on the concurrency queue. */
-    protected readonly queuedCreateRequests = new Map<string, QaapCreateAgentTaskRequest>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly queuedCreateRequests = new Map<string, QaapCreateAgentTaskRequest>();
     /** Client request id → task id, retained across restarts to make create POSTs idempotent. */
-    protected readonly clientRequestTaskIds = new Map<string, string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly clientRequestTaskIds = new Map<string, string>();
     /** Prevents two rapid Continue clicks from starting two replacements for one interrupted task. */
-    protected readonly resumingTaskIds = new Map<string, string>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly resumingTaskIds = new Map<string, string>();
     /** Releases the runtime protection lease when a queued/running task finishes or is cancelled. */
     protected readonly tenantOperationReleases = new Map<string, () => void>();
     /** Serializes whole-index snapshots so an older, slower write can never overwrite a newer one. */
-    protected persistChain: Promise<void> = Promise.resolve();
-    protected recoveryState: 'loading' | 'ready' | 'failed' = 'ready';
-    protected storageWriteFailed = false;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public persistChain: Promise<void> = Promise.resolve();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public recoveryState: 'loading' | 'ready' | 'failed' = 'ready';
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public storageWriteFailed = false;
 
     storageHealth(): { ready: boolean; recovery: 'loading' | 'ready' | 'failed'; writeFailed: boolean } {
         const recovery = this.recoveryState ?? 'ready';
@@ -235,7 +274,8 @@ export class QaapAgentTaskRunner {
     /** Short-lived, per-tenant auth probe cache; Connect invalidates it through refreshAgentCatalog. */
     protected readonly agentConnectionStates = new Map<string, { readonly state: QaapAgentDescriptor['connectionState']; readonly at: number }>();
 
-    protected readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly onDidChangeTaskEmitter = new Emitter<QaapAgentTaskEvent>();
     /**
      * Fires every time a task is created, transitions state, or is cancelled. SSE endpoints and
      * cross-project UIs subscribe here to update their views without polling.
@@ -247,19 +287,23 @@ export class QaapAgentTaskRunner {
         initExtracted(this);
     }
 
-    protected ensureHelperCli(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public ensureHelperCli(): void {
         ensureHelperCliExtracted(this);
     }
 
-    protected loadHelperTokens(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public loadHelperTokens(): void {
         loadHelperTokensExtracted(this);
     }
 
-    protected persistHelperTokens(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public persistHelperTokens(): void {
         persistHelperTokensExtracted(this);
     }
 
-    protected helperTokenForOwner(ownerLogin?: string): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public helperTokenForOwner(ownerLogin?: string): string {
         return helperTokenForOwnerExtracted(this, ownerLogin);
     }
 
@@ -277,99 +321,123 @@ export class QaapAgentTaskRunner {
         this.helperApiUrl = `http://127.0.0.1:${port}/qaap/api/agent-tasks`;
     }
 
-    protected detectAgents(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public detectAgents(): void {
         detectAgentsExtracted(this);
     }
 
-    protected logDetectedAgents(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public logDetectedAgents(): void {
         logDetectedAgentsExtracted(this);
     }
 
-    protected isCandidateAvailable(candidate: AgentCandidate): boolean {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public isCandidateAvailable(candidate: AgentCandidate): boolean {
         return !candidate.bin || this.isOnPath(candidate.bin);
     }
 
-    protected resolveAntigravityBin(): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveAntigravityBin(): string | undefined {
         return resolveAntigravityBinExtracted(this);
     }
 
-    protected detectAntigravityAgent(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public detectAntigravityAgent(): void {
         detectAntigravityAgentExtracted(this);
     }
 
-    protected resolveCursorAgentBin(): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveCursorAgentBin(): string | undefined {
         return resolveCursorAgentBinExtracted(this);
     }
 
-    protected detectCursorAgent(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public detectCursorAgent(): void {
         detectCursorAgentExtracted(this);
     }
 
-    protected resolveQaiqBin(): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveQaiqBin(): string | undefined {
         return resolveQaiqBinExtracted(this);
     }
 
-    protected detectQaiqAgent(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public detectQaiqAgent(): void {
         detectQaiqAgentExtracted(this);
     }
 
-    protected detectCodexAgent(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public detectCodexAgent(): void {
         detectCodexAgentExtracted(this);
     }
 
-    protected readCodexHelp(): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readCodexHelp(): string {
         return readCodexHelpHelper();
     }
 
-    protected isQaiqRunner(agentId: string | undefined, command: string): boolean {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public isQaiqRunner(agentId: string | undefined, command: string): boolean {
         return isQaiqRunnerHelper(agentId, command);
     }
 
-    protected resolveTaskAgentId(task: QaapAgentTask): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveTaskAgentId(task: QaapAgentTask): string {
         return resolveTaskAgentIdExtracted(this, task);
     }
 
-    protected readCustomAgents(): AgentCandidate[] {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readCustomAgents(): AgentCandidate[] {
         return readCustomAgentsExtracted(this);
     }
 
-    protected parseCustomAgent(entry: unknown, index: number): AgentCandidate[] {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public parseCustomAgent(entry: unknown, index: number): AgentCandidate[] {
         return parseCustomAgentHelper(entry, index, AGENT_CANDIDATES, SHELL_AGENT_ID, ENV_AGENT_ID, CUSTOM_AGENTS_ENV);
     }
 
-    protected isOnPath(bin: string): boolean {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public isOnPath(bin: string): boolean {
         return isOnPathHelper(bin);
     }
 
-    protected async restoreFromDisk(): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async restoreFromDisk(): Promise<void> {
         return restoreFromDiskExtracted(this);
     }
 
-    protected restorePersistedIndex(stored: unknown): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public restorePersistedIndex(stored: unknown): void {
         restorePersistedIndexExtracted(this, stored);
     }
 
-    protected maxConcurrentAgents(): number {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public maxConcurrentAgents(): number {
         return maxConcurrentAgentsHelper();
     }
 
-    protected countRunningTasks(): number {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public countRunningTasks(): number {
         return countRunningTasksExtracted(this);
     }
 
-    protected maxConcurrentAgentsPerUser(): number {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public maxConcurrentAgentsPerUser(): number {
         return maxConcurrentAgentsPerUserHelper();
     }
 
-    protected runningTaskCountForOwner(ownerLogin: string): number {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public runningTaskCountForOwner(ownerLogin: string): number {
         return runningTaskCountForOwnerExtracted(this, ownerLogin);
     }
 
-    protected ownerAtConcurrencyCap(ownerLogin: string | undefined): boolean {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public ownerAtConcurrencyCap(ownerLogin: string | undefined): boolean {
         return ownerAtConcurrencyCapExtracted(this, ownerLogin);
     }
 
-    protected drainQueuedTasks(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public drainQueuedTasks(): void {
         drainQueuedTasksExtracted(this);
     }
 
@@ -394,7 +462,8 @@ export class QaapAgentTaskRunner {
      * Best-effort display name for a cwd. Reads `package.json#name` once and caches it; falls
      * back to the directory basename when no package manifest is present or readable.
      */
-    protected resolveProjectName(cwd: string): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveProjectName(cwd: string): string {
         return resolveProjectNameHelper(cwd, this.projectNameCache);
     }
 
@@ -508,7 +577,8 @@ export class QaapAgentTaskRunner {
         return warmForCwdExtracted(this, cwd);
     }
 
-    protected probeAgentBinOnce(agentId: string, resolveBin: () => string | undefined): boolean {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public probeAgentBinOnce(agentId: string, resolveBin: () => string | undefined): boolean {
         return probeAgentBinOnceHelper(agentId, resolveBin, this.probedAgentBins);
     }
 
@@ -551,11 +621,13 @@ export class QaapAgentTaskRunner {
         return current === task.worktreeFinishedFingerprint && current === task.worktreeBaselineFingerprint ? 'current' : 'changed';
     }
 
-    protected resolveAgentModelForRequest(request: QaapCreateAgentTaskRequest, prompt: string, ownerLogin?: string): QaapCreateAgentTaskQaiqModel | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveAgentModelForRequest(request: QaapCreateAgentTaskRequest, prompt: string, ownerLogin?: string): QaapCreateAgentTaskQaiqModel | undefined {
         return resolveAgentModelForRequestExtracted(this, request, prompt, ownerLogin);
     }
 
-    protected nativeModelRoutingTable(): QaapNativeModelRoutingTable {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public nativeModelRoutingTable(): QaapNativeModelRoutingTable {
         return nativeModelRoutingTableExtracted(this);
     }
 
@@ -574,27 +646,33 @@ export class QaapAgentTaskRunner {
         return task;
     }
 
-    protected buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public buildAgentCommand(prompt: string, agentId: string | undefined, autoApprove: boolean, agentModel?: QaapCreateAgentTaskQaiqModel, cwd?: string, contextPreamble?: string, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentTaskRequest['toolApprovalRules'], userQuery?: string, readOnlyWorkspace?: boolean, ownerLogin?: string,): { command: string; stdinPrompt?: string; stdinPromptMode?: 'qaiq-stdio' | 'plain'; agentId: string; promptTempDir?: string } {
         return buildAgentCommandExtracted(this, prompt, agentId, autoApprove, agentModel, cwd, contextPreamble, interactionModeId, approvalPolicyId, toolApprovalRules, userQuery, readOnlyWorkspace, ownerLogin);
     }
 
-    protected readProjectInfo(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readProjectInfo(cwd: string): string | undefined {
         return readProjectInfoExtracted(this, cwd);
     }
 
-    protected loadProjectInfoFromDisk(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public loadProjectInfoFromDisk(cwd: string): string | undefined {
         return loadProjectInfoFromDiskHelper(cwd);
     }
 
-    protected readAgentInstructions(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readAgentInstructions(cwd: string): string | undefined {
         return readAgentInstructionsExtracted(this, cwd);
     }
 
-    protected loadAgentInstructionsFromDisk(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public loadAgentInstructionsFromDisk(cwd: string): string | undefined {
         return loadAgentInstructionsFromDiskHelper(cwd);
     }
 
-    protected readRepoMap(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readRepoMap(cwd: string): string | undefined {
         return readRepoMapExtracted(this, cwd);
     }
 
@@ -604,21 +682,25 @@ export class QaapAgentTaskRunner {
      * disabled, no keywords, ripgrep missing, or nothing matches. Bounded and short-timeout so it
      * never blocks a turn.
      */
-    protected readRelevantFiles(cwd: string, userQuery: string | undefined): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readRelevantFiles(cwd: string, userQuery: string | undefined): string | undefined {
         return readRelevantFilesHelper(cwd, userQuery, this.readProcessSync.bind(this));
     }
 
-    protected buildRepoMap(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public buildRepoMap(cwd: string): string | undefined {
         return buildRepoMapExtracted(this, cwd);
     }
 
     /** Two-level directory listing, source dirs expanded one level, hygiene dirs excluded. */
-    protected buildRepoTree(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public buildRepoTree(cwd: string): string | undefined {
         return buildRepoTreeHelper(cwd);
     }
 
     /** Recently-changed files via git, so the agent knows where work is already in flight. */
-    protected buildRecentlyChangedFiles(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public buildRecentlyChangedFiles(cwd: string): string | undefined {
         return buildRecentlyChangedFilesHelper(cwd, this.readGitSync.bind(this));
     }
 
@@ -627,7 +709,8 @@ export class QaapAgentTaskRunner {
      * where it stands instead of spending its first tool call on `git status`. Never cached — the
      * working tree drifts as the agent edits between turns.
      */
-    protected readGitStatusSnapshot(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readGitStatusSnapshot(cwd: string): string | undefined {
         return readGitStatusSnapshotHelper(cwd, this.readGitSync.bind(this));
     }
 
@@ -635,7 +718,8 @@ export class QaapAgentTaskRunner {
      * Durable repo memory (`.qaap/memory.md`) appended by previous agent turns — user corrections,
      * lasting preferences, non-obvious repo facts. Never cached: the agent updates it between turns.
      */
-    protected readRepoMemory(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readRepoMemory(cwd: string): string | undefined {
         return readRepoMemoryHelper(cwd);
     }
 
@@ -647,70 +731,86 @@ export class QaapAgentTaskRunner {
      * repository's experiment history so it does not hand-edit the ledger or fight the researcher's
      * commits. Never cached: the runner rewrites the ledger after every phase.
      */
-    protected readResearchLedger(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readResearchLedger(cwd: string): string | undefined {
         return readResearchLedgerHelper(cwd);
     }
 
-    protected resolveAgentId(prompt: string, agentId: string | undefined, ownerLogin?: string): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveAgentId(prompt: string, agentId: string | undefined, ownerLogin?: string): string {
         return resolveAgentIdExtracted(this, prompt, agentId, ownerLogin);
     }
 
-    protected extractLastAgentMention(prompt: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public extractLastAgentMention(prompt: string): string | undefined {
         return extractLastAgentMentionExtracted(this, prompt);
     }
 
-    protected extractLastAgentMentionToken(prompt: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public extractLastAgentMentionToken(prompt: string): string | undefined {
         return extractLastAgentMentionTokenExtracted(this, prompt);
     }
 
-    protected normalizeMentionToken(token: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public normalizeMentionToken(token: string): string | undefined {
         const normalized = token.toLowerCase();
         return this.normalizeAgentId(normalized);
     }
 
-    protected stripLeadingAgentMention(prompt: string): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public stripLeadingAgentMention(prompt: string): string {
         return stripLeadingAgentMentionExtracted(this, prompt);
     }
 
-    protected buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,): Record<string, string> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,): Record<string, string> {
         return buildTemplateVarsExtracted(this, agentId, agentModel, interaction);
     }
 
-    protected resolveQaiqProviderFlags(): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveQaiqProviderFlags(): string {
         return resolveQaiqProviderFlagsExtracted(this);
     }
 
-    protected resolveQaapQaiqBinding(ownerLogin?: string): QaapQaiqModelBinding | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveQaapQaiqBinding(ownerLogin?: string): QaapQaiqModelBinding | undefined {
         return resolveQaapQaiqBindingExtracted(this, ownerLogin);
     }
 
-    protected resolveAgentBindingForTask(task: QaapAgentTask): QaapQaiqModelBinding | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveAgentBindingForTask(task: QaapAgentTask): QaapQaiqModelBinding | undefined {
         return resolveAgentBindingForTaskExtracted(this, task);
     }
 
-    protected normalizeAgentBinding(binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public normalizeAgentBinding(binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding {
         return normalizeAgentBindingExtracted(this, binding, ownerLogin);
     }
 
-    protected previewProviderEnv(): NodeJS.ProcessEnv {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public previewProviderEnv(): NodeJS.ProcessEnv {
         return previewProviderEnvExtracted(this);
     }
 
     /** Env-only fallback when no model alias or provider list is configured yet. */
-    protected resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string {
         return resolveQaiqProviderFlagsFromEnvHelper(env);
     }
 
-    protected assertQaiqConfigured(agentId: string): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public assertQaiqConfigured(agentId: string): void {
         assertQaiqConfiguredExtracted(this, agentId);
     }
 
-    protected applyTemplate(template: string, prompt: string, vars: Record<string, string> = {}): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyTemplate(template: string, prompt: string, vars: Record<string, string> = {}): string {
         return applyTemplateHelper(template, prompt, vars);
     }
 
     /** Template expansion for stdio-approval runs: the prompt is delivered over stdin, not argv. */
-    protected applyTemplateWithoutPrompt(template: string, vars: Record<string, string> = {}): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyTemplateWithoutPrompt(template: string, vars: Record<string, string> = {}): string {
         return applyTemplateWithoutPromptHelper(template, vars);
     }
 
@@ -719,7 +819,8 @@ export class QaapAgentTaskRunner {
     }
 
     /** POSIX single-quote escaping so the prompt is passed as one safe argument. */
-    protected shellQuote(value: string): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public shellQuote(value: string): string {
         return shellQuoteHelper(value);
     }
 
@@ -741,7 +842,8 @@ export class QaapAgentTaskRunner {
         return deleteForCwdExtracted(this, cwd);
     }
 
-    protected killAgentProcessTree(child: ChildProcess,
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public killAgentProcessTree(child: ChildProcess,
         options?: { readonly escalateAfterMs?: number; readonly onGracePeriodElapsed?: () => void },): NodeJS.Timeout | undefined {
         return killAgentProcessTreeExtracted(this, child, options);
     }
@@ -759,7 +861,8 @@ export class QaapAgentTaskRunner {
      * Preview terminals are spawned by the terminal service in their own process groups and are not
      * descendants of the agent, so they continue running across navigation and reloads.
      */
-    protected reapAgentProcessGroupAfterExit(child: ChildProcess): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public reapAgentProcessGroupAfterExit(child: ChildProcess): void {
         reapAgentProcessGroupAfterExitHelper(child);
     }
 
@@ -784,23 +887,28 @@ export class QaapAgentTaskRunner {
         return respondToApprovalPromptExtracted(this, taskId, action, toolUseId);
     }
 
-    protected findPendingControlRequestEntry(pending: QaapQaiqPendingControlRequest[], idFromApproval?: string,): QaapQaiqPendingControlRequest | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public findPendingControlRequestEntry(pending: QaapQaiqPendingControlRequest[], idFromApproval?: string,): QaapQaiqPendingControlRequest | undefined {
         return findPendingControlRequestEntryExtracted(this, pending, idFromApproval);
     }
 
-    protected scheduleQueuedApprovalTimeout(taskId: string, request: QaapQaiqPendingControlRequest, logStream: fs.WriteStream,): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public scheduleQueuedApprovalTimeout(taskId: string, request: QaapQaiqPendingControlRequest, logStream: fs.WriteStream,): void {
         scheduleQueuedApprovalTimeoutExtracted(this, taskId, request, logStream);
     }
 
-    protected clearQueuedApprovalTimer(taskId: string, requestId: string): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public clearQueuedApprovalTimer(taskId: string, requestId: string): void {
         clearQueuedApprovalTimerExtracted(this, taskId, requestId);
     }
 
-    protected clearQueuedApprovalTimers(taskId: string): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public clearQueuedApprovalTimers(taskId: string): void {
         clearQueuedApprovalTimersExtracted(this, taskId);
     }
 
-    protected async spawnProcessWhenReady(task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async spawnProcessWhenReady(task: QaapAgentTask, request: QaapCreateAgentTaskRequest): Promise<void> {
         return spawnProcessWhenReadyExtracted(this, task, request);
     }
 
@@ -810,65 +918,81 @@ export class QaapAgentTaskRunner {
      * fail runs that work today on an installation without a restrictable CLI. It is reported instead,
      * so nobody reads "cwd-readonly" off a node and assumes the workspace was protected.
      */
-    protected noteReadOnlyEnforcement(taskId: string, agentId: string): QaapAgentReadOnlyEnforcement {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public noteReadOnlyEnforcement(taskId: string, agentId: string): QaapAgentReadOnlyEnforcement {
         return noteReadOnlyEnforcementHelper(taskId, agentId);
     }
 
-    protected async spawnProcess(task: QaapAgentTask): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async spawnProcess(task: QaapAgentTask): Promise<void> {
         await spawnProcessExtracted(this, task);
     }
 
     /** In-flight self-verification passes. Each may spawn an extra (fix-turn) qaiq — bounded below. */
-    protected activeVerificationPasses = 0;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public activeVerificationPasses = 0;
     /** FIFO waiters for a verification slot. A released slot is transferred directly to one waiter. */
-    protected verificationPassWaiters: Array<() => void> = [];
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public verificationPassWaiters: Array<() => void> = [];
 
-    protected maxConcurrentVerificationPasses(): number {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public maxConcurrentVerificationPasses(): number {
         return maxConcurrentVerificationPassesExtracted(this);
     }
 
-    protected acquireVerificationPass(): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public acquireVerificationPass(): Promise<void> {
         return acquireVerificationPassExtracted(this);
     }
 
-    protected releaseVerificationPass(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public releaseVerificationPass(): void {
         releaseVerificationPassExtracted(this);
     }
 
-    protected async finishSuccessfulTaskAfterVerification(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async finishSuccessfulTaskAfterVerification(task: QaapAgentTask, exitCode: number | undefined): Promise<void> {
         return finishSuccessfulTaskAfterVerificationExtracted(this, task, exitCode);
     }
 
-    protected async detectEmptyAgentTurnForTask(task: QaapAgentTask): Promise<QaapEmptyAgentTurnResult> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async detectEmptyAgentTurnForTask(task: QaapAgentTask): Promise<QaapEmptyAgentTurnResult> {
         return detectEmptyAgentTurnForTaskExtracted(this, task);
     }
 
-    protected async verifySuccessfulAgentTask(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async verifySuccessfulAgentTask(task: QaapAgentTask): Promise<QaapAgentTaskVerification | undefined> {
         return verifySuccessfulAgentTaskExtracted(this, task);
     }
 
-    protected async reviewSuccessfulAgentTask(task: QaapAgentTask, verification: QaapAgentTaskVerification | undefined,): Promise<QaapAgentTaskReview | undefined> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async reviewSuccessfulAgentTask(task: QaapAgentTask, verification: QaapAgentTaskVerification | undefined,): Promise<QaapAgentTaskReview | undefined> {
         return reviewSuccessfulAgentTaskExtracted(this, task, verification);
     }
 
-    protected resolveReviewerCandidates(task: QaapAgentTask): string[] {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveReviewerCandidates(task: QaapAgentTask): string[] {
         return resolveReviewerCandidatesExtracted(this, task);
     }
 
-    protected async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async hasEditedFilesForVerification(task: QaapAgentTask, env: NodeJS.ProcessEnv): Promise<boolean> {
         return hasEditedFilesForVerificationExtracted(this, task, env);
     }
 
-    protected captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'sensitiveBaselineHashes'> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public captureWorktreeBaseline(cwd: string): Pick<QaapAgentTask, 'worktreeBaselineFingerprint' | 'worktreeBaselineStatus' | 'sensitiveBaselineHashes'> {
         return captureWorktreeBaselineExtracted(this, cwd);
     }
 
     /** Sensitive (gitignored) files this task changed, or `[]` when none / no baseline. */
-    protected changedSensitiveFiles(task: QaapAgentTask): string[] {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public changedSensitiveFiles(task: QaapAgentTask): string[] {
         return changedSensitiveFilesHelper(task);
     }
 
-    protected restoreBaselineSensitiveFiles(task: QaapAgentTask): string[] {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public restoreBaselineSensitiveFiles(task: QaapAgentTask): string[] {
         return restoreBaselineSensitiveFilesExtracted(this, task);
     }
 
@@ -876,7 +1000,8 @@ export class QaapAgentTaskRunner {
      * Normalized porcelain status used as a path-level baseline. Line order is sorted so two
      * equivalent dirty trees compare equal even when git emits paths in different orders.
      */
-    protected captureWorktreeStatus(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public captureWorktreeStatus(cwd: string): string | undefined {
         return captureWorktreeStatusHelper(cwd, this.readGitSync.bind(this));
     }
 
@@ -886,23 +1011,28 @@ export class QaapAgentTaskRunner {
      * above the explicit byte budget return undefined so callers can use the porcelain baseline
      * instead of a bare "any dirty path" probe.
      */
-    protected captureWorktreeFingerprint(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public captureWorktreeFingerprint(cwd: string): string | undefined {
         return captureWorktreeFingerprintHelper(cwd, this.readGitSync.bind(this));
     }
 
-    protected async resolveVerificationScriptsForCwd(cwd: string): Promise<string[]> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async resolveVerificationScriptsForCwd(cwd: string): Promise<string[]> {
         return resolveVerificationScriptsForCwdHelper(cwd);
     }
 
-    protected async runVerificationScripts(task: QaapAgentTask, env: NodeJS.ProcessEnv, scripts: readonly string[], startedAt: number,): Promise<{ command: string; result: QaapGenericCommandResult } | undefined> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async runVerificationScripts(task: QaapAgentTask, env: NodeJS.ProcessEnv, scripts: readonly string[], startedAt: number,): Promise<{ command: string; result: QaapGenericCommandResult } | undefined> {
         return runVerificationScriptsExtracted(this, task, env, scripts, startedAt);
     }
 
-    protected async runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number,): Promise<QaapGenericCommandResult | undefined> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async runAgentVerificationFixTurn(task: QaapAgentTask, env: NodeJS.ProcessEnv, failedCommand: string, failure: QaapGenericCommandResult, attempt: number, startedAt: number,): Promise<QaapGenericCommandResult | undefined> {
         return runAgentVerificationFixTurnExtracted(this, task, env, failedCommand, failure, attempt, startedAt);
     }
 
-    protected buildAgentVerificationFixPrompt(failedCommand: string, failure: QaapGenericCommandResult, attempt: number,): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public buildAgentVerificationFixPrompt(failedCommand: string, failure: QaapGenericCommandResult, attempt: number,): string {
         return buildAgentVerificationFixPromptExtracted(this, failedCommand, failure, attempt);
     }
 
@@ -910,35 +1040,43 @@ export class QaapAgentTaskRunner {
         return runGenericCommandExtracted(this, command, cwd, env, taskId, timeoutMs, options);
     }
 
-    protected appendBoundedCommandOutput(current: string, chunk: string, maxChars: number | undefined): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public appendBoundedCommandOutput(current: string, chunk: string, maxChars: number | undefined): string {
         return appendBoundedCommandOutputHelper(current, chunk, maxChars);
     }
 
-    protected appendAndFireOutput(taskId: string, chunk: string, ownerLogin?: string): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public appendAndFireOutput(taskId: string, chunk: string, ownerLogin?: string): void {
         appendAndFireOutputExtracted(this, taskId, chunk, ownerLogin);
     }
 
-    protected isTaskStillRunning(taskId: string): boolean {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public isTaskStillRunning(taskId: string): boolean {
         return this.tasks.get(taskId)?.state === 'running';
     }
 
-    protected summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public summarizeVerificationFailure(command: string, result: QaapGenericCommandResult): string {
         return summarizeVerificationFailureExtracted(this, command, result);
     }
 
-    protected truncateForPrompt(value: string, maxChars: number): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public truncateForPrompt(value: string, maxChars: number): string {
         return truncateForPromptHelper(value, maxChars);
     }
 
-    protected truncateHead(value: string, maxChars: number): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public truncateHead(value: string, maxChars: number): string {
         return truncateHeadHelper(value, maxChars);
     }
 
-    protected fireOutput(taskId: string, chunk: unknown): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public fireOutput(taskId: string, chunk: unknown): void {
         fireOutputExtracted(this, taskId, chunk);
     }
 
-    protected recordTaskLatencyMark(taskId: string, mark: QaapTurnLatencyMark, at = Date.now()): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public recordTaskLatencyMark(taskId: string, mark: QaapTurnLatencyMark, at = Date.now()): void {
         recordTaskLatencyMarkHelper(taskId, mark, this.tasks, at);
     }
 
@@ -949,34 +1087,41 @@ export class QaapAgentTaskRunner {
      * methods below are thin delegators kept for readable call sites and test override points.
      */
     @inject(QaapTenantSpawnService)
-    protected readonly tenantSpawn: QaapTenantSpawnService;
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public readonly tenantSpawn: QaapTenantSpawnService;
 
     /** @see QaapTenantSpawnService.enforceIsolationPolicy — throws to fail the spawn when refused. */
-    protected enforceAgentIsolationPolicy(): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public enforceAgentIsolationPolicy(): void {
         this.tenantSpawn.enforceIsolationPolicy();
     }
 
     /** @see QaapTenantSpawnService.resolveSpawnIdentity */
-    protected resolveAgentSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveAgentSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
         return this.tenantSpawn.resolveSpawnIdentity(cwd);
     }
 
-    protected spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('pipe' | 'ignore')[]; detached?: boolean; }): ChildProcess {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public spawnAgentCommand(command: string, options: { cwd: string; env: NodeJS.ProcessEnv; stdio: ('pipe' | 'ignore')[]; detached?: boolean; }): ChildProcess {
         return spawnAgentCommandExtracted(this, command, options);
     }
 
     /** @see QaapTenantSpawnService.resolveTenantHome */
-    protected resolveAgentHome(cwd: string): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public resolveAgentHome(cwd: string): string {
         return this.tenantSpawn.resolveTenantHome(cwd);
     }
 
     /** @see QaapTenantSpawnService.tenantHomeEnvOverlay */
-    protected tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public tenantHomeEnvOverlay(cwd: string): { HOME?: string; USER?: string; LOGNAME?: string } {
         return this.tenantSpawn.tenantHomeEnvOverlay(cwd);
     }
 
     /** @see QaapTenantSpawnService.prepareTenantIsolation */
-    protected ensureAgentCwdOwnership(cwd: string): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public ensureAgentCwdOwnership(cwd: string): void {
         this.tenantSpawn.prepareTenantIsolation(cwd);
     }
 
@@ -1005,30 +1150,36 @@ export class QaapAgentTaskRunner {
     }
 
     /** Async lifecycle gate: Docker tenant creation/inspection must complete before any child spawn. */
-    protected async ensureAgentCwdOwnershipAsync(cwd: string): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async ensureAgentCwdOwnershipAsync(cwd: string): Promise<void> {
         await this.tenantSpawn.prepareTenantIsolationAsync(cwd);
     }
 
-    protected buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv {
         return buildChildEnvExtracted(this, task);
     }
 
-    protected applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void {
         applyOpenAiVendorCompatEnvExtracted(this, env, binding);
     }
 
-    protected applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void {
         applyQaiqProviderEnvExtracted(this, env, command, binding);
     }
 
-    protected applyProviderPreferenceEnv(env: NodeJS.ProcessEnv, ownerLogin?: string): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyProviderPreferenceEnv(env: NodeJS.ProcessEnv, ownerLogin?: string): void {
         applyProviderPreferenceEnvExtracted(this, env, ownerLogin);
     }
 
     /** Remove provider API keys inherited from the shared process.env so they
      *  don't leak across users. Operator-level keys are intentionally stripped;
      *  each user must configure their own keys via per-user settings. */
-    protected stripSharedProviderEnv(env: NodeJS.ProcessEnv): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public stripSharedProviderEnv(env: NodeJS.ProcessEnv): void {
         stripSharedProviderEnvHelper(env);
     }
 
@@ -1038,22 +1189,26 @@ export class QaapAgentTaskRunner {
         return readUserSettingsFromDiskHelper(ownerLogin);
     }
 
-    protected preferenceReaderForOwner(ownerLogin?: string): QaapPreferenceReader {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public preferenceReaderForOwner(ownerLogin?: string): QaapPreferenceReader {
         return preferenceReaderForOwnerHelper(this, ownerLogin);
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map OpenRouter prefs when needed. */
-    protected applyOpenRouterOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyOpenRouterOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
         applyOpenRouterOpenAiCompatEnvHelper(env);
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map NVIDIA NIM prefs when needed. */
-    protected applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
         applyNvidiaOpenAiCompatEnvHelper(env);
     }
 
     /** QAIQ's OpenAI provider reads OPENAI_*; map Hugging Face Inference Router prefs when needed. */
-    protected applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public applyHuggingfaceOpenAiCompatEnv(env: NodeJS.ProcessEnv): void {
         applyHuggingfaceOpenAiCompatEnvHelper(env);
     }
 
@@ -1065,7 +1220,8 @@ export class QaapAgentTaskRunner {
         return markTaskBlockedExtracted(this, id);
     }
 
-    protected finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public finishTask(id: string, state: QaapAgentTaskState, exitCode: number | undefined): QaapAgentTask | undefined {
         const task = finishTaskExtracted(this, id, state, exitCode);
         this.releaseTenantOperation(id);
         return task;
@@ -1086,19 +1242,23 @@ export class QaapAgentTaskRunner {
      */
     conversationIdForTask?: (taskId: string) => string | undefined;
 
-    protected async notifyCompletion(task: QaapAgentTask): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async notifyCompletion(task: QaapAgentTask): Promise<void> {
         return notifyCompletionExtracted(this, task);
     }
 
-    protected async readLog(id: string): Promise<string> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public async readLog(id: string): Promise<string> {
         return readLogExtracted(this, id);
     }
 
-    protected persist(): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public persist(): Promise<void> {
         return persistExtracted(this);
     }
 
-    protected logPath(id: string, ownerLogin?: string): string {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public logPath(id: string, ownerLogin?: string): string {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
             throw new Error('Invalid task id.');
         }
@@ -1108,7 +1268,8 @@ export class QaapAgentTaskRunner {
         return path.join(root, `${id}.log`);
     }
 
-    protected isDirectory(target: string): boolean {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public isDirectory(target: string): boolean {
         return isDirectoryHelper(target);
     }
 
@@ -1116,7 +1277,8 @@ export class QaapAgentTaskRunner {
         return improveComposerPromptExtracted(this, options);
     }
 
-    protected runOneShotCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, agentId?: string, timeoutMs = 45_000, stdinPrompt?: string, promptTempDir?: string,): Promise<string> {
+    /** @internal Used by the extracted qaap-agent-task-runner-* modules. */
+    public runOneShotCommand(command: string, cwd: string, env: NodeJS.ProcessEnv, agentId?: string, timeoutMs = 45_000, stdinPrompt?: string, promptTempDir?: string,): Promise<string> {
         return runOneShotCommandExtracted(this, command, cwd, env, agentId, timeoutMs, stdinPrompt, promptTempDir);
     }
 }

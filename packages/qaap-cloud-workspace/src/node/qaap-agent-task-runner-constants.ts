@@ -1,9 +1,9 @@
-// @ts-nocheck
 // Constants and types extracted from qaap-agent-task-runner.ts
 
 import * as os from 'os';
 import * as path from 'path';
 import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 
 export interface AgentCandidate {
     readonly id: string;

@@ -38,7 +38,7 @@ class TestableQaapAgentTaskRunner extends QaapAgentTaskRunner {
         return this.hasEditedFilesForVerification(task, {});
     }
     public residualProcessGroupReaps = 0;
-    protected override reapAgentProcessGroupAfterExit(_child: ChildProcess): void {
+    public override reapAgentProcessGroupAfterExit(_child: ChildProcess): void {
         this.residualProcessGroupReaps++;
     }
 }

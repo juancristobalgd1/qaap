@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 
 import { expect } from 'chai';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { createExtracted, retryExtracted, resumeExtracted } from './qaap-agent-task-runner-streaming2';
 
 describe('Qaap standalone task retry', () => {
@@ -32,7 +33,7 @@ describe('Qaap standalone task retry', () => {
             },
         };
 
-        const retried = retryExtracted(ctx, original.id);
+        const retried = retryExtracted(ctx as unknown as QaapAgentTaskRunnerContext, original.id);
 
         expect(retried?.id).to.equal('retried-task');
         expect(owner).to.equal('alice');
@@ -60,9 +61,9 @@ describe('Qaap standalone task retry', () => {
             create: () => { creates++; },
         };
 
-        expect(retryExtracted(ctx, 'running')).to.equal(undefined);
-        expect(retryExtracted(ctx, 'blocked')).to.equal(undefined);
-        expect(retryExtracted(ctx, 'completed')).to.equal(undefined);
+        expect(retryExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'running')).to.equal(undefined);
+        expect(retryExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'blocked')).to.equal(undefined);
+        expect(retryExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'completed')).to.equal(undefined);
         expect(creates).to.equal(0);
     });
 
@@ -90,7 +91,7 @@ describe('Qaap standalone task retry', () => {
             },
         };
 
-        const resumed = resumeExtracted(ctx, original.id);
+        const resumed = resumeExtracted(ctx as unknown as QaapAgentTaskRunnerContext, original.id);
 
         expect(resumed?.id).to.equal('resumed-task');
         expect(request).to.deep.include({
@@ -100,7 +101,7 @@ describe('Qaap standalone task retry', () => {
             autoApprove: undefined,
             resumedFromTaskId: original.id,
         });
-        expect(resumeExtracted(ctx, original.id)?.id).to.equal('resumed-task');
+        expect(resumeExtracted(ctx as unknown as QaapAgentTaskRunnerContext, original.id)?.id).to.equal('resumed-task');
     });
 
     it('returns the existing task for a repeated create clientRequestId', () => {
@@ -124,8 +125,8 @@ describe('Qaap standalone task retry', () => {
         };
         const request = { command: 'echo hello', cwd: '/workspace/repo', clientRequestId: 'submit-1' };
 
-        const first = createExtracted(ctx, request, 'alice');
-        const second = createExtracted(ctx, request, 'alice');
+        const first = createExtracted(ctx as unknown as QaapAgentTaskRunnerContext, request, 'alice');
+        const second = createExtracted(ctx as unknown as QaapAgentTaskRunnerContext, request, 'alice');
 
         expect(second).to.equal(first);
         expect(ctx.tasks.size).to.equal(1);

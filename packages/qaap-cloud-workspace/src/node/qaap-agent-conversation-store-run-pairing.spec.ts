@@ -52,7 +52,7 @@ class TestTaskRunner extends QaapAgentTaskRunner {
         return [];
     }
 
-    protected override async persist(): Promise<void> { /* no-op */ }
+    public override async persist(): Promise<void> { /* no-op */ }
 }
 
 class TestConversationStore extends QaapAgentConversationStore {

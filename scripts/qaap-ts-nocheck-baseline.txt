@@ -1,17 +1,10 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 117 files.
+# 110 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller.ts
-packages/qaap-cloud-workspace/src/node/qaap-agent-task-runner-activity2.ts
-packages/qaap-cloud-workspace/src/node/qaap-agent-task-runner-constants.ts
-packages/qaap-cloud-workspace/src/node/qaap-agent-task-runner-live-status2.ts
-packages/qaap-cloud-workspace/src/node/qaap-agent-task-runner-render2.ts
-packages/qaap-cloud-workspace/src/node/qaap-agent-task-runner-streaming2.ts
-packages/qaap-cloud-workspace/src/node/qaap-agent-task-runner-timeline2.ts
-packages/qaap-cloud-workspace/src/node/qaap-agent-task-runner-tool-pills2.ts
 packages/qaap-cloud-workspace/src/node/qaap-job-runtime-render2.ts
 packages/qaap-cloud-workspace/src/node/qaap-job-runtime-streaming2.ts
 packages/qaap-cloud-workspace/src/node/qaap-job-runtime-timeline2.ts
