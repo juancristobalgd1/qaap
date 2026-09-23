@@ -1,13 +1,10 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 106 files.
+# 103 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller.ts
-packages/qaap-cloud-workspace/src/node/qaap-research-runner-render2.ts
-packages/qaap-cloud-workspace/src/node/qaap-research-runner-streaming2.ts
-packages/qaap-cloud-workspace/src/node/qaap-research-runner.ts
 packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution-activity.ts
 packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution-streaming.ts

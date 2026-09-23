@@ -2,40 +2,27 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { spawnSync } from 'child_process';
-import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
 import { Worker } from 'worker_threads';
 import {
-    DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
     type ResearchAgentModel,
     type ResearchGoal,
-    type ResearchGoalStatus,
     type ResearchMetricSpec,
     type TerminationReason,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import {
-    configFingerprint,
-    evaluateVerdict,
-    parseExperimentProposal,
     parseMetricFromStdout,
     resolveTerminationReason,
     type ResearchExperimentRecord,
-    type ResearchMetricValue,
 } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
-import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
-import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
-import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
-import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
+import { type RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
+import { type QaapAgentTask } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
+import type { QaapResearchFallbackProposal, QaapResearchProposeOptions, QaapResearchRoundCommit, QaapResearchRunnerContext } from './qaap-research-runner-context';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { cancelExtracted, collectRealFileChangesExtracted, ensureLoopExtracted, ensurePreflightPassedExtracted, pushRealFileChangeExtracted, reconcileOnBootExtracted, recordPreflightResultExtracted, resumeRoundExtracted, roundDiffStatExtracted, runLoopExtracted, runProposeExtracted, startNewRoundExtracted, synthesizeFallbackProposalExtracted, terminateExtracted, unquoteGitPathExtracted } from './qaap-research-runner-render2';
 import { appendCommandOutputExtracted, buildResearchCommandEnvExtracted, commitRoundChangesExtracted, commitRoundExtracted, describeGateFailureExtracted, discardBrokenRoundExtracted, finishAsInfraFailureExtracted, finishAsNoopExtracted, revertRoundExtracted, runGitExtracted, runMeasurePhaseExtracted, runRunPhaseExtracted, waitForTaskFinishExtracted, waitForTaskFinishOrTimeoutExtracted } from './qaap-research-runner-streaming2';
@@ -214,29 +201,35 @@ export async function parseResearchMetricFromStdout(stdout: string, spec: Resear
  * but drives a multi-phase state machine instead of a single fire-and-forget task per tick.
  */
 @injectable()
-export class QaapResearchRunner {
+export class QaapResearchRunner implements QaapResearchRunnerContext {
 
     @inject(QaapResearchStore)
-    protected readonly store: QaapResearchStore;
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public readonly store: QaapResearchStore;
 
     @inject(QaapAgentTaskRunner)
-    protected readonly taskRunner: QaapAgentTaskRunner;
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public readonly taskRunner: QaapAgentTaskRunner;
 
     @inject(QaapTenantSpawnService)
-    protected readonly tenantSpawn: QaapTenantSpawnService;
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public readonly tenantSpawn: QaapTenantSpawnService;
 
     /** goalId → the task id / synthetic id currently executing, so `cancel` can kill it immediately
      *  instead of waiting out a multi-hour `runCommand`. */
-    protected readonly activeExecutionId = new Map<string, string>();
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public readonly activeExecutionId = new Map<string, string>();
     /** Guards against two loops running concurrently for the same goal (e.g. a duplicate `start`
      *  call racing the boot-time reconciliation). */
-    protected readonly loopRunning = new Set<string>();
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public readonly loopRunning = new Set<string>();
 
     /**
      * Starts a ledger write. Returns a Promise only for the real async store; sync test doubles
      * return `undefined` so callers can skip `await` and avoid an unconditional microtask yield.
      */
-    protected beginLedgerWrite(cwd: string, record: ResearchExperimentRecord): undefined | Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public beginLedgerWrite(cwd: string, record: ResearchExperimentRecord): undefined | Promise<void> {
         const pending = this.store.upsertRecord(cwd, record) as void | Promise<void>;
         return pending ? pending : undefined;
     }
@@ -268,156 +261,184 @@ export class QaapResearchRunner {
         return cancelExtracted(this, goalId);
     }
 
-    protected ensureLoop(goalId: string): void {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public ensureLoop(goalId: string): void {
         ensureLoopExtracted(this, goalId);
     }
 
     // ---- the loop --------------------------------------------------------
 
-    protected async runLoop(goalId: string): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async runLoop(goalId: string): Promise<void> {
         return runLoopExtracted(this, goalId);
     }
 
     /** The ledger, excluding the `round: 0` preflight-probe record (see {@link ensurePreflightPassed})
      *  — everything that counts rounds (round numbering, `maxRounds`, stagnation, and infra-failure
      *  streaks via `resolveTerminationReason`) must never see it. */
-    protected readRoundLedger(goal: ResearchGoal): ResearchExperimentRecord[] {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public readRoundLedger(goal: ResearchGoal): ResearchExperimentRecord[] {
         return this.store.readLedgerForGoal(goal).filter(record => !record.preflight);
     }
 
-    protected async ensurePreflightPassed(goalId: string): Promise<boolean> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async ensurePreflightPassed(goalId: string): Promise<boolean> {
         return ensurePreflightPassedExtracted(this, goalId);
     }
 
-    protected async recordPreflightResult(goal: ResearchGoal, failureNote: string | undefined): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async recordPreflightResult(goal: ResearchGoal, failureNote: string | undefined): Promise<void> {
         return recordPreflightResultExtracted(this, goal, failureNote);
     }
 
-    protected terminate(goal: ResearchGoal, reason: TerminationReason): void {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public terminate(goal: ResearchGoal, reason: TerminationReason): void {
         terminateExtracted(this, goal, reason);
     }
 
-    protected isCancelled(goalId: string): boolean {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public isCancelled(goalId: string): boolean {
         return this.store.get(goalId)?.status !== 'running';
     }
 
     // ---- round orchestration ----------------------------------------------
 
-    protected async startNewRound(goal: ResearchGoal, round: number): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async startNewRound(goal: ResearchGoal, round: number): Promise<void> {
         return startNewRoundExtracted(this, goal, round);
     }
 
-    protected async resumeRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async resumeRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         return resumeRoundExtracted(this, goal, record);
     }
 
     // ---- phase: propose -----------------------------------------------------
 
-    protected async runPropose(goal: ResearchGoal, record: ResearchExperimentRecord, options: { readonly reminder?: string; readonly fingerprintRetried?: boolean; readonly noopRetried?: boolean },): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async runPropose(goal: ResearchGoal, record: ResearchExperimentRecord, options: QaapResearchProposeOptions,): Promise<void> {
         return runProposeExtracted(this, goal, record, options);
     }
 
-    protected synthesizeFallbackProposal(diffStat: string): { readonly hypothesis: string; readonly symptom?: string; readonly lever?: string; readonly config: Record<string, unknown> } {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public synthesizeFallbackProposal(diffStat: string): QaapResearchFallbackProposal {
         return synthesizeFallbackProposalExtracted(this, diffStat);
     }
 
-    protected roundDiffStat(cwd: string): string {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public roundDiffStat(cwd: string): string {
         return roundDiffStatExtracted(this, cwd);
     }
 
-    protected collectRealFileChanges(cwd: string): RealFileChange[] {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public collectRealFileChanges(cwd: string): RealFileChange[] {
         return collectRealFileChangesExtracted(this, cwd);
     }
 
-    protected pushRealFileChange(changes: RealFileChange[], cwd: string, rawPath: string, deleted: boolean): void {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public pushRealFileChange(changes: RealFileChange[], cwd: string, rawPath: string, deleted: boolean): void {
         pushRealFileChangeExtracted(this, changes, cwd, rawPath, deleted);
     }
 
-    protected unquoteGitPath(rawPath: string): string {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public unquoteGitPath(rawPath: string): string {
         return unquoteGitPathExtracted(this, rawPath);
     }
 
-    protected async finishAsNoop(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async finishAsNoop(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         return finishAsNoopExtracted(this, goal, record);
     }
 
     // ---- phase: commit (round → branch) --------------------------------------
 
-    protected async commitRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async commitRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         return commitRoundExtracted(this, goal, record);
     }
 
-    protected commitRoundChanges(goal: ResearchGoal, record: ResearchExperimentRecord): {
-        sha?: string;
-        baselineSha?: string;
-        adoptedAgentCommits?: number;
-    } {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public commitRoundChanges(goal: ResearchGoal, record: ResearchExperimentRecord): QaapResearchRoundCommit {
         return commitRoundChangesExtracted(this, goal, record);
     }
 
-    protected async discardBrokenRound(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async discardBrokenRound(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string): Promise<void> {
         return discardBrokenRoundExtracted(this, goal, record, reason);
     }
 
-    protected describeGateFailure(task: QaapAgentTask): string {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public describeGateFailure(task: QaapAgentTask): string {
         return describeGateFailureExtracted(this, task);
     }
 
     // ---- phase: run (the long-running work) ----------------------------------
 
-    protected async runRunPhase(goal: ResearchGoal, record: ResearchExperimentRecord, isResume: boolean): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async runRunPhase(goal: ResearchGoal, record: ResearchExperimentRecord, isResume: boolean): Promise<void> {
         return runRunPhaseExtracted(this, goal, record, isResume);
     }
 
     // ---- phase: measure -------------------------------------------------------
 
-    protected async runMeasurePhase(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async runMeasurePhase(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         return runMeasurePhaseExtracted(this, goal, record);
     }
 
-    protected async finishAsInfraFailure(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string, runAttempts: number | undefined): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async finishAsInfraFailure(goal: ResearchGoal, record: ResearchExperimentRecord, reason: string, runAttempts: number | undefined): Promise<void> {
         return finishAsInfraFailureExtracted(this, goal, record, reason, runAttempts);
     }
 
     // ---- discard a regression --------------------------------------------------
 
-    protected async revertRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public async revertRound(goal: ResearchGoal, record: ResearchExperimentRecord): Promise<void> {
         return revertRoundExtracted(this, goal, record);
     }
 
     // ---- small helpers ---------------------------------------------------------
 
-    protected waitForTaskFinish(taskId: string): Promise<QaapAgentTask> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public waitForTaskFinish(taskId: string): Promise<QaapAgentTask> {
         return waitForTaskFinishExtracted(this, taskId);
     }
 
-    protected waitForTaskFinishOrTimeout(taskId: string, timeoutMs: number): Promise<QaapAgentTask | undefined> {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public waitForTaskFinishOrTimeout(taskId: string, timeoutMs: number): Promise<QaapAgentTask | undefined> {
         return waitForTaskFinishOrTimeoutExtracted(this, taskId, timeoutMs);
     }
 
-    protected appendNote(existing: string | undefined, note: string): string {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public appendNote(existing: string | undefined, note: string): string {
         return existing ? `${existing}\n${note}` : note;
     }
 
-    protected describeCommandFailure(label: string, result: QaapGenericCommandResult): string {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public describeCommandFailure(label: string, result: QaapGenericCommandResult): string {
         const reason = `${label} exited ${result.exitCode}${result.timedOut ? ' (timed out)' : ''}.`;
         return this.appendCommandOutput(reason, result);
     }
 
-    protected appendCommandOutput(reason: string, result: QaapGenericCommandResult): string {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public appendCommandOutput(reason: string, result: QaapGenericCommandResult): string {
         return appendCommandOutputExtracted(this, reason, result);
     }
 
-    protected buildResearchCommandEnv(ownerLogin?: string): NodeJS.ProcessEnv {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public buildResearchCommandEnv(ownerLogin?: string): NodeJS.ProcessEnv {
         return buildResearchCommandEnvExtracted(this, ownerLogin);
     }
 
-    protected runGit(cwd: string, args: readonly string[]): { readonly stdout: string; readonly ok: boolean } {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public runGit(cwd: string, args: readonly string[]): { readonly stdout: string; readonly ok: boolean } {
         return runGitExtracted(this, cwd, args);
     }
 
     /** POSIX single-quote escaping so a sha is passed as one safe shell argument. */
-    protected shellQuote(value: string): string {
+    /** @internal Used by the extracted qaap-research-runner-* modules. */
+    public shellQuote(value: string): string {
         return `'${value.split('\'').join('\'\\\'\'')}'`;
     }
 }
