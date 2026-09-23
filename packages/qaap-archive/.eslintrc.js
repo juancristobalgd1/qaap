@@ -1,10 +1,12 @@
 /** @type {import('eslint').Linter.Config} */
 module.exports = {
-    root: true,
-    parser: '@typescript-eslint/parser',
+    extends: [
+        '../../configs/build.eslintrc.json'
+    ],
     parserOptions: {
-        ecmaVersion: 2022,
-        sourceType: 'module'
+        tsconfigRootDir: __dirname,
+        project: 'tsconfig.json'
     },
-    plugins: ['@typescript-eslint', '@typescript-eslint/tslint', 'deprecation', 'no-null']
+    // Backlog rules are warnings until paid down; see scripts/qaap-eslint-ratchet.js.
+    rules: require('../../scripts/qaap-eslint-ratchet').rules
 };
