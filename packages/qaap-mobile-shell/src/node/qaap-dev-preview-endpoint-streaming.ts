@@ -43,6 +43,7 @@ import {
 } from '../common/qaap-preview-identity';
 import { normalizeQaapPublicUrl } from './qaap-github-oauth-config';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
+import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { PREVIEW_RESERVATION_START_GRACE_MS } from './qaap-dev-preview-endpoint';
@@ -415,7 +416,7 @@ export async function proxyWebSocketExtracted(ctx: any, req: http.IncomingMessag
             return;
         }
         // `localhost` keeps dev-server host checks happy regardless of loopback family.
-        const headers = { ...req.headers, host: `localhost:${port}` };
+        const headers = buildQaapPreviewUpstreamHeaders(req.headers, `localhost:${port}`);
         const proxyReq = http.request({
             hostname: targetHost,
             port,
@@ -424,7 +425,9 @@ export async function proxyWebSocketExtracted(ctx: any, req: http.IncomingMessag
             headers,
         });
         proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
-            const headerLines = Object.entries(proxyRes.headers)
+            const upgradeHeaders = { ...proxyRes.headers };
+            sanitizeQaapPreviewResponseHeaders(upgradeHeaders);
+            const headerLines = Object.entries(upgradeHeaders)
                 .filter(([, value]) => value !== undefined)
                 .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`);
             socket.write(

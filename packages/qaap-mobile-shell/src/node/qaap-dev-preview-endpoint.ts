@@ -45,6 +45,7 @@ import {
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
 import { normalizeQaapPublicUrl } from './qaap-github-oauth-config';
+import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-headers';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
@@ -56,7 +57,7 @@ export const PROBE_TIMEOUT_MS = 2500;
 export const LOCAL_TARGET_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
 export const TEXT_RESPONSE_PATTERN = /\b(?:text\/html|text\/css|application\/javascript|text\/javascript|application\/x-javascript)\b/i;
 export const QAAP_PREVIEW_ACCESS_QUERY = 'qaap_preview_token';
-export const QAAP_PREVIEW_ACCESS_COOKIE = 'qaap_preview_access';
+export const QAAP_PREVIEW_ACCESS_COOKIE = QAAP_PREVIEW_ACCESS_COOKIE_NAME;
 export const PREVIEW_PORT_ALLOCATION_ATTEMPTS = 128;
 export const PREVIEW_RESERVATION_START_GRACE_MS = 5 * 60_000;
 export const PREVIEW_REAPER_INTERVAL_MS = 60_000;

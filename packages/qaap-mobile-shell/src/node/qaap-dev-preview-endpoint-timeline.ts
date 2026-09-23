@@ -44,6 +44,7 @@ import {
 } from '../common/qaap-preview-identity';
 import { normalizeQaapPublicUrl, resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
+import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { QAAP_PREVIEW_ACCESS_QUERY } from './qaap-dev-preview-endpoint';
@@ -59,11 +60,10 @@ export async function forwardHttpExtracted(ctx: any, incoming: Request,
             outgoing.status(503).type('text/html').send(buildDevPreviewWaitingHtml(targetPort));
             return;
         }
-        const headers: http.OutgoingHttpHeaders = { ...incoming.headers };
-        headers.host = `localhost:${targetPort}`;
+        // Qaap session/capability cookies and x-qaap-* internal headers never reach the dev server.
+        const headers = buildQaapPreviewUpstreamHeaders(incoming.headers, `localhost:${targetPort}`);
         headers['accept-encoding'] = 'identity';
         delete headers.connection;
-        delete headers['x-qaap-preview-referer-id'];
 
         const proxyReq = http.request({
             hostname: targetHost,
@@ -73,6 +73,7 @@ export async function forwardHttpExtracted(ctx: any, incoming: Request,
             headers,
         }, proxyRes => {
             const responseHeaders = { ...proxyRes.headers };
+            sanitizeQaapPreviewResponseHeaders(responseHeaders);
             // Every proxied preview is rendered inside Qaap's mini-browser. Remove upstream
             // anti-frame headers and scope frame-ancestors to this Qaap origin for identity,
             // legacy-port, and isolated-host preview routes alike.
