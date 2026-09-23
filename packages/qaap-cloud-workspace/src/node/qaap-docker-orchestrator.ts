@@ -1175,7 +1175,9 @@ export class QaapDockerOrchestrator {
     }
 
     toContainerPath(hostPath: string, tenantRootHostPath?: string): string {
-        const normalized = hostPath.replace(/\\/g, '/').replace(/\/$/, '');
+        // Collapse `.`/`..` segments before the prefix checks: `<root>/../other` string-starts-with
+        // `<root>/` but must not be translated to `/workspace/../other`.
+        const normalized = path.posix.normalize(hostPath.replace(/\\/g, '/')).replace(/\/$/, '');
         const root = tenantRootHostPath?.replace(/\\/g, '/').replace(/\/$/, '');
         if (!root) {
             throw new Error('Cannot translate a tenant cwd without the validated tenant mount root.');
