@@ -8,6 +8,7 @@ import { execFileSync } from 'child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import * as pty from 'node-pty';
 import { OS } from '@theia/core/lib/common/os';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
@@ -16,7 +17,7 @@ import { buildQaapManagedShellInvocation, resolveWorkspaceHostFsPath } from './q
 
 describe('qaap-project-bootstrap-shell', () => {
 
-    it('enforces the requested project cwd inside the command, including quoted paths', function (): void {
+    it('quotes project cwd correctly for POSIX shells', function (): void {
         if (process.platform === 'win32') {
             this.skip();
         }
@@ -32,6 +33,43 @@ describe('qaap-project-bootstrap-shell', () => {
 
             expect(output).to.equal(project);
             expect(invocation.shellArgs[2]).to.include('cd --');
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('lets node-pty set the Windows cwd instead of embedding it in cmd /c', async function (): Promise<void> {
+        if (process.platform !== 'win32') {
+            this.skip();
+        }
+        const root = mkdtempSync(join(tmpdir(), 'qaap managed preview '));
+        try {
+            const invocation = buildQaapManagedShellInvocation('echo %CD%', root, 'win32');
+            expect(invocation.shellPath).to.equal('cmd.exe');
+            expect(invocation.shellArgs).to.deep.equal(['/d', '/s', '/c', 'echo %CD%']);
+
+            const result = await new Promise<{ exitCode: number; output: string }>((resolve, reject) => {
+                const terminal = pty.spawn(invocation.shellPath, invocation.shellArgs, {
+                    name: 'xterm-256color',
+                    cols: 80,
+                    rows: 24,
+                    cwd: root,
+                    env: process.env,
+                });
+                let output = '';
+                const timeout = setTimeout(() => {
+                    terminal.kill();
+                    reject(new Error('node-pty did not finish the Windows cwd probe'));
+                }, 5000);
+                terminal.onData(data => output += data);
+                terminal.onExit(event => {
+                    clearTimeout(timeout);
+                    resolve({ exitCode: event.exitCode, output });
+                });
+            });
+
+            expect(result.exitCode).to.equal(0);
+            expect(result.output.toLowerCase()).to.include(root.toLowerCase());
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

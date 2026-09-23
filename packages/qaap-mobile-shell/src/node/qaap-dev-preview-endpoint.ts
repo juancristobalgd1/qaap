@@ -50,7 +50,7 @@ import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { configureExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, supersedeProjectPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
-import { authorizePreviewHostRequestExtracted, buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forwardHttpExtracted, hasPreviewCapabilityExtracted, matchesPreviewTokenExtracted, previewBaseDomainExtracted, previewIdFromHostExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewriteIsolatedPreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
+import { authorizePreviewHostRequestExtracted, buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forwardHttpExtracted, hasPreviewCapabilityExtracted, matchesPreviewTokenExtracted, previewBaseDomainExtracted, previewIdFromHostExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
 
 export const PROBE_TIMEOUT_MS = 2500;
 export const LOCAL_TARGET_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]', '0.0.0.0']);
@@ -193,8 +193,13 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution {
         return rewriteViteHmrClientExtracted(this, body, publicPrefix);
     }
 
-    protected rewriteIsolatedPreviewCsp(raw: string | string[] | undefined, parentOrigin: string): string {
-        return rewriteIsolatedPreviewCspExtracted(this, raw, parentOrigin);
+    protected rewritePreviewCsp(raw: string | string[] | undefined, parentOrigin: string): string {
+        return rewritePreviewCspExtracted(this, raw, parentOrigin);
+    }
+
+    protected rewritePreviewFrameHeaders(headers: http.OutgoingHttpHeaders, parentOrigin: string): void {
+        delete headers['x-frame-options'];
+        headers['content-security-policy'] = this.rewritePreviewCsp(headers['content-security-policy'], parentOrigin);
     }
 
     protected isIdeListenPort(port: number): boolean {

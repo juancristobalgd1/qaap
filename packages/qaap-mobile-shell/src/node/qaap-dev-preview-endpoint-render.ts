@@ -123,6 +123,59 @@ export function configureExtracted(ctx: any, app: Application): void {
         }
         ctx.handleProxy(req, res);
     });
+    // SSR frameworks such as Next compare rendered href/src attributes during hydration. Their
+    // absolute same-origin URLs must remain unchanged in the HTML, so route those later browser
+    // requests by the identity preview in Referer. Ownership is rechecked for every request and
+    // HTML navigations are redirected back under the identity prefix before the next page loads.
+    app.use((req: Request, res: Response, next: NextFunction) => {
+        const requestPath = req.path || '/';
+        if (requestPath.startsWith(`${QAAP_IDENTITY_PREVIEW_PREFIX}/`)
+            || requestPath.startsWith(`${QAAP_DEV_PREVIEW_PREFIX}/`)) {
+            next();
+            return;
+        }
+        const referer = req.get('referer');
+        if (!referer) {
+            next();
+            return;
+        }
+        let refererUrl: URL;
+        try {
+            refererUrl = new URL(referer);
+        } catch {
+            next();
+            return;
+        }
+        if (refererUrl.origin !== ctx.resolvePublicOrigin(req)) {
+            next();
+            return;
+        }
+        const identity = parseQaapIdentityPreviewRequestPath(refererUrl.pathname);
+        const previewId = identity?.previewId;
+        if (!previewId) {
+            next();
+            return;
+        }
+        if (!ctx.requireHttpAuth(req, res)) {
+            return;
+        }
+        const record = ctx.previewForRequest(req, previewId);
+        if (!record || ctx.isIdeListenPort(record.port)) {
+            res.status(403).type('text/plain').send('This preview belongs to another execution.');
+            return;
+        }
+        ctx.portRegistry.touchPreview(previewId, record.ownerLogin);
+        const accept = req.get('accept') ?? '';
+        const isDocumentNavigation = req.method === 'GET'
+            && (req.get('sec-fetch-dest') === 'document' || /\btext\/html\b/i.test(accept));
+        if (isDocumentNavigation) {
+            const target = req.originalUrl || req.url || '/';
+            res.redirect(307, `${QAAP_IDENTITY_PREVIEW_PREFIX}/${encodeURIComponent(previewId)}${target}`);
+            return;
+        }
+        req.headers['x-qaap-preview-referer-id'] = previewId;
+        void ctx.forwardHttp(req, res, record.port, req.url || '/', `${QAAP_IDENTITY_PREVIEW_PREFIX}/${previewId}`);
+    });
 }
 
 export function requireHttpAuthExtracted(ctx: any, req: Request, res: Response): boolean {

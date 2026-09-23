@@ -5,6 +5,7 @@
 
 import { expect } from 'chai';
 import type { Request } from '@theia/core/shared/express';
+import type { OutgoingHttpHeaders } from 'http';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import * as path from 'path';
 import { QaapDevPreviewEndpoint } from './qaap-dev-preview-endpoint';
@@ -12,6 +13,7 @@ import type { QaapGithubAuthContext, QaapGithubAuthGuard } from './qaap-github-a
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { resolveQaapPreviewIdentity } from '../common/qaap-preview-identity';
+import { rewriteNextPreviewDocument } from './qaap-dev-preview-endpoint-timeline';
 
 class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
     exposeRewriteDevPreviewBody(body: string, targetPort: number, publicPrefix?: string): string {
@@ -38,8 +40,12 @@ class TestQaapDevPreviewEndpoint extends QaapDevPreviewEndpoint {
         return this.previewIdFromHost(req);
     }
 
-    exposeRewriteIsolatedPreviewCsp(raw: string | undefined, parentOrigin: string): string {
-        return this.rewriteIsolatedPreviewCsp(raw, parentOrigin);
+    exposeRewritePreviewCsp(raw: string | undefined, parentOrigin: string): string {
+        return this.rewritePreviewCsp(raw, parentOrigin);
+    }
+
+    exposeRewritePreviewFrameHeaders(headers: OutgoingHttpHeaders, parentOrigin: string): void {
+        this.rewritePreviewFrameHeaders(headers, parentOrigin);
     }
 
     async exposeHandleProbe(req: Request, res: unknown): Promise<void> {
@@ -115,6 +121,27 @@ describe('QaapDevPreviewEndpoint', () => {
         )).to.equal(
             'import "/qaap-preview/u-alice-w-site-p-site-x-run-abc1234/@vite/client"; '
             + 'const socketPath = "/hmr";',
+        );
+    });
+
+    it('keeps Next.js Webpack chunk requests inside an identity-scoped preview', () => {
+        const prefix = '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234';
+        expect(endpoint.exposeRewriteDevPreviewBody(
+            'module.exports = __webpack_require__.p = "/_next/";',
+            5184,
+            prefix,
+        )).to.equal(`module.exports = __webpack_require__.p = "${prefix}/_next/";`);
+    });
+
+    it('preserves Next SSR attributes for hydration while rebasing only Webpack public path', () => {
+        const prefix = '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234';
+        const html = '<script src="/_next/static/chunks/app.js"></script>'
+            + '<script>__webpack_require__.p = "/_next/";</script>'
+            + '<script src="/register-sw.js"></script><a href="/panel">Panel</a>';
+        expect(rewriteNextPreviewDocument(html, prefix)).to.equal(
+            '<script src="/_next/static/chunks/app.js"></script>'
+            + `<script>__webpack_require__.p = "${prefix}/_next/";</script>`
+            + '<script src="/register-sw.js"></script><a href="/panel">Panel</a>',
         );
     });
 
@@ -207,10 +234,24 @@ describe('QaapDevPreviewEndpoint', () => {
         });
 
         it('rewrites frame policy for the Qaap parent and permits the injected loader', () => {
-            expect(endpoint.exposeRewriteIsolatedPreviewCsp(
+            expect(endpoint.exposeRewritePreviewCsp(
                 "default-src 'self'; frame-ancestors 'none'",
                 'https://app.qaap.example',
             )).to.equal(
+                "default-src 'self'; frame-ancestors https://app.qaap.example; script-src 'self' 'unsafe-inline'",
+            );
+        });
+
+        it('removes upstream anti-frame headers from every proxied preview response', () => {
+            const headers: OutgoingHttpHeaders = {
+                'x-frame-options': 'DENY',
+                'content-security-policy': "default-src 'self'; frame-ancestors 'none'",
+            };
+
+            endpoint.exposeRewritePreviewFrameHeaders(headers, 'https://app.qaap.example');
+
+            expect(headers['x-frame-options']).to.be.undefined;
+            expect(headers['content-security-policy']).to.equal(
                 "default-src 'self'; frame-ancestors https://app.qaap.example; script-src 'self' 'unsafe-inline'",
             );
         });

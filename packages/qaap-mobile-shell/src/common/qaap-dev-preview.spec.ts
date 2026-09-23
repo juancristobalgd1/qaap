@@ -93,10 +93,29 @@ describe('qaap-dev-preview', () => {
         expect(injected).to.contain('var x="/qaap-preview/abc"');
         expect(injected).to.contain('Location.prototype,"pathname"');
         expect(injected).to.contain('History.prototype.pushState');
+        expect(injected).to.contain('globalThis.fetch=function(input,init)');
+        expect(injected).to.contain('XMLHttpRequest.prototype.open=function(method,url)');
+        expect(injected).to.contain('swProto.register=function(scriptURL,options)');
+        expect(injected).to.contain('scoped.scope=scoped.scope?add(String(scoped.scope)):x+"/"');
+        expect(injected).to.contain('new Request(new URL(rebased,location.href).href,input)');
         expect(injected.indexOf('data-qaap-preview-history-base'))
             .to.be.lessThan(injected.indexOf('@vite/client'));
         expect(injectQaapPreviewHistoryBase(injected, '/qaap-preview/abc/')).to.equal(injected);
         expect(injectQaapPreviewHistoryBase(html, '')).to.equal(html);
+    });
+
+    it('can inject the route bridge after the rendered document body for React hydration', () => {
+        const html = '<html><head><title>app</title></head><body><main>SSR</main></body></html>';
+        const withHistory = injectQaapPreviewHistoryBase(html, '/qaap-preview/abc', 'body-end');
+        const withDiagnostics = injectQaapPreviewDiagnostics(withHistory, 'body-end');
+        const headEnd = withDiagnostics.indexOf('</head>');
+        const bodyStart = withDiagnostics.indexOf('<body>');
+        const history = withDiagnostics.indexOf('data-qaap-preview-history-base');
+        const diagnostics = withDiagnostics.indexOf('data-qaap-preview-diagnostics');
+        expect(headEnd).to.be.lessThan(bodyStart);
+        expect(bodyStart).to.be.lessThan(history);
+        expect(history).to.be.lessThan(diagnostics);
+        expect(diagnostics).to.be.lessThan(withDiagnostics.indexOf('</body>'));
     });
 
     it('injectQaapPreviewViteEnvBootstrap rebases TSS_ROUTER_BASEPATH onto the proxy prefix', () => {

@@ -27,4 +27,13 @@ describe('qaap-preview-bridge-protocol', () => {
         expect(injected.indexOf('data-qaap-preview-bridge-loader')).to.be.lessThan(injected.indexOf('</head>'));
         expect(injectQaapPreviewBridgeLoader(injected, 'https://app.qaap.example')).to.equal(injected);
     });
+
+    it('can inject after the body content for frameworks that hydrate the document head', () => {
+        const html = '<html><head><title>App</title></head><body><main>SSR</main></body></html>';
+        const injected = injectQaapPreviewBridgeLoader(html, 'https://app.qaap.example', 'body-end');
+        expect(injected.indexOf('</head>')).to.be.lessThan(injected.indexOf('<body>'));
+        expect(injected.indexOf('<main>')).to.be.lessThan(injected.indexOf('data-qaap-preview-bridge-loader'));
+        expect(injected.indexOf('data-qaap-preview-bridge-loader')).to.be.lessThan(injected.indexOf('</body>'));
+        expect(injectQaapPreviewBridgeLoader(injected, 'https://app.qaap.example', 'body-end')).to.equal(injected);
+    });
 });

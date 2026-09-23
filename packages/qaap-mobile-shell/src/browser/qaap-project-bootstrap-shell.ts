@@ -37,7 +37,7 @@ function defaultManagedShellPlatform(): string {
     return OS.backend.isWindows ? 'Win32' : 'Linux';
 }
 
-/** Builds a managed shell command whose project cwd survives terminal widget restoration. */
+/** Builds a managed shell command for the workspace host's shell and cwd. */
 export function buildQaapManagedShellInvocation(
     command: string,
     cwd: string,
@@ -55,8 +55,10 @@ export function buildQaapManagedShellInvocation(
                 shellArgs: ['/d', '/s', '/c', 'cd', '/d', cwd, '&&', ...staticCommand],
             };
         }
-        const quotedCwd = `"${cwd.replace(/"/g, '""')}"`;
-        return { shellPath: 'cmd.exe', shellArgs: ['/d', '/s', '/c', `cd /d ${quotedCwd} && ${command}`] };
+        // TerminalService passes cwd to node-pty. Do not repeat it as `cd /d "..."` in the
+        // /c command: node-pty joins cmd.exe arguments and /s then misparses the nested quotes,
+        // exiting before npm/Next starts (even when the path itself has no spaces).
+        return { shellPath: 'cmd.exe', shellArgs: ['/d', '/s', '/c', command] };
     }
     const quotedCwd = `'${cwd.replace(/'/g, "'\"'\"'")}'`;
     return { shellPath: '/bin/bash', shellArgs: ['-l', '-c', `cd -- ${quotedCwd} && ${command}`] };

@@ -119,7 +119,16 @@ export const QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER = 'data-qaap-preview-vite-en
 export const QAAP_PREVIEW_DIAGNOSTICS_MARKER = 'data-qaap-preview-diagnostics';
 export const QAAP_PREVIEW_HISTORY_BASE_MARKER = 'data-qaap-preview-history-base';
 
-function insertPreviewHeadScript(html: string, script: string): string {
+type PreviewScriptPlacement = 'head' | 'body-end';
+
+function insertPreviewScript(html: string, script: string, placement: PreviewScriptPlacement): string {
+    if (placement === 'body-end') {
+        const bodyClose = /<\/body\s*>/i;
+        if (bodyClose.test(html)) {
+            return html.replace(bodyClose, match => `${script}${match}`);
+        }
+        return `${html}${script}`;
+    }
     const headOpen = /<head(?:\s[^>]*)?>/i;
     if (headOpen.test(html)) {
         return html.replace(headOpen, match => `${match}${script}`);
@@ -136,7 +145,11 @@ function insertPreviewHeadScript(html: string, script: string): string {
  * path proxy that value is `/qaap-preview/<id>/…`, so the app 404s (vitesse-lite "Not Found")
  * even though index.html loaded. Strip the prefix for reads and re-apply it on history writes.
  */
-export function injectQaapPreviewHistoryBase(html: string, publicPrefix: string): string {
+export function injectQaapPreviewHistoryBase(
+    html: string,
+    publicPrefix: string,
+    placement: PreviewScriptPlacement = 'head',
+): string {
     const prefix = publicPrefix.replace(/\/+$/, '');
     if (!html || !prefix || html.includes(QAAP_PREVIEW_HISTORY_BASE_MARKER)) {
         return html;
@@ -168,8 +181,42 @@ set:pd.set
 var push=History.prototype.pushState,repl=History.prototype.replaceState;
 History.prototype.pushState=function(s,t,u){return push.call(this,s,t,u==null?u:add(u));};
 History.prototype.replaceState=function(s,t,u){return repl.call(this,s,t,u==null?u:add(u));};
+// Framework routers (notably Next App Router) fetch an absolute root route before they update
+// history. Rebase same-origin network URLs too, otherwise the root-relative dashboard route escapes this identity-scoped
+// proxy and lands on Qaap's own origin. Keep cross-origin and already-prefixed requests untouched.
+var fetchFn=globalThis.fetch;
+if(typeof fetchFn==="function"){
+globalThis.fetch=function(input,init){
+var raw=typeof input==="string"?input:(input instanceof URL?input.href:(input&&input.url));
+var rebased=add(raw);
+if(!raw||rebased===raw)return fetchFn.call(this,input,init);
+if(typeof Request!=="undefined"&&input instanceof Request){
+return fetchFn.call(this,new Request(new URL(rebased,location.href).href,input),init);
+}
+return fetchFn.call(this,rebased,init);
+};
+}
+if(typeof XMLHttpRequest!=="undefined"){
+var xhrOpen=XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open=function(method,url){
+var args=Array.prototype.slice.call(arguments);
+args[1]=add(String(url));
+return xhrOpen.apply(this,args);
+};
+}
+try{
+if(navigator.serviceWorker&&typeof ServiceWorkerContainer!=="undefined"){
+var swProto=ServiceWorkerContainer.prototype,swRegister=swProto.register;
+swProto.register=function(scriptURL,options){
+var scoped=options?Object.assign({},options):{};
+var scriptPath=add(String(scriptURL));
+scoped.scope=scoped.scope?add(String(scoped.scope)):x+"/";
+return swRegister.call(this,scriptPath,scoped);
+};
+}
+}catch(err){}
 })();</script>`;
-    return insertPreviewHeadScript(html, script);
+    return insertPreviewScript(html, script, placement);
 }
 
 /**
@@ -177,7 +224,7 @@ History.prototype.replaceState=function(s,t,u){return repl.call(this,s,t,u==null
  * visual verifier reads it after hydration, catching the common HTTP-200 + blank-app case that
  * a transport probe cannot distinguish from a healthy render.
  */
-export function injectQaapPreviewDiagnostics(html: string): string {
+export function injectQaapPreviewDiagnostics(html: string, placement: PreviewScriptPlacement = 'head'): string {
     if (!html || html.includes(QAAP_PREVIEW_DIAGNOSTICS_MARKER)) {
         return html;
     }
@@ -196,15 +243,7 @@ var original=console.error;
 console.error=function(){var values=Array.prototype.slice.call(arguments);add('console.error',values.map(text).join(' '));
 return original.apply(console,arguments);};
 })();</script>`;
-    const headOpen = /<head(?:\s[^>]*)?>/i;
-    if (headOpen.test(html)) {
-        return html.replace(headOpen, match => `${match}${script}`);
-    }
-    const htmlOpen = /<html(?:\s[^>]*)?>/i;
-    if (htmlOpen.test(html)) {
-        return html.replace(htmlOpen, match => `${match}${script}`);
-    }
-    return `${script}${html}`;
+    return insertPreviewScript(html, script, placement);
 }
 
 /**

@@ -63,6 +63,7 @@ export async function forwardHttpExtracted(ctx: any, incoming: Request,
         headers.host = `localhost:${targetPort}`;
         headers['accept-encoding'] = 'identity';
         delete headers.connection;
+        delete headers['x-qaap-preview-referer-id'];
 
         const proxyReq = http.request({
             hostname: targetHost,
@@ -72,12 +73,17 @@ export async function forwardHttpExtracted(ctx: any, incoming: Request,
             headers,
         }, proxyRes => {
             const responseHeaders = { ...proxyRes.headers };
-            if (publicPrefix === '') {
-                delete responseHeaders['x-frame-options'];
-                responseHeaders['content-security-policy'] = ctx.rewriteIsolatedPreviewCsp(
-                    responseHeaders['content-security-policy'],
-                    ctx.resolvePublicOrigin(incoming),
-                );
+            // Every proxied preview is rendered inside Qaap's mini-browser. Remove upstream
+            // anti-frame headers and scope frame-ancestors to this Qaap origin for identity,
+            // legacy-port, and isolated-host preview routes alike.
+            ctx.rewritePreviewFrameHeaders(responseHeaders, ctx.resolvePublicOrigin(incoming));
+            if (incoming.headers['x-qaap-preview-referer-id']) {
+                responseHeaders['cache-control'] = 'private, no-store';
+                const vary = String(responseHeaders.vary ?? '').split(',').map(value => value.trim()).filter(Boolean);
+                if (!vary.some(value => value.toLowerCase() === 'referer')) {
+                    vary.push('Referer');
+                }
+                responseHeaders.vary = vary.join(', ');
             }
             const location = responseHeaders.location;
             if (typeof location === 'string') {
@@ -96,17 +102,35 @@ export async function forwardHttpExtracted(ctx: any, incoming: Request,
             proxyRes.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
             proxyRes.on('end', () => {
                 const body = Buffer.concat(chunks).toString('utf8');
-                const rewritten = ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix);
                 const contentType = proxyRes.headers['content-type'];
-                outgoing.end(typeof contentType === 'string' && /\btext\/html\b/i.test(contentType)
-                    ? injectQaapPreviewDiagnostics(injectQaapPreviewHistoryBase(
-                        injectQaapPreviewViteEnvBootstrap(
-                            injectQaapPreviewBridgeLoader(rewritten, ctx.resolvePublicOrigin(incoming)),
-                            publicPrefix,
-                        ),
-                        publicPrefix,
-                    ))
-                    : rewritten);
+                if (typeof contentType !== 'string' || !/\btext\/html\b/i.test(contentType)) {
+                    outgoing.end(ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix));
+                    return;
+                }
+                // Next hydrates the server-rendered <html>/<head> tree. Injecting Qaap scripts
+                // into <head> makes React mistake them for app-owned metadata (e.g. JSON-LD) and
+                // abort hydration. Put its classic bridge scripts at the end of <body>; the
+                // browser executes them during parsing, before deferred Next bundles hydrate.
+                const isNextDocument = /__next_f|\/_next\/static\//.test(body);
+                const placement = isNextDocument ? 'body-end' : 'head';
+                // Rewriting Next's server-rendered href/src values changes React-owned props and
+                // triggers hydration errors. Its root-relative requests are routed by the
+                // referer-scoped fallback middleware; rewrite only actual Next runtime chunks.
+                const rewritten = isNextDocument
+                    ? rewriteNextPreviewDocument(body, publicPrefix)
+                    : ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix);
+                const bridged = injectQaapPreviewBridgeLoader(
+                    rewritten,
+                    ctx.resolvePublicOrigin(incoming),
+                    placement,
+                );
+                const bootstrapped = isNextDocument
+                    ? bridged
+                    : injectQaapPreviewViteEnvBootstrap(bridged, publicPrefix);
+                outgoing.end(injectQaapPreviewDiagnostics(
+                    injectQaapPreviewHistoryBase(bootstrapped, publicPrefix, placement),
+                    placement,
+                ));
             });
         });
         proxyReq.on('error', () => {
@@ -117,6 +141,14 @@ export async function forwardHttpExtracted(ctx: any, incoming: Request,
             }
         });
         incoming.pipe(proxyReq);
+}
+
+export function rewriteNextPreviewDocument(body: string, publicPrefix: string): string {
+    const prefixPath = publicPrefix.replace(/\/+$/, '');
+    if (!prefixPath) {
+        return body;
+    }
+    return body.replace(/(__webpack_require__\.p\s*=\s*["'`])\/_next\//g, `$1${prefixPath}/_next/`);
 }
 
 export function shouldRewriteProxyBodyExtracted(ctx: any, proxyRes: http.IncomingMessage): boolean {
@@ -173,7 +205,11 @@ export function rewriteDevPreviewBodyExtracted(ctx: any, body: string,
             .replace(/(\bimport\s*(?:\(|[^"'`]*from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             .replace(/(\bexport\s+[^"'`]*from\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             .replace(/(\bnew\s+URL\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
-            .replace(/(\bfetch\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`);
+            .replace(/(\bfetch\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
+            // Next's Webpack runtime loads App Router chunks through its public path. Those
+            // URLs are built from this assignment rather than markup/import/fetch syntax, so
+            // rewrite this framework-owned asset prefix without touching app route strings.
+            .replace(/(__webpack_require__\.p\s*=\s*["'`])\/_next\//g, `$1${prefixPath}/_next/`);
         return ctx.rewriteViteHmrClient(rewritten, prefix);
 }
 
@@ -191,7 +227,7 @@ export function rewriteViteHmrClientExtracted(ctx: any, body: string, publicPref
             .replace(/^const base = .*;$/m, `const base = ${JSON.stringify(publicBase)};`);
 }
 
-export function rewriteIsolatedPreviewCspExtracted(ctx: any, raw: string | string[] | undefined, parentOrigin: string): string {
+export function rewritePreviewCspExtracted(ctx: any, raw: string | string[] | undefined, parentOrigin: string): string {
         const source = Array.isArray(raw) ? raw.join('; ') : raw ?? '';
         const directives = source.split(';').map(item => item.trim()).filter(Boolean);
         let frameAncestorsSeen = false;
