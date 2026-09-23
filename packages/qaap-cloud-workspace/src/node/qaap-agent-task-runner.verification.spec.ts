@@ -334,6 +334,41 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
 
 describe('QaapAgentTaskRunner process lifecycle', () => {
 
+    /**
+     * Stubs the collaborators of `runGenericCommand`. The cwd ownership check is async, so the child
+     * is spawned (and its listeners attached) only after it resolves: tests must await `spawned`
+     * before emitting child events, otherwise the events are lost.
+     */
+    function prepareRunner(
+        runner: TestableQaapAgentTaskRunner,
+        child: ChildProcess,
+        options: { ownershipError?: string } = {},
+    ): { spawned: Promise<void>; spawnCalls: () => number } {
+        let spawnCalls = 0;
+        let markSpawned: () => void = () => undefined;
+        const spawned = new Promise<void>(resolve => { markSpawned = resolve; });
+        Object.assign(runner, {
+            residualProcessGroupReaps: 0,
+            processes: new Map(),
+            // runGenericCommand looks up the persisted task to attribute the audit record.
+            tasks: new Map(),
+            enforceAgentIsolationPolicy: () => undefined,
+            ensureAgentCwdOwnership: () => undefined,
+            // Preferred over the sync variant when present (it is, on the real prototype).
+            ensureAgentCwdOwnershipAsync: async () => {
+                if (options.ownershipError) {
+                    throw new Error(options.ownershipError);
+                }
+            },
+            spawnAgentCommand: () => {
+                spawnCalls++;
+                markSpawned();
+                return child;
+            },
+        });
+        return { spawned, spawnCalls: () => spawnCalls };
+    }
+
     it('reaps residual descendants after a bounded reviewer/helper command exits normally', async () => {
         const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
         const child = new EventEmitter() as ChildProcess;
@@ -342,15 +377,10 @@ describe('QaapAgentTaskRunner process lifecycle', () => {
             stdout: new PassThrough(),
             stderr: new PassThrough(),
         });
-        Object.assign(runner, {
-            residualProcessGroupReaps: 0,
-            processes: new Map(),
-            enforceAgentIsolationPolicy: () => undefined,
-            ensureAgentCwdOwnership: () => undefined,
-            spawnAgentCommand: () => child,
-        });
+        const { spawned } = prepareRunner(runner, child);
 
         const resultPromise = runner.runGenericCommand('review', '/repo', {}, TASK.id, 1_000);
+        await spawned;
         child.emit('exit', 0);
         child.emit('close', 0);
 
@@ -368,13 +398,7 @@ describe('QaapAgentTaskRunner process lifecycle', () => {
             stdout,
             stderr,
         });
-        Object.assign(runner, {
-            residualProcessGroupReaps: 0,
-            processes: new Map(),
-            enforceAgentIsolationPolicy: () => undefined,
-            ensureAgentCwdOwnership: () => undefined,
-            spawnAgentCommand: () => child,
-        });
+        const { spawned } = prepareRunner(runner, child);
 
         const maxCaptureChars = 80;
         const resultPromise = runner.runGenericCommand(
@@ -385,6 +409,7 @@ describe('QaapAgentTaskRunner process lifecycle', () => {
             1_000,
             { maxCaptureChars },
         );
+        await spawned;
         stdout.write('a'.repeat(200));
         stdout.end('latest-output');
         stderr.write('b'.repeat(200));
@@ -399,6 +424,17 @@ describe('QaapAgentTaskRunner process lifecycle', () => {
         expect(result.stderr).to.match(/^\.\.\.\[truncated\]\.\.\.\n/);
         expect(result.stdout).to.match(/latest-output$/);
         expect(result.stderr).to.match(/latest-error$/);
+    });
+
+    it('never spawns when the cwd ownership check rejects', async () => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const child = new EventEmitter() as ChildProcess;
+        const { spawnCalls } = prepareRunner(runner, child, { ownershipError: 'cwd is outside the tenant workspace' });
+
+        const result = await runner.runGenericCommand('review', '/other-tenant/repo', {}, TASK.id, 1_000);
+
+        expect(spawnCalls()).to.equal(0);
+        expect(result).to.deep.equal({ exitCode: 1, stdout: '', stderr: 'cwd is outside the tenant workspace', timedOut: false });
     });
 });
 
