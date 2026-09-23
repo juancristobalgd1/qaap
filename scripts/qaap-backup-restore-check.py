@@ -10,7 +10,9 @@ import re
 import tarfile
 
 
-ROOTS = ("workspace", "root/.qaap", "root/.theia", "tmp/qaap-worktrees", "tmp/qaap-parallel", "home/qaap-tenants")
+ROOTS = ("workspace", "home/theia/.qaap", "home/theia/.theia", "tmp/qaap-worktrees", "tmp/qaap-parallel", "home/qaap-tenants")
+# Archives written before the control plane moved its state to /home/theia used /root.
+PRE_HOME_ROOTS = ("workspace", "root/.qaap", "root/.theia") + ROOTS[3:]
 
 
 def digest(stream):
@@ -49,7 +51,7 @@ def restore_check(archive, destination, expected_sha, max_bytes=20 * 1024**3, le
         parts = PurePosixPath(name).parts
         if not name or name.startswith("/") or "\\" in name or ":" in name or ".." in parts or str(PurePosixPath(name)) != name:
             raise ValueError("Unsafe archive path")
-        if not any(name == root or name.startswith(root + "/") for root in ROOTS):
+        if not any(name == root or name.startswith(root + "/") for root in ROOTS + PRE_HOME_ROOTS[1:3]):
             raise ValueError("Entry outside Qaap state roots")
         if name in seen:
             raise ValueError("Duplicate archive entry")
@@ -72,7 +74,8 @@ def restore_check(archive, destination, expected_sha, max_bytes=20 * 1024**3, le
                     files[name] = (digest(original), member.uid, member.gid, member.mode & 0o777)
             elif member.isdir():
                 directories[name] = (member.uid, member.gid, member.mode & 0o777)
-    for root in (ROOTS[:3] if legacy else ROOTS):
+    roots = PRE_HOME_ROOTS if "root/.qaap" in directories or "root/.theia" in directories else ROOTS
+    for root in (roots[:3] if legacy else roots):
         if root not in directories or not (destination / root).is_dir():
             raise ValueError("Backup is missing a required state directory")
     # Directory permissions are applied last, just as tar.extractall does.
@@ -103,7 +106,7 @@ def restore_check(archive, destination, expected_sha, max_bytes=20 * 1024**3, le
             raise ValueError("Archive changed during rehearsal")
     return {"ok": True, "sha256": expected_sha, "files_verified": len(files),
             "entries_verified": len(seen), "ownership_verified": ownership,
-            "runtime_state_covered": all(root in directories for root in ROOTS)}
+            "runtime_state_covered": all(root in directories for root in roots)}
 
 
 if __name__ == "__main__":

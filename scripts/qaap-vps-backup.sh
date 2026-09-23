@@ -3,8 +3,8 @@
 #
 # What it protects (the six persistent state surfaces of a deployment):
 #   /workspace     user repositories + /workspace/.qaap (uid-registry, project-sessions)
-#   /root/.qaap    OAuth sessions, agent-task index/logs, conversations, helper tokens
-#   /root/.theia   per-user settings (incl. Settings → AI API keys)
+#   /home/theia/.qaap   OAuth sessions, agent-task index/logs, conversations, helper tokens
+#   /home/theia/.theia  per-user settings (incl. Settings → AI API keys)
 #   /tmp/qaap-worktrees, /tmp/qaap-parallel  in-progress worktrees
 #   /home/qaap-tenants  private tenant agent homes
 #
@@ -59,7 +59,7 @@ docker run --rm \
     -v "$BACKUP_DIR:/backup" \
     busybox:1.37.0 sh -c "umask 077; tar czf '/backup/qaap-$STAMP.tar.gz.partial' \
         --exclude 'node_modules' \
-        /workspace /root/.qaap /root/.theia /tmp/qaap-worktrees /tmp/qaap-parallel /home/qaap-tenants"
+        /workspace /home/theia/.qaap /home/theia/.theia /tmp/qaap-worktrees /tmp/qaap-parallel /home/qaap-tenants"
 
 if [[ ! -s "$PARTIAL" ]]; then
     echo "[qaap-backup] FAILED: archive is empty or missing" >&2
@@ -73,7 +73,7 @@ LISTING="$(tar -tzf "$PARTIAL" 2>/dev/null)" || {
 }
 
 # Require all six state roots in addition to a successful tar exit.
-for expect in 'workspace/' 'root/.qaap/' 'root/.theia/' 'tmp/qaap-worktrees/' 'tmp/qaap-parallel/' 'home/qaap-tenants/'; do
+for expect in 'workspace/' 'home/theia/.qaap/' 'home/theia/.theia/' 'tmp/qaap-worktrees/' 'tmp/qaap-parallel/' 'home/qaap-tenants/'; do
     if ! grep -Fxq "$expect" <<< "$LISTING"; then
         echo "[qaap-backup] FAILED: archive is incomplete — no '${expect}' entries (a source path failed to read)" >&2
         exit 1

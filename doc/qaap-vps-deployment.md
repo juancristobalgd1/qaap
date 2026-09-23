@@ -213,7 +213,7 @@ At container start, the backend logs detected agents, for example:
 Background jobs read credentials in this order:
 
 1. **Environment variables** in `.env` / `docker-compose` (recommended on VPS)
-2. **Theia user preferences** under `/root/.theia` (persisted via volume `qaap-theia-user`)
+2. **Theia user preferences** under `/home/theia/.theia` (persisted via volume `qaap-theia-user`)
 
 Set at least one key in `.env` before relying on `@qaiq`. Without a key, task creation fails
 with a clear error instead of hanging on Anthropic OAuth.
@@ -373,7 +373,7 @@ explicitly single-user box, and verify it before opting out:
    # the agent process should run as uid 1001, not 0
    docker compose exec theia sh -c 'ps -o uid,cmd -C qaiq'
    # the agent user must NOT be able to read tenant secrets
-   docker compose exec -u 1001 theia sh -c 'cat /root/.qaap/* 2>&1 | head'   # expect: Permission denied
+   docker compose exec -u 1001 theia sh -c 'cat /home/theia/.qaap/* 2>&1 | head'   # expect: Permission denied
    # the agent user MUST be able to write its workspace
    docker compose exec -u 1001 theia sh -c 'touch /workspace/.__perm_test && rm /workspace/.__perm_test && echo OK'
    ```
@@ -391,8 +391,8 @@ agent run, or an operator mistake loses every user's repositories and sessions**
 | Volume | Mounted at | Holds |
 |---|---|---|
 | `theia-workspace` | `/workspace` | user repositories, `.qaap/uid-registry.json`, project sessions |
-| `qaap-auth-data` | `/root/.qaap` | OAuth sessions, agent-task index/logs, conversations, helper tokens |
-| `qaap-theia-user` | `/root/.theia` | per-user settings, incl. Settings → AI API keys |
+| `qaap-auth-data` | `/home/theia/.qaap` | OAuth sessions, agent-task index/logs, conversations, helper tokens |
+| `qaap-theia-user` | `/home/theia/.theia` | per-user settings, incl. Settings → AI API keys |
 | `theia-worktrees` | `/tmp/qaap-worktrees` | conversation worktrees, including uncommitted changes |
 | `theia-parallel` | `/tmp/qaap-parallel` | parallel task worktrees |
 | `qaap-tenant-homes` | `/home/qaap-tenants` | private agent configuration and state |
@@ -435,7 +435,9 @@ It does **not** start the restored app. The default decompressed limit is 20 GiB
 **Existing deployments:** preserve runtime contents before activating the three new
 mounts. Follow [runtime state migration](qaap-runtime-state-migration.md) before
 container recreation. Old three-root backups require `--legacy-three-roots` for
-rehearsal and do not cover runtime worktrees. A successful archive rehearsal does
+rehearsal and do not cover runtime worktrees. Archives written before the control plane moved its
+state from `/root` to `/home/theia` (`root/.qaap`, `root/.theia`) are still accepted; restore them to
+the current mount paths. A successful archive rehearsal does
 not by itself prove that an interrupted task can resume.
 
 Backup creation now fails on any tar error (including changing source files), writes

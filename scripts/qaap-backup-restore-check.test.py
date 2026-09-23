@@ -44,6 +44,16 @@ class RestoreCheckTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.restore_check(self.archive, self.root, sha)
 
+    def test_pre_home_layout_archive(self):
+        sha = self.make_archive(roots=module.PRE_HOME_ROOTS)
+        result = module.restore_check(self.archive, self.root / "restored", sha)
+        self.assertTrue(result["runtime_state_covered"])
+
+    def test_mixed_layout_is_incomplete(self):
+        sha = self.make_archive(roots=("root/.qaap",) + module.ROOTS)
+        with self.assertRaises(ValueError):
+            module.restore_check(self.archive, self.root / "restored", sha)
+
     def test_missing_state(self):
         sha = self.make_archive(roots=("workspace", "root/.qaap"))
         with self.assertRaises(ValueError):

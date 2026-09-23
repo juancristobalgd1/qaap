@@ -5,7 +5,7 @@ SOURCE="$(cd "$(dirname "$0")" && pwd)"
 TEST_ROOT="$(mktemp -d -t qaap-backup-test.XXXXXXXX)"
 cleanup() { case "$TEST_ROOT" in */qaap-backup-test.*) rm -rf -- "$TEST_ROOT" ;; *) exit 2 ;; esac; }
 trap cleanup EXIT
-mkdir -p "$TEST_ROOT/scripts" "$TEST_ROOT/bin" "$TEST_ROOT/data/workspace" "$TEST_ROOT/data/root/.qaap" "$TEST_ROOT/data/root/.theia"
+mkdir -p "$TEST_ROOT/scripts" "$TEST_ROOT/bin" "$TEST_ROOT/data/workspace" "$TEST_ROOT/data/home/theia/.qaap" "$TEST_ROOT/data/home/theia/.theia"
 mkdir -p "$TEST_ROOT/data/tmp/qaap-worktrees" "$TEST_ROOT/data/tmp/qaap-parallel" "$TEST_ROOT/data/home/qaap-tenants"
 sed 's/\r$//' "$SOURCE/qaap-vps-backup.sh" > "$TEST_ROOT/scripts/qaap-vps-backup.sh"
 printf 'saved data' > "$TEST_ROOT/data/workspace/example"
@@ -18,7 +18,7 @@ partial="$(printf '%s' "$*" | sed -n 's/.*\(qaap-[0-9-]*\.tar\.gz\.partial\).*/\
 if [[ "${TEST_CORRUPT:-0}" == 1 ]]; then
     printf 'broken archive' > "$QAAP_BACKUP_DIR/$partial"
 else
-    tar -czf "$QAAP_BACKUP_DIR/$partial" -C "$TEST_DATA" workspace root/.qaap root/.theia tmp/qaap-worktrees tmp/qaap-parallel home/qaap-tenants
+    tar -czf "$QAAP_BACKUP_DIR/$partial" -C "$TEST_DATA" workspace home/theia/.qaap home/theia/.theia tmp/qaap-worktrees tmp/qaap-parallel home/qaap-tenants
 fi
 exit "${TEST_TAR_EXIT:-0}"
 MOCK
