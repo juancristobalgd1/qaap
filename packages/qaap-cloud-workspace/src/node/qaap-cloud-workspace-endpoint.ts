@@ -43,7 +43,7 @@ import { QaapPushSubscriptionStore } from './qaap-push-subscription-store';
 import { QaapTerminalSessionStore } from './qaap-terminal-session-store';
 import { QaapPreviewShareProxyContribution } from './qaap-preview-share-proxy';
 import { QaapWebPushService } from './qaap-web-push-service';
-import { normalizeQaapPublicUrl } from '@theia/qaap-mobile-shell/lib/node/qaap-github-oauth-config';
+import { resolveQaapPublicOrigin } from '@theia/qaap-mobile-shell/lib/node/qaap-github-oauth-config';
 import { QaapGithubAuthGuard, type QaapGithubAuthContext } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
 
 @injectable()
@@ -462,19 +462,6 @@ export class QaapCloudWorkspaceEndpoint implements BackendApplicationContributio
     }
 
     protected resolvePublicOrigin(req: Request): string {
-        const envUrl = process.env.QAAP_OAUTH_PUBLIC_URL?.trim();
-        if (envUrl) {
-            return normalizeQaapPublicUrl(envUrl);
-        }
-        const proto = this.firstHeader(req.headers['x-forwarded-proto']) ?? req.protocol ?? 'http';
-        const host = this.firstHeader(req.headers['x-forwarded-host']) ?? req.get('host') ?? 'localhost';
-        return normalizeQaapPublicUrl(`${proto}://${host}`);
-    }
-
-    protected firstHeader(value: string | string[] | undefined): string | undefined {
-        if (Array.isArray(value)) {
-            return value[0]?.split(',')[0]?.trim();
-        }
-        return value?.split(',')[0]?.trim();
+        return resolveQaapPublicOrigin(req);
     }
 }

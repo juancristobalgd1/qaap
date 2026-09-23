@@ -42,7 +42,7 @@ import {
     resolveQaapPreviewIdentity,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import { normalizeQaapPublicUrl } from './qaap-github-oauth-config';
+import { normalizeQaapPublicUrl, resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
@@ -284,13 +284,7 @@ export async function probeLocalDevServerExtracted(ctx: any, port: number): Prom
 }
 
 export function resolvePublicOriginExtracted(ctx: any, req: Request): string {
-        const envUrl = process.env.QAAP_OAUTH_PUBLIC_URL?.trim();
-        if (envUrl) {
-            return normalizeQaapPublicUrl(envUrl);
-        }
-        const proto = ctx.firstHeaderValue(req.headers['x-forwarded-proto']) ?? req.protocol ?? 'http';
-        const host = ctx.firstHeaderValue(req.headers['x-forwarded-host']) ?? req.get('host') ?? 'localhost';
-        return normalizeQaapPublicUrl(`${proto}://${host}`);
+        return resolveQaapPublicOrigin(req);
 }
 
 export function buildIdentityPreviewUrlExtracted(ctx: any, req: Request, record: Pick<QaapDevPreviewRecord, 'previewId' | 'accessToken'>): string {
