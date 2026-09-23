@@ -16,12 +16,16 @@ describe('qaap-ai-features-visibility', () => {
         expect(shouldHideQaapAiFeaturesPreference('ai-features.copilot.enabled')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.chat.defaultChatAgent')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.AiEnable.enableAI')).to.equal(true);
-        expect(shouldHideQaapAiFeaturesPreference('ai-features.skills.disabledSkills')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.vercelAi.openaiApiKey')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.llamafile.llamafiles')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.SCANOSS.apiKey')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.workspaceFunctions.excludedExtensions')).to.equal(true);
         expect(shouldHideQaapAiFeaturesPreference('ai-features.terminal.denyList')).to.equal(true);
+    });
+
+    it('keeps Skills and Harness preferences visible in Settings (organized there since 63bd0c758)', () => {
+        expect(shouldHideQaapAiFeaturesPreference('ai-features.skills.disabledSkills')).to.equal(false);
+        expect(shouldHideQaapAiFeaturesPreference('ai-features.harness.disabledAgents')).to.equal(false);
     });
 
     it('keeps Qaap BYOK and MCP preferences visible', () => {

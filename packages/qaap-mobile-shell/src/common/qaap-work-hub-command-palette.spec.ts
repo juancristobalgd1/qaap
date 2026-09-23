@@ -47,13 +47,16 @@ describe('isWorkHubCommandPaletteCommand', () => {
             label: 'Color Theme',
         })).to.equal(true);
         expect(isWorkHubCommandPaletteCommand({
-            id: 'aiConfiguration:open',
-            label: 'AI Configuration',
-        })).to.equal(true);
-        expect(isWorkHubCommandPaletteCommand({
             id: 'preferences:open',
             label: 'Open Settings (UI)',
         })).to.equal(true);
+    });
+
+    it('no longer offers the IDE AI Configuration view (organized into Work Hub settings since 63bd0c758)', () => {
+        expect(isWorkHubCommandPaletteCommand({
+            id: 'aiConfiguration:open',
+            label: 'AI Configuration',
+        })).to.equal(false);
     });
 
     it('excludes arg-required, IDE-header, and IDE-chrome qaap commands', () => {
