@@ -165,7 +165,7 @@ export class MobileProjectsTranscriptMessagesToolUi {
     }
 
     createTranscriptClampedBlock(content: HTMLElement, lineCount: number, previewLines = 4): HTMLElement {
-        return createTranscriptClampedBlockExtracted(this, content, lineCount, previewLines = 4);
+        return createTranscriptClampedBlockExtracted(this, content, lineCount, previewLines);
     }
 
     createTranscriptReadLine(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): HTMLElement {

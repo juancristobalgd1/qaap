@@ -196,7 +196,7 @@ export class MobileProjectsTasksHubUi {
     }
 
     collectAgentsHubRecentItems(projects: MobileProjectEntry[], limit = QAAP_AGENTS_HUB_RECENT_LIMIT, scopeProject?: MobileProjectEntry,): Array<{ project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO }> {
-        return collectAgentsHubRecentItemsExtracted(this, projects, limit = QAAP_AGENTS_HUB_RECENT_LIMIT, scopeProject);
+        return collectAgentsHubRecentItemsExtracted(this, projects, limit, scopeProject);
     }
 
     shouldEmbedAgentsHubRecentsInWorkspaceTranscript(): boolean {

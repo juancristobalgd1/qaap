@@ -594,7 +594,7 @@ export class QaapAgentConversationStore {
     }
 
     protected buildPrompt(conv: QaapAgentConversation, turnAgentId = conv.agentId): string {
-        return buildPromptExtracted(this, conv, turnAgentId = conv.agentId);
+        return buildPromptExtracted(this, conv, turnAgentId);
     }
 
     protected contextPreambleWithCompaction(contextPreamble: string | undefined, summary: string): string {

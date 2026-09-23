@@ -193,7 +193,7 @@ export class QaapJobRuntime {
     }
 
     pruneRetainedJobs(nowMs = Date.now()): { prunedJobs: number; prunedGraphs: number } {
-        return pruneRetainedJobsExtracted(this, nowMs = Date.now());
+        return pruneRetainedJobsExtracted(this, nowMs);
     }
 
     protected normalizeRequest(request: QaapCreateJobRequest): NormalizedJobRequest {

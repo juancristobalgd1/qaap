@@ -311,7 +311,7 @@ export class MobileProjectsSessionsSidebarUi {
     }
 
     protected prefetchVisibleSidebarDocuments(limit = 8): void {
-        prefetchVisibleSidebarDocumentsExtracted(this, limit = 8);
+        prefetchVisibleSidebarDocumentsExtracted(this, limit);
     }
     syncSessionsSidebarAnimatedListHeights(host: HTMLElement): void {
         syncSessionsSidebarAnimatedListHeightsExtracted(this, host);

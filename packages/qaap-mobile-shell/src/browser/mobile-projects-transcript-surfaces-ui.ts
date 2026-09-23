@@ -336,7 +336,7 @@ export class MobileProjectsTranscriptSurfacesUi {
     }
 
     updateTranscriptHeader(project: MobileProjectEntry, summary = this.host.transcriptOpenSummary,): void {
-        updateTranscriptHeaderExtracted(this, project, summary = this.host.transcriptOpenSummary);
+        updateTranscriptHeaderExtracted(this, project, summary);
     }
 
     async mountTranscriptReviewWidget(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
