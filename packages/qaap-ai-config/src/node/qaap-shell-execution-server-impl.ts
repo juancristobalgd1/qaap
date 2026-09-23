@@ -35,8 +35,8 @@ const MAX_OUTPUT_SIZE = 1024 * 1024;
  * 1. If the model passes the project's basename as a relative `cwd`, treat it as the workspace root.
  *    The naive `path.resolve(workspaceRoot, basename)` would point at a non-existent nested directory
  *    and surface as the misleading `spawn /bin/sh ENOENT` error.
- * 2. If the joined directory does not exist on disk, fall back to the workspace root so the agent
- *    gets a sensible response instead of an opaque shell error.
+ * 2. If the joined directory does not exist on disk, fail without running the command and tell the
+ *    agent which directory was missing (never fall back to a broader directory).
  * 3. If a real ENOENT still leaks through, rewrite the error message to explicitly point at the bad cwd.
  */
 @injectable()
@@ -51,6 +51,10 @@ export class QaapShellExecutionServerImpl extends ShellExecutionServerImpl {
     override async execute(request: ShellExecutionRequest): Promise<ShellExecutionResult> {
         if (isQaapHostedRuntime(process.env)) {
             return this.executeInTenantWorker(request);
+        }
+        const requestedCwd = this.resolveCwd(request.cwd, request.workspaceRoot);
+        if (requestedCwd && !this.isExistingDirectory(requestedCwd)) {
+            return this.missingCwdResult(requestedCwd);
         }
         const result = await super.execute(request);
         if (!result.success && result.error && /ENOENT/.test(result.error) && result.resolvedCwd) {
@@ -82,6 +86,11 @@ export class QaapShellExecutionServerImpl extends ShellExecutionServerImpl {
     protected async executeInTenantWorker(request: ShellExecutionRequest): Promise<ShellExecutionResult> {
         const owner = this.requireTenantOwner();
         const resolvedCwd = this.resolveCwd(request.cwd, request.workspaceRoot);
+        // Authorization runs first so existence of other tenants' paths is never revealed; a
+        // missing directory is only reported when it lies lexically inside the caller's own tree.
+        if (resolvedCwd && !this.isExistingDirectory(resolvedCwd) && this.isInsideOwnTenantTree(resolvedCwd, owner)) {
+            return this.missingCwdResult(resolvedCwd);
+        }
         if (!resolvedCwd || !this.isAllowedTenantCwd(resolvedCwd, owner)) {
             throw new Error('Shell execution is restricted to the authenticated tenant workspace.');
         }
@@ -213,14 +222,44 @@ export class QaapShellExecutionServerImpl extends ShellExecutionServerImpl {
         if (requestedCwd === path.basename(workspaceRoot) || requestedCwd === `./${path.basename(workspaceRoot)}`) {
             return workspaceRoot;
         }
-        const candidate = path.resolve(workspaceRoot, requestedCwd);
-        try {
-            if (fs.statSync(candidate).isDirectory()) {
-                return candidate;
-            }
-        } catch {
-            // candidate doesn't exist or isn't accessible
+        // Never substitute a different directory for a missing one: a command meant for a
+        // subdirectory (e.g. `git clean -fdx .`) must not silently run at the workspace root.
+        return path.resolve(workspaceRoot, requestedCwd);
+    }
+
+    /** Lexical (no realpath) check that `cwd` is inside one of the tenant's own roots. */
+    protected isInsideOwnTenantTree(cwd: string, owner: string): boolean {
+        if (isPathUnderUserWorkspace(cwd, resolveQaapReposRoot(), owner)) {
+            return true;
         }
-        return workspaceRoot;
+        const segment = safeUserIdSegment(owner);
+        const target = path.resolve(cwd);
+        return [resolveQaapWorktreesRoot(), resolveQaapParallelRoot()]
+            .map(root => path.join(root, segment))
+            .some(root => {
+                const relative = path.relative(root, target);
+                return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+            });
+    }
+
+    protected isExistingDirectory(candidate: string): boolean {
+        try {
+            return fs.statSync(candidate).isDirectory();
+        } catch {
+            return false;
+        }
+    }
+
+    protected missingCwdResult(resolvedCwd: string): ShellExecutionResult {
+        return {
+            success: false,
+            exitCode: undefined,
+            stdout: '',
+            stderr: '',
+            error: `Working directory does not exist: ${resolvedCwd}. ` +
+                'Pass an existing cwd (or omit it to use the workspace root). The command was not run.',
+            duration: 0,
+            resolvedCwd,
+        };
     }
 }

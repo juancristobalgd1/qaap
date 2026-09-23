@@ -48,6 +48,31 @@ describe('QaapShellExecutionServerImpl hosted isolation', () => {
         expect(server.allowed(root, 'alice')).to.equal(false);
     });
 
+    it('reports a missing cwd inside the own tenant tree without spawning', async () => {
+        const server = new TestShellExecutionServer();
+        const registry = new QaapWebsocketAuthRegistry();
+        (server as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+        const result = await registry.runWithLogin('alice', () =>
+            server.execute({ command: 'id', cwd: 'not-created-yet', workspaceRoot: aliceRepo }));
+        expect(result.success).to.equal(false);
+        expect(result.error).to.match(/does not exist/);
+        expect(result.resolvedCwd).to.equal(path.join(aliceRepo, 'not-created-yet'));
+    });
+
+    it('does not reveal whether a path in another tenant tree exists', async () => {
+        const server = new TestShellExecutionServer();
+        const registry = new QaapWebsocketAuthRegistry();
+        (server as unknown as { connections: QaapWebsocketAuthRegistry }).connections = registry;
+        for (const cwd of [bobRepo, path.join(bobRepo, 'missing')]) {
+            try {
+                await registry.runWithLogin('alice', () => server.execute({ command: 'id', cwd, workspaceRoot: aliceRepo }));
+                expect.fail('expected cross-tenant cwd to be rejected');
+            } catch (error) {
+                expect(String(error)).to.match(/restricted to the authenticated tenant/i);
+            }
+        }
+    });
+
     it('rejects an unauthenticated hosted shell request before spawning', async () => {
         const server = new TestShellExecutionServer();
         const registry = new QaapWebsocketAuthRegistry();
@@ -58,5 +83,45 @@ describe('QaapShellExecutionServerImpl hosted isolation', () => {
         } catch (error) {
             expect(String(error)).to.match(/authenticated tenant/i);
         }
+    });
+});
+
+describe('QaapShellExecutionServerImpl local cwd resolution', () => {
+    const previousEnv = process.env;
+    let workspaceRoot: string;
+    const writeMarker = 'node -e "require(\'fs\').writeFileSync(\'marker.txt\', \'x\')"';
+
+    beforeEach(() => {
+        workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-shell-local-'));
+        fs.mkdirSync(path.join(workspaceRoot, 'sub'));
+        process.env = { ...previousEnv, NODE_ENV: 'test', QAAP_CLOUD_MODE: 'local' };
+    });
+
+    afterEach(() => {
+        process.env = previousEnv;
+        fs.rmSync(workspaceRoot, { recursive: true, force: true });
+    });
+
+    it('fails without running the command when a relative cwd does not exist', async () => {
+        const server = new TestShellExecutionServer();
+        const result = await server.execute({ command: writeMarker, cwd: 'missing', workspaceRoot });
+        expect(result.success).to.equal(false);
+        expect(result.error).to.match(/does not exist/);
+        expect(result.resolvedCwd).to.equal(path.join(workspaceRoot, 'missing'));
+        expect(fs.existsSync(path.join(workspaceRoot, 'marker.txt'))).to.equal(false);
+    });
+
+    it('runs in an existing relative subdirectory', async () => {
+        const server = new TestShellExecutionServer();
+        const result = await server.execute({ command: writeMarker, cwd: 'sub', workspaceRoot });
+        expect(result.success).to.equal(true);
+        expect(fs.existsSync(path.join(workspaceRoot, 'sub', 'marker.txt'))).to.equal(true);
+    });
+
+    it('treats the workspace basename as the workspace root', async () => {
+        const server = new TestShellExecutionServer();
+        const result = await server.execute({ command: writeMarker, cwd: path.basename(workspaceRoot), workspaceRoot });
+        expect(result.success).to.equal(true);
+        expect(result.resolvedCwd).to.equal(workspaceRoot);
     });
 });
