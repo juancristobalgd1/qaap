@@ -13,9 +13,9 @@ class GitActionStoreHarness extends QaapAgentConversationStore {
         this.conversations.set(conversation.id, conversation);
     }
 
-    protected override async persist(): Promise<void> { }
+    override async persist(): Promise<void> { }
 
-    protected override fire(_event: QaapAgentConversationEvent): void { }
+    override fire(_event: QaapAgentConversationEvent): void { }
 }
 
 describe('QaapAgentConversationStore git actions', () => {

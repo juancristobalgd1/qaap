@@ -87,11 +87,11 @@ class TestTaskRunner extends QaapAgentTaskRunner {
 }
 
 class TestConversationStore extends QaapAgentConversationStore {
-    protected override async persist(): Promise<void> { /* no-op */ }
-    protected override async restoreFromDisk(): Promise<void> { /* seeded directly */ }
-    protected override startTurnWatchdog(): void { /* not under test */ }
+    override async persist(): Promise<void> { /* no-op */ }
+    override async restoreFromDisk(): Promise<void> { /* seeded directly */ }
+    override startTurnWatchdog(): void { /* not under test */ }
 
-    protected override buildTaskCreateRequest(conv: QaapAgentConversation): QaapCreateAgentTaskRequest {
+    override buildTaskCreateRequest(conv: QaapAgentConversation): QaapCreateAgentTaskRequest {
         return { cwd: conv.cwd, prompt: 'retry', agent: conv.agentId } as unknown as QaapCreateAgentTaskRequest;
     }
 

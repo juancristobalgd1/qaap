@@ -57,27 +57,27 @@ class TestTaskRunner extends QaapAgentTaskRunner {
 
 class TestConversationStore extends QaapAgentConversationStore {
 
-    protected override async persist(): Promise<void> {
+    override async persist(): Promise<void> {
         /* no-op — keep ~/.qaap/agent-conversations out of the tests */
     }
 
-    protected override async restoreFromDisk(): Promise<void> {
+    override async restoreFromDisk(): Promise<void> {
         /* no-op — tests seed conversations directly */
     }
 
-    protected override startTurnWatchdog(): void {
+    override startTurnWatchdog(): void {
         /* no-op */
     }
 
-    protected override captureGitSha(): string | undefined {
+    override captureGitSha(): string | undefined {
         return undefined;
     }
 
-    protected override computeGitDiffStats(): { added: number; removed: number } | undefined {
+    override computeGitDiffStats(): { added: number; removed: number } | undefined {
         return undefined;
     }
 
-    protected override captureCheckpoint(): undefined {
+    override captureCheckpoint(): undefined {
         return undefined;
     }
 

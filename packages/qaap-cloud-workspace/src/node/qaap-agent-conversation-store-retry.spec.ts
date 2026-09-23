@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { retryExtracted } from './qaap-agent-conversation-store-render2';
+import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 describe('qaap agent conversation retry', () => {
     it('retries with the failed turn agent and model instead of the current conversation picker', () => {
@@ -49,7 +50,9 @@ describe('qaap agent conversation retry', () => {
             },
         };
 
-        retryExtracted(ctx, conversation.id);
+        // Narrow unit test: `retryExtracted` only touches these three members, so the fake
+        // implements a slice of the context rather than the whole 100+ member surface.
+        retryExtracted(ctx as unknown as QaapAgentConversationStoreContext, conversation.id);
 
         expect(calls).to.have.length(1);
         expect(calls[0][2]).to.equal('qaiq');

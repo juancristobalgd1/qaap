@@ -6,6 +6,7 @@ import * as sinon from 'sinon';
 import { persistExtracted } from './qaap-agent-conversation-store-thought-brief2';
 import { clearRunActive } from './qaap-agent-conversation-store-helpers';
 import type { QaapAgentConversation } from '../common/qaap-agent-conversation';
+import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 describe('conversation persistence and turn completion', () => {
     afterEach(() => sinon.restore());
@@ -17,11 +18,13 @@ describe('conversation persistence and turn completion', () => {
         write.onFirstCall().returns(new Promise<void>(resolve => { release = resolve; }));
         write.onSecondCall().rejects(new Error('busy'));
         write.onThirdCall().resolves();
+        // Narrow unit test: `persistExtracted` only touches these members (plus `persistChain`,
+        // which it initializes itself), so the fake implements a slice of the context.
         const ctx = {
             conversations: new Map(),
             persistFailureLoggedAtMs: 0,
             getSqliteStore: () => ({ replace: write }),
-        };
+        } as unknown as QaapAgentConversationStoreContext;
         const first = persistExtracted(ctx);
         await new Promise(resolve => setImmediate(resolve));
         const second = persistExtracted(ctx);

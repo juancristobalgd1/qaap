@@ -100,6 +100,7 @@ import { appendAgentReplyExtracted, appendBlockedTraceExtracted, appendCheckpoin
 import { applyAgUiTranscriptEventExtracted, buildPromptExtracted, clearAgUiReducerExtracted, cwdMatchesGithubRepoExtracted, fireAgentMessageWireUpdateExtracted, flushPersistExtracted, forceStopZombieTurnExtracted, maybeAutoResumeInterruptedTurnExtracted, recordStreamMetricsExtracted, resolveRunAgentMessageIdExtracted, restoreFromDiskExtracted, schedulePersistExtracted, stageWireMetricsBaselineExtracted, startTurnWatchdogExtracted, sweepZombieStreamingTurnsExtracted, tryAutoLinkConversationToGitBranchExtracted } from './qaap-agent-conversation-store-live-status2';
 import { captureCheckpointExtracted, countDurableLoopSpawnsExtracted, findLiveChatTurnRunExtracted, interruptStreamingTurnForRestartExtracted, maybeRetryTurnWithFallbackModelViaGraphExtracted, persistExtracted, reapOrphanedChatTurnRunsExtracted, resumeInterruptedTurnViaGraphExtracted, settleChatTurnRunExtracted } from './qaap-agent-conversation-store-thought-brief2';
 import { restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-agent-conversation-store-diff2';
+import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 /**
  * Persistent multi-turn conversations with the coding agent. Each user message spawns a one-shot
@@ -108,19 +109,24 @@ import { restoreCheckpointExtracted, rewindToMessageExtracted } from './qaap-age
  * restarts and workspace switches: state lives entirely on the VPS.
  */
 @injectable()
-export class QaapAgentConversationStore {
+export class QaapAgentConversationStore implements QaapAgentConversationStoreContext {
 
     @inject(QaapAgentTaskRunner)
-    protected readonly taskRunner!: QaapAgentTaskRunner;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly taskRunner!: QaapAgentTaskRunner;
     @inject(QaapBillingStore) @optional()
-    protected readonly billingStore: QaapBillingStore | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly billingStore: QaapBillingStore | undefined;
     @inject(QaapObservability) @optional()
-    protected readonly observability: QaapObservability | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly observability: QaapObservability | undefined;
 
     @inject(QaapTenantSpawnService)
-    protected readonly tenantSpawn!: QaapTenantSpawnService;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly tenantSpawn!: QaapTenantSpawnService;
 
-    protected mutatingGitSync(cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public mutatingGitSync(cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
         return mutatingGitSyncExtracted(this, cwd, args, env);
     }
 
@@ -130,49 +136,71 @@ export class QaapAgentConversationStore {
      * (the default) it stays completely unused.
      */
     @inject(QaapWorkflowRunStore) @optional()
-    protected readonly workflowRuns: QaapWorkflowRunStore | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly workflowRuns: QaapWorkflowRunStore | undefined;
 
-    protected readonly conversations = new Map<string, QaapAgentConversation>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly conversations = new Map<string, QaapAgentConversation>();
     /** Task id → the chat-turn run it is executing, so its terminal settles the run's edge. */
-    protected readonly chatTurnRunByTask = new Map<string, { runId: string; ownerLogin?: string; nodeId: string }>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly chatTurnRunByTask = new Map<string, { runId: string; ownerLogin?: string; nodeId: string }>();
     /** Serializes screenshot attachment per conversation across multiple open frontend tabs. */
-    protected readonly visualVerificationInFlight = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly visualVerificationInFlight = new Set<string>();
     /** Reverse index: task id → conversation turn metadata so we can route output/completion. */
-    protected readonly taskToConversation = new Map<string, QaapConversationTaskRef>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly taskToConversation = new Map<string, QaapConversationTaskRef>();
     /** Subtask ids whose completion was already appended to a leader conversation (passive mailbox). */
-    protected readonly subtaskMailboxDelivered = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly subtaskMailboxDelivered = new Set<string>();
     /** Leader turn task ids for which an auto-synthesis user message was already posted. */
-    protected readonly teamSynthesisTriggeredForLeader = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly teamSynthesisTriggeredForLeader = new Set<string>();
     /** Leader turns waiting for the in-flight agent reply before auto-synthesis can run. */
-    protected readonly pendingTeamSynthesisForLeader = new Set<string>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly pendingTeamSynthesisForLeader = new Set<string>();
     /** Per user turn: model keys already attempted before a fallback retry. */
-    protected readonly modelFallbackTriedByUserMessage = new Map<string, Set<string>>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly modelFallbackTriedByUserMessage = new Map<string, Set<string>>();
     /**
      * Per user turn: total agent re-spawns triggered by the auto-continue and model-fallback loops
      * combined. A shared ceiling so a pathological turn cannot fan out into many CLI invocations
      * (auto-continue × fallback multiply otherwise). See {@link MAX_LOOP_SPAWNS_PER_USER_MESSAGE}.
      */
-    protected readonly loopSpawnCountByUserMessage = new Map<string, number>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly loopSpawnCountByUserMessage = new Map<string, number>();
     /** Per-task structured stdout parsers (QAIQ, Claude, Codex JSON, OpenCode, Antigravity). */
-    protected readonly agentStreamByTaskId = new Map<string, QaapAgentStreamAccumulator>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly agentStreamByTaskId = new Map<string, QaapAgentStreamAccumulator>();
     /** Per-task CLI stdout → native AG-UI event emitters (QAIQ, Claude, Codex, OpenCode). */
-    protected readonly agUiStreamByTaskId = new Map<string, QaapCliAgUiStreamEmitter>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly agUiStreamByTaskId = new Map<string, QaapCliAgUiStreamEmitter>();
     /** Last wire snapshot per agent message — drives incremental SSE deltas during streaming. */
-    protected readonly lastWireMessageById = new Map<string, QaapAgentMessageWireSnapshot>();
-    protected readonly agUiReducerByAgentMessageId = new Map<string, QaapAgUiTraceReducerState>();
-    protected sseBatcher!: QaapAgentConversationSseBatcher;
-    protected persistTimer: ReturnType<typeof setTimeout> | undefined;
-    protected sqliteStore: QaapSqliteStore | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly lastWireMessageById = new Map<string, QaapAgentMessageWireSnapshot>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly agUiReducerByAgentMessageId = new Map<string, QaapAgUiTraceReducerState>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public sseBatcher!: QaapAgentConversationSseBatcher;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public persistTimer: ReturnType<typeof setTimeout> | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public sqliteStore: QaapSqliteStore | undefined;
     /** Periodic sweep that force-stops turns stuck 'streaming' past {@link QAAP_MAX_TURN_MINUTES_ENV}. */
-    protected turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
-    protected readonly streamMetrics = new QaapConversationStreamMetricsCollector('server');
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public turnWatchdogTimer: ReturnType<typeof setInterval> | undefined;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly streamMetrics = new QaapConversationStreamMetricsCollector('server');
     /** Uncompressed wire payloads keyed by `conversationId:messageId` for compression savings. */
-    protected readonly wireMetricsBaselines = new Map<string, QaapAgentConversationEvent>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly wireMetricsBaselines = new Map<string, QaapAgentConversationEvent>();
 
-    protected readonly onDidChangeEmitter = new Emitter<QaapAgentConversationEvent>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readonly onDidChangeEmitter = new Emitter<QaapAgentConversationEvent>();
     readonly onDidChange: Event<QaapAgentConversationEvent> = this.onDidChangeEmitter.event;
     /** Resolves once {@link restoreFromDisk} finishes — consumers that reconcile against conversations should await this. */
-    protected restoreReady!: Promise<void>;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public restoreReady!: Promise<void>;
 
     @postConstruct()
     protected init(): void {
@@ -207,15 +235,18 @@ export class QaapAgentConversationStore {
         return countStreamingForksExtracted(this, parentId);
     }
 
-    protected hasOtherActiveTaskForConversation(conversationId: string, exceptTaskId: string): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public hasOtherActiveTaskForConversation(conversationId: string, exceptTaskId: string): boolean {
         return hasOtherActiveTaskForConversationExtracted(this, conversationId, exceptTaskId);
     }
 
-    protected hasActiveTaskForUserMessage(conversationId: string, userMessageId: string, exceptTaskId: string,): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public hasActiveTaskForUserMessage(conversationId: string, userMessageId: string, exceptTaskId: string, ): boolean {
         return hasActiveTaskForUserMessageExtracted(this, conversationId, userMessageId, exceptTaskId);
     }
 
-    protected settleStatusForRun(conversationId: string, finishedTaskId: string, settled: QaapAgentConversationStatus,): QaapAgentConversationStatus {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public settleStatusForRun(conversationId: string, finishedTaskId: string, settled: QaapAgentConversationStatus, ): QaapAgentConversationStatus {
         return settleStatusForRunExtracted(this, conversationId, finishedTaskId, settled);
     }
 
@@ -223,7 +254,7 @@ export class QaapAgentConversationStore {
         return createExtracted(this, request, ownerLogin);
     }
 
-    postUserMessage(id: string, content: string, agentOverride?: string, agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'], autoApproveOverride?: boolean, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'], latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], internal?: PostUserMessageInternalOptions, deliveryMode?: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode,): QaapAgentConversation {
+    postUserMessage(id: string, content: string, agentOverride?: string, agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'], autoApproveOverride?: boolean, interactionModeId?: string, approvalPolicyId?: string, toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'], latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], internal?: PostUserMessageInternalOptions, deliveryMode?: import('../common/qaap-agent-conversation').QaapMessageDeliveryMode, ): QaapAgentConversation {
         return postUserMessageExtracted(this, id, content, agentOverride, agentModelOverride, autoApproveOverride, interactionModeId, approvalPolicyId, toolApprovalRules, latencyMarks, internal, deliveryMode);
     }
 
@@ -236,7 +267,8 @@ export class QaapAgentConversationStore {
     }
 
     /** Per-conversation coalesce timers for the drain (optimization C). */
-    protected drainTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public drainTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
     maybeDrainAtToolRoundBoundary(conversationId: string): void {
         return maybeDrainAtToolRoundBoundaryExtracted(this, conversationId);
@@ -286,39 +318,47 @@ export class QaapAgentConversationStore {
         return deleteExtracted(this, id);
     }
 
-    protected visualEvidenceDirectory(conversationId: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public visualEvidenceDirectory(conversationId: string): string {
         return visualEvidenceDirectoryHelper(conversationId);
     }
 
-    protected resolveVisualEvidenceTarget(conv: QaapAgentConversation, targetAgentMessageId: string | undefined,): QaapAgentMessage | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveVisualEvidenceTarget(conv: QaapAgentConversation, targetAgentMessageId: string | undefined, ): QaapAgentMessage | undefined {
         return resolveVisualEvidenceTargetExtracted(this, conv, targetAgentMessageId);
     }
 
-    protected attachVisualVerificationBlock(conv: QaapAgentConversation, target: QaapAgentMessage, markdown: string,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public attachVisualVerificationBlock(conv: QaapAgentConversation, target: QaapAgentMessage, markdown: string, ): QaapAgentConversation {
         return attachVisualVerificationBlockExtracted(this, conv, target, markdown);
     }
 
-    protected resolveVisualRepairSourceUserMessage(conv: QaapAgentConversation, target: QaapAgentMessage,): QaapAgentMessage | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveVisualRepairSourceUserMessage(conv: QaapAgentConversation, target: QaapAgentMessage, ): QaapAgentMessage | undefined {
         return resolveVisualRepairSourceUserMessageExtracted(this, conv, target);
     }
 
-    protected countVisualRepairAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public countVisualRepairAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
         return countVisualRepairAttemptsHelper(conv, rootUserMessageId);
     }
 
-    protected buildVisualRepairPrompt(target: QaapAgentMessage, attempt: number): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public buildVisualRepairPrompt(target: QaapAgentMessage, attempt: number): string {
         return buildVisualRepairPromptHelper(target, attempt);
     }
 
-    protected async failVisualRepairLoop(conv: QaapAgentConversation, sourceUserMessage: QaapAgentMessage, target: QaapAgentMessage, reason: string,): Promise<QaapAgentConversation> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async failVisualRepairLoop(conv: QaapAgentConversation, sourceUserMessage: QaapAgentMessage, target: QaapAgentMessage, reason: string, ): Promise<QaapAgentConversation> {
         return failVisualRepairLoopExtracted(this, conv, sourceUserMessage, target, reason);
     }
 
-    protected async continueVisualRepairLoop(conversationId: string, sourceAgentMessageId: string,): Promise<QaapAgentConversation | undefined> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async continueVisualRepairLoop(conversationId: string, sourceAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
         return continueVisualRepairLoopExtracted(this, conversationId, sourceAgentMessageId);
     }
 
-    async recordVisualVerification(conversationId: string, result: QaapPreviewVisualValidationResult, png: Buffer, targetAgentMessageId?: string, previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+    async recordVisualVerification(conversationId: string, result: QaapPreviewVisualValidationResult, png: Buffer, targetAgentMessageId?: string, previewUrl?: string, ): Promise<QaapAgentConversation | undefined> {
         return recordVisualVerificationExtracted(this, conversationId, result, png, targetAgentMessageId, previewUrl);
     }
 
@@ -339,7 +379,7 @@ export class QaapAgentConversationStore {
         return saveVisualEvidenceVideoHelper(this.conversations, conversationId, sourcePath, this.visualEvidenceDirectory(conversationId));
     }
 
-    async recordVisualVerificationVideo(conversationId: string, videoEvidenceId: string, steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string, previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+    async recordVisualVerificationVideo(conversationId: string, videoEvidenceId: string, steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string, previewUrl?: string, ): Promise<QaapAgentConversation | undefined> {
         return recordVisualVerificationVideoExtracted(this, conversationId, videoEvidenceId, steps, targetAgentMessageId, previewUrl);
     }
 
@@ -351,7 +391,7 @@ export class QaapAgentConversationStore {
         return resolveVisualVerificationFileHelper(this.conversations, conversationId, evidenceRef, this.visualEvidenceDirectory(conversationId));
     }
 
-    async recordVisualVerificationFlow(conversationId: string, steps: readonly { label: string; evidenceId: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string, previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+    async recordVisualVerificationFlow(conversationId: string, steps: readonly { label: string; evidenceId: string; result: QaapPreviewVisualValidationResult }[], targetAgentMessageId: string, previewUrl?: string, ): Promise<QaapAgentConversation | undefined> {
         return recordVisualVerificationFlowExtracted(this, conversationId, steps, targetAgentMessageId, previewUrl);
     }
 
@@ -360,15 +400,16 @@ export class QaapAgentConversationStore {
      * leftovers of flows whose finalize never arrived (tab closed mid-walk, budget exhausted).
      * The age guard protects a concurrent tab that is still mid-upload.
      */
-    protected async sweepUnreferencedVisualEvidence(conversationId: string): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async sweepUnreferencedVisualEvidence(conversationId: string): Promise<void> {
         return sweepUnreferencedVisualEvidenceHelper(this.conversations, conversationId, this.visualEvidenceDirectory(conversationId));
     }
 
-    async recordVisualVerificationFailure(conversationId: string, reason: string, targetAgentMessageId: string,): Promise<QaapAgentConversation | undefined> {
+    async recordVisualVerificationFailure(conversationId: string, reason: string, targetAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
         return recordVisualVerificationFailureExtracted(this, conversationId, reason, targetAgentMessageId);
     }
 
-    recordGitAction(conversationId: string, metadata: ComposerGitActionDisplayMetadata, options: { readonly messageId?: string; readonly replaceMessageId?: string; } = {},): QaapAgentConversation | undefined {
+    recordGitAction(conversationId: string, metadata: ComposerGitActionDisplayMetadata, options: { readonly messageId?: string; readonly replaceMessageId?: string; } = {}, ): QaapAgentConversation | undefined {
         return recordGitActionExtracted(this, conversationId, metadata, options);
     }
 
@@ -376,63 +417,78 @@ export class QaapAgentConversationStore {
         return readVisualVerificationExtracted(this, conversationId, evidenceId);
     }
 
-    protected onTaskChanged(event: QaapAgentTaskEvent): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public onTaskChanged(event: QaapAgentTaskEvent): void {
         onTaskChangedExtracted(this, event);
     }
 
-    protected recordTaskLatencyMarks(conversationId: string, task: QaapAgentTask): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public recordTaskLatencyMarks(conversationId: string, task: QaapAgentTask): void {
         recordTaskLatencyMarksExtracted(this, conversationId, task);
     }
 
-    protected recordSubmitLatencyMarks(conversationId: string, latencyMarks: QaapCreateAgentConversationRequest['latencyMarks'] | undefined,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public recordSubmitLatencyMarks(conversationId: string, latencyMarks: QaapCreateAgentConversationRequest['latencyMarks'] | undefined, ): void {
         recordSubmitLatencyMarksExtracted(this, conversationId, latencyMarks);
     }
 
-    protected async deliverSubtaskMailbox(task: QaapAgentTask): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async deliverSubtaskMailbox(task: QaapAgentTask): Promise<void> {
         return deliverSubtaskMailboxExtracted(this, task);
     }
 
-    protected resolveLeaderTaskId(task: QaapAgentTask): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveLeaderTaskId(task: QaapAgentTask): string | undefined {
         return resolveLeaderTaskIdExtracted(this, task);
     }
 
-    protected findConversationIdForLeaderTask(leaderTaskId: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public findConversationIdForLeaderTask(leaderTaskId: string): string | undefined {
         return findConversationIdForLeaderTaskExtracted(this, leaderTaskId);
     }
 
-    protected findTaskById(id: string): QaapAgentTask | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public findTaskById(id: string): QaapAgentTask | undefined {
         return this.taskRunner.list().find(candidate => candidate.id === id);
     }
 
-    protected maybeTriggerTeamSynthesis(leaderTaskId: string, conversationId: string): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public maybeTriggerTeamSynthesis(leaderTaskId: string, conversationId: string): void {
         maybeTriggerTeamSynthesisExtracted(this, leaderTaskId, conversationId);
     }
 
-    protected finishLeaderTurnAndMaybeSynthesize(conversationId: string, leaderTaskId: string, next: QaapAgentConversation,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public finishLeaderTurnAndMaybeSynthesize(conversationId: string, leaderTaskId: string, next: QaapAgentConversation, ): void {
         finishLeaderTurnAndMaybeSynthesizeExtracted(this, conversationId, leaderTaskId, next);
     }
 
-    protected applyTaskOutput(taskId: string, ref: QaapConversationTaskRef, chunk: string,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public applyTaskOutput(taskId: string, ref: QaapConversationTaskRef, chunk: string, ): void {
         applyTaskOutputExtracted(this, taskId, ref, chunk);
     }
 
-    protected applyAgUiTaskOutput(taskId: string, ref: QaapConversationTaskRef, chunk: string, agentId: string,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public applyAgUiTaskOutput(taskId: string, ref: QaapConversationTaskRef, chunk: string, agentId: string, ): void {
         applyAgUiTaskOutputExtracted(this, taskId, ref, chunk, agentId);
     }
 
-    protected finalizeTurnContextUsage(conv: QaapAgentConversation, taskId: string, agentId: string): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public finalizeTurnContextUsage(conv: QaapAgentConversation, taskId: string, agentId: string): QaapAgentConversation {
         return finalizeTurnContextUsageHelper(conv, taskId, this.agentStreamByTaskId);
     }
 
-    protected ensureAgentStream(taskId: string, agentId: string): QaapAgentStreamAccumulator | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public ensureAgentStream(taskId: string, agentId: string): QaapAgentStreamAccumulator | undefined {
         return ensureAgentStreamHelper(taskId, agentId, this.agentStreamByTaskId);
     }
 
-    protected ensureAgUiStream(taskId: string, agentId: string): QaapCliAgUiStreamEmitter {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public ensureAgUiStream(taskId: string, agentId: string): QaapCliAgUiStreamEmitter {
         return ensureAgUiStreamHelper(taskId, agentId, this.agUiStreamByTaskId);
     }
 
-    protected parseStructuredLog(agentId: string, log: string,): {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public parseStructuredLog(agentId: string, log: string, ): {
         content: string;
         segments: QaapAgentMessage['segments'];
         traceEvents: QaapAgentMessage['traceEvents'];
@@ -440,19 +496,23 @@ export class QaapAgentConversationStore {
         return parseStructuredLogExtracted(this, agentId, log);
     }
 
-    protected applyAccumulatorStructuredOutput(taskId: string, ref: QaapConversationTaskRef, agentId: string,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public applyAccumulatorStructuredOutput(taskId: string, ref: QaapConversationTaskRef, agentId: string, ): void {
         applyAccumulatorStructuredOutputExtracted(this, taskId, ref, agentId);
     }
 
-    protected backfillAgentMessageFromStructuredLog(message: QaapAgentMessage, agentId: string, log: string,): QaapAgentMessage {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public backfillAgentMessageFromStructuredLog(message: QaapAgentMessage, agentId: string, log: string, ): QaapAgentMessage {
         return backfillAgentMessageFromStructuredLogExtracted(this, message, agentId, log);
     }
 
-    protected resolveStructuredParsedTraceEvents(message: QaapAgentMessage, parsed: { segments?: QaapAgentMessage['segments']; traceEvents?: QaapAgentMessage['traceEvents']; },): QaapAgentMessage['traceEvents'] {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveStructuredParsedTraceEvents(message: QaapAgentMessage, parsed: { segments?: QaapAgentMessage['segments']; traceEvents?: QaapAgentMessage['traceEvents']; }, ): QaapAgentMessage['traceEvents'] {
         return resolveStructuredParsedTraceEventsExtracted(this, message, parsed);
     }
 
-    protected async applyTaskOutcome(ref: QaapConversationTaskRef, task: QaapAgentTask,): Promise<QaapWorkflowNodeOutcome> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async applyTaskOutcome(ref: QaapConversationTaskRef, task: QaapAgentTask, ): Promise<QaapWorkflowNodeOutcome> {
         return applyTaskOutcomeExtracted(this, ref, task);
     }
 
@@ -461,37 +521,45 @@ export class QaapAgentConversationStore {
      * with the next curated fallback model so the thread keeps moving without user intervention.
      */
     /** Shared re-spawn budget across the auto-continue and model-fallback loops for one user turn. */
-    protected hasLoopSpawnBudget(userMessageId: string): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public hasLoopSpawnBudget(userMessageId: string): boolean {
         return (this.loopSpawnCountByUserMessage.get(userMessageId) ?? 0) < MAX_LOOP_SPAWNS_PER_USER_MESSAGE;
     }
 
-    protected recordLoopSpawn(userMessageId: string): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public recordLoopSpawn(userMessageId: string): void {
         this.loopSpawnCountByUserMessage.set(userMessageId, (this.loopSpawnCountByUserMessage.get(userMessageId) ?? 0) + 1);
     }
 
     /** Resolve every generated continuation in a chain back to the human-authored root turn. */
-    protected resolveLoopBudgetKey(conv: QaapAgentConversation, userMessageId: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveLoopBudgetKey(conv: QaapAgentConversation, userMessageId: string): string {
         return resolveLoopBudgetKeyHelper(conv, userMessageId);
     }
 
     /** Persisted count so a backend restart cannot reset the per-chain auto-continue ceiling. */
-    protected countAutoContinueAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public countAutoContinueAttempts(conv: QaapAgentConversation, rootUserMessageId: string): number {
         return countAutoContinueAttemptsHelper(conv, rootUserMessageId);
     }
 
-    protected async maybeRetryTurnWithFallback(conversationId: string, userMessageId: string, agentMessageId: string | undefined, task: QaapAgentTask, conv: QaapAgentConversation, agentMessage: QaapAgentMessage | undefined, turnAgentId: string, startSha?: string,): Promise<boolean> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async maybeRetryTurnWithFallback(conversationId: string, userMessageId: string, agentMessageId: string | undefined, task: QaapAgentTask, conv: QaapAgentConversation, agentMessage: QaapAgentMessage | undefined, turnAgentId: string, startSha?: string, ): Promise<boolean> {
         return maybeRetryTurnWithFallbackExtracted(this, conversationId, userMessageId, agentMessageId, task, conv, agentMessage, turnAgentId, startSha);
     }
 
-    protected maybeRetryTurnWithFallbackModel(conversationId: string, userMessageId: string, agentMessageId: string | undefined, task: QaapAgentTask, conv: QaapAgentConversation, agentMessage: QaapAgentMessage | undefined, turnAgentId: string, startSha?: string,): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public maybeRetryTurnWithFallbackModel(conversationId: string, userMessageId: string, agentMessageId: string | undefined, task: QaapAgentTask, conv: QaapAgentConversation, agentMessage: QaapAgentMessage | undefined, turnAgentId: string, startSha?: string, ): boolean {
         return maybeRetryTurnWithFallbackModelExtracted(this, conversationId, userMessageId, agentMessageId, task, conv, agentMessage, turnAgentId, startSha);
     }
 
-    protected postAutoContinueMessage(conversationId: string, content: string, conv: QaapAgentConversation, rootUserMessageId: string, turnAgentId: string, turnAgentModel: QaapAgentMessage['turnAgentModel'],): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public postAutoContinueMessage(conversationId: string, content: string, conv: QaapAgentConversation, rootUserMessageId: string, turnAgentId: string, turnAgentModel: QaapAgentMessage['turnAgentModel'], ): QaapAgentConversation {
         return postAutoContinueMessageExtracted(this, conversationId, content, conv, rootUserMessageId, turnAgentId, turnAgentModel);
     }
 
-    protected maybeAutoContinueIncompleteTurn(conversationId: string, conv: QaapAgentConversation, userMessageId: string, agentMessageId?: string, turnAgentId?: string,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public maybeAutoContinueIncompleteTurn(conversationId: string, conv: QaapAgentConversation, userMessageId: string, agentMessageId?: string, turnAgentId?: string, ): void {
         maybeAutoContinueIncompleteTurnExtracted(this, conversationId, conv, userMessageId, agentMessageId, turnAgentId);
     }
 
@@ -499,11 +567,13 @@ export class QaapAgentConversationStore {
         return reportPreviewBootstrapFailureExtracted(this, conversationId, reason);
     }
 
-    protected appendAgentReply(conv: QaapAgentConversation, content: string, runUserMessageId?: string,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public appendAgentReply(conv: QaapAgentConversation, content: string, runUserMessageId?: string, ): QaapAgentConversation {
         return appendAgentReplyExtracted(this, conv, content, runUserMessageId);
     }
 
-    protected failTurnBeforeSpawn(id: string, conv: QaapAgentConversation, userMessageId: string, reason: string,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public failTurnBeforeSpawn(id: string, conv: QaapAgentConversation, userMessageId: string, reason: string, ): QaapAgentConversation {
         return failTurnBeforeSpawnExtracted(this, id, conv, userMessageId, reason);
     }
 
@@ -513,71 +583,88 @@ export class QaapAgentConversationStore {
      * rate limits). Covers stream-json `is_error:true` and plain-text Antigravity
      * quota lines ("Individual quota reached…").
      */
-    protected resolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveCompletedTurnAuthFailureReason(log: string | undefined): string | undefined {
         return resolveCompletedTurnAuthFailureReasonHelper(log);
     }
 
-    protected markTurnFailed(conv: QaapAgentConversation, options: { readonly userMessageId: string; readonly agentMessageId?: string; readonly reason: string; readonly failureBody?: string; readonly status?: QaapAgentConversationStatus; },): { readonly conv: QaapAgentConversation; readonly agentMessageId?: string } {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public markTurnFailed(conv: QaapAgentConversation, options: { readonly userMessageId: string; readonly agentMessageId?: string; readonly reason: string; readonly failureBody?: string; readonly status?: QaapAgentConversationStatus; }, ): { readonly conv: QaapAgentConversation; readonly agentMessageId?: string } {
         return markTurnFailedExtracted(this, conv, options);
     }
 
-    protected finalizeStreamingAgentMessage(conv: QaapAgentConversation, agentMessageId: string | undefined, interruptionReason: string,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public finalizeStreamingAgentMessage(conv: QaapAgentConversation, agentMessageId: string | undefined, interruptionReason: string, ): QaapAgentConversation {
         return finalizeStreamingAgentMessageExtracted(this, conv, agentMessageId, interruptionReason);
     }
 
-    protected clearRunActive(conv: QaapAgentConversation, agentMessageId: string | undefined,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public clearRunActive(conv: QaapAgentConversation, agentMessageId: string | undefined, ): QaapAgentConversation {
         return clearRunActiveExtracted(this, conv, agentMessageId);
     }
 
-    protected appendRunCancelledTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public appendRunCancelledTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, reason: string, ): QaapAgentConversation {
         return appendRunCancelledTraceExtracted(this, conv, agentMessageId, reason);
     }
 
-    protected detectAgentBlockedNeed(conv: QaapAgentConversation, agentMessageId: string | undefined,): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public detectAgentBlockedNeed(conv: QaapAgentConversation, agentMessageId: string | undefined, ): string | undefined {
         return detectAgentBlockedNeedExtracted(this, conv, agentMessageId);
     }
 
-    protected appendReviewTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, note: string,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public appendReviewTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, note: string, ): QaapAgentConversation {
         return appendReviewTraceExtracted(this, conv, agentMessageId, note);
     }
 
-    protected appendBlockedTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, need: string,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public appendBlockedTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, need: string, ): QaapAgentConversation {
         return appendBlockedTraceExtracted(this, conv, agentMessageId, need);
     }
 
-    protected appendVerificationWarningTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, task: QaapAgentTask,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public appendVerificationWarningTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, task: QaapAgentTask, ): QaapAgentConversation {
         return appendVerificationWarningTraceExtracted(this, conv, agentMessageId, task);
     }
 
-    protected appendCheckpointTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, checkpoint: QaapConversationCheckpoint,): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public appendCheckpointTrace(conv: QaapAgentConversation, agentMessageId: string | undefined, checkpoint: QaapConversationCheckpoint, ): QaapAgentConversation {
         return appendCheckpointTraceExtracted(this, conv, agentMessageId, checkpoint);
     }
 
-    protected publishFinalizedAgentMessage(conversationId: string, conv: QaapAgentConversation, agentMessageId: string | undefined, turnAgentId?: string,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public publishFinalizedAgentMessage(conversationId: string, conv: QaapAgentConversation, agentMessageId: string | undefined, turnAgentId?: string, ): void {
         publishFinalizedAgentMessageExtracted(this, conversationId, conv, agentMessageId, turnAgentId);
     }
 
-    protected resolveAgentIdForAgentMessage(conv: QaapAgentConversation, agentMessage: QaapAgentMessage): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveAgentIdForAgentMessage(conv: QaapAgentConversation, agentMessage: QaapAgentMessage): string {
         return resolveAgentIdForAgentMessageHelper(conv, agentMessage);
     }
 
-    protected resolveTurnAgent(conv: QaapAgentConversation, userContent: string, explicit?: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveTurnAgent(conv: QaapAgentConversation, userContent: string, explicit?: string): string {
         return resolveTurnAgentExtracted(this, conv, userContent, explicit);
     }
 
-    protected isKnownAgentId(agentId: string): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public isKnownAgentId(agentId: string): boolean {
         return !!this.taskRunner.normalizeAgentId(agentId);
     }
 
-    protected extractAgentMentionFromUserMessage(content: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public extractAgentMentionFromUserMessage(content: string): string | undefined {
         return extractAgentMentionFromUserMessageExtracted(this, content);
     }
 
-    protected prepareContextCompactionForTurn(conv: QaapAgentConversation): QaapAgentConversation {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public prepareContextCompactionForTurn(conv: QaapAgentConversation): QaapAgentConversation {
         return prepareContextCompactionForTurnExtracted(this, conv);
     }
 
-    protected buildContextCompactionSummary(messages: readonly QaapAgentMessage[]): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public buildContextCompactionSummary(messages: readonly QaapAgentMessage[]): string {
         return buildContextCompactionSummaryHelper(messages);
     }
 
@@ -585,30 +672,36 @@ export class QaapAgentConversationStore {
         return contextCompactionMessageTextHelper(message);
     }
 
-    protected buildTaskCreateRequest(conv: QaapAgentConversation, turnAgentId: string, latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], turnUserMessageId?: string,): QaapCreateAgentTaskRequest {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public buildTaskCreateRequest(conv: QaapAgentConversation, turnAgentId: string, latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'], turnUserMessageId?: string, ): QaapCreateAgentTaskRequest {
         return buildTaskCreateRequestExtracted(this, conv, turnAgentId, latencyMarks, turnUserMessageId);
     }
 
-    protected stripLeadingAgentMention(content: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public stripLeadingAgentMention(content: string): string {
         return stripLeadingAgentMentionExtracted(this, content);
     }
 
-    protected buildPrompt(conv: QaapAgentConversation, turnAgentId = conv.agentId): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public buildPrompt(conv: QaapAgentConversation, turnAgentId = conv.agentId): string {
         return buildPromptExtracted(this, conv, turnAgentId);
     }
 
-    protected contextPreambleWithCompaction(contextPreamble: string | undefined, summary: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public contextPreambleWithCompaction(contextPreamble: string | undefined, summary: string): string {
         return contextPreambleWithCompactionHelper(contextPreamble, summary);
     }
 
     /** Inject lightweight team-delegation instructions so the leader can spawn sub-tasks via `qaap-task`. */
-    protected appendTeamDelegation(prompt: string, turnAgentId: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public appendTeamDelegation(prompt: string, turnAgentId: string): string {
         const agentIds = this.taskRunner.listAgents().map(agent => agent.id);
         return appendTeamDelegationToPrompt(prompt, turnAgentId, agentIds);
     }
 
     /** Drop repetitive QAIQ/OpenClaude metadata noise from chat transcripts (still kept in task logs). */
-    protected filterAgentLogChunk(chunk: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public filterAgentLogChunk(chunk: string): string {
         return filterAgentLogChunkHelper(chunk);
     }
 
@@ -620,43 +713,52 @@ export class QaapAgentConversationStore {
      * the first user turn is posted, so an explicit rename ({@link rename}/{@link update}) is never
      * touched. See {@link deriveConversationTitle}'s doc for the documented LLM-title upgrade seam.
      */
-    protected deriveTitle(seed: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public deriveTitle(seed: string): string {
         return deriveTitleHelper(seed);
     }
 
-    protected fire(event: QaapAgentConversationEvent): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public fire(event: QaapAgentConversationEvent): void {
         this.sseBatcher.enqueue(event);
     }
 
-    protected resolveRunAgentMessageId(conv: QaapAgentConversation, run: { readonly userMessageId: string; readonly agentMessageId?: string },): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public resolveRunAgentMessageId(conv: QaapAgentConversation, run: { readonly userMessageId: string; readonly agentMessageId?: string }, ): string | undefined {
         return resolveRunAgentMessageIdExtracted(this, conv, run);
     }
 
-    applyAgUiTranscriptEvent(conversationId: string, event: QaapAgUiEvent, run?: { readonly userMessageId: string; readonly turnAgentId?: string; agentMessageId?: string },): QaapAgentConversation | undefined {
+    applyAgUiTranscriptEvent(conversationId: string, event: QaapAgUiEvent, run?: { readonly userMessageId: string; readonly turnAgentId?: string; agentMessageId?: string }, ): QaapAgentConversation | undefined {
         return applyAgUiTranscriptEventExtracted(this, conversationId, event, run);
     }
 
-    protected clearAgUiReducer(agentMessageId: string | undefined): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public clearAgUiReducer(agentMessageId: string | undefined): void {
         clearAgUiReducerExtracted(this, agentMessageId);
     }
 
-    protected stageWireMetricsBaseline(conversationId: string, messageId: string, baseline: QaapAgentConversationEvent,): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public stageWireMetricsBaseline(conversationId: string, messageId: string, baseline: QaapAgentConversationEvent, ): void {
         stageWireMetricsBaselineExtracted(this, conversationId, messageId, baseline);
     }
 
-    protected recordStreamMetrics(event: QaapAgentConversationEvent): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public recordStreamMetrics(event: QaapAgentConversationEvent): void {
         recordStreamMetricsExtracted(this, event);
     }
 
-    protected fireAgentMessageWireUpdate(conversationId: string, cwd: string, agentId: string, message: QaapAgentMessage, options?: { forceFullMessage?: boolean },): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public fireAgentMessageWireUpdate(conversationId: string, cwd: string, agentId: string, message: QaapAgentMessage, options?: { forceFullMessage?: boolean }, ): void {
         fireAgentMessageWireUpdateExtracted(this, conversationId, cwd, agentId, message, options);
     }
 
-    protected schedulePersist(): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public schedulePersist(): void {
         schedulePersistExtracted(this);
     }
 
-    protected flushPersist(): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public flushPersist(): void {
         flushPersistExtracted(this);
     }
 
@@ -665,27 +767,33 @@ export class QaapAgentConversationStore {
         this.fire({ type: 'parallel-run', runId, cwd, variants });
     }
 
-    protected tryAutoLinkConversationToGitBranch(conv: QaapAgentConversation): QaapAgentConversation | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public tryAutoLinkConversationToGitBranch(conv: QaapAgentConversation): QaapAgentConversation | undefined {
         return tryAutoLinkConversationToGitBranchExtracted(this, conv);
     }
 
-    protected cwdMatchesGithubRepo(cwd: string, owner: string, repo: string): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public cwdMatchesGithubRepo(cwd: string, owner: string, repo: string): boolean {
         return cwdMatchesGithubRepoExtracted(this, cwd, owner, repo);
     }
 
-    protected parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public parseGithubRepoFromCwd(cwd: string): { owner: string; name: string } | undefined {
         return parseGithubRepoFromCwdHelper(cwd, this.readGitSync.bind(this));
     }
 
-    protected readGitBranch(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readGitBranch(cwd: string): string | undefined {
         return readGitBranchHelper(cwd, this.readGitSync.bind(this));
     }
 
-    protected async restoreFromDisk(): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async restoreFromDisk(): Promise<void> {
         return restoreFromDiskExtracted(this);
     }
 
-    protected startTurnWatchdog(): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public startTurnWatchdog(): void {
         startTurnWatchdogExtracted(this);
     }
 
@@ -699,70 +807,87 @@ export class QaapAgentConversationStore {
      * turn under budget can never complete normally — same fallback the store always applied).
      */
     /** True when the conversation's current turn is paused waiting on a user approval (REL-5). */
-    protected turnHasPendingApproval(conv: QaapAgentConversation): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public turnHasPendingApproval(conv: QaapAgentConversation): boolean {
         const lastUser = [...conv.messages].reverse().find(message => message.role === 'user' && message.taskId);
         return !!lastUser?.taskId && this.taskRunner.listPendingQaiqControlRequests(lastUser.taskId).length > 0;
     }
 
-    protected sweepZombieStreamingTurns(nowMs: number, options?: { readonly resetSurvivorsToIdle?: boolean }): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public sweepZombieStreamingTurns(nowMs: number, options?: { readonly resetSurvivorsToIdle?: boolean }): boolean {
         return sweepZombieStreamingTurnsExtracted(this, nowMs, options);
     }
 
-    protected forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public forceStopZombieTurn(conversationId: string, elapsedMs: number, maxTurnMinutes: number): boolean {
         return forceStopZombieTurnExtracted(this, conversationId, elapsedMs, maxTurnMinutes);
     }
 
-    protected async maybeAutoResumeInterruptedTurn(conversationId: string, nowMs: number): Promise<boolean> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async maybeAutoResumeInterruptedTurn(conversationId: string, nowMs: number): Promise<boolean> {
         return maybeAutoResumeInterruptedTurnExtracted(this, conversationId, nowMs);
     }
 
     /** ADR-002 turnstile: whether restart-resume is governed by the chat-turn workflow graph. */
-    protected isTurnGraphEnabled(): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public isTurnGraphEnabled(): boolean {
         return isTurnGraphEnabledHelper();
     }
 
-    protected async resumeInterruptedTurnViaGraph(conv: QaapAgentConversation, turnUserMessage: QaapAgentMessage, rootUserMessage: QaapAgentMessage, turnAgentId: string, nowMs: number,): Promise<boolean> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async resumeInterruptedTurnViaGraph(conv: QaapAgentConversation, turnUserMessage: QaapAgentMessage, rootUserMessage: QaapAgentMessage, turnAgentId: string, nowMs: number, ): Promise<boolean> {
         return resumeInterruptedTurnViaGraphExtracted(this, conv, turnUserMessage, rootUserMessage, turnAgentId, nowMs);
     }
 
-    protected settleChatTurnRun(task: QaapAgentTask, outcome: QaapWorkflowNodeOutcome = resolveChatTurnOutcome(task.state)): void {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public settleChatTurnRun(task: QaapAgentTask, outcome: QaapWorkflowNodeOutcome = resolveChatTurnOutcome(task.state)): void {
         settleChatTurnRunExtracted(this, task, outcome);
     }
 
-    protected findLiveChatTurnRun(conv: QaapAgentConversation, rootUserMessageId: string): QaapPersistedWorkflowRun | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public findLiveChatTurnRun(conv: QaapAgentConversation, rootUserMessageId: string): QaapPersistedWorkflowRun | undefined {
         return findLiveChatTurnRunExtracted(this, conv, rootUserMessageId);
     }
 
     /** The durable tried-model keys of a run's fallback ladder ({@link QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT}). */
-    protected readTriedFallbackModels(record: QaapPersistedWorkflowRun | undefined): readonly string[] {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public readTriedFallbackModels(record: QaapPersistedWorkflowRun | undefined): readonly string[] {
         return readTriedFallbackModelsHelper(record);
     }
 
-    protected countDurableLoopSpawns(conv: QaapAgentConversation, rootUserMessageId: string, record: QaapPersistedWorkflowRun | undefined,): number {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public countDurableLoopSpawns(conv: QaapAgentConversation, rootUserMessageId: string, record: QaapPersistedWorkflowRun | undefined, ): number {
         return countDurableLoopSpawnsExtracted(this, conv, rootUserMessageId, record);
     }
 
-    protected async maybeRetryTurnWithFallbackModelViaGraph(conversationId: string, userMessageId: string, agentMessageId: string | undefined, task: QaapAgentTask, conv: QaapAgentConversation, agentMessage: QaapAgentMessage | undefined, turnAgentId: string, startSha?: string,): Promise<boolean> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async maybeRetryTurnWithFallbackModelViaGraph(conversationId: string, userMessageId: string, agentMessageId: string | undefined, task: QaapAgentTask, conv: QaapAgentConversation, agentMessage: QaapAgentMessage | undefined, turnAgentId: string, startSha?: string, ): Promise<boolean> {
         return maybeRetryTurnWithFallbackModelViaGraphExtracted(this, conversationId, userMessageId, agentMessageId, task, conv, agentMessage, turnAgentId, startSha);
     }
 
-    protected async reapOrphanedChatTurnRuns(): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async reapOrphanedChatTurnRuns(): Promise<void> {
         return reapOrphanedChatTurnRunsExtracted(this);
     }
 
-    protected interruptStreamingTurnForRestart(conversationId: string, nowMs: number): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public interruptStreamingTurnForRestart(conversationId: string, nowMs: number): boolean {
         return interruptStreamingTurnForRestartExtracted(this, conversationId, nowMs);
     }
 
     /** Throttle persist-failure warnings so a sustained disk error can't spam the log every 500ms. */
-    protected persistFailureLoggedAtMs = 0;
-    protected persistChain: Promise<void> = Promise.resolve();
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public persistFailureLoggedAtMs = 0;
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public persistChain: Promise<void> = Promise.resolve();
 
-    protected async persist(): Promise<void> {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public async persist(): Promise<void> {
         return persistExtracted(this);
     }
 
-    protected getSqliteStore(): QaapSqliteStore {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public getSqliteStore(): QaapSqliteStore {
         return this.sqliteStore ??= new QaapSqliteStore({
             databasePath: resolveQaapSqlitePath(INDEX_PATH),
             namespace: 'agent-conversations',
@@ -770,11 +895,13 @@ export class QaapAgentConversationStore {
         });
     }
 
-    protected captureGitSha(cwd: string): string | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public captureGitSha(cwd: string): string | undefined {
         return captureGitShaHelper(cwd, this.readGitSync.bind(this));
     }
 
-    protected computeGitDiffStats(cwd: string, startSha?: string): { added: number; removed: number } | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public computeGitDiffStats(cwd: string, startSha?: string): { added: number; removed: number } | undefined {
         return computeGitDiffStatsHelper(cwd, startSha, this.readGitSync.bind(this));
     }
 
@@ -790,11 +917,13 @@ export class QaapAgentConversationStore {
         });
     }
 
-    protected captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number },): QaapConversationCheckpoint | undefined {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public captureCheckpoint(cwd: string, conversationId: string, messageId: string, label: string, stats?: { added: number; removed: number }, ): QaapConversationCheckpoint | undefined {
         return captureCheckpointExtracted(this, cwd, conversationId, messageId, label, stats);
     }
 
-    protected checkpointLabel(content: string): string {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public checkpointLabel(content: string): string {
         return checkpointLabelHelper(content);
     }
 
@@ -806,7 +935,8 @@ export class QaapAgentConversationStore {
         return restoreCheckpointExtracted(this, conversationId, checkpointId);
     }
 
-    protected isDirectory(target: string): boolean {
+    /** @internal Used by the extracted qaap-agent-conversation-store-* modules. */
+    public isDirectory(target: string): boolean {
         return isDirectoryHelper(target);
     }
 }

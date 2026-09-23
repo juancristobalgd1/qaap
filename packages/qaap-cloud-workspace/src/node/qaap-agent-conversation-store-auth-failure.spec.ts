@@ -40,12 +40,12 @@ class TestTaskRunner extends QaapAgentTaskRunner {
 
 class TestConversationStore extends QaapAgentConversationStore {
 
-    protected override async persist(): Promise<void> { /* no-op */ }
-    protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
-    protected override startTurnWatchdog(): void { /* no-op */ }
-    protected override captureGitSha(): string | undefined { return undefined; }
-    protected override captureCheckpoint(): undefined { return undefined; }
-    protected override fireAgentMessageWireUpdate(): void { /* no-op */ }
+    override async persist(): Promise<void> { /* no-op */ }
+    override async restoreFromDisk(): Promise<void> { /* no-op */ }
+    override startTurnWatchdog(): void { /* no-op */ }
+    override captureGitSha(): string | undefined { return undefined; }
+    override captureCheckpoint(): undefined { return undefined; }
+    override fireAgentMessageWireUpdate(): void { /* no-op */ }
 
     configureForTest(taskRunner: QaapAgentTaskRunner): void {
         (this as unknown as { sseBatcher: QaapAgentConversationSseBatcher }).sseBatcher =

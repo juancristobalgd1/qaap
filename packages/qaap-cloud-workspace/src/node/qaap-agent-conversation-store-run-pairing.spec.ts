@@ -65,19 +65,19 @@ class TestConversationStore extends QaapAgentConversationStore {
 
     private testTaskRunner: TestTaskRunner | undefined;
 
-    protected override async persist(): Promise<void> { /* no-op */ }
-    protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
-    protected override startTurnWatchdog(): void { /* no-op */ }
+    override async persist(): Promise<void> { /* no-op */ }
+    override async restoreFromDisk(): Promise<void> { /* no-op */ }
+    override startTurnWatchdog(): void { /* no-op */ }
 
-    protected override captureGitSha(): string | undefined {
+    override captureGitSha(): string | undefined {
         return undefined;
     }
 
-    protected override captureCheckpoint(): undefined {
+    override captureCheckpoint(): undefined {
         return undefined;
     }
 
-    protected override fireAgentMessageWireUpdate(
+    override fireAgentMessageWireUpdate(
         _conversationId: string,
         _cwd: string,
         agentId: string,

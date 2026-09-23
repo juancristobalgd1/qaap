@@ -9,6 +9,7 @@ import { backfillAgentMessageFromStructuredLogExtracted } from './qaap-agent-con
 import { parseStructuredLog } from './qaap-agent-conversation-store-helpers';
 import { resolveStructuredParsedTraceEvents } from './qaap-agent-conversation-store-utils';
 import type { QaapAgentMessage } from '../common/qaap-agent-conversation';
+import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
 const QAIQ_TOOL_LOG = [
     '{"type":"assistant","timestamp_ms":1,"message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.ts"}}]}}',
@@ -18,10 +19,12 @@ const QAIQ_TOOL_LOG = [
 
 describe('QA-003 backfill placeholder agent rows from structured logs', () => {
 
+    // Narrow unit test: `backfillAgentMessageFromStructuredLogExtracted` only touches these two
+    // members, so the fake implements a slice of the context rather than the whole surface.
     const ctx = {
         parseStructuredLog,
         resolveStructuredParsedTraceEvents,
-    };
+    } as unknown as QaapAgentConversationStoreContext;
 
     it('replays QAIQ tool segments when the agent row only has placeholder content', () => {
         const message: QaapAgentMessage = {

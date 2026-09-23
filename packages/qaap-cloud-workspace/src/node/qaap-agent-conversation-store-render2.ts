@@ -1,222 +1,45 @@
-// @ts-nocheck
 // Extracted from qaap-agent-conversation-store.ts
+import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { nls } from '@theia/core/lib/common/nls';
-import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
 import { randomUUID } from 'crypto';
+
 import { spawnSync, SpawnSyncReturns } from 'child_process';
-import * as fs from 'fs';
-import * as fsp from 'fs/promises';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
-import * as os from 'os';
+
 import * as path from 'path';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import {
-    QAAP_AGENT_CONVERSATION_API_PATH,
-    QAAP_DEFAULT_DELIVERY_MODE,
-    QaapAgentConversation,
-    QaapAgentConversationCwdGroup,
-    QaapAgentConversationEvent,
-    QaapAgentConversationStatus,
-    QaapAgentConversationSummary,
-    QaapAgentMessage,
-    QaapConversationCheckpoint,
-    QaapCreateAgentConversationRequest,
-    QaapLinkConversationsByBranchRequest,
-    QaapMessageDeliveryMode,
-    QaapPendingUserMessage,
-    QaapRenameAgentConversationRequest,
-    QaapUpdateAgentConversationRequest,
-    toConversationSummary,
-} from '../common/qaap-agent-conversation';
-import {
-    agentSupportsModelPicker,
-    QAIQ_AGENT_ID,
-    resolveQaapAgentMentionToken,
-    SHELL_AGENT_ID,
-    usesAgUiCliTranscriptStream,
-    usesStructuredAgentTranscript,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import {
-    DEFAULT_QAAP_CONTEXT_WINDOW,
-    totalTokensFromContextUsage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
-import { localizeAgentFailureMessage, localizeMissingCodingAgentMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
-import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
-import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
-import {
-    resolveAgentLogDisplayText,
-    type QaapAgentStreamAccumulator,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import {
-    type QaapCliAgUiStreamEmitter,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
-import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
-import {
-    autoContinueAllowedForInteraction,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
-import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
-import {
-    QAAP_CHAT_TURN_NODE,
-    QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT,
-    QAAP_CHAT_TURN_WORKFLOW_ID,
-    buildChatTurnWorkflow,
-    resolveChatTurnOutcome,
-    resolveChatTurnRunBudget,
-} from '../common/qaap-chat-turn-workflow';
-import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
-import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
-import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
-import {
-    buildConversationAgentPrompt,
-} from '../common/qaap-agent-conversation-prompt';
-import { deriveConversationTitle } from '../common/qaap-conversation-title';
-import {
-    areAllSubtasksSettled,
-    buildTeamSynthesisUserMessage,
-    collectSubtasksForLeader,
-    countFailedSubtasks,
-    formatSubtaskMailboxMessage,
-    isTeamSynthesisUserMessage,
-} from '../common/qaap-team-mailbox';
-import { planConversationRewind } from '../common/qaap-agent-conversation-rewind';
-import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
-import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
-import { resolveTaskAgentModel } from '../common/qaap-agent-task';
-import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
-import {
-    QaapConversationStreamMetricsCollector,
-    countCompressedWireFields,
-    logQaapStreamMetrics,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
-import {
-    type QaapAgentMessageWireSnapshot,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
-import {
-    buildAgentMessageFromAgUiStructuredLog,
-    buildAgentMessageFromQaapAgUiReducer,
-    reduceQaapAgUiTranscriptEvent,
-    type QaapAgUiEvent,
-    type QaapAgUiTraceReducerState,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
-import {
-    agentModelKey,
-    agentTurnHasRetryableEmptyOutput,
-    agentTurnHasRetryableModelFailure,
-    agentTurnHasRetryableToolSupportFailure,
-    resolveNextFallbackAgentModel,
-} from '../common/qaap-agent-model-fallback';
-import {
-    appendTracePreviewFailureEvent,
-    agentMessageHasStructuredTrace,
-    syncSettledTraceEventsOnMessage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
-import { backfillConversationTraceEvents, materializeConversationForApiWithChanges, materializeAgentMessageForApi, preferTraceFirstAgentMessageStorage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
-import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
-import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
-import {
-    QAAP_VISUAL_REPAIR_REQUIRED_MARKER,
-    agentMessageHasVisualVerificationMarker,
-    buildQaapVisualFlowMarkdown,
-    buildQaapVisualVerificationFailureMarkdown,
-    buildQaapVisualVerificationMarkdown,
-    buildQaapVisualVideoMarkdown,
-    type QaapPreviewVisualValidationResult,
-    type QaapVisualFlowStepEvidence,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
-import {
-    type ComposerGitActionDisplayMetadata,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
-import {
-    QAAP_MAX_TURN_MINUTES_ENV,
-    resolveQaapMaxTurnMinutes,
-} from '../common/qaap-agent-turn-watchdog';
-import {
-    visualEvidenceDirectory as visualEvidenceDirectoryHelper,
-    resolveVisualEvidenceTarget as resolveVisualEvidenceTargetHelper,
-    resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper,
-    countVisualRepairAttempts as countVisualRepairAttemptsHelper,
-    buildVisualRepairPrompt as buildVisualRepairPromptHelper,
-    saveVisualEvidenceImage as saveVisualEvidenceImageHelper,
-    saveVisualEvidenceVideo as saveVisualEvidenceVideoHelper,
-    resolveVisualVerificationFile as resolveVisualVerificationFileHelper,
-    sweepUnreferencedVisualEvidence as sweepUnreferencedVisualEvidenceHelper,
-} from './qaap-agent-conversation-store-visual';
-import {
-    parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper,
-    readGitBranch as readGitBranchHelper,
-    captureGitSha as captureGitShaHelper,
-    computeGitDiffStats as computeGitDiffStatsHelper,
-    checkpointLabel as checkpointLabelHelper,
-    isDirectory as isDirectoryHelper,
-} from './qaap-agent-conversation-store-git';
-import {
-    resolveStructuredParsedTraceEvents as resolveStructuredParsedTraceEventsHelper,
-    resolveLoopBudgetKey as resolveLoopBudgetKeyHelper,
-    countAutoContinueAttempts as countAutoContinueAttemptsHelper,
-    resolveAgentIdForAgentMessage as resolveAgentIdForAgentMessageHelper,
-    contextCompactionMessageText as contextCompactionMessageTextHelper,
-    contextPreambleWithCompaction as contextPreambleWithCompactionHelper,
-    filterAgentLogChunk as filterAgentLogChunkHelper,
-    deriveTitle as deriveTitleHelper,
-    isTurnGraphEnabled as isTurnGraphEnabledHelper,
-    readTriedFallbackModels as readTriedFallbackModelsHelper,
-} from './qaap-agent-conversation-store-utils';
-import {
-    clearRunActive as clearRunActiveHelper,
-    appendRunCancelledTrace as appendRunCancelledTraceHelper,
-    detectAgentBlockedNeed as detectAgentBlockedNeedHelper,
-    appendReviewTrace as appendReviewTraceHelper,
-    appendBlockedTrace as appendBlockedTraceHelper,
-    appendVerificationWarningTrace as appendVerificationWarningTraceHelper,
-    appendCheckpointTrace as appendCheckpointTraceHelper,
-    appendAgentReply as appendAgentReplyHelper,
-    resolveCompletedTurnAuthFailureReason as resolveCompletedTurnAuthFailureReasonHelper,
-    parseStructuredLog as parseStructuredLogHelper,
-    resolveRunAgentMessageId as resolveRunAgentMessageIdHelper,
-    listAllGroupedByCwd as listAllGroupedByCwdHelper,
-    hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper,
-    finalizeTurnContextUsage as finalizeTurnContextUsageHelper,
-    ensureAgentStream as ensureAgentStreamHelper,
-    ensureAgUiStream as ensureAgUiStreamHelper,
-    buildContextCompactionSummary as buildContextCompactionSummaryHelper,
-    countDurableLoopSpawns as countDurableLoopSpawnsHelper,
-    maybeAutoContinueIncompleteTurn as maybeAutoContinueIncompleteTurnHelper,
-    prepareContextCompactionForTurn as prepareContextCompactionForTurnHelper,
-    sweepZombieStreamingTurns as sweepZombieStreamingTurnsHelper,
-    forceStopZombieTurn as forceStopZombieTurnHelper,
-    applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper,
-    fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper,
-} from './qaap-agent-conversation-store-helpers';
-import {
-    markTurnFailed as markTurnFailedHelper,
-    buildTaskCreateRequest as buildTaskCreateRequestHelper,
-    recordGitAction as recordGitActionHelper,
-} from './qaap-agent-conversation-store-helpers2';
-import {
-    STORE_DIR,
-    STREAMING_PERSIST_DEBOUNCE_MS,
-    INDEX_PATH,
-    MAX_CONCURRENT_CONVERSATION_RUNS,
-    QAAP_MAX_PARALLEL_VARIANTS_PER_CONVERSATION,
-    QAAP_MAX_BATCH_SIZE,
-    QAAP_COALESCE_WINDOW_MS,
-    TURN_WATCHDOG_SWEEP_MS,
-    QAAP_AUTO_RESUME_TURNS_ENABLED,
-    MAX_RESTART_RESUMES,
-    MAX_LOOP_SPAWNS_PER_USER_MESSAGE,
-    MAX_VISUAL_REPAIR_ATTEMPTS,
-    QaapMaxConcurrentRunsError,
-    type PostUserMessageInternalOptions,
-    type QaapConversationTaskRef,
-} from './qaap-agent-conversation-store-constants';
 
-export function mutatingGitSyncExtracted(ctx: any, cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
+import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
+
+import { QAAP_DEFAULT_DELIVERY_MODE, QaapAgentConversation, QaapAgentConversationStatus, QaapAgentConversationSummary, QaapAgentMessage, QaapCreateAgentConversationRequest, QaapLinkConversationsByBranchRequest, QaapMessageDeliveryMode, QaapPendingUserMessage, toConversationSummary } from '../common/qaap-agent-conversation';
+
+import { agentSupportsModelPicker, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+
+import { DEFAULT_QAAP_CONTEXT_WINDOW } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+
+import { localizeAgentFailureMessage, localizeMissingCodingAgentMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+
+import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
+
+import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
+
+import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
+
+import { collectSubtasksForLeader } from '../common/qaap-team-mailbox';
+
+import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
+
+import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
+
+import { backfillConversationTraceEvents, materializeConversationForApiWithChanges } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import type { QaapAgentConversationDTO } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-client';
+
+import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
+
+import { hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper } from './qaap-agent-conversation-store-helpers';
+
+import { QAAP_MAX_BATCH_SIZE, QAAP_COALESCE_WINDOW_MS, type PostUserMessageInternalOptions } from './qaap-agent-conversation-store-constants';
+
+export function mutatingGitSyncExtracted(ctx: QaapAgentConversationStoreContext, cwd: string, args: string[], env?: NodeJS.ProcessEnv): SpawnSyncReturns<string> {
     const wrapped = ctx.tenantSpawn.wrapShellForTenant(
         cwd,
         'git',
@@ -226,7 +49,7 @@ export function mutatingGitSyncExtracted(ctx: any, cwd: string, args: string[], 
     return spawnSync(wrapped.file, wrapped.args, { cwd, env: runEnv, encoding: 'utf8' });
 }
 
-export function initExtracted(ctx: any): void {
+export function initExtracted(ctx: QaapAgentConversationStoreContext): void {
     ctx.sseBatcher = new QaapAgentConversationSseBatcher(event => {
         ctx.recordStreamMetrics(event);
         ctx.onDidChangeEmitter.fire(event);
@@ -238,7 +61,7 @@ export function initExtracted(ctx: any): void {
     ctx.startTurnWatchdog();
 }
 
-export function listExtracted(ctx: any, cwd: string | undefined): QaapAgentConversationSummary[] {
+export function listExtracted(ctx: QaapAgentConversationStoreContext, cwd: string | undefined): QaapAgentConversationSummary[] {
     const all = [...ctx.conversations.values()];
     const filtered = cwd
         ? all.filter(c => normalizeConversationCwd(c.cwd) === normalizeConversationCwd(cwd))
@@ -260,7 +83,7 @@ function normalizeConversationCwd(cwd: string): string {
  * How many isolated parallel children of {@link parentId} are still streaming (or visually
  * settled with a live backend task). Used to cap delivery-mode `'parallel'` spawns.
  */
-export function countStreamingForksExtracted(ctx: any, parentId: string): number {
+export function countStreamingForksExtracted(ctx: QaapAgentConversationStoreContext, parentId: string): number {
     let count = 0;
     for (const conv of ctx.conversations.values() as Iterable<QaapAgentConversation>) {
         if (conv.forkedFromId === parentId && (conv.status === 'streaming' || conv.status === 'settled')) {
@@ -270,21 +93,26 @@ export function countStreamingForksExtracted(ctx: any, parentId: string): number
     return count;
 }
 
-export function getExtracted(ctx: any, id: string): QaapAgentConversation | undefined {
+export function getExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {
     const conv = ctx.conversations.get(id);
     if (!conv) {
         return undefined;
     }
-    const { conversation, changed } = backfillConversationTraceEvents(conv);
+    // qaap-mobile-shell's trace-backfill helpers are typed against the client-side
+    // QaapAgentConversationDTO, but only ever read/spread `.status` and `.messages` — both of
+    // which are structurally compatible with the server-side QaapAgentConversation. Cast rather
+    // than duplicate/unify the two type hierarchies here.
+    const { conversation, changed } = backfillConversationTraceEvents(conv as unknown as QaapAgentConversationDTO);
     const materialized = materializeConversationForApiWithChanges(conversation);
+    const materializedConversation = materialized.conversation as unknown as QaapAgentConversation;
     if (changed || materialized.changed) {
-        ctx.conversations.set(id, materialized.conversation);
+        ctx.conversations.set(id, materializedConversation);
         ctx.schedulePersist();
     }
-    return materialized.conversation;
+    return materializedConversation;
 }
 
-export function getActiveTaskIdForConversationExtracted(ctx: any, conversationId: string): string | undefined {
+export function getActiveTaskIdForConversationExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): string | undefined {
     for (const [taskId, ref] of ctx.taskToConversation) {
         if (ref.conversationId === conversationId) {
             return taskId;
@@ -293,7 +121,7 @@ export function getActiveTaskIdForConversationExtracted(ctx: any, conversationId
     return undefined;
 }
 
-export function getActiveTaskIdsForConversationExtracted(ctx: any, conversationId: string): string[] {
+export function getActiveTaskIdsForConversationExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): string[] {
     const taskIds: string[] = [];
     for (const [taskId, ref] of ctx.taskToConversation) {
         if (ref.conversationId === conversationId) {
@@ -303,7 +131,7 @@ export function getActiveTaskIdsForConversationExtracted(ctx: any, conversationI
     return taskIds;
 }
 
-export function hasOtherActiveTaskForConversationExtracted(ctx: any, conversationId: string, exceptTaskId: string): boolean {
+export function hasOtherActiveTaskForConversationExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, exceptTaskId: string): boolean {
     for (const [taskId, ref] of ctx.taskToConversation) {
         if (ref.conversationId === conversationId && taskId !== exceptTaskId) {
             return true;
@@ -312,19 +140,19 @@ export function hasOtherActiveTaskForConversationExtracted(ctx: any, conversatio
     return false;
 }
 
-export function hasActiveTaskForUserMessageExtracted(ctx: any, conversationId: string,
+export function hasActiveTaskForUserMessageExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
     userMessageId: string,
-    exceptTaskId: string,): boolean {
+    exceptTaskId: string, ): boolean {
     return hasActiveTaskForUserMessageHelper(ctx.taskToConversation, conversationId, userMessageId, exceptTaskId);
 }
 
-export function settleStatusForRunExtracted(ctx: any, conversationId: string,
+export function settleStatusForRunExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
     finishedTaskId: string,
-    settled: QaapAgentConversationStatus,): QaapAgentConversationStatus {
+    settled: QaapAgentConversationStatus, ): QaapAgentConversationStatus {
     return ctx.hasOtherActiveTaskForConversation(conversationId, finishedTaskId) ? 'streaming' : settled;
 }
 
-export function createExtracted(ctx: any, request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
+export function createExtracted(ctx: QaapAgentConversationStoreContext, request: QaapCreateAgentConversationRequest, ownerLogin?: string): QaapAgentConversation {
     const cwd = path.resolve(request.cwd ?? '');
     if (!path.isAbsolute(cwd) || !ctx.isDirectory(cwd)) {
         throw new Error('A valid absolute "cwd" directory is required.');
@@ -415,7 +243,7 @@ export function createExtracted(ctx: any, request: QaapCreateAgentConversationRe
  * Inspired by Cursor "Send after current message" and Claude Code `pendingMessages`.
  */
 export function enqueuePendingMessageExtracted(
-    ctx: any,
+    ctx: QaapAgentConversationStoreContext,
     conv: QaapAgentConversation,
     userMessage: QaapAgentMessage,
     turnAgentId?: string,
@@ -457,7 +285,7 @@ export function enqueuePendingMessageExtracted(
  * The timer is per-conversation and cancelable — a new drain request cancels the previous
  * pending one and resets the window.
  */
-export function drainPendingMessagesExtracted(ctx: any, conversationId: string): void {
+export function drainPendingMessagesExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv?.pendingUserMessages?.length) {
         return;
@@ -488,7 +316,7 @@ export function drainPendingMessagesExtracted(ctx: any, conversationId: string):
 }
 
 /** Immediate drain — bypasses the coalesce window. Used after the timer fires. */
-function drainPendingMessagesNow(ctx: any, conversationId: string): void {
+function drainPendingMessagesNow(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv?.pendingUserMessages?.length) {
         return;
@@ -559,7 +387,7 @@ function drainPendingMessagesNow(ctx: any, conversationId: string): void {
  *
  * Inspired by Cursor "Stop & send" and Codex "Steer".
  */
-export function interruptConversationRunsExtracted(ctx: any, conversationId: string): void {
+export function interruptConversationRunsExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv) {
         return;
@@ -602,7 +430,7 @@ export function interruptConversationRunsExtracted(ctx: any, conversationId: str
  * Remove a single queued message from the conversation's pending queue. Called when the user
  * clicks "Cancel" on a queued message row in the transcript.
  */
-export function cancelQueuedMessageExtracted(ctx: any, conversationId: string, queuedMessageId: string): QaapAgentConversation | undefined {
+export function cancelQueuedMessageExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, queuedMessageId: string): QaapAgentConversation | undefined {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv?.pendingUserMessages?.length) {
         return conv;
@@ -632,7 +460,7 @@ export function cancelQueuedMessageExtracted(ctx: any, conversationId: string, q
  * No coalesce delay here: the window is the gap between tools. Waiting
  * {@link QAAP_COALESCE_WINDOW_MS} would miss that round.
  */
-export function maybeDrainAtToolRoundBoundaryExtracted(ctx: any, conversationId: string): void {
+export function maybeDrainAtToolRoundBoundaryExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string): void {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv?.pendingUserMessages?.length) {
         return;
@@ -694,7 +522,7 @@ export function maybeDrainAtToolRoundBoundaryExtracted(ctx: any, conversationId:
  * to spawn a peer run, or 'interrupt' to stop the current agent). Called when the user clicks
  * "Send now" on a queued message row in the transcript.
  */
-export function dispatchQueuedMessageExtracted(ctx: any, conversationId: string, queuedMessageId: string, deliveryMode: QaapMessageDeliveryMode): QaapAgentConversation | undefined {
+export function dispatchQueuedMessageExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string, queuedMessageId: string, deliveryMode: QaapMessageDeliveryMode): QaapAgentConversation | undefined {
     const conv = ctx.conversations.get(conversationId) as QaapAgentConversation | undefined;
     if (!conv?.pendingUserMessages?.length) {
         return conv;
@@ -729,7 +557,7 @@ export function dispatchQueuedMessageExtracted(ctx: any, conversationId: string,
     );
 }
 
-export function postUserMessageExtracted(ctx: any, id: string,
+export function postUserMessageExtracted(ctx: QaapAgentConversationStoreContext, id: string,
     content: string,
     agentOverride?: string,
     agentModelOverride?: QaapCreateAgentTaskRequest['agentModel'],
@@ -739,7 +567,7 @@ export function postUserMessageExtracted(ctx: any, id: string,
     toolApprovalRules?: QaapCreateAgentConversationRequest['toolApprovalRules'],
     latencyMarks?: QaapCreateAgentConversationRequest['latencyMarks'],
     internal?: PostUserMessageInternalOptions,
-    deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE,): QaapAgentConversation {
+    deliveryMode: QaapMessageDeliveryMode = QAAP_DEFAULT_DELIVERY_MODE, ): QaapAgentConversation {
     let conv = ctx.conversations.get(id);
     if (!conv) {
         throw new Error('Conversation not found.');
@@ -969,7 +797,7 @@ export function postUserMessageExtracted(ctx: any, id: string,
     return next;
 }
 
-export function linkConversationsToPullRequestExtracted(ctx: any, input: QaapLinkConversationsByBranchRequest): number {
+export function linkConversationsToPullRequestExtracted(ctx: QaapAgentConversationStoreContext, input: QaapLinkConversationsByBranchRequest): number {
     const link: QaapLinkedPullRequest = {
         owner: input.owner,
         repo: input.repo,
@@ -1008,7 +836,7 @@ export function linkConversationsToPullRequestExtracted(ctx: any, input: QaapLin
     return linked;
 }
 
-export function retryExtracted(ctx: any, id: string): QaapAgentConversation {
+export function retryExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation {
     const conv = ctx.conversations.get(id);
     if (!conv) {
         throw new Error('Conversation not found.');
@@ -1047,7 +875,7 @@ export function retryExtracted(ctx: any, id: string): QaapAgentConversation {
     );
 }
 
-export function cancelExtracted(ctx: any, id: string): QaapAgentConversation | undefined {
+export function cancelExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {
     const conv = ctx.conversations.get(id);
     if (!conv) {
         return undefined;

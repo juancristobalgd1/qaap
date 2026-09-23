@@ -1,213 +1,28 @@
-// @ts-nocheck
 // Extracted from qaap-agent-conversation-store.ts
+import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
-import { Emitter, Event } from '@theia/core/lib/common/event';
 import { nls } from '@theia/core/lib/common/nls';
-import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
+
 import { randomUUID } from 'crypto';
-import { spawnSync, SpawnSyncReturns } from 'child_process';
+
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
-import { writeJsonAtomic } from './qaap-write-json-atomic';
-import * as os from 'os';
 import * as path from 'path';
-import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import {
-    QAAP_AGENT_CONVERSATION_API_PATH,
-    QaapAgentConversation,
-    QaapAgentConversationCwdGroup,
-    QaapAgentConversationEvent,
-    QaapAgentConversationStatus,
-    QaapAgentConversationSummary,
-    QaapAgentMessage,
-    QaapConversationCheckpoint,
-    QaapCreateAgentConversationRequest,
-    QaapLinkConversationsByBranchRequest,
-    QaapRenameAgentConversationRequest,
-    QaapUpdateAgentConversationRequest,
-    toConversationSummary,
-} from '../common/qaap-agent-conversation';
-import {
-    agentSupportsModelPicker,
-    resolveQaapAgentMentionToken,
-    usesAgUiCliTranscriptStream,
-    usesStructuredAgentTranscript,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import {
-    DEFAULT_QAAP_CONTEXT_WINDOW,
-    totalTokensFromContextUsage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
-import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
-import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
-import {
-    resolveAgentLogDisplayText,
-    type QaapAgentStreamAccumulator,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import {
-    type QaapCliAgUiStreamEmitter,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
-import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
-import {
-    autoContinueAllowedForInteraction,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
-import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
-import {
-    QAAP_CHAT_TURN_NODE,
-    QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT,
-    QAAP_CHAT_TURN_WORKFLOW_ID,
-    buildChatTurnWorkflow,
-    resolveChatTurnOutcome,
-    resolveChatTurnRunBudget,
-} from '../common/qaap-chat-turn-workflow';
-import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
-import { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
-import { appendTeamDelegationToPrompt } from '../common/qaap-team-delegation';
-import {
-    buildConversationAgentPrompt,
-} from '../common/qaap-agent-conversation-prompt';
-import { deriveConversationTitle } from '../common/qaap-conversation-title';
-import {
-    areAllSubtasksSettled,
-    buildTeamSynthesisUserMessage,
-    collectSubtasksForLeader,
-    countFailedSubtasks,
-    formatSubtaskMailboxMessage,
-    isTeamSynthesisUserMessage,
-} from '../common/qaap-team-mailbox';
-import { planConversationRewind } from '../common/qaap-agent-conversation-rewind';
-import type { QaapParallelRunVariantStats } from '../common/qaap-parallel-run';
-import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
-import { resolveTaskAgentModel } from '../common/qaap-agent-task';
-import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
-import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
-import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
-import {
-    QaapConversationStreamMetricsCollector,
-    countCompressedWireFields,
-    logQaapStreamMetrics,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
-import {
-    type QaapAgentMessageWireSnapshot,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
-import {
-    buildAgentMessageFromAgUiStructuredLog,
-    buildAgentMessageFromQaapAgUiReducer,
-    reduceQaapAgUiTranscriptEvent,
-    type QaapAgUiEvent,
-    type QaapAgUiTraceReducerState,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
-import {
-    agentModelKey,
-    agentTurnHasRetryableEmptyOutput,
-    agentTurnHasRetryableModelFailure,
-    agentTurnHasRetryableToolSupportFailure,
-    resolveNextFallbackAgentModel,
-} from '../common/qaap-agent-model-fallback';
-import {
-    appendTracePreviewFailureEvent,
-    agentMessageHasStructuredTrace,
-    syncSettledTraceEventsOnMessage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
-import { backfillConversationTraceEvents, materializeConversationForApiWithChanges, materializeAgentMessageForApi, preferTraceFirstAgentMessageStorage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
-import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
-import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
-import {
-    QAAP_VISUAL_REPAIR_REQUIRED_MARKER,
-    agentMessageHasVisualVerificationMarker,
-    buildQaapVisualFlowMarkdown,
-    buildQaapVisualVerificationFailureMarkdown,
-    buildQaapVisualVerificationMarkdown,
-    buildQaapVisualVideoMarkdown,
-    type QaapPreviewVisualValidationResult,
-    type QaapVisualFlowStepEvidence,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
-import {
-    type ComposerGitActionDisplayMetadata,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
-import {
-    QAAP_MAX_TURN_MINUTES_ENV,
-    resolveQaapMaxTurnMinutes,
-} from '../common/qaap-agent-turn-watchdog';
-import {
-    visualEvidenceDirectory as visualEvidenceDirectoryHelper,
-    resolveVisualEvidenceTarget as resolveVisualEvidenceTargetHelper,
-    resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper,
-    countVisualRepairAttempts as countVisualRepairAttemptsHelper,
-    buildVisualRepairPrompt as buildVisualRepairPromptHelper,
-    saveVisualEvidenceImage as saveVisualEvidenceImageHelper,
-    saveVisualEvidenceVideo as saveVisualEvidenceVideoHelper,
-    resolveVisualVerificationFile as resolveVisualVerificationFileHelper,
-    sweepUnreferencedVisualEvidence as sweepUnreferencedVisualEvidenceHelper,
-} from './qaap-agent-conversation-store-visual';
-import {
-    parseGithubRepoFromCwd as parseGithubRepoFromCwdHelper,
-    readGitBranch as readGitBranchHelper,
-    captureGitSha as captureGitShaHelper,
-    computeGitDiffStats as computeGitDiffStatsHelper,
-    checkpointLabel as checkpointLabelHelper,
-    isDirectory as isDirectoryHelper,
-} from './qaap-agent-conversation-store-git';
-import {
-    resolveStructuredParsedTraceEvents as resolveStructuredParsedTraceEventsHelper,
-    resolveLoopBudgetKey as resolveLoopBudgetKeyHelper,
-    countAutoContinueAttempts as countAutoContinueAttemptsHelper,
-    resolveAgentIdForAgentMessage as resolveAgentIdForAgentMessageHelper,
-    contextCompactionMessageText as contextCompactionMessageTextHelper,
-    contextPreambleWithCompaction as contextPreambleWithCompactionHelper,
-    filterAgentLogChunk as filterAgentLogChunkHelper,
-    deriveTitle as deriveTitleHelper,
-    isTurnGraphEnabled as isTurnGraphEnabledHelper,
-    readTriedFallbackModels as readTriedFallbackModelsHelper,
-} from './qaap-agent-conversation-store-utils';
-import {
-    clearRunActive as clearRunActiveHelper,
-    appendRunCancelledTrace as appendRunCancelledTraceHelper,
-    detectAgentBlockedNeed as detectAgentBlockedNeedHelper,
-    appendReviewTrace as appendReviewTraceHelper,
-    appendBlockedTrace as appendBlockedTraceHelper,
-    appendVerificationWarningTrace as appendVerificationWarningTraceHelper,
-    appendCheckpointTrace as appendCheckpointTraceHelper,
-    appendAgentReply as appendAgentReplyHelper,
-    resolveCompletedTurnAuthFailureReason as resolveCompletedTurnAuthFailureReasonHelper,
-    parseStructuredLog as parseStructuredLogHelper,
-    resolveRunAgentMessageId as resolveRunAgentMessageIdHelper,
-    listAllGroupedByCwd as listAllGroupedByCwdHelper,
-    hasActiveTaskForUserMessage as hasActiveTaskForUserMessageHelper,
-    finalizeTurnContextUsage as finalizeTurnContextUsageHelper,
-    ensureAgentStream as ensureAgentStreamHelper,
-    ensureAgUiStream as ensureAgUiStreamHelper,
-    buildContextCompactionSummary as buildContextCompactionSummaryHelper,
-    countDurableLoopSpawns as countDurableLoopSpawnsHelper,
-    maybeAutoContinueIncompleteTurn as maybeAutoContinueIncompleteTurnHelper,
-    prepareContextCompactionForTurn as prepareContextCompactionForTurnHelper,
-    sweepZombieStreamingTurns as sweepZombieStreamingTurnsHelper,
-    forceStopZombieTurn as forceStopZombieTurnHelper,
-    applyAccumulatorStructuredOutput as applyAccumulatorStructuredOutputHelper,
-    fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper,
-} from './qaap-agent-conversation-store-helpers';
-import {
-    markTurnFailed as markTurnFailedHelper,
-    buildTaskCreateRequest as buildTaskCreateRequestHelper,
-    recordGitAction as recordGitActionHelper,
-} from './qaap-agent-conversation-store-helpers2';
-import {
-    STORE_DIR,
-    STREAMING_PERSIST_DEBOUNCE_MS,
-    INDEX_PATH,
-    MAX_CONCURRENT_CONVERSATION_RUNS,
-    TURN_WATCHDOG_SWEEP_MS,
-    QAAP_AUTO_RESUME_TURNS_ENABLED,
-    MAX_RESTART_RESUMES,
-    MAX_LOOP_SPAWNS_PER_USER_MESSAGE,
-    MAX_VISUAL_REPAIR_ATTEMPTS,
-    QaapMaxConcurrentRunsError,
-    type PostUserMessageInternalOptions,
-    type QaapConversationTaskRef,
-} from './qaap-agent-conversation-store-constants';
+import { QAAP_AGENT_CONVERSATION_API_PATH, QaapAgentConversation, QaapAgentMessage, QaapUpdateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
 
-export function cancelRunExtracted(ctx: any, id: string, userMessageId: string): QaapAgentConversation | undefined {
+import { agentSupportsModelPicker } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+
+import { collectSubtasksForLeader } from '../common/qaap-team-mailbox';
+
+import { appendTracePreviewFailureEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+
+import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER, agentMessageHasVisualVerificationMarker, buildQaapVisualVerificationMarkdown, buildQaapVisualVideoMarkdown, type QaapPreviewVisualValidationResult } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+
+import { resolveVisualEvidenceTarget as resolveVisualEvidenceTargetHelper, resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper } from './qaap-agent-conversation-store-visual';
+
+import { MAX_VISUAL_REPAIR_ATTEMPTS } from './qaap-agent-conversation-store-constants';
+
+export function cancelRunExtracted(ctx: QaapAgentConversationStoreContext, id: string, userMessageId: string): QaapAgentConversation | undefined {
         const conv = ctx.conversations.get(id);
         if (!conv) {
             return undefined;
@@ -241,7 +56,7 @@ export function cancelRunExtracted(ctx: any, id: string, userMessageId: string):
         return next;
 }
 
-export function updateExtracted(ctx: any, id: string, request: QaapUpdateAgentConversationRequest): QaapAgentConversation | undefined {
+export function updateExtracted(ctx: QaapAgentConversationStoreContext, id: string, request: QaapUpdateAgentConversationRequest): QaapAgentConversation | undefined {
         const conv = ctx.conversations.get(id);
         if (!conv) {
             return undefined;
@@ -318,7 +133,7 @@ export function updateExtracted(ctx: any, id: string, request: QaapUpdateAgentCo
         return next;
 }
 
-export function forkExtracted(ctx: any, id: string): QaapAgentConversation | undefined {
+export function forkExtracted(ctx: QaapAgentConversationStoreContext, id: string): QaapAgentConversation | undefined {
         const conv = ctx.conversations.get(id);
         if (!conv) {
             return undefined;
@@ -345,7 +160,7 @@ export function forkExtracted(ctx: any, id: string): QaapAgentConversation | und
         return forked;
 }
 
-export function deleteExtracted(ctx: any, id: string): boolean {
+export function deleteExtracted(ctx: QaapAgentConversationStoreContext, id: string): boolean {
         const conv = ctx.conversations.get(id);
         if (!conv) {
             return false;
@@ -362,14 +177,14 @@ export function deleteExtracted(ctx: any, id: string): boolean {
         return true;
 }
 
-export function resolveVisualEvidenceTargetExtracted(ctx: any, conv: QaapAgentConversation,
-        targetAgentMessageId: string | undefined,): QaapAgentMessage | undefined {
+export function resolveVisualEvidenceTargetExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
+        targetAgentMessageId: string | undefined, ): QaapAgentMessage | undefined {
         return resolveVisualEvidenceTargetHelper(conv, targetAgentMessageId);
 }
 
-export function attachVisualVerificationBlockExtracted(ctx: any, conv: QaapAgentConversation,
+export function attachVisualVerificationBlockExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
         target: QaapAgentMessage,
-        markdown: string,): QaapAgentConversation {
+        markdown: string, ): QaapAgentConversation {
         const evidenceBlock = `---\n\n${markdown}`;
         const next: QaapAgentConversation = {
             ...conv,
@@ -391,15 +206,15 @@ export function attachVisualVerificationBlockExtracted(ctx: any, conv: QaapAgent
         return next;
 }
 
-export function resolveVisualRepairSourceUserMessageExtracted(ctx: any, conv: QaapAgentConversation,
-        target: QaapAgentMessage,): QaapAgentMessage | undefined {
+export function resolveVisualRepairSourceUserMessageExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
+        target: QaapAgentMessage, ): QaapAgentMessage | undefined {
         return resolveVisualRepairSourceUserMessageHelper(conv, target);
 }
 
-export async function failVisualRepairLoopExtracted(ctx: any, conv: QaapAgentConversation,
+export async function failVisualRepairLoopExtracted(ctx: QaapAgentConversationStoreContext, conv: QaapAgentConversation,
         sourceUserMessage: QaapAgentMessage,
         target: QaapAgentMessage,
-        reason: string,): Promise<QaapAgentConversation> {
+        reason: string, ): Promise<QaapAgentConversation> {
         const failed = ctx.markTurnFailed(conv, {
             userMessageId: sourceUserMessage.id,
             agentMessageId: target.id,
@@ -421,8 +236,8 @@ export async function failVisualRepairLoopExtracted(ctx: any, conv: QaapAgentCon
         return next;
 }
 
-export async function continueVisualRepairLoopExtracted(ctx: any, conversationId: string,
-        sourceAgentMessageId: string,): Promise<QaapAgentConversation | undefined> {
+export async function continueVisualRepairLoopExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
+        sourceAgentMessageId: string, ): Promise<QaapAgentConversation | undefined> {
         let conv = ctx.conversations.get(conversationId);
         if (!conv || conv.status === 'failed' || conv.paused) {
             return conv;
@@ -498,11 +313,11 @@ export async function continueVisualRepairLoopExtracted(ctx: any, conversationId
         return next;
 }
 
-export async function recordVisualVerificationExtracted(ctx: any, conversationId: string,
+export async function recordVisualVerificationExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
         result: QaapPreviewVisualValidationResult,
         png: Buffer,
         targetAgentMessageId?: string,
-        previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+        previewUrl?: string, ): Promise<QaapAgentConversation | undefined> {
         const conv = ctx.conversations.get(conversationId);
         if (!conv || png.length === 0) {
             return undefined;
@@ -534,11 +349,11 @@ export async function recordVisualVerificationExtracted(ctx: any, conversationId
         }
 }
 
-export async function recordVisualVerificationVideoExtracted(ctx: any, conversationId: string,
+export async function recordVisualVerificationVideoExtracted(ctx: QaapAgentConversationStoreContext, conversationId: string,
         videoEvidenceId: string,
         steps: readonly { label: string; result: QaapPreviewVisualValidationResult }[],
         targetAgentMessageId: string,
-        previewUrl?: string,): Promise<QaapAgentConversation | undefined> {
+        previewUrl?: string, ): Promise<QaapAgentConversation | undefined> {
         const conv = ctx.conversations.get(conversationId);
         if (!conv || !/^[a-f\d-]{36}$/i.test(videoEvidenceId)) {
             return undefined;

@@ -32,15 +32,15 @@ class TestTaskRunner extends QaapAgentTaskRunner {
 /** Exposes the store's protected watchdog internals for direct testing, without real disk I/O. */
 class TestConversationStore extends QaapAgentConversationStore {
 
-    protected override async persist(): Promise<void> {
+    override async persist(): Promise<void> {
         /* no-op — avoid touching ~/.qaap/agent-conversations during tests */
     }
 
-    protected override async restoreFromDisk(): Promise<void> {
+    override async restoreFromDisk(): Promise<void> {
         /* no-op — tests seed conversations directly */
     }
 
-    protected override startTurnWatchdog(): void {
+    override startTurnWatchdog(): void {
         /* no-op — tests call sweep() explicitly instead of waiting on a real interval */
     }
 

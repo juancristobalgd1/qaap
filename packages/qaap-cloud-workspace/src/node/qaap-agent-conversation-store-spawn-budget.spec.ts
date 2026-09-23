@@ -11,11 +11,11 @@ import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 class TestConversationStore extends QaapAgentConversationStore {
     protected autoMessageSequence = 0;
 
-    protected override async persist(): Promise<void> { /* no-op */ }
-    protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
-    protected override startTurnWatchdog(): void { /* no-op */ }
+    override async persist(): Promise<void> { /* no-op */ }
+    override async restoreFromDisk(): Promise<void> { /* no-op */ }
+    override startTurnWatchdog(): void { /* no-op */ }
 
-    protected override postAutoContinueMessage(
+    override postAutoContinueMessage(
         conversationId: string,
         content: string,
         conv: QaapAgentConversation,

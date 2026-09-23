@@ -32,16 +32,16 @@ class TestableQaapAgentConversationStore extends QaapAgentConversationStore {
     /** Everything that would have gone out over SSE, in emission order. */
     readonly emitted: RecordedEvent[] = [];
 
-    protected override isDirectory(): boolean {
+    override isDirectory(): boolean {
         return true;
     }
 
-    protected override async persist(): Promise<void> { /* no-op */ }
-    protected override async restoreFromDisk(): Promise<void> { /* no-op */ }
-    protected override fire(event: QaapAgentConversationEvent): void {
+    override async persist(): Promise<void> { /* no-op */ }
+    override async restoreFromDisk(): Promise<void> { /* no-op */ }
+    override fire(event: QaapAgentConversationEvent): void {
         this.emitted.push(event);
     }
-    protected override startTurnWatchdog(): void { /* no-op */ }
+    override startTurnWatchdog(): void { /* no-op */ }
 
     /** The SSE `message` frames carrying the given message id, in emission order. */
     messageFrames(messageId: string): QaapAgentMessage[] {
