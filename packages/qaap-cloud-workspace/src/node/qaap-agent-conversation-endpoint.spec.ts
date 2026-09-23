@@ -20,22 +20,40 @@ const fakeRes = (): FakeRes => ({
     json(payload: unknown): FakeRes { this.body = payload; return this; },
 });
 
+type FakeAuthContext = { kind: 'authenticated' | 'skip'; userLogin?: string } | { kind: 'unauthorized' };
+
+/** Mirrors the parts of `QaapGithubAuthGuard` the endpoint uses; `resolveUserLogin` matches the real guard. */
+const fakeAuth = (ctx: FakeAuthContext = { kind: 'authenticated', userLogin: 'alice' }): Record<string, unknown> => ({
+    authenticate: () => ctx,
+    resolveUserLogin: (c: FakeAuthContext) => (c.kind === 'authenticated' || c.kind === 'skip' ? c.userLogin : undefined),
+    resolveOwnedRepositoryCwd: (_ctx: unknown, cwd: string) => ({ kind: 'ok', cwd }),
+    ownsWorkspacePath: () => true,
+    denyForbidden: () => false,
+});
+
 /**
  * Idempotency of conversation creation (finding: a slow/timed-out create must not spawn a duplicate).
  * Exercises the real handleCreate dedup path with a minimal store/auth stub.
  */
 describe('QaapAgentConversationEndpoint create idempotency', () => {
 
-    function buildEndpoint(): { endpoint: QaapAgentConversationEndpoint; createCalls: number; store: Map<string, unknown> } {
+    function buildEndpoint(): {
+        endpoint: QaapAgentConversationEndpoint;
+        createCalls: number;
+        store: Map<string, unknown>;
+        owners: Array<string | undefined>;
+    } {
         const store = new Map<string, unknown>();
+        const owners: Array<string | undefined> = [];
         let createCalls = 0;
         const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
         Object.assign(endpoint, {
             clientRequestDedup: new Map<string, string>(),
             clientRequestInFlight: new Set<string>(),
             store: {
-                create: (_req: unknown, _owner?: string) => {
+                create: (_req: unknown, owner?: string) => {
                     createCalls += 1;
+                    owners.push(owner);
                     const conv = { id: `conv-${createCalls}`, cwd: '/workspace/repos/users/alice/o/r' };
                     store.set(conv.id, conv);
                     return conv;
@@ -46,16 +64,14 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
                 // Async so a second concurrent request can observe the first still in flight.
                 create: async (cwd: string) => { await Promise.resolve(); return { worktreePath: `${cwd}/.wt`, branch: 'qaap/wt' }; },
             },
-            auth: {
-                resolveOwnedRepositoryCwd: (_ctx: unknown, cwd: string) => ({ kind: 'ok', cwd }),
-                denyForbidden: () => false,
-            },
+            auth: fakeAuth(),
             requireAuth: () => ({ kind: 'authenticated', userLogin: 'alice' }),
         });
         return {
             endpoint,
             get createCalls(): number { return createCalls; },
             store,
+            owners,
         };
     }
 
@@ -76,6 +92,21 @@ describe('QaapAgentConversationEndpoint create idempotency', () => {
         expect((res1.body as { id: string }).id).to.equal('conv-1');
         expect((res2.body as { id: string }).id).to.equal('conv-1'); // same conversation echoed back
         expect(res2.statusCode).to.equal(201);
+        expect(h.owners).to.deep.equal(['alice']); // owner resolved from the auth context
+    });
+
+    it('scopes the dedup key per owner so two users cannot collide on a clientRequestId', async () => {
+        const h = buildEndpoint();
+        await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, fakeRes());
+        Object.assign(h.endpoint, {
+            auth: fakeAuth({ kind: 'authenticated', userLogin: 'bob' }),
+            requireAuth: () => ({ kind: 'authenticated', userLogin: 'bob' }),
+        });
+        const res = fakeRes();
+        await call(h.endpoint, { ...base, clientRequestId: 'req-A' }, res);
+        expect(h.createCalls).to.equal(2);
+        expect(h.owners).to.deep.equal(['alice', 'bob']);
+        expect((res.body as { id: string }).id).to.equal('conv-2');
     });
 
     it('creates a distinct conversation for a different clientRequestId', async () => {
@@ -129,6 +160,7 @@ describe('QaapAgentConversationEndpoint message correlation', () => {
                     return { id: 'conv-1', messages: [] };
                 },
             },
+            auth: fakeAuth(),
         });
         const response = fakeRes();
 
@@ -139,6 +171,31 @@ describe('QaapAgentConversationEndpoint message correlation', () => {
 
         expect(response.statusCode).to.equal(202);
         expect(internal).to.deep.equal({ clientMessageId: 'pending-user-123' });
+    });
+
+    it('warms the billing account of the authenticated sender, falling back to the conversation owner', async () => {
+        const warmed: string[] = [];
+        const post = async (ctx: FakeAuthContext): Promise<FakeRes> => {
+            const endpoint = Object.create(QaapAgentConversationEndpoint.prototype) as QaapAgentConversationEndpoint;
+            Object.assign(endpoint, {
+                store: {
+                    get: () => ({ id: 'conv-1', ownerLogin: 'owner' }),
+                    getActiveTaskIdsForConversation: () => [],
+                    postUserMessage: () => ({ id: 'conv-1', messages: [] }),
+                },
+                billingStore: { getOrCreateAccount: async (login: string) => { warmed.push(login); } },
+                auth: fakeAuth(ctx),
+            });
+            const response = fakeRes();
+            await (endpoint as unknown as { handlePostMessage(req: unknown, res: unknown): Promise<void> })
+                .handlePostMessage({ params: { id: 'conv-1' }, body: { content: 'hola' } }, response);
+            return response;
+        };
+
+        expect((await post({ kind: 'authenticated', userLogin: 'alice' })).statusCode).to.equal(202);
+        // Ownership is enforced by the route (getConversationIfOwned); a local skip-auth context has no login.
+        expect((await post({ kind: 'skip' })).statusCode).to.equal(202);
+        expect(warmed).to.deep.equal(['alice', 'owner']);
     });
 });
 
@@ -193,6 +250,7 @@ describe('QaapAgentConversationEndpoint isolated parallel delivery', () => {
                     return { worktreePath: `${cwd}/.wt-${owner ?? 'anon'}`, branch: 'qaap/worktree/abcd1234' };
                 },
             },
+            auth: fakeAuth(),
         });
         return { endpoint, created, queuedModes, get worktreeCalls() { return worktreeCalls; } };
     }
@@ -273,11 +331,7 @@ describe('QaapAgentConversationEndpoint worktree apply', () => {
                     return overrides.applyResult ?? { ok: true, branch: conv.worktreeBranch };
                 },
             },
-            auth: {
-                authenticate: () => ({ kind: 'skip' }),
-                ownsWorkspacePath: () => true,
-                denyForbidden: () => false,
-            },
+            auth: fakeAuth({ kind: 'skip' }),
             requireAuth: () => ({ kind: 'skip' }),
         });
         return { endpoint, deleted, applied };
