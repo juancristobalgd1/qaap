@@ -50,16 +50,16 @@ def restore_check(archive, destination, expected_sha, max_bytes=20 * 1024**3, le
         name = member.name.rstrip("/")
         parts = PurePosixPath(name).parts
         if not name or name.startswith("/") or "\\" in name or ":" in name or ".." in parts or str(PurePosixPath(name)) != name:
-            raise ValueError("Unsafe archive path")
+            raise ValueError(f"Unsafe archive path: {name!r}")
         if not any(name == root or name.startswith(root + "/") for root in ROOTS + PRE_HOME_ROOTS[1:3]):
-            raise ValueError("Entry outside Qaap state roots")
+            raise ValueError(f"Entry outside Qaap state roots: {name!r}")
         if name in seen:
-            raise ValueError("Duplicate archive entry")
+            raise ValueError(f"Duplicate archive entry: {name!r}")
         seen.add(name)
         if len(seen) > 500_000:
             raise ValueError("Too many archive entries")
         if not (member.isdir() or member.isfile() or member.issym() or member.islnk()):
-            raise ValueError("Unsupported special file")
+            raise ValueError(f"Unsupported special file: {name!r}")
         checked = tarfile.data_filter(member, target)
         # Preserve tenant uid/gid and permissions for the rehearsal; never restore
         # setuid/setgid/sticky bits or resolve owner names from the container passwd.
@@ -77,7 +77,7 @@ def restore_check(archive, destination, expected_sha, max_bytes=20 * 1024**3, le
     roots = PRE_HOME_ROOTS if "root/.qaap" in directories or "root/.theia" in directories else ROOTS
     for root in (roots[:3] if legacy else roots):
         if root not in directories or not (destination / root).is_dir():
-            raise ValueError("Backup is missing a required state directory")
+            raise ValueError(f"Backup is missing a required state directory: {root}")
     # Directory permissions are applied last, just as tar.extractall does.
     for name, (uid, gid, mode) in sorted(directories.items(), key=lambda item: len(item[0]), reverse=True):
         target = destination / name
@@ -120,6 +120,7 @@ if __name__ == "__main__":
     try:
         print(json.dumps(restore_check(args.archive, args.destination, args.sha256, args.max_bytes, args.legacy_three_roots)))
     except Exception as error:
-        # Never print archive contents or secret-bearing JSON parse input.
-        print(json.dumps({"ok": False, "error": type(error).__name__}))
+        # Report the failed rule and member path, never file contents or secret-bearing JSON input.
+        detail = str(error) if type(error) is ValueError else ""
+        print(json.dumps({"ok": False, "error": type(error).__name__, "detail": detail}))
         raise SystemExit(1)
