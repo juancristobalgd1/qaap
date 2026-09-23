@@ -63,7 +63,6 @@ const FUNCTION_BY_OP: Readonly<Partial<Record<QaapWorkflowDeterministicNode['op'
     verify: QAAP_WORKFLOW_VERIFY_FUNCTION,
 };
 
-
 @injectable()
 export class QaapWorkflowAgentTurnAdapter implements QaapWorkflowAgentTurnPort {
 

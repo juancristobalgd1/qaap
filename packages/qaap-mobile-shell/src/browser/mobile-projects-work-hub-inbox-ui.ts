@@ -196,7 +196,7 @@ export class MobileProjectsWorkHubInboxUi {
         const groups: Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }> = [];
         const query = this.host.query.trim().toLowerCase();
         for (const project of projects) {
-            let pullRequests = this.host.inboxPullRequests.filter(pr => {
+            const pullRequests = this.host.inboxPullRequests.filter(pr => {
                 if (query) {
                     return pullRequestMatchesQuery(pr, query);
                 }

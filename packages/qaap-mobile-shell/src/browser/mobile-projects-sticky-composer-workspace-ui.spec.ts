@@ -579,7 +579,7 @@ describe('MobileProjectsStickyComposerWorkspaceUi', () => {
 
     it('shows a human message when branches API rejects an invalid root', async () => {
         const current = project('repo', 'Repo', true);
-        globalThis.fetch = (input) => {
+        globalThis.fetch = input => {
             const url = String(input);
             if (url.includes('/branches')) {
                 return Promise.resolve(new Response(

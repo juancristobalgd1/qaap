@@ -493,4 +493,3 @@ export function refreshMobileExecutionEventTimeline(
     return fresh;
 }
 
-

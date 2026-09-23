@@ -49,7 +49,6 @@ describe('qaap-agent-task-client', () => {
         rememberQaapHostedRuntime(false);
     });
 
-
     it('resolveQaapAgentMentionToken lowercases tokens', () => {
         expect(resolveQaapAgentMentionToken('QAIQ')).to.equal('qaiq');
     });

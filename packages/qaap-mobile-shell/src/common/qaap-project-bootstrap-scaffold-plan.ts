@@ -25,7 +25,7 @@ export function formatMissingBootstrapProjectHint(candidatePaths: readonly strin
             + 'declare command, args, cwd, and port in .qaap/preview.json.';
     }
     if (candidatePaths.length === 1) {
-        return `No runnable target exists at the workspace root. `
+        return 'No runnable target exists at the workspace root. '
             + `App detected in ${candidatePaths[0]}/ — Qaap preview targets that folder automatically.`;
     }
     return `No runnable target exists at the workspace root. Runnable apps detected in: ${candidatePaths.join(', ')}. `

@@ -26,7 +26,6 @@ describe('qaap-dev-preview', () => {
         expect(injectQaapPreviewDiagnostics(once)).to.equal(once);
     });
 
-
     it('buildQaapDevPreviewUrl works for VPS IP origins', () => {
         expect(buildQaapDevPreviewUrl('http://178.105.136.93:3000', 3001))
             .to.equal('http://178.105.136.93:3000/qaap-dev/3001/');

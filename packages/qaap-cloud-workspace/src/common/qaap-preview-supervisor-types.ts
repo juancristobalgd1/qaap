@@ -160,8 +160,8 @@ export function buildQaapPreviewFailureHtml(options: QaapPreviewFailurePageOptio
         ? `<details id="logs"><summary>View logs</summary><pre class="log">${escapeQaapHtml(tail.join('\n'))}</pre></details>`
         : '<details id="logs"><summary>View logs</summary><p class="muted">No recent server output was captured.</p></details>';
     const restartControl = canRestart
-        ? `<button id="restart" type="button">Restart Preview</button>`
-        : `<p class="muted">Restart is unavailable here — reopen the project to start the dev server.</p>`;
+        ? '<button id="restart" type="button">Restart Preview</button>'
+        : '<p class="muted">Restart is unavailable here — reopen the project to start the dev server.</p>';
     const diagnostic = [
         'Qaap Preview diagnostic',
         `status: ${exitLine}`,

@@ -133,7 +133,7 @@ describe('qaap-project-bootstrap-port', () => {
             this.skip();
         }
         const command = wrapDevCommandForPort(
-            `PORT=8080 node -e 'process.stdout.write(process.env.PORT)'`,
+            'PORT=8080 node -e \'process.stdout.write(process.env.PORT)\'',
             8081,
             'node-generic',
         );
@@ -149,7 +149,7 @@ describe('qaap-project-bootstrap-port', () => {
         const sibling = join(directory, 'server.js');
         const runner = join(directory, 'runner.cjs');
         try {
-            writeFileSync(vite, "process.stdout.write(JSON.stringify({ port: process.env.PORT, argv: process.argv.slice(2) }));");
+            writeFileSync(vite, 'process.stdout.write(JSON.stringify({ port: process.env.PORT, argv: process.argv.slice(2) }));');
             writeFileSync(sibling, "process.stdout.write(process.env.PORT || '');");
             writeFileSync(runner, [
                 "const { execFileSync } = require('child_process');",
@@ -157,7 +157,7 @@ describe('qaap-project-bootstrap-port', () => {
                 `const sibling = execFileSync(process.execPath, [${JSON.stringify(sibling)}], {`,
                 "    encoding: 'utf8', env: { ...process.env, PORT: '8787' },",
                 '});',
-                "process.stdout.write(JSON.stringify({ app: JSON.parse(app), sibling }));",
+                'process.stdout.write(JSON.stringify({ app: JSON.parse(app), sibling }));',
             ].join('\n'));
             // The trailing CLI flag is deliberately swallowed by the runner, just like
             // `concurrently`; the inherited targeted preload must still patch the Vite child.
@@ -182,11 +182,11 @@ describe('qaap-project-bootstrap-port', () => {
         const vite = join(directory, 'vite');
         const runner = join(directory, 'runner-with-port.cjs');
         try {
-            writeFileSync(vite, "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }));");
+            writeFileSync(vite, 'process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }));');
             writeFileSync(runner, [
                 "const { execFileSync } = require('child_process');",
                 `const app = execFileSync(process.execPath, [${JSON.stringify(vite)}, '--port', '5182'], { encoding: 'utf8' });`,
-                "process.stdout.write(app);",
+                'process.stdout.write(app);',
             ].join('\n'));
             const command = wrapDevCommandForPort(`node ${JSON.stringify(runner)}`, 5182, 'node-vite');
             const result = JSON.parse(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })) as {
@@ -206,11 +206,11 @@ describe('qaap-project-bootstrap-port', () => {
         const vite = join(directory, 'vite');
         const runner = join(directory, 'runner-open.cjs');
         try {
-            writeFileSync(vite, "process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }));");
+            writeFileSync(vite, 'process.stdout.write(JSON.stringify({ argv: process.argv.slice(2) }));');
             writeFileSync(runner, [
                 "const { execFileSync } = require('child_process');",
                 `const app = execFileSync(process.execPath, [${JSON.stringify(vite)}, '--port', '3333', '--open'], { encoding: 'utf8' });`,
-                "process.stdout.write(app);",
+                'process.stdout.write(app);',
             ].join('\n'));
             const command = wrapDevCommandForPort(`node ${JSON.stringify(runner)}`, 3333, 'node-vite');
             const result = JSON.parse(execFileSync('/bin/sh', ['-c', command], { encoding: 'utf8' })) as {

@@ -24,7 +24,6 @@ describe('qaap-agent-auth-login', () => {
         rememberQaapHostedRuntime(false);
     });
 
-
     it('extracts Codex device-auth URL and one-time code', () => {
         const log = [
             'Follow these steps to sign in with ChatGPT using device code ABCD-EFGHI:',

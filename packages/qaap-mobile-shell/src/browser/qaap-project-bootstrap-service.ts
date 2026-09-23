@@ -128,7 +128,6 @@ export const TERMINAL_READY_DELAY_MS = 120;
 /** Let destroyTermOnClose release a restored preview's listener before reserving its replacement. */
 export const RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS = 500;
 
-
 /** After this delay, open the hinted preview URL even when stdout never prints a parseable URL. */
 export const DEV_PREVIEW_FALLBACK_MS = 2500;
 

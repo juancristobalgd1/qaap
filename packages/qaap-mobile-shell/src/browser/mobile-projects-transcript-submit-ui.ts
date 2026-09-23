@@ -408,7 +408,7 @@ export class MobileProjectsTranscriptSubmitUi {
             this.renderInstantSubmitOptimistic(summary, pendingUserMessage, options.imagePreviews);
         }
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_start');
-        let base = await getConversation(summary.id);
+        const base = await getConversation(summary.id);
         this.host.conversations?.recordSubmitLatencyMark(summary.id, 'pre_post_get_end');
         // A follow-up on a still-streaming conversation must not cancel the live turn.
         // Delivery defaults to `'queue'` (backend pendingUserMessages). Explicit parallel

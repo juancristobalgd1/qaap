@@ -48,7 +48,6 @@ export interface QaapGenericCommandResult {
     readonly timedOut: boolean;
 }
 
-
 /** Cap on the generated repo-map block (shallow tree + recently-changed files). */
 export const REPO_MAP_MAX_CHARS = 4000;
 /**

@@ -38,7 +38,7 @@ export function resolveTranscriptTimelineRenderWindow(
     const focus = Math.max(0, Math.min(itemCount - 1, options?.focusIndex ?? itemCount - 1));
     const half = Math.floor(windowSize / 2);
     let start = Math.max(0, focus - half);
-    let end = Math.min(itemCount, start + windowSize);
+    const end = Math.min(itemCount, start + windowSize);
     start = Math.max(0, end - windowSize);
     return {
         start,

@@ -58,7 +58,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         }, includeThinkingSteps, options);
     }
 
-
     resolveTranscriptChangedFiles(
         segments: QaapAgentMessageSegmentDTO[],
     ): Array<{ readonly path: string; readonly kind: 'edited' | 'created'; readonly added?: number; readonly removed?: number }> {
@@ -88,7 +87,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         });
     }
 
-
     resolveTranscriptVerificationChecks(
         segments: QaapAgentMessageSegmentDTO[],
     ): Array<{ readonly command: string; readonly state: 'passed' | 'failed' | 'running' }> {
@@ -108,7 +106,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         }
         return checks;
     }
-
 
     resolveTranscriptDiffStats(
         segments: QaapAgentMessageSegmentDTO[],
@@ -181,7 +178,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         return found ? { added, removed } : {};
     }
 
-
     resolveTranscriptFileChangeKind(toolName: string): 'edited' | 'created' | undefined {
         const name = toolName.toLowerCase();
         if (name.includes('write') || name.includes('create')) {
@@ -192,7 +188,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         }
         return undefined;
     }
-
 
     extractTranscriptToolPath(argsJson: string): string | undefined {
         try {
@@ -215,7 +210,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         }
     }
 
-
     extractTranscriptToolCommand(argsJson: string): string | undefined {
         try {
             const args = JSON.parse(argsJson) as Record<string, unknown>;
@@ -229,28 +223,23 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         }
     }
 
-
     isTranscriptShellTool(toolName: string): boolean {
         const name = toolName.toLowerCase();
         return name.includes('bash') || name.includes('shell') || name.includes('terminal') || name.includes('run_');
     }
-
 
     isTranscriptReadLikeTool(toolName: string): boolean {
         const name = toolName.toLowerCase();
         return name.includes('read') || name.includes('grep') || name.includes('glob') || name.includes('search') || name.includes('list');
     }
 
-
     isTranscriptVerificationCommand(command: string): boolean {
         return /\b(test|spec|check|lint|compile|build|typecheck|tsc|vitest|jest|mocha|playwright|pytest|cargo test|go test)\b/i.test(command);
     }
 
-
     transcriptToolResultFailed(result: string | undefined, toolName?: string): boolean {
         return isAgentToolResultFailure(result, { toolName });
     }
-
 
     shouldOpenTranscriptToolDetails(segment: { readonly name?: string; readonly finished: boolean; readonly result?: string }): boolean {
         return shouldOpenTranscriptToolDetailsSegment({
@@ -259,24 +248,20 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         });
     }
 
-
     compactTranscriptCommand(command: string): string {
         const clean = command.replace(/\s+/g, ' ').trim();
         return clean.length > 72 ? `${clean.slice(0, 69)}…` : clean;
     }
 
-
     formatTranscriptToolResult(result: string): string {
         return this.stripTranscriptLineNumberPrefixes(this.contentUi.cleanTranscriptDisplayText(result));
     }
-
 
     stripTranscriptLineNumberPrefixes(text: string): string {
         const lines = text.split('\n');
         const stripped = lines.map(line => line.replace(/^\s*\d+[→:|]\s?/, ''));
         return stripped.some((line, index) => line !== lines[index]) ? stripped.join('\n') : text;
     }
-
 
     isTranscriptPureReadTool(toolName: string): boolean {
         const name = toolName.toLowerCase();
@@ -287,11 +272,9 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         return name === 'read' || name.endsWith('_read') || /\bread\b/.test(name);
     }
 
-
     extractTranscriptToolFullPath(argsJson: string): string | undefined {
         return extractToolArgFilePath(argsJson);
     }
-
 
     splitTranscriptFilePath(path: string): { fileName: string; dirPath: string } {
         const clean = path.replace(/\\/g, '/').replace(/^\.?\//, '');
@@ -301,12 +284,10 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         return { fileName, dirPath: dirParts.join('/') };
     }
 
-
     countTranscriptResultLines(result: string): number {
         const clean = this.stripTranscriptLineNumberPrefixes(this.contentUi.cleanTranscriptDisplayText(result));
         return clean ? clean.split('\n').length : 0;
     }
-
 
     shouldShowTranscriptToolResultBody(
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
@@ -321,13 +302,11 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         return kind === 'searching' || kind === 'editing' || kind === 'tool' || kind === 'terminal' || kind === 'mcp';
     }
 
-
     compactTranscriptPath(path: string): string {
         const clean = path.replace(/\\/g, '/').replace(/^\.?\//, '');
         const parts = clean.split('/').filter(Boolean);
         return parts.length > 3 ? parts.slice(-3).join('/') : clean;
     }
-
 
     resolveTranscriptToolKind(toolName: string | undefined): string {
         if (isTranscriptWebSearchTool(toolName)) {
@@ -355,7 +334,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         return 'tool';
     }
 
-
     resolveTranscriptToolDetail(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): string {
         const name = (segment.name ?? 'tool').replace(/_/g, ' ');
         const shortArgs = this.extractTranscriptToolShortArg(segment.args);
@@ -363,7 +341,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             ? nls.localize('qaap/mobileProjects/transcriptActivityToolDetailWithArgs', '{0}: {1}', name, shortArgs)
             : nls.localize('qaap/mobileProjects/transcriptActivityToolDetail', 'Calling {0}', name);
     }
-
 
     extractTranscriptToolShortArg(argsJson: string): string | undefined {
         try {

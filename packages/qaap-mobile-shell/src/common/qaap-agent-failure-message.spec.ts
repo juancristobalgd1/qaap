@@ -23,7 +23,6 @@ describe('qaap-agent-failure-message', () => {
         rememberQaapHostedRuntime(false);
     });
 
-
     it('detectAgentFailureKind recognizes quota and credit exhaustion', () => {
         expect(detectAgentFailureKind('{"error":{"type":"invalid_request","message":"quota exceeded"}}'))
             .to.equal('quota');

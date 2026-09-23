@@ -109,7 +109,7 @@ export function materializeQaapPreviewLaunchPlan(
 }
 
 function quotePosixArgument(value: string): string {
-    return `'${value.replace(/'/g, `'\\''`)}'`;
+    return `'${value.replace(/'/g, '\'\\\'\'')}'`;
 }
 
 /** Shell rendering used only by the frontend terminal; every token remains individually quoted. */

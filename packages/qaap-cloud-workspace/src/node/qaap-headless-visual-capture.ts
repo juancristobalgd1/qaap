@@ -492,7 +492,7 @@ export async function inspectQaapHeadlessPage(
         await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => undefined);
         await page.waitForTimeout(settleMs);
         const result = await page.evaluate(PAGE_SMOKE_CHECK) as QaapPreviewVisualValidationResult;
-        const rejections = await page.evaluate(`globalThis.__qaapHeadlessUnhandledRejections || []`)
+        const rejections = await page.evaluate('globalThis.__qaapHeadlessUnhandledRejections || []')
             .catch(() => []) as string[];
         for (const rejection of rejections) {
             add('unhandledrejection', rejection);

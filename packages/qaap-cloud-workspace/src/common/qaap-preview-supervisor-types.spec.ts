@@ -87,7 +87,7 @@ describe('qaap-preview-supervisor-types', () => {
 
     describe('escapeQaapHtml', () => {
         it('escapes HTML-significant characters', () => {
-            expect(escapeQaapHtml(`<script>"&'`)).to.equal('&lt;script&gt;&quot;&amp;&#39;');
+            expect(escapeQaapHtml('<script>"&\'')).to.equal('&lt;script&gt;&quot;&amp;&#39;');
         });
     });
 

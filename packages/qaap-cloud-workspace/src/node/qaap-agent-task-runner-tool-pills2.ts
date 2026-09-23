@@ -627,7 +627,7 @@ export async function improveComposerPromptExtracted(ctx: any, options: {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',
         });
-        let template = detected.template
+        const template = detected.template
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
             .replace(/--verbose/g, '');

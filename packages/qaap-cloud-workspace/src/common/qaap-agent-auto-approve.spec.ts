@@ -81,7 +81,7 @@ describe('qaap-agent-auto-approve', () => {
             .to.equal("opencode run --dangerously-skip-permissions 'hi'");
         expect(applyAutoApproveToCommand("cursor-agent 'hi'", 'cursor'))
             .to.equal("cursor-agent --approve-mcps --trust -p --force 'hi'");
-        expect(applyAutoApproveToCommand("agent -p --force", 'cursor'))
+        expect(applyAutoApproveToCommand('agent -p --force', 'cursor'))
             .to.equal('agent --approve-mcps --trust -p --force');
         expect(applyAutoApproveToCommand("agent 'hi'", 'cursor'))
             .to.equal("agent --approve-mcps --trust -p --force 'hi'");

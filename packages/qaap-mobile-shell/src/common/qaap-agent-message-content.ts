@@ -111,7 +111,6 @@ type MessagePreviewLike = {
     readonly role?: string;
 };
 
-
 export interface TranscriptUserContextChip {
     readonly title: string;
     readonly kind: string;

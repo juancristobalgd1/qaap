@@ -19,7 +19,6 @@ describe('agent spawn refuses a workspace-container cwd', () => {
         rememberQaapHostedRuntime(false);
     });
 
-
     function buildRunner(): QaapAgentTaskRunner {
         const runner = Object.create(QaapAgentTaskRunner.prototype) as QaapAgentTaskRunner;
         Object.assign(runner, {

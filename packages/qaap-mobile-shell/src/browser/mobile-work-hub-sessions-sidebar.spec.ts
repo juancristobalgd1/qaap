@@ -46,9 +46,7 @@ describe('mobile-work-hub-sessions-sidebar', () => {
                 key: () => null,
                 length: 0,
             },
-            requestAnimationFrame: (callback: FrameRequestCallback) => {
-                return setTimeout(() => callback(performance.now()), 0) as unknown as number;
-            },
+            requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0) as unknown as number,
             cancelAnimationFrame: (id: number) => {
                 clearTimeout(id);
             },

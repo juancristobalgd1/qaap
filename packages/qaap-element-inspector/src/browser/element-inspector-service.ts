@@ -67,7 +67,7 @@ export class ElementInspectorService {
     /** Sends a style mutation to the iframe bridge for the currently-picked element. */
     updateStyle(property: string, value: string, important: boolean = false): void {
         const picked = this._state.picked;
-        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) return;
+        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) {return;}
         this.boundWindow.postMessage({
             type: ELEMENT_UPDATE_STYLE_TYPE,
             channelId: this.boundChannelId,
@@ -81,7 +81,7 @@ export class ElementInspectorService {
     /** Sends a `textContent` mutation to the iframe bridge. */
     updateText(text: string): void {
         const picked = this._state.picked;
-        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) return;
+        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) {return;}
         this.boundWindow.postMessage({
             type: ELEMENT_UPDATE_TEXT_TYPE,
             channelId: this.boundChannelId,
@@ -93,7 +93,7 @@ export class ElementInspectorService {
     /** Requests a fresh snapshot for the currently-picked element. */
     requestRefresh(): void {
         const picked = this._state.picked;
-        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) return;
+        if (!picked || !this.boundWindow || !this.boundOrigin || !this.boundChannelId) {return;}
         this.boundWindow.postMessage({
             type: ELEMENT_REFRESH_REQUEST_TYPE,
             channelId: this.boundChannelId,

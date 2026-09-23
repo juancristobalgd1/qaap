@@ -162,7 +162,7 @@ describe('turn-provenance sealing and fallback-model re-attribution (backend hal
             vendor: 'openrouter',
             modelId: 'some-vendor/flaky-model',
         };
-        let spawnedRequests: QaapCreateAgentTaskRequest[] = [];
+        const spawnedRequests: QaapCreateAgentTaskRequest[] = [];
         installFakes(store, request => {
             spawnedRequests.push(request);
             return {

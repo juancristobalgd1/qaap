@@ -449,7 +449,6 @@ export class MobileProjectsTranscriptVerifyUi {
         }, 5000);
     }
 
-
     createVerifyCheckRow(result: VerifyCheckResult): HTMLElement {
         const row = document.createElement('div');
         row.className = 'theia-mobile-transcript-verify-check';

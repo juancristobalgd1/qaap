@@ -72,7 +72,7 @@ export class MobileProjectsDiffHubUi {
             this.detachDiffReviewWidget();
             const empty = document.createElement('div');
             empty.className = 'theia-mobile-projects-diff-empty';
-            empty.innerHTML = `<i class="codicon codicon-check-all" aria-hidden="true"></i>`
+            empty.innerHTML = '<i class="codicon codicon-check-all" aria-hidden="true"></i>'
                 + `<p>${nls.localize('qaap/diff/noChangesAnyProject', 'No pending changes across your projects.')}</p>`
                 + `<span>${nls.localize('qaap/diff/noChangesHint', 'Edits made by you or an agent will show up here.')}</span>`;
             this.host.diffWidgetHost.replaceChildren(empty);

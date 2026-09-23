@@ -232,7 +232,6 @@ export class QaapResearchRunner {
      *  call racing the boot-time reconciliation). */
     protected readonly loopRunning = new Set<string>();
 
-
     /**
      * Starts a ledger write. Returns a Promise only for the real async store; sync test doubles
      * return `undefined` so callers can skip `await` and avoid an unconditional microtask yield.
@@ -241,7 +240,6 @@ export class QaapResearchRunner {
         const pending = this.store.upsertRecord(cwd, record) as void | Promise<void>;
         return pending ? pending : undefined;
     }
-
 
     @postConstruct()
     protected init(): void {

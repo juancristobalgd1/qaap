@@ -24,7 +24,7 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include('productionRuntime = config.productionRuntime === true');
         expect(source).to.include('!productionRuntime && config.skipAuth === true');
         expect(source).to.include('retryButton && !productionRuntime');
-        expect(source).to.include("host.querySelectorAll<HTMLElement>(");
+        expect(source).to.include('host.querySelectorAll<HTMLElement>(');
         expect(source).to.not.include("githubButton.addEventListener('keydown'");
         expect(source).to.not.include('data-qaap-link');
     });
@@ -34,7 +34,7 @@ describe('Qaap login gate accessibility contract', () => {
         expect(source).to.include("host.setAttribute('aria-labelledby', 'qaap-login-title')");
         expect(source).to.include("host.setAttribute('aria-describedby', 'qaap-login-description')");
         expect(source).to.include('aria-live="polite"');
-        expect(source).to.include("prefers-reduced-motion:reduce");
+        expect(source).to.include('prefers-reduced-motion:reduce');
         expect(source).to.include("button.setAttribute('aria-busy', 'true')");
         expect(source).to.include('href="/legal/terms.html"');
         expect(source).to.include('href="/legal/privacy.html"');

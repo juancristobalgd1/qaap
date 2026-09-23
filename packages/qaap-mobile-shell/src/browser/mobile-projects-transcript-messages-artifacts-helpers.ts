@@ -639,7 +639,7 @@ export function populateTranscriptActivityStepCopy(
 
     deps.syncTranscriptActivityDiffPeek(copy, item, options);
 
-    let errorDetail = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-error-detail');
+    const errorDetail = copy.querySelector<HTMLElement>('.theia-mobile-agent-activity-error-detail');
     if (item.errorSummary && item.state === 'error') {
         errorDetail?.remove();
         copy.querySelector('.theia-mobile-agent-activity-error-expand')?.remove();
@@ -968,7 +968,7 @@ export function syncTranscriptStreamStallChrome(
         deps.syncTranscriptStreamTimeoutBanner(segmentsBody, timedOut, timeoutCause, conv);
         // Codex-style execution event timeline: toggle stalled class on the container.
         if (hasMobileExecutionEventTimeline(row)) {
-            const eventTimeline = segmentsBody.querySelector<HTMLElement>(`.theia-mobile-execution-timeline`);
+            const eventTimeline = segmentsBody.querySelector<HTMLElement>('.theia-mobile-execution-timeline');
             if (eventTimeline) {
                 eventTimeline.classList.toggle('theia-mod-stalled', stalled);
                 eventTimeline.classList.toggle('theia-mod-timed-out', timedOut);

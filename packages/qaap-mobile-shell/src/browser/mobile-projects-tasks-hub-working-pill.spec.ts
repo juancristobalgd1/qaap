@@ -356,7 +356,7 @@ describe('MobileProjectsTasksHubUi — working pill', () => {
     });
 
     it('hides the Working pill after Stop All even if detail was open', async () => {
-        let cancelledIds: string[] = [];
+        const cancelledIds: string[] = [];
         const host = createHost({
             running: 1,
             members: [{

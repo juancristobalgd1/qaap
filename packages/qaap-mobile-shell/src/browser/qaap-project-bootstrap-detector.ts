@@ -1093,7 +1093,7 @@ export class QaapProjectBootstrapDetector {
      */
     protected buildMonorepoDevCommand(pm: QaapPackageManager, script: string, packageName: string): string {
         if (pm === 'pnpm') {
-            const quoted = packageName.replace(/'/g, `'\\''`);
+            const quoted = packageName.replace(/'/g, '\'\\\'\'');
             return `pnpm --filter '${quoted}' ${script}`;
         }
         return this.buildRunCommand(pm, script);

@@ -18,7 +18,7 @@ describe('qaap-preview-bridge-protocol', () => {
         expect(script).to.contain(QAAP_PREVIEW_BRIDGE_INIT_TYPE);
         expect(script).to.contain('event.source!==window.parent');
         expect(script).to.contain('event.origin!==parentOrigin');
-        expect(script).not.to.contain("postMessage({type:" + JSON.stringify(QAAP_PREVIEW_BRIDGE_READY_TYPE) + "},'*')");
+        expect(script).not.to.contain('postMessage({type:' + JSON.stringify(QAAP_PREVIEW_BRIDGE_READY_TYPE) + "},'*')");
     });
 
     it('injects once before head closes', () => {

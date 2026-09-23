@@ -285,7 +285,7 @@ describe('TranscriptVirtualList follow-tail after spacer thrash', () => {
     });
 
     it('observes the footer host so in-place footer growth is measured', () => {
-        let observeCalls: Element[] = [];
+        const observeCalls: Element[] = [];
         const PreviousResizeObserver = globalThis.ResizeObserver;
         class MockResizeObserver {
             constructor(_callback: ResizeObserverCallback) { }

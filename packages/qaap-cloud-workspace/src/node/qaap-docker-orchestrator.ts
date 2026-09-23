@@ -821,7 +821,7 @@ export class QaapDockerOrchestrator {
                 'QAAP_AGENT_UID_PER_USER=0',
                 `QAAP_REPOS_ROOT=${TENANT_BACKEND_REPOS_ROOT}`,
                 `QAAP_TENANT_CONFIG_ROOT=${TENANT_BACKEND_QAAP_HOME_MOUNT}`,
-                `QAAP_TENANT_BACKEND_MODE=1`,
+                'QAAP_TENANT_BACKEND_MODE=1',
                 `QAAP_TENANT_BACKEND_SECRET=${secret}`,
                 `QAAP_TENANT_LOGIN=${ownerLogin}`,
                 `QAAP_SQLITE_STORE_PATH=${TENANT_BACKEND_SQLITE_STORE_PATH}`,

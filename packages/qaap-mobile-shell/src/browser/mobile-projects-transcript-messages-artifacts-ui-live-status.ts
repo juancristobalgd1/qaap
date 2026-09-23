@@ -349,7 +349,7 @@ export function clearPinnedTranscriptStreamFooterExtracted(ctx: any, chatHost?: 
         ctx.pinnedLiveStatusPeakTokens = 0;
         const host = chatHost
             ?? ctx.host.transcriptChatHost
-            ?? document.querySelector<HTMLElement>(`.theia-mobile-agent-transcript-real-chat`);
+            ?? document.querySelector<HTMLElement>('.theia-mobile-agent-transcript-real-chat');
         if (!(host instanceof HTMLElement)) {
             return;
         }

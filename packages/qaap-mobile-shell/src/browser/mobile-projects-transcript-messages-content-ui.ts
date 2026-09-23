@@ -204,7 +204,6 @@ export class MobileProjectsTranscriptMessagesContentUi {
         return probe.previewUrl || claimUrl;
     }
 
-
     async openTranscriptPreviewUrlFromLink(href: string): Promise<boolean> {
         const summary = this.host.transcriptComposerSummary ?? this.host.transcriptOpenSummary;
         const project = this.host.transcriptOpenProject;
@@ -269,7 +268,6 @@ export class MobileProjectsTranscriptMessagesContentUi {
         MobileSnackbar.show(nls.localize('qaap/mobileProjects/previewLinkOpened', 'Preview opened'), { kind: 'success', duration: 1400 });
         return true;
     }
-
 
     renderTranscriptMarkdown(host: HTMLElement, content: string, options?: { readonly defer?: boolean }): void {
         const clean = this.cleanTranscriptDisplayText(content).trim();
@@ -630,7 +628,6 @@ export class MobileProjectsTranscriptMessagesContentUi {
         });
     }
 
-
     linkifyTranscriptPreviewUrls(content: string | undefined | null): string {
         const text = content ?? '';
         return text.replace(
@@ -650,7 +647,6 @@ export class MobileProjectsTranscriptMessagesContentUi {
             },
         );
     }
-
 
     cleanTranscriptDisplayText(content: string | undefined | null): string {
         const text = content ?? '';

@@ -264,7 +264,7 @@ export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoa
     const status = input.status ?? 'running';
     const startedAt = input.startedAt ?? (status === 'running' ? createdAt : undefined);
 
-    let deadlineAt = input.deadlineAt;
+    const deadlineAt = input.deadlineAt;
     if (deadlineAt !== undefined) {
         if (!Number.isSafeInteger(deadlineAt) || deadlineAt <= 0) {
             throw new Error('ResearchGoal.deadlineAt must be a positive integer timestamp.');

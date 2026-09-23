@@ -181,7 +181,7 @@ function createIsolationPathApi(host: IsolationPathHost): path.PlatformPath {
         }
         const drive = host === 'win32' ? resolved.match(/^([A-Za-z]:)(\/.*)?$/) : undefined;
         const unc = host === 'win32' && resolved.startsWith('//');
-        let body = drive ? (drive[2] || '/') : resolved;
+        const body = drive ? (drive[2] || '/') : resolved;
         const absolute = host === 'posix'
             ? body.startsWith('/')
             : !!(drive || unc || body.startsWith('/'));

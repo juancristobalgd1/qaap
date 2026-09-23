@@ -221,7 +221,7 @@ describe('qaap-transcript-timeline-render-bench', () => {
 
     it('patches timeline under ~250ms for 50 growing tool segments', () => {
         const artifactsUi = createArtifactsUi();
-        let row = createStreamingRow(artifactsUi, buildToolSegments(1, 0));
+        const row = createStreamingRow(artifactsUi, buildToolSegments(1, 0));
         const start = performance.now();
         for (let count = 1; count <= 50; count++) {
             const segments = buildToolSegments(count, count - 1);

@@ -136,14 +136,14 @@ describe('qaap-execution-event-timeline', () => {
 
         it('accumulates multiple consecutive text segments into one event narrative without dropping any', () => {
             const timeline = buildMobileExecutionEvents([
-                textSegment("Let me explain the approach."),
+                textSegment('Let me explain the approach.'),
                 textSegment("I'll start by reading the file."),
                 toolSegment('Read', 'tool-1', '{}'),
             ]);
 
             expect(timeline.events).to.have.length(1);
             expect(timeline.events[0]?.narrativeSource).to.equal('agent');
-            expect(timeline.events[0]?.narrative).to.include("Let me explain the approach.");
+            expect(timeline.events[0]?.narrative).to.include('Let me explain the approach.');
             expect(timeline.events[0]?.narrative).to.include("I'll start by reading the file.");
         });
 
@@ -154,22 +154,22 @@ describe('qaap-execution-event-timeline', () => {
                 textSegment("Here's a summary of changes."),
             ]);
 
-            expect(timeline.closingNarrative).to.include("Done with the implementation.");
+            expect(timeline.closingNarrative).to.include('Done with the implementation.');
             expect(timeline.closingNarrative).to.include("Here's a summary of changes.");
         });
 
         it('accumulates text segments between tool groups as narrative for the next event', () => {
             const timeline = buildMobileExecutionEvents([
                 toolSegment('Read', 'tool-1', '{}'),
-                textSegment("I found the rendering pipeline."),
-                textSegment("Now let me check the tests."),
+                textSegment('I found the rendering pipeline.'),
+                textSegment('Now let me check the tests.'),
                 toolSegment('Read', 'tool-2', '{}'),
             ]);
 
             expect(timeline.events).to.have.length(2);
             expect(timeline.events[1]?.narrativeSource).to.equal('agent');
-            expect(timeline.events[1]?.narrative).to.include("I found the rendering pipeline.");
-            expect(timeline.events[1]?.narrative).to.include("Now let me check the tests.");
+            expect(timeline.events[1]?.narrative).to.include('I found the rendering pipeline.');
+            expect(timeline.events[1]?.narrative).to.include('Now let me check the tests.');
         });
 
         it('propagates pending and error state to the event level', () => {

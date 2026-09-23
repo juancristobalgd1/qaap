@@ -48,7 +48,6 @@ export class QaapWorkHubComposerPromptService {
         });
     }
 
-
     /**
      * Panels ranked by REAL on-screen presence. Multiple panels can report
      * {@link MobileProjectsPanel.isVisible} true at once (home + workspace instances share the

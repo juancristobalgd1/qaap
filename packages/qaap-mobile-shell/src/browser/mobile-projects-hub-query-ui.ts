@@ -70,7 +70,6 @@ export class MobileProjectsHubQueryUi {
         return this.applySearch(base);
     }
 
-
     isReviewHubView(): boolean {
         return this.host.hubView === 'review';
     }

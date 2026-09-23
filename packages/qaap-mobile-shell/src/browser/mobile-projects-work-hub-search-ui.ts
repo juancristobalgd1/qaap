@@ -252,5 +252,4 @@ export class MobileProjectsWorkHubSearchUi {
      * and aborts live refresh until the user reopens the conversation.
      */
 
-
 }

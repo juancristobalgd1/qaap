@@ -320,7 +320,7 @@ export class MobileOpenRepositoryDialog {
         this.publicInput.spellcheck = false;
         this.publicInput.autocomplete = 'off';
         this.publicInput.addEventListener('input', () => this.clearPublicError());
-        this.publicInput.addEventListener('keydown', (ev) => {
+        this.publicInput.addEventListener('keydown', ev => {
             if (ev.key === 'Enter') {
                 ev.preventDefault();
                 void this.onSubmitPublic();

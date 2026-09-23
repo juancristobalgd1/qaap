@@ -124,5 +124,4 @@ export class MobileProjectsProjectDetailUi {
         this.host.executionSurfaceTabsUi.activateExecutionSurfaceTab(tab, project, this.projectDetailSurfaceSummary(project), 'project-detail');
     }
 
-
 }

@@ -335,7 +335,6 @@ export function createTranscriptToolPillSummaryExtracted(ctx: any, options: {
         return summary;
 }
 
-
 export function createTranscriptMcpBadgeExtracted(ctx: any, server?: string): HTMLElement {
         const badge = document.createElement('span');
         badge.className = 'theia-mobile-agent-tool-pill-badge theia-mod-mcp';

@@ -267,7 +267,7 @@ function applyClaudeApprovalFlags(
     policyId: QaapAgentApprovalPolicyId,
     rules: QaapAgentToolApprovalRules | undefined,
 ): string {
-    let next = stripClaudeApprovalFlags(command);
+    const next = stripClaudeApprovalFlags(command);
     if (policyId === 'full-access' || rules?.network) {
         return injectAfterExecutable(next, 'claude', '--dangerously-skip-permissions');
     }
@@ -286,7 +286,7 @@ function applyCodexApprovalFlags(
     rules: QaapAgentToolApprovalRules | undefined,
     codexSupportsApproveForMe: boolean | undefined,
 ): string {
-    let next = stripCodexApprovalFlags(command);
+    const next = stripCodexApprovalFlags(command);
     if (policyId === 'full-access' || rules?.network) {
         return injectAfterExecutable(next, 'codex', '--dangerously-bypass-approvals-and-sandbox');
     }

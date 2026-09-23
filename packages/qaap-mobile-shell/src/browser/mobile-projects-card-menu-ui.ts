@@ -545,7 +545,7 @@ export class MobileProjectsCardMenuUi {
         if (options.title) {
             item.title = options.title;
         }
-        item.addEventListener('click', (ev) => {
+        item.addEventListener('click', ev => {
             ev.stopPropagation();
             if (!item.disabled) {
                 options.onSelect();
