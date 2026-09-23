@@ -14,6 +14,11 @@
  * an error again. Never add a rule here to silence new code.
  *
  * A severity-only override keeps the upstream rule options (e.g. `max-len` code: 180).
+ *
+ * Never run a bare `eslint --fix` over a qaap package: it also applies the autofixes of the
+ * backlog rules below, and some of them are unsafe here (`@theia/shared-dependencies` rewrote
+ * `from 'ws'` into the non-existent `'@theia/core/sharedws'`). Disable them for the fix run:
+ *   npx eslint --fix $(node -e "require('./scripts/qaap-eslint-ratchet').backlog.forEach(r => console.log('--rule', r + ': off'))") <files>
  */
 const QAAP_WARN_BACKLOG = [
     '@typescript-eslint/no-explicit-any',
@@ -33,6 +38,7 @@ const QAAP_WARN_BACKLOG = [
 ];
 
 module.exports = {
+    backlog: QAAP_WARN_BACKLOG,
     rules: {
         ...Object.fromEntries(QAAP_WARN_BACKLOG.map(rule => [rule, 'warn'])),
         // Same as upstream, but allow the `let timer; const done = () => clearTimeout(timer); timer = …`
