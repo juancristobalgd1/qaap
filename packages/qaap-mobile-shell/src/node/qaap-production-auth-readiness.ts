@@ -113,6 +113,21 @@ export function qaapPreviewIsolationProblem(env: NodeJS.ProcessEnv = process.env
     return undefined;
 }
 
+function parseLoginList(raw: string | undefined): string[] {
+    return (raw ?? '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+}
+
+/**
+ * Whether the beta allowlist admits anyone besides the operators (`QAAP_OPERATOR_LOGINS`, the people
+ * who run this instance and preview their own code). A single-operator deployment still lists the
+ * operator in `QAAP_BETA_ALLOWED_LOGINS` (production admits nobody otherwise), but it has no third
+ * party whose session an untrusted preview could abuse.
+ */
+export function qaapAdmitsThirdPartyTenants(env: NodeJS.ProcessEnv = process.env): boolean {
+    const operators = new Set(parseLoginList(env.QAAP_OPERATOR_LOGINS));
+    return parseLoginList(env.QAAP_BETA_ALLOWED_LOGINS).some(login => !operators.has(login));
+}
+
 export function evaluateQaapProductionAuthReadiness(
     env: NodeJS.ProcessEnv = process.env,
 ): QaapProductionAuthReadiness {
@@ -139,7 +154,9 @@ export function evaluateQaapProductionAuthReadiness(
                 + 'See MULTI_TENANCY_AUDIT.md.',
         };
     }
-    const previewIsolationProblem = isQaapPublicMultiTenantRuntime(env) ? qaapPreviewIsolationProblem(env) : undefined;
+    const previewIsolationProblem = isQaapPublicMultiTenantRuntime(env) && qaapAdmitsThirdPartyTenants(env)
+        ? qaapPreviewIsolationProblem(env)
+        : undefined;
     if (previewIsolationProblem) {
         return {
             productionRuntime,
@@ -151,6 +168,7 @@ export function evaluateQaapProductionAuthReadiness(
             ready: false,
             fatalReason: 'Refusing to serve third-party tenants without isolated preview origins. '
                 + `${previewIsolationProblem} `
+                + 'Logins listed in QAAP_OPERATOR_LOGINS do not count as third parties. '
                 + 'Point wildcard DNS/TLS for *.QAAP_PREVIEW_BASE_DOMAIN at this server so untrusted '
                 + 'preview code cannot use the IDE session. See SECURITY.md.',
         };

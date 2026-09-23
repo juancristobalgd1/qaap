@@ -110,6 +110,19 @@ describe('evaluateQaapProductionAuthReadiness', () => {
             expect(result.fatalReason).to.match(/not a valid domain/);
         });
 
+        it('does not require a preview domain when only operators are admitted', () => {
+            const operatorOnly = { ...publicBeta, QAAP_BETA_ALLOWED_LOGINS: 'alice', QAAP_OPERATOR_LOGINS: 'Alice' };
+            expect(evaluateQaapProductionAuthReadiness(operatorOnly).ready).to.equal(true);
+            const allOperators = { ...publicBeta, QAAP_OPERATOR_LOGINS: ' bob , alice ' };
+            expect(evaluateQaapProductionAuthReadiness(allOperators).ready).to.equal(true);
+        });
+
+        it('still requires it as soon as one admitted login is not an operator', () => {
+            const result = evaluateQaapProductionAuthReadiness({ ...publicBeta, QAAP_OPERATOR_LOGINS: 'alice' });
+            expect(result.ready).to.equal(false);
+            expect(result.fatalReason).to.match(/QAAP_OPERATOR_LOGINS/);
+        });
+
         it('does not require a preview domain without invited tenants', () => {
             expect(evaluateQaapProductionAuthReadiness({ ...publicBeta, QAAP_BETA_ALLOWED_LOGINS: '' }).ready).to.equal(true);
         });
