@@ -1,94 +1,32 @@
-// @ts-nocheck
+import type { ConversationPreviewRuntimeState, TranscriptTab } from './mobile-projects-transcript-surfaces-ui';
+import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
 import { invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
-import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import {
-    mountEmbeddedAgentPreviewChrome,
-    type EmbeddedAgentPreviewChrome,
-} from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
-import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
-import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
-import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
-import {
-    conversationShouldWatchDevPreview,
-    findTranscriptPreviewUrlFromConversation,
-    previewPageTitleMatchesProjectName,
-    resolveReadyTranscriptPreviewUrlFromProbe,
-} from '../common/qaap-transcript-preview-offer';
-import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
-import {
-    findQaapIdentityPreviewUrl,
-    isLocalQaapPreviewOrigin,
-    parseQaapIdentityPreviewRequestPath,
-    resolveDevPreviewPublicOrigin,
-} from '../common/qaap-dev-preview';
-import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
-import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
 import {
-    buildQaapPreviewId,
-    normalizeQaapPreviewConversationId,
     qaapPreviewFileUriMatchesProjectName,
-    qaapPreviewProjectIdMatches,
-    type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
 import {
-    mountTranscriptFilesView,
     writePendingTranscriptFilesViewMode,
-    type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
 import {
-    createTranscriptTerminalStagingHost,
-    createTranscriptTerminalSurface,
-    markTranscriptTerminalRestorable,
-    scheduleTranscriptTerminalResize,
-    type TranscriptTerminalPersistedWorkspace,
-    type TranscriptTerminalSurface,
-    type TranscriptTerminalViewServices,
-} from './qaap-transcript-terminal-view';
-import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import {
-    TranscriptWorkspaceSurfacesCache,
-    type TranscriptWorkspaceSurfaceKey,
-} from './qaap-transcript-workspace-surfaces-cache';
-import type { MobileProjectsTranscriptHistoryUi } from './mobile-projects-transcript-history-ui';
-import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
-import {
-    pathsEqual as pathsEqualHelper,
     transcriptConversationMeta as transcriptConversationMetaHelper,
-    resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,
-    resolveTranscriptTerminalTabTitle as resolveTranscriptTerminalTabTitleHelper,
-    toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
 } from './mobile-projects-transcript-surfaces-helpers';
 
-export function pickTranscriptPreviewAppExtracted(ctx: any, apps: readonly QaapMonorepoAppCandidate[],): Promise<QaapMonorepoAppCandidate | undefined> {
+export function pickTranscriptPreviewAppExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, apps: readonly QaapMonorepoAppCandidate[],): Promise<QaapMonorepoAppCandidate | undefined> {
     ctx.closeTranscriptPreviewAppPicker();
     return new Promise(resolve => {
         let settled = false;
@@ -165,14 +103,14 @@ export function pickTranscriptPreviewAppExtracted(ctx: any, apps: readonly QaapM
     });
 }
 
-export function closeTranscriptPreviewAppPickerExtracted(ctx: any): void {
+export function closeTranscriptPreviewAppPickerExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
     ctx.transcriptPreviewAppPickerCancel?.();
     ctx.transcriptPreviewAppPickerCancel = undefined;
     ctx.transcriptPreviewAppPicker?.remove();
     ctx.transcriptPreviewAppPicker = undefined;
 }
 
-export function previewRuntimeForExtracted(ctx: any, conversationScopeId: string): ConversationPreviewRuntimeState {
+export function previewRuntimeForExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, conversationScopeId: string): ConversationPreviewRuntimeState {
     let state = ctx.previewRuntimeByConversationId.get(conversationScopeId);
     if (!state) {
         state = {};
@@ -181,7 +119,7 @@ export function previewRuntimeForExtracted(ctx: any, conversationScopeId: string
     return state;
 }
 
-export function setMountedPreviewUrlExtracted(ctx: any, conversationScopeId: string, url: string | undefined): void {
+export function setMountedPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, conversationScopeId: string, url: string | undefined): void {
     const state = ctx.previewRuntimeFor(conversationScopeId);
     if (url === undefined) {
         delete state.mountedUrl;
@@ -190,7 +128,7 @@ export function setMountedPreviewUrlExtracted(ctx: any, conversationScopeId: str
     }
 }
 
-export function setProbeReadyPreviewUrlExtracted(ctx: any, conversationScopeId: string, url: string | undefined): void {
+export function setProbeReadyPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, conversationScopeId: string, url: string | undefined): void {
     const state = ctx.previewRuntimeFor(conversationScopeId);
     if (url === undefined) {
         delete state.probeReadyUrl;
@@ -199,7 +137,7 @@ export function setProbeReadyPreviewUrlExtracted(ctx: any, conversationScopeId: 
     }
 }
 
-export function setLastSyncedPreviewUrlExtracted(ctx: any, conversationScopeId: string, url: string | undefined): void {
+export function setLastSyncedPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, conversationScopeId: string, url: string | undefined): void {
     const state = ctx.previewRuntimeFor(conversationScopeId);
     if (url === undefined) {
         delete state.lastSyncedUrl;
@@ -208,7 +146,7 @@ export function setLastSyncedPreviewUrlExtracted(ctx: any, conversationScopeId: 
     }
 }
 
-export function matchesActivePreviewSummaryExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO): boolean {
+export function matchesActivePreviewSummaryExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, summary: QaapAgentConversationSummaryDTO): boolean {
     if (ctx.host.transcriptOpenSummaryId === summary.id) {
         return true;
     }
@@ -217,7 +155,7 @@ export function matchesActivePreviewSummaryExtracted(ctx: any, summary: QaapAgen
         && isAgentsHubIdleConversationSummary(summary);
 }
 
-export function bootstrapAppliesToProjectExtracted(ctx: any, project: MobileProjectEntry): boolean {
+export function bootstrapAppliesToProjectExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): boolean {
     const bootstrap = ctx.host.projectBootstrap;
     if (!bootstrap?.descriptor) {
         return project.isCurrent === true;
@@ -236,7 +174,7 @@ export function bootstrapAppliesToProjectExtracted(ctx: any, project: MobileProj
     return project.isCurrent === true;
 }
 
-export function bootstrapPreviewUrlForProjectExtracted(ctx: any, project: MobileProjectEntry): string | undefined {
+export function bootstrapPreviewUrlForProjectExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): string | undefined {
     const bootstrap = ctx.host.projectBootstrap;
     const previewUrl = bootstrap?.previewUrl ?? bootstrap?.previewClaimUrl;
     if (!bootstrap || bootstrap.phase !== 'running' || !previewUrl) {
@@ -253,7 +191,7 @@ export function bootstrapPreviewUrlForProjectExtracted(ctx: any, project: Mobile
     });
 }
 
-export function ensurePreviewProjectContextExtracted(ctx: any, project: MobileProjectEntry): void {
+export function ensurePreviewProjectContextExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): void {
     if (ctx.transcriptPreviewProjectId === project.id) {
         return;
     }
@@ -262,7 +200,7 @@ export function ensurePreviewProjectContextExtracted(ctx: any, project: MobilePr
     ctx.transcriptPreviewProjectId = project.id;
 }
 
-export function mountProjectDetailSurfaceTabExtracted(ctx: any, project: MobileProjectEntry,
+export function mountProjectDetailSurfaceTabExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     tab: TranscriptTab,): void {
     switch (tab) {
@@ -288,7 +226,7 @@ export function mountProjectDetailSurfaceTabExtracted(ctx: any, project: MobileP
     }
 }
 
-export async function mountProjectDetailReviewWidgetExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
+export async function mountProjectDetailReviewWidgetExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): Promise<void> {
     const host = ctx.host.projectDetailSurfaceTargets?.reviewHost;
     if (!host || !ctx.host.createDiffReviewWidget) {
         return;
@@ -351,7 +289,7 @@ export async function mountProjectDetailReviewWidgetExtracted(ctx: any, project:
     );
 }
 
-export function executionSurfaceHostExtracted(ctx: any, transcriptHost: HTMLElement | undefined,
+export function executionSurfaceHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, transcriptHost: HTMLElement | undefined,
     projectDetailHost: HTMLElement | undefined,): HTMLElement | undefined {
     if ((ctx.host.transcriptSheet || ctx.host.agentsHubShellActive) && transcriptHost) {
         return transcriptHost;
@@ -359,28 +297,28 @@ export function executionSurfaceHostExtracted(ctx: any, transcriptHost: HTMLElem
     return projectDetailHost ?? transcriptHost;
 }
 
-export function executionPreviewHostExtracted(ctx: any): HTMLElement | undefined {
+export function executionPreviewHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): HTMLElement | undefined {
     return ctx.executionSurfaceHost(
         ctx.host.transcriptPreviewHost,
         ctx.host.projectDetailSurfaceTargets?.previewHost,
     );
 }
 
-export function executionFilesHostExtracted(ctx: any): HTMLElement | undefined {
+export function executionFilesHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): HTMLElement | undefined {
     return ctx.executionSurfaceHost(
         ctx.host.transcriptFilesHost,
         ctx.host.projectDetailSurfaceTargets?.filesHost,
     );
 }
 
-export function executionTerminalHostExtracted(ctx: any): HTMLElement | undefined {
+export function executionTerminalHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): HTMLElement | undefined {
     return ctx.executionSurfaceHost(
         ctx.host.transcriptTerminalHost,
         ctx.host.projectDetailSurfaceTargets?.terminalHost,
     );
 }
 
-export function latestAgentSegmentsExtracted(ctx: any, conv: QaapAgentConversationDTO | undefined): QaapAgentMessageSegmentDTO[] | undefined {
+export function latestAgentSegmentsExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, conv: QaapAgentConversationDTO | undefined): QaapAgentMessageSegmentDTO[] | undefined {
     if (!conv) {
         return undefined;
     }
@@ -397,13 +335,13 @@ export function latestAgentSegmentsExtracted(ctx: any, conv: QaapAgentConversati
     return undefined;
 }
 
-export function transcriptConversationMetaExtracted(ctx: any, project: MobileProjectEntry,
+export function transcriptConversationMetaExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): string {
     return transcriptConversationMetaHelper(project, summary);
 }
 
-export function updateTranscriptHeaderExtracted(ctx: any, project: MobileProjectEntry,
-    summary,): void {
+export function updateTranscriptHeaderExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+    summary: QaapAgentConversationSummaryDTO | undefined,): void {
     const titleEl = ctx.host.transcriptSheet?.querySelector('.theia-mobile-agent-log-header h2');
     const subtitle = ctx.host.transcriptHeaderSubtitle;
     if (!titleEl || !subtitle) {

@@ -34,7 +34,7 @@ class TestTranscriptSurfacesUi extends MobileProjectsTranscriptSurfacesUi {
 class SwitchTrackingTranscriptSurfacesUi extends MobileProjectsTranscriptSurfacesUi {
     switchCalls = 0;
 
-    protected override switchTranscriptPreviewApp(): Promise<void> {
+    override switchTranscriptPreviewApp(): Promise<void> {
         this.switchCalls += 1;
         return Promise.resolve();
     }

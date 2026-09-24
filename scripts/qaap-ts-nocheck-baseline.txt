@@ -1,6 +1,6 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 84 files.
+# 75 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
@@ -62,15 +62,6 @@ packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-compose
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-timeline.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-tool-pills.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-activity.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-diff.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-live-status.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-render.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-streaming.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-thought-brief.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-timeline.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui-tool-pills.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-surfaces-ui.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-timeline.ts

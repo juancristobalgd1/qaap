@@ -1,37 +1,20 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
-import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import {
-    mountEmbeddedAgentPreviewChrome,
-    type EmbeddedAgentPreviewChrome,
-} from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
-import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
-import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
-import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
 import {
     conversationShouldWatchDevPreview,
     findTranscriptPreviewUrlFromConversation,
     previewPageTitleMatchesProjectName,
-    resolveReadyTranscriptPreviewUrlFromProbe,
 } from '../common/qaap-transcript-preview-offer';
-import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
 import {
     findQaapIdentityPreviewUrl,
     isLocalQaapPreviewOrigin,
@@ -39,53 +22,18 @@ import {
     parseQaapIdentityPreviewRequestPath,
     resolveDevPreviewPublicOrigin,
 } from '../common/qaap-dev-preview';
-import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
-import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
 import {
-    buildQaapPreviewId,
     claimedPreviewCoordinatesMatchProject,
-    normalizeQaapPreviewConversationId,
-    type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
 import {
-    mountTranscriptFilesView,
-    type TranscriptFilesViewServices,
-} from './qaap-transcript-files-view';
-import {
-    createTranscriptTerminalStagingHost,
-    createTranscriptTerminalSurface,
     markTranscriptTerminalRestorable,
-    scheduleTranscriptTerminalResize,
-    type TranscriptTerminalPersistedWorkspace,
-    type TranscriptTerminalSurface,
-    type TranscriptTerminalViewServices,
 } from './qaap-transcript-terminal-view';
-import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
-    TranscriptWorkspaceSurfacesCache,
     type TranscriptWorkspaceSurfaceKey,
 } from './qaap-transcript-workspace-surfaces-cache';
-import type { MobileProjectsTranscriptHistoryUi } from './mobile-projects-transcript-history-ui';
-import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
-import {
-    pathsEqual as pathsEqualHelper,
-    transcriptConversationMeta as transcriptConversationMetaHelper,
-    resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,
-    resolveTranscriptTerminalTabTitle as resolveTranscriptTerminalTabTitleHelper,
-    toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
-} from './mobile-projects-transcript-surfaces-helpers';
 
-export function disposeTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey?: TranscriptWorkspaceSurfaceKey): void {
+export function disposeTranscriptTerminalSlidesExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey?: TranscriptWorkspaceSurfaceKey): void {
         if (workspaceKey) {
             const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
             if (state) {
@@ -104,7 +52,7 @@ export function disposeTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey?
         ctx.host.transcriptTerminalSlidesByWorkspace.clear();
 }
 
-export function prepareTranscriptTerminalsForPageUnloadExtracted(ctx: any): void {
+export function prepareTranscriptTerminalsForPageUnloadExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
         for (const [workspaceKey, state] of ctx.host.transcriptTerminalSlidesByWorkspace) {
             for (const surface of state.surfaces) {
                 if (!surface.terminal.isDisposed) {
@@ -115,7 +63,7 @@ export function prepareTranscriptTerminalsForPageUnloadExtracted(ctx: any): void
         }
 }
 
-export function createTranscriptPreviewLoadingExtracted(ctx: any, _conv: QaapAgentConversationDTO | undefined): HTMLElement {
+export function createTranscriptPreviewLoadingExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, _conv: QaapAgentConversationDTO | undefined): HTMLElement {
         const wrap = document.createElement('div');
         wrap.className = 'theia-mobile-transcript-preview-loading';
         wrap.setAttribute('role', 'status');
@@ -159,7 +107,7 @@ export function createTranscriptPreviewLoadingExtracted(ctx: any, _conv: QaapAge
         return wrap;
 }
 
-export async function syncTranscriptPreviewFromConversationExtracted(ctx: any, project: MobileProjectEntry,
+export async function syncTranscriptPreviewFromConversationExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         conv: QaapAgentConversationDTO,): Promise<void> {
         if (ctx.host.transcriptPreviewSuppressedByUser) {
@@ -193,7 +141,7 @@ export async function syncTranscriptPreviewFromConversationExtracted(ctx: any, p
         }
 }
 
-export async function refreshTranscriptPreviewProjectExtracted(ctx: any, project: MobileProjectEntry, summary?: QaapAgentConversationSummaryDTO): Promise<MobileProjectEntry> {
+export async function refreshTranscriptPreviewProjectExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry, summary?: QaapAgentConversationSummaryDTO): Promise<MobileProjectEntry> {
         try {
             const previousPreviewUrl = project.previewUrl
                 ?? ctx.host.projects.find(candidate => candidate.id === project.id)?.previewUrl;
@@ -226,7 +174,7 @@ export async function refreshTranscriptPreviewProjectExtracted(ctx: any, project
         }
 }
 
-export async function previewUrlMatchesProjectExtracted(ctx: any, previewUrl: string, project: MobileProjectEntry): Promise<boolean> {
+export async function previewUrlMatchesProjectExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, previewUrl: string, project: MobileProjectEntry): Promise<boolean> {
         try {
             const normalized = normalizePreviewUrlForSameOrigin(previewUrl);
             const parsed = new URL(normalized, window.location.href);
@@ -281,7 +229,7 @@ export async function previewUrlMatchesProjectExtracted(ctx: any, previewUrl: st
         }
 }
 
-export async function discoverProjectDevPreviewUrlExtracted(ctx: any, project: MobileProjectEntry): Promise<string | undefined> {
+export async function discoverProjectDevPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): Promise<string | undefined> {
         // The preview registry knows the project's live claim even on hosted origins, where the
         // legacy localhost port-scan below is unavailable. This is what recovers a surface whose
         // stored URL was cleared after its claim was superseded by a newer run.
@@ -308,7 +256,7 @@ export async function discoverProjectDevPreviewUrlExtracted(ctx: any, project: M
         return previewUrl;
 }
 
-export function beginTranscriptDevPreviewRequestExtracted(ctx: any, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+export function beginTranscriptDevPreviewRequestExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
         ctx.clearPreviewRuntimeForConversation(ctx.previewScopeId(summary));
         ctx.stopTranscriptPreviewTabProbe();
         ctx.host.transcriptPreviewSuppressedByUser = false;
@@ -325,7 +273,7 @@ export function beginTranscriptDevPreviewRequestExtracted(ctx: any, project: Mob
         ctx.host.transcriptStickyComposerUi?.refreshComposerActivityStack?.();
 }
 
-export function resolveTranscriptPreviewUrlExtracted(ctx: any, project: MobileProjectEntry,
+export function resolveTranscriptPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         conv: QaapAgentConversationDTO | undefined,): string | undefined {
         const conversationScopeId = ctx.previewScopeId(conv ? { id: conv.id } : undefined);
         const storedUrl = project.previewUrl ? normalizePreviewUrlForSameOrigin(project.previewUrl) : undefined;

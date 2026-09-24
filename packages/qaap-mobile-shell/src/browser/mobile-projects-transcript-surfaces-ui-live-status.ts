@@ -1,65 +1,18 @@
-// @ts-nocheck
+import type { TranscriptTerminalSliderState } from './mobile-projects-transcript-surfaces-ui';
+import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { FileUri } from '@theia/core/lib/common/file-uri';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import {
-    mountEmbeddedAgentPreviewChrome,
-    type EmbeddedAgentPreviewChrome,
-} from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
-import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
-import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
-import {
-    type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
-import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
-import {
-    conversationShouldWatchDevPreview,
-    findTranscriptPreviewUrlFromConversation,
-    previewPageTitleMatchesProjectName,
-    resolveReadyTranscriptPreviewUrlFromProbe,
-} from '../common/qaap-transcript-preview-offer';
-import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview, waitForQaapDevPreviewPort } from './qaap-dev-preview-client';
-import {
-    findQaapIdentityPreviewUrl,
-    isLocalQaapPreviewOrigin,
-    parseQaapIdentityPreviewRequestPath,
-    resolveDevPreviewPublicOrigin,
-} from '../common/qaap-dev-preview';
-import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
 import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
-import {
-    buildQaapPreviewId,
-    normalizeQaapPreviewConversationId,
-    qaapPreviewProjectIdMatches,
-    type QaapPreviewIdentity,
-} from '../common/qaap-preview-identity';
-import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import {
-    mountTranscriptFilesView,
-    type TranscriptFilesViewServices,
-} from './qaap-transcript-files-view';
 import {
     createTranscriptTerminalStagingHost,
     createTranscriptTerminalSurface,
     getTranscriptTerminalContext,
-    markTranscriptTerminalRestorable,
     parkTranscriptTerminalSurface,
     scheduleTranscriptTerminalResize,
     type TranscriptTerminalPersistedWorkspace,
@@ -70,23 +23,13 @@ import { registerQaapWorkHubTerminalContext } from '@theia/qaap-adapters/lib/bro
 import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
-    TranscriptWorkspaceSurfacesCache,
     type TranscriptWorkspaceSurfaceKey,
 } from './qaap-transcript-workspace-surfaces-cache';
-import type { MobileProjectsTranscriptHistoryUi } from './mobile-projects-transcript-history-ui';
-import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
 import {
-    pathsEqual as pathsEqualHelper,
-    transcriptConversationMeta as transcriptConversationMetaHelper,
-    resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,
-    resolveTranscriptTerminalTabTitle as resolveTranscriptTerminalTabTitleHelper,
     toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
 } from './mobile-projects-transcript-surfaces-helpers';
 
-export async function ensureTranscriptTerminalTabExtracted(ctx: any, project: MobileProjectEntry,
+export async function ensureTranscriptTerminalTabExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
     const host = ctx.executionTerminalHost();
     if (!host) {
@@ -144,7 +87,7 @@ export async function ensureTranscriptTerminalTabExtracted(ctx: any, project: Mo
     }
 }
 
-export function ensureTranscriptTerminalChromeExtracted(ctx: any, host: HTMLElement,
+export function ensureTranscriptTerminalChromeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
     workspaceKey: TranscriptWorkspaceSurfaceKey,
     cwd: string,
     services: TranscriptTerminalViewServices,
@@ -190,7 +133,7 @@ export function ensureTranscriptTerminalChromeExtracted(ctx: any, host: HTMLElem
     ctx.host.transcriptTerminalDots = switcher;
 }
 
-export async function createTranscriptTerminalSlideExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey,
+export async function createTranscriptTerminalSlideExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey,
     cwd: string,
     services: TranscriptTerminalViewServices,
     project: MobileProjectEntry,
@@ -223,7 +166,7 @@ export async function createTranscriptTerminalSlideExtracted(ctx: any, workspace
     }
 }
 
-export async function mountFreshTranscriptTerminalSlideExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey,
+export async function mountFreshTranscriptTerminalSlideExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey,
     cwd: string,
     services: TranscriptTerminalViewServices,
     project: MobileProjectEntry,
@@ -244,7 +187,7 @@ export async function mountFreshTranscriptTerminalSlideExtracted(ctx: any, works
     }
 }
 
-export function showTranscriptTerminalErrorExtracted(ctx: any, host: HTMLElement,
+export function showTranscriptTerminalErrorExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
     services: TranscriptTerminalViewServices,
     error: unknown,): void {
     if (!host.isConnected) {
@@ -271,7 +214,7 @@ export function showTranscriptTerminalErrorExtracted(ctx: any, host: HTMLElement
     console.error('[qaap-mobile-shell] transcript terminal failed', error);
 }
 
-export async function launchAgentTuiInTranscriptTerminalExtracted(ctx: any, project: MobileProjectEntry,
+export async function launchAgentTuiInTranscriptTerminalExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     agentId: string,
     options?: { readonly login?: boolean },): Promise<void> {
@@ -312,7 +255,7 @@ export async function launchAgentTuiInTranscriptTerminalExtracted(ctx: any, proj
     }
 }
 
-export function renderTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey): void {
+export function renderTranscriptTerminalSlidesExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey): void {
     const slider = ctx.host.transcriptTerminalSlider;
     const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
     if (!slider || !state) {
@@ -344,7 +287,7 @@ export function renderTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey: 
     ctx.renderTranscriptTerminalDots(workspaceKey);
 }
 
-export function syncTranscriptTerminalResizeObserverExtracted(ctx: any, slider: HTMLElement | undefined,
+export function syncTranscriptTerminalResizeObserverExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, slider: HTMLElement | undefined,
     terminal: TerminalWidget | undefined,): void {
     ctx.host.transcriptTerminalResizeObserver?.disconnect();
     ctx.host.transcriptTerminalResizeObserver = undefined;
@@ -371,7 +314,7 @@ export function syncTranscriptTerminalResizeObserverExtracted(ctx: any, slider: 
     }
 }
 
-export function renderTranscriptTerminalDotsExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey): void {
+export function renderTranscriptTerminalDotsExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey): void {
     const dots = ctx.host.transcriptTerminalDots;
     const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
     if (!dots || !state) {
@@ -428,7 +371,7 @@ export function renderTranscriptTerminalDotsExtracted(ctx: any, workspaceKey: Tr
     });
 }
 
-export function closeTranscriptTerminalTabExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey, index: number): void {
+export function closeTranscriptTerminalTabExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey, index: number): void {
     const state = ctx.host.transcriptTerminalSlidesByWorkspace.get(workspaceKey);
     if (!state) {
         return;
@@ -446,7 +389,7 @@ export function closeTranscriptTerminalTabExtracted(ctx: any, workspaceKey: Tran
     ctx.renderTranscriptTerminalSlides(workspaceKey);
 }
 
-export async function restoreTranscriptTerminalSlidesExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey,
+export async function restoreTranscriptTerminalSlidesExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey,
     cwd: string,
     services: TranscriptTerminalViewServices,): Promise<void> {
     const persisted = await services.loadWorkspaceState(workspaceKey);
@@ -479,7 +422,7 @@ export async function restoreTranscriptTerminalSlidesExtracted(ctx: any, workspa
     void ctx.persistTranscriptTerminalWorkspace(workspaceKey);
 }
 
-function registerTranscriptTerminalContext(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey,
+function registerTranscriptTerminalContext(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey,
     cwd: string,
     services: TranscriptTerminalViewServices,
     project: MobileProjectEntry,
@@ -529,7 +472,7 @@ function registerTranscriptTerminalContext(ctx: any, workspaceKey: TranscriptWor
     });
 }
 
-async function focusWorkHubChatInput(ctx: any,
+async function focusWorkHubChatInput(ctx: MobileProjectsTranscriptSurfacesUiContext,
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     terminalContext?: string,
@@ -599,7 +542,7 @@ async function submitWorkHubChat(host: HTMLElement | undefined): Promise<void> {
     }
 }
 
-export async function persistTranscriptTerminalWorkspaceExtracted(ctx: any, workspaceKey: TranscriptWorkspaceSurfaceKey): Promise<void> {
+export async function persistTranscriptTerminalWorkspaceExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey: TranscriptWorkspaceSurfaceKey): Promise<void> {
     const services = ctx.host.createTranscriptTerminalViewServices?.();
     if (!services) {
         return;
@@ -609,11 +552,11 @@ export async function persistTranscriptTerminalWorkspaceExtracted(ctx: any, work
     await services.saveWorkspaceState(workspaceKey, persisted);
 }
 
-export function toPersistedTerminalWorkspaceExtracted(ctx: any, state: TranscriptTerminalSliderState | undefined,): TranscriptTerminalPersistedWorkspace | undefined {
+export function toPersistedTerminalWorkspaceExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, state: TranscriptTerminalSliderState | undefined,): TranscriptTerminalPersistedWorkspace | undefined {
     return toPersistedTerminalWorkspaceHelper(state);
 }
 
-export function detachTranscriptFilesFromHostExtracted(ctx: any): void {
+export function detachTranscriptFilesFromHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
     ctx.hideHeaderFilesMoreButton();
     ctx.hideHeaderViewModeSwitch();
     const host = ctx.executionFilesHost();
@@ -624,7 +567,7 @@ export function detachTranscriptFilesFromHostExtracted(ctx: any): void {
     ctx.host.transcriptFilesAttachedKey = undefined;
 }
 
-export function detachTranscriptTerminalFromHostExtracted(ctx: any): void {
+export function detachTranscriptTerminalFromHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
     ctx.syncTranscriptTerminalResizeObserver(undefined, undefined);
     for (const state of ctx.host.transcriptTerminalSlidesByWorkspace.values()) {
         for (const surface of state.surfaces) {
