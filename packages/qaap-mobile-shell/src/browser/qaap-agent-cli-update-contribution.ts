@@ -17,8 +17,8 @@ import {
     requestAgentCliUpdate,
     type QaapAgentCliUpdateInfo,
 } from '../common/qaap-agent-cli-update';
-import { OPEN_AI_CONFIGURATION_COMMAND } from './mobile-shell-bottom-bar-widget';
-import { MobileSnackbar } from './mobile-snackbar';
+import { OPEN_AI_CONFIGURATION_COMMAND } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {
     showAgentCliUpdateToast,
     type QaapAgentCliUpdateToastController,

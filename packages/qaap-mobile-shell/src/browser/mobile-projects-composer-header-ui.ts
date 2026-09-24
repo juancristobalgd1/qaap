@@ -2,7 +2,7 @@
 import { writeStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { QAAP_PRIMARY_AGENT_ID, writeStoredAgent } from '../common/qaap-agent-task-client';
 import type { MobileProjectEntry, MobileProjectFilter } from './mobile-projects-types';
-import type { MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
+import type { MobileBottomButtonId } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 
 export interface MobileProjectsComposerHeaderHost {

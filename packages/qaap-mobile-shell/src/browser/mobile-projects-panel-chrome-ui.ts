@@ -10,9 +10,9 @@ import {
     createMobileSheetGrabber,
     installMobilePullToRefresh,
     installMobileSheetDragDismiss,
-} from './mobile-sheet-gestures';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-sheet-gestures';
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { createQaapViewModeSwitch } from './qaap-workbench-account-menu';
 import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';

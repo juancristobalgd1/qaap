@@ -14,7 +14,7 @@ import { type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-g
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,

@@ -16,7 +16,7 @@ import {
     QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import {
     createComposerContextEntry,

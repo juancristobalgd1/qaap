@@ -13,7 +13,7 @@ import {
 } from '../common/qaap-transcript-preview-offer';
 import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 export function stopTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {

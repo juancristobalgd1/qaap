@@ -13,7 +13,7 @@ import {
     type TranscriptPreviewMonacoEditor,
     type TranscriptPreviewMonacoEditorOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-monaco-editor';
-import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
+import { installMobilePanelResizeDrag } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-panel-resize-drag';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { QAAP_SCM_CHANGES_SVG_MARKUP } from '../common/qaap-scm-changes-icon';
 

@@ -22,7 +22,7 @@ import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn
 import {
     type QaapTranscriptLiveRefreshOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 export function scheduleTranscriptConversationRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext, project: MobileProjectEntry,

@@ -12,7 +12,7 @@ import {
     clearComposerImproveFeedback,
     showComposerImproveFeedback,
 } from './qaap-composer-prompt-improve-feedback';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 export interface StickyComposerImprovePromptContext {
     readonly input: HTMLTextAreaElement;

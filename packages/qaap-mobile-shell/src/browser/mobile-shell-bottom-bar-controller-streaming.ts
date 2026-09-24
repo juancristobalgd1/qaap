@@ -4,9 +4,9 @@ import type { MobileShellBottomBarControllerContext } from './mobile-shell-botto
 import { MAXIMIZED_CLASS } from '@theia/core/lib/browser/shell/application-shell';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import { nls } from '@theia/core/lib/common/nls';
-import { MobileHaptics } from './mobile-haptics';
+import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import {
     BottomBarSecondaryItem,
@@ -14,7 +14,7 @@ import {
     MobileBottomButton,
     OPEN_AI_CONFIGURATION_COMMAND,
     WORKBENCH_TOGGLE_TERMINAL,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 
 export async function toggleTerminalBottomPanelExtracted(ctx: MobileShellBottomBarControllerContext): Promise<void> {
         if (ctx.isTerminalBottomPanelOpen()) {

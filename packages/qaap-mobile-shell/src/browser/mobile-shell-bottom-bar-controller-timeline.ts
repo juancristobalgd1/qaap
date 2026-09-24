@@ -2,7 +2,7 @@ import type { MobileShellBottomBarControllerContext } from './mobile-shell-botto
 // Extracted from mobile-shell-bottom-bar-controller.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { MobileHaptics } from './mobile-haptics';
+import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
 import {
     clearPreferAgentsSurface,
     markPreferDesktopIde,
@@ -14,7 +14,7 @@ import {
     BottomBarSecondaryItem,
     MobileBottomButton,
     MobileBottomButtonId,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 
 export function getPreviewSecondaryItemsExtracted(ctx: MobileShellBottomBarControllerContext): BottomBarSecondaryItem[] {
     const items: BottomBarSecondaryItem[] = [];

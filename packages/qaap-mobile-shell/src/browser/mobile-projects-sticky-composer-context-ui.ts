@@ -26,7 +26,7 @@ import {
 import { type QaapAgentTaskAgentOption } from '../common/qaap-agent-task-client';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 
 /**

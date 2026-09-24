@@ -14,7 +14,7 @@ import {
     EDIT_CHAT_SESSION_SETTINGS_COMMAND,
     OPEN_AI_CONFIGURATION_COMMAND,
     WORKBENCH_TOGGLE_TERMINAL,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 import { setMobileWorkHubSideSheetOpen } from './mobile-projects-open';
 import type { MobileShellBottomBarController } from './mobile-shell-bottom-bar-controller';
 

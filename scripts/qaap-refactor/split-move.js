@@ -24,6 +24,8 @@ const ts = require('typescript');
 const { repoRoot, walk } = require('./split-graph');
 const { rewriteImports, corpus, specifierNodes } = require('./rewrite-imports');
 
+const ROOT_DEV_DEPS = new Set(Object.keys(readJson(path.join(repoRoot, 'package.json')).devDependencies || {}));
+
 function arg(name, def) {
     const i = process.argv.indexOf('--' + name);
     return i > 0 ? process.argv[i + 1] : def;
@@ -61,6 +63,7 @@ function ensureSkeleton(dir, name, description, fromDir) {
         devDependencies: from.devDependencies,
         nyc: from.nyc
     });
+    fs.copyFileSync(path.join(repoRoot, fromDir, '.eslintrc.js'), path.join(abs, '.eslintrc.js'));
     writeJson(path.join(abs, 'tsconfig.json'), {
         extends: '../../configs/base.tsconfig',
         compilerOptions: { composite: true, rootDir: 'src', outDir: 'lib' },
@@ -89,7 +92,8 @@ function importedPackages(pkgDir) {
     return out;
 }
 
-const localPackages = (() => {
+/** Package name -> dir of every local package (re-read after a skeleton is created). */
+function scanLocalPackages() {
     const m = new Map();
     for (const root of ['packages', 'dev-packages']) {
         for (const d of fs.readdirSync(path.join(repoRoot, root))) {
@@ -98,7 +102,8 @@ const localPackages = (() => {
         }
     }
     return m;
-})();
+}
+let localPackages = scanLocalPackages();
 
 function versionFor(name, hintDirs) {
     if (localPackages.has(name)) { return readJson(path.join(localPackages.get(name), 'package.json')).version; }
@@ -111,12 +116,13 @@ function versionFor(name, hintDirs) {
 }
 
 /** Add missing deps and tsconfig references for one package; with prune, drop unused qaap deps. */
-function syncManifest(pkgDir, hintDirs, prune) {
+function syncManifest(pkgDir, hintDirs, prune, exact) {
     const pjPath = path.join(pkgDir, 'package.json');
     const pj = readJson(pjPath);
     const used = importedPackages(pkgDir);
     used.delete(pj.name);
-    const deps = { ...(pj.dependencies || {}) };
+    // exact: dependencies become precisely the non-dev packages imported by src (new packages)
+    const deps = exact ? Object.fromEntries(Object.entries(pj.dependencies || {}).filter(([n]) => used.has(n))) : { ...(pj.dependencies || {}) };
     const missing = [];
     for (const name of used) {
         if (deps[name] || (pj.devDependencies || {})[name] || (pj.peerDependencies || {})[name]) { continue; }
@@ -129,15 +135,23 @@ function syncManifest(pkgDir, hintDirs, prune) {
             if (/^@theia\/qaap-/.test(name) && !used.has(name)) { delete deps[name]; }
         }
     }
-    pj.dependencies = Object.fromEntries(Object.entries(deps).sort(([a], [b]) => a.localeCompare(b)));
-    writeJson(pjPath, pj);
+    const sorted = Object.fromEntries(Object.entries(deps).sort(([a], [b]) => a.localeCompare(b)));
+    if (JSON.stringify(sorted) !== JSON.stringify(pj.dependencies || {})) {
+        pj.dependencies = sorted;
+        writeJson(pjPath, pj);
+    }
     const tsPath = path.join(pkgDir, 'tsconfig.json');
     if (fs.existsSync(tsPath)) {
         const tsc = readJson(tsPath);
+        const existing = (tsc.references || []).map(r => r.path);
         const refs = Object.keys(pj.dependencies).filter(n => localPackages.has(n) && fs.existsSync(path.join(localPackages.get(n), 'tsconfig.json')))
             .map(n => path.relative(pkgDir, localPackages.get(n)).split(path.sep).join('/'));
-        tsc.references = [...new Set(refs)].sort().map(p => ({ path: p }));
-        writeJson(tsPath, tsc);
+        const dropped = exact ? existing.filter(r => !refs.includes(r)) : prune ? existing.filter(r => /(^|\/)qaap-/.test(r) && !refs.includes(r)) : [];
+        const next = [...new Set([...existing.filter(r => !dropped.includes(r)), ...refs])].sort();
+        if (JSON.stringify(next) !== JSON.stringify(existing)) {
+            tsc.references = next.map(p => ({ path: p }));
+            writeJson(tsPath, tsc);
+        }
     }
     return missing;
 }
@@ -192,6 +206,7 @@ function main() {
     const files = rows.filter(([, t]) => t === target).map(([f]) => f).filter(f => f.startsWith(fromDir + '/src/'));
     if (!files.length) { throw new Error('no files mapped to ' + target); }
     const created = dry ? false : ensureSkeleton(dir, name, arg('description', ''), fromDir);
+    localPackages = scanLocalPackages();
     const mapping = new Map(files.map(f => [path.resolve(repoRoot, f), path.resolve(repoRoot, dir, 'src', path.relative(path.join(fromDir, 'src'), f))]));
     console.log(`${created ? 'created ' + dir + '; ' : ''}moving ${files.length} files to ${dir}`);
     if (dry) { return; }
@@ -206,9 +221,14 @@ function main() {
     const specFixes = fixSpecTextPaths([...new Set(qaapDirs)]);
     console.log(`repointed source-text reads in ${specFixes.length} specs`);
     const hints = [path.join(repoRoot, fromDir)];
-    for (const d of new Set(qaapDirs)) {
+    const touched = new Set([path.join(repoRoot, dir), path.join(repoRoot, fromDir)]);
+    for (const c of changed) {
+        const d = [...localPackages.values()].find(p => c.startsWith(p + path.sep));
+        if (d) { touched.add(d); }
+    }
+    for (const d of touched) {
         if (!fs.existsSync(path.join(d, 'package.json'))) { continue; }
-        const missing = syncManifest(d, hints, has('prune'));
+        const missing = syncManifest(d, hints, has('prune'), d === path.join(repoRoot, dir)).filter(m => !ROOT_DEV_DEPS.has(m));
         if (missing.length) { console.log(`  ${path.relative(repoRoot, d)}: no version found for ${missing.join(', ')}`); }
     }
     if (bad.length) {

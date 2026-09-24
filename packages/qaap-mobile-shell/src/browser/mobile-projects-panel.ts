@@ -51,7 +51,7 @@ import {
 } from '../common/qaap-agent-conversation-client';
 import { } from '../common/qaap-conversation-clipboard-text';
 import { } from './qaap-agent-ui';
-import { } from './mobile-snackbar';
+import { } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {
     type QaapAgentTaskAgentOption,
@@ -83,7 +83,7 @@ import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-tran
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import { bindTranscriptOverlayStateAccessors } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-overlay-state';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
-import type { MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
+import type { MobileBottomButtonId } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
 import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';

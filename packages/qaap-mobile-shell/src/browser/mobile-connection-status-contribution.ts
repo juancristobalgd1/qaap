@@ -9,7 +9,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { ConnectionStatus, ConnectionStatusService } from '@theia/core/lib/browser/connection-status-service';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { nls } from '@theia/core/lib/common';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 /**
  * Surfaces backend reconnection state on the narrow-viewport workbench. The

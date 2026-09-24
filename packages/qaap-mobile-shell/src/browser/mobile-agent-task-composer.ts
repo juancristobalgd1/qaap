@@ -19,7 +19,7 @@ import { localizeMissingCodingAgentMessage } from '../common/qaap-agent-failure-
 import { createAgentSelectField } from './qaap-agent-ui';
 import { MobileProjectEntry } from './mobile-projects-types';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
 
 export type { QaapAgentTaskCreated as MobileAgentTaskCreated };

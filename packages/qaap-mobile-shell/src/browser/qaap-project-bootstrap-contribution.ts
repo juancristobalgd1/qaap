@@ -10,8 +10,8 @@ import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposa
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { shouldPreferWorkHubAgentsLayout } from './mobile-projects-open';
-import { MobileHaptics } from './mobile-haptics';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { parsePreviewIdentityPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { probeQaapIdentityPreview } from './qaap-dev-preview-client';
 import { formatQaapBootstrapDiagnostic } from './qaap-bootstrap-display';

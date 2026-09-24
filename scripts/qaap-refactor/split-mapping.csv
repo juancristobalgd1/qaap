@@ -417,7 +417,7 @@ packages/qaap-mobile-shell/src/browser/qaap-memory-inspector-mobile-contribution
 packages/qaap-mobile-shell/src/browser/qaap-mobile-agent-notification-service.ts,shared-core
 packages/qaap-mobile-shell/src/browser/qaap-mobile-agent-notification.spec.ts,transcript
 packages/qaap-mobile-shell/src/browser/qaap-mobile-app-preferences.ts,mechanics
-packages/qaap-mobile-shell/src/browser/qaap-mobile-app-tester-contribution.ts,mechanics
+packages/qaap-mobile-shell/src/browser/qaap-mobile-app-tester-contribution.ts,work-hub
 packages/qaap-mobile-shell/src/browser/qaap-mobile-composer-device-attach.spec.ts,composer
 packages/qaap-mobile-shell/src/browser/qaap-mobile-composer-device-attach.ts,composer
 packages/qaap-mobile-shell/src/browser/qaap-mobile-context-attach-menu.ts,composer
@@ -1027,4 +1027,4 @@ packages/qaap-mobile-shell/src/node/qaap-project-session-store.ts,shared-core
 packages/qaap-mobile-shell/src/node/qaap-realpath-guard.spec.ts,shared-core
 packages/qaap-mobile-shell/src/node/qaap-realpath-guard.ts,shared-core
 packages/qaap-mobile-shell/src/node/qaap-user-isolation-security.spec.ts,shared-core
-packages/qaap-mobile-shell/src/qaap-css-modules.d.ts,shared-core
+packages/qaap-mobile-shell/src/qaap-css-modules.d.ts,work-hub

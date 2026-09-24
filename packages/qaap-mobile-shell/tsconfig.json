@@ -19,6 +19,9 @@
       "path": "../ai-claude-code"
     },
     {
+      "path": "../ai-copilot"
+    },
+    {
       "path": "../ai-core"
     },
     {
@@ -29,6 +32,9 @@
     },
     {
       "path": "../core"
+    },
+    {
+      "path": "../editor"
     },
     {
       "path": "../filesystem"
@@ -62,6 +68,9 @@
     },
     {
       "path": "../qaap-element-inspector"
+    },
+    {
+      "path": "../qaap-mobile-mechanics"
     },
     {
       "path": "../qaap-persistence"

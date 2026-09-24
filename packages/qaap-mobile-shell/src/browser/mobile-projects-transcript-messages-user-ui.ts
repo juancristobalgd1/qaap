@@ -11,7 +11,7 @@ import { splitPreviewFeedbackSource, type PreviewFeedbackAnnotationDetail } from
 import { isComposerGitActionOnlyMessage } from '../common/qaap-composer-git-action-display';
 import { isSvgImagePreviewFileName, type QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { resolveTranscriptImagePreviewSrc } from './qaap-transcript-user-attachment-preview-ui';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';

@@ -8,7 +8,7 @@ import { reorderAgentTask, resumeAgentTask, retryAgentTask, type QaapAgentTaskDe
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 /** Panel surface for VPS background-task cancel and log viewer. */
 export interface MobileProjectsActiveTaskActionsHost {

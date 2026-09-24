@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT } from './mobile-keyboard-helper';
+import { QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-keyboard-helper';
 import {
     isStickyComposerAnnotationPopoverAnchor,
     mountStickyComposerBottomSheet,

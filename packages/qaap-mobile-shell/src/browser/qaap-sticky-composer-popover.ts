@@ -6,7 +6,7 @@
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import {
     QAAP_MOBILE_VIEWPORT_INSET_CHANGE_EVENT,
-} from './mobile-keyboard-helper';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-keyboard-helper';
 
 export type StickyComposerPopoverAlign = 'start' | 'end' | 'center';
 

@@ -27,7 +27,7 @@ import {
     registerDeferredTranscriptMarkdown,
     type TranscriptDeferredMarkdownHydrate,
 } from './qaap-transcript-row-defer';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';

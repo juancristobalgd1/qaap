@@ -41,7 +41,7 @@ import {
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import { readProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,

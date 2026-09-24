@@ -26,7 +26,7 @@ import {
     QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS,
 } from '../common/qaap-mobile-work-surface-preference';
 import { MobileProjectsService } from './mobile-projects-service';
-import { type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
+import { type MobileBottomButton, type MobileBottomButtonId } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';

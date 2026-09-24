@@ -24,7 +24,7 @@ import {
     transcriptContentNeedsStreamingMarkdown,
 } from './mobile-projects-transcript-messages-content-ui';
 import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-worker-client';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 describe('MobileProjectsTranscriptMessagesContentUi', () => {
 

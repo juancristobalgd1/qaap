@@ -14,7 +14,7 @@ import {
 import { MobileProjectEntry } from './mobile-projects-types';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
@@ -50,7 +50,7 @@ import {
     isMiniBrowserPreviewWidgetId,
     MobileBottomButtonId,
     WORKBENCH_CHAT_VIEW_WIDGET_ID,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 
 export function registerCommandsExtracted(ctx: MobileOneColumnShellContributionContext, registry: CommandRegistry): void {
     registry.registerCommand(QaapMobileProjectsDashboardCommands.TOGGLE, {

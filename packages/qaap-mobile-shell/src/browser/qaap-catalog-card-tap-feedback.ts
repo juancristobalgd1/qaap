@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { MobileHaptics } from './mobile-haptics';
+import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
 
 /** Applied on pointerdown; drives the radial light animation in CSS. */
 export const QAAP_CATALOG_CARD_TAP_GLOW_CLASS = 'theia-mod-catalog-tap-glow';

@@ -43,7 +43,7 @@ import {
 } from './mobile-shell-transcript-chrome-controller';
 import {
     MobileBottomButtonId,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 
 export function setTrackedProjectsPanelExtracted(ctx: MobileOneColumnShellContributionContext, panel: MobileProjectsPanel | undefined): void {
     ctx.projectsPanelTrack?.dispose();

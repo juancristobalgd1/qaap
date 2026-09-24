@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
-import { MobileHaptics } from './mobile-haptics';
-import { MobileKeyboardHelper } from './mobile-keyboard-helper';
+import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
+import { MobileKeyboardHelper } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-keyboard-helper';
 
 export interface MobileShellOverlayHost {
     isMobileActive(): boolean;

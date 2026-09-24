@@ -8,7 +8,7 @@ import {
 } from '../common/qaap-agent-conversation-client';
 import { reconcileAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
 
 export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,

@@ -9,9 +9,9 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
-import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
-import { installMobileVerticalTouchScroll } from './mobile-vertical-touch-scroll';
-import { MobileHaptics } from './mobile-haptics';
+import { installMobilePanelResizeDrag } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-panel-resize-drag';
+import { installMobileVerticalTouchScroll } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-vertical-touch-scroll';
+import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
 import { hashString } from '../common/qaap-agent-task-client';
 import { setQaapClientErrorBuild } from '../common/qaap-client-error-report';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';

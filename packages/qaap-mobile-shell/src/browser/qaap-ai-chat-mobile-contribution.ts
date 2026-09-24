@@ -13,7 +13,7 @@ import { OpenViewArguments } from '@theia/core/lib/browser/shell/view-contributi
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { isQaapNarrowMobileWorkbench, stripRightPanelWidgetsOnMobile } from './qaap-mobile-layout-utils';
+import { isQaapNarrowMobileWorkbench, stripRightPanelWidgetsOnMobile } from '@theia/qaap-mobile-mechanics/lib/browser/qaap-mobile-layout-utils';
 import { QaapAiChatBootstrapChip } from './qaap-ai-chat-bootstrap-chip';
 
 /** Body class for full-width AI chat on narrow viewports (see `qaap-ai-chat-mobile.css`). */

@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import { Emitter } from '@theia/core/lib/common/event';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapConversationChangeEvent } from '../common/qaap-conversation-change';
 import type { MobileProjectEntry } from './mobile-projects-types';

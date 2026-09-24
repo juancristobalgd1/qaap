@@ -25,7 +25,7 @@ import {
     ScmTreeWidget
 } from '@theia/scm/lib/browser/scm-tree-widget';
 import { ScmTreeModelProps } from '@theia/scm/lib/browser/scm-tree-model';
-import { collapseShellSidePanelContainingWidget } from './mobile-side-sheet-collapse';
+import { collapseShellSidePanelContainingWidget } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-side-sheet-collapse';
 
 @injectable()
 export class QaapScmTreeWidget extends ScmTreeWidget {

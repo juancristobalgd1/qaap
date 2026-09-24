@@ -17,7 +17,7 @@ import {
 import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
 import { createAgentIdentityElement } from './qaap-agent-ui';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import { type MobileProjectEntry } from './mobile-projects-types'; import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import { type MobileProjectEntry } from './mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-mechanics/lib/browser/qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
 const TASK_FAILURE_HINT_MAX_LENGTH = 120;

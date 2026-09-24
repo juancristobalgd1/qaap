@@ -17,7 +17,7 @@ import {
     buildQaapPreviewId,
     type QaapPreviewIdentity,
 } from '../common/qaap-preview-identity';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { createTranscriptReviewChrome } from './qaap-transcript-review-chrome';
 

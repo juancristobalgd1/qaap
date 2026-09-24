@@ -15,7 +15,7 @@ import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-c
 import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {
     closeWorkingAgentsPopover,
     getWorkingAgentsDetailMemberId,

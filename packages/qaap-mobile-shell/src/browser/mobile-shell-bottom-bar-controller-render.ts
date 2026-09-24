@@ -8,7 +8,7 @@ import { ApplicationShell, MAXIMIZED_CLASS } from '@theia/core/lib/browser/shell
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { installMobileHorizontalTouchScroll } from './mobile-horizontal-touch-scroll';
+import { installMobileHorizontalTouchScroll } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-horizontal-touch-scroll';
 import {
     peekPreferDesktopIde,
     setMobileLandingHubListChrome,
@@ -23,7 +23,7 @@ import {
     MobileBottomButtonId,
     WORKBENCH_AI_CHAT_TOGGLE,
     WORKBENCH_TOGGLE_TERMINAL,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 
 export function measureMobileBottomPanelHeightPxExtracted(ctx: MobileShellBottomBarControllerContext): number | undefined {
     const parent = ctx.shell.bottomPanel.parent;

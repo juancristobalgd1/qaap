@@ -16,7 +16,7 @@ import '../../src/browser/style/mobile-workbench-work-hub.css';
 import '../../src/browser/style/mobile-workbench-chrome.css';
 import '../../src/browser/style/mobile-workbench-ide-chrome.css';
 import '../../src/browser/style/qaap-catalog-card-tap-feedback.css';
-import '../../src/browser/style/qaap-mobile-touch-scroll.css';
+import '@theia/qaap-mobile-mechanics/src/browser/style/qaap-mobile-touch-scroll.css';
 import '../../src/browser/style/qaap-empty-workbench-brand.css';
 import '../../src/browser/style/qaap-ide-preferences.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
@@ -72,11 +72,9 @@ import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
 import { MobileThemeChromeContribution } from './mobile-theme-chrome-contribution';
 import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
-import { MobileEditorGestureContribution } from './mobile-editor-gesture-contribution';
 import { QaapEmptyWorkbenchBrandingContribution } from './qaap-empty-workbench-branding-contribution';
 import { QaapIdePreferencesResizer } from './qaap-ide-preferences-resizer';
 import { QaapWatermarkCommandsContribution } from './qaap-watermark-commands-contribution';
-import { LongPressContextMenuContribution } from './long-press-context-menu';
 import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
@@ -97,7 +95,6 @@ import { QaapProjectSkillRoots } from '@theia/qaap-adapters/lib/common/qaap-proj
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { QaapWorkspacePreviewPortClaimService } from './qaap-preview-port-claim-service';
-import { MobileTouchScrollContribution } from './mobile-touch-scroll-contribution';
 import { QaapBootstrapVariableContribution } from './qaap-bootstrap-variable-contribution';
 import { createQaapScmWidgetContainer } from './qaap-scm-tree-widget';
 import { QaapSelectComponentOverlayContribution } from './qaap-select-component-overlay-contribution';
@@ -138,7 +135,6 @@ import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from './qaap-copilot-owner-binding';
 import { QaapUserAiSettingsSyncContribution } from './qaap-user-ai-settings-sync';
-import { QaapMobileAppPreferenceContribution } from './qaap-mobile-app-preferences';
 import { CopilotAuthService } from '@theia/ai-copilot/src/common/copilot-auth-service';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
@@ -240,8 +236,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(FrontendApplicationContribution).toService(MobileThemeChromeContribution);
     bind(QaapAppearanceModeService).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapAppearanceModeService);
-    bind(MobileEditorGestureContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(MobileEditorGestureContribution);
 
     bind(QaapWatermarkCommandsContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(QaapWatermarkCommandsContribution);
@@ -253,14 +247,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(QaapIdePreferencesResizer).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapIdePreferencesResizer);
 
-    bind(LongPressContextMenuContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(LongPressContextMenuContribution);
-
     bind(QaapProjectBootstrapDetector).toSelf().inSingletonScope();
     bind(QaapProjectBootstrapService).toSelf().inSingletonScope();
     rebind(QaapPreviewPortClaimService).to(QaapWorkspacePreviewPortClaimService).inSingletonScope();
-    bind(MobileTouchScrollContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(MobileTouchScrollContribution);
     bind(QaapSelectComponentOverlayContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapSelectComponentOverlayContribution);
     bind(QaapChatMicTranscribeContribution).toSelf().inSingletonScope();
@@ -362,9 +351,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(QaapVsxExtensionsMobileContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapVsxExtensionsMobileContribution);
-
-    bind(QaapMobileAppPreferenceContribution).toSelf().inSingletonScope();
-    bind(PreferenceContribution).toService(QaapMobileAppPreferenceContribution);
 
     bind(QaapPushNotificationContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(QaapPushNotificationContribution);

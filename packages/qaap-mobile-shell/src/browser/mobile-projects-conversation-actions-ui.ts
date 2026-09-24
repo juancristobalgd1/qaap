@@ -20,7 +20,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import { reportQaapClientError } from '../common/qaap-client-error-report';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';

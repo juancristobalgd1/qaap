@@ -122,7 +122,7 @@ import {
     isMiniBrowserPreviewWidgetId,
     MobileBottomButton,
     MobileBottomButtonId,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobile-one-column-shell-helpers';
 import { activateMainPreviewWidgetExtracted, bootstrapMobilePreviewInBackgroundExtracted, ensureMobilePreviewEditorVisibleExtracted, ensureWelcomeInMainAreaExtracted, openMobilePreviewInMainExtracted, relocatePreviewToMainIfNeededExtracted, toggleMobilePreviewExtracted } from './mobile-one-column-shell-contribution-activity';
 import { ensureWorkHubSurfaceMountedAfterReadyExtracted, initBottomBarControllerExtracted, initLandingControllerExtracted, initHubNavigationControllerExtracted, initIdeFallbackControllerExtracted, initOverlayControllerExtracted, initProjectsPanelFactoryExtracted, initPullRequestPanelControllerExtracted, initSideSheetControllerExtracted, initTranscriptChromeControllerExtracted, initWorkHubBootstrapControllerExtracted, onStartExtracted, patchWorkHubBootstrapLandingHostExtracted, setTrackedProjectsPanelExtracted, syncOverlayEdgeSwipeZonesExtracted } from './mobile-one-column-shell-contribution-render';

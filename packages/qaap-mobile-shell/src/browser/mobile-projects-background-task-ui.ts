@@ -43,7 +43,7 @@ import type { MobileProjectsConversations } from './mobile-projects-conversation
 import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import type { QaapBackgroundContextProvider } from './qaap-background-context-provider';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 export interface MobileProjectsBackgroundTaskHost {
     projects: MobileProjectEntry[];

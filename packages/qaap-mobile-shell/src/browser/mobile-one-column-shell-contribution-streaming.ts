@@ -35,7 +35,7 @@ import {
 } from './mobile-shell-layout-recovery';
 import {
     MOBILE_BOTTOM_OPEN_CLASS,
-} from './mobile-shell-bottom-bar-widget';
+} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 import { LAYOUT_RECOVERY_GRACE_MS } from './mobile-one-column-shell-contribution';
 
 export function isWorkHubSurfacePresentInDomExtracted(ctx: MobileOneColumnShellContributionContext): boolean {

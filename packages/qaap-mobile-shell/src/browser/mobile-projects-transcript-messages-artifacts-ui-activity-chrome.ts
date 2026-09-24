@@ -24,7 +24,7 @@ import { TRANSCRIPT_ACTIVITY_ACTIVE_ATTR } from '@theia/qaap-transcript-overlay/
 import {
     transcriptActivityNestDepthClassName,
 } from '../common/qaap-transcript-activity-nesting';
-import { MobileSnackbar } from './mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { canRestoreConversationCheckpoint } from '../common/qaap-transcript-checkpoint-restore';
 import {
     isTranscriptExecutionTimelineNarrative,
