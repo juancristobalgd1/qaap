@@ -69,10 +69,13 @@ import {
 export function resolveAgentModelForRequestExtracted(ctx: QaapAgentTaskRunnerContext, request: QaapCreateAgentTaskRequest,
         prompt: string, ownerLogin?: string,): QaapCreateAgentTaskQaiqModel | undefined {
         const agentId = ctx.resolveAgentId(prompt, request.agent, ownerLogin);
-        const readPref = (key: string): unknown => ctx.preferenceService?.get(key);
+        // The task owner's AI settings: in hosted mode BYOK keys, model lists and aliases are stored
+        // per user, so the global preference service alone would report e.g. OpenRouter as having no
+        // credential and `coerceRunnableAgentModel` would swap the user's pick for the env fallback.
         // No preference guard here: only QAIQ's alias routing needs preferences, and the native-CLI
         // branch (claude & co.) must still route when none is available — the reader simply yields
         // undefined and the QAIQ path resolves to no binding, as before.
+        const readPref = ctx.preferenceReaderForOwner(ownerLogin);
         const resolved = resolveEffectiveRequestAgentModel(
             request,
             readPref,
