@@ -86,7 +86,39 @@ describe('qaap-agent-task-runner-utils2', () => {
             expect(env.PATH).to.equal('/usr/bin');
         });
 
-        it('local / anonymous single user: keeps the operator provider keys, still removes backend secrets', () => {
+        const withEnv = (overrides: Record<string, string | undefined>, fn: () => void): void => {
+            const saved = Object.fromEntries(Object.keys(overrides).map(key => [key, process.env[key]]));
+            const apply = (values: Record<string, string | undefined>): void => {
+                for (const [key, value] of Object.entries(values)) {
+                    if (value === undefined) {
+                        delete process.env[key];
+                    } else {
+                        process.env[key] = value;
+                    }
+                }
+            };
+            apply(overrides);
+            try {
+                fn();
+            } finally {
+                apply(saved);
+            }
+        };
+        const LOCAL = { NODE_ENV: undefined, QAAP_CLOUD_MODE: undefined, QAAP_TENANT_BACKEND_MODE: undefined };
+
+        it('multi-user backend: removes operator provider credentials for every owner, even without a login', () => {
+            withEnv({ ...LOCAL, QAAP_CLOUD_MODE: 'docker' }, () => {
+                for (const owner of [undefined, '_anonymous', 'alice']) {
+                    const env = inherited();
+                    stripSharedProviderEnv(env, owner);
+                    for (const name of providerEnv()) {
+                        expect(env[name], `${owner}:${name}`).to.equal(undefined);
+                    }
+                }
+            });
+        });
+
+        it('local / anonymous single user: keeps the operator provider keys, still removes backend secrets', () => withEnv(LOCAL, () => {
             for (const owner of [undefined, '_dev', '_anonymous']) {
                 const env = inherited();
                 stripSharedProviderEnv(env, owner);
@@ -95,7 +127,7 @@ describe('qaap-agent-task-runner-utils2', () => {
                 }
                 expect(env.QAAP_GITHUB_CLIENT_SECRET).to.equal(undefined);
             }
-        });
+        }));
 
         it('covers the credentials read by the built-in agent CLIs', () => {
             for (const name of ['GH_TOKEN', 'GITHUB_TOKEN', 'COPILOT_GITHUB_TOKEN', 'CURSOR_API_KEY', 'DASHSCOPE_API_KEY', 'XAI_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) {

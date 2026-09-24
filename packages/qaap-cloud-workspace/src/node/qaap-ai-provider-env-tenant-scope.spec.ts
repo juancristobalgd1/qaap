@@ -12,7 +12,12 @@ import { VercelAiLanguageModelFactory } from '@theia/ai-vercel-ai/lib/node/verce
 import { installQaapAiProviderEnvTenantScope, shouldHideOperatorProviderEnv } from './qaap-ai-provider-env-tenant-scope';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 
-const OPERATOR_ENV: Record<string, string> = {
+const OPERATOR_ENV: Record<string, string | undefined> = {
+    // Single-user / local runtime unless a test opts into another mode.
+    NODE_ENV: undefined,
+    QAAP_CLOUD_MODE: undefined,
+    QAAP_TENANT_BACKEND_MODE: undefined,
+    OPENAI_API_VERSION: 'operator-azure-version',
     OPENAI_API_KEY: 'operator-openai',
     ANTHROPIC_API_KEY: 'operator-anthropic',
     GOOGLE_API_KEY: 'operator-google',
@@ -28,24 +33,33 @@ describe('qaap-ai-provider-env-tenant-scope', () => {
         installQaapAiProviderEnvTenantScope(registry);
         for (const [key, value] of Object.entries(OPERATOR_ENV)) {
             saved[key] = process.env[key];
-            process.env[key] = value;
+            setEnv(key, value);
         }
+    });
+
+    afterEach(() => {
+        setEnv('QAAP_CLOUD_MODE', undefined);
+        setEnv('QAAP_TENANT_BACKEND_MODE', undefined);
     });
 
     after(() => {
         for (const [key, value] of Object.entries(saved)) {
-            if (value === undefined) {
-                delete process.env[key];
-            } else {
-                process.env[key] = value;
-            }
+            setEnv(key, value);
         }
     });
+
+    function setEnv(key: string, value: string | undefined): void {
+        if (value === undefined) {
+            delete process.env[key];
+        } else {
+            process.env[key] = value;
+        }
+    }
 
     function managers(pushed?: string): Record<string, { apiKey?: string; host?: string }> {
         const create = <T extends object>(prototype: T, field: string): T => Object.assign(Object.create(prototype), { [field]: pushed });
         return {
-            openai: create(OpenAiLanguageModelsManagerImpl.prototype, '_apiKey'),
+            openai: Object.assign(create(OpenAiLanguageModelsManagerImpl.prototype, '_apiKey'), { _apiVersion: pushed }),
             anthropic: create(AnthropicLanguageModelsManagerImpl.prototype, '_apiKey'),
             google: create(GoogleLanguageModelsManagerImpl.prototype, '_apiKey'),
             ollama: create(OllamaLanguageModelsManagerImpl.prototype, '_host'),
@@ -54,7 +68,7 @@ describe('qaap-ai-provider-env-tenant-scope', () => {
 
     const read = (login: string | undefined, pushed?: string): unknown[] => registry.runWithLogin(login, () => {
         const { openai, anthropic, google, ollama } = managers(pushed);
-        return [openai.apiKey, anthropic.apiKey, google.apiKey, ollama.host];
+        return [openai.apiKey, anthropic.apiKey, google.apiKey, ollama.host, (openai as { apiVersion?: string }).apiVersion];
     });
 
     const vercelKey = (login: string | undefined, apiKey?: string): unknown => registry.runWithLogin(login, () =>
@@ -64,22 +78,40 @@ describe('qaap-ai-provider-env-tenant-scope', () => {
 
     it('hides the operator env from authenticated tenants', () => {
         expect(shouldHideOperatorProviderEnv('alice')).to.equal(true);
-        expect(read('alice')).to.deep.equal([undefined, undefined, undefined, undefined]);
+        expect(read('alice')).to.deep.equal([undefined, undefined, undefined, undefined, undefined]);
         expect(vercelKey('alice')).to.equal(undefined);
     });
 
     it('still uses the key the tenant pushed', () => {
-        expect(read('alice', 'mine')).to.deep.equal(['mine', 'mine', 'mine', 'mine']);
+        expect(read('alice', 'mine')).to.deep.equal(['mine', 'mine', 'mine', 'mine', 'mine']);
         expect(vercelKey('alice', 'mine')).to.equal('mine');
     });
 
     it('keeps the upstream env fallback for local, skip-auth, anonymous and non-RPC callers', () => {
-        const operator = [OPERATOR_ENV.OPENAI_API_KEY, OPERATOR_ENV.ANTHROPIC_API_KEY, OPERATOR_ENV.GOOGLE_API_KEY, OPERATOR_ENV.OLLAMA_HOST];
+        const operator = [OPERATOR_ENV.OPENAI_API_KEY, OPERATOR_ENV.ANTHROPIC_API_KEY, OPERATOR_ENV.GOOGLE_API_KEY, OPERATOR_ENV.OLLAMA_HOST,
+            OPERATOR_ENV.OPENAI_API_VERSION];
         for (const login of [undefined, '_dev', '_anonymous']) {
             expect(shouldHideOperatorProviderEnv(login), String(login)).to.equal(false);
             expect(read(login), String(login)).to.deep.equal(operator);
             expect(vercelKey(login), String(login)).to.equal(OPERATOR_ENV.OPENAI_API_KEY);
         }
-        expect(read('_dev', 'mine')).to.deep.equal(['mine', 'mine', 'mine', 'mine']);
+        expect(read('_dev', 'mine')).to.deep.equal(['mine', 'mine', 'mine', 'mine', 'mine']);
+    });
+
+    it('fails closed for every caller, including no login and anonymous, on a multi-user backend', () => {
+        setEnv('QAAP_CLOUD_MODE', 'docker');
+        for (const login of [undefined, '_anonymous', 'alice']) {
+            expect(shouldHideOperatorProviderEnv(login), String(login)).to.equal(true);
+            expect(read(login), String(login)).to.deep.equal([undefined, undefined, undefined, undefined, undefined]);
+            expect(vercelKey(login), String(login)).to.equal(undefined);
+        }
+        expect(read(undefined, 'pushed')).to.deep.equal(['pushed', 'pushed', 'pushed', 'pushed', 'pushed']);
+    });
+
+    it('a dedicated per-tenant backend is single-user: its (operator-free) env stays readable without a login', () => {
+        setEnv('QAAP_CLOUD_MODE', 'docker');
+        setEnv('QAAP_TENANT_BACKEND_MODE', '1');
+        expect(shouldHideOperatorProviderEnv(undefined)).to.equal(false);
+        expect(shouldHideOperatorProviderEnv('alice')).to.equal(true);
     });
 });

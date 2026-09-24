@@ -10,6 +10,8 @@ import {
     parseGithubFullNameFromWorkspacePath,
     resolveTenantIsolationRoot,
     resolveTenantSegmentFromWorkspacePath,
+    isQaapMultiUserBackend,
+    mustWithholdOperatorProviderCredentials,
 } from './qaap-user-isolation';
 
 describe('normalizeIsolationPath (cross-OS)', () => {
@@ -150,5 +152,23 @@ describe('parseGithubFullNameFromWorkspacePath', () => {
     it('does not invent an owner for ambiguous legacy per-user paths', () => {
         expect(parseGithubFullNameFromWorkspacePath('/workspace/repos/users/alice/site'))
             .to.equal(undefined);
+    });
+});
+
+describe('multi-user backend signal', () => {
+    it('is true only for a hosted runtime that is not a dedicated per-tenant backend', () => {
+        expect(isQaapMultiUserBackend({})).to.equal(false);
+        expect(isQaapMultiUserBackend({ QAAP_CLOUD_MODE: 'local' })).to.equal(false);
+        expect(isQaapMultiUserBackend({ QAAP_CLOUD_MODE: 'docker' })).to.equal(true);
+        expect(isQaapMultiUserBackend({ NODE_ENV: 'production' })).to.equal(true);
+        expect(isQaapMultiUserBackend({ NODE_ENV: 'production', QAAP_TENANT_BACKEND_MODE: '1' })).to.equal(false);
+    });
+
+    it('withholds operator provider credentials from tenants always, and from everyone on a multi-user backend', () => {
+        expect(mustWithholdOperatorProviderCredentials('alice', {})).to.equal(true);
+        for (const owner of [undefined, '_dev', '_anonymous']) {
+            expect(mustWithholdOperatorProviderCredentials(owner, {}), String(owner)).to.equal(false);
+            expect(mustWithholdOperatorProviderCredentials(owner, { QAAP_CLOUD_MODE: 'docker' }), String(owner)).to.equal(true);
+        }
     });
 });

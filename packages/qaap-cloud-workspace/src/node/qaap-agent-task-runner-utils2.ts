@@ -13,6 +13,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
+    mustWithholdOperatorProviderCredentials,
     resolveUserSettingsFilePath,
     usesSharedAiSettingsFallback,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
@@ -499,11 +500,12 @@ export const SHARED_PROVIDER_ONLY_ENV: readonly string[] = [
 
 /**
  * Removes inherited backend env the agent must not see. Backend-only secrets are always removed. Operator
- * provider credentials are removed only for authenticated tenants (multi-tenant): per-user Settings are then
- * their sole source. Local / anonymous single-user runs keep the operator's keys (they are the operator).
+ * provider credentials are removed for authenticated tenants and for every owner on a multi-user backend
+ * ({@link mustWithholdOperatorProviderCredentials}): per-user Settings are then their sole source. Local
+ * single-user runs keep the operator's keys (they are the operator).
  */
 export function stripSharedProviderEnv(env: NodeJS.ProcessEnv, ownerLogin?: string): void {
-    if (!usesSharedAiSettingsFallback(ownerLogin)) {
+    if (mustWithholdOperatorProviderCredentials(ownerLogin)) {
         for (const mapping of AGENT_ENV_PREFS) {
             delete env[mapping.env];
         }
