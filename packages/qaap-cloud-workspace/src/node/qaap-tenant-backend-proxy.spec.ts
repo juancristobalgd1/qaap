@@ -168,8 +168,11 @@ describe('QaapTenantBackendProxyContribution', () => {
         expect(proxy.shouldEvictTenantBackendTarget(new Error('socket hang up'), false, true)).to.equal(false);
     });
 
-    it('does not evict a live tenant backend when the HTTP response wait times out', async () => {
-        const server = http.createServer(() => { /* never answers */ });
+    it('does not evict a live tenant backend when the HTTP response wait times out, and closes the upstream request', async () => {
+        let tenantSawClose!: () => void;
+        const tenantClosed = new Promise<void>(resolve => { tenantSawClose = resolve; });
+        // Never answers; records when the proxy gives up so the tenant can cancel its work.
+        const server = http.createServer((_req, tenantRes) => tenantRes.once('close', () => tenantSawClose()));
         await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
         try {
             const invalidations: unknown[] = [];
@@ -181,6 +184,8 @@ describe('QaapTenantBackendProxyContribution', () => {
             const done = new Promise<void>(resolve => {
                 const res = {
                     headersSent: false,
+                    writableFinished: false,
+                    once: () => undefined,
                     status: (code: number) => {
                         statuses.push(code);
                         return { json: () => resolve() };
@@ -193,7 +198,50 @@ describe('QaapTenantBackendProxyContribution', () => {
                 (req as unknown as PassThrough).end();
             });
             await done;
+            await tenantClosed;
             expect(statuses).to.deep.equal([504]);
+            expect(invalidations).to.deep.equal([]);
+        } finally {
+            server.closeAllConnections();
+            await new Promise<void>(resolve => server.close(() => resolve()));
+        }
+    });
+
+    it('closes the upstream request when the browser goes away before the response', async () => {
+        let tenantSawClose!: () => void;
+        const tenantClosed = new Promise<void>(resolve => { tenantSawClose = resolve; });
+        let tenantGotRequest!: () => void;
+        const tenantReceived = new Promise<void>(resolve => { tenantGotRequest = resolve; });
+        const server = http.createServer((_req, tenantRes) => {
+            tenantRes.once('close', () => tenantSawClose());
+            tenantGotRequest();
+        });
+        await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+        try {
+            const proxy = createProxy() as unknown as Record<string, unknown> & {
+                forwardHttp(req: unknown, res: unknown, target: unknown, assertion: string, tenantLogin: string, timeoutMs: number): void;
+            };
+            const invalidations: unknown[] = [];
+            proxy.docker = { invalidateTenantBackendTarget: (...args: unknown[]) => invalidations.push(args) };
+            let browserClose: (() => void) | undefined;
+            const res = {
+                headersSent: false,
+                writableFinished: false,
+                once: (event: string, listener: () => void) => {
+                    if (event === 'close') {
+                        browserClose = listener;
+                    }
+                },
+                status: () => ({ json: () => undefined }),
+                end: () => undefined,
+            };
+            const req = new PassThrough() as unknown as Record<string, unknown>;
+            Object.assign(req, { method: 'GET', url: '/slow', headers: {} });
+            proxy.forwardHttp(req, res, { ...TARGET, port: (server.address() as net.AddressInfo).port }, 'assertion', 'alice', 60_000);
+            (req as unknown as PassThrough).end();
+            await tenantReceived;
+            browserClose?.();
+            await tenantClosed;
             expect(invalidations).to.deep.equal([]);
         } finally {
             server.closeAllConnections();

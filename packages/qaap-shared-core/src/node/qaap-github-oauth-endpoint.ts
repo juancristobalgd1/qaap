@@ -72,6 +72,14 @@ const GIT_OPERATION_TIMEOUT_MS = 120_000;
  * 210 s open/clone/create timeout, so the user gets this server's error instead of a client abort.
  */
 const WORKSPACE_PREPARE_TIMEOUT_MS = 150_000;
+
+/** Bounds shared by the git calls of one request. */
+interface QaapGitRunOptions {
+    /** Absolute epoch-ms deadline shared by several calls; each call is still capped individually. */
+    readonly deadline?: number;
+    /** Aborted when the HTTP request that asked for the work went away (browser or proxy gave up). */
+    readonly signal?: AbortSignal;
+}
 const GIT_MAX_OUTPUT = 16 * 1024 * 1024;
 
 /** Placeholder user returned by `/auth/session` when `QAAP_SKIP_AUTH` is enabled. */
@@ -551,7 +559,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 res.status(403).json({ error: 'Forbidden' });
                 return;
             }
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin);
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, this.abortOnResponseClose(res));
             this.rememberGithubCloneSession(auth.userLogin, repository);
             res.json({
                 repository,
@@ -648,7 +656,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 private: body.private ?? true,
                 description: typeof body.description === 'string' ? body.description.trim() : undefined,
             });
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin);
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, this.abortOnResponseClose(res));
             this.rememberGithubCloneSession(auth.userLogin, repository);
             res.json({
                 repository,
@@ -693,7 +701,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 }
                 userLogin = QAAP_ANONYMOUS_USER_LOGIN;
             }
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, accessToken, userLogin);
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, accessToken, userLogin, this.abortOnResponseClose(res));
             this.rememberGithubCloneSession(userLogin, repository);
             res.json({
                 repository,
@@ -805,8 +813,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         repository: Pick<QaapGithubRepositorySummary, 'owner' | 'name' | 'cloneUrl'>,
         accessToken: string | undefined,
         userLogin: string,
+        signal?: AbortSignal,
     ): Promise<string> {
-        const deadline = Date.now() + this.workspacePrepareTimeoutMs;
+        const gitOptions: QaapGitRunOptions = { deadline: Date.now() + this.workspacePrepareTimeoutMs, signal };
         const target = resolveRepositoryWorkspacePath(this.reposRoot, userLogin, repository.owner, repository.name);
         await fs.mkdir(path.dirname(target), { recursive: true });
         if (await this.isGitRepository(target)) {
@@ -816,7 +825,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             // (from the repo's own .git/config) as ROOT, i.e. a root-RCE. We deliberately do NOT check
             // out in the open flow: the working tree fast-forwards on the tenant's next git operation
             // (agent / terminal), which runs UNDER THE TENANT UID and is therefore safe. See SECURITY.md.
-            await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken, target, deadline);
+            await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken, target, gitOptions);
             return target;
         }
         let cloneTargetCreated = false;
@@ -831,7 +840,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         await this.assertBillingAllowsNewRepo(userLogin);
         try {
-            await this.runGit(['clone', repository.cloneUrl, path.basename(target)], accessToken, path.dirname(target), deadline);
+            await this.runGit(['clone', repository.cloneUrl, path.basename(target)], accessToken, path.dirname(target), gitOptions);
         } catch (err) {
             if (cloneTargetCreated) {
                 await fs.rm(target, { recursive: true, force: true }).catch(cleanupErr => {
@@ -845,7 +854,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         try {
             // Seeding is best effort: once the shared deadline is spent it fails fast and only warns.
-            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken, target, deadline));
+            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken, target, gitOptions));
         } catch (err) {
             console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
         }
@@ -923,10 +932,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /**
-     * @param deadline optional absolute epoch-ms deadline shared by several git calls; each call is
-     * additionally capped at {@link gitOperationTimeoutMs}.
+     * @param options optional shared deadline (each call is additionally capped at
+     * {@link gitOperationTimeoutMs}) and a cancellation signal that kills the git child.
      */
-    protected runGit(args: string[], accessToken: string | undefined, cwd = this.reposRoot, deadline?: number): Promise<void> {
+    protected runGit(args: string[], accessToken: string | undefined, cwd = this.reposRoot, options: QaapGitRunOptions = {}): Promise<void> {
         const invocation = this.resolveGitInvocation(args, cwd);
         // GitHub clone/fetch is tenant-controlled work. In hosted mode it MUST go through the
         // worker so clean/smudge filters, config helpers and repository hooks cannot execute as the
@@ -942,18 +951,18 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             ]
             : [...hardening, ...invocation.args];
         if (isQaapHostedEnvironment()) {
-            return this.runTenantGit(invocation.cwd, gitArgs, false, deadline).then(() => undefined);
+            return this.runTenantGit(invocation.cwd, gitArgs, false, options).then(() => undefined);
         }
-        return this.runLocalGit(invocation.cwd, gitArgs, false, deadline).then(() => undefined);
+        return this.runLocalGit(invocation.cwd, gitArgs, false, options).then(() => undefined);
     }
 
-    protected runGitOutput(args: string[], cwd = this.reposRoot, deadline?: number): Promise<string> {
+    protected runGitOutput(args: string[], cwd = this.reposRoot, options: QaapGitRunOptions = {}): Promise<string> {
         const invocation = this.resolveGitInvocation(args, cwd);
         const gitArgs = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...invocation.args];
         if (isQaapHostedEnvironment()) {
-            return this.runTenantGit(invocation.cwd, gitArgs, true, deadline).then(output => output.trim());
+            return this.runTenantGit(invocation.cwd, gitArgs, true, options).then(output => output.trim());
         }
-        return this.runLocalGit(invocation.cwd, gitArgs, true, deadline).then(output => output.trim());
+        return this.runLocalGit(invocation.cwd, gitArgs, true, options).then(output => output.trim());
     }
 
     /** Absolute deadline for one git call: the per-operation cap, or the shared deadline if sooner. */
@@ -962,13 +971,35 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         return deadline === undefined ? capped : Math.min(capped, deadline);
     }
 
+    protected gitCancelledError(): Error {
+        return new Error('Git operation cancelled: the request was closed.');
+    }
+
+    /**
+     * Abort signal that fires when the client (browser, or the tenant proxy after its 504) closes
+     * the connection before this response was sent, so long git work is not left running.
+     */
+    protected abortOnResponseClose(res: Response): AbortSignal {
+        const controller = new AbortController();
+        res.once('close', () => {
+            if (!res.writableFinished) {
+                controller.abort();
+            }
+        });
+        return controller.signal;
+    }
+
     protected gitTimeoutError(): Error {
         return new Error(`Git operation timed out after ${Math.ceil(this.gitOperationTimeoutMs / 1000)} seconds`);
     }
 
     /** Non-hosted git (local dev): same deadline semantics as the tenant worker path. */
-    protected runLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean, deadline?: number): Promise<string> {
-        const effectiveDeadline = this.resolveGitDeadline(deadline);
+    protected runLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean, options: QaapGitRunOptions = {}): Promise<string> {
+        const { signal } = options;
+        const effectiveDeadline = this.resolveGitDeadline(options.deadline);
+        if (signal?.aborted) {
+            return Promise.reject(this.gitCancelledError());
+        }
         if (effectiveDeadline <= Date.now()) {
             return Promise.reject(this.gitTimeoutError());
         }
@@ -978,6 +1009,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             let stderr = '';
             let settled = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
+            const onAbort = (): void => complete(() => {
+                child.kill();
+                reject(this.gitCancelledError());
+            });
             const complete = (callback: () => void): void => {
                 if (settled) {
                     return;
@@ -986,8 +1021,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 if (timeout) {
                     clearTimeout(timeout);
                 }
+                signal?.removeEventListener('abort', onAbort);
                 callback();
             };
+            signal?.addEventListener('abort', onAbort, { once: true });
             child.stdout?.on('data', chunk => {
                 stdout += String(chunk);
             });
@@ -1027,7 +1064,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /** Execute git with a minimal environment and a fail-closed tenant worker in hosted mode. */
-    protected async runTenantGit(cwd: string, args: readonly string[], captureStdout: boolean, requestedDeadline?: number): Promise<string> {
+    protected async runTenantGit(cwd: string, args: readonly string[], captureStdout: boolean, options: QaapGitRunOptions = {}): Promise<string> {
         if (!this.tenantProcess) {
             throw new Error('Hosted GitHub repository operations are unavailable: the tenant worker is not bound.');
         }
@@ -1042,8 +1079,12 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
         }
         // One deadline covers preparing the tenant worker (Docker ensure can hang) and git itself.
-        const deadline = this.resolveGitDeadline(requestedDeadline);
+        const { signal } = options;
+        const deadline = this.resolveGitDeadline(options.deadline);
         const timeoutError = (): Error => this.gitTimeoutError();
+        if (signal?.aborted) {
+            throw this.gitCancelledError();
+        }
         if (deadline <= Date.now()) {
             throw timeoutError();
         }
@@ -1054,10 +1095,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             detached: true,
         });
         let prepareTimer: ReturnType<typeof setTimeout> | undefined;
-        let prepareTimedOut = false;
+        let prepareAbandoned = false;
+        let onPrepareAbort: (() => void) | undefined;
         // A worker that finishes preparing after we gave up must not run git unsupervised.
         prepared.then(late => {
-            if (prepareTimedOut) {
+            if (prepareAbandoned) {
                 late.kill();
             }
         }, () => undefined);
@@ -1065,16 +1107,30 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             prepared,
             new Promise<never>((_, reject) => {
                 prepareTimer = setTimeout(() => {
-                    prepareTimedOut = true;
+                    prepareAbandoned = true;
                     reject(new Error(`${timeoutError().message} while starting the tenant worker`));
                 }, deadline - Date.now());
+                onPrepareAbort = () => {
+                    prepareAbandoned = true;
+                    reject(this.gitCancelledError());
+                };
+                signal?.addEventListener('abort', onPrepareAbort, { once: true });
             }),
-        ]).finally(() => clearTimeout(prepareTimer));
+        ]).finally(() => {
+            clearTimeout(prepareTimer);
+            if (onPrepareAbort) {
+                signal?.removeEventListener('abort', onPrepareAbort);
+            }
+        });
         return new Promise((resolve, reject) => {
             let stdout = '';
             let stderr = '';
             let settled = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
+            const onAbort = (): void => {
+                child.kill();
+                complete(() => reject(this.gitCancelledError()));
+            };
             const complete = (callback: () => void): void => {
                 if (settled) {
                     return;
@@ -1083,8 +1139,10 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 if (timeout) {
                     clearTimeout(timeout);
                 }
+                signal?.removeEventListener('abort', onAbort);
                 callback();
             };
+            signal?.addEventListener('abort', onAbort, { once: true });
             const collect = (target: 'stdout' | 'stderr', chunk: unknown): void => {
                 if (settled) {
                     return;

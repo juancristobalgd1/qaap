@@ -59,6 +59,16 @@ describe('QaapTenantDiskFileSystemProvider', () => {
         await expectForbidden(() => provider.stat(new URI('file:///workspace')));
     });
 
+    it('reports a forbidden path as a rejected promise, never a synchronous throw', async () => {
+        const provider = createProvider({});
+        const uri = new URI('file:///root/.theia/backend-settings.json');
+        let pending: Promise<unknown> | undefined;
+        expect(() => { pending = provider.readFile(uri); }).not.to.throw();
+        await expectForbidden(() => pending!);
+        await expectForbidden(() => provider.stat(uri));
+        await expectForbidden(() => provider.writeFile(uri, new Uint8Array(), { create: true, overwrite: true }));
+    });
+
     it('blocks cross-tenant repository paths even when another user is connected', async () => {
         const registry = new QaapWebsocketAuthRegistry();
         registry.bindSocketLogin('socket-alice', 'alice');

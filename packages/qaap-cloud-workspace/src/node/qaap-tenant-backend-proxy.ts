@@ -259,8 +259,8 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             path: req.originalUrl || req.url,
             headers,
         }, response => {
-            // Headers arrived: streaming / long-lived bodies must not be cut by the wait timeout.
-            upstream.setTimeout(0);
+            // Headers arrived: streaming / long-lived bodies must not be cut by the wait deadline.
+            clearTimeout(responseTimer);
             const responseHeaders = { ...response.headers };
             for (const key of Object.keys(responseHeaders)) {
                 if (HOP_BY_HOP_HEADERS.has(key.toLowerCase()) || key.toLowerCase() === 'set-cookie') {
@@ -270,15 +270,25 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             res.writeHead(response.statusCode ?? 502, responseHeaders);
             response.pipe(res);
         });
-        // Idle bound while waiting for the tenant backend to answer; a wedged backend otherwise
-        // leaves the browser request (e.g. repository open) pending forever.
+        // Hard deadline (not a socket idle timeout, which trickled bytes would keep resetting) for the
+        // response headers; a wedged backend otherwise leaves the browser request (e.g. repository
+        // open) pending forever. Destroying the upstream request closes its connection, so the
+        // tenant backend sees the response 'close' and cancels the work (e.g. kills git).
         let timedOut = false;
         const isConnected = this.trackUpstreamConnected(upstream);
-        upstream.setTimeout(responseTimeoutMs, () => {
+        const responseTimer = setTimeout(() => {
             timedOut = true;
             upstream.destroy(new Error('Tenant backend did not respond in time.'));
+        }, responseTimeoutMs);
+        // The browser went away (navigation, client timeout): stop the tenant work as well.
+        res.once('close', () => {
+            clearTimeout(responseTimer);
+            if (!res.writableFinished) {
+                upstream.destroy();
+            }
         });
         upstream.once('error', error => {
+            clearTimeout(responseTimer);
             if (this.shouldEvictTenantBackendTarget(error, timedOut, isConnected())) {
                 // Drop the cached target so the next request re-ensures (restarts) the backend.
                 this.docker.invalidateTenantBackendTarget(tenantLogin, target);

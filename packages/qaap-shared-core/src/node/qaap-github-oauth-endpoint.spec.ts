@@ -138,7 +138,9 @@ describe('QaapGithubOauthEndpoint.handleDeleteGithubRepository', () => {
             body?: unknown;
             status: (code: number) => { json: (b: unknown) => void };
             json: (b: unknown) => void;
+            once: () => void;
         } = {
+            once: () => undefined,
             status(code: number) {
                 res.statusCode = code;
                 return { json: (b: unknown) => { res.body = b; } };
@@ -279,7 +281,9 @@ describe('QaapGithubOauthEndpoint clone-by-URL lookup', () => {
             body?: unknown;
             status: (code: number) => { json: (b: unknown) => void };
             json: (b: unknown) => void;
+            once: () => void;
         } = {
+            once: () => undefined,
             status(code: number) {
                 res.statusCode = code;
                 return { json: (b: unknown) => { res.body = b; } };
@@ -380,8 +384,8 @@ describe('QaapGithubOauthEndpoint git deadlines', () => {
         const deadlines: Array<number | undefined> = [];
         const endpoint = createEndpoint({
             reposRoot,
-            runGit: async (args: string[], _token: string | undefined, _cwd: string, deadline?: number) => {
-                deadlines.push(deadline);
+            runGit: async (args: string[], _token: string | undefined, _cwd: string, options?: { deadline?: number }) => {
+                deadlines.push(options?.deadline);
                 if (args[0] === 'clone') {
                     fs.mkdirSync(path.join(target, '.git'), { recursive: true });
                 }
@@ -403,11 +407,11 @@ describe('QaapGithubOauthEndpoint git deadlines', () => {
 
     it('fails fast without spawning git once the shared deadline has passed', async () => {
         const endpoint = createEndpoint() as unknown as {
-            runLocalGit(cwd: string, args: string[], capture: boolean, deadline?: number): Promise<string>;
+            runLocalGit(cwd: string, args: string[], capture: boolean, options?: { deadline?: number }): Promise<string>;
         };
         let error: unknown;
         try {
-            await endpoint.runLocalGit(os.tmpdir(), ['--version'], true, Date.now() - 1);
+            await endpoint.runLocalGit(os.tmpdir(), ['--version'], true, { deadline: Date.now() - 1 });
         } catch (err) {
             error = err;
         }
@@ -416,8 +420,36 @@ describe('QaapGithubOauthEndpoint git deadlines', () => {
 
     it('runs local git with output under the per-operation cap', async () => {
         const endpoint = createEndpoint() as unknown as {
-            runLocalGit(cwd: string, args: string[], capture: boolean, deadline?: number): Promise<string>;
+            runLocalGit(cwd: string, args: string[], capture: boolean, options?: { deadline?: number }): Promise<string>;
         };
         expect(await endpoint.runLocalGit(os.tmpdir(), ['--version'], true)).to.contain('git version');
+    });
+
+    it('kills a running local git child when the request is closed', async () => {
+        const endpoint = createEndpoint() as unknown as {
+            runLocalGit(cwd: string, args: string[], capture: boolean, options?: { signal?: AbortSignal }): Promise<string>;
+        };
+        const controller = new AbortController();
+        const pending = endpoint.runLocalGit(os.tmpdir(), ['--version'], true, { signal: controller.signal });
+        controller.abort();
+        let error: unknown;
+        try {
+            await pending;
+        } catch (err) {
+            error = err;
+        }
+        expect((error as Error).message).to.contain('cancelled');
+    });
+
+    it('aborts the workspace signal only when the response closes before it finished', () => {
+        const endpoint = createEndpoint() as unknown as { abortOnResponseClose(res: unknown): AbortSignal };
+        const listeners: Array<() => void> = [];
+        const once = (_event: string, listener: () => void): void => { listeners.push(listener); };
+        const signal = endpoint.abortOnResponseClose({ writableFinished: false, once });
+        listeners[0]();
+        expect(signal.aborted).to.equal(true);
+        const finishedSignal = endpoint.abortOnResponseClose({ writableFinished: true, once });
+        listeners[1]();
+        expect(finishedSignal.aborted).to.equal(false);
     });
 });
