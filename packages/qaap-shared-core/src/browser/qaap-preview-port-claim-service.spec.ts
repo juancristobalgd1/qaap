@@ -4,9 +4,18 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+// These modules touch the DOM while loading; give them one only for the import.
+const disableImportJSDOM = enableJSDOM();
+// Load core's browser barrel first: entering via @theia/workspace alone hits a core import cycle.
+import '@theia/core/lib/browser';
 import { requestQaapPreviewPortClaim } from './qaap-preview-port-claim-service';
+disableImportJSDOM();
 
 describe('qaap-preview-port-claim-service', () => {
+    useSuiteJSDOM();
+
     const origin = 'http://localhost:3000/';
     const root = 'file:///workspace/current';
 

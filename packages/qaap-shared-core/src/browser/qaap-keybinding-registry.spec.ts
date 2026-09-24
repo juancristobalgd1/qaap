@@ -4,13 +4,15 @@
 // *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-
-enableJSDOM();
-
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+// The registry touches the DOM while loading; give it one only for the import.
+const disableImportJSDOM = enableJSDOM();
 import { expect } from 'chai';
 import { QaapKeybindingRegistry } from './qaap-keybinding-registry';
+disableImportJSDOM();
 
 describe('QaapKeybindingRegistry', () => {
+    useSuiteJSDOM();
 
     it('does not throw when a widget asks for an optional missing binding', () => {
         const registry = Object.create(QaapKeybindingRegistry.prototype) as QaapKeybindingRegistry;

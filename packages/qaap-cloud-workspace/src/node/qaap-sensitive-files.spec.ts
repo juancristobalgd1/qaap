@@ -107,7 +107,17 @@ describe('runner edit detection for gitignored secrets', () => {
 
     function runner(): TestableRunner {
         const instance = Object.create(TestableRunner.prototype) as TestableRunner;
-        Object.assign(instance, { tasks: new Map(), detectedAgents: new Map() });
+        Object.assign(instance, {
+            tasks: new Map(),
+            detectedAgents: new Map(),
+            // Git reads go through the tenant spawn seam; outside isolation it is a plain local git.
+            tenantSpawn: {
+                wrapGitForTenant: (cwd: string, args: readonly string[]) => ({
+                    file: 'git',
+                    args: ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args],
+                }),
+            },
+        });
         return instance;
     }
 

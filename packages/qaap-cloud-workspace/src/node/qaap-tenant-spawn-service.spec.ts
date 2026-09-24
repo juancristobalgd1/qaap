@@ -24,9 +24,15 @@ class TestTenantSpawnService extends QaapTenantSpawnService {
     container = false;
     linuxResourceLimits = false;
     systemdRun = false;
+    /** Pinned so results do not depend on whether the test runner itself runs as root. */
+    backendRoot = false;
 
     override isContainerIsolationEnabled(): boolean {
         return this.container;
+    }
+
+    protected override isBackendRoot(): boolean {
+        return this.backendRoot;
     }
 
     override resolveSpawnIdentity(cwd: string): { uid?: number; gid?: number } {
@@ -161,6 +167,17 @@ describe('QaapTenantSpawnService.spawnArgvPrepared', () => {
         ]);
         expect(svc.launches[0].args.slice(-4)).to.deep.equal(['--', 'npm', 'run', 'dev']);
         expect(svc.launches[0].options.shell).to.equal(false);
+    });
+
+    it('uses the system systemd manager when the backend runs as root', () => {
+        const svc = new TestTenantSpawnService();
+        svc.backendRoot = true;
+        svc.linuxResourceLimits = true;
+        svc.systemdRun = true;
+        svc.spawnArgvPrepared('npm', ['run', 'dev'], { cwd: tenantCwd, env: {} });
+        expect(svc.launches[0].file).to.equal('systemd-run');
+        expect(svc.launches[0].args).to.include('--system');
+        expect(svc.launches[0].args).not.to.include('--user');
     });
 
     it('applies inherited rlimits on a non-systemd development Linux host', () => {

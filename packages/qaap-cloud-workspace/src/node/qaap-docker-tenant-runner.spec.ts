@@ -524,11 +524,12 @@ describe('Container-per-Tenant Runner (Option A)', () => {
             const wrappedAlice = service.wrapShellForTenant(aliceCwd, '/bin/bash', []);
             const wrappedBob = service.wrapShellForTenant(bobCwd, '/bin/bash', []);
 
-            expect(wrappedAlice.file).to.equal('docker');
+            // The Docker CLI is resolved to an absolute path when it is installed on the host.
+            expect(path.basename(wrappedAlice.file)).to.equal('docker');
             expect(wrappedAlice.args).to.include('-it');
             expect(wrappedAlice.args).to.include(orchestrator.containerNameForTenant('alice'));
 
-            expect(wrappedBob.file).to.equal('docker');
+            expect(path.basename(wrappedBob.file)).to.equal('docker');
             expect(wrappedBob.args).to.include('-it');
             expect(wrappedBob.args).to.include(orchestrator.containerNameForTenant('bob'));
 

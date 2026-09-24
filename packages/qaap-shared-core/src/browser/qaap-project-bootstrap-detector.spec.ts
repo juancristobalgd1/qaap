@@ -5,7 +5,8 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// The detector's imports touch the DOM while loading; give them one only for the import.
+const disableImportJSDOM = enableJSDOM();
 const browserGlobals = globalThis as unknown as { DragEvent?: unknown };
 if (!browserGlobals.DragEvent) {
     browserGlobals.DragEvent = class DragEvent { };
@@ -17,6 +18,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { FileStat } from '@theia/filesystem/lib/common/files';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import { staticEntryPathFromDevCommand } from './qaap-project-bootstrap-static';
+disableImportJSDOM();
 
 const VITE_PKG = JSON.stringify({
     name: 'rioja-wines-landing-page',

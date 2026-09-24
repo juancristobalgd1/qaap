@@ -499,7 +499,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             throw new Error('Composer prompt is empty.');
         }
         const improveText = buildImproveComposerPromptRequest(trimmed);
-        const agentId = ctx.resolveAgentId(improveText, options.agentId);
+        const agentId = ctx.resolveAgentId(improveText, options.agentId, options.ownerLogin);
         ctx.assertQaiqConfigured(agentId, options.ownerLogin);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
