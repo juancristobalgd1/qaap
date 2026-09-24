@@ -42,7 +42,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { ComposerTranscriptSurfacesApi } from './qaap-composer-host-contracts';
 import type { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
 import type { ChatSessionActivityApi } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
-import type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
+import type { MobileProjectsTranscriptVerifyHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-verify-ui';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
@@ -70,7 +70,7 @@ import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtr
 import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptionsExtracted, keepAllComposerChangedFilesExtracted, launchComposerDevPreviewExtracted, refreshComposerActivityGitFilesIfNeededExtracted, runComposerCommitActionExtracted, runComposerGitFileActionExtracted, syncComposerGitSnapshotExtracted, undoAllComposerChangedFilesExtracted } from './mobile-projects-transcript-sticky-composer-ui-streaming';
 import { appendRunningGitActionToTranscriptExtracted, applyGitActionTranscriptConversationExtracted, buildComposerActivityFingerprintExtracted, dispatchQueuedFollowUpInParallelExtracted, flushTranscriptFollowUpQueueExtracted, interruptQueuedFollowUpExtracted, isTranscriptFollowUpReadyExtracted, markPendingGitActionFailedExtracted, recordComposerGitActionInTranscriptExtracted, refreshComposerActivityStackExtracted, refreshTranscriptComposerActivityIfNeededExtracted, sendQueuedFollowUpNowExtracted, startIsolatedRunIfRequestedExtracted, syncComposerActivityFingerprintExtracted } from './mobile-projects-transcript-sticky-composer-ui-timeline';
 import { mountTranscriptStickyComposerAsyncExtracted } from './mobile-projects-transcript-sticky-composer-ui-tool-pills';
-import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
+import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 export const COMPOSER_PREVIEW_HEALTH_INTERVAL_MS = 5_000;
 
@@ -160,10 +160,10 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     updateWorkingPillChrome(): void;
     conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     chatServiceSummariesUi: ChatSessionActivityApi;
-    transcriptMessagesUi: import('./mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
+    transcriptMessagesUi: import('@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
     handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
-    executionSurfaceTabsUi: import('./qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
-    transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
+    executionSurfaceTabsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
+    transcriptLiveUi: import('@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
     beginTranscriptDevPreviewRequest(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

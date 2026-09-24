@@ -13,7 +13,7 @@ import {
     parseEditorSelectionFingerprint,
     QAAP_EDITOR_CONTEXT_VARIABLE_NAME,
 } from '../common/qaap-composer-editor-context-bridge-core';
-import { resolveTranscriptWorkspaceFileUri } from './qaap-transcript-file-open';
+import { resolveTranscriptWorkspaceFileUri } from '@theia/qaap-transcript/lib/browser/qaap-transcript-file-open';
 
 export async function resolvePinnedEditorContextVariable(
     request: AIVariableResolutionRequest,

@@ -11,7 +11,7 @@ import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { isImageAttachmentFileName } from '../common/qaap-sticky-composer-attachment-utils';
-import { resolveTranscriptWorkspaceFileUri } from './qaap-transcript-file-open';
+import { resolveTranscriptWorkspaceFileUri } from '@theia/qaap-transcript/lib/browser/qaap-transcript-file-open';
 
 function parseImageContextArg(arg: string | undefined): ImageContextVariable | undefined {
     if (!arg?.trim()) {

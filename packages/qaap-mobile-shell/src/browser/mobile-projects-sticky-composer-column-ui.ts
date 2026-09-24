@@ -31,7 +31,7 @@ import {
 } from './qaap-sticky-composer-context-ui';
 import {
     createContextUsageIndicatorBadge,
-} from './qaap-chat-context-usage-indicator';
+} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-indicator';
 import type { StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';

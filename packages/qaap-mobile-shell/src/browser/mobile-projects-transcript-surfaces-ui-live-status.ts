@@ -18,7 +18,7 @@ import {
     type TranscriptTerminalPersistedWorkspace,
     type TranscriptTerminalSurface,
     type TranscriptTerminalViewServices,
-} from './qaap-transcript-terminal-view';
+} from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import { registerQaapWorkHubTerminalContext } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-terminal-context';
 import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
@@ -27,7 +27,7 @@ import {
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import {
     toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
-} from './mobile-projects-transcript-surfaces-helpers';
+} from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-surfaces-helpers';
 
 export async function ensureTranscriptTerminalTabExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {

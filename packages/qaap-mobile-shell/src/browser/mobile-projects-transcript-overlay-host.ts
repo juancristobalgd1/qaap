@@ -13,15 +13,15 @@
  */
 
 export type { MobileProjectsTranscriptComposerHost } from './mobile-projects-transcript-composer-ui';
-export type { MobileProjectsTranscriptHeaderHost } from './mobile-projects-transcript-header-ui';
-export type { MobileProjectsTranscriptHistoryHost } from './mobile-projects-transcript-history-ui';
-export type { MobileProjectsTranscriptLiveHost } from './mobile-projects-transcript-live-ui';
-export type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
+export type { MobileProjectsTranscriptHeaderHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
+export type { MobileProjectsTranscriptHistoryHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-history-ui';
+export type { MobileProjectsTranscriptLiveHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
+export type { MobileProjectsTranscriptMessagesHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui';
 export type { MobileProjectsTranscriptSheetHost } from './mobile-projects-transcript-sheet-ui';
 export type { MobileProjectsTranscriptStickyComposerHost } from './mobile-projects-transcript-sticky-composer-ui';
-export type { MobileProjectsTranscriptSubmitHost } from './mobile-projects-transcript-submit-ui';
+export type { MobileProjectsTranscriptSubmitHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-submit-ui';
 export type { MobileProjectsTranscriptSurfacesHost } from './mobile-projects-transcript-surfaces-ui';
-export type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
+export type { MobileProjectsTranscriptVerifyHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-verify-ui';
 export { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 export {
     TranscriptOverlayState,
@@ -31,15 +31,15 @@ export {
 export type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 import type { MobileProjectsTranscriptComposerHost } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptHeaderHost } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsTranscriptHistoryHost } from './mobile-projects-transcript-history-ui';
-import type { MobileProjectsTranscriptLiveHost } from './mobile-projects-transcript-live-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
+import type { MobileProjectsTranscriptHeaderHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
+import type { MobileProjectsTranscriptHistoryHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-history-ui';
+import type { MobileProjectsTranscriptLiveHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
+import type { MobileProjectsTranscriptMessagesHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptSheetHost } from './mobile-projects-transcript-sheet-ui';
 import type { MobileProjectsTranscriptStickyComposerHost } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsTranscriptSubmitHost } from './mobile-projects-transcript-submit-ui';
+import type { MobileProjectsTranscriptSubmitHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-submit-ui';
 import type { MobileProjectsTranscriptSurfacesHost } from './mobile-projects-transcript-surfaces-ui';
-import type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
+import type { MobileProjectsTranscriptVerifyHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-verify-ui';
 
 /** Full panel surface required by all transcript overlay `*Ui` modules. */
 export type MobileProjectsTranscriptOverlayHost =

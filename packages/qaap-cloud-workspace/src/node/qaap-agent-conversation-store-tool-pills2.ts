@@ -16,7 +16,7 @@ import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 
 import { agentModelKey, agentTurnHasRetryableEmptyOutput, agentTurnHasRetryableModelFailure, agentTurnHasRetryableToolSupportFailure, resolveNextFallbackAgentModel } from '../common/qaap-agent-model-fallback';
 
-import { appendTracePreviewFailureEvent, syncSettledTraceEventsOnMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+import { appendTracePreviewFailureEvent, syncSettledTraceEventsOnMessage } from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 

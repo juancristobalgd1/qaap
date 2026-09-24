@@ -17,13 +17,21 @@ import {
 
 describe('qaap-chat-markdown-render', () => {
 
-    before(() => {
-        const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
+    const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
+    let previousDocument: Document | undefined;
+
+    // Installed per test and restored afterwards: a document swapped in once in `before` would either be replaced by
+    // the root JSDOM hook or leak into every later suite.
+    beforeEach(() => {
+        previousDocument = globalThis.document;
         (globalThis as typeof globalThis & { document: Document }).document = document as unknown as Document;
     });
 
     afterEach(() => {
         resetSharedChatMarkdownItForTests();
+        if (previousDocument) {
+            (globalThis as typeof globalThis & { document: Document }).document = previousDocument;
+        }
     });
 
     it('getSharedChatMarkdownIt returns one shared instance', () => {

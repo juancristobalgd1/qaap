@@ -4,16 +4,16 @@
 // *****************************************************************************
 
 import { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
-import { MobileProjectsTranscriptHistoryUi } from './mobile-projects-transcript-history-ui';
+import { MobileProjectsTranscriptHistoryUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-history-ui';
 import { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
-import { MobileProjectsTranscriptVerifyUi } from './mobile-projects-transcript-verify-ui';
-import { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import { MobileProjectsTranscriptSubmitUi } from './mobile-projects-transcript-submit-ui';
-import { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
-import { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
+import { MobileProjectsTranscriptVerifyUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-verify-ui';
+import { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
+import { MobileProjectsTranscriptSubmitUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-submit-ui';
+import { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
+import { MobileProjectsTranscriptMessagesUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-host';
 import { TranscriptOverlayState } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-overlay-state';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';

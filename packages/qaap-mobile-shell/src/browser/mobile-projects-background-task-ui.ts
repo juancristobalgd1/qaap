@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapProjectChatSessionCreated } from './qaap-transcript-host-contracts';
+import type { QaapProjectChatSessionCreated } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import { GenericCapabilitySelections } from '@theia/ai-core';
@@ -59,7 +59,7 @@ export interface MobileProjectsBackgroundTaskHost {
     delegate: { onProjectsChanged?: () => void };
     projectBootstrap?: import('@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service').QaapProjectBootstrapService;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
-    transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
+    transcriptLiveUi: import('@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
     expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
     applyComposerAttachmentsToDraft?: (
         draft: string,

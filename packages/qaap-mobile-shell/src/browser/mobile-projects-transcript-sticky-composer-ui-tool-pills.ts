@@ -12,7 +12,7 @@ import { warmAgentTurnPath } from '@theia/qaap-shared-core/lib/common/qaap-agent
 import {
     resolveChatModelContextUsageBreakdown,
     resolveVpsContextUsageBreakdown,
-} from './qaap-chat-context-usage-panel';
+} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
 import {
     describeComposerInteractionMode,
     reconcileComposerModeId,

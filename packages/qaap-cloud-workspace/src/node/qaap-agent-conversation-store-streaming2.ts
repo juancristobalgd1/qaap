@@ -14,7 +14,7 @@ import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaa
 
 import { collectSubtasksForLeader } from '../common/qaap-team-mailbox';
 
-import { appendTracePreviewFailureEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+import { appendTracePreviewFailureEvent } from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 
 import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER, agentMessageHasVisualVerificationMarker, buildQaapVisualVerificationMarkdown, buildQaapVisualVideoMarkdown, type QaapPreviewVisualValidationResult } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 

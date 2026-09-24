@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapTodoStepProgress } from '../common/qaap-transcript-todo-step';
+import type { QaapTodoStepProgress } from '@theia/qaap-transcript/lib/common/qaap-transcript-todo-step';
 import { WORKING_CONTROL_CLASS } from './qaap-sticky-composer-working-agents-popover';
 
 export interface StickyComposerStepPillOptions {

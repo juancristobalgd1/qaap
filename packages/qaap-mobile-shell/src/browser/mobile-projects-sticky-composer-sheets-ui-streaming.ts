@@ -26,7 +26,7 @@ import {
     mountStickyComposerBottomSheet,
     mountStickyComposerSheetPopover,
     scheduleStickyComposerPopoverPosition,
-} from './qaap-sticky-composer-popover';
+} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function openComposerModeSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {

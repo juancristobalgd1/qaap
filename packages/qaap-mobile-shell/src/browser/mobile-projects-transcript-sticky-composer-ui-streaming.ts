@@ -25,7 +25,7 @@ import {
     resolveComposerPreviewCandidate,
     resolveVerifiedComposerPreviewUrl,
 } from './qaap-composer-preview-action';
-import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
+import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,

@@ -8,7 +8,7 @@ import {
     mountEmbeddedAgentPreviewChrome,
 } from '@theia/qaap-adapters/lib/browser/qaap-agent-preview-chrome';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
+import { resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -19,7 +19,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { createTranscriptReviewChrome } from './qaap-transcript-review-chrome';
+import { createTranscriptReviewChrome } from '@theia/qaap-transcript/lib/browser/qaap-transcript-review-chrome';
 
 export async function mountTranscriptReviewWidgetExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,): Promise<void> {

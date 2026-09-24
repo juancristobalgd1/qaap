@@ -23,7 +23,7 @@ import {
     appendTraceReviewEvent,
     appendTraceRunCancelledEvent,
     appendTraceVerificationWarningEvent,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+} from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import {
     detectAgentAuthFailureMode,
@@ -74,7 +74,7 @@ import {
     buildAgentAutoContinuePrompt,
     buildDevPreviewAutoContinueExhaustedReason,
     isIncompleteAgentTurn,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
+} from '@theia/qaap-transcript/lib/common/qaap-agent-turn-completion';
 import { messageRequestsDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { QAAP_AGENT_AUTO_CONTINUE_ENABLED } from './qaap-agent-conversation-store-constants';
 import {

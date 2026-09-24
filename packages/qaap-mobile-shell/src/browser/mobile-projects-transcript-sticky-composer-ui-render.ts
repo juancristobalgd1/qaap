@@ -28,7 +28,7 @@ import {
     resolveChangedFilesStats as resolveChangedFilesStatsHelper,
 } from './mobile-projects-transcript-sticky-composer-helpers';
 import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
-import { extractTranscriptPreviewId } from './mobile-projects-transcript-messages-content-ui';
+import { extractTranscriptPreviewId } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-content-ui';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import {
     openCurrentComposerPreview,
@@ -37,7 +37,7 @@ import {
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
 import { COMPOSER_PREVIEW_HEALTH_INTERVAL_MS } from './mobile-projects-transcript-sticky-composer-ui';
-import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
+import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 export function scheduleIdleComposerFocusRetentionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, textarea: HTMLTextAreaElement): void {
         ctx.clearIdleComposerFocusRetention();

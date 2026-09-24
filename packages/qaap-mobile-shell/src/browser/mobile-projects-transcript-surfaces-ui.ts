@@ -27,27 +27,27 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import {
     type TranscriptFilesViewMode,
     type TranscriptFilesViewServices,
-} from './qaap-transcript-files-view';
+} from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import {
     type TranscriptTerminalPersistedWorkspace,
     type TranscriptTerminalSurface,
     type TranscriptTerminalViewServices,
-} from './qaap-transcript-terminal-view';
+} from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import {
     TranscriptWorkspaceSurfacesCache,
     type TranscriptWorkspaceSurfaceKey,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
-import type { MobileProjectsTranscriptHistoryUi } from './mobile-projects-transcript-history-ui';
+import type { MobileProjectsTranscriptHistoryUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-history-ui';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
+import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
+import type { MobileProjectsTranscriptMessagesUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
+import type { MobileProjectsTranscriptVerifyHost } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-verify-ui';
 import {
     pathsEqual as pathsEqualHelper,
     resolveTranscriptTerminalTabTitle as resolveTranscriptTerminalTabTitleHelper,
-} from './mobile-projects-transcript-surfaces-helpers';
+} from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-surfaces-helpers';
 import { applyTranscriptPreviewRunButtonStateExtracted, createTranscriptPreviewRunButtonExtracted, hideHeaderFilesMoreButtonExtracted, hideHeaderViewModeSwitchExtracted, isTranscriptPreviewStoppableExtracted, isTranscriptPreviewWaitingExtracted, refreshTranscriptPreviewTabProbeExtracted, scheduleTranscriptPreviewTabProbeExtracted, stopTranscriptPreviewExtracted, stopTranscriptPreviewTabProbeExtracted, switchTranscriptPreviewAppExtracted, syncHeaderFilesMoreButtonExtracted, syncHeaderPreviewAppSwitchButtonExtracted, syncHeaderPreviewRunButtonExtracted, syncHeaderViewModeSwitchExtracted, updateTranscriptPreviewReadyOverlayExtracted } from './mobile-projects-transcript-surfaces-ui-activity';
 import { adoptReadyTranscriptPreviewExtracted, requestTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-diff';
 import { closeTranscriptTerminalTabExtracted, createTranscriptTerminalSlideExtracted, detachTranscriptFilesFromHostExtracted, detachTranscriptTerminalFromHostExtracted, ensureTranscriptTerminalChromeExtracted, ensureTranscriptTerminalTabExtracted, launchAgentTuiInTranscriptTerminalExtracted, mountFreshTranscriptTerminalSlideExtracted, persistTranscriptTerminalWorkspaceExtracted, renderTranscriptTerminalDotsExtracted, renderTranscriptTerminalSlidesExtracted, restoreTranscriptTerminalSlidesExtracted, showTranscriptTerminalErrorExtracted, syncTranscriptTerminalResizeObserverExtracted, toPersistedTerminalWorkspaceExtracted } from './mobile-projects-transcript-surfaces-ui-live-status';

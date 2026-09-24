@@ -19,15 +19,15 @@ import {
     resolveTranscriptActivityStats,
     resolveTranscriptThinkingContent,
     type QaapTranscriptActivityStats,
-} from '../common/qaap-agent-transcript-segments';
+} from '@theia/qaap-transcript/lib/common/qaap-agent-transcript-segments';
 import { isAgentToolResultFailure } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 import {
     groupTranscriptActivityNavigationItems,
     resolveTranscriptActivityNavigationItems,
     type TranscriptActivityNavigationDeps,
     type TranscriptActivityNavigationItem,
-} from '../common/qaap-transcript-activity-navigation';
-import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
+} from '@theia/qaap-transcript/lib/common/qaap-transcript-activity-navigation';
+import { resolveTranscriptStreamingActivityFromSegments } from '@theia/qaap-transcript/lib/common/qaap-transcript-streaming-activity';
 import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 

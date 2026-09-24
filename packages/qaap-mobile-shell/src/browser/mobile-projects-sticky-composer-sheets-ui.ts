@@ -20,11 +20,11 @@ import {
 } from '../common/qaap-sticky-composer-model-capability';
 import {
     type ContextUsageBreakdownView,
-} from './qaap-chat-context-usage-panel';
+} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
 import {
     shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
-} from './qaap-sticky-composer-popover';
+} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';

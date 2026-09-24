@@ -13,7 +13,7 @@ import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '
 import { shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
+import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import { layoutHeaderProjectClusterContents } from './mobile-projects-panel-chrome-ui';
 import type { MobileProjectsPullRequestDetailTab } from '@theia/qaap-diff-review/lib/browser/mobile-projects-pull-request-detail-ui';

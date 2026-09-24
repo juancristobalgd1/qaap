@@ -16,7 +16,7 @@ import {
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from '@theia/qaap-shared-core/lib/browser/qaap-execution-surface-header-chrome';
-import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
+import { writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 

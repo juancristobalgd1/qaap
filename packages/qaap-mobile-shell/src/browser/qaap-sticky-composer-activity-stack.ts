@@ -9,7 +9,7 @@ import type { TranscriptFollowUpEntry } from '@theia/qaap-transcript-overlay/lib
 import type { QaapGitCommitWorkflowAction } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { createStickyComposerSendIcon } from './mobile-projects-sticky-composer-send-icon';
 import { ensureQueueControlInPillRow } from './qaap-sticky-composer-queue-position';
-import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
+import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 /** Outcome of {@link selectComposerPillChanges}. */
 export interface ComposerPillChangesSelection {

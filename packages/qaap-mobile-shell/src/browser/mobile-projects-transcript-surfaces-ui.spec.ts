@@ -20,7 +20,7 @@ import {
     MobileProjectsTranscriptSurfacesUi,
     type MobileProjectsTranscriptSurfacesHost,
 } from './mobile-projects-transcript-surfaces-ui';
-import type { MobileProjectsTranscriptHistoryUi } from './mobile-projects-transcript-history-ui';
+import type { MobileProjectsTranscriptHistoryUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-history-ui';
 import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 
 const historyUiStub = {} as unknown as MobileProjectsTranscriptHistoryUi;

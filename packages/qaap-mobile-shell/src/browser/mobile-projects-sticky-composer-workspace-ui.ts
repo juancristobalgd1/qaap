@@ -22,7 +22,7 @@ import {
     scheduleStickyComposerPopoverPosition,
     shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
-} from './qaap-sticky-composer-popover';
+} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';

@@ -23,9 +23,9 @@ import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
-import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
+import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
+import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
+import type { MobileProjectsTranscriptMessagesUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTasksHubUi } from './mobile-projects-tasks-hub-ui';

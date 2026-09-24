@@ -17,11 +17,11 @@ import {
 import {
     MobileProjectsTranscriptMessagesArtifactsUi,
     type TranscriptActivityTimelineOptions,
-} from '../browser/mobile-projects-transcript-messages-artifacts-ui';
-import { MobileProjectsTranscriptMessagesContentUi } from '../browser/mobile-projects-transcript-messages-content-ui';
-import { MobileProjectsTranscriptMessagesResolversUi } from '../browser/mobile-projects-transcript-messages-resolvers-ui';
-import { MobileProjectsTranscriptMessagesToolUi } from '../browser/mobile-projects-transcript-messages-tool-ui';
-import type { MobileProjectsTranscriptMessagesHost } from '../browser/mobile-projects-transcript-messages-ui';
+} from './mobile-projects-transcript-messages-artifacts-ui';
+import { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
+import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
+import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
+import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 
 type TranscriptTimelineSyncHarness = {
     resolveTranscriptActivityItemsForDisplay(

@@ -6,7 +6,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
+import { writePendingTranscriptFilesViewMode } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function positionExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, menu: HTMLElement, anchor: HTMLElement): void {

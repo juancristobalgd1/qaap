@@ -14,8 +14,8 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
+import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
+import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import { TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';

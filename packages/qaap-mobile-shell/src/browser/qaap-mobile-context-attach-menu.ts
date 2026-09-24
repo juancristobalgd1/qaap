@@ -32,7 +32,7 @@ import {
 } from './qaap-mobile-mcp-attach-menu';
 import { resolveComposerProjectFileAttachment } from '../common/qaap-mobile-composer-project-file-attach';
 import { QAAP_EDITOR_CONTEXT_VARIABLE_NAME } from '../common/qaap-composer-editor-context-bridge-core';
-import { wireStickyComposerPopoverPosition } from './qaap-sticky-composer-popover';
+import { wireStickyComposerPopoverPosition } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 
 const QUERY_CONTEXT = { type: 'context-variable-picker' };
 

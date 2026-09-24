@@ -1,7 +1,7 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
+import { resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
@@ -25,7 +25,7 @@ import {
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     markTranscriptTerminalRestorable,
-} from './qaap-transcript-terminal-view';
+} from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import {
     type TranscriptWorkspaceSurfaceKey,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';

@@ -27,8 +27,8 @@ import type { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/q
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
-import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
-import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
+import type { TranscriptFilesViewServices } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
+import type { TranscriptTerminalViewServices } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 
 export interface MobileProjectsPanelDelegate {

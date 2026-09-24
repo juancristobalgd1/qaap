@@ -5,7 +5,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 import { nls } from '@theia/core/lib/common/nls';
 import { resolveWorkspaceHostFsPath } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-shell';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
+import { resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
 import { type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
@@ -15,10 +15,10 @@ import {
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     writePendingTranscriptFilesViewMode,
-} from './qaap-transcript-files-view';
+} from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import {
     transcriptConversationMeta as transcriptConversationMetaHelper,
-} from './mobile-projects-transcript-surfaces-helpers';
+} from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-surfaces-helpers';
 
 export function pickTranscriptPreviewAppExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, apps: readonly QaapMonorepoAppCandidate[],): Promise<QaapMonorepoAppCandidate | undefined> {
     ctx.closeTranscriptPreviewAppPicker();

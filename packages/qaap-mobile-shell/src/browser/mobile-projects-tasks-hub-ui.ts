@@ -23,7 +23,7 @@ import {
 } from './qaap-sticky-composer-working-detail-activity';
 import {
     resolveTodoStepProgress,
-} from '../common/qaap-transcript-todo-step';
+} from '@theia/qaap-transcript/lib/common/qaap-transcript-todo-step';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import {
     EMPTY_MOBILE_PROJECT_TASK_HISTORY_FILTERS,
@@ -72,7 +72,7 @@ export interface MobileProjectsTasksHubHost {
     localChatsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     vpsTasksForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     conversationMatchesQuery(summary: QaapAgentConversationSummaryDTO, query: string): boolean;
-    transcriptMessagesUi: import('./mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
+    transcriptMessagesUi: import('@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
     transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     activeInfoForProject(project: MobileProjectEntry): ReturnType<MobileProjectsActiveTasks['getForCwd']>;

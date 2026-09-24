@@ -14,7 +14,7 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
+import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 
 /** Panel surface for hub subtitle and meta chips. */
 export interface MobileProjectsSubtitleHost {

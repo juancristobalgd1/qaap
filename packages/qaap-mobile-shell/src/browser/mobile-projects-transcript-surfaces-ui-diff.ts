@@ -2,7 +2,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
+import { resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';

@@ -24,7 +24,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
-import { isConversationError } from './mobile-projects-transcript-messages-artifacts-helpers';
+import { isConversationError } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-artifacts-helpers';
 import {
     revokeComposerContextPreview,
 } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
@@ -138,7 +138,7 @@ export async function createProjectChatSessionExtracted(ctx: MobileProjectsPanel
         variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
         agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
         latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
-    },): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
+    },): Promise<import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
     return ctx.backgroundTaskUi.createProjectChatSession(project, cwd, draft, options);
 }
 

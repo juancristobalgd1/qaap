@@ -16,9 +16,9 @@ export async function ensureTranscriptSurfaceCss(): Promise<void> {
     }
     transcriptSurfaceCssLoaded = true;
     await import('../../src/browser/style/mobile-workbench-conversation.css');
-    await import('../../src/browser/style/mobile-workbench-transcript.css');
+    await import('@theia/qaap-transcript/src/browser/style/mobile-workbench-transcript.css');
     // Keep the Markdown surface last: it is the single canonical owner of transcript
     // typography, overflow, tables, headings, and rich code block presentation.
-    await import('../../src/browser/style/qaap-transcript-markdown.css');
+    await import('@theia/qaap-transcript/src/browser/style/qaap-transcript-markdown.css');
 }
 

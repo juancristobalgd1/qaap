@@ -18,7 +18,7 @@ import {
     QAAP_THINKING_ORB_COMPACT_SIZE,
     QAAP_THINKING_ORB_INDICATOR_CLASS,
     syncThinkingOrbIndicator,
-} from './qaap-thinking-orb-indicator';
+} from '@theia/qaap-transcript/lib/browser/qaap-thinking-orb-indicator';
 
 export interface StickyComposerWorkingPillOptions {
     readonly count: number;

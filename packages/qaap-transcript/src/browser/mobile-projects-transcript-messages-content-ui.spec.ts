@@ -31,12 +31,13 @@ describe('MobileProjectsTranscriptMessagesContentUi', () => {
     const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
     let previousDocument: Document | undefined;
 
-    before(() => {
+    // Per test: the root JSDOM hook re-creates `document` when an earlier suite disabled JSDOM.
+    beforeEach(() => {
         previousDocument = globalThis.document;
         (globalThis as typeof globalThis & { document: Document }).document = document as unknown as Document;
     });
 
-    after(() => {
+    afterEach(() => {
         if (previousDocument) {
             (globalThis as typeof globalThis & { document: Document }).document = previousDocument;
         }

@@ -28,7 +28,7 @@ import {
     transferWorkingControlToHost,
 } from './qaap-sticky-composer-working-agents-popover';
 import { transferStepPillToHost } from './qaap-sticky-composer-step-pill';
-import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
+import type { StickyComposerChangedFileView } from '@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts';
 
 export function appendRunningGitActionToTranscriptExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, summary: QaapAgentConversationSummaryDTO,
     action: QaapGitCommitWorkflowAction,): string | undefined {

@@ -32,7 +32,7 @@ import {
     mountStickyComposerBottomSheet,
     mountStickyComposerSheetPopover,
     type StickyComposerPopoverAlign,
-} from './qaap-sticky-composer-popover';
+} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     activateAgentPickerEntry,

@@ -28,10 +28,10 @@ import '@theia/qaap-diff-review/src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
 import '../../src/browser/style/qaap-work-hub-pull-requests.css';
-import '../../src/browser/style/qaap-transcript-timeline-premium.css';
-import '../../src/browser/style/qaap-transcript-lobehub.css';
+import '@theia/qaap-transcript/src/browser/style/qaap-transcript-timeline-premium.css';
+import '@theia/qaap-transcript/src/browser/style/qaap-transcript-lobehub.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
-import '../../src/browser/style/qaap-transcript-live-status.css';
+import '@theia/qaap-transcript/src/browser/style/qaap-transcript-live-status.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
 import { ChatResponsePartRenderer } from '@theia/ai-chat-ui/lib/browser/chat-response-part-renderer';
@@ -48,7 +48,7 @@ import { ScmContribution } from '@theia/scm/lib/browser/scm-contribution';
 import { ScmWidget } from '@theia/scm/lib/browser/scm-widget';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import { ChatViewTreeWidget } from '@theia/ai-chat-ui/lib/browser/chat-tree-view/chat-view-tree-widget';
-import { createQaapChatViewTreeWidget } from './qaap-chat-view-tree-container';
+import { createQaapChatViewTreeWidget } from '@theia/qaap-transcript/lib/browser/qaap-chat-view-tree-container';
 import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import {
     QaapBootstrapInstallTool,
@@ -105,11 +105,11 @@ import { MobileConnectionStatusContribution } from './mobile-connection-status-c
 import { MobileChatSessionRestoreContribution } from './mobile-chat-session-restore-contribution';
 import { QaapQaiqChatAgentContribution } from '@theia/qaap-shared-core/lib/browser/qaap-qaiq-chat-agent-contribution';
 import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
-import { QaapQaiqBashToolRenderer } from './qaap-qaiq-bash-tool-renderer';
-import { QaapQaiqGenericToolRenderer } from './qaap-qaiq-generic-tool-renderer';
-import { QaapMarkdownPartRenderer } from './qaap-markdown-part-renderer';
-import { QaapLobehubToolRenderer } from './qaap-lobehub-tool-renderer';
-import { QaapLobehubThinkingRenderer } from './qaap-lobehub-thinking-renderer';
+import { QaapQaiqBashToolRenderer } from '@theia/qaap-transcript/lib/browser/qaap-qaiq-bash-tool-renderer';
+import { QaapQaiqGenericToolRenderer } from '@theia/qaap-transcript/lib/browser/qaap-qaiq-generic-tool-renderer';
+import { QaapMarkdownPartRenderer } from '@theia/qaap-transcript/lib/browser/qaap-markdown-part-renderer';
+import { QaapLobehubToolRenderer } from '@theia/qaap-transcript/lib/browser/qaap-lobehub-tool-renderer';
+import { QaapLobehubThinkingRenderer } from '@theia/qaap-transcript/lib/browser/qaap-lobehub-thinking-renderer';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/browser/qaap-terminal-frontend-contribution';
@@ -128,9 +128,9 @@ import { QaapWorkHubDiffService } from '@theia/qaap-diff-review/lib/browser/qaap
 import { QaapPushNotificationContribution } from '@theia/qaap-shared-core/lib/browser/qaap-push-notification-contribution';
 import { QaapAgentCompletionContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-completion-contribution';
 import { QaapMobileAgentNotificationService } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-agent-notification-service';
-import { QaapAgentDevPreviewAutopilotContribution } from './qaap-agent-dev-preview-autopilot-contribution';
-import { QaapTranscriptImageLightboxContribution } from './qaap-transcript-image-lightbox';
-import { QaapTurnSettleNotifyContribution } from './qaap-turn-settle-notify-contribution';
+import { QaapAgentDevPreviewAutopilotContribution } from '@theia/qaap-transcript/lib/browser/qaap-agent-dev-preview-autopilot-contribution';
+import { QaapTranscriptImageLightboxContribution } from '@theia/qaap-transcript/lib/browser/qaap-transcript-image-lightbox';
+import { QaapTurnSettleNotifyContribution } from '@theia/qaap-transcript/lib/browser/qaap-turn-settle-notify-contribution';
 import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-finished-toast-contribution';
 import { QaapMobileAppTesterContribution } from './qaap-mobile-app-tester-contribution';
 import { QaapCopilotOwnerBinding } from '@theia/qaap-shared-core/lib/browser/qaap-copilot-owner-binding';

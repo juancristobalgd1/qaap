@@ -24,7 +24,7 @@ import {
     renderContextUsageSheet,
     wireContextUsagePopoverDismiss,
     type ContextUsageBreakdownView,
-} from './qaap-chat-context-usage-panel';
+} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
 import {
     isStickyComposerAnnotationPopoverAnchor,
     markStickyComposerPopoverAnchor,
@@ -33,7 +33,7 @@ import {
     scheduleStickyComposerPopoverPosition,
     shouldUseStickyComposerDesktopPopover,
     shouldUseStickyComposerPopover,
-} from './qaap-sticky-composer-popover';
+} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function shouldElevateComposerSheetsExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): boolean {

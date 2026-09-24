@@ -33,7 +33,7 @@ import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-p
 import {
     resolveLatestTranscriptTodos,
     resolveTodoStepProgress,
-} from '../common/qaap-transcript-todo-step';
+} from '@theia/qaap-transcript/lib/common/qaap-transcript-todo-step';
 
 export function collectAgentsHubRecentItemsExtracted(ctx: MobileProjectsTasksHubUiContext, projects: MobileProjectEntry[],
         limit = QAAP_AGENTS_HUB_RECENT_LIMIT,

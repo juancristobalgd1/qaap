@@ -18,7 +18,7 @@ import {
 
 describe('qaap-chat-context-usage-panel', () => {
     it('uses flat transparent rows and a violet Prompt context swatch', () => {
-        const cssPath = path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
+        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
         const css = fs.readFileSync(cssPath, 'utf8');
         expect(css).to.include('.qaap-chat-context-usage-panel-row {');
         expect(css).to.include('border: none');

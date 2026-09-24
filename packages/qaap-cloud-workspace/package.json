@@ -17,6 +17,7 @@
     "@theia/qaap-mobile-shell": "1.73.0",
     "@theia/qaap-persistence": "1.73.0",
     "@theia/qaap-shared-core": "1.73.0",
+    "@theia/qaap-transcript": "1.73.0",
     "@theia/terminal": "1.73.0",
     "@theia/workspace": "1.73.0",
     "dockerode": "^5.0.1",

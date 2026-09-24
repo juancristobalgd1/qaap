@@ -26,7 +26,7 @@ import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
+import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 
 /** Panel surface for show/hide/dispose and live subscription wiring. */

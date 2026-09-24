@@ -16,25 +16,28 @@
       "path": "../ai-chat-ui"
     },
     {
+      "path": "../ai-claude-code"
+    },
+    {
       "path": "../ai-core"
-    },
-    {
-      "path": "../ai-ide"
-    },
-    {
-      "path": "../ai-mcp"
     },
     {
       "path": "../core"
     },
     {
-      "path": "../dev-container"
+      "path": "../editor"
     },
     {
       "path": "../filesystem"
     },
     {
-      "path": "../process"
+      "path": "../mini-browser"
+    },
+    {
+      "path": "../monaco"
+    },
+    {
+      "path": "../preview"
     },
     {
       "path": "../qaap-adapters"
@@ -43,16 +46,19 @@
       "path": "../qaap-agents-ui"
     },
     {
-      "path": "../qaap-mobile-shell"
+      "path": "../qaap-diff-review"
     },
     {
-      "path": "../qaap-persistence"
+      "path": "../qaap-mobile-mechanics"
     },
     {
       "path": "../qaap-shared-core"
     },
     {
-      "path": "../qaap-transcript"
+      "path": "../qaap-transcript-overlay"
+    },
+    {
+      "path": "../scm"
     },
     {
       "path": "../terminal"

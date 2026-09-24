@@ -21,7 +21,7 @@ import { buildAgentMessageFromAgUiStructuredLog } from '@theia/qaap-shared-core/
 
 import { agentTurnHasRetryableToolSupportFailure } from '../common/qaap-agent-model-fallback';
 
-import { agentMessageHasStructuredTrace, isPlaceholderAgentContent, syncSettledTraceEventsOnMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
+import { agentMessageHasStructuredTrace, isPlaceholderAgentContent, syncSettledTraceEventsOnMessage } from '@theia/qaap-transcript/lib/common/qaap-transcript-trace-lifecycle';
 
 import { materializeAgentMessageForApi } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
 

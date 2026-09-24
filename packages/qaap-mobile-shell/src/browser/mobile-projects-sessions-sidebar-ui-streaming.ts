@@ -4,7 +4,7 @@ import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-s
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { collapseOlderFailedDuplicateTitles } from '../common/qaap-failed-duplicate-collapse';
+import { collapseOlderFailedDuplicateTitles } from '@theia/qaap-transcript/lib/common/qaap-failed-duplicate-collapse';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';

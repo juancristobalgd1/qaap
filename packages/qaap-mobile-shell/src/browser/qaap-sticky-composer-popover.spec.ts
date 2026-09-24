@@ -13,7 +13,7 @@ import {
     positionStickyComposerPopover,
     shouldUseStickyComposerPopover,
     wireStickyComposerPopoverPosition,
-} from './qaap-sticky-composer-popover';
+} from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-popover';
 
 describe('qaap-sticky-composer-popover', () => {
     let disableJSDOM: () => void;

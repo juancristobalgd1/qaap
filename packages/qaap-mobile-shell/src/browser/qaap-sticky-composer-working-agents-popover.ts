@@ -14,7 +14,7 @@ import {
     resolveWorkingMemberCommand,
     type WorkingAgentDetailActivityFeed,
 } from './qaap-sticky-composer-working-detail-activity';
-import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
+import { WORKING_DETAIL_TRANSCRIPT_CLASS } from '@theia/qaap-transcript/lib/browser/qaap-sticky-composer-working-detail-transcript';
 import {
     findWorkingDetailTaskLog,
     renderWorkingDetailTaskLog,

@@ -9,7 +9,7 @@ import { extractAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/comm
 import { resolveInteractiveAgentLoginCommand } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
-import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from './qaap-transcript-terminal-view';
+import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
 import { createQaapAgentLoginDialog, type QaapAgentLoginDialogController } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-dialog';
 import { resolveAgentLoginCwd } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-login-cwd';
 

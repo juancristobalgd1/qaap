@@ -9,7 +9,7 @@ import { QaapAgentConversation, QaapAgentConversationEvent, QaapAgentMessage, to
 
 import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
-import { autoContinueAllowedForInteraction } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
+import { autoContinueAllowedForInteraction } from '@theia/qaap-transcript/lib/common/qaap-agent-turn-completion';
 
 import { buildConversationAgentPrompt } from '../common/qaap-agent-conversation-prompt';
 

@@ -90,7 +90,7 @@ export interface MobileProjectsTranscriptComposerHost {
         defaultAgent?: string;
     }>;
     resolveConversationAgentLabel(summary: QaapAgentConversationSummaryDTO | undefined): string;
-    projectRowsUi: import('./qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
+    projectRowsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
 }
 
 /** Transcript sticky-composer agent/mode/approval sheets and backend agent list refresh. */

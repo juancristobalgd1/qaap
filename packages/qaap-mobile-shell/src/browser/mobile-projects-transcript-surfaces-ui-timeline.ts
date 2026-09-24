@@ -4,7 +4,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 import { nls } from '@theia/core/lib/common/nls';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
+import { resolveTranscriptPreviewOpenUrl } from '@theia/qaap-transcript/lib/browser/qaap-transcript-preview-effective-url';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,

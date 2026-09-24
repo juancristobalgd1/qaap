@@ -11,7 +11,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
+import { resolveTranscriptWorkspaceCwd, isTranscriptWorkspaceFilesystemPath } from '@theia/qaap-transcript/lib/common/qaap-transcript-workspace-cwd';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { probeQaapDevPreviewPort, waitForQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
@@ -25,14 +25,14 @@ import {
     writePendingTranscriptFilesViewMode,
     type TranscriptFilesViewMode,
     type TranscriptFilesViewServices,
-} from './qaap-transcript-files-view';
+} from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import {
     type TranscriptWorkspaceSurfaceKey,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
-import { createTranscriptReviewChrome } from './qaap-transcript-review-chrome';
+import { createTranscriptReviewChrome } from '@theia/qaap-transcript/lib/browser/qaap-transcript-review-chrome';
 import {
     resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,
-} from './mobile-projects-transcript-surfaces-helpers';
+} from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-surfaces-helpers';
 
 export function cancelPreviewAgentTurnExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): void {

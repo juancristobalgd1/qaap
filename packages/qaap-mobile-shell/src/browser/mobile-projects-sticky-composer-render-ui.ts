@@ -47,11 +47,11 @@ import {
     resolveContextUsageWarningThreshold,
     resolveContextUsageWarningThresholdPercentage,
     resolveVpsContextUsageIndicatorState,
-} from './qaap-chat-context-usage-indicator';
+} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-indicator';
 import {
     resolveChatModelContextUsageBreakdown,
     resolveVpsContextUsageBreakdown,
-} from './qaap-chat-context-usage-panel';
+} from '@theia/qaap-transcript/lib/browser/qaap-chat-context-usage-panel';
 import type { QaapAgentConversationSummaryDTO, QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import type { QaapAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
@@ -133,7 +133,7 @@ export interface MobileProjectsStickyComposerRenderHost {
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
     updateNewFabVisibility(): void;
     submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<void>;
-    executionSurfaceTabsUi: import('./qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
+    executionSurfaceTabsUi: import('@theia/qaap-transcript/lib/browser/qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
     transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
