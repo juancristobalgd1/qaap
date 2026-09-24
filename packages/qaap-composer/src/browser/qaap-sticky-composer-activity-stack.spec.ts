@@ -15,7 +15,7 @@ describe('qaap-sticky-composer-activity-stack', () => {
 
     it('keeps Preview and Run app at the prompt suggestion height on narrow screens', () => {
         const css = fs.readFileSync(
-            path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
+            path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
             'utf8',
         );
         const narrowCss = css.slice(css.indexOf('@media (max-width: 767px)'));

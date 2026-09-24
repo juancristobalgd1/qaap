@@ -58,10 +58,10 @@
       "path": "../qaap-cloud-workspace"
     },
     {
-      "path": "../qaap-mobile-shell"
+      "path": "../qaap-shared-core"
     },
     {
-      "path": "../qaap-shared-core"
+      "path": "../qaap-work-hub"
     },
     {
       "path": "../workspace"

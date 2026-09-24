@@ -29,7 +29,7 @@ import {
 
 describe('qaap-transcript-files-view', () => {
     it('hides Files/Changes labels on narrow or coarse pointers', () => {
-        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
+        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
         const css = fs.readFileSync(cssPath, 'utf8');
         expect(css).to.match(/@media \(max-width: 767px\),\s*\(pointer: coarse\)[\s\S]*?\.theia-mobile-transcript-files-view-mode-btn-label\s*\{\s*display:\s*none;/);
     });
@@ -114,7 +114,7 @@ describe('qaap-transcript-files-view', () => {
     });
 
     it('keeps the Files layout contract in CSS: side grid tracks, side/bottom tree borders', () => {
-        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
+        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
         const css = fs.readFileSync(cssPath, 'utf8');
         expect(css).to.include('minmax(0, 1fr) 5px minmax(120px');
         expect(css).to.match(/\.theia-mobile-transcript-files-layout\.theia-mod-tree-side\s*>\s*\.theia-mobile-transcript-files-tree\s*\{\s*border-left:/);

@@ -7,9 +7,9 @@ alwaysApply: true
 
 Cuando completes **cualquier** cambio de código en este repo, ejecuta **siempre** estos tres pasos **en orden** para que la vista previa refleje el trabajo:
 
-1. **Compilar** (mínimo mobile-shell + cloud-workspace; añade `--scope` si tocaste otros `@theia/qaap-*`):
+1. **Compilar** (mínimo work-hub + cloud-workspace; `tsc -b` de work-hub compila también los paquetes qaap que referencia; añade `--scope` si tocaste otros `@theia/qaap-*`):
    ```sh
-   npx lerna run compile --scope @theia/qaap-mobile-shell --scope @theia/qaap-cloud-workspace
+   npx lerna run compile --scope @theia/qaap-work-hub --scope @theia/qaap-cloud-workspace
    ```
 
 2. **Bundle frontend** (webpack; sin esto el browser no carga JS/CSS nuevo):

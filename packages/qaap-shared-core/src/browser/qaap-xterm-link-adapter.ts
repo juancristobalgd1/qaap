@@ -28,7 +28,7 @@ import {
  * (which protects text selection).
  *
  * Wired in via {@link createQaapXtermLinkFactory}, rebound onto the upstream
- * {@link XtermLinkFactory} in `qaap-mobile-shell-frontend-module.ts`.
+ * {@link XtermLinkFactory} in `qaap-work-hub-frontend-module.ts` (@theia/qaap-work-hub).
  *
  * The activation decision lives in the pure, unit-tested
  * `qaap-terminal-link-activation.ts` module.

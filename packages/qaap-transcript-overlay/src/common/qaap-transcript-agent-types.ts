@@ -6,7 +6,7 @@
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 
-/** Structural copies of mobile-shell agent DTOs — keeps overlay independent of qaap-mobile-shell at compile time. */
+/** Structural copies of mobile-shell agent DTOs — keeps overlay independent of qaap-shared-core at compile time. */
 export type QaapAgentApprovalKind = 'tool' | 'prompt';
 
 export interface QaapAgentApprovalRequestDTO {

@@ -16,7 +16,7 @@ import {
     type TranscriptFollowUpEntry,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,

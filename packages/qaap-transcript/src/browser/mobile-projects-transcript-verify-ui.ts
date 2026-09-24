@@ -19,7 +19,7 @@ import {
     evaluateVerifyCommitReadiness,
     type EvaluateVerifyCommitReadinessInput,
 } from '@theia/qaap-diff-review/lib/common/qaap-verify-commit-readiness';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { TranscriptExecutionSurfaceTabsApi } from './qaap-transcript-host-contracts';
 

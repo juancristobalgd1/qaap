@@ -6,7 +6,7 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { listPreviewAnnotationElements, type PreviewAnnotation } from './qaap-preview-annotation-types';
 
-/** Command implemented by qaap-mobile-shell — attach chip; pass `submit: true` to also send. */
+/** Command implemented by qaap-work-hub — attach chip; pass `submit: true` to also send. */
 export const QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND = 'qaap.workHub.attachComposerContext';
 
 /** Inline image payload forwarded with annotate Send (base64, no workspace upload). */

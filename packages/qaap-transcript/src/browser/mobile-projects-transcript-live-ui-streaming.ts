@@ -33,7 +33,7 @@ import {
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork } from '../common/qaap-transcript-idle-scheduler';
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
 

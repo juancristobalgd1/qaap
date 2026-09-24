@@ -15,7 +15,7 @@ En viewports estrechos (`max-width: 767px`) y puntero grueso (`pointer: coarse`)
    - `touch-action: pan-y` (vertical) o `pan-x` (franjas horizontales)
    - `overscroll-behavior-y: contain` en listas verticales
 3. **Registro en el fallback iOS**: añadir el selector a **ambos**:
-   - `packages/qaap-mobile-mechanics/src/browser/style/qaap-mobile-touch-scroll.css` (bloque `@media` móvil)
+   - `packages/qaap-mobile-shell/src/browser/style/qaap-mobile-touch-scroll.css` (bloque `@media` móvil)
    - `MOBILE_VERTICAL_SCROLL_SELECTOR` en `mobile-vertical-touch-scroll.ts`
    Los overlays se montan fuera de `#theia-app-shell`; `MobileTouchScrollContribution` los parchea vía `MutationObserver` solo si el selector está registrado.
 4. **No poner `touch-action: none`** en contenedores que envuelvan listas scrollables (solo grabbers, edge-swipe, gestos de arrastre explícitos).
@@ -39,4 +39,4 @@ Tras cambios en overlays o listas: `npm run build:browser`, viewport ≤767px o 
 | Approval policy | Composer Codex/QAIQ → control de política de aprobación | Las 3 opciones (icono + título + descripción) se leen y el sheet responde al pan vertical si el teclado reduce altura. Repetir desde transcript overlay si aplica. |
 | Choose model (regresión) | Sheet de modelo con muchos proveedores | Misma prueba de pan vertical en `.theia-mobile-sticky-composer-sheet-list`. |
 
-Prueba unitaria de registro: `npx lerna run test --scope @theia/qaap-mobile-mechanics -- --grep mobile-vertical-touch-scroll`.
+Prueba unitaria de registro: `npx lerna run test --scope @theia/qaap-mobile-shell -- --grep mobile-vertical-touch-scroll`.

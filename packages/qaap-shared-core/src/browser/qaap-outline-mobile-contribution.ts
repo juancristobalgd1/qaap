@@ -9,7 +9,7 @@ import { FrontendApplication } from '@theia/core/lib/browser';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { OutlineViewContribution, OUTLINE_WIDGET_FACTORY_ID } from '@theia/outline-view/lib/browser/outline-view-contribution';
-import { isQaapNarrowMobileWorkbench, stripRightPanelWidgetsOnMobile } from '@theia/qaap-mobile-mechanics/lib/browser/qaap-mobile-layout-utils';
+import { isQaapNarrowMobileWorkbench, stripRightPanelWidgetsOnMobile } from '@theia/qaap-mobile-shell/lib/browser/qaap-mobile-layout-utils';
 
 @injectable()
 export class QaapOutlineMobileContribution extends OutlineViewContribution implements ShellLayoutTransformer {

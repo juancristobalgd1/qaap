@@ -18,7 +18,7 @@
     "@theia/preferences": "1.73.0",
     "@theia/qaap-adapters": "1.73.0",
     "@theia/qaap-ai-openrouter": "1.73.0",
-    "@theia/qaap-mobile-mechanics": "1.73.0",
+    "@theia/qaap-mobile-shell": "1.73.0",
     "@theia/qaap-persistence": "1.73.0",
     "@theia/qaap-transcript-overlay": "1.73.0",
     "@theia/scm": "1.73.0",

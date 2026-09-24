@@ -267,7 +267,7 @@ const ALLOWED = [
     /^packages\/ai-chat-ui\/src\/browser\/style\/index\.css$/,
     /^packages\/ai-chat-ui\/src\/browser\/chat-response-renderer\/toolcall-part-renderer\.tsx$/,
     // Token-usage indicator: fork keeps CHAT_CONTEXT_WINDOW_SIZE_FALLBACK shape
-    // consumed by qaap-mobile-shell context-usage indicator/panel.
+    // consumed by the qaap-transcript context-usage indicator/panel.
     /^packages\/ai-chat-ui\/src\/browser\/chat-token-usage-indicator-util(\.spec)?\.ts$/,
     // ai-chat: fork carries configurable tool-confirmation timeout (chat-model,
     // response-model/tool-call specs, tool-request-service) and is ahead of

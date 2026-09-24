@@ -9,7 +9,7 @@ import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shel
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { DebugFrontendContribution } from '@theia/memory-inspector/lib/browser/memory-inspector-frontend-contribution';
 import { MemoryLayoutWidget } from '@theia/memory-inspector/lib/browser/wrapper-widgets/memory-layout-widget';
-import { isQaapNarrowMobileWorkbench, stripRightPanelWidgetsOnMobile } from '@theia/qaap-mobile-mechanics/lib/browser/qaap-mobile-layout-utils';
+import { isQaapNarrowMobileWorkbench, stripRightPanelWidgetsOnMobile } from '@theia/qaap-mobile-shell/lib/browser/qaap-mobile-layout-utils';
 
 @injectable()
 export class QaapMemoryInspectorMobileContribution extends DebugFrontendContribution implements ShellLayoutTransformer {

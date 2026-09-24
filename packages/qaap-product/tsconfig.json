@@ -40,9 +40,6 @@
       "path": "../qaap-element-inspector"
     },
     {
-      "path": "../qaap-mobile-shell"
-    },
-    {
       "path": "../qaap-product-theme"
     },
     {
@@ -50,6 +47,9 @@
     },
     {
       "path": "../qaap-shell"
+    },
+    {
+      "path": "../qaap-work-hub"
     },
     {
       "path": "../terminal"

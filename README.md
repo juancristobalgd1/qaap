@@ -50,7 +50,13 @@ templates, environment variables, and custom agent configuration.
 packages/
   qaap-product/            product umbrella, branding, preload, Electron hooks
   qaap-cloud-workspace/    background agents, conversations, tasks, deploy APIs
-  qaap-mobile-shell/       Work Hub, mobile shell, execution surfaces
+  qaap-work-hub/           Work Hub UI and frontend composition root
+  qaap-composer/           sticky composer, agent/model sheets, attachments
+  qaap-transcript/         transcript rendering, execution timeline, markdown worker
+  qaap-agents-ui/          agent picker, sign-in dialogs, CLI update notices
+  qaap-diff-review/        diff review, pull-request panel, git-review endpoint
+  qaap-shared-core/        agent/conversation DTOs, project services, GitHub/dev-preview backends
+  qaap-mobile-shell/       mobile mechanics: gestures, touch scroll, keyboard, narrow layout
   qaap-persistence/        embedded SQLite/WAL persistence for Node stores
   qaap-adapters/           Theia seams and browser/preview adapters
   qaap-ai-config/          AI defaults, prompts, model wiring
@@ -89,7 +95,7 @@ Useful checks:
 ```bash
 npm run qaap:drift-check
 npm --prefix packages/qaap-cloud-workspace test
-npm --prefix packages/qaap-mobile-shell test
+npm --prefix packages/qaap-work-hub test
 ```
 
 ## Docker / VPS

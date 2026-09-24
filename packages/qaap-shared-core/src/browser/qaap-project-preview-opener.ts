@@ -5,7 +5,7 @@
 
 /**
  * Structural view of the project-scoped preview API implemented by `QaapMiniBrowserOpenHandler`
- * (`@theia/qaap-adapters`). Declared structurally so `qaap-mobile-shell` does not take a package
+ * (`@theia/qaap-adapters`). Declared structurally so `qaap-shared-core` does not take a package
  * dependency on `qaap-adapters`, and so deployments that only bind the upstream mini-browser
  * handler degrade gracefully to the single shared preview tab.
  *

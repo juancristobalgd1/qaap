@@ -8,7 +8,13 @@ Single dependency for Qaap browser/Electron example apps. Pulls the product laye
 | `@theia/qaap-adapters` | Mini-browser + Monaco quick-input hooks |
 | `@theia/qaap-ai-config` | Agent defaults, shell confirmation policy, model branding |
 | `@theia/qaap-cloud-workspace` | Login OAuth, hub sync, agent tasks, deploy |
-| `@theia/qaap-mobile-shell` | Work Hub, mobile layout, navigator, notifications |
+| `@theia/qaap-work-hub` | Work Hub UI and the frontend composition root; pulls the packages below |
+| `@theia/qaap-composer` | Sticky composer, agent/model sheets, attachments, slash commands |
+| `@theia/qaap-transcript` | Transcript rendering, execution timeline, live streaming, markdown worker |
+| `@theia/qaap-agents-ui` | Agent picker, sign-in dialogs, CLI update notices |
+| `@theia/qaap-diff-review` | Diff review widget, pull-request panel, git-review endpoint |
+| `@theia/qaap-shared-core` | Agent/conversation DTOs and clients, project services, GitHub and dev-preview backends |
+| `@theia/qaap-mobile-shell` | Mobile mechanics: gestures, touch scroll, keyboard, bottom bar, narrow-viewport layout |
 | `@theia/qaap-product-theme` | Product CSS (narrow viewport, side panel, VSX, …) |
 | `@theia/qaap-element-inspector` | Element inspector (also required by `@theia/mini-browser`) |
 
@@ -40,7 +46,7 @@ upstream Theia core (minimal seams)
         ↓
 @theia/qaap-shell + qaap-adapters + qaap-ai-config (DI rebinds)
         ↓
-@theia/qaap-cloud-workspace + qaap-mobile-shell + qaap-product-theme (UI)
+@theia/qaap-cloud-workspace + qaap-work-hub + qaap-product-theme (UI)
         ↓
 example app depends only on @theia/qaap-product
 ```

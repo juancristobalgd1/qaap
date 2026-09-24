@@ -1,0 +1,112 @@
+{
+  "extends": "../../configs/base.tsconfig",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "lib"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../ai-chat"
+    },
+    {
+      "path": "../ai-chat-ui"
+    },
+    {
+      "path": "../ai-claude-code"
+    },
+    {
+      "path": "../ai-copilot"
+    },
+    {
+      "path": "../ai-core"
+    },
+    {
+      "path": "../ai-ide"
+    },
+    {
+      "path": "../ai-mcp"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../editor"
+    },
+    {
+      "path": "../filesystem"
+    },
+    {
+      "path": "../memory-inspector"
+    },
+    {
+      "path": "../mini-browser"
+    },
+    {
+      "path": "../monaco"
+    },
+    {
+      "path": "../navigator"
+    },
+    {
+      "path": "../outline-view"
+    },
+    {
+      "path": "../preferences"
+    },
+    {
+      "path": "../preview"
+    },
+    {
+      "path": "../qaap-adapters"
+    },
+    {
+      "path": "../qaap-agents-ui"
+    },
+    {
+      "path": "../qaap-ai-openrouter"
+    },
+    {
+      "path": "../qaap-composer"
+    },
+    {
+      "path": "../qaap-diff-review"
+    },
+    {
+      "path": "../qaap-element-inspector"
+    },
+    {
+      "path": "../qaap-mobile-shell"
+    },
+    {
+      "path": "../qaap-persistence"
+    },
+    {
+      "path": "../qaap-shared-core"
+    },
+    {
+      "path": "../qaap-shell"
+    },
+    {
+      "path": "../qaap-transcript"
+    },
+    {
+      "path": "../qaap-transcript-overlay"
+    },
+    {
+      "path": "../scm"
+    },
+    {
+      "path": "../terminal"
+    },
+    {
+      "path": "../vsx-registry"
+    },
+    {
+      "path": "../workspace"
+    }
+  ]
+}

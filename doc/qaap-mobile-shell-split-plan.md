@@ -1,9 +1,46 @@
 # Splitting `qaap-mobile-shell`
 
-Status: planned (September 2026), not started. Owner decision: split the package into
+Status: **done (2026-09-24)**. Owner decision: split the package into
 `qaap-work-hub`, `qaap-transcript`, `qaap-composer`, `qaap-diff-review` and `qaap-agents-ui`,
 leaving in `qaap-mobile-shell` only real mobile mechanics (gestures, touch scroll, keyboard,
 narrow-viewport layout).
+
+## Outcome
+
+Layers (imports only point down; `scripts/qaap-package-graph-check.js` enforces it):
+
+| Package | Files (incl. specs) | Role |
+|---|---|---|
+| `qaap-mobile-shell` | 21 | mobile mechanics (was `qaap-mobile-mechanics` during the split) |
+| `qaap-shared-core` | 342 | DTOs, clients, stream parsers, project services, GitHub/dev-preview/client-error backend |
+| `qaap-diff-review` | 35 | diff review, PR panel, git-review backend endpoint |
+| `qaap-agents-ui` | 20 | agent picker, sign-in dialogs, CLI update notice |
+| `qaap-transcript` | 241 | transcript rendering, execution timeline, markdown worker |
+| `qaap-composer` | 125 | sticky composer, sheets, attachments, MCP plugin icons |
+| `qaap-work-hub` | 247 | Work Hub UI, shell controllers and the frontend composition root |
+
+Before splitting, a dead-code pass removed ~40k lines unreachable from the entry points
+(the pre-split `mobile-workbench.css`, 21 re-export shims into `qaap-transcript-overlay`,
+~150 unused exports and ~95 unused class members, and the tests that only covered them).
+Test totals were preserved step by step: 2579 passing + 6 pending across the seven packages
+(plus 73 specs moved to `qaap-transcript-overlay`, which owns the code they test).
+
+Deviations from the steps below:
+
+- S3 was done by inverting the remaining type-only cycles with structural contracts
+  (`qaap-transcript-host-contracts.ts`, `qaap-composer-host-contracts.ts`, `ChatSessionActivityApi`)
+  instead of splitting DTO modules; the assignment itself came from `split-settle.js`
+  (cluster-aware, resolves every upward value edge by moving the cheaper side) plus
+  `split-overrides.csv`.
+- DI bindings stay in the Work Hub composition root, except the mechanics module
+  (`qaap-mobile-shell-frontend-module`) and the backend modules of shared-core and
+  diff-review. Stylesheets live in their packages but are all imported from the root module so the
+  cascade order is unchanged.
+- `QaapMobileAppTesterContribution` (AI App Tester) stays in the Work Hub, not in mechanics.
+- `qaap-cloud-workspace` keeps its declared dependency on the Work Hub package (it no longer imports
+  from it) so its frontend contributions still start after the Work Hub's.
+- The Playwright mobile suite was not run locally (no browsers installed); CI runs it, and the
+  app was checked by hand at desktop and 375px widths after S2, S4, S7 and S9.
 
 ## Where we start
 

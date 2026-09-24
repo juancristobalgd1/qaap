@@ -15,8 +15,8 @@ import {
     createMobileSheetGrabber,
     installMobilePullToRefresh,
     installMobileSheetDragDismiss,
-} from '@theia/qaap-mobile-mechanics/lib/browser/mobile-sheet-gestures';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+} from '@theia/qaap-mobile-shell/lib/browser/mobile-sheet-gestures';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { clearActivePullRequestExtracted, createCardStackExtracted, createFileCardExtracted, createPullRequestPickerExtracted, disposeExtracted, hideExtracted, loadPullRequestsExtracted, renderExtracted, renderHeaderExtracted, renderProgressExtracted, repositoryLabelExtracted, restoreReviewStateExtracted, showExtracted, showWithPullRequestExtracted, usePullRequestExtracted } from './mobile-pull-request-panel-render';
 import { createActionButtonExtracted, createBusyStateExtracted, createChipButtonExtracted, createDiffLineExtracted, createDoneStateExtracted, createEmptyStateExtracted, createErrorStateExtracted, createSignInStateExtracted, createSkeletonCardExtracted, createStatChipExtracted, doneSummaryExtracted, doneTitleExtracted, mergeButtonLabelExtracted, onPointerDownExtracted, onPointerMoveExtracted, onPointerUpExtracted, renderActionsExtracted, renderEmptyActionsExtracted, renderErrorActionsExtracted, renderReviewedActionsExtracted, renderSignInActionsExtracted, resetSheetPresentationExtracted, toggleExpandedExtracted } from './mobile-pull-request-panel-streaming';
 import { applyDragStylesExtracted, clearMergeTimerExtracted, createClassedTextSpanExtracted, createIconExtracted, createTestsPillExtracted, createTextSpanExtracted, decideTopExtracted, delayExtracted, executeMergeAndDeployExtracted, fireConfettiExtracted, hideToastExtracted, readStoredReviewExtracted, resetExtracted, reviewLabelExtracted, reviewStatsExtracted, saveReviewStateExtracted, showToastExtracted, showUndoToastExtracted, startMergeConfirmationExtracted, undoExtracted } from './mobile-pull-request-panel-timeline';

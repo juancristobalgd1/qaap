@@ -72,7 +72,7 @@ describe('qaap-agent-picker-loading', () => {
     });
 
     it('defines shimmer and disables it for reduced motion', () => {
-        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css');
+        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css');
         const css = fs.readFileSync(cssPath, 'utf8');
         expect(css).to.include('@keyframes theia-qaap-agent-skeleton-shimmer');
         expect(css).to.include('@media (prefers-reduced-motion: reduce)');

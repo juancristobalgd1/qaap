@@ -18,7 +18,7 @@
     "@theia/qaap-adapters": "1.73.0",
     "@theia/qaap-agents-ui": "1.73.0",
     "@theia/qaap-diff-review": "1.73.0",
-    "@theia/qaap-mobile-mechanics": "1.73.0",
+    "@theia/qaap-mobile-shell": "1.73.0",
     "@theia/qaap-shared-core": "1.73.0",
     "@theia/qaap-transcript-overlay": "1.73.0",
     "@theia/scm": "1.73.0",

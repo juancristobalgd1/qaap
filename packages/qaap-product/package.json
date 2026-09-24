@@ -1,7 +1,7 @@
 {
   "name": "@theia/qaap-product",
   "version": "1.73.0",
-  "description": "Qaap umbrella: add this single dependency to example/browser apps; transitively enables qaap-ai-config, qaap-element-inspector, qaap-mobile-shell, qaap-product-theme. @theia/mini-browser still depends on qaap-element-inspector directly.",
+  "description": "Qaap umbrella: add this single dependency to example/browser apps; transitively enables qaap-ai-config, qaap-element-inspector, qaap-work-hub (and with it the composer, transcript, agents-ui, diff-review, shared-core and mobile-shell packages), qaap-product-theme. @theia/mini-browser still depends on qaap-element-inspector directly.",
   "dependencies": {
     "@theia/ai-chat-ui": "1.73.0",
     "@theia/core": "1.73.0",
@@ -13,10 +13,10 @@
     "@theia/qaap-ai-config": "1.73.0",
     "@theia/qaap-cloud-workspace": "1.73.0",
     "@theia/qaap-element-inspector": "1.73.0",
-    "@theia/qaap-mobile-shell": "1.73.0",
     "@theia/qaap-product-theme": "1.73.0",
     "@theia/qaap-shared-core": "1.73.0",
     "@theia/qaap-shell": "1.73.0",
+    "@theia/qaap-work-hub": "1.73.0",
     "@theia/terminal": "1.73.0",
     "@theia/workspace": "1.73.0",
     "fs-extra": "^11.3.0",

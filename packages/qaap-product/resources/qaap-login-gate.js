@@ -19,7 +19,7 @@
     /**
      * Mobile Work Hub boot guard — runs before bundle.js so the IDE shell never flashes
      * behind the Agents chat while layout + workspace restore finish loading.
-     * Mirrors installMobileWorkHubBootGuard() in @theia/qaap-mobile-shell.
+     * Mirrors installMobileWorkHubBootGuard() in @theia/qaap-shared-core.
      */
     (function installMobileWorkHubBootGuardEarly() {
         try {
@@ -84,7 +84,7 @@
             }
             document.documentElement.classList.add('theia-mobile-workhub-boot');
             // Safety net: never leave the shell hidden if the hub fails to mount for any reason.
-            // Only lift the html boot guard — body classes are owned by @theia/qaap-mobile-shell and
+            // Only lift the html boot guard — body classes are owned by @theia/qaap-work-hub and
             // must stay active while Work Hub is the surface (stripping them leaks Explorer).
             window.setTimeout(function () {
                 document.documentElement.classList.remove('theia-mobile-workhub-boot');

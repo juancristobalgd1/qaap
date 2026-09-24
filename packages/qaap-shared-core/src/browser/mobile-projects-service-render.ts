@@ -21,7 +21,7 @@ import {
     markMobileProjectsPanelDismiss,
     requestMobileProjectsPanelDismiss,
 } from './mobile-projects-open';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     mobileProjectsUserStorageKey,
 } from './mobile-projects-user-storage';

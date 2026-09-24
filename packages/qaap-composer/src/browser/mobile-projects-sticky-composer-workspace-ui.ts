@@ -27,7 +27,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     closeComposerBranchSheetMenu,
     COMPOSER_BRANCH_SHEET_ROW_SELECTOR,

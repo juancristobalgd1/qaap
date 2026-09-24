@@ -46,9 +46,6 @@
       "path": "../qaap-composer"
     },
     {
-      "path": "../qaap-mobile-shell"
-    },
-    {
       "path": "../qaap-persistence"
     },
     {
@@ -56,6 +53,9 @@
     },
     {
       "path": "../qaap-transcript"
+    },
+    {
+      "path": "../qaap-work-hub"
     },
     {
       "path": "../terminal"

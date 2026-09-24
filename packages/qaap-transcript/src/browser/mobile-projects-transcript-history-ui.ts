@@ -18,7 +18,7 @@ import {
     cycleHistoryFilter,
     filterTranscriptHistoryCommits,
 } from '../common/qaap-transcript-history-filter';
-import { installMobilePanelResizeDrag } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-panel-resize-drag';
+import { installMobilePanelResizeDrag } from '@theia/qaap-mobile-shell/lib/browser/mobile-panel-resize-drag';
 
 /** Panel state for the transcript review-tab commit history drawer. */
 export interface MobileProjectsTranscriptHistoryHost {

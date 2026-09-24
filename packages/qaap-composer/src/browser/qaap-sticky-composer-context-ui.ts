@@ -8,7 +8,7 @@ import { AIVariableResolutionRequest } from '@theia/ai-core';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import { nls } from '@theia/core/lib/common/nls';
 import type { LabelProvider } from '@theia/core/lib/browser';
-import { installMobileHorizontalTouchScroll } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-horizontal-touch-scroll';
+import { installMobileHorizontalTouchScroll } from '@theia/qaap-mobile-shell/lib/browser/mobile-horizontal-touch-scroll';
 import { isImageAttachmentFileName } from '../common/qaap-sticky-composer-attachment-utils';
 import {
     isPendingComposerContextArg,

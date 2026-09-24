@@ -25,7 +25,7 @@ import {
     pickFilesFromDevice,
     type MobileComposerAttachHandlers,
 } from './qaap-mobile-composer-device-attach';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
     type MobileMcpAttachOptions,
     renderMobileMcpAttachView,

@@ -7,7 +7,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { nls } from '@theia/core/lib/common/nls';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapConversationChangeEvent } from '../common/qaap-conversation-change';
 import type { MobileProjectEntry } from './mobile-projects-types';

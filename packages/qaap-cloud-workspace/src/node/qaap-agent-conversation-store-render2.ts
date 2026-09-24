@@ -98,7 +98,7 @@ export function getExtracted(ctx: QaapAgentConversationStoreContext, id: string)
     if (!conv) {
         return undefined;
     }
-    // qaap-mobile-shell's trace-backfill helpers are typed against the client-side
+    // qaap-shared-core's trace-backfill helpers are typed against the client-side
     // QaapAgentConversationDTO, but only ever read/spread `.status` and `.messages` — both of
     // which are structurally compatible with the server-side QaapAgentConversation. Cast rather
     // than duplicate/unify the two type hierarchies here.

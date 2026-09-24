@@ -23,9 +23,9 @@ No persistir en `localStorage`, query/hash, backend, ni layout restore como sele
 
 - `packages/qaap-shared-core/src/common/qaap-mobile-work-surface-preference.ts`
 - `packages/qaap-shared-core/src/browser/mobile-projects-open.ts`
-- `packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution.ts`
+- `packages/qaap-work-hub/src/browser/mobile-one-column-shell-contribution.ts`
 - `packages/qaap-product/resources/qaap-login-gate.js`
-- `packages/qaap-mobile-shell/src/browser/qaap-shell-layout-restore-contribution.ts`
+- `packages/qaap-work-hub/src/browser/qaap-shell-layout-restore-contribution.ts`
 
 ## Contrato esperado
 
@@ -39,8 +39,8 @@ No persistir en `localStorage`, query/hash, backend, ni layout restore como sele
 Despues de tocar estos archivos, ejecutar:
 
 ```sh
-npx lerna run compile --scope @theia/qaap-mobile-shell
-npx lerna run test --scope @theia/qaap-mobile-shell
+npx lerna run compile --scope @theia/qaap-shared-core --scope @theia/qaap-work-hub
+npx lerna run test --scope @theia/qaap-shared-core --scope @theia/qaap-work-hub
 ```
 
 Y verificar manualmente en browser:

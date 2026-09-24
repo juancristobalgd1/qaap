@@ -33,7 +33,7 @@ import { buildWorkingAgentDetailActivityFeed } from './qaap-sticky-composer-work
 
 describe('qaap-sticky-composer-working-agents-popover', () => {
     it('locks expanded Working to full composer width (no flex-shrink to content)', () => {
-        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css');
+        const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css');
         const css = fs.readFileSync(cssPath, 'utf8');
         expect(css).to.match(
             /\.theia-mobile-sticky-composer-working-control\.theia-mod-expanded\s*\{[^}]*flex:\s*1 0 100%;[^}]*min-width:\s*100%;/s,

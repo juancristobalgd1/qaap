@@ -60,7 +60,7 @@ import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import type { MobileProjectEntry, MobileProjectFilter } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';

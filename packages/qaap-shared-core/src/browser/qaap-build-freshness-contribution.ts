@@ -7,7 +7,7 @@ import { injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { nls } from '@theia/core/lib/common/nls';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 
 /** Re-check cadence while the tab is visible; visibility changes also trigger a check. */
 const CHECK_INTERVAL_MS = 5 * 60_000;

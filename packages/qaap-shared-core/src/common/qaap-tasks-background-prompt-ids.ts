@@ -11,8 +11,8 @@
  * PromptService. The QAIQ bridge therefore resolves this fragment (plus the per-project
  * `project-info` artifact) and prepends the text to the prompt it sends to the runner.
  *
- * Lives in `common` so QAIQ (qaap-mobile-shell) and the registrar (qaap-ai-config, which
- * depends on qaap-mobile-shell) share one id without an import cycle.
+ * Lives in `common` so QAIQ (qaap-shared-core) and the registrar (qaap-ai-config, which
+ * depends on qaap-shared-core) share one id without an import cycle.
  */
 export const QAAP_TASKS_BACKGROUND_CONTEXT_PROMPT_ID = 'qaap-tasks-background-context';
 

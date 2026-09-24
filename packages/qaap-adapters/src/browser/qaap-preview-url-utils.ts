@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-/** Same prefix as {@link QAAP_DEV_PREVIEW_PREFIX} in qaap-mobile-shell (keep in sync). */
+/** Same prefix as {@link QAAP_DEV_PREVIEW_PREFIX} in qaap-shared-core (keep in sync). */
 export const QAAP_DEV_PREVIEW_PATH_PREFIX = '/qaap-dev';
 
-/** Same prefix as {@link QAAP_IDENTITY_PREVIEW_PREFIX} in qaap-mobile-shell (keep in sync). */
+/** Same prefix as {@link QAAP_IDENTITY_PREVIEW_PREFIX} in qaap-shared-core (keep in sync). */
 export const QAAP_IDENTITY_PREVIEW_PATH_PREFIX = '/qaap-preview';
 
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '[::1]', '::1']);

@@ -19,7 +19,7 @@ import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/c
 import { createAgentSelectField } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
-import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 
 export type { QaapAgentTaskCreated as MobileAgentTaskCreated };
