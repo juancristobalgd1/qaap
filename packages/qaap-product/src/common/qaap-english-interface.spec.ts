@@ -16,9 +16,11 @@ describe('Qaap English interface bootstrap', () => {
         );
 
         const localeWrite = gate.indexOf("window.localStorage.setItem('localeId', 'en')");
-        const bundleLoad = gate.indexOf("script.src = './bundle.js'");
+        // The bundle URL is versioned (`./bundle.js?qaap-build=…`) by resolveBundleUrl().
+        const bundleLoad = gate.indexOf('script.src = resolveBundleUrl()');
         expect(localeWrite).to.be.greaterThan(-1);
         expect(bundleLoad).to.be.greaterThan(localeWrite);
+        expect(gate).to.include("return './bundle.js';");
         expect(gate).to.include("document.documentElement.setAttribute('lang', 'en')");
         expect(gate).to.include('Sign in with GitHub');
         expect(gate).to.include('href="/legal/terms.html"');
