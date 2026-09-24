@@ -2,30 +2,10 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
-import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
-import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
-import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
-import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
-import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import {
-    isTranscriptAgentTailStreaming,
-    resolveTranscriptEffectiveStatus,
-    shouldShowTranscriptEmptyQuickActions,
-} from '../common/qaap-transcript-turn-status';
-import {
-    appendBeforeTranscriptLiveStatus,
-    detachTranscriptLiveStatusFromScroller,
-} from '../common/qaap-transcript-live-status';
-import { recordTranscriptRenderMetric, type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
+import { resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
+import { type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
 
 /** Telemetry: attribute every patch-miss to the guard that rejected it. */
 export const PATCH_NONE_REASON_METRIC: Record<QaapTranscriptStreamingPatchNoneReason, QaapTranscriptRenderMetricKind> = {
@@ -46,33 +26,11 @@ export const AGENT_REPLACE_REASON_METRIC: Record<TranscriptAgentPatchRejectReaso
     applier: 'render_patch_last_agent_replace_applier',
     thinking: 'render_patch_last_agent_replace_thinking',
 };
-import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
-import {
-    attachTranscriptScrollIntentObserver,
-    transcriptHasActiveSelection,
-    transcriptHasInteractiveFocus,
-} from './qaap-transcript-scroll-intent';
 import {
     ensureTranscriptScrollController,
     type TranscriptScrollController,
 } from './qaap-transcript-scroll-controller';
-import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
-import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
-import {
-    attachTranscriptReadPositionPersistence,
-    resolveStoredTranscriptReadMessageIndex,
-    restoreTranscriptReadPosition,
-} from './qaap-transcript-read-position';
-import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
-import {
-    attachTranscriptRowDeferObserver,
-    shouldDeferTranscriptRowHeavyContent,
-} from './qaap-transcript-row-defer';
-import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO, cancelQueuedConversationMessage, dispatchQueuedConversationMessage, conversationToSummary } from '../common/qaap-agent-conversation-client';
-import {
-    extractLastFailedToolFromMessage,
-    resolveAgentTurnFailureTechnicalContent,
-} from '../common/qaap-agent-failure-message';
+import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO, cancelQueuedConversationMessage, dispatchQueuedConversationMessage, conversationToSummary } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
@@ -84,9 +42,14 @@ import { applyTranscriptScrollAfterMutationExtracted, buildTranscriptVirtualFoot
 import { createTranscriptEmptyWelcomeExtracted, prepareTranscriptReadingAnchorWindowExtracted, renderTranscriptMessagesExtracted, renderTranscriptMessagesVirtualExtracted, restoreTranscriptOpeningPositionExtracted, scrollTranscriptToLastUserTurnExtracted } from './mobile-projects-transcript-messages-render-ui-streaming';
 import { attachTranscriptScrollChromeExtracted, markTranscriptMessageRowExtracted, settleVisuallySettledAgentTranscriptExtracted, tryPatchStreamingTranscriptMessagesExtracted, tryPatchStreamingTranscriptVirtualExtracted } from './mobile-projects-transcript-messages-render-ui-timeline';
 
+/** Options accepted by {@link MobileProjectsTranscriptMessagesToolUi.createTranscriptAgentFailureDialog}. */
+export type TranscriptAgentFailureDialogOptions = NonNullable<Parameters<MobileProjectsTranscriptMessagesToolUi['createTranscriptAgentFailureDialog']>[2]>;
+
 export class MobileProjectsTranscriptMessagesRenderUi {
-    protected readonly transcriptAgentSegmentsCache = new Map<string, readonly QaapAgentMessageSegmentDTO[]>();
-    protected transcriptAgentSegmentsCacheConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public readonly transcriptAgentSegmentsCache = new Map<string, readonly QaapAgentMessageSegmentDTO[]>();
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public transcriptAgentSegmentsCacheConversationId: string | undefined;
     /**
      * Tracks the most recent cache key inserted per message (`${conv.id}|${msg.id}`).
      * The cache key embeds a content signature that changes every streamed token, so
@@ -95,7 +58,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
      * the message's previous entry before inserting the new one caps live growth at one
      * entry per message while still caching finished messages across re-renders.
      */
-    protected readonly transcriptAgentSegmentsCacheKeyByMessage = new Map<string, string>();
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public readonly transcriptAgentSegmentsCacheKeyByMessage = new Map<string, string>();
     /**
      * Tracks which conversation the full scroll chrome (scroll-to-bottom button, scroll pin,
      * intent observer, inline search, read position, activity timeline, row defer observer) is
@@ -103,15 +67,22 @@ export class MobileProjectsTranscriptMessagesRenderUi {
      * scroll-to-bottom button, which starts hidden and needs a rAF + 100ms debounce to show
      * again — causes visible flicker during streaming. Only rebuild on conversation switch.
      */
-    protected transcriptScrollChromeBoundConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public transcriptScrollChromeBoundConversationId: string | undefined;
 
     constructor(
-        protected readonly host: MobileProjectsTranscriptMessagesHost,
-        protected readonly workHub: WorkHubTranscriptBridge,
-        protected readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
-        protected readonly userUi: MobileProjectsTranscriptMessagesUserUi,
-        protected readonly artifactsUi: MobileProjectsTranscriptMessagesArtifactsUi,
-        protected readonly toolUi: MobileProjectsTranscriptMessagesToolUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+        public readonly host: MobileProjectsTranscriptMessagesHost,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+        public readonly workHub: WorkHubTranscriptBridge,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+        public readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+        public readonly userUi: MobileProjectsTranscriptMessagesUserUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+        public readonly artifactsUi: MobileProjectsTranscriptMessagesArtifactsUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+        public readonly toolUi: MobileProjectsTranscriptMessagesToolUi,
     ) { }
 
     resolveTranscriptMessageHost(host: HTMLElement): HTMLElement {
@@ -122,27 +93,33 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return resolveTranscriptAgentSegmentsExtracted(this, conv, msg);
     }
 
-    protected syncTranscriptAgentSegmentsCache(conversationId: string): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public syncTranscriptAgentSegmentsCache(conversationId: string): void {
         syncTranscriptAgentSegmentsCacheExtracted(this, conversationId);
     }
 
-    protected setTranscriptAgentSegmentsCacheEntry(conv: QaapAgentConversationDTO, msg: QaapAgentMessageDTO, cacheKey: string, segments: readonly QaapAgentMessageSegmentDTO[],): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public setTranscriptAgentSegmentsCacheEntry(conv: QaapAgentConversationDTO, msg: QaapAgentMessageDTO, cacheKey: string, segments: readonly QaapAgentMessageSegmentDTO[],): void {
         setTranscriptAgentSegmentsCacheEntryExtracted(this, conv, msg, cacheKey, segments);
     }
 
-    protected transcriptAgentSegmentsCacheKey(conv: QaapAgentConversationDTO, msg: QaapAgentMessageDTO): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public transcriptAgentSegmentsCacheKey(conv: QaapAgentConversationDTO, msg: QaapAgentMessageDTO): string {
         return transcriptAgentSegmentsCacheKeyExtracted(this, conv, msg);
     }
 
-    protected transcriptTextSignature(text: string | undefined): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public transcriptTextSignature(text: string | undefined): string {
         return transcriptTextSignatureExtracted(this, text);
     }
 
-    protected transcriptSegmentsSignature(segments: readonly QaapAgentMessageSegmentDTO[] | undefined): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public transcriptSegmentsSignature(segments: readonly QaapAgentMessageSegmentDTO[] | undefined): string {
         return transcriptSegmentsSignatureExtracted(this, segments);
     }
 
-    protected withDerivedTranscriptSegments(msg: QaapAgentMessageDTO): QaapAgentMessageDTO {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public withDerivedTranscriptSegments(msg: QaapAgentMessageDTO): QaapAgentMessageDTO {
         return withDerivedTranscriptSegmentsExtracted(this, msg);
     }
 
@@ -152,13 +129,16 @@ export class MobileProjectsTranscriptMessagesRenderUi {
      * per row) stays O(N) instead of O(N²). Snapshots are immutable per tick,
      * so keying by object identity is safe.
      */
-    private readonly normalizedFailuresCache = new WeakMap<QaapAgentConversationDTO, QaapAgentConversationDTO>();
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public readonly normalizedFailuresCache = new WeakMap<QaapAgentConversationDTO, QaapAgentConversationDTO>();
 
-    protected normalizeConversationFailuresCached(conv: QaapAgentConversationDTO): QaapAgentConversationDTO {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public normalizeConversationFailuresCached(conv: QaapAgentConversationDTO): QaapAgentConversationDTO {
         return normalizeConversationFailuresCachedExtracted(this, conv);
     }
 
-    protected transcriptRowRenderKey(conv: QaapAgentConversationDTO, index: number): string | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public transcriptRowRenderKey(conv: QaapAgentConversationDTO, index: number): string | undefined {
         return transcriptRowRenderKeyExtracted(this, conv, index);
     }
 
@@ -166,7 +146,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return createTranscriptMessageRowAtIndexExtracted(this, conv, index);
     }
 
-    protected transcriptContextCompactionBoundaryIndex(conv: QaapAgentConversationDTO): number | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public transcriptContextCompactionBoundaryIndex(conv: QaapAgentConversationDTO): number | undefined {
         return transcriptContextCompactionBoundaryIndexExtracted(this, conv);
     }
 
@@ -215,7 +196,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     /** Activity row currently mounted in the transcript host or virtual footer. */
-    protected findTranscriptStreamingActivityRow(messageHost: HTMLElement): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public findTranscriptStreamingActivityRow(messageHost: HTMLElement): HTMLElement | undefined {
         const rows = [...messageHost.querySelectorAll<HTMLElement>(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`)];
         const first = rows.shift();
         for (const duplicate of rows) {
@@ -224,19 +206,23 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return first;
     }
 
-    protected createTranscriptContextCompactionRow(conv: QaapAgentConversationDTO): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public createTranscriptContextCompactionRow(conv: QaapAgentConversationDTO): HTMLElement | undefined {
         return createTranscriptContextCompactionRowExtracted(this, conv);
     }
 
-    protected resolveTranscriptScrollController(scroller: HTMLElement): TranscriptScrollController {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public resolveTranscriptScrollController(scroller: HTMLElement): TranscriptScrollController {
         return ensureTranscriptScrollController(scroller);
     }
 
-    protected shouldFollowTranscriptTail(scroller: HTMLElement): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public shouldFollowTranscriptTail(scroller: HTMLElement): boolean {
         return shouldFollowTranscriptTailExtracted(this, scroller);
     }
 
-    protected captureTranscriptScrollAnchor(scroller: HTMLElement): ReturnType<TranscriptScrollController['captureAnchor']> {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public captureTranscriptScrollAnchor(scroller: HTMLElement): ReturnType<TranscriptScrollController['captureAnchor']> {
         return this.resolveTranscriptScrollController(scroller).captureAnchor(scroller);
     }
 
@@ -244,51 +230,63 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         restoreTranscriptScrollAnchorExtracted(this, scroller, anchor);
     }
 
-    protected applyTranscriptScrollAfterMutation(messageHost: HTMLElement, anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public applyTranscriptScrollAfterMutation(messageHost: HTMLElement, anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,): void {
         applyTranscriptScrollAfterMutationExtracted(this, messageHost, anchor);
     }
 
-    protected scheduleTranscriptScrollAfterMutation(messageHost: HTMLElement, anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public scheduleTranscriptScrollAfterMutation(messageHost: HTMLElement, anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,): void {
         scheduleTranscriptScrollAfterMutationExtracted(this, messageHost, anchor);
     }
 
-    protected scrollTranscriptTurnStartIntoReadingPosition(messageHost: HTMLElement, row: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public scrollTranscriptTurnStartIntoReadingPosition(messageHost: HTMLElement, row: HTMLElement): void {
         scrollTranscriptTurnStartIntoReadingPositionExtracted(this, messageHost, row);
     }
 
-    protected scrollTranscriptFollowTail(scroller: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public scrollTranscriptFollowTail(scroller: HTMLElement): void {
         this.resolveTranscriptScrollController(scroller).onContentChanged(scroller);
     }
 
-    protected findLastUserMessageRow(messageHost: HTMLElement): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public findLastUserMessageRow(messageHost: HTMLElement): HTMLElement | undefined {
         return [...messageHost.querySelectorAll<HTMLElement>('.theia-mobile-agent-transcript-msg.theia-mod-user')].at(-1);
     }
 
-    protected findLastUserMessageIndex(conv: QaapAgentConversationDTO): number {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public findLastUserMessageIndex(conv: QaapAgentConversationDTO): number {
         return findLastUserMessageIndexExtracted(this, conv);
     }
 
-    protected findAppendedUserMessageIndex(previous: QaapAgentConversationDTO | undefined, next: QaapAgentConversationDTO,): number {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public findAppendedUserMessageIndex(previous: QaapAgentConversationDTO | undefined, next: QaapAgentConversationDTO,): number {
         return findAppendedUserMessageIndexExtracted(this, previous, next);
     }
 
-    protected positionTranscriptVirtualListAtUserTurn(messageHost: HTMLElement, list: { scrollToIndex?: (index: number, contextPx?: number) => void }, userIndex: number,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public positionTranscriptVirtualListAtUserTurn(messageHost: HTMLElement, list: { scrollToIndex?: (index: number, contextPx?: number) => void }, userIndex: number,): void {
         positionTranscriptVirtualListAtUserTurnExtracted(this, messageHost, list, userIndex);
     }
 
-    protected hasExplicitTranscriptMessageHash(): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public hasExplicitTranscriptMessageHash(): boolean {
         return typeof window !== 'undefined' && window.location.hash.startsWith('#qaap-transcript-message-');
     }
 
-    protected scrollTranscriptVirtualListToIndex(list: { scrollToIndex?: (index: number, contextPx?: number) => void }, index: number, contextPx: number,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public scrollTranscriptVirtualListToIndex(list: { scrollToIndex?: (index: number, contextPx?: number) => void }, index: number, contextPx: number,): void {
         scrollTranscriptVirtualListToIndexExtracted(this, list, index, contextPx);
     }
 
-    protected restoreTranscriptOpeningPositionVirtual(list: { scrollToIndex?: (index: number, contextPx?: number) => void }, conv: QaapAgentConversationDTO, contextPx: number,): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public restoreTranscriptOpeningPositionVirtual(list: { scrollToIndex?: (index: number, contextPx?: number) => void }, conv: QaapAgentConversationDTO, contextPx: number,): boolean {
         return restoreTranscriptOpeningPositionVirtualExtracted(this, list, conv, contextPx);
     }
 
-    protected createTranscriptEmptyWelcome(): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public createTranscriptEmptyWelcome(): HTMLElement {
         return createTranscriptEmptyWelcomeExtracted(this);
     }
 
@@ -296,15 +294,18 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         renderTranscriptMessagesVirtualExtracted(this, host, conv, options);
     }
 
-    protected restoreTranscriptOpeningPosition(messageHost: HTMLElement, conv: QaapAgentConversationDTO): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public restoreTranscriptOpeningPosition(messageHost: HTMLElement, conv: QaapAgentConversationDTO): boolean {
         return restoreTranscriptOpeningPositionExtracted(this, messageHost, conv);
     }
 
-    protected scrollTranscriptToLastUserTurn(messageHost: HTMLElement, options?: { readonly asPositionTurn?: boolean }): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public scrollTranscriptToLastUserTurn(messageHost: HTMLElement, options?: { readonly asPositionTurn?: boolean }): void {
         scrollTranscriptToLastUserTurnExtracted(this, messageHost, options);
     }
 
-    protected prepareTranscriptReadingAnchorWindow(messageHost: HTMLElement, userRow: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public prepareTranscriptReadingAnchorWindow(messageHost: HTMLElement, userRow: HTMLElement): void {
         prepareTranscriptReadingAnchorWindowExtracted(this, messageHost, userRow);
     }
 
@@ -312,7 +313,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         renderTranscriptMessagesExtracted(this, host, conv);
     }
 
-    protected attachTranscriptScrollChrome(host: HTMLElement, messageHost: HTMLElement, conv: QaapAgentConversationDTO,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public attachTranscriptScrollChrome(host: HTMLElement, messageHost: HTMLElement, conv: QaapAgentConversationDTO,): void {
         attachTranscriptScrollChromeExtracted(this, host, messageHost, conv);
     }
 
@@ -333,7 +335,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
     }
 
     /** Why the last in-place patch attempt failed — read by the replace-site telemetry. */
-    protected lastAgentPatchRejectReason: TranscriptAgentPatchRejectReason | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public lastAgentPatchRejectReason: TranscriptAgentPatchRejectReason | undefined;
 
     tryPatchStreamingAgentTextContent(existingRow: HTMLElement, prevMsg: QaapAgentMessageDTO | undefined, nextMsg: QaapAgentMessageDTO, resolvedSegments: QaapAgentMessageSegmentDTO[] | undefined, conv?: QaapAgentConversationDTO,): boolean {
         return tryPatchStreamingAgentTextContentExtracted(this, existingRow, prevMsg, nextMsg, resolvedSegments, conv);
@@ -343,7 +346,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         messageHost.querySelectorAll(`[${TRANSCRIPT_ACTIVITY_ROW_ATTR}]`).forEach(row => row.remove());
     }
 
-    protected clearTranscriptEmptyQuickActions(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public clearTranscriptEmptyQuickActions(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         clearTranscriptEmptyQuickActionsExtracted(this, messageHost, conv);
     }
 
@@ -351,7 +355,8 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         syncTranscriptActivityRowExtracted(this, messageHost, conv);
     }
 
-    protected ensureLiveStatusBeforeRemovingActivityRow(messageHost: HTMLElement, conv: QaapAgentConversationDTO,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public ensureLiveStatusBeforeRemovingActivityRow(messageHost: HTMLElement, conv: QaapAgentConversationDTO,): void {
         ensureLiveStatusBeforeRemovingActivityRowExtracted(this, messageHost, conv);
     }
 
@@ -359,13 +364,15 @@ export class MobileProjectsTranscriptMessagesRenderUi {
         return createTranscriptAgentFailureRowExtracted(this, msg, conv, options);
     }
 
-    protected buildTranscriptAgentFailureDialogOptions(input: { readonly failedToolName?: string; readonly canRetry: boolean; readonly agentId?: string; readonly error?: string; readonly technicalContent?: string; }): {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-render-ui-* modules. */
+    public buildTranscriptAgentFailureDialogOptions(input: {
         readonly failedToolName?: string;
-        readonly onRetry?: () => void | Promise<void>;
-        readonly onOpenAuthUrl?: (url: string) => void;
-        readonly onOpenAgentSignIn?: () => void | Promise<void>;
-        readonly agentLabel?: string;
-    } {
+        readonly canRetry: boolean;
+        readonly agentId?: string;
+        readonly error?: string;
+        readonly technicalContent?: string;
+        readonly agentMessage?: TranscriptAgentFailureDialogOptions['agentMessage'];
+    }): TranscriptAgentFailureDialogOptions {
         return buildTranscriptAgentFailureDialogOptionsExtracted(this, input);
     }
 

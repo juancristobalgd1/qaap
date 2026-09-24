@@ -1,64 +1,27 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptMessagesRenderUiContext } from './mobile-projects-transcript-messages-render-ui-context';
+import type { TranscriptAgentFailureDialogOptions } from './mobile-projects-transcript-messages-render-ui';
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { nls } from '@theia/core/lib/common/nls';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
-import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
-import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
-import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
-import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
-import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
+import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
-    isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
 } from '../common/qaap-transcript-turn-status';
 import {
     appendBeforeTranscriptLiveStatus,
-    detachTranscriptLiveStatusFromScroller,
 } from '../common/qaap-transcript-live-status';
-import { recordTranscriptRenderMetric, type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
-import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
-import {
-    attachTranscriptScrollIntentObserver,
-    transcriptHasActiveSelection,
-    transcriptHasInteractiveFocus,
-} from './qaap-transcript-scroll-intent';
-import {
-    ensureTranscriptScrollController,
-    type TranscriptScrollController,
-} from './qaap-transcript-scroll-controller';
-import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
-import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
-import {
-    attachTranscriptReadPositionPersistence,
-    resolveStoredTranscriptReadMessageIndex,
-    restoreTranscriptReadPosition,
-} from './qaap-transcript-read-position';
-import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
-import {
-    attachTranscriptRowDeferObserver,
-    shouldDeferTranscriptRowHeavyContent,
-} from './qaap-transcript-row-defer';
-import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {
     extractLastFailedToolFromMessage,
     resolveAgentTurnFailureTechnicalContent,
 } from '../common/qaap-agent-failure-message';
-import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
-import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
-import type { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 
-export function tryPatchStreamingAgentTextContentExtracted(ctx: any, existingRow: HTMLElement,
+export function tryPatchStreamingAgentTextContentExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, existingRow: HTMLElement,
         prevMsg: QaapAgentMessageDTO | undefined,
         nextMsg: QaapAgentMessageDTO,
         resolvedSegments: QaapAgentMessageSegmentDTO[] | undefined,
@@ -178,7 +141,7 @@ export function tryPatchStreamingAgentTextContentExtracted(ctx: any, existingRow
         return true;
 }
 
-export function clearTranscriptEmptyQuickActionsExtracted(ctx: any, messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+export function clearTranscriptEmptyQuickActionsExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         if (shouldShowTranscriptEmptyQuickActions(conv, ctx.host.transcriptLastConv)) {
             return;
         }
@@ -186,7 +149,7 @@ export function clearTranscriptEmptyQuickActionsExtracted(ctx: any, messageHost:
         ctx.host.transcriptComposerHost?.classList.remove('theia-mod-show-quick-actions');
 }
 
-export function syncTranscriptActivityRowExtracted(ctx: any, messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+export function syncTranscriptActivityRowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         ctx.clearTranscriptEmptyQuickActions(messageHost, conv);
         const existingActivityRow = ctx.findTranscriptStreamingActivityRow(messageHost);
         messageHost.querySelectorAll('.theia-mod-streaming').forEach(element => {
@@ -219,7 +182,7 @@ export function syncTranscriptActivityRowExtracted(ctx: any, messageHost: HTMLEl
         ctx.removeTranscriptActivityRow(messageHost);
 }
 
-export function ensureLiveStatusBeforeRemovingActivityRowExtracted(ctx: any, messageHost: HTMLElement,
+export function ensureLiveStatusBeforeRemovingActivityRowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement,
         conv: QaapAgentConversationDTO,): void {
         const lastAgent = [...conv.messages].reverse().find(message => message.role === 'agent');
         if (!lastAgent?.id) {
@@ -233,7 +196,7 @@ export function ensureLiveStatusBeforeRemovingActivityRowExtracted(ctx: any, mes
         }
 }
 
-export function createTranscriptAgentFailureRowExtracted(ctx: any, msg: QaapAgentMessageDTO,
+export function createTranscriptAgentFailureRowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, msg: QaapAgentMessageDTO,
         conv?: QaapAgentConversationDTO,
         options?: { readonly deferHeavyContent?: boolean },): HTMLElement {
         const row = document.createElement('div');
@@ -272,22 +235,14 @@ export function createTranscriptAgentFailureRowExtracted(ctx: any, msg: QaapAgen
         return row;
 }
 
-export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, input: {
+export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, input: {
         readonly failedToolName?: string;
         readonly canRetry: boolean;
         readonly agentId?: string;
         readonly error?: string;
         readonly technicalContent?: string;
-        readonly agentMessage?: unknown;
-    }): {
-        readonly failedToolName?: string;
-        readonly onRetry?: () => void | Promise<void>;
-        readonly onOpenAuthUrl?: (url: string) => void;
-        readonly onOpenAgentSignIn?: () => void | Promise<void>;
-        readonly onOpenAiFeaturesSettings?: () => void | Promise<void>;
-        readonly agentLabel?: string;
-        readonly agentId?: string;
-    } {
+        readonly agentMessage?: TranscriptAgentFailureDialogOptions['agentMessage'];
+    }): TranscriptAgentFailureDialogOptions {
         return {
             failedToolName: input.failedToolName,
             onRetry: input.canRetry ? () => ctx.host.retryOpenFailedConversationTask?.() : undefined,
@@ -306,7 +261,7 @@ export function buildTranscriptAgentFailureDialogOptionsExtracted(ctx: any, inpu
         };
 }
 
-export function createTranscriptMessageRowExtracted(ctx: any, role: 'user' | 'agent',
+export function createTranscriptMessageRowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, role: 'user' | 'agent',
         content: string,
         _error?: string,
         options?: {

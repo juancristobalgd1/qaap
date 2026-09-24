@@ -1,6 +1,6 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 62 files.
+# 57 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
@@ -44,11 +44,6 @@ packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui-render
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui-timeline.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui-activity.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui-render.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui-streaming.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui-timeline.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-timeline.ts

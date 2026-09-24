@@ -1,63 +1,31 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptMessagesRenderUiContext } from './mobile-projects-transcript-messages-render-ui-context';
+import type { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-transcript-messages-render-ui';
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
 import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
 import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
-import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { fingerprintTranscriptMessage, TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
-    shouldShowTranscriptEmptyQuickActions,
 } from '../common/qaap-transcript-turn-status';
 import {
-    appendBeforeTranscriptLiveStatus,
-    detachTranscriptLiveStatusFromScroller,
-} from '../common/qaap-transcript-live-status';
-import { recordTranscriptRenderMetric, type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
-import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
-import {
-    attachTranscriptScrollIntentObserver,
     transcriptHasActiveSelection,
     transcriptHasInteractiveFocus,
 } from './qaap-transcript-scroll-intent';
 import {
-    ensureTranscriptScrollController,
-    type TranscriptScrollController,
-} from './qaap-transcript-scroll-controller';
-import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
-import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
-import {
-    attachTranscriptReadPositionPersistence,
     resolveStoredTranscriptReadMessageIndex,
-    restoreTranscriptReadPosition,
 } from './qaap-transcript-read-position';
-import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
 import {
-    attachTranscriptRowDeferObserver,
     shouldDeferTranscriptRowHeavyContent,
 } from './qaap-transcript-row-defer';
 import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO } from '../common/qaap-agent-conversation-client';
-import {
-    extractLastFailedToolFromMessage,
-    resolveAgentTurnFailureTechnicalContent,
-} from '../common/qaap-agent-failure-message';
-import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
-import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
-import type { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 
-export function resolveTranscriptMessageHostExtracted(ctx: any, host: HTMLElement): HTMLElement {
+export function resolveTranscriptMessageHostExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, host: HTMLElement): HTMLElement {
     if (!host.classList.contains('theia-mobile-agent-transcript-real-chat')) {
         host.className = 'theia-mobile-agent-transcript';
         return host;
@@ -79,7 +47,7 @@ export function resolveTranscriptMessageHostExtracted(ctx: any, host: HTMLElemen
     return list;
 }
 
-export function resolveTranscriptAgentSegmentsExtracted(ctx: any, conv: QaapAgentConversationDTO,
+export function resolveTranscriptAgentSegmentsExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO,
     msg: QaapAgentMessageDTO,): QaapAgentMessageSegmentDTO[] | undefined {
     ctx.syncTranscriptAgentSegmentsCache(conv.id);
     const cacheKey = ctx.transcriptAgentSegmentsCacheKey(conv, msg);
@@ -114,7 +82,7 @@ export function resolveTranscriptAgentSegmentsExtracted(ctx: any, conv: QaapAgen
     return undefined;
 }
 
-export function syncTranscriptAgentSegmentsCacheExtracted(ctx: any, conversationId: string): void {
+export function syncTranscriptAgentSegmentsCacheExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conversationId: string): void {
     if (ctx.transcriptAgentSegmentsCacheConversationId === conversationId && ctx.transcriptAgentSegmentsCache.size < 1_000) {
         return;
     }
@@ -123,7 +91,7 @@ export function syncTranscriptAgentSegmentsCacheExtracted(ctx: any, conversation
     ctx.transcriptAgentSegmentsCacheKeyByMessage.clear();
 }
 
-export function setTranscriptAgentSegmentsCacheEntryExtracted(ctx: any, conv: QaapAgentConversationDTO,
+export function setTranscriptAgentSegmentsCacheEntryExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO,
     msg: QaapAgentMessageDTO,
     cacheKey: string,
     segments: readonly QaapAgentMessageSegmentDTO[],): void {
@@ -136,7 +104,7 @@ export function setTranscriptAgentSegmentsCacheEntryExtracted(ctx: any, conv: Qa
     ctx.transcriptAgentSegmentsCache.set(cacheKey, segments);
 }
 
-export function transcriptAgentSegmentsCacheKeyExtracted(ctx: any, conv: QaapAgentConversationDTO, msg: QaapAgentMessageDTO): string {
+export function transcriptAgentSegmentsCacheKeyExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO, msg: QaapAgentMessageDTO): string {
     return [
         conv.id,
         msg.id ?? '',
@@ -148,14 +116,14 @@ export function transcriptAgentSegmentsCacheKeyExtracted(ctx: any, conv: QaapAge
     ].join('|');
 }
 
-export function transcriptTextSignatureExtracted(ctx: any, text: string | undefined): string {
+export function transcriptTextSignatureExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, text: string | undefined): string {
     if (!text) {
         return '0';
     }
     return `${text.length}:${text.slice(0, 32)}:${text.slice(-32)}`;
 }
 
-export function transcriptSegmentsSignatureExtracted(ctx: any, segments: readonly QaapAgentMessageSegmentDTO[] | undefined): string {
+export function transcriptSegmentsSignatureExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, segments: readonly QaapAgentMessageSegmentDTO[] | undefined): string {
     if (!segments?.length) {
         return '0';
     }
@@ -177,7 +145,7 @@ export function transcriptSegmentsSignatureExtracted(ctx: any, segments: readonl
     ].join(':');
 }
 
-export function withDerivedTranscriptSegmentsExtracted(ctx: any, msg: QaapAgentMessageDTO): QaapAgentMessageDTO {
+export function withDerivedTranscriptSegmentsExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, msg: QaapAgentMessageDTO): QaapAgentMessageDTO {
     if (!msg.traceEvents?.length) {
         return msg;
     }
@@ -185,7 +153,7 @@ export function withDerivedTranscriptSegmentsExtracted(ctx: any, msg: QaapAgentM
     return segments.length ? { ...msg, segments } : msg;
 }
 
-export function normalizeConversationFailuresCachedExtracted(ctx: any, conv: QaapAgentConversationDTO): QaapAgentConversationDTO {
+export function normalizeConversationFailuresCachedExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO): QaapAgentConversationDTO {
     let normalized = ctx.normalizedFailuresCache.get(conv);
     if (!normalized) {
         normalized = normalizeAgentConversationFailures(conv);
@@ -194,7 +162,7 @@ export function normalizeConversationFailuresCachedExtracted(ctx: any, conv: Qaa
     return normalized;
 }
 
-export function transcriptRowRenderKeyExtracted(ctx: any, conv: QaapAgentConversationDTO, index: number): string | undefined {
+export function transcriptRowRenderKeyExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO, index: number): string | undefined {
     const msg = conv.messages[index];
     if (!msg?.id || msg.error?.trim()) {
         return undefined;
@@ -202,7 +170,7 @@ export function transcriptRowRenderKeyExtracted(ctx: any, conv: QaapAgentConvers
     return `${conv.id}|${msg.role}|${fingerprintTranscriptMessage(msg)}`;
 }
 
-export function createTranscriptMessageRowAtIndexExtracted(ctx: any, conv: QaapAgentConversationDTO, index: number): HTMLElement {
+export function createTranscriptMessageRowAtIndexExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO, index: number): HTMLElement {
     const normalized = ctx.normalizeConversationFailuresCached(conv);
     const msg = normalized.messages[index];
     const sameConversation = ctx.host.transcriptLastRenderedConversationId === normalized.id;
@@ -266,7 +234,7 @@ export function createTranscriptMessageRowAtIndexExtracted(ctx: any, conv: QaapA
     return row;
 }
 
-export function transcriptContextCompactionBoundaryIndexExtracted(ctx: any, conv: QaapAgentConversationDTO): number | undefined {
+export function transcriptContextCompactionBoundaryIndexExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO): number | undefined {
     const compaction = conv.contextCompaction;
     if (!compaction || compaction.status !== 'complete') {
         return undefined;
@@ -278,7 +246,7 @@ export function transcriptContextCompactionBoundaryIndexExtracted(ctx: any, conv
     return boundary;
 }
 
-export function buildTranscriptVirtualFooterExtracted(ctx: any, conv: QaapAgentConversationDTO,
+export function buildTranscriptVirtualFooterExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO,
     options?: { readonly existingActivityRow?: HTMLElement | null },): HTMLElement[] {
     const footers: HTMLElement[] = [];
     // Only the live shimmer belongs in the footer; the completed seam is rendered inline at the
@@ -328,7 +296,7 @@ export function buildTranscriptVirtualFooterExtracted(ctx: any, conv: QaapAgentC
  * Inspired by Cursor's queued message indicator and Claude Code's `pendingMessages` display.
  */
 function createTranscriptQueuedMessageRow(
-    ctx: any,
+    ctx: MobileProjectsTranscriptMessagesRenderUiContext,
     conv: QaapAgentConversationDTO,
     pending: QaapPendingUserMessageDTO,
 ): HTMLElement {
@@ -411,7 +379,7 @@ function createTranscriptQueuedMessageRow(
     return wrap;
 }
 
-export function createTranscriptContextCompactionRowExtracted(ctx: any, conv: QaapAgentConversationDTO): HTMLElement | undefined {
+export function createTranscriptContextCompactionRowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO): HTMLElement | undefined {
     const compaction = conv.contextCompaction;
     if (!compaction) {
         return undefined;
@@ -449,7 +417,7 @@ export function createTranscriptContextCompactionRowExtracted(ctx: any, conv: Qa
     return row;
 }
 
-export function shouldFollowTranscriptTailExtracted(ctx: any, scroller: HTMLElement): boolean {
+export function shouldFollowTranscriptTailExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, scroller: HTMLElement): boolean {
     const scroll = ctx.resolveTranscriptScrollController(scroller);
     // Explicit live-edge opt-in (Jump to latest) wins over stale selection/focus.
     if (scroll.shouldFollowTail()) {
@@ -462,12 +430,12 @@ export function shouldFollowTranscriptTailExtracted(ctx: any, scroller: HTMLElem
     return false;
 }
 
-export function restoreTranscriptScrollAnchorExtracted(ctx: any, scroller: HTMLElement,
+export function restoreTranscriptScrollAnchorExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, scroller: HTMLElement,
     anchor: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,): void {
     ctx.resolveTranscriptScrollController(scroller).restoreAnchor(scroller, anchor);
 }
 
-export function applyTranscriptScrollAfterMutationExtracted(ctx: any, messageHost: HTMLElement,
+export function applyTranscriptScrollAfterMutationExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement,
     anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,): void {
     if (ctx.shouldFollowTranscriptTail(messageHost)) {
         ctx.scrollTranscriptFollowTail(messageHost);
@@ -476,7 +444,7 @@ export function applyTranscriptScrollAfterMutationExtracted(ctx: any, messageHos
     }
 }
 
-export function scheduleTranscriptScrollAfterMutationExtracted(ctx: any, messageHost: HTMLElement,
+export function scheduleTranscriptScrollAfterMutationExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement,
     anchor?: ReturnType<MobileProjectsTranscriptMessagesRenderUi['captureTranscriptScrollAnchor']>,): void {
     if (ctx.shouldFollowTranscriptTail(messageHost)) {
         ctx.scrollTranscriptFollowTail(messageHost);
@@ -488,7 +456,7 @@ export function scheduleTranscriptScrollAfterMutationExtracted(ctx: any, message
     ctx.resolveTranscriptScrollController(messageHost).schedulePreserveAnchor(messageHost, anchor);
 }
 
-export function scrollTranscriptTurnStartIntoReadingPositionExtracted(ctx: any, messageHost: HTMLElement, row: HTMLElement): void {
+export function scrollTranscriptTurnStartIntoReadingPositionExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement, row: HTMLElement): void {
     const scroll = ctx.resolveTranscriptScrollController(messageHost);
     if (scroll.phase === 'positioning-turn') {
         scroll.positionTurnStart(messageHost, row);
@@ -497,7 +465,7 @@ export function scrollTranscriptTurnStartIntoReadingPositionExtracted(ctx: any, 
     scroll.placeReadingPosition(messageHost, row);
 }
 
-export function findLastUserMessageIndexExtracted(ctx: any, conv: QaapAgentConversationDTO): number {
+export function findLastUserMessageIndexExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, conv: QaapAgentConversationDTO): number {
     for (let index = conv.messages.length - 1; index >= 0; index--) {
         if (conv.messages[index]?.role === 'user') {
             return index;
@@ -506,7 +474,7 @@ export function findLastUserMessageIndexExtracted(ctx: any, conv: QaapAgentConve
     return -1;
 }
 
-export function findAppendedUserMessageIndexExtracted(ctx: any, previous: QaapAgentConversationDTO | undefined,
+export function findAppendedUserMessageIndexExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, previous: QaapAgentConversationDTO | undefined,
     next: QaapAgentConversationDTO,): number {
     if (!previous || previous.id !== next.id || next.messages.length <= previous.messages.length) {
         return -1;
@@ -519,7 +487,7 @@ export function findAppendedUserMessageIndexExtracted(ctx: any, previous: QaapAg
     return -1;
 }
 
-export function positionTranscriptVirtualListAtUserTurnExtracted(ctx: any, messageHost: HTMLElement,
+export function positionTranscriptVirtualListAtUserTurnExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement,
     list: { scrollToIndex?: (index: number, contextPx?: number) => void },
     userIndex: number,): void {
     if (userIndex < 0) {
@@ -539,13 +507,13 @@ export function positionTranscriptVirtualListAtUserTurnExtracted(ctx: any, messa
     scroll.completePositionTurn();
 }
 
-export function scrollTranscriptVirtualListToIndexExtracted(ctx: any, list: { scrollToIndex?: (index: number, contextPx?: number) => void },
+export function scrollTranscriptVirtualListToIndexExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, list: { scrollToIndex?: (index: number, contextPx?: number) => void },
     index: number,
     contextPx: number,): void {
     list.scrollToIndex?.(index, contextPx);
 }
 
-export function restoreTranscriptOpeningPositionVirtualExtracted(ctx: any, list: { scrollToIndex?: (index: number, contextPx?: number) => void },
+export function restoreTranscriptOpeningPositionVirtualExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, list: { scrollToIndex?: (index: number, contextPx?: number) => void },
     conv: QaapAgentConversationDTO,
     contextPx: number,): boolean {
     const storedIndex = resolveStoredTranscriptReadMessageIndex(conv.id, conv.messages);

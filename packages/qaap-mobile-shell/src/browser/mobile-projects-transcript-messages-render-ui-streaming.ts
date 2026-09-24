@@ -1,20 +1,12 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptMessagesRenderUiContext } from './mobile-projects-transcript-messages-render-ui-context';
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
-import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
-import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
-import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
-import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { buildConversationTranscriptFingerprint, fingerprintTranscriptMessage, isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
+import { buildConversationTranscriptFingerprint, isStreamingTranscriptTailUnchanged, TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
-    isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
 } from '../common/qaap-transcript-turn-status';
@@ -22,42 +14,14 @@ import {
     appendBeforeTranscriptLiveStatus,
     detachTranscriptLiveStatusFromScroller,
 } from '../common/qaap-transcript-live-status';
-import { recordTranscriptRenderMetric, type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
+import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
 import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
 import {
-    attachTranscriptScrollIntentObserver,
-    transcriptHasActiveSelection,
-    transcriptHasInteractiveFocus,
-} from './qaap-transcript-scroll-intent';
-import {
-    ensureTranscriptScrollController,
-    type TranscriptScrollController,
-} from './qaap-transcript-scroll-controller';
-import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
-import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
-import {
-    attachTranscriptReadPositionPersistence,
-    resolveStoredTranscriptReadMessageIndex,
     restoreTranscriptReadPosition,
 } from './qaap-transcript-read-position';
-import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
-import {
-    attachTranscriptRowDeferObserver,
-    shouldDeferTranscriptRowHeavyContent,
-} from './qaap-transcript-row-defer';
-import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import {
-    extractLastFailedToolFromMessage,
-    resolveAgentTurnFailureTechnicalContent,
-} from '../common/qaap-agent-failure-message';
-import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
-import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
-import type { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import { type QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 
-export function createTranscriptEmptyWelcomeExtracted(ctx: any): HTMLElement {
+export function createTranscriptEmptyWelcomeExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext): HTMLElement {
         const welcome = document.createElement('section');
         welcome.className = 'theia-mobile-agent-transcript-empty-welcome';
         welcome.setAttribute(
@@ -77,7 +41,7 @@ export function createTranscriptEmptyWelcomeExtracted(ctx: any): HTMLElement {
         return welcome;
 }
 
-export function renderTranscriptMessagesVirtualExtracted(ctx: any, host: HTMLElement,
+export function renderTranscriptMessagesVirtualExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, host: HTMLElement,
         conv: QaapAgentConversationDTO,
         options?: { readonly openingConversation?: boolean; readonly newTurnStarted?: boolean },): void {
         const normalized = ctx.normalizeConversationFailuresCached(conv);
@@ -133,14 +97,14 @@ export function renderTranscriptMessagesVirtualExtracted(ctx: any, host: HTMLEle
         ctx.attachTranscriptScrollChrome(host, messageHost, conv);
 }
 
-export function restoreTranscriptOpeningPositionExtracted(ctx: any, messageHost: HTMLElement, conv: QaapAgentConversationDTO): boolean {
+export function restoreTranscriptOpeningPositionExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement, conv: QaapAgentConversationDTO): boolean {
         if (ctx.hasExplicitTranscriptMessageHash()) {
             return false;
         }
         return restoreTranscriptReadPosition(messageHost, conv.id);
 }
 
-export function scrollTranscriptToLastUserTurnExtracted(ctx: any, messageHost: HTMLElement, options?: { readonly asPositionTurn?: boolean }): void {
+export function scrollTranscriptToLastUserTurnExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement, options?: { readonly asPositionTurn?: boolean }): void {
         const userRow = ctx.findLastUserMessageRow(messageHost);
         if (!userRow) {
             return;
@@ -164,7 +128,7 @@ export function scrollTranscriptToLastUserTurnExtracted(ctx: any, messageHost: H
         ctx.scrollTranscriptTurnStartIntoReadingPosition(messageHost, userRow);
 }
 
-export function prepareTranscriptReadingAnchorWindowExtracted(ctx: any, messageHost: HTMLElement, userRow: HTMLElement): void {
+export function prepareTranscriptReadingAnchorWindowExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, messageHost: HTMLElement, userRow: HTMLElement): void {
         messageHost.querySelectorAll('.theia-mod-transcript-reading-anchor').forEach(element => {
             element.classList.remove('theia-mod-transcript-reading-anchor');
         });
@@ -181,7 +145,7 @@ export function prepareTranscriptReadingAnchorWindowExtracted(ctx: any, messageH
         }
 }
 
-export function renderTranscriptMessagesExtracted(ctx: any, host: HTMLElement, conv: QaapAgentConversationDTO): void {
+export function renderTranscriptMessagesExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, host: HTMLElement, conv: QaapAgentConversationDTO): void {
         const conversationSwitched = ctx.host.transcriptLastRenderedConversationId !== undefined
             && ctx.host.transcriptLastRenderedConversationId !== conv.id;
         // Settled (non-streaming) snapshots can never take the stream-patch fast path and never
