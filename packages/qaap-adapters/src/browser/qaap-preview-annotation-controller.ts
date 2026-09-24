@@ -2,19 +2,11 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { generateUuid } from '@theia/core/lib/common/uuid';
 import {
-    ELEMENT_ANNOTATION_CANCEL_TYPE,
-    ELEMENT_ANNOTATION_POINT_TYPE,
-    ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE,
-    ELEMENT_ANNOTATION_REANCHOR_TYPE,
-    ELEMENT_SET_MODE_TYPE,
     type AnnotationPointPayload,
     type AnnotationReanchorResultItem,
     type PreviewInteractionMode,
@@ -22,36 +14,23 @@ import {
 import { guessSourceLocationFromElement } from '@theia/qaap-element-inspector/lib/browser/qaap-element-inspector-source-map';
 import type { PickedElement } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
 import {
-    buildAnnotateChatAttachArgs,
-    QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
     type PreviewAnnotationChatImageAttachment,
 } from './qaap-preview-annotation-context';
 import { mountPreviewAnnotationMarkers, type AnnotationMarkerPosition, type PreviewAnnotationMarkersHandle } from './qaap-preview-annotation-markers';
 import {
-    mountAnnotationCommentPopover,
     type AnnotationCommentPopoverHandle,
     type AnnotationComposerSessionControls,
     type AnnotationPopoverElementRef,
     type AnnotationPopoverPendingImage,
 } from './qaap-preview-annotation-popover';
 import {
-    createPreviewAnnotation,
-    isBlankAnnotationComment,
     PreviewAnnotationStore,
 } from './qaap-preview-annotation-store';
 import {
-    listPreviewAnnotationElements,
-    previewAnnotationElementKey,
     type PreviewAnnotation,
     type PreviewAnnotationElementMeta,
     type PreviewAnnotationScope,
 } from './qaap-preview-annotation-types';
-import {
-    blobToBase64,
-    captureSameOriginPreview,
-    previewNotify,
-    writePngBlobToClipboard,
-} from './qaap-preview-overflow-actions';
 import { addAnnotationsToChatExtracted, addPendingChatImageFromPasteExtracted, askDeleteAllConfirmationExtracted, clearAllAnnotationsExtracted, clearAnnotationsAfterSuccessfulSendExtracted, clearPendingChatImagesExtracted, confirmAndClearAllAnnotationsExtracted, disposeExtracted, exitAnnotateModeExtracted, formatAnnotationsSentToastExtracted, handleEscapeExtracted, hasClearableAnnotationsExtracted, installMessageListenerExtracted, listPopoverImagesExtracted, notifyUserExtracted, onFrameLoadExtracted, onWindowMessageExtracted, redoLastAnnotationExtracted, removePendingChatImageExtracted, setInteractionModeExtracted, setPendingChatScreenshotExtracted, setToolbarHostExtracted, undoLastAnnotationExtracted } from './qaap-preview-annotation-controller-render2';
 import { cancelScheduledReanchorExtracted, captureScreenshotForChatExtracted, closePopoverExtracted, frameTargetOriginExtracted, handleAnnotationPointExtracted, handleReanchorResultExtracted, installReanchorObserversExtracted, openExistingAnnotationExtracted, openPopoverForExtracted, postSetModeExtracted, refreshMarkersExtracted, requestReanchorExtracted, scheduleReanchorExtracted, setComparingOriginalExtracted, takeScreenshotExtracted } from './qaap-preview-annotation-controller-streaming2';
 import { countReadyAnnotationsExtracted, ensureAnnotateToolbarExtracted, syncAnnotateToolbarExtracted } from './qaap-preview-annotation-controller-timeline2';
@@ -132,42 +111,71 @@ export interface QaapPreviewAnnotationControllerOptions {
  */
 export class QaapPreviewAnnotationController implements Disposable {
 
-    protected readonly toDispose = new DisposableCollection();
-    protected readonly store: PreviewAnnotationStore;
-    protected mode: PreviewInteractionMode = 'browse';
-    protected markers: PreviewAnnotationMarkersHandle | undefined;
-    protected positions = new Map<string, AnnotationMarkerPosition>();
-    protected popover: AnnotationCommentPopoverHandle | undefined;
-    protected provisionalId: string | undefined;
-    protected sendInFlight = false;
-    protected reanchorRaf = 0;
-    protected toolbarHost: HTMLElement | undefined;
-    protected annotateToolbar: HTMLElement | undefined;
-    protected annotateUrlField: HTMLElement | undefined;
-    protected annotateChromeToolbar: HTMLElement | undefined;
-    protected annotateSendButton: HTMLButtonElement | undefined;
-    protected annotateSendBadge: HTMLElement | undefined;
-    protected annotateUndoButton: HTMLButtonElement | undefined;
-    protected annotateRedoButton: HTMLButtonElement | undefined;
-    protected annotateDeleteButton: HTMLButtonElement | undefined;
-    protected annotateScreenshotButton: HTMLButtonElement | undefined;
-    protected annotateCompareButton: HTMLButtonElement | undefined;
-    protected screenshotCaptureInFlight: Promise<void> | undefined;
-    protected comparingOriginal = false;
-    protected listenerInstalled = false;
-    protected notify: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
-    protected composerSession: AnnotationComposerSessionControls | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public readonly toDispose = new DisposableCollection();
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public readonly store: PreviewAnnotationStore;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public mode: PreviewInteractionMode = 'browse';
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public markers: PreviewAnnotationMarkersHandle | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public positions = new Map<string, AnnotationMarkerPosition>();
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public popover: AnnotationCommentPopoverHandle | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public provisionalId: string | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public sendInFlight = false;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public reanchorRaf = 0;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public toolbarHost: HTMLElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateToolbar: HTMLElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateUrlField: HTMLElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateChromeToolbar: HTMLElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateSendButton: HTMLButtonElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateSendBadge: HTMLElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateUndoButton: HTMLButtonElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateRedoButton: HTMLButtonElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateDeleteButton: HTMLButtonElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateScreenshotButton: HTMLButtonElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public annotateCompareButton: HTMLButtonElement | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public screenshotCaptureInFlight: Promise<void> | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public comparingOriginal = false;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public listenerInstalled = false;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public notify: ((message: string, kind?: 'info' | 'warn') => void) | undefined;
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public composerSession: AnnotationComposerSessionControls | undefined;
     /**
      * Pending images for Annotate Send (toolbar screenshot and/or pasted images).
      * Preview URLs are shown in the open comment popover.
+     * @internal Used by the extracted qaap-preview-annotation-controller-* modules.
      */
-    protected pendingChatImages: Array<{
+    public pendingChatImages: Array<{
         readonly id: string;
         readonly previewUrl: string;
         readonly attachment: PreviewAnnotationChatImageAttachment;
     }> = [];
 
-    constructor(protected readonly options: QaapPreviewAnnotationControllerOptions) {
+    constructor(
+        /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+        public readonly options: QaapPreviewAnnotationControllerOptions,
+    ) {
         this.store = options.store ?? new PreviewAnnotationStore();
         this.toolbarHost = options.toolbarHost;
         this.notify = options.notify;
@@ -232,33 +240,42 @@ export class QaapPreviewAnnotationController implements Disposable {
         return addAnnotationsToChatExtracted(this);
     }
 
-    /** Confirmed annotations for the whole conversation (any route of this preview thread). */
-    protected listConfirmedForConversation(scope: PreviewAnnotationScope): PreviewAnnotation[] {
+    /**
+     * Confirmed annotations for the whole conversation (any route of this preview thread).
+     * @internal Used by the extracted qaap-preview-annotation-controller-* modules.
+     */
+    public listConfirmedForConversation(scope: PreviewAnnotationScope): PreviewAnnotation[] {
         return this.store.listForConversation(scope.workspaceId, scope.threadId, scope.previewId ?? scope.previewUrl)
             .filter(item => item.status === 'confirmed');
     }
 
-    protected exitAnnotateMode(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public exitAnnotateMode(): void {
         exitAnnotateModeExtracted(this);
     }
 
-    protected clearAllAnnotations(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public clearAllAnnotations(): void {
         clearAllAnnotationsExtracted(this);
     }
 
-    protected async confirmAndClearAllAnnotations(): Promise<void> {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public async confirmAndClearAllAnnotations(): Promise<void> {
         return confirmAndClearAllAnnotationsExtracted(this);
     }
 
-    protected async askDeleteAllConfirmation(): Promise<boolean> {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public async askDeleteAllConfirmation(): Promise<boolean> {
         return askDeleteAllConfirmationExtracted(this);
     }
 
-    protected hasClearableAnnotations(): boolean {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public hasClearableAnnotations(): boolean {
         return hasClearableAnnotationsExtracted(this);
     }
 
-    protected clearAnnotationsAfterSuccessfulSend(scope: PreviewAnnotationScope, sentIds: readonly string[]): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public clearAnnotationsAfterSuccessfulSend(scope: PreviewAnnotationScope, sentIds: readonly string[]): void {
         clearAnnotationsAfterSuccessfulSendExtracted(this, scope, sentIds);
     }
 
@@ -270,31 +287,38 @@ export class QaapPreviewAnnotationController implements Disposable {
         return this.pendingChatImages[0]?.attachment;
     }
 
-    protected listPopoverImages(): AnnotationPopoverPendingImage[] {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public listPopoverImages(): AnnotationPopoverPendingImage[] {
         return listPopoverImagesExtracted(this);
     }
 
-    protected syncPopoverImages(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public syncPopoverImages(): void {
         this.popover?.setImages(this.listPopoverImages());
     }
 
-    protected clearPendingChatImages(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public clearPendingChatImages(): void {
         clearPendingChatImagesExtracted(this);
     }
 
-    protected removePendingChatImage(id: string): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public removePendingChatImage(id: string): void {
         removePendingChatImageExtracted(this, id);
     }
 
-    protected async addPendingChatImageFromPaste(image: { readonly id: string; readonly file: File; readonly previewUrl: string; readonly name: string; }): Promise<void> {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public async addPendingChatImageFromPaste(image: { readonly id: string; readonly file: File; readonly previewUrl: string; readonly name: string; }): Promise<void> {
         return addPendingChatImageFromPasteExtracted(this, image);
     }
 
-    protected formatAnnotationsSentToast(count: number): string {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public formatAnnotationsSentToast(count: number): string {
         return formatAnnotationsSentToastExtracted(this, count);
     }
 
-    protected notifyUser(message: string, kind: 'info' | 'warn' = 'info'): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public notifyUser(message: string, kind: 'info' | 'warn' = 'info'): void {
         notifyUserExtracted(this, message, kind);
     }
 
@@ -318,7 +342,8 @@ export class QaapPreviewAnnotationController implements Disposable {
         installReanchorObserversExtracted(this);
     }
 
-    protected handleAnnotationPoint(payload: AnnotationPointPayload): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public handleAnnotationPoint(payload: AnnotationPointPayload): void {
         handleAnnotationPointExtracted(this, payload);
     }
 
@@ -326,63 +351,78 @@ export class QaapPreviewAnnotationController implements Disposable {
         openExistingAnnotationExtracted(this, id, clientX, clientY);
     }
 
-    protected openPopoverFor(annotation: PreviewAnnotation, clientX: number, clientY: number, isNew: boolean): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public openPopoverFor(annotation: PreviewAnnotation, clientX: number, clientY: number, isNew: boolean): void {
         openPopoverForExtracted(this, annotation, clientX, clientY, isNew);
     }
 
-    protected closePopover(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public closePopover(): void {
         closePopoverExtracted(this);
     }
 
-    protected scheduleReanchor(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public scheduleReanchor(): void {
         scheduleReanchorExtracted(this);
     }
 
-    protected cancelScheduledReanchor(id: number): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public cancelScheduledReanchor(id: number): void {
         cancelScheduledReanchorExtracted(this, id);
     }
 
-    protected requestReanchor(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public requestReanchor(): void {
         requestReanchorExtracted(this);
     }
 
-    protected handleReanchorResult(payload: { items?: AnnotationReanchorResultItem[] }): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public handleReanchorResult(payload: { items?: AnnotationReanchorResultItem[] }): void {
         handleReanchorResultExtracted(this, payload);
     }
 
-    protected refreshMarkers(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public refreshMarkers(): void {
         refreshMarkersExtracted(this);
     }
 
-    protected postSetMode(mode: PreviewInteractionMode): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public postSetMode(mode: PreviewInteractionMode): void {
         postSetModeExtracted(this, mode);
     }
 
-    protected frameTargetOrigin(): string {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public frameTargetOrigin(): string {
         return frameTargetOriginExtracted(this);
     }
 
-    protected setComparingOriginal(active: boolean): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public setComparingOriginal(active: boolean): void {
         setComparingOriginalExtracted(this, active);
     }
 
-    protected async takeScreenshot(): Promise<void> {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public async takeScreenshot(): Promise<void> {
         return takeScreenshotExtracted(this);
     }
 
-    protected async captureScreenshotForChat(): Promise<void> {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public async captureScreenshotForChat(): Promise<void> {
         return captureScreenshotForChatExtracted(this);
     }
 
-    protected ensureAnnotateToolbar(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public ensureAnnotateToolbar(): void {
         ensureAnnotateToolbarExtracted(this);
     }
 
-    protected syncAnnotateToolbar(): void {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public syncAnnotateToolbar(): void {
         syncAnnotateToolbarExtracted(this);
     }
 
-    protected countReadyAnnotations(scope: PreviewAnnotationScope): number {
+    /** @internal Used by the extracted qaap-preview-annotation-controller-* modules. */
+    public countReadyAnnotations(scope: PreviewAnnotationScope): number {
         return countReadyAnnotationsExtracted(this, scope);
     }
 }

@@ -1,56 +1,34 @@
-// @ts-nocheck
+import type { QaapPreviewAnnotationControllerContext } from './qaap-preview-annotation-controller-context';
 // Extracted from qaap-preview-annotation-controller.ts
 
-import { CommandRegistry } from '@theia/core/lib/common/command';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { MessageService } from '@theia/core/lib/common/message-service';
 import { generateUuid } from '@theia/core/lib/common/uuid';
 import {
     ELEMENT_ANNOTATION_CANCEL_TYPE,
     ELEMENT_ANNOTATION_POINT_TYPE,
     ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE,
-    ELEMENT_ANNOTATION_REANCHOR_TYPE,
-    ELEMENT_SET_MODE_TYPE,
     type AnnotationPointPayload,
     type AnnotationReanchorResultItem,
     type PreviewInteractionMode,
 } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
-import { guessSourceLocationFromElement } from '@theia/qaap-element-inspector/lib/browser/qaap-element-inspector-source-map';
-import type { PickedElement } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
 import {
     buildAnnotateChatAttachArgs,
     QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
     type PreviewAnnotationChatImageAttachment,
 } from './qaap-preview-annotation-context';
-import { mountPreviewAnnotationMarkers, type AnnotationMarkerPosition, type PreviewAnnotationMarkersHandle } from './qaap-preview-annotation-markers';
 import {
-    mountAnnotationCommentPopover,
-    type AnnotationCommentPopoverHandle,
-    type AnnotationComposerSessionControls,
-    type AnnotationPopoverElementRef,
     type AnnotationPopoverPendingImage,
 } from './qaap-preview-annotation-popover';
 import {
-    createPreviewAnnotation,
-    isBlankAnnotationComment,
-    PreviewAnnotationStore,
-} from './qaap-preview-annotation-store';
-import {
-    listPreviewAnnotationElements,
-    previewAnnotationElementKey,
-    type PreviewAnnotation,
-    type PreviewAnnotationElementMeta,
     type PreviewAnnotationScope,
 } from './qaap-preview-annotation-types';
 import {
     blobToBase64,
-    captureSameOriginPreview,
     previewNotify,
-    writePngBlobToClipboard,
 } from './qaap-preview-overflow-actions';
 
-export function setToolbarHostExtracted(ctx: any, host: HTMLElement | undefined): void {
+export function setToolbarHostExtracted(ctx: QaapPreviewAnnotationControllerContext, host: HTMLElement | undefined): void {
         if (!host) {
             return;
         }
@@ -59,7 +37,7 @@ export function setToolbarHostExtracted(ctx: any, host: HTMLElement | undefined)
         ctx.syncAnnotateToolbar();
 }
 
-export function disposeExtracted(ctx: any): void {
+export function disposeExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         ctx.closePopover();
         ctx.clearPendingChatImages();
         if (ctx.reanchorRaf) {
@@ -70,7 +48,7 @@ export function disposeExtracted(ctx: any): void {
         ctx.toDispose.dispose();
 }
 
-export function setInteractionModeExtracted(ctx: any, mode: PreviewInteractionMode): void {
+export function setInteractionModeExtracted(ctx: QaapPreviewAnnotationControllerContext, mode: PreviewInteractionMode): void {
         if (mode === ctx.mode && mode !== 'select') {
             return;
         }
@@ -99,7 +77,7 @@ export function setInteractionModeExtracted(ctx: any, mode: PreviewInteractionMo
         ctx.refreshMarkers();
 }
 
-export function undoLastAnnotationExtracted(ctx: any): void {
+export function undoLastAnnotationExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         const scope = ctx.options.getScope();
         if (!scope) {
             return;
@@ -117,7 +95,7 @@ export function undoLastAnnotationExtracted(ctx: any): void {
         ctx.syncAnnotateToolbar();
 }
 
-export function redoLastAnnotationExtracted(ctx: any): void {
+export function redoLastAnnotationExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         const scope = ctx.options.getScope();
         if (!scope) {
             return;
@@ -138,7 +116,7 @@ export function redoLastAnnotationExtracted(ctx: any): void {
         ctx.syncAnnotateToolbar();
 }
 
-export async function addAnnotationsToChatExtracted(ctx: any): Promise<void> {
+export async function addAnnotationsToChatExtracted(ctx: QaapPreviewAnnotationControllerContext): Promise<void> {
         if (ctx.sendInFlight) {
             return;
         }
@@ -208,7 +186,7 @@ export async function addAnnotationsToChatExtracted(ctx: any): Promise<void> {
         }
 }
 
-export function exitAnnotateModeExtracted(ctx: any): void {
+export function exitAnnotateModeExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         ctx.closePopover();
         if (ctx.provisionalId) {
             ctx.store.remove(ctx.provisionalId);
@@ -224,7 +202,7 @@ export function exitAnnotateModeExtracted(ctx: any): void {
         }
 }
 
-export function clearAllAnnotationsExtracted(ctx: any): void {
+export function clearAllAnnotationsExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         const scope = ctx.options.getScope();
         ctx.clearPendingChatImages();
         ctx.provisionalId = undefined;
@@ -245,7 +223,7 @@ export function clearAllAnnotationsExtracted(ctx: any): void {
         ctx.syncAnnotateToolbar();
 }
 
-export async function confirmAndClearAllAnnotationsExtracted(ctx: any): Promise<void> {
+export async function confirmAndClearAllAnnotationsExtracted(ctx: QaapPreviewAnnotationControllerContext): Promise<void> {
         if (!ctx.hasClearableAnnotations()) {
             return;
         }
@@ -257,7 +235,7 @@ export async function confirmAndClearAllAnnotationsExtracted(ctx: any): Promise<
         ctx.exitAnnotateMode();
 }
 
-export async function askDeleteAllConfirmationExtracted(ctx: any): Promise<boolean> {
+export async function askDeleteAllConfirmationExtracted(ctx: QaapPreviewAnnotationControllerContext): Promise<boolean> {
         if (ctx.options.confirmDeleteAllAnnotations) {
             return !!(await ctx.options.confirmDeleteAllAnnotations());
         }
@@ -272,7 +250,7 @@ export async function askDeleteAllConfirmationExtracted(ctx: any): Promise<boole
         }).open());
 }
 
-export function hasClearableAnnotationsExtracted(ctx: any): boolean {
+export function hasClearableAnnotationsExtracted(ctx: QaapPreviewAnnotationControllerContext): boolean {
         const scope = ctx.options.getScope();
         if (!scope) {
             return ctx.pendingChatImages.length > 0 || !!ctx.provisionalId;
@@ -287,7 +265,7 @@ export function hasClearableAnnotationsExtracted(ctx: any): boolean {
         ).length > 0;
 }
 
-export function clearAnnotationsAfterSuccessfulSendExtracted(ctx: any, scope: PreviewAnnotationScope, sentIds: readonly string[]): void {
+export function clearAnnotationsAfterSuccessfulSendExtracted(ctx: QaapPreviewAnnotationControllerContext, scope: PreviewAnnotationScope, sentIds: readonly string[]): void {
         ctx.clearPendingChatImages();
         ctx.provisionalId = undefined;
         ctx.closePopover();
@@ -307,7 +285,7 @@ export function clearAnnotationsAfterSuccessfulSendExtracted(ctx: any, scope: Pr
         }
 }
 
-export function setPendingChatScreenshotExtracted(ctx: any, image: PreviewAnnotationChatImageAttachment | undefined): void {
+export function setPendingChatScreenshotExtracted(ctx: QaapPreviewAnnotationControllerContext, image: PreviewAnnotationChatImageAttachment | undefined): void {
         ctx.clearPendingChatImages();
         if (!image) {
             ctx.syncPopoverImages();
@@ -321,7 +299,7 @@ export function setPendingChatScreenshotExtracted(ctx: any, image: PreviewAnnota
         ctx.syncPopoverImages();
 }
 
-export function listPopoverImagesExtracted(ctx: any): AnnotationPopoverPendingImage[] {
+export function listPopoverImagesExtracted(ctx: QaapPreviewAnnotationControllerContext): AnnotationPopoverPendingImage[] {
         return ctx.pendingChatImages.map(item => ({
             id: item.id,
             name: item.attachment.name,
@@ -329,7 +307,7 @@ export function listPopoverImagesExtracted(ctx: any): AnnotationPopoverPendingIm
         }));
 }
 
-export function clearPendingChatImagesExtracted(ctx: any): void {
+export function clearPendingChatImagesExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         for (const item of ctx.pendingChatImages) {
             if (item.previewUrl.startsWith('blob:')) {
                 try {
@@ -340,7 +318,7 @@ export function clearPendingChatImagesExtracted(ctx: any): void {
         ctx.pendingChatImages = [];
 }
 
-export function removePendingChatImageExtracted(ctx: any, id: string): void {
+export function removePendingChatImageExtracted(ctx: QaapPreviewAnnotationControllerContext, id: string): void {
         const next: typeof ctx.pendingChatImages = [];
         for (const item of ctx.pendingChatImages) {
             if (item.id === id) {
@@ -357,7 +335,7 @@ export function removePendingChatImageExtracted(ctx: any, id: string): void {
         ctx.syncPopoverImages();
 }
 
-export async function addPendingChatImageFromPasteExtracted(ctx: any, image: {
+export async function addPendingChatImageFromPasteExtracted(ctx: QaapPreviewAnnotationControllerContext, image: {
         readonly id: string;
         readonly file: File;
         readonly previewUrl: string;
@@ -380,14 +358,14 @@ export async function addPendingChatImageFromPasteExtracted(ctx: any, image: {
         ctx.syncPopoverImages();
 }
 
-export function formatAnnotationsSentToastExtracted(ctx: any, count: number): string {
+export function formatAnnotationsSentToastExtracted(ctx: QaapPreviewAnnotationControllerContext, count: number): string {
         if (count === 1) {
             return nls.localize('qaap/preview/annotateSentOne', '1 annotation sent to chat');
         }
         return nls.localize('qaap/preview/annotateSentMany', '{0} annotations sent to chat', String(count));
 }
 
-export function notifyUserExtracted(ctx: any, message: string, kind: 'info' | 'warn' = 'info'): void {
+export function notifyUserExtracted(ctx: QaapPreviewAnnotationControllerContext, message: string, kind: 'info' | 'warn' = 'info'): void {
         previewNotify(
             { messageService: ctx.options.messageService, notify: ctx.notify },
             message,
@@ -395,7 +373,7 @@ export function notifyUserExtracted(ctx: any, message: string, kind: 'info' | 'w
         );
 }
 
-export function handleEscapeExtracted(ctx: any): boolean {
+export function handleEscapeExtracted(ctx: QaapPreviewAnnotationControllerContext): boolean {
         // Agent/model picker (portaled above the annotation card) owns Escape first.
         if (document.querySelector(
             '.qaap-sticky-composer-sheet-popover, .theia-mobile-sticky-composer-sheet, .theia-mobile-projects-sticky-composer-sheet',
@@ -421,7 +399,7 @@ export function handleEscapeExtracted(ctx: any): boolean {
         return false;
 }
 
-export function onFrameLoadExtracted(ctx: any): void {
+export function onFrameLoadExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         ctx.options.injectBridge();
         if (ctx.mode === 'annotate') {
             ctx.postSetMode('annotate');
@@ -431,7 +409,7 @@ export function onFrameLoadExtracted(ctx: any): void {
         ctx.scheduleReanchor();
 }
 
-export function installMessageListenerExtracted(ctx: any): void {
+export function installMessageListenerExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         if (ctx.listenerInstalled) {
             return;
         }
@@ -449,7 +427,7 @@ export function installMessageListenerExtracted(ctx: any): void {
         ctx.toDispose.push(Disposable.create(() => window.removeEventListener('keydown', onKeyDown, true)));
 }
 
-export function onWindowMessageExtracted(ctx: any, event: Pick<MessageEvent, 'data' | 'source'> & Partial<Pick<MessageEvent, 'origin'>>): void {
+export function onWindowMessageExtracted(ctx: QaapPreviewAnnotationControllerContext, event: Pick<MessageEvent, 'data' | 'source'> & Partial<Pick<MessageEvent, 'origin'>>): void {
         if (!event.data || typeof event.data !== 'object') {
             return;
         }

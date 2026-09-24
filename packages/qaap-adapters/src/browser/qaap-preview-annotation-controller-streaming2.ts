@@ -1,57 +1,38 @@
-// @ts-nocheck
+import type { QaapPreviewAnnotationControllerContext } from './qaap-preview-annotation-controller-context';
 // Extracted from qaap-preview-annotation-controller.ts
 
-import { CommandRegistry } from '@theia/core/lib/common/command';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { MessageService } from '@theia/core/lib/common/message-service';
 import { generateUuid } from '@theia/core/lib/common/uuid';
 import {
-    ELEMENT_ANNOTATION_CANCEL_TYPE,
-    ELEMENT_ANNOTATION_POINT_TYPE,
-    ELEMENT_ANNOTATION_REANCHOR_RESULT_TYPE,
     ELEMENT_ANNOTATION_REANCHOR_TYPE,
     ELEMENT_SET_MODE_TYPE,
     type AnnotationPointPayload,
     type AnnotationReanchorResultItem,
     type PreviewInteractionMode,
 } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
-import { guessSourceLocationFromElement } from '@theia/qaap-element-inspector/lib/browser/qaap-element-inspector-source-map';
-import type { PickedElement } from '@theia/qaap-element-inspector/lib/browser/element-inspector-types';
-import {
-    buildAnnotateChatAttachArgs,
-    QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
-    type PreviewAnnotationChatImageAttachment,
-} from './qaap-preview-annotation-context';
-import { mountPreviewAnnotationMarkers, type AnnotationMarkerPosition, type PreviewAnnotationMarkersHandle } from './qaap-preview-annotation-markers';
+import { type AnnotationMarkerPosition } from './qaap-preview-annotation-markers';
 import {
     mountAnnotationCommentPopover,
-    type AnnotationCommentPopoverHandle,
-    type AnnotationComposerSessionControls,
-    type AnnotationPopoverElementRef,
-    type AnnotationPopoverPendingImage,
 } from './qaap-preview-annotation-popover';
 import {
     createPreviewAnnotation,
     isBlankAnnotationComment,
-    PreviewAnnotationStore,
 } from './qaap-preview-annotation-store';
 import {
     listPreviewAnnotationElements,
     previewAnnotationElementKey,
     type PreviewAnnotation,
-    type PreviewAnnotationElementMeta,
     type PreviewAnnotationScope,
 } from './qaap-preview-annotation-types';
 import {
     blobToBase64,
     captureSameOriginPreview,
-    previewNotify,
     writePngBlobToClipboard,
 } from './qaap-preview-overflow-actions';
 import { buildAnnotationElementMeta,toPopoverElementRef } from './qaap-preview-annotation-controller';
 
-export function installReanchorObserversExtracted(ctx: any): void {
+export function installReanchorObserversExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         const schedule = (): void => ctx.scheduleReanchor();
         window.addEventListener('resize', schedule);
         ctx.toDispose.push(Disposable.create(() => window.removeEventListener('resize', schedule)));
@@ -67,7 +48,7 @@ export function installReanchorObserversExtracted(ctx: any): void {
         }
 }
 
-export function handleAnnotationPointExtracted(ctx: any, payload: AnnotationPointPayload): void {
+export function handleAnnotationPointExtracted(ctx: QaapPreviewAnnotationControllerContext, payload: AnnotationPointPayload): void {
         if (ctx.mode !== 'annotate' || ctx.comparingOriginal) {
             return;
         }
@@ -154,7 +135,7 @@ export function handleAnnotationPointExtracted(ctx: any, payload: AnnotationPoin
         ctx.openPopoverFor(annotation, frameRect.left + payload.clientX, frameRect.top + payload.clientY, true);
 }
 
-export function openExistingAnnotationExtracted(ctx: any, id: string, clientX: number, clientY: number): void {
+export function openExistingAnnotationExtracted(ctx: QaapPreviewAnnotationControllerContext, id: string, clientX: number, clientY: number): void {
         const annotation = ctx.store.get(id);
         if (!annotation) {
             return;
@@ -162,7 +143,7 @@ export function openExistingAnnotationExtracted(ctx: any, id: string, clientX: n
         ctx.openPopoverFor(annotation, clientX, clientY, false);
 }
 
-export function openPopoverForExtracted(ctx: any, annotation: PreviewAnnotation, clientX: number, clientY: number, isNew: boolean): void {
+export function openPopoverForExtracted(ctx: QaapPreviewAnnotationControllerContext, annotation: PreviewAnnotation, clientX: number, clientY: number, isNew: boolean): void {
         ctx.closePopover();
         const panel = ctx.options.frameSlot.getBoundingClientRect();
         const elementRefs = listPreviewAnnotationElements(annotation).map(toPopoverElementRef);
@@ -219,13 +200,13 @@ export function openPopoverForExtracted(ctx: any, annotation: PreviewAnnotation,
         ctx.syncAnnotateToolbar();
 }
 
-export function closePopoverExtracted(ctx: any): void {
+export function closePopoverExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         ctx.popover?.dispose();
         ctx.popover = undefined;
         ctx.syncAnnotateToolbar();
 }
 
-export function scheduleReanchorExtracted(ctx: any): void {
+export function scheduleReanchorExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         if (ctx.reanchorRaf) {
             ctx.cancelScheduledReanchor(ctx.reanchorRaf);
         }
@@ -238,7 +219,7 @@ export function scheduleReanchorExtracted(ctx: any): void {
         });
 }
 
-export function cancelScheduledReanchorExtracted(ctx: any, id: number): void {
+export function cancelScheduledReanchorExtracted(ctx: QaapPreviewAnnotationControllerContext, id: number): void {
         if (typeof cancelAnimationFrame === 'function') {
             cancelAnimationFrame(id);
             return;
@@ -246,7 +227,7 @@ export function cancelScheduledReanchorExtracted(ctx: any, id: number): void {
         window.clearTimeout(id);
 }
 
-export function requestReanchorExtracted(ctx: any): void {
+export function requestReanchorExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         const scope = ctx.options.getScope();
         if (!scope) {
             return;
@@ -274,7 +255,7 @@ export function requestReanchorExtracted(ctx: any): void {
         }
 }
 
-export function handleReanchorResultExtracted(ctx: any, payload: { items?: AnnotationReanchorResultItem[] }): void {
+export function handleReanchorResultExtracted(ctx: QaapPreviewAnnotationControllerContext, payload: { items?: AnnotationReanchorResultItem[] }): void {
         const items = payload.items ?? [];
         for (const item of items) {
             ctx.positions.set(item.id, {
@@ -292,7 +273,7 @@ export function handleReanchorResultExtracted(ctx: any, payload: { items?: Annot
         ctx.refreshMarkers();
 }
 
-export function refreshMarkersExtracted(ctx: any): void {
+export function refreshMarkersExtracted(ctx: QaapPreviewAnnotationControllerContext): void {
         const scope = ctx.options.getScope();
         if (!scope || !ctx.markers) {
             ctx.markers?.sync([], []);
@@ -306,7 +287,7 @@ export function refreshMarkersExtracted(ctx: any): void {
         ctx.markers.setVisible(!ctx.comparingOriginal);
 }
 
-export function postSetModeExtracted(ctx: any, mode: PreviewInteractionMode): void {
+export function postSetModeExtracted(ctx: QaapPreviewAnnotationControllerContext, mode: PreviewInteractionMode): void {
         const win = ctx.options.frame.contentWindow;
         if (!win) {
             return;
@@ -318,7 +299,7 @@ export function postSetModeExtracted(ctx: any, mode: PreviewInteractionMode): vo
         }
 }
 
-export function frameTargetOriginExtracted(ctx: any): string {
+export function frameTargetOriginExtracted(ctx: QaapPreviewAnnotationControllerContext): string {
         try {
             const origin = new URL(ctx.options.frame.src || window.location.href, window.location.href).origin;
             return origin === 'null' ? window.location.origin : origin;
@@ -327,7 +308,7 @@ export function frameTargetOriginExtracted(ctx: any): string {
         }
 }
 
-export function setComparingOriginalExtracted(ctx: any, active: boolean): void {
+export function setComparingOriginalExtracted(ctx: QaapPreviewAnnotationControllerContext, active: boolean): void {
         if (ctx.comparingOriginal === active) {
             return;
         }
@@ -342,7 +323,7 @@ export function setComparingOriginalExtracted(ctx: any, active: boolean): void {
         }
 }
 
-export async function takeScreenshotExtracted(ctx: any): Promise<void> {
+export async function takeScreenshotExtracted(ctx: QaapPreviewAnnotationControllerContext): Promise<void> {
         if (ctx.screenshotCaptureInFlight) {
             await ctx.screenshotCaptureInFlight;
             return;
@@ -366,7 +347,7 @@ export async function takeScreenshotExtracted(ctx: any): Promise<void> {
         }
 }
 
-export async function captureScreenshotForChatExtracted(ctx: any): Promise<void> {
+export async function captureScreenshotForChatExtracted(ctx: QaapPreviewAnnotationControllerContext): Promise<void> {
         const frame = ctx.options.frame;
         const doc = frame.contentDocument;
         if (!doc?.body) {
