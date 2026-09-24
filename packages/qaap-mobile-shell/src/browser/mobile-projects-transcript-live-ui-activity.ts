@@ -1,92 +1,31 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptLiveUiContext } from './mobile-projects-transcript-live-ui-context';
 // Extracted from mobile-projects-transcript-live-ui.ts
 
-import { Event as TheiaEvent } from '@theia/core/lib/common/event';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import {
     conversationToSummary,
     getConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageDTO,
-    type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import {
-    fetchAgentApprovals,
-    type QaapAgentApprovalRequestDTO,
-} from '../common/qaap-agent-approval-client';
-import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
-import { excerptTranscriptThought } from '../common/qaap-agent-transcript-segments';
-import { applyAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
-import {
-    advanceTranscriptSemanticProgressClock,
-    resolveTranscriptStreamingAgentSegments,
-    seedTranscriptSemanticProgressClock,
-} from '../common/qaap-transcript-semantic-progress';
-import type { ConversationLiveMessageEvent } from './mobile-projects-conversations';
-import {
-    applyConversationMessageDelta,
-    canApplySseMessageDelta,
     shouldSkipStreamingTranscriptRefetch,
 } from '../common/qaap-transcript-sse-delta';
-import { findTranscriptToolApproval, isPendingTranscriptToolSegment, resolveTranscriptInlineApproval } from '../common/qaap-transcript-approval-inline';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import {
-    clearTranscriptPendingApprovalBar,
-    mountTranscriptPendingApprovalBar,
-    removeTranscriptPendingApprovalHosts,
-    scrollTranscriptPendingApprovalIntoView,
-} from './qaap-transcript-inline-approval-ui';
-import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
-import {
-    conversationAwaitingDevPreview,
-    conversationMayAutoOpenTranscriptPreview,
-    conversationRequestsDevPreview,
-    conversationShouldKickoffDevPreviewBootstrap,
     conversationShouldWatchDevPreview,
-    messageRequestsDevPreview,
-    resolveReadyTranscriptPreviewUrlFromProbe,
 } from '../common/qaap-transcript-preview-offer';
 import {
-    buildTranscriptPreviewBootstrapFailureReason,
-    shouldReportTranscriptPreviewBootstrapFailure,
-    toTranscriptPreviewBootstrapSnapshot,
-} from '../common/qaap-transcript-preview-bootstrap-failure';
-import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
-import { agentMessageHasVisualVerificationMarker } from '../common/qaap-visual-verification';
-import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import {
-    buildConversationTranscriptFingerprint,
-    mergeConversationTranscriptFingerprint,
     shouldForceTranscriptRenderOnStatusSettle,
-    TRANSCRIPT_TOOL_USE_ID_ATTR,
 } from '../common/qaap-transcript-incremental-update';
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
-import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
-import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
-import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
-import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
-import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
+import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import {
-    QaapTranscriptLiveController,
     type QaapTranscriptLiveRefreshOptions,
 } from './qaap-transcript-live-controller';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
-import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridge';
 
-export function scheduleTranscriptConversationRefreshExtracted(ctx: any, project: MobileProjectEntry,
+export function scheduleTranscriptConversationRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         _chatHost: HTMLElement,): void {
         ctx.transcriptTurnVisuallySettledActive = false;
@@ -104,7 +43,7 @@ export function scheduleTranscriptConversationRefreshExtracted(ctx: any, project
         void ctx.refreshOpenTranscriptConversation({ forcePoll: true });
 }
 
-export function renderOpenTranscriptPlaceholderExtracted(ctx: any, chatHost: HTMLElement,
+export function renderOpenTranscriptPlaceholderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, chatHost: HTMLElement,
         summary: QaapAgentConversationSummaryDTO,): void {
         // Never paint lastMessagePreview as a fake transcript row — it is list chrome (often
         // mid-sentence / truncated) and sticks until a GET finishes. Show an empty shell instead.
@@ -145,7 +84,7 @@ export function isTrustedOpenTranscriptCache(
     return true;
 }
 
-export function applyCachedTranscriptOnOpenExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
+export function applyCachedTranscriptOnOpenExtracted(ctx: MobileProjectsTranscriptLiveUiContext, summary: QaapAgentConversationSummaryDTO,
         chatHost: HTMLElement,): boolean {
         const cached = ctx.readCachedTranscriptConversation(summary.id);
         if (!cached || !isTrustedOpenTranscriptCache(cached, summary)) {
@@ -163,7 +102,7 @@ export function applyCachedTranscriptOnOpenExtracted(ctx: any, summary: QaapAgen
         return true;
 }
 
-export function reconcileConversationListSummaryExtracted(ctx: any, full: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
+export function reconcileConversationListSummaryExtracted(ctx: MobileProjectsTranscriptLiveUiContext, full: QaapAgentConversationDTO): QaapAgentConversationSummaryDTO {
         const snapshot = conversationToSummary(full);
         const stored = ctx.host.conversations?.findSummaryById(full.id);
         const shouldPersist = !stored
@@ -176,7 +115,7 @@ export function reconcileConversationListSummaryExtracted(ctx: any, full: QaapAg
         return snapshot;
 }
 
-export async function resolveOpenTranscriptConversationExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,): Promise<QaapAgentConversationDTO | undefined> {
+export async function resolveOpenTranscriptConversationExtracted(ctx: MobileProjectsTranscriptLiveUiContext, summary: QaapAgentConversationSummaryDTO,): Promise<QaapAgentConversationDTO | undefined> {
         if (summary.source === 'theia-chat' || summary.id.startsWith('theia-chat-service:')) {
             return ctx.host.getChatServiceConversation(summary);
         }
@@ -190,7 +129,7 @@ export async function resolveOpenTranscriptConversationExtracted(ctx: any, summa
         }
 }
 
-export async function refreshOpenTranscriptConversationExtracted(ctx: any, options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
+export async function refreshOpenTranscriptConversationExtracted(ctx: MobileProjectsTranscriptLiveUiContext, options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
         const activeId = ctx.host.transcriptOpenSummaryId;
         if (ctx.refreshInFlight && ctx.refreshInFlightConversationId === activeId) {
             if (options?.forceStatusSettle) {
@@ -206,7 +145,7 @@ export async function refreshOpenTranscriptConversationExtracted(ctx: any, optio
         return ctx.refreshInFlight;
 }
 
-export async function doRefreshOpenTranscriptConversationExtracted(ctx: any, options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
+export async function doRefreshOpenTranscriptConversationExtracted(ctx: MobileProjectsTranscriptLiveUiContext, options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
         const context = ctx.resolveTranscriptRefreshContext();
         if (!context) {
             return;

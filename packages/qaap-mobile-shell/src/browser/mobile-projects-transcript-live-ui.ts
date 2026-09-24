@@ -2,83 +2,32 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import {
-    conversationToSummary,
-    getConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
     type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
-import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import {
-    fetchAgentApprovals,
     type QaapAgentApprovalRequestDTO,
 } from '../common/qaap-agent-approval-client';
-import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
-import { excerptTranscriptThought } from '../common/qaap-agent-transcript-segments';
-import { applyAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
-import {
-    advanceTranscriptSemanticProgressClock,
-    resolveTranscriptStreamingAgentSegments,
-    seedTranscriptSemanticProgressClock,
-} from '../common/qaap-transcript-semantic-progress';
 import type { ConversationLiveMessageEvent } from './mobile-projects-conversations';
+import { findTranscriptToolApproval } from '../common/qaap-transcript-approval-inline';
 import {
-    applyConversationMessageDelta,
-    canApplySseMessageDelta,
-    shouldSkipStreamingTranscriptRefetch,
-} from '../common/qaap-transcript-sse-delta';
-import { findTranscriptToolApproval, isPendingTranscriptToolSegment, resolveTranscriptInlineApproval } from '../common/qaap-transcript-approval-inline';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import {
-    clearTranscriptPendingApprovalBar,
-    mountTranscriptPendingApprovalBar,
     removeTranscriptPendingApprovalHosts,
-    scrollTranscriptPendingApprovalIntoView,
 } from './qaap-transcript-inline-approval-ui';
-import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
-import {
-    conversationAwaitingDevPreview,
-    conversationMayAutoOpenTranscriptPreview,
-    conversationRequestsDevPreview,
-    conversationShouldKickoffDevPreviewBootstrap,
-    conversationShouldWatchDevPreview,
-    messageRequestsDevPreview,
-    resolveReadyTranscriptPreviewUrlFromProbe,
-} from '../common/qaap-transcript-preview-offer';
-import {
-    buildTranscriptPreviewBootstrapFailureReason,
-    shouldReportTranscriptPreviewBootstrapFailure,
-    toTranscriptPreviewBootstrapSnapshot,
-} from '../common/qaap-transcript-preview-bootstrap-failure';
-import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
-import { agentMessageHasVisualVerificationMarker } from '../common/qaap-visual-verification';
-import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     buildConversationTranscriptFingerprint,
-    mergeConversationTranscriptFingerprint,
-    shouldForceTranscriptRenderOnStatusSettle,
-    TRANSCRIPT_TOOL_USE_ID_ATTR,
 } from '../common/qaap-transcript-incremental-update';
-import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
-import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
-import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
-import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
-import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
-import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
+import { type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
 import {
     QaapTranscriptLiveController,
     type QaapTranscriptLiveRefreshOptions,
 } from './qaap-transcript-live-controller';
-import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
@@ -168,33 +117,62 @@ export const TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS = 180_000;
 /** SSE-first live transcript watch, debounced refetch, and inline approval bar. */
 export class MobileProjectsTranscriptLiveUi {
 
-    protected transcriptLiveController: QaapTranscriptLiveController | undefined;
-    /** Avoid remounting the sticky composer on every SSE patch once a turn looks visually idle. */
-    protected transcriptTurnVisuallySettledActive = false;
-    protected transcriptPreviewOfferTimer: number | undefined;
-    protected transcriptPreviewOfferAnnouncedUrl: string | undefined;
-    protected transcriptPreviewSettlePollUntil: number | undefined;
-    protected transcriptDevPreviewBootstrapConversationId: string | undefined;
-    protected bootstrapPreviewListenerInitialized = false;
-    protected pendingSseRenderConv: QaapAgentConversationDTO | undefined;
-    protected threadStoreSummaryDispose: Disposable = Disposable.NULL;
-    protected sseRenderRafId = 0;
-    protected sseRenderTimer: number | undefined;
-    protected lastMountedApprovalId: string | undefined;
-    protected lastInlineApprovalSyncKey: string | undefined;
-    protected transcriptComposerActivityTimer: number | undefined;
-    protected transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
-    protected transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
-    protected transcriptPreviewPollMisses = 0;
-    protected transcriptVisualVerificationPollTimer: number | undefined;
-    protected transcriptVisualVerificationPollUntil: number | undefined;
-    protected refreshInFlight: Promise<void> | undefined;
-    protected refreshInFlightConversationId: string | undefined;
-    protected readonly transcriptPreviewFailureReportedFor = new Set<string>();
-    protected visibilityResumeListenerInstalled = false;
-    protected readonly agUiLiveBridge: QaapAgUiTranscriptLiveBridge;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptLiveController: QaapTranscriptLiveController | undefined;
+    /**
+     * Avoid remounting the sticky composer on every SSE patch once a turn looks visually idle.
+     * @internal Used by the extracted mobile-projects-transcript-live-ui-* modules.
+     */
+    public transcriptTurnVisuallySettledActive = false;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptPreviewOfferTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptPreviewOfferAnnouncedUrl: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptPreviewSettlePollUntil: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptDevPreviewBootstrapConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public bootstrapPreviewListenerInitialized = false;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public pendingSseRenderConv: QaapAgentConversationDTO | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public threadStoreSummaryDispose: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public sseRenderRafId = 0;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public sseRenderTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public lastMountedApprovalId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public lastInlineApprovalSyncKey: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptComposerActivityTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptComposerActivityIdleHandle: TranscriptIdleWorkHandle | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptPreviewPollIntervalMs = TRANSCRIPT_PREVIEW_POLL_BASE_MS;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptPreviewPollMisses = 0;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptVisualVerificationPollTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public transcriptVisualVerificationPollUntil: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public refreshInFlight: Promise<void> | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public refreshInFlightConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public readonly transcriptPreviewFailureReportedFor = new Set<string>();
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public visibilityResumeListenerInstalled = false;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public readonly agUiLiveBridge: QaapAgUiTranscriptLiveBridge;
 
-    constructor(protected readonly host: MobileProjectsTranscriptLiveHost) {
+    constructor(
+        /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+        public readonly host: MobileProjectsTranscriptLiveHost,
+    ) {
         this.agUiLiveBridge = new QaapAgUiTranscriptLiveBridge(() => this.host.agUiFrontendTools);
         this.ensureBootstrapPreviewListener();
         this.ensureVisibilityResumeListener();
@@ -204,7 +182,8 @@ export class MobileProjectsTranscriptLiveUi {
         this.host.transcriptLastTransportEventAt = Date.now();
     }
 
-    protected touchTranscriptSemanticProgressFromConversation(conv: QaapAgentConversationDTO): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public touchTranscriptSemanticProgressFromConversation(conv: QaapAgentConversationDTO): void {
         touchTranscriptSemanticProgressFromConversationExtracted(this, conv);
     }
 
@@ -252,38 +231,47 @@ export class MobileProjectsTranscriptLiveUi {
         handleTranscriptSseMessageExtracted(this, event);
     }
 
-    protected sseDeltaResyncTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public sseDeltaResyncTimer: number | undefined;
 
-    protected scheduleSseDeltaResync(): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public scheduleSseDeltaResync(): void {
         scheduleSseDeltaResyncExtracted(this);
     }
 
-    protected resolveLiveSseMessage(event: ConversationLiveMessageEvent): QaapAgentMessageDTO | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public resolveLiveSseMessage(event: ConversationLiveMessageEvent): QaapAgentMessageDTO | undefined {
         return resolveLiveSseMessageExtracted(this, event);
     }
 
-    protected pauseTranscriptBackgroundRenders(): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public pauseTranscriptBackgroundRenders(): void {
         pauseTranscriptBackgroundRendersExtracted(this);
     }
 
-    protected schedulePendingSseRender(): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public schedulePendingSseRender(): void {
         schedulePendingSseRenderExtracted(this);
     }
 
-    protected isActiveTranscriptNearBottom(): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public isActiveTranscriptNearBottom(): boolean {
         return isActiveTranscriptNearBottomExtracted(this);
     }
 
-    protected flushPendingSseRender(): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public flushPendingSseRender(): void {
         flushPendingSseRenderExtracted(this);
     }
 
-    protected cacheTranscriptConversation(document: QaapAgentConversationDTO): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public cacheTranscriptConversation(document: QaapAgentConversationDTO): void {
         this.host.transcriptConversationCache.set(document.id, document);
         this.host.conversations?.cacheDocument(document);
     }
 
-    protected bindOpenTranscriptThreadStore(conversationId: string): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public bindOpenTranscriptThreadStore(conversationId: string): void {
         bindOpenTranscriptThreadStoreExtracted(this, conversationId);
     }
 
@@ -292,16 +280,19 @@ export class MobileProjectsTranscriptLiveUi {
         this.threadStoreSummaryDispose = Disposable.NULL;
     }
 
-    protected readCachedTranscriptConversation(conversationId: string): QaapAgentConversationDTO | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public readCachedTranscriptConversation(conversationId: string): QaapAgentConversationDTO | undefined {
         return this.host.conversations?.threadStore.getDocument(conversationId)
             ?? this.host.transcriptConversationCache.get(conversationId);
     }
 
-    protected applyTranscriptSseRender(next: QaapAgentConversationDTO, eventMessage: QaapAgentMessageDTO,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public applyTranscriptSseRender(next: QaapAgentConversationDTO, eventMessage: QaapAgentMessageDTO,): void {
         applyTranscriptSseRenderExtracted(this, next, eventMessage);
     }
 
-    protected scheduleTranscriptComposerActivityRefresh(conv: QaapAgentConversationDTO): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public scheduleTranscriptComposerActivityRefresh(conv: QaapAgentConversationDTO): void {
         scheduleTranscriptComposerActivityRefreshExtracted(this, conv);
     }
 
@@ -321,11 +312,13 @@ export class MobileProjectsTranscriptLiveUi {
         kickoffTranscriptDevPreviewBootstrapExtracted(this, conv);
     }
 
-    protected async maybeReportTranscriptPreviewBootstrapFailure(conv: QaapAgentConversationDTO, bootstrap: QaapProjectBootstrapService,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public async maybeReportTranscriptPreviewBootstrapFailure(conv: QaapAgentConversationDTO, bootstrap: QaapProjectBootstrapService,): Promise<void> {
         return maybeReportTranscriptPreviewBootstrapFailureExtracted(this, conv, bootstrap);
     }
 
-    protected async openReadyTranscriptPreviewUrl(readyUrl: string, _conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public async openReadyTranscriptPreviewUrl(readyUrl: string, _conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv,): Promise<void> {
         return openReadyTranscriptPreviewUrlExtracted(this, readyUrl, _conv);
     }
 
@@ -333,11 +326,13 @@ export class MobileProjectsTranscriptLiveUi {
         return finalizeTranscriptDevPreviewAfterSettleExtracted(this);
     }
 
-    protected maybeActivateTranscriptDevPreview(conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public maybeActivateTranscriptDevPreview(conv: QaapAgentConversationDTO | undefined = this.host.transcriptLastConv): void {
         maybeActivateTranscriptDevPreviewExtracted(this, conv);
     }
 
-    protected ensureTranscriptDevPreviewWatch(conv: QaapAgentConversationDTO, options?: { readonly restartPreviewPoll?: boolean },): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public ensureTranscriptDevPreviewWatch(conv: QaapAgentConversationDTO, options?: { readonly restartPreviewPoll?: boolean },): void {
         ensureTranscriptDevPreviewWatchExtracted(this, conv, options);
     }
 
@@ -412,11 +407,13 @@ export class MobileProjectsTranscriptLiveUi {
         syncTranscriptPendingApprovalExtracted(this, conv);
     }
 
-    protected buildTranscriptApprovalSyncKey(chatHost: HTMLElement | undefined, conv: QaapAgentConversationDTO, pendingId: string | undefined,): string {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public buildTranscriptApprovalSyncKey(chatHost: HTMLElement | undefined, conv: QaapAgentConversationDTO, pendingId: string | undefined,): string {
         return buildTranscriptApprovalSyncKeyExtracted(this, chatHost, conv, pendingId);
     }
 
-    protected reconcileTranscriptInlineToolApprovalCards(chatHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public reconcileTranscriptInlineToolApprovalCards(chatHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         reconcileTranscriptInlineToolApprovalCardsExtracted(this, chatHost, conv);
     }
 
@@ -424,7 +421,8 @@ export class MobileProjectsTranscriptLiveUi {
         return hasInlineToolApprovalCardExtracted(this, chatHost, toolUseId);
     }
 
-    protected findTranscriptToolSegment(conv: QaapAgentConversationDTO, toolUseId: string,): Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public findTranscriptToolSegment(conv: QaapAgentConversationDTO, toolUseId: string,): Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> | undefined {
         return findTranscriptToolSegmentExtracted(this, conv, toolUseId);
     }
 
@@ -432,7 +430,8 @@ export class MobileProjectsTranscriptLiveUi {
         stopTranscriptPreviewOfferRefreshExtracted(this);
     }
 
-    protected resolveTranscriptPreviewPollIntervalMs(): number {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public resolveTranscriptPreviewPollIntervalMs(): number {
         return resolveTranscriptPreviewPollIntervalMsExtracted(this);
     }
 
@@ -444,7 +443,8 @@ export class MobileProjectsTranscriptLiveUi {
         return refreshTranscriptPreviewOfferExtracted(this, conv);
     }
 
-    protected async resolveReadyTranscriptPreviewUrl(conv: QaapAgentConversationDTO): Promise<string | undefined> {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public async resolveReadyTranscriptPreviewUrl(conv: QaapAgentConversationDTO): Promise<string | undefined> {
         return resolveReadyTranscriptPreviewUrlExtracted(this, conv);
     }
 
@@ -456,11 +456,13 @@ export class MobileProjectsTranscriptLiveUi {
         ensureTranscriptConversationRefreshExtracted(this);
     }
 
-    protected scheduleTranscriptVisualVerificationPoll(conversationId: string): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public scheduleTranscriptVisualVerificationPoll(conversationId: string): void {
         scheduleTranscriptVisualVerificationPollExtracted(this, conversationId);
     }
 
-    protected stopTranscriptVisualVerificationPoll(): void {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public stopTranscriptVisualVerificationPoll(): void {
         stopTranscriptVisualVerificationPollExtracted(this);
     }
 
@@ -496,7 +498,8 @@ export class MobileProjectsTranscriptLiveUi {
         return refreshOpenTranscriptConversationExtracted(this, options);
     }
 
-    protected async doRefreshOpenTranscriptConversation(options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
+    public async doRefreshOpenTranscriptConversation(options?: QaapTranscriptLiveRefreshOptions,): Promise<void> {
         return doRefreshOpenTranscriptConversationExtracted(this, options);
     }
 

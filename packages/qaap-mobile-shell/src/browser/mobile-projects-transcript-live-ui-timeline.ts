@@ -1,14 +1,9 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptLiveUiContext } from './mobile-projects-transcript-live-ui-context';
 // Extracted from mobile-projects-transcript-live-ui.ts
 
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import {
-    conversationToSummary,
-    getConversation,
     type QaapAgentConversationDTO,
-    type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageDTO,
     type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
@@ -16,20 +11,6 @@ import {
     fetchAgentApprovals,
     type QaapAgentApprovalRequestDTO,
 } from '../common/qaap-agent-approval-client';
-import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
-import { excerptTranscriptThought } from '../common/qaap-agent-transcript-segments';
-import { applyAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
-import {
-    advanceTranscriptSemanticProgressClock,
-    resolveTranscriptStreamingAgentSegments,
-    seedTranscriptSemanticProgressClock,
-} from '../common/qaap-transcript-semantic-progress';
-import type { ConversationLiveMessageEvent } from './mobile-projects-conversations';
-import {
-    applyConversationMessageDelta,
-    canApplySseMessageDelta,
-    shouldSkipStreamingTranscriptRefetch,
-} from '../common/qaap-transcript-sse-delta';
 import { findTranscriptToolApproval, isPendingTranscriptToolSegment, resolveTranscriptInlineApproval } from '../common/qaap-transcript-approval-inline';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import {
@@ -40,60 +21,27 @@ import {
 } from './qaap-transcript-inline-approval-ui';
 import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
 import {
-    conversationAwaitingDevPreview,
-    conversationMayAutoOpenTranscriptPreview,
-    conversationRequestsDevPreview,
-    conversationShouldKickoffDevPreviewBootstrap,
     conversationShouldWatchDevPreview,
-    messageRequestsDevPreview,
     resolveReadyTranscriptPreviewUrlFromProbe,
 } from '../common/qaap-transcript-preview-offer';
-import {
-    buildTranscriptPreviewBootstrapFailureReason,
-    shouldReportTranscriptPreviewBootstrapFailure,
-    toTranscriptPreviewBootstrapSnapshot,
-} from '../common/qaap-transcript-preview-bootstrap-failure';
-import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
-import { agentMessageHasVisualVerificationMarker } from '../common/qaap-visual-verification';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
-    buildConversationTranscriptFingerprint,
-    mergeConversationTranscriptFingerprint,
-    shouldForceTranscriptRenderOnStatusSettle,
     TRANSCRIPT_TOOL_USE_ID_ATTR,
 } from '../common/qaap-transcript-incremental-update';
-import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
-import { scheduleTranscriptIdleWork, type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
-import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
 import {
     recordTranscriptRenderMetric,
 } from '../common/qaap-transcript-render-metrics';
-import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
-import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import {
     QaapTranscriptLiveController,
-    type QaapTranscriptLiveRefreshOptions,
 } from './qaap-transcript-live-controller';
-import { MobileSnackbar } from './mobile-snackbar';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
-import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridge';
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_PREVIEW_POLL_BASE_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_APPROVAL_REFRESH_MS, TRANSCRIPT_PREVIEW_POLL_MAX_MS, TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
 
-export function stopTranscriptLiveWatchExtracted(ctx: any): void {
+export function stopTranscriptLiveWatchExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
         ctx.transcriptTurnVisuallySettledActive = false;
         if (ctx.sseDeltaResyncTimer !== undefined) {
             window.clearTimeout(ctx.sseDeltaResyncTimer);
@@ -120,14 +68,14 @@ export function stopTranscriptLiveWatchExtracted(ctx: any): void {
         ctx.stopTranscriptPreviewOfferRefresh();
 }
 
-export function stopTranscriptApprovalRefreshExtracted(ctx: any): void {
+export function stopTranscriptApprovalRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
         if (ctx.host.transcriptApprovalRefreshTimer !== undefined) {
             window.clearTimeout(ctx.host.transcriptApprovalRefreshTimer);
             ctx.host.transcriptApprovalRefreshTimer = undefined;
         }
 }
 
-export function scheduleTranscriptApprovalRefreshExtracted(ctx: any): void {
+export function scheduleTranscriptApprovalRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
         ctx.stopTranscriptApprovalRefresh();
         if (!ctx.host.transcriptOpenSummaryId || !ctx.host.transcriptLastConv
             || !conversationUsesInteractiveApprovals(ctx.host.transcriptLastConv)) {
@@ -139,7 +87,7 @@ export function scheduleTranscriptApprovalRefreshExtracted(ctx: any): void {
         }, TRANSCRIPT_APPROVAL_REFRESH_MS);
 }
 
-export async function refreshTranscriptApprovalsExtracted(ctx: any): Promise<void> {
+export async function refreshTranscriptApprovalsExtracted(ctx: MobileProjectsTranscriptLiveUiContext): Promise<void> {
         if (!ctx.host.transcriptOpenSummaryId) {
             return;
         }
@@ -160,7 +108,7 @@ export async function refreshTranscriptApprovalsExtracted(ctx: any): Promise<voi
         }
 }
 
-export function ensureTranscriptLiveControllerExtracted(ctx: any): QaapTranscriptLiveController {
+export function ensureTranscriptLiveControllerExtracted(ctx: MobileProjectsTranscriptLiveUiContext): QaapTranscriptLiveController {
         if (!ctx.transcriptLiveController) {
             ctx.transcriptLiveController = new QaapTranscriptLiveController({
                 isDocumentVisible: () => isTranscriptDocumentVisible(),
@@ -202,12 +150,12 @@ export function ensureTranscriptLiveControllerExtracted(ctx: any): QaapTranscrip
         return ctx.transcriptLiveController;
 }
 
-export function getPendingTranscriptToolApprovalExtracted(ctx: any, conversationId: string,
+export function getPendingTranscriptToolApprovalExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conversationId: string,
         toolUseId: string,): QaapAgentApprovalRequestDTO | undefined {
         return findTranscriptToolApproval(ctx.host.cachedAgentApprovals, conversationId, toolUseId);
 }
 
-export function syncTranscriptPendingApprovalExtracted(ctx: any, conv: QaapAgentConversationDTO): void {
+export function syncTranscriptPendingApprovalExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): void {
         const chatHost = ctx.resolveActiveTranscriptChatHost();
         const pending = resolveTranscriptInlineApproval(ctx.host.cachedAgentApprovals, conv.id);
         // Always surface a real pending store item (Allow/Deny card), even if policy reconciliation
@@ -266,7 +214,7 @@ export function syncTranscriptPendingApprovalExtracted(ctx: any, conv: QaapAgent
         }
 }
 
-export function buildTranscriptApprovalSyncKeyExtracted(ctx: any, chatHost: HTMLElement | undefined,
+export function buildTranscriptApprovalSyncKeyExtracted(ctx: MobileProjectsTranscriptLiveUiContext, chatHost: HTMLElement | undefined,
         conv: QaapAgentConversationDTO,
         pendingId: string | undefined,): string {
         const approvals = ctx.host.cachedAgentApprovals
@@ -298,7 +246,7 @@ export function buildTranscriptApprovalSyncKeyExtracted(ctx: any, chatHost: HTML
         ].join('|');
 }
 
-export function reconcileTranscriptInlineToolApprovalCardsExtracted(ctx: any, chatHost: HTMLElement, conv: QaapAgentConversationDTO): void {
+export function reconcileTranscriptInlineToolApprovalCardsExtracted(ctx: MobileProjectsTranscriptLiveUiContext, chatHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         const pills = chatHost.querySelectorAll<HTMLDetailsElement>(`details[${TRANSCRIPT_TOOL_USE_ID_ATTR}]`);
         pills.forEach(pill => {
             const toolUseId = pill.getAttribute(TRANSCRIPT_TOOL_USE_ID_ATTR);
@@ -325,13 +273,13 @@ export function reconcileTranscriptInlineToolApprovalCardsExtracted(ctx: any, ch
         });
 }
 
-export function hasInlineToolApprovalCardExtracted(ctx: any, chatHost: HTMLElement | undefined, toolUseId: string): boolean {
+export function hasInlineToolApprovalCardExtracted(ctx: MobileProjectsTranscriptLiveUiContext, chatHost: HTMLElement | undefined, toolUseId: string): boolean {
         return !!chatHost?.querySelector(
             `details[${TRANSCRIPT_TOOL_USE_ID_ATTR}="${CSS.escape(toolUseId)}"] .${TRANSCRIPT_APPROVAL_CARD_CLASS}`,
         );
 }
 
-export function findTranscriptToolSegmentExtracted(ctx: any, conv: QaapAgentConversationDTO,
+export function findTranscriptToolSegmentExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,
         toolUseId: string,): Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> | undefined {
         for (let i = conv.messages.length - 1; i >= 0; i--) {
             for (const segment of conv.messages[i].segments ?? []) {
@@ -343,21 +291,21 @@ export function findTranscriptToolSegmentExtracted(ctx: any, conv: QaapAgentConv
         return undefined;
 }
 
-export function stopTranscriptPreviewOfferRefreshExtracted(ctx: any): void {
+export function stopTranscriptPreviewOfferRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
         if (ctx.transcriptPreviewOfferTimer !== undefined) {
             window.clearTimeout(ctx.transcriptPreviewOfferTimer);
             ctx.transcriptPreviewOfferTimer = undefined;
         }
 }
 
-export function resolveTranscriptPreviewPollIntervalMsExtracted(ctx: any): number {
+export function resolveTranscriptPreviewPollIntervalMsExtracted(ctx: MobileProjectsTranscriptLiveUiContext): number {
         return Math.min(
             TRANSCRIPT_PREVIEW_POLL_MAX_MS,
             TRANSCRIPT_PREVIEW_POLL_BASE_MS + ctx.transcriptPreviewPollMisses * 400,
         );
 }
 
-export function scheduleTranscriptPreviewOfferRefreshExtracted(ctx: any, conv: QaapAgentConversationDTO | undefined ,
+export function scheduleTranscriptPreviewOfferRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO | undefined ,
         options?: { readonly restart?: boolean },): void {
         if (!options?.restart && ctx.transcriptPreviewOfferTimer !== undefined) {
             return;
@@ -383,7 +331,7 @@ export function scheduleTranscriptPreviewOfferRefreshExtracted(ctx: any, conv: Q
         }, ctx.transcriptPreviewPollIntervalMs);
 }
 
-export async function refreshTranscriptPreviewOfferExtracted(ctx: any, conv: QaapAgentConversationDTO | undefined ): Promise<void> {
+export async function refreshTranscriptPreviewOfferExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO | undefined ): Promise<void> {
         if (!conv || !ctx.host.transcriptOpenSummaryId || !isTranscriptDocumentVisible()) {
             return;
         }
@@ -422,7 +370,7 @@ export async function refreshTranscriptPreviewOfferExtracted(ctx: any, conv: Qaa
         }
 }
 
-export async function resolveReadyTranscriptPreviewUrlExtracted(ctx: any, conv: QaapAgentConversationDTO): Promise<string | undefined> {
+export async function resolveReadyTranscriptPreviewUrlExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): Promise<string | undefined> {
         const readyUrl = await resolveReadyTranscriptPreviewUrlFromProbe(
             conv,
             port => probeQaapDevPreviewPort(port),
@@ -431,7 +379,7 @@ export async function resolveReadyTranscriptPreviewUrlExtracted(ctx: any, conv: 
         return readyUrl ? normalizePreviewUrlForSameOrigin(readyUrl) : undefined;
 }
 
-export function ensureTranscriptConversationRefreshExtracted(ctx: any): void {
+export function ensureTranscriptConversationRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
         const context = ctx.resolveTranscriptRefreshContext();
         if (!context || !ctx.isWatchingOpenTranscript(context.summary.id)) {
             ctx.stopTranscriptVisualVerificationPoll();
@@ -461,7 +409,7 @@ export function ensureTranscriptConversationRefreshExtracted(ctx: any): void {
         ctx.host.transcriptScheduleRefresh();
 }
 
-export function scheduleTranscriptVisualVerificationPollExtracted(ctx: any, conversationId: string): void {
+export function scheduleTranscriptVisualVerificationPollExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conversationId: string): void {
         if (ctx.transcriptVisualVerificationPollTimer !== undefined) {
             return;
         }
@@ -491,7 +439,7 @@ export function scheduleTranscriptVisualVerificationPollExtracted(ctx: any, conv
         ctx.transcriptVisualVerificationPollTimer = window.setTimeout(tick, TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS);
 }
 
-export function stopTranscriptVisualVerificationPollExtracted(ctx: any): void {
+export function stopTranscriptVisualVerificationPollExtracted(ctx: MobileProjectsTranscriptLiveUiContext): void {
         if (ctx.transcriptVisualVerificationPollTimer !== undefined) {
             window.clearTimeout(ctx.transcriptVisualVerificationPollTimer);
             ctx.transcriptVisualVerificationPollTimer = undefined;
