@@ -1,19 +1,9 @@
-// @ts-nocheck
+import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
-import { nls } from '@theia/core/lib/common/nls';
+import type { SessionsSidebarConversationEntry } from './mobile-projects-sessions-sidebar-ui';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { QuickPickItem } from '@theia/core/lib/browser';
-import {
-    readStoredAgent,
-    SHELL_AGENT_ID,
-} from '../common/qaap-agent-task-client';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
-import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import {
@@ -25,14 +15,9 @@ import {
 } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
 import { expandConversationSlots, partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import {
-    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
-    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
-    resolveSessionsSidebarInitialConversationLimit,
-} from '../common/qaap-sessions-sidebar-conversation-limit';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
 
-export function openWorkHubSessionsSidebarExtracted(ctx: any): void {
+export function openWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
     const sidebar = ctx.ensureWorkHubSessionsSidebar();
     // Seed before the first paint: loadProjects() omits composer-targetable
     // workspaces (local monorepos, ephemeral folders) that Working still uses.
@@ -47,7 +32,7 @@ export function openWorkHubSessionsSidebarExtracted(ctx: any): void {
     });
 }
 
-export function toggleWorkHubSessionsSidebarExtracted(ctx: any): void {
+export function toggleWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
     const sidebar = ctx.ensureWorkHubSessionsSidebar();
     if (sidebar.isVisible()) {
         sidebar.hide();
@@ -60,7 +45,7 @@ export function toggleWorkHubSessionsSidebarExtracted(ctx: any): void {
     });
 }
 
-export async function prepareSessionsSidebarDataExtracted(ctx: any): Promise<void> {
+export async function prepareSessionsSidebarDataExtracted(ctx: MobileProjectsSessionsSidebarUiContext): Promise<void> {
     ctx.host.activeTasks?.start();
     ctx.host.conversations?.start();
     try {
@@ -73,7 +58,7 @@ export async function prepareSessionsSidebarDataExtracted(ctx: any): Promise<voi
     await ctx.host.chatServiceSummariesUi.refreshChatServiceSessionSummaries();
 }
 
-export function mergeSessionsSidebarProjectsExtracted(ctx: any, projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
+export function mergeSessionsSidebarProjectsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
     const merged = [...projects];
     // The authenticated history can arrive before the repository catalog or workspace service.
     // Keep those real sessions reachable instead of claiming there is no history.
@@ -100,7 +85,7 @@ export function mergeSessionsSidebarProjectsExtracted(ctx: any, projects: readon
     return [current, ...projects];
 }
 
-export function seedSessionsSidebarProjectsForPaintExtracted(ctx: any): void {
+export function seedSessionsSidebarProjectsForPaintExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
     if (ctx.host.projects.length === 0) {
         const cached = ctx.host.projectsService.peekCachedProjects();
         if (cached.length > 0) {
@@ -110,7 +95,7 @@ export function seedSessionsSidebarProjectsForPaintExtracted(ctx: any): void {
     ctx.host.projects = ctx.mergeSessionsSidebarProjects(ctx.host.projects);
 }
 
-export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSessionsSidebar {
+export function ensureWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): MobileWorkHubSessionsSidebar {
     if (!ctx.host.sessionsSidebar) {
         ctx.host.sessionsSidebar = new MobileWorkHubSessionsSidebar({
             renderSessionList: host => ctx.renderWorkHubSessionsSidebarList(host),
@@ -166,7 +151,7 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: any): MobileWorkHubSe
     return ctx.host.sessionsSidebar;
 }
 
-export function buildSessionsSidebarFingerprintInputExtracted(ctx: any): WorkHubSessionsSidebarFingerprintInput {
+export function buildSessionsSidebarFingerprintInputExtracted(ctx: MobileProjectsSessionsSidebarUiContext): WorkHubSessionsSidebarFingerprintInput {
     const pinnedConversationIds = new Set<string>();
     for (const project of ctx.host.projects) {
         for (const summary of ctx.host.conversationIndexUi.conversationsForProject(project)) {
@@ -195,7 +180,7 @@ export function buildSessionsSidebarFingerprintInputExtracted(ctx: any): WorkHub
     };
 }
 
-export function shouldSkipSessionsSidebarListRenderExtracted(ctx: any): boolean {
+export function shouldSkipSessionsSidebarListRenderExtracted(ctx: MobileProjectsSessionsSidebarUiContext): boolean {
     if (!ctx.sessionsSidebarListFingerprint) {
         return false;
     }
@@ -208,7 +193,7 @@ export function shouldSkipSessionsSidebarListRenderExtracted(ctx: any): boolean 
     return false;
 }
 
-export function shouldDeferSessionsSidebarListRefreshExtracted(ctx: any): boolean {
+export function shouldDeferSessionsSidebarListRefreshExtracted(ctx: MobileProjectsSessionsSidebarUiContext): boolean {
     if (ctx.isSessionsSidebarInteractionGuardActive()) {
         return true;
     }
@@ -220,7 +205,7 @@ export function shouldDeferSessionsSidebarListRefreshExtracted(ctx: any): boolea
     return false;
 }
 
-export function bindSessionsSidebarInteractionGuardExtracted(ctx: any, listHost: HTMLElement): void {
+export function bindSessionsSidebarInteractionGuardExtracted(ctx: MobileProjectsSessionsSidebarUiContext, listHost: HTMLElement): void {
     if (ctx.sessionsSidebarInteractionBound) {
         return;
     }
@@ -232,7 +217,7 @@ export function bindSessionsSidebarInteractionGuardExtracted(ctx: any, listHost:
     listHost.addEventListener('touchstart', arm, { capture: true, passive: true });
 }
 
-export function buildSessionsSidebarStructureFingerprintExtracted(ctx: any): string {
+export function buildSessionsSidebarStructureFingerprintExtracted(ctx: MobileProjectsSessionsSidebarUiContext): string {
     const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
     const query = ctx.host.query.trim().toLowerCase();
     const pinnedGroups = ctx.collectSessionsSidebarPinnedGroups(projects, query);
@@ -266,14 +251,14 @@ export function buildSessionsSidebarStructureFingerprintExtracted(ctx: any): str
     });
 }
 
-export function rememberSessionsSidebarListFingerprintExtracted(ctx: any, listHost: HTMLElement): void {
+export function rememberSessionsSidebarListFingerprintExtracted(ctx: MobileProjectsSessionsSidebarUiContext, listHost: HTMLElement): void {
     const structure = ctx.buildSessionsSidebarStructureFingerprint();
     ctx.sessionsSidebarListFingerprint = structure;
     listHost.setAttribute(QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR, structure);
     ctx.stampSessionsSidebarRowFingerprints(listHost);
 }
 
-export function tryPatchSessionsSidebarListExtracted(ctx: any, listHost: HTMLElement): boolean {
+export function tryPatchSessionsSidebarListExtracted(ctx: MobileProjectsSessionsSidebarUiContext, listHost: HTMLElement): boolean {
     if (ctx.clearFailedModeProjectId) {
         return false;
     }
@@ -347,7 +332,7 @@ export function tryPatchSessionsSidebarListExtracted(ctx: any, listHost: HTMLEle
     return true;
 }
 
-export function stampSessionsSidebarRowFingerprintsExtracted(ctx: any, listHost: HTMLElement): void {
+export function stampSessionsSidebarRowFingerprintsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, listHost: HTMLElement): void {
     const rowsByConversationId = new Map<string, HTMLElement>();
     for (const row of listHost.querySelectorAll<HTMLElement>(
         '.theia-mobile-projects-task-row[data-qaap-conversation-id]',
@@ -365,7 +350,7 @@ export function stampSessionsSidebarRowFingerprintsExtracted(ctx: any, listHost:
     }
 }
 
-export function buildSidebarRowFingerprintExtracted(ctx: any, entry: SessionsSidebarConversationEntry,): string {
+export function buildSidebarRowFingerprintExtracted(ctx: MobileProjectsSessionsSidebarUiContext, entry: SessionsSidebarConversationEntry,): string {
     const task = ctx.host.conversationIndexUi.summaryToTaskView(entry.summary);
     const unread = ctx.host.conversationIndexUi.isConversationUnread(entry.summary);
     const visualStatusId = resolveQaapAgentTaskVisualStatus(task, entry.summary, unread).id;
@@ -376,7 +361,7 @@ export function buildSidebarRowFingerprintExtracted(ctx: any, entry: SessionsSid
     });
 }
 
-export function collectSessionsSidebarConversationEntriesExtracted(ctx: any): SessionsSidebarConversationEntry[] {
+export function collectSessionsSidebarConversationEntriesExtracted(ctx: MobileProjectsSessionsSidebarUiContext): SessionsSidebarConversationEntry[] {
     const projects = [...ctx.host.projects].sort((a, b) => ctx.compareSessionsSidebarProjectOrder(a, b));
     const query = ctx.host.query.trim().toLowerCase();
     const bypassConversationLimit = query.length > 0;
@@ -429,7 +414,7 @@ export function collectSessionsSidebarConversationEntriesExtracted(ctx: any): Se
     return entries;
 }
 
-export function collectParentIdsExtracted(ctx: any, conversations: readonly QaapAgentConversationSummaryDTO[],): ReadonlySet<string> {
+export function collectParentIdsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, conversations: readonly QaapAgentConversationSummaryDTO[],): ReadonlySet<string> {
     const parentIds = new Set<string>();
     for (const summary of conversations) {
         if (summary.forkedFromId) {
@@ -439,7 +424,7 @@ export function collectParentIdsExtracted(ctx: any, conversations: readonly Qaap
     return parentIds;
 }
 
-export function beginSessionsSidebarConversationActivationExtracted(ctx: any, conversationId: string): void {
+export function beginSessionsSidebarConversationActivationExtracted(ctx: MobileProjectsSessionsSidebarUiContext, conversationId: string): void {
     ctx.sessionsSidebarInteractionUntil = Date.now() + SESSIONS_SIDEBAR_INTERACTION_GUARD_MS;
     ctx.sessionsSidebarOpeningConversationId = conversationId;
     if (ctx.sessionsSidebarOpeningTimer !== undefined) {
@@ -451,14 +436,14 @@ export function beginSessionsSidebarConversationActivationExtracted(ctx: any, co
     }, SESSIONS_SIDEBAR_INTERACTION_GUARD_MS);
 }
 
-export function refreshWorkHubSessionsSidebarListExtracted(ctx: any, force = false): void {
+export function refreshWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSessionsSidebarUiContext, force = false): void {
     if (force) {
         ctx.resetSessionsSidebarListFingerprint();
     }
     ctx.host.sessionsSidebar?.refreshList(force ? { force: true } : undefined);
 }
 
-export function resolveWorkHubSessionsSidebarProjectExtracted(ctx: any): MobileProjectEntry | undefined {
+export function resolveWorkHubSessionsSidebarProjectExtracted(ctx: MobileProjectsSessionsSidebarUiContext): MobileProjectEntry | undefined {
     if (ctx.host.agentsHubSelectedProjectId) {
         const selected = ctx.host.projects.find(p => p.id === ctx.host.agentsHubSelectedProjectId);
         if (selected) {

@@ -1,6 +1,6 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 46 files.
+# 42 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
@@ -15,10 +15,6 @@ packages/qaap-mobile-shell/src/browser/mobile-projects-project-rows-ui-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-project-rows-ui-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-project-rows-ui-timeline.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-project-rows-ui.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-sessions-sidebar-ui-render.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-sessions-sidebar-ui-streaming.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-sessions-sidebar-ui-timeline.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-sessions-sidebar-ui.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-sticky-composer-sheets-ui-activity.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-sticky-composer-sheets-ui-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-sticky-composer-sheets-ui-streaming.ts

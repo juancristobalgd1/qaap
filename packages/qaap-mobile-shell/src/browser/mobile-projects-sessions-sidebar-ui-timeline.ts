@@ -1,8 +1,7 @@
-// @ts-nocheck
+import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { QuickPickItem } from '@theia/core/lib/browser';
 import {
     readStoredAgent,
@@ -20,22 +19,8 @@ import {
     type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
-import {
-    buildWorkHubSessionsSidebarRowFingerprint,
-    buildWorkHubSessionsSidebarVisibleStructureFingerprint,
-    QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR,
-    QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
-    type WorkHubSessionsSidebarFingerprintInput,
-} from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import {
-    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
-    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
-    resolveSessionsSidebarInitialConversationLimit,
-} from '../common/qaap-sessions-sidebar-conversation-limit';
 
-export function createSessionsSidebarProjectGroupExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
     onActivate: () => void,
     bypassConversationLimit = false,): HTMLElement {
@@ -69,7 +54,7 @@ export function createSessionsSidebarProjectGroupExtracted(ctx: any, project: Mo
     return section;
 }
 
-export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     expanded: boolean,
     onToggleExpand: () => void,): HTMLElement {
     const row = document.createElement('div');
@@ -144,7 +129,7 @@ export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: 
     return row;
 }
 
-export function createSessionsSidebarIdeOpenControlExtracted(ctx: any, project: MobileProjectEntry): HTMLButtonElement {
+export function createSessionsSidebarIdeOpenControlExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): HTMLButtonElement {
     const openBtn = document.createElement('button');
     openBtn.type = 'button';
     openBtn.className = 'theia-mobile-projects-row-meta-open theia-mobile-work-hub-sessions-sidebar-project-open';
@@ -166,7 +151,7 @@ export function createSessionsSidebarIdeOpenControlExtracted(ctx: any, project: 
     return openBtn;
 }
 
-export function createSessionsSidebarNewAgentControlExtracted(ctx: any, project: MobileProjectEntry): HTMLButtonElement {
+export function createSessionsSidebarNewAgentControlExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'theia-mobile-work-hub-sessions-sidebar-project-new-agent';
@@ -185,7 +170,7 @@ export function createSessionsSidebarNewAgentControlExtracted(ctx: any, project:
     return btn;
 }
 
-export function onSessionsSidebarViewModeChangeExtracted(ctx: any, id: MobileViewToggleId): void {
+export function onSessionsSidebarViewModeChangeExtracted(ctx: MobileProjectsSessionsSidebarUiContext, id: MobileViewToggleId): void {
     if (id === 'editor') {
         if (!ctx.host.commands.getCommand(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)
             || !ctx.host.commands.isEnabled(QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND)) {
@@ -207,7 +192,7 @@ export function onSessionsSidebarViewModeChangeExtracted(ctx: any, id: MobileVie
         });
 }
 
-export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: any): Promise<void> {
+export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: MobileProjectsSessionsSidebarUiContext): Promise<void> {
     const project = ctx.resolveWorkHubSessionsSidebarProject();
     if (!project) {
         await ctx.host.onNewClick();
@@ -216,7 +201,7 @@ export async function onWorkHubSessionsSidebarNewChatExtracted(ctx: any): Promis
     await ctx.openEmptyMobileChatSheet(project);
 }
 
-export async function openEmptyMobileChatSheetExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
+export async function openEmptyMobileChatSheetExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): Promise<void> {
     ctx.host.sessionsSidebar?.hide();
     if (ctx.host.shouldUseAgentsHubLanding() && !ctx.host.isProjectDetailView()) {
         // Card-menu / sidebar "New agent" must scope the idle Agents shell to THIS project.
@@ -257,7 +242,7 @@ export async function openEmptyMobileChatSheetExtracted(ctx: any, project: Mobil
     await ctx.host.transcriptSheetUi.openTranscriptSheet(project, summary);
 }
 
-export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLButtonElement): void {
+export function onSessionsSidebarAccountClickExtracted(ctx: MobileProjectsSessionsSidebarUiContext, anchor: HTMLButtonElement): void {
     toggleQaapAccountMenu(
         anchor,
         ctx.host.commands,
@@ -277,7 +262,7 @@ export function onSessionsSidebarAccountClickExtracted(ctx: any, anchor: HTMLBut
     );
 }
 
-export async function openSessionsSidebarSearchExtracted(ctx: any): Promise<void> {
+export async function openSessionsSidebarSearchExtracted(ctx: MobileProjectsSessionsSidebarUiContext): Promise<void> {
     if (!ctx.host.quickInputService) {
         return;
     }

@@ -17,6 +17,7 @@ import {
     type MobileProjectsSessionsSidebarHost,
 } from './mobile-projects-sessions-sidebar-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 
 describe('mobile-projects-sessions-sidebar-ui', () => {
 
@@ -25,16 +26,16 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
             conversations: { threadStore: { listAllSummaries: () => [{ cwd: '/repo/app' }, { cwd: '/repo/app' }] } },
             projectsService: { resolveCurrentWorkspaceProject: () => undefined }
         } };
-        const projects = mergeSessionsSidebarProjectsExtracted(ctx, []);
+        const projects = mergeSessionsSidebarProjectsExtracted(ctx as unknown as MobileProjectsSessionsSidebarUiContext, []);
         expect(projects).to.have.lengthOf(1);
         expect(projects[0].name).to.equal('app');
         expect(projects[0].uri?.scheme).to.equal('file');
     });
 
     it('distinguishes loading and connection failure from an empty history', () => {
-        for (const snapshotState of ['loading', 'error']) {
+        for (const snapshotState of ['loading', 'error'] as const) {
             const host = document.createElement('div');
-            renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } }, host);
+            renderWorkHubSessionsSidebarListExtracted({ host: { projects: [], conversations: { snapshotState } } } as unknown as MobileProjectsSessionsSidebarUiContext, host);
             expect(host.textContent).not.to.contain('No agent sessions');
             expect(host.querySelector('[role="status"]')).not.to.equal(null);
         }

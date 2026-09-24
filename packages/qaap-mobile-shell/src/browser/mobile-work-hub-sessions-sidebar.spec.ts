@@ -18,6 +18,7 @@ import {
     shouldKeepSessionsSidebarOpenAfterNavigation,
 } from './mobile-work-hub-sessions-sidebar';
 import { ensureWorkHubSessionsSidebarExtracted } from './mobile-projects-sessions-sidebar-ui-render';
+import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 
 describe('mobile-work-hub-sessions-sidebar', () => {
 
@@ -296,7 +297,7 @@ describe('mobile-work-hub-sessions-sidebar', () => {
                 sessionsSidebar: sidebar,
                 sessionsSidebarContainer: () => undefined,
             },
-        });
+        } as unknown as MobileProjectsSessionsSidebarUiContext);
 
         expect(document.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar')).to.have.length(1);
         expect(document.body.contains(sidebar.node)).to.equal(true);

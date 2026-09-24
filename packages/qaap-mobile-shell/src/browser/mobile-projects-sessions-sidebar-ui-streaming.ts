@@ -1,33 +1,16 @@
-// @ts-nocheck
+import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 // Extracted from mobile-projects-sessions-sidebar-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { QuickPickItem } from '@theia/core/lib/browser';
-import {
-    readStoredAgent,
-    SHELL_AGENT_ID,
-} from '../common/qaap-agent-task-client';
 import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { collapseOlderFailedDuplicateTitles } from '../common/qaap-failed-duplicate-collapse';
-import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import { createLucideArrowUpRightIcon, createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
+import { createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
+import { listQaapAgentTaskVisualStatusLegendEntries } from '../common/qaap-agent-task-visual-status';
 import {
-    buildWorkHubSessionsSidebarRowFingerprint,
-    buildWorkHubSessionsSidebarVisibleStructureFingerprint,
-    QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR,
-    QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
-    type WorkHubSessionsSidebarFingerprintInput,
-} from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
-import { listQaapAgentTaskVisualStatusLegendEntries, resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import {
-    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
-    QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
     resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE, SESSIONS_SIDEBAR_PROJECT_SORT_MODES } from './mobile-projects-sessions-sidebar-ui';
@@ -53,7 +36,7 @@ export function createSessionsSidebarSignInHintExtracted(options?: { readonly co
         return hint;
 }
 
-export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLElement): void {
+export function renderWorkHubSessionsSidebarListExtracted(ctx: MobileProjectsSessionsSidebarUiContext, host: HTMLElement): void {
         // Empty first paints need subscriptions too; otherwise the first snapshot
         // cannot replace the loading/empty state until a later navigation.
         if (ctx.host.projectsService) {
@@ -178,7 +161,7 @@ export function renderWorkHubSessionsSidebarListExtracted(ctx: any, host: HTMLEl
         ctx.bindSessionsSidebarThreadStoreSubscriptions();
 }
 
-export function bindSessionsSidebarThreadStoreSubscriptionsExtracted(ctx: any): void {
+export function bindSessionsSidebarThreadStoreSubscriptionsExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {
         ctx.sessionsSidebarThreadStoreDispose.dispose();
         const conversations = ctx.host.conversations;
         if (!conversations || !ctx.isWorkHubSessionsSidebarVisible()) {
@@ -218,7 +201,7 @@ export function bindSessionsSidebarThreadStoreSubscriptionsExtracted(ctx: any): 
         ctx.sessionsSidebarThreadStoreDispose = disposables;
 }
 
-export function prefetchVisibleSidebarDocumentsExtracted(ctx: any, limit = 8): void {
+export function prefetchVisibleSidebarDocumentsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, limit = 8): void {
         const conversations = ctx.host.conversations;
         if (!conversations) {
             return;
@@ -236,7 +219,7 @@ export function prefetchVisibleSidebarDocumentsExtracted(ctx: any, limit = 8): v
         conversations.prefetchDocuments(ids);
 }
 
-export function syncSessionsSidebarAnimatedListHeightsExtracted(ctx: any, host: HTMLElement): void {
+export function syncSessionsSidebarAnimatedListHeightsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, host: HTMLElement): void {
         window.requestAnimationFrame(() => {
             const lists = host.querySelectorAll<HTMLElement>(
                 '.theia-mobile-work-hub-sessions-sidebar-project-group:not(.theia-mod-collapsed) .theia-mobile-projects-chats-list, '
@@ -248,7 +231,7 @@ export function syncSessionsSidebarAnimatedListHeightsExtracted(ctx: any, host: 
         });
 }
 
-export function collectSessionsSidebarPinnedGroupsExtracted(ctx: any, projects: MobileProjectEntry[],
+export function collectSessionsSidebarPinnedGroupsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, projects: MobileProjectEntry[],
         query: string,): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
         const groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> = [];
         for (const project of projects) {
@@ -265,7 +248,7 @@ export function collectSessionsSidebarPinnedGroupsExtracted(ctx: any, projects: 
         return groups;
 }
 
-export function createSessionsSidebarPinnedSectionExtracted(ctx: any, groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>,
+export function createSessionsSidebarPinnedSectionExtracted(ctx: MobileProjectsSessionsSidebarUiContext, groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>,
         onActivate: () => void,
         bypassConversationLimit = false,): HTMLElement {
         const section = document.createElement('section');
@@ -285,7 +268,7 @@ export function createSessionsSidebarPinnedSectionExtracted(ctx: any, groups: Ar
         return section;
 }
 
-export function resolveSessionsSidebarCollapsedLimitExtracted(ctx: any, totalConversations: number): number {
+export function resolveSessionsSidebarCollapsedLimitExtracted(ctx: MobileProjectsSessionsSidebarUiContext, totalConversations: number): number {
         const projectCount = ctx.host.hubQueryUi.projectsForCurrentHubList().length;
         return resolveSessionsSidebarInitialConversationLimit({
             projectCount,
@@ -294,7 +277,7 @@ export function resolveSessionsSidebarCollapsedLimitExtracted(ctx: any, totalCon
         });
 }
 
-export function getSessionsSidebarConversationDisplayLimitExtracted(ctx: any, project: MobileProjectEntry,
+export function getSessionsSidebarConversationDisplayLimitExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
         totalCount: number,
         bypassLimit: boolean,): number {
         if (bypassLimit || totalCount === 0) {
@@ -305,7 +288,7 @@ export function getSessionsSidebarConversationDisplayLimitExtracted(ctx: any, pr
         return Math.min(limit, totalCount);
 }
 
-export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: any, project: MobileProjectEntry,
+export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
         conversations: readonly QaapAgentConversationSummaryDTO[],
         bypassLimit: boolean,): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
         const all = [...conversations];
@@ -330,7 +313,7 @@ export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: any, pr
         return { visible, hiddenCount, showLess };
 }
 
-export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHost: HTMLElement,
+export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, listHost: HTMLElement,
         project: MobileProjectEntry,
         conversations: readonly QaapAgentConversationSummaryDTO[],
         onActivate: () => void,
@@ -437,7 +420,7 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
 }
 
 export function createSessionsSidebarClearFailedControlExtracted(
-    ctx: any,
+    ctx: MobileProjectsSessionsSidebarUiContext,
     project: MobileProjectEntry,
     failedCount: number,
 ): HTMLButtonElement {
@@ -467,7 +450,7 @@ export function createSessionsSidebarClearFailedControlExtracted(
 }
 
 export function createSessionsSidebarClearFailedModeFooterExtracted(
-    ctx: any,
+    ctx: MobileProjectsSessionsSidebarUiContext,
     project: MobileProjectEntry,
 ): HTMLElement {
     const footer = document.createElement('div');
@@ -514,7 +497,7 @@ export function createSessionsSidebarClearFailedModeFooterExtracted(
     return footer;
 }
 
-export function createSessionsSidebarShowMoreControlExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarShowMoreControlExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
         hiddenCount: number,
         totalCount: number,): HTMLButtonElement {
         const moreBtn = document.createElement('button');
@@ -542,7 +525,7 @@ export function createSessionsSidebarShowMoreControlExtracted(ctx: any, project:
         return moreBtn;
 }
 
-export function createSessionsSidebarShowLessControlExtracted(ctx: any, project: MobileProjectEntry): HTMLButtonElement {
+export function createSessionsSidebarShowLessControlExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry): HTMLButtonElement {
         const lessBtn = document.createElement('button');
         lessBtn.type = 'button';
         lessBtn.className = 'theia-mobile-work-hub-sessions-sidebar-show-more theia-mod-show-less';
@@ -564,7 +547,7 @@ export function createSessionsSidebarShowLessControlExtracted(ctx: any, project:
         return lessBtn;
 }
 
-export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
         conversations: readonly QaapAgentConversationSummaryDTO[],
         onActivate: () => void,
         bypassConversationLimit = false,): HTMLElement {
@@ -586,7 +569,7 @@ export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: any, proje
         return group;
 }
 
-export function seedSessionsSidebarAccordionDefaultsExtracted(ctx: any, projects: MobileProjectEntry[]): void {
+export function seedSessionsSidebarAccordionDefaultsExtracted(ctx: MobileProjectsSessionsSidebarUiContext, projects: MobileProjectEntry[]): void {
         if (ctx.host.sessionsSidebarAccordionDefaultsApplied) {
             return;
         }
@@ -601,7 +584,7 @@ export function seedSessionsSidebarAccordionDefaultsExtracted(ctx: any, projects
         }
 }
 
-export function ensureSessionsSidebarActiveProjectExpandedExtracted(ctx: any, projects: MobileProjectEntry[]): void {
+export function ensureSessionsSidebarActiveProjectExpandedExtracted(ctx: MobileProjectsSessionsSidebarUiContext, projects: MobileProjectEntry[]): void {
         const selectedId = ctx.host.agentsHubSelectedProjectId;
         for (const project of projects) {
             if (
@@ -618,7 +601,7 @@ export function ensureSessionsSidebarActiveProjectExpandedExtracted(ctx: any, pr
         }
 }
 
-export function compareSessionsSidebarProjectOrderExtracted(ctx: any, a: MobileProjectEntry, b: MobileProjectEntry): number {
+export function compareSessionsSidebarProjectOrderExtracted(ctx: MobileProjectsSessionsSidebarUiContext, a: MobileProjectEntry, b: MobileProjectEntry): number {
         const mode = ctx.getSessionsSidebarProjectSortMode?.() ?? 'default';
         if (mode === 'alphabetical') {
             return a.name.localeCompare(b.name);
@@ -764,7 +747,7 @@ function bindSessionsSidebarHeadPopoverKeyboard(
         return () => popover.removeEventListener('keydown', handleKeydown);
 }
 
-export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: any, anchor: HTMLButtonElement): void {
+export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: MobileProjectsSessionsSidebarUiContext, anchor: HTMLButtonElement): void {
         if (ctx.sessionsSidebarSortPopover) {
             ctx.closeSessionsSidebarHeadPopovers();
             return;
@@ -819,7 +802,7 @@ export function toggleSessionsSidebarProjectSortPopoverExtracted(ctx: any, ancho
         };
 }
 
-export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: any, anchor: HTMLButtonElement): void {
+export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProjectsSessionsSidebarUiContext, anchor: HTMLButtonElement): void {
         if (ctx.sessionsSidebarAddProjectPopover) {
             ctx.closeSessionsSidebarHeadPopovers();
             return;
@@ -907,7 +890,7 @@ function createSessionsSidebarStatusLegendGlyph(status: ReturnType<typeof listQa
         return glyph;
 }
 
-export function toggleSessionsSidebarStatusLegendPopoverExtracted(ctx: any, anchor: HTMLButtonElement): void {
+export function toggleSessionsSidebarStatusLegendPopoverExtracted(ctx: MobileProjectsSessionsSidebarUiContext, anchor: HTMLButtonElement): void {
         if (ctx.sessionsSidebarStatusLegendPopover) {
             ctx.closeSessionsSidebarHeadPopovers();
             return;

@@ -2,34 +2,19 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
-import { nls } from '@theia/core/lib/common/nls';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { QuickPickItem } from '@theia/core/lib/browser';
-import {
-    readStoredAgent,
-    SHELL_AGENT_ID,
-} from '../common/qaap-agent-task-client';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import { buildQaapAccountMenuEntries, toggleQaapAccountMenu, type MobileViewToggleId } from './qaap-workbench-account-menu';
+import { type MobileViewToggleId } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
+import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import {
-    buildWorkHubSessionsSidebarRowFingerprint,
-    buildWorkHubSessionsSidebarVisibleStructureFingerprint,
-    QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR,
-    QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
     type WorkHubSessionsSidebarFingerprintInput,
 } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import {
     QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
     QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
-    resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { beginSessionsSidebarConversationActivationExtracted, bindSessionsSidebarInteractionGuardExtracted, buildSessionsSidebarFingerprintInputExtracted, buildSessionsSidebarStructureFingerprintExtracted, buildSidebarRowFingerprintExtracted, collectParentIdsExtracted, collectSessionsSidebarConversationEntriesExtracted, ensureWorkHubSessionsSidebarExtracted, mergeSessionsSidebarProjectsExtracted, openWorkHubSessionsSidebarExtracted, prepareSessionsSidebarDataExtracted, refreshWorkHubSessionsSidebarListExtracted, rememberSessionsSidebarListFingerprintExtracted, resolveWorkHubSessionsSidebarProjectExtracted, seedSessionsSidebarProjectsForPaintExtracted, shouldDeferSessionsSidebarListRefreshExtracted, shouldSkipSessionsSidebarListRenderExtracted, stampSessionsSidebarRowFingerprintsExtracted, toggleWorkHubSessionsSidebarExtracted, tryPatchSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-render';
 import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarClearFailedControlExtracted, createSessionsSidebarClearFailedModeFooterExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted, toggleSessionsSidebarStatusLegendPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming';
@@ -43,6 +28,7 @@ export const SESSIONS_SIDEBAR_INTERACTION_GUARD_MS = 900;
 export const SESSIONS_SIDEBAR_STREAM_REFRESH_MS = 250;
 
 export interface MobileProjectsSessionsSidebarHost {
+    openBillingSheet?: () => Promise<void>;
     sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
     sessionsSidebarExpandedProjectIds: Set<string>;
     sessionsSidebarVisibleConversationCountByProjectId: Map<string, number>;
@@ -133,19 +119,12 @@ export interface MobileProjectsSessionsSidebarHost {
     onStartNewProject(): Promise<void>;
 }
 
-interface SessionsSidebarConversationEntry {
+export interface SessionsSidebarConversationEntry {
     readonly project: MobileProjectEntry;
     readonly summary: QaapAgentConversationSummaryDTO;
     readonly pinned: boolean;
     readonly parentIds: ReadonlySet<string>;
     readonly onActivate?: () => void;
-}
-
-function cssEscapeAttribute(value: string): string {
-    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-        return CSS.escape(value);
-    }
-    return value.replace(/["\\]/g, '\\$&');
 }
 
 export type SessionsSidebarProjectSortMode = 'default' | 'lastMessage' | 'createdAt' | 'alphabetical';
@@ -160,19 +139,32 @@ export const SESSIONS_SIDEBAR_PROJECT_SORT_MODES: ReadonlyArray<{ id: SessionsSi
 ];
 
 export class MobileProjectsSessionsSidebarUi {
-    constructor(protected readonly host: MobileProjectsSessionsSidebarHost) { }
+    constructor(
+        /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+        public readonly host: MobileProjectsSessionsSidebarHost,
+    ) { }
 
-    protected sessionsSidebarListFingerprint = '';
-    protected sessionsSidebarOpeningConversationId: string | undefined;
-    protected sessionsSidebarOpeningTimer: number | undefined;
-    protected sessionsSidebarInteractionUntil = 0;
-    protected sessionsSidebarLastStreamRefreshAt = 0;
-    protected sessionsSidebarInteractionBound = false;
-    protected sessionsSidebarThreadStoreDispose: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarListFingerprint = '';
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarOpeningConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarOpeningTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarInteractionUntil = 0;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarLastStreamRefreshAt = 0;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarInteractionBound = false;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarThreadStoreDispose: Disposable = Disposable.NULL;
     protected sessionsSidebarProjectSortModeValue: SessionsSidebarProjectSortMode = this.readPersistedProjectSortMode();
-    protected sessionsSidebarSortPopover: HTMLElement | undefined;
-    protected sessionsSidebarAddProjectPopover: HTMLElement | undefined;
-    protected sessionsSidebarStatusLegendPopover: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarSortPopover: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarAddProjectPopover: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public sessionsSidebarStatusLegendPopover: HTMLElement | undefined;
     /** Project id currently in failed-run multi-select clear mode (session-only; not persisted). */
     clearFailedModeProjectId: string | undefined;
     /** Conversation ids selected while {@link clearFailedModeProjectId} is set. */
@@ -188,11 +180,13 @@ export class MobileProjectsSessionsSidebarUi {
         return prepareSessionsSidebarDataExtracted(this);
     }
 
-    protected mergeSessionsSidebarProjects(projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public mergeSessionsSidebarProjects(projects: readonly MobileProjectEntry[]): MobileProjectEntry[] {
         return mergeSessionsSidebarProjectsExtracted(this, projects);
     }
 
-    protected seedSessionsSidebarProjectsForPaint(): void {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public seedSessionsSidebarProjectsForPaint(): void {
         seedSessionsSidebarProjectsForPaintExtracted(this);
     }
     isWorkHubSessionsSidebarVisible(): boolean {
@@ -224,15 +218,18 @@ export class MobileProjectsSessionsSidebarUi {
         return shouldDeferSessionsSidebarListRefreshExtracted(this);
     }
 
-    protected isSessionsSidebarInteractionGuardActive(): boolean {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public isSessionsSidebarInteractionGuardActive(): boolean {
         return Date.now() < this.sessionsSidebarInteractionUntil;
     }
 
-    protected bindSessionsSidebarInteractionGuard(listHost: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public bindSessionsSidebarInteractionGuard(listHost: HTMLElement): void {
         bindSessionsSidebarInteractionGuardExtracted(this, listHost);
     }
 
-    protected buildSessionsSidebarStructureFingerprint(): string {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public buildSessionsSidebarStructureFingerprint(): string {
         return buildSessionsSidebarStructureFingerprintExtracted(this);
     }
 
@@ -244,19 +241,23 @@ export class MobileProjectsSessionsSidebarUi {
         return tryPatchSessionsSidebarListExtracted(this, listHost);
     }
 
-    protected stampSessionsSidebarRowFingerprints(listHost: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public stampSessionsSidebarRowFingerprints(listHost: HTMLElement): void {
         stampSessionsSidebarRowFingerprintsExtracted(this, listHost);
     }
 
-    protected buildSidebarRowFingerprint(entry: SessionsSidebarConversationEntry,): string {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public buildSidebarRowFingerprint(entry: SessionsSidebarConversationEntry,): string {
         return buildSidebarRowFingerprintExtracted(this, entry);
     }
 
-    protected collectSessionsSidebarConversationEntries(): SessionsSidebarConversationEntry[] {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public collectSessionsSidebarConversationEntries(): SessionsSidebarConversationEntry[] {
         return collectSessionsSidebarConversationEntriesExtracted(this);
     }
 
-    protected collectParentIds(conversations: readonly QaapAgentConversationSummaryDTO[],): ReadonlySet<string> {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public collectParentIds(conversations: readonly QaapAgentConversationSummaryDTO[],): ReadonlySet<string> {
         return collectParentIdsExtracted(this, conversations);
     }
 
@@ -264,7 +265,8 @@ export class MobileProjectsSessionsSidebarUi {
         this.sessionsSidebarListFingerprint = '';
     }
 
-    protected beginSessionsSidebarConversationActivation(conversationId: string): void {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public beginSessionsSidebarConversationActivation(conversationId: string): void {
         beginSessionsSidebarConversationActivationExtracted(this, conversationId);
     }
 
@@ -306,11 +308,13 @@ export class MobileProjectsSessionsSidebarUi {
         return readQaapSignedIn();
     }
 
-    protected bindSessionsSidebarThreadStoreSubscriptions(): void {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public bindSessionsSidebarThreadStoreSubscriptions(): void {
         bindSessionsSidebarThreadStoreSubscriptionsExtracted(this);
     }
 
-    protected prefetchVisibleSidebarDocuments(limit = 8): void {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public prefetchVisibleSidebarDocuments(limit = 8): void {
         prefetchVisibleSidebarDocumentsExtracted(this, limit);
     }
     syncSessionsSidebarAnimatedListHeights(host: HTMLElement): void {
@@ -326,7 +330,8 @@ export class MobileProjectsSessionsSidebarUi {
     createSessionsSidebarPinnedSection(groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>, onActivate: () => void, bypassConversationLimit = false,): HTMLElement {
         return createSessionsSidebarPinnedSectionExtracted(this, groups, onActivate, bypassConversationLimit);
     }
-    protected resolveSessionsSidebarCollapsedLimit(totalConversations: number): number {
+    /** @internal Used by the extracted mobile-projects-sessions-sidebar-ui-* modules. */
+    public resolveSessionsSidebarCollapsedLimit(totalConversations: number): number {
         return resolveSessionsSidebarCollapsedLimitExtracted(this, totalConversations);
     }
     getSessionsSidebarConversationDisplayLimit(project: MobileProjectEntry, totalCount: number, bypassLimit: boolean,): number {
