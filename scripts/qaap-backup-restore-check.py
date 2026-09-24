@@ -74,7 +74,11 @@ def restore_check(archive, destination, expected_sha, max_bytes=20 * 1024**3, le
                     files[name] = (digest(original), member.uid, member.gid, member.mode & 0o777)
             elif member.isdir():
                 directories[name] = (member.uid, member.gid, member.mode & 0o777)
-    roots = PRE_HOME_ROOTS if "root/.qaap" in directories or "root/.theia" in directories else ROOTS
+    has_legacy = "root/.qaap" in directories or "root/.theia" in directories
+    has_home = "home/theia/.qaap" in directories or "home/theia/.theia" in directories
+    if has_legacy and has_home:
+        raise ValueError("Backup mixes pre-home (/root) and current (/home/theia) state layouts")
+    roots = PRE_HOME_ROOTS if has_legacy else ROOTS
     for root in (roots[:3] if legacy else roots):
         if root not in directories or not (destination / root).is_dir():
             raise ValueError(f"Backup is missing a required state directory: {root}")

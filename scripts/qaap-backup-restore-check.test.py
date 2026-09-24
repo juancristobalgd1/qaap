@@ -51,7 +51,13 @@ class RestoreCheckTest(unittest.TestCase):
 
     def test_mixed_layout_is_incomplete(self):
         sha = self.make_archive(roots=("root/.qaap",) + module.ROOTS)
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "mixes pre-home"):
+            module.restore_check(self.archive, self.root / "restored", sha)
+
+    def test_full_mixed_layouts_are_rejected(self):
+        mixed = tuple(dict.fromkeys(module.PRE_HOME_ROOTS + module.ROOTS))
+        sha = self.make_archive(roots=mixed)
+        with self.assertRaisesRegex(ValueError, "mixes pre-home"):
             module.restore_check(self.archive, self.root / "restored", sha)
 
     def test_missing_state(self):
