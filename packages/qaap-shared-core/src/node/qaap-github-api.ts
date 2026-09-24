@@ -74,14 +74,31 @@ interface GithubMergePullResponse {
 
 const GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS = 30_000;
 
-async function fetchGithubRepositoryRequest(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+/** Statuses whose `Response` must be constructed without a body. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * GitHub request with one deadline covering the headers AND the body: the body is buffered before
+ * the timer is cleared, so a connection that stalls mid-body cannot hang the caller. Exported for tests.
+ */
+export async function fetchGithubRepositoryRequest(
+    input: RequestInfo | URL,
+    init: RequestInit,
+    timeoutMs = GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS,
+): Promise<Response> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(input, { ...init, signal: controller.signal });
+        const response = await fetch(input, { ...init, signal: controller.signal });
+        const body = NULL_BODY_STATUSES.has(response.status) ? undefined : await response.arrayBuffer();
+        return new Response(body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+        });
     } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-            throw new Error('GitHub repository request timed out after 30 seconds');
+        if (controller.signal.aborted) {
+            throw new Error(`GitHub repository request timed out after ${Math.ceil(timeoutMs / 1000)} seconds`);
         }
         throw err;
     } finally {
@@ -197,7 +214,7 @@ export async function createGithubRepository(
     accessToken: string,
     input: { name: string; private?: boolean; description?: string }
 ): Promise<QaapGithubRepositorySummary> {
-    const response = await fetch('https://api.github.com/user/repos', {
+    const response = await fetchGithubRepositoryRequest('https://api.github.com/user/repos', {
         method: 'POST',
         headers: {
             Accept: 'application/vnd.github+json',

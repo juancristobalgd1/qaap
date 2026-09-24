@@ -34,10 +34,23 @@ import {
     type QaapAuthProvider,
 } from './qaap-auth-session';
 
-const QAAP_GITHUB_CLONE_TIMEOUT_MS = 120_000;
-/** Opening may clone/pull and first has to start the tenant runtime, so allow more than a plain clone. */
-const QAAP_GITHUB_OPEN_TIMEOUT_MS = 180_000;
+/**
+ * Open / clone / create prepare a repository workspace on the server: they may first cold-start the
+ * tenant backend and then run GitHub API calls (30 s each) plus git fetch/clone (120 s). The tenant
+ * proxy answers with a 504 once ensure + response wait exceed `QAAP_TENANT_PROXY_IDLE_TIMEOUT_MS`
+ * (180 s by default), so this client budget stays above the server's worst case: the user sees the
+ * server's error instead of racing it with a client abort.
+ */
+const QAAP_GITHUB_WORKSPACE_TIMEOUT_MS = 210_000;
 const QAAP_GITHUB_LIST_TIMEOUT_MS = 30_000;
+/** Pull request listing fans out over several repositories and merging waits for GitHub. */
+const QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS = 60_000;
+/** Removing a clone deletes a whole working tree on the server. */
+const QAAP_GITHUB_DELETE_TIMEOUT_MS = 60_000;
+/** Small JSON reads/writes against the Qaap backend (project sessions, settings, billing). */
+const QAAP_API_REQUEST_TIMEOUT_MS = 15_000;
+/** Checkout creation round-trips to Stripe. */
+const QAAP_BILLING_CHECKOUT_TIMEOUT_MS = 30_000;
 const QAAP_AUTH_REQUEST_TIMEOUT_MS = 6000;
 
 async function fetchQaapWithTimeout(
@@ -57,6 +70,36 @@ async function fetchQaapWithTimeout(
 function isQaapAbortError(err: unknown): boolean {
     return err instanceof Error && err.name === 'AbortError';
 }
+
+/** {@link fetchQaapWithTimeout}, mapping an abort to a user-facing timeout error. */
+async function fetchQaapOrTimeoutError(
+    input: RequestInfo | URL,
+    init: RequestInit,
+    timeoutMs: number,
+    timeoutMessage: () => string,
+): Promise<Response> {
+    try {
+        return await fetchQaapWithTimeout(input, init, timeoutMs);
+    } catch (err) {
+        if (isQaapAbortError(err)) {
+            throw new Error(timeoutMessage());
+        }
+        throw err;
+    }
+}
+
+const projectSessionsTimedOut = (): string => nls.localize(
+    'qaap/projectSessions/timedOut',
+    'Loading project sessions took too long. Please try again.'
+);
+const userSettingsTimedOut = (): string => nls.localize(
+    'qaap/userSettings/timedOut',
+    'The settings request took too long. Please try again.'
+);
+const billingTimedOut = (): string => nls.localize(
+    'qaap/billing/timedOut',
+    'The billing request took too long. Please try again.'
+);
 
 /**
  * Send the HttpOnly session cookie — the ONLY session credential. The id itself is
@@ -100,7 +143,12 @@ export async function fetchQaapAuthSession(): Promise<QaapAuthSessionResponse> {
 }
 
 export async function fetchQaapProjectSessions(): Promise<QaapProjectSessionsResponse> {
-    const response = await fetch(`${QAAP_GITHUB_API_PATH}/project-sessions`, qaapAuthenticatedFetchInit());
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/project-sessions`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        projectSessionsTimedOut,
+    );
     if (response.status === 401) {
         // Cookie session gone on the server — reconcile the local signed-in flag so the
         // login gate returns instead of a signed-in-but-broken UI.
@@ -117,11 +165,11 @@ export async function fetchQaapProjectSessions(): Promise<QaapProjectSessionsRes
 }
 
 export async function upsertQaapProjectSession(patch: QaapProjectSessionUpsertRequest): Promise<QaapProjectSessionSummary | undefined> {
-    const response = await fetch(`${QAAP_GITHUB_API_PATH}/project-sessions`, qaapAuthenticatedFetchInit({
+    const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/project-sessions`, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
-    }));
+    }), QAAP_API_REQUEST_TIMEOUT_MS, projectSessionsTimedOut);
     if (!response.ok) {
         return undefined;
     }
@@ -130,22 +178,15 @@ export async function upsertQaapProjectSession(patch: QaapProjectSessionUpsertRe
 }
 
 export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositoriesResponse> {
-    let response: Response;
-    try {
-        response = await fetchQaapWithTimeout(
-            `${QAAP_GITHUB_API_PATH}/repositories`,
-            qaapAuthenticatedFetchInit(),
-            QAAP_GITHUB_LIST_TIMEOUT_MS,
-        );
-    } catch (err) {
-        if (isQaapAbortError(err)) {
-            throw new Error(nls.localize(
-                'qaap/githubRepositories/timedOut',
-                'Loading GitHub repositories took too long. Please try again.'
-            ));
-        }
-        throw err;
-    }
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/repositories`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_GITHUB_LIST_TIMEOUT_MS,
+        () => nls.localize(
+            'qaap/githubRepositories/timedOut',
+            'Loading GitHub repositories took too long. Please try again.'
+        ),
+    );
     if (response.status === 401) {
         // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
         // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
@@ -165,7 +206,15 @@ export async function fetchQaapGithubPullRequests(
     const reposQuery = repositories?.length
         ? `?repos=${encodeURIComponent(repositories.join(','))}`
         : '';
-    const response = await fetch(`${QAAP_GITHUB_API_PATH}/pull-requests${reposQuery}`, qaapAuthenticatedFetchInit());
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/pull-requests${reposQuery}`,
+        qaapAuthenticatedFetchInit(),
+        QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS,
+        () => nls.localize(
+            'qaap/githubPullRequests/timedOut',
+            'Loading GitHub pull requests took too long. Please try again.'
+        ),
+    );
     if (response.status === 401) {
         return { pullRequests: [], signedIn: false };
     }
@@ -182,11 +231,15 @@ export async function fetchQaapGithubPullRequests(
 }
 
 export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullRequestRequest): Promise<QaapGithubMergePullRequestResponse> {
-    const response = await fetch(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, qaapAuthenticatedFetchInit({
+    // A timeout does not mean the merge failed: GitHub may still complete it.
+    const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
-    }));
+    }), QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS, () => nls.localize(
+        'qaap/githubMerge/timedOut',
+        'Merging the pull request took too long. Refresh to check whether it was merged.'
+    ));
     const body = await response.json().catch(() => ({})) as Partial<QaapGithubMergePullRequestResponse> & { error?: string };
     if (!response.ok) {
         throw new Error(body.error || `Failed to merge pull request (${response.status})`);
@@ -198,17 +251,18 @@ export async function openQaapGithubRepository(owner: string, name: string): Pro
     const url = `${QAAP_GITHUB_API_PATH}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/open`;
     // POST, not GET: this endpoint clones/pulls to disk, and SameSite=Lax only protects
     // non-GET requests from cross-site initiation.
-    let response: Response;
-    try {
-        response = await fetchQaapWithTimeout(url, qaapAuthenticatedFetchInit({ method: 'POST' }), QAAP_GITHUB_OPEN_TIMEOUT_MS);
-    } catch (err) {
-        if (isQaapAbortError(err)) {
-            throw new Error(nls.localize(
-                'qaap/githubOpen/timedOut',
-                'Opening the GitHub repository took too long. Please try again.'
-            ));
-        }
-        throw err;
+    const openTimedOut = (): string => nls.localize(
+        'qaap/githubOpen/timedOut',
+        'Opening the GitHub repository took too long. Please try again.'
+    );
+    const response = await fetchQaapOrTimeoutError(
+        url,
+        qaapAuthenticatedFetchInit({ method: 'POST' }),
+        QAAP_GITHUB_WORKSPACE_TIMEOUT_MS,
+        openTimedOut,
+    );
+    if (response.status === 504) {
+        throw new Error(openTimedOut());
     }
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
@@ -220,7 +274,15 @@ export async function openQaapGithubRepository(owner: string, name: string): Pro
 /** Delete this user's on-disk clone of `owner/name` from the VPS. Does not delete the GitHub remote. */
 export async function deleteQaapGithubRepository(owner: string, name: string): Promise<void> {
     const url = `${QAAP_GITHUB_API_PATH}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
-    const response = await fetch(url, qaapAuthenticatedFetchInit({ method: 'DELETE' }));
+    const response = await fetchQaapOrTimeoutError(
+        url,
+        qaapAuthenticatedFetchInit({ method: 'DELETE' }),
+        QAAP_GITHUB_DELETE_TIMEOUT_MS,
+        () => nls.localize(
+            'qaap/githubDelete/timedOut',
+            'Removing the repository took too long. Please try again.'
+        ),
+    );
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || `Failed to remove repository (${response.status})`);
@@ -228,11 +290,19 @@ export async function deleteQaapGithubRepository(owner: string, name: string): P
 }
 
 export async function createQaapGithubRepository(request: QaapGithubCreateRepositoryRequest): Promise<QaapGithubOpenRepositoryResponse> {
-    const response = await fetch(`${QAAP_GITHUB_API_PATH}/repositories`, qaapAuthenticatedFetchInit({
+    // Creating also clones the new repository into the workspace, so it gets the workspace budget.
+    const createTimedOut = (): string => nls.localize(
+        'qaap/githubCreate/timedOut',
+        'Creating the GitHub repository took too long. It may still have been created; refresh and try opening it.'
+    );
+    const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/repositories`, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
-    }));
+    }), QAAP_GITHUB_WORKSPACE_TIMEOUT_MS, createTimedOut);
+    if (response.status === 504) {
+        throw new Error(createTimedOut());
+    }
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
         throw new Error(body.message || body.error || `Failed to create GitHub repository (${response.status})`);
@@ -242,25 +312,22 @@ export async function createQaapGithubRepository(request: QaapGithubCreateReposi
 
 export async function cloneQaapGithubRepository(repository: string): Promise<QaapGithubOpenRepositoryResponse> {
     const request: QaapGithubOpenRepositoryRequest = { repository };
-    let response: Response;
-    try {
-        response = await fetchQaapWithTimeout(
-            `${QAAP_GITHUB_API_PATH}/repositories/open`,
-            qaapAuthenticatedFetchInit({
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(request),
-            }),
-            QAAP_GITHUB_CLONE_TIMEOUT_MS,
-        );
-    } catch (err) {
-        if (isQaapAbortError(err)) {
-            throw new Error(nls.localize(
-                'qaap/githubClone/timedOut',
-                'Cloning the GitHub repository took too long. Check the URL and try again.'
-            ));
-        }
-        throw err;
+    const cloneTimedOut = (): string => nls.localize(
+        'qaap/githubClone/timedOut',
+        'Cloning the GitHub repository took too long. Check the URL and try again.'
+    );
+    const response = await fetchQaapOrTimeoutError(
+        `${QAAP_GITHUB_API_PATH}/repositories/open`,
+        qaapAuthenticatedFetchInit({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request),
+        }),
+        QAAP_GITHUB_WORKSPACE_TIMEOUT_MS,
+        cloneTimedOut,
+    );
+    if (response.status === 504) {
+        throw new Error(cloneTimedOut());
     }
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
@@ -270,7 +337,12 @@ export async function cloneQaapGithubRepository(repository: string): Promise<Qaa
 }
 
 export async function fetchQaapUserAiSettings(): Promise<Record<string, unknown>> {
-    const response = await fetch(QAAP_USER_SETTINGS_API_PATH, qaapAuthenticatedFetchInit());
+    const response = await fetchQaapOrTimeoutError(
+        QAAP_USER_SETTINGS_API_PATH,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        userSettingsTimedOut,
+    );
     if (!response.ok) {
         return {};
     }
@@ -338,7 +410,12 @@ export interface QaapBillingApiResponse {
 }
 
 export async function fetchQaapBilling(): Promise<QaapBillingApiResponse | undefined> {
-    const response = await fetch(QAAP_BILLING_API_PATH, qaapAuthenticatedFetchInit());
+    const response = await fetchQaapOrTimeoutError(
+        QAAP_BILLING_API_PATH,
+        qaapAuthenticatedFetchInit(),
+        QAAP_API_REQUEST_TIMEOUT_MS,
+        billingTimedOut,
+    );
     if (!response.ok) {
         return undefined;
     }
@@ -346,11 +423,11 @@ export async function fetchQaapBilling(): Promise<QaapBillingApiResponse | undef
 }
 
 export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise<{ url: string }> {
-    const response = await fetch(QAAP_BILLING_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
+    const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planId }),
-    }));
+    }), QAAP_BILLING_CHECKOUT_TIMEOUT_MS, billingTimedOut);
     const body = await response.json().catch(() => ({})) as {
         url?: string;
         error?: string;
@@ -371,11 +448,11 @@ export async function createQaapBillingCheckout(planId: 'pro' | 'team'): Promise
 
 /** Apply a paid Stripe Checkout session to the signed-in account (idempotent with the webhook). */
 export async function confirmQaapBillingCheckout(sessionId: string): Promise<QaapBillingApiResponse | undefined> {
-    const response = await fetch(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
+    const response = await fetchQaapOrTimeoutError(QAAP_BILLING_CONFIRM_CHECKOUT_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId }),
-    }));
+    }), QAAP_BILLING_CHECKOUT_TIMEOUT_MS, billingTimedOut);
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
         throw new Error(body.message || body.error || `Confirm checkout failed (${response.status})`);
@@ -386,11 +463,11 @@ export async function confirmQaapBillingCheckout(sessionId: string): Promise<Qaa
 export async function activateQaapBillingPlanDev(
     planId: 'starter' | 'pro' | 'team',
 ): Promise<QaapBillingApiResponse | undefined> {
-    const response = await fetch(QAAP_BILLING_DEV_ACTIVATE_API_PATH, qaapAuthenticatedFetchInit({
+    const response = await fetchQaapOrTimeoutError(QAAP_BILLING_DEV_ACTIVATE_API_PATH, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ planId }),
-    }));
+    }), QAAP_API_REQUEST_TIMEOUT_MS, billingTimedOut);
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || `Dev activate failed (${response.status})`);
@@ -399,11 +476,11 @@ export async function activateQaapBillingPlanDev(
 }
 
 export async function putQaapUserAiSettings(settings: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const response = await fetch(QAAP_USER_SETTINGS_API_PATH, qaapAuthenticatedFetchInit({
+    const response = await fetchQaapOrTimeoutError(QAAP_USER_SETTINGS_API_PATH, qaapAuthenticatedFetchInit({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings }),
-    }));
+    }), QAAP_API_REQUEST_TIMEOUT_MS, userSettingsTimedOut);
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error || `Failed to save AI settings (${response.status})`);
@@ -418,7 +495,7 @@ export function startGithubOAuth(): void {
 
 export async function signOutQaapAuth(): Promise<void> {
     try {
-        await fetch(`${QAAP_AUTH_API_PATH}/signout`, qaapAuthenticatedFetchInit({ method: 'POST' }));
+        await fetchQaapWithTimeout(`${QAAP_AUTH_API_PATH}/signout`, qaapAuthenticatedFetchInit({ method: 'POST' }), QAAP_AUTH_REQUEST_TIMEOUT_MS);
     } catch {
         /* still clear local session */
     }

@@ -30,6 +30,9 @@ const HOP_BY_HOP_HEADERS = new Set([
     'upgrade',
 ]);
 
+/** Floor for the response wait when the tenant cold start consumed (almost) the whole budget. */
+const TENANT_PROXY_MIN_RESPONSE_WAIT_MS = 5_000;
+
 /**
  * Routes an authenticated browser session to the complete Theia backend running in its tenant
  * container. The outer Theia process remains a small control-plane for OAuth, health and login;
@@ -73,6 +76,11 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             return;
         }
         this.activity.touch(context.userLogin, 'user');
+        // One budget covers the tenant cold start and the wait for response headers, so a request
+        // that first had to start the backend still gets its answer (at worst a 504) within
+        // max(QAAP_TENANT_ENSURE_TIMEOUT_MS, QAAP_TENANT_PROXY_IDLE_TIMEOUT_MS) + the floor below.
+        // The browser budgets (e.g. repository open) are sized above that.
+        const deadline = Date.now() + this.getTenantProxyIdleTimeoutMs();
         try {
             const root = this.auth.userWorkspaceRoot(context);
             if (!root) {
@@ -85,7 +93,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 user: context.session.user,
                 githubAccessToken: context.session.accessToken,
             }, this.docker.getTenantBackendAssertionSecret(context.userLogin));
-            this.forwardHttp(req, res, target, assertion, context.userLogin);
+            this.forwardHttp(req, res, target, assertion, context.userLogin, this.remainingTenantProxyBudgetMs(deadline));
         } catch (error) {
             this.writeProxyError(res, error);
         }
@@ -178,7 +186,15 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 path: request.url,
                 headers,
             });
+            // Bound only the handshake: a backend that accepts TCP but never answers the upgrade
+            // would otherwise hold the browser socket open forever. The upgraded stream is unbounded.
+            let connectTimedOut = false;
+            const connectTimer = setTimeout(() => {
+                connectTimedOut = true;
+                upstream.destroy(new Error('Tenant backend did not accept the WebSocket in time.'));
+            }, this.getTenantWebSocketConnectTimeoutMs());
             upstream.once('upgrade', (response, upstreamSocket, upstreamHead) => {
+                clearTimeout(connectTimer);
                 const status = `HTTP/1.1 ${response.statusCode ?? 101} ${response.statusMessage ?? 'Switching Protocols'}\r\n`;
                 const lines = Object.entries(response.headers).flatMap(([key, value]) => {
                     const values = Array.isArray(value) ? value : [value];
@@ -195,10 +211,16 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 socket.pipe(upstreamSocket);
             });
             upstream.once('response', () => {
+                clearTimeout(connectTimer);
                 release();
                 socket.destroy();
             });
-            upstream.once('error', () => {
+            upstream.once('error', error => {
+                clearTimeout(connectTimer);
+                if (connectTimedOut || this.isTenantBackendConnectError(error)) {
+                    // Same as the HTTP path: drop the cached target so the next upgrade re-ensures it.
+                    this.docker.invalidateTenantBackendTarget(userLogin, target);
+                }
                 release();
                 socket.destroy();
             });
@@ -214,7 +236,14 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         }
     }
 
-    protected forwardHttp(req: Request, res: Response, target: QaapTenantBackendTarget, assertion: string, tenantLogin?: string): void {
+    protected forwardHttp(
+        req: Request,
+        res: Response,
+        target: QaapTenantBackendTarget,
+        assertion: string,
+        tenantLogin?: string,
+        responseTimeoutMs = this.getTenantProxyIdleTimeoutMs(),
+    ): void {
         const headers = this.forwardHeaders(req.headers, target, assertion);
         const body = req.body !== undefined && req.method !== 'GET' && req.method !== 'HEAD'
             ? Buffer.from(JSON.stringify(req.body), 'utf8')
@@ -243,7 +272,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         // Idle bound while waiting for the tenant backend to answer; a wedged backend otherwise
         // leaves the browser request (e.g. repository open) pending forever.
         let timedOut = false;
-        upstream.setTimeout(this.getTenantProxyIdleTimeoutMs(), () => {
+        upstream.setTimeout(responseTimeoutMs, () => {
             timedOut = true;
             upstream.destroy(new Error('Tenant backend did not respond in time.'));
         });
@@ -320,6 +349,16 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     protected getTenantProxyIdleTimeoutMs(): number {
         const configured = Number.parseInt(process.env.QAAP_TENANT_PROXY_IDLE_TIMEOUT_MS?.trim() ?? '', 10);
         return Number.isInteger(configured) && configured > 0 ? configured : 180_000;
+    }
+
+    /** What is left of the per-request budget after ensure, never below a short floor to reach a warm backend. */
+    protected remainingTenantProxyBudgetMs(deadline: number): number {
+        return Math.max(TENANT_PROXY_MIN_RESPONSE_WAIT_MS, deadline - Date.now());
+    }
+
+    protected getTenantWebSocketConnectTimeoutMs(): number {
+        const configured = Number.parseInt(process.env.QAAP_TENANT_PROXY_WS_CONNECT_TIMEOUT_MS?.trim() ?? '', 10);
+        return Number.isInteger(configured) && configured > 0 ? configured : 15_000;
     }
 
     protected isTenantBackendConnectError(error: unknown): boolean {

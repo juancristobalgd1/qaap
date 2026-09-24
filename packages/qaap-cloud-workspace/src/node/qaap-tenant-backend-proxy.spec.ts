@@ -4,6 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as http from 'http';
+import * as net from 'net';
+import { PassThrough } from 'stream';
 import { QaapTenantBackendProxyContribution } from './qaap-tenant-backend-proxy';
 
 const TARGET = {
@@ -61,5 +64,94 @@ describe('QaapTenantBackendProxyContribution', () => {
         expect(headers.cookie).to.equal('theia-connection-token=tenant-private-token');
         expect(headers.origin).to.equal('http://127.0.0.1:4873');
         expect(headers['sec-websocket-key']).to.equal('key');
+    });
+
+    describe('WebSocket upgrade to the tenant backend', () => {
+        const SECRET = 'x'.repeat(40);
+        const SESSION = { accessToken: 'gh-token', user: { provider: 'github' as const, login: 'alice', name: 'Alice' } };
+
+        function createWebSocketProxy(port: number, invalidations: unknown[]): QaapTenantBackendProxyContribution & {
+            proxyWebSocket(...args: unknown[]): Promise<void>;
+            getTenantWebSocketConnectTimeoutMs(): number;
+        } {
+            const target = { ...TARGET, port };
+            const proxy = createProxy() as unknown as Record<string, unknown>;
+            proxy.auth = { userWorkspaceRoot: () => '/srv/qaap/users/alice' };
+            proxy.activity = { beginOperation: () => () => undefined };
+            proxy.docker = {
+                ensureTenantBackend: async () => target,
+                getTenantBackendConnectionToken: () => 'tenant-token',
+                getTenantBackendAssertionSecret: () => SECRET,
+                invalidateTenantBackendTarget: (login: string, cached: unknown) => invalidations.push([login, cached === target]),
+            };
+            proxy.getTenantWebSocketConnectTimeoutMs = () => 100;
+            return proxy as unknown as QaapTenantBackendProxyContribution & {
+                proxyWebSocket(...args: unknown[]): Promise<void>;
+                getTenantWebSocketConnectTimeoutMs(): number;
+            };
+        }
+
+        function upgradeRequest(): http.IncomingMessage {
+            return { url: '/services', headers: { host: 'qaap.example.test', upgrade: 'websocket' } } as unknown as http.IncomingMessage;
+        }
+
+        function waitForClose(socket: PassThrough): Promise<void> {
+            return new Promise(resolve => socket.once('close', () => resolve()));
+        }
+
+        it('evicts the cached target when the tenant backend refuses the connection', async () => {
+            const probe = net.createServer();
+            await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', resolve));
+            const port = (probe.address() as net.AddressInfo).port;
+            await new Promise<void>(resolve => probe.close(() => resolve()));
+            const invalidations: unknown[] = [];
+            const proxy = createWebSocketProxy(port, invalidations);
+            const socket = new PassThrough();
+            const closed = waitForClose(socket);
+            await proxy.proxyWebSocket(upgradeRequest(), socket, Buffer.alloc(0), 'alice', SESSION, [], {});
+            await closed;
+            expect(invalidations).to.deep.equal([['alice', true]]);
+        });
+
+        it('bounds a handshake the tenant backend never answers and evicts the target', async () => {
+            const sockets: net.Socket[] = [];
+            const silent = net.createServer(connection => { sockets.push(connection); });
+            await new Promise<void>(resolve => silent.listen(0, '127.0.0.1', resolve));
+            try {
+                const invalidations: unknown[] = [];
+                const proxy = createWebSocketProxy((silent.address() as net.AddressInfo).port, invalidations);
+                const socket = new PassThrough();
+                const closed = waitForClose(socket);
+                await proxy.proxyWebSocket(upgradeRequest(), socket, Buffer.alloc(0), 'alice', SESSION, [], {});
+                await closed;
+                expect(invalidations).to.deep.equal([['alice', true]]);
+            } finally {
+                sockets.forEach(connection => connection.destroy());
+                await new Promise<void>(resolve => silent.close(() => resolve()));
+            }
+        });
+
+        it('does not evict the target when the backend answers the upgrade with an HTTP response', async () => {
+            const server = http.createServer((_req, res) => res.writeHead(403).end());
+            await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+            try {
+                const invalidations: unknown[] = [];
+                const proxy = createWebSocketProxy((server.address() as net.AddressInfo).port, invalidations);
+                const socket = new PassThrough();
+                const closed = waitForClose(socket);
+                await proxy.proxyWebSocket(upgradeRequest(), socket, Buffer.alloc(0), 'alice', SESSION, [], {});
+                await closed;
+                expect(invalidations).to.deep.equal([]);
+            } finally {
+                server.closeAllConnections();
+                await new Promise<void>(resolve => server.close(() => resolve()));
+            }
+        });
+    });
+
+    it('never shrinks the response wait below the floor once ensure used the budget', () => {
+        const proxy = createProxy() as unknown as { remainingTenantProxyBudgetMs(deadline: number): number };
+        expect(proxy.remainingTenantProxyBudgetMs(Date.now() - 1_000)).to.equal(5_000);
+        expect(proxy.remainingTenantProxyBudgetMs(Date.now() + 60_000)).to.be.within(59_000, 60_000);
     });
 });

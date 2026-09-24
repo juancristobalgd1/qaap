@@ -112,6 +112,7 @@ export type MobileOneColumnShellContributionContextMember =
     | 'onProjectsPanelOpen'
     | 'onProjectsPanelOpenInIde'
     | 'onProjectsWorkspaceOpened'
+    | 'onRestoreProjectsPanelEvent'
     | 'onWindowResize'
     | 'openAgentTaskComposer'
     | 'openConversationInWorkHub'

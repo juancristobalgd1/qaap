@@ -12,6 +12,7 @@ import {
     shouldPreferWorkHubAgentsLayout,
     QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT,
     QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT,
+    QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT,
     setMobileWorkHubComposerHeaderChrome,
     recomputeMobileWorkHubHideIdeSidePanels,
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
@@ -421,6 +422,7 @@ export function onStartExtracted(ctx: MobileOneColumnShellContributionContext, _
     ctx.mobileMq?.addEventListener('change', ctx.onMediaChange);
     window.addEventListener('resize', ctx.onWindowResize);
     window.addEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, ctx.onDismissProjectsPanelEvent);
+    window.addEventListener(QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT, ctx.onRestoreProjectsPanelEvent);
     window.addEventListener(QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT, ctx.onLandingHubListChanged);
     ctx.landing.installAuthListener(ctx.toDispose);
     window.addEventListener('beforeunload', ctx.persistWorkHubSurfacePreference);

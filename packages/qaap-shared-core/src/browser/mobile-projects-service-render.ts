@@ -21,6 +21,7 @@ import {
     markMobileProjectReadmeForOpen,
     markMobileProjectsPanelDismiss,
     requestMobileProjectsPanelDismiss,
+    requestMobileProjectsPanelRestore,
 } from './mobile-projects-open';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
@@ -137,10 +138,15 @@ async function resolveWorkspaceRootExtracted(ctx: MobileProjectsServiceContext, 
         }
 }
 
-function failWorkspaceOpenExtracted(ctx: MobileProjectsServiceContext, uri: URI, detail: string): void {
+function failWorkspaceOpenExtracted(ctx: MobileProjectsServiceContext, uri: URI, detail: string, panelDismissed = false): void {
         MobileSnackbar.dismiss();
         clearMobileProjectReadmeOpenRequest();
-        clearMobileProjectsPanelDismiss();
+        if (panelDismissed) {
+            // The Work Hub already left the Projects panel; bring it back so the error has context.
+            requestMobileProjectsPanelRestore();
+        } else {
+            clearMobileProjectsPanelDismiss();
+        }
         void ctx.messageService.error(nls.localize(
             'qaap/mobileProjects/openWorkspaceFailed',
             'Could not open {0}: {1}',
@@ -174,7 +180,7 @@ export async function openWorkspaceUriExtracted(ctx: MobileProjectsServiceContex
         setTimeout(() => failWorkspaceOpenExtracted(ctx, uri, nls.localize(
             'qaap/mobileProjects/openWorkspaceNoReload',
             'the workspace did not load. Please try again.'
-        )), OPEN_WORKSPACE_RELOAD_WATCHDOG_MS);
+        ), true), OPEN_WORKSPACE_RELOAD_WATCHDOG_MS);
         return true;
 }
 
@@ -241,6 +247,8 @@ export async function openGithubProjectExtracted(ctx: MobileProjectsServiceConte
             // Without this, the backend error (e.g. failed clone, missing workspace root) is silently
             // dropped on the floor and the user sees the project tap as a no-op.
             clearMobileProjectReadmeOpenRequest();
+            // No reload follows, so a later F5 must not skip the Projects landing.
+            clearMobileProjectsPanelDismiss();
             const detail = err instanceof Error ? err.message : String(err);
             await ctx.messageService.error(
                 nls.localize(

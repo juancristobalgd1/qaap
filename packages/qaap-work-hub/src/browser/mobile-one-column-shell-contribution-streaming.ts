@@ -22,6 +22,7 @@ import {
     QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS,
     QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT,
     QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT,
+    QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT,
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
@@ -187,6 +188,7 @@ export function onStopExtracted(ctx: MobileOneColumnShellContributionContext, _a
         ctx.resizeRaf = 0;
     }
     window.removeEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, ctx.onDismissProjectsPanelEvent);
+    window.removeEventListener(QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT, ctx.onRestoreProjectsPanelEvent);
     window.removeEventListener(QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT, ctx.onLandingHubListChanged);
     ctx.teardownMobileUi();
     ctx.toDispose.dispose();
