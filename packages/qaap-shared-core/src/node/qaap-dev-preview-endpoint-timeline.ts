@@ -74,10 +74,7 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             const isHtml = typeof contentType === 'string' && /\btext\/html\b/i.test(contentType);
             if (!ctx.shouldRewriteProxyBody(proxyRes)
                 // No body to rewrite: keep content-length (HEAD reports the GET size).
-                || incoming.method === 'HEAD' || statusCode === 204 || statusCode === 304
-                // Large JS/CSS (vendor bundles) stream through unrewritten. HTML is always
-                // buffered because the bridge scripts must be injected.
-                || (!isHtml && Number(proxyRes.headers['content-length']) > MAX_REWRITE_BODY_BYTES)) {
+                || incoming.method === 'HEAD' || statusCode === 204 || statusCode === 304) {
                 outgoing.writeHead(statusCode, responseHeaders);
                 proxyRes.pipe(outgoing);
                 return;
@@ -85,6 +82,24 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
 
             delete responseHeaders['content-length'];
             outgoing.writeHead(statusCode, responseHeaders);
+            // Bodies past the look-ahead continue through a chunk-boundary-safe streaming rewriter
+            // (bounded memory, same output as the buffered rule for matches up to its overlap).
+            const streamRest = (rewriter: QaapDevPreviewStreamingRewriter, trailer: string): void => {
+                proxyRes.on('data', (next: Buffer) => {
+                    const rewritten = rewriter.write(next);
+                    if (rewritten && !outgoing.write(rewritten)) {
+                        proxyRes.pause();
+                        outgoing.once('drain', () => proxyRes.resume());
+                    }
+                });
+                proxyRes.on('end', () => outgoing.end(rewriter.end() + trailer));
+            };
+            if (!isHtml && Number(proxyRes.headers['content-length']) > MAX_REWRITE_BODY_BYTES) {
+                // Large JS/CSS (vendor bundles): no look-ahead needed. The Vite HMR client
+                // special-case only applies to the small, buffered `/@vite/client` module.
+                streamRest(new QaapDevPreviewStreamingRewriter(devPreviewBodyUrlRule(publicPrefix)), '');
+                return;
+            }
             const chunks: Buffer[] = [];
             let bufferedBytes = 0;
             const onData = (chunk: Buffer | string): void => {
@@ -100,8 +115,9 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                 const buffered = Buffer.concat(chunks);
                 chunks.length = 0;
                 if (!isHtml) {
-                    outgoing.write(buffered);
-                    proxyRes.pipe(outgoing);
+                    const rewriter = new QaapDevPreviewStreamingRewriter(devPreviewBodyUrlRule(publicPrefix));
+                    outgoing.write(rewriter.write(buffered));
+                    streamRest(rewriter, '');
                     return;
                 }
                 // HTML keeps its URL rewrite through a chunk-boundary-safe streaming rewriter; the
@@ -112,14 +128,7 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                     : devPreviewBodyUrlRule(publicPrefix));
                 const { html, trailer } = injectPreviewHtmlScripts(ctx, incoming, rewriter.write(buffered), publicPrefix, isNextDocument, true);
                 outgoing.write(html);
-                proxyRes.on('data', (next: Buffer) => {
-                    const rewritten = rewriter.write(next);
-                    if (rewritten && !outgoing.write(rewritten)) {
-                        proxyRes.pause();
-                        outgoing.once('drain', () => proxyRes.resume());
-                    }
-                });
-                proxyRes.on('end', () => outgoing.end(rewriter.end() + trailer));
+                streamRest(rewriter, trailer);
             };
             const onEnd = (): void => {
                 const body = Buffer.concat(chunks).toString('utf8');
@@ -188,7 +197,7 @@ function injectPreviewHtmlScripts(
     return { html: injectQaapPreviewDocumentScripts(html, publicPrefix, placement, !isNextDocument, html ? bridge : ''), trailer: '' };
 }
 
-/** Non-HTML text bodies above this size stream through without URL rewriting. */
+/** Text bodies above this size are rewritten by streaming instead of being buffered whole. */
 export const MAX_REWRITE_BODY_BYTES = 5 * 1024 * 1024;
 
 /**
@@ -387,7 +396,11 @@ export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointCo
         // HEAD skips SSR rendering on every readiness check. Fall back to GET only when HEAD is
         // unsupported (405/501) or unanswered (timeout, reset, parse error) — never on a refused
         // connection, where GET cannot fare better. Each attempt keeps the same timeout.
-        const head = await probeDevServerOnce(ctx, targetHost, port, 'HEAD');
+        // Ports whose server rejected or ignored HEAD while answering GET go straight to GET
+        // for a while, so 405-on-HEAD servers don't pay a double request on every probe.
+        const headlessPorts = headUnsupportedPorts(ctx);
+        const skipHead = (headlessPorts.get(port) ?? 0) > Date.now();
+        const head = skipHead ? 'unsupported' : await probeDevServerOnce(ctx, targetHost, port, 'HEAD');
         if (head === 'refused') {
             return false;
         }
@@ -395,7 +408,27 @@ export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointCo
             return head;
         }
         const get = await probeDevServerOnce(ctx, targetHost, port, 'GET');
-        return typeof get === 'boolean' && get;
+        if (typeof get !== 'boolean') {
+            headlessPorts.delete(port);
+            return false;
+        }
+        if (!skipHead) {
+            headlessPorts.set(port, Date.now() + HEAD_UNSUPPORTED_TTL_MS);
+        }
+        return get;
+}
+
+/** How long a port stays in the "HEAD unsupported" cache (ports get reused by new servers). */
+export const HEAD_UNSUPPORTED_TTL_MS = 5 * 60_000;
+const headUnsupportedByEndpoint = new WeakMap<QaapDevPreviewEndpointContext, Map<number, number>>();
+
+function headUnsupportedPorts(ctx: QaapDevPreviewEndpointContext): Map<number, number> {
+    let ports = headUnsupportedByEndpoint.get(ctx);
+    if (!ports) {
+        ports = new Map();
+        headUnsupportedByEndpoint.set(ctx, ports);
+    }
+    return ports;
 }
 
 /** `true`/`false` per the served rule, `'unsupported'` (405/501), `'refused'` or `'failed'`. */

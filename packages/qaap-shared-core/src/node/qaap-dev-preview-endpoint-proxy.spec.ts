@@ -175,23 +175,26 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             expect(notModified.headers.etag).to.equal('"x"');
         });
 
-        it('streams large JS unrewritten with or without a declared length', async () => {
-            const large = moduleSource + ' '.repeat(MAX_REWRITE_BODY_BYTES);
+        it('stream-rewrites large JS exactly like the buffered rewrite, with or without a declared length', async () => {
+            const prefix = `/qaap-dev/${upstreamPort}`;
+            const unit = 'import a from "/src/a.js"; fetch("/api/x"); const s = "/not-a-url"; new URL(`/w.js`, import.meta.url);\n';
+            const large = unit.repeat(Math.ceil((MAX_REWRITE_BODY_BYTES + 1) / unit.length)) + 'export * from "/end.js";';
+            const expected = endpoint.rewriteDevPreviewBody(large, upstreamPort, prefix);
             upstreamHandler = (_req, res) => {
                 res.writeHead(200, { 'content-type': 'text/javascript', 'content-length': Buffer.byteLength(large) });
                 res.end(large);
             };
             const declared = await request('GET', '/vendor.js');
-            expect(declared.headers['content-length']).to.equal(String(Buffer.byteLength(large)));
-            expect(declared.body).to.equal(large);
+            expect(declared.headers['content-length']).to.equal(undefined);
+            expect(declared.body).to.equal(expected);
 
             upstreamHandler = (_req, res) => {
                 res.writeHead(200, { 'content-type': 'text/javascript' });
-                res.write(large.slice(0, 1024));
-                res.end(large.slice(1024));
+                res.write(large.slice(0, 1021));
+                res.end(large.slice(1021));
             };
             const chunked = await request('GET', '/vendor.js');
-            expect(chunked.body).to.equal(large);
+            expect(chunked.body).to.equal(expected);
         });
 
         const serveHtml = (html: string, chunked: boolean): void => {
@@ -289,8 +292,13 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
                 res.writeHead(req.method === 'HEAD' ? 405 : 503, req.method === 'HEAD' ? {} : { 'x-qaap-preview-waiting': '1' });
                 res.end();
             };
-            expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(false);
+            const headless = new ProxyTestEndpoint();
+            expect(await headless.probeLocalDevServer(upstreamPort)).to.equal(false);
             expect(methods).to.deep.equal(['HEAD', 'GET']);
+            // Cached per endpoint and port: the next probe skips the rejected HEAD.
+            methods.length = 0;
+            expect(await headless.probeLocalDevServer(upstreamPort)).to.equal(false);
+            expect(methods).to.deep.equal(['GET']);
 
             methods.length = 0;
             upstreamHandler = (req, res) => {
@@ -301,7 +309,7 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
                 }
                 // HEAD hangs: the probe times out and retries with GET.
             };
-            expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(true);
+            expect(await new ProxyTestEndpoint().probeLocalDevServer(upstreamPort)).to.equal(true);
             expect(methods).to.deep.equal(['HEAD', 'GET']);
         });
 

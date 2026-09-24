@@ -58,22 +58,25 @@ export interface WaitForDevPreviewOptions {
     readonly intervalMs?: number;
     /** Stops polling and aborts the in-flight probe. */
     readonly signal?: AbortSignal;
+    /** Jitter source in [0, 1); injectable for deterministic tests. */
+    readonly random?: () => number;
 }
 
 const MAX_PROBE_BACKOFF_MS = 4000;
 
 /**
  * Sleep schedule between probes: starts at `intervalMs`, grows ×1.5 up to 4 s (or `intervalMs`
- * if larger), and keeps the caller's historical sleep budget of `(maxAttempts - 1) × intervalMs`
+ * if larger), each step jittered ±20%, and keeps the caller's historical sleep budget of `(maxAttempts - 1) × intervalMs`
  * — the last sleep is clamped so the final probe lands where the fixed schedule's would.
  */
-export function devPreviewProbeBackoffDelays(maxAttempts: number, intervalMs: number): number[] {
+export function devPreviewProbeBackoffDelays(maxAttempts: number, intervalMs: number, random: () => number = Math.random): number[] {
     const delays: number[] = [];
     let remaining = Math.max(0, maxAttempts - 1) * Math.max(0, intervalMs);
     let delay = intervalMs;
     const maxDelay = Math.max(intervalMs, MAX_PROBE_BACKOFF_MS);
     while (remaining > 0 && delay > 0) {
-        const next = Math.min(delay, remaining);
+        // ±20% jitter keeps several preview surfaces from probing in lockstep.
+        const next = Math.min(delay * (0.8 + 0.4 * random()), remaining);
         delays.push(next);
         remaining -= next;
         delay = Math.min(delay * 1.5, maxDelay);
@@ -90,7 +93,7 @@ export async function waitForQaapDevPreviewPort(
     if ((options.maxAttempts ?? 30) <= 0) {
         return undefined;
     }
-    const delays = devPreviewProbeBackoffDelays(options.maxAttempts ?? 30, options.intervalMs ?? 500);
+    const delays = devPreviewProbeBackoffDelays(options.maxAttempts ?? 30, options.intervalMs ?? 500, options.random);
     for (let attempt = 0; attempt <= delays.length && !signal?.aborted; attempt++) {
         const probe = await probeQaapDevPreviewPort(port, signal);
         if (probe.ready) {
