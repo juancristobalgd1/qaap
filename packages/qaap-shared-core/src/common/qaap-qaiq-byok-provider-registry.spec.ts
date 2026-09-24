@@ -6,6 +6,7 @@ import {
     hasAnyConfiguredByokCredential,
     formatQaiqModelProviderLabel,
     listCustomOpenAiModels,
+    listQaapAiSettingsPrefKeys,
     parseTheiaLanguageModelId,
     QAAP_CUSTOM_OPENAI_API_KEY_PREF,
     QAAP_CUSTOM_OPENAI_BASE_URL_PREF,
@@ -16,6 +17,15 @@ import {
 } from './qaap-qaiq-byok-provider-registry';
 
 describe('qaap-qaiq-byok-provider-registry', () => {
+    it('persists non-secret provider options per user and lists no unregistered providers', () => {
+        const keys = listQaapAiSettingsPrefKeys();
+        expect(keys).to.include('ai-features.openAiOfficial.useResponseApi');
+        expect(keys).to.include('ai-features.anthropicCustom.customAnthropicModels');
+        expect(keys).to.include('ai-features.vercelAi.openaiApiKey');
+        expect(keys.some(key => key.startsWith('ai-features.mistral.'))).to.equal(false);
+        expect(findQaiqByokProvider('mistral')).to.equal(undefined);
+    });
+
     it('resolves alias vendors to the canonical provider', () => {
         expect(findQaiqByokProvider('gemini')?.vendor).to.equal('google');
         expect(parseTheiaLanguageModelId('gemini/gemini-2.5-flash')?.vendor).to.equal('google');

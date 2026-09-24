@@ -18,7 +18,9 @@ import {
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { listQaapAiSettingsPrefKeys } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
+import { AGENT_ENV_PREFS } from './qaap-agent-task-runner-constants';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';
 
@@ -46,14 +48,6 @@ export const REPO_MAP_EXCLUDED_DIRS = new Set<string>([
     'coverage', '.nyc_output', '.turbo', '.vscode', '.idea',
 ]);
 export const REPO_MAP_SOURCE_DIRS = new Set<string>(['src', 'app', 'components', 'pages', 'packages', 'server', 'api']);
-export const AGENT_ENV_PREFS: readonly { readonly env: string; readonly pref: string }[] = [
-    { env: 'ANTHROPIC_API_KEY', pref: 'anthropic-api-key' },
-    { env: 'OPENAI_API_KEY', pref: 'openai-api-key' },
-    { env: 'GEMINI_API_KEY', pref: 'gemini-api-key' },
-    { env: 'GOOGLE_API_KEY', pref: 'google-api-key' },
-    { env: 'OPENROUTER_API_KEY', pref: 'openrouter-api-key' },
-    { env: 'NVIDIA_API_KEY', pref: 'nvidia-api-key' },
-];
 export const DEFAULT_MAX_CONCURRENT_AGENTS = 16;
 export const MAX_CONCURRENT_AGENTS_ENV = 'QAAP_MAX_CONCURRENT_AGENTS';
 /** Ceiling for one user; plan entitlements (Starter 2 / Pro 4 / Team 8) are the real limiter. */
@@ -437,13 +431,39 @@ export function writeUserSettingsToDisk(
     return filterAiSettings(next);
 }
 
+/** Minimal preference seam: the runner passes the backend `PreferenceService`; tests may pass a stub. */
+interface QaapOwnerPreferenceSource {
+    get?(key: string): unknown;
+    inspectInScope?(key: string, scope: PreferenceScope): unknown;
+}
+
+/**
+ * Registered schema default (plus product default overrides) for a per-user AI settings key.
+ * Only the Default scope is consulted, so no shared User-scope value can leak into a tenant.
+ */
+function schemaDefaultForAiSetting(
+    preferenceService: QaapOwnerPreferenceSource | undefined,
+    allowedKeys: ReadonlySet<string>,
+    key: string,
+): unknown {
+    if (!allowedKeys.has(key) || typeof preferenceService?.inspectInScope !== 'function') {
+        return undefined;
+    }
+    return preferenceService.inspectInScope(key, PreferenceScope.Default);
+}
+
 export function preferenceReaderForOwner(ctx: any, ownerLogin?: string): QaapPreferenceReader {
     const diskSettings = ctx.readUserSettingsFromDisk(ownerLogin);
+    const preferenceService: QaapOwnerPreferenceSource | undefined = ctx.preferenceService;
     if (!usesSharedAiSettingsFallback(ownerLogin)) {
-        return (key: string): unknown => diskSettings[key];
+        // Authenticated tenants: their own settings.json, else the schema default — never shared/User-scope values.
+        const allowedKeys = new Set(listQaapAiSettingsPrefKeys());
+        return (key: string): unknown => diskSettings[key] !== undefined
+            ? diskSettings[key]
+            : schemaDefaultForAiSetting(preferenceService, allowedKeys, key);
     }
     return (key: string): unknown => {
-        const fromPref = ctx.preferenceService?.get(key);
+        const fromPref = preferenceService?.get?.(key);
         if (fromPref !== undefined && fromPref !== null && fromPref !== '') {
             return fromPref;
         }

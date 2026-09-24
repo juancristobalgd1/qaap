@@ -138,14 +138,6 @@ export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[]
         credentialEnv: [{ env: 'ANTHROPIC_API_KEY', pref: 'ai-features.anthropic.AnthropicApiKey' }],
     },
     {
-        vendor: 'mistral',
-        provider: 'mistral',
-        credentialPref: 'ai-features.mistral.apiKey',
-        modelListPrefs: ['ai-features.mistral.models'],
-        label: 'Mistral',
-        credentialEnv: [{ env: 'MISTRAL_API_KEY', pref: 'ai-features.mistral.apiKey' }],
-    },
-    {
         vendor: 'ollama',
         provider: 'ollama',
         credentialPref: 'ai-features.ollama.ollamaHost',
@@ -180,6 +172,17 @@ const EXTRA_AI_SETTINGS_PREF_KEYS = [
     QAAP_CUSTOM_OPENAI_API_KEY_PREF,
     'ai-features.languageModelAliases',
     'ai-features.harness.disabledAgents',
+    // Per-provider options without a QAIQ descriptor. Hosted tenants' writes of keys outside this list
+    // land in the process-wide User settings.json, so every provider pref (secrets especially) belongs here.
+    'ai-features.openAiOfficial.useResponseApi',
+    'ai-features.anthropicCustom.customAnthropicModels',
+    'ai-features.google.maxRetriesOnErrors',
+    'ai-features.google.retryDelayOnRateLimitError',
+    'ai-features.google.retryDelayOnOtherErrors',
+    'ai-features.vercelAi.openaiApiKey',
+    'ai-features.vercelAi.anthropicApiKey',
+    'ai-features.vercelAi.officialModels',
+    'ai-features.vercelAi.customModels',
 ] as const;
 
 /** Preference keys persisted per authenticated user (API keys, model lists, aliases). */

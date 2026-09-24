@@ -21,6 +21,7 @@ import { QaapGettingStartedWidget } from './qaap-getting-started-widget';
 import { QaapPluginViewWelcomePolicy } from './qaap-plugin-view-welcome-policy';
 import { QaapAiPreferenceBrandingStartup } from './qaap-ai-preference-branding-contribution';
 import { QaapWorkspaceSafetyDefaultsContribution } from './qaap-workspace-safety-defaults-contribution';
+import { rebindQaapPreferenceTreeGenerator } from '@theia/qaap-shared-core/lib/browser/qaap-preference-tree-generator';
 
 export default new ContainerModule((bind, _unbind, isBound, rebind) => {
     bind(QaapBuiltinThemeBrandingContribution).toSelf().inSingletonScope();
@@ -62,4 +63,7 @@ export default new ContainerModule((bind, _unbind, isBound, rebind) => {
 
     bind(QaapPluginViewWelcomePolicy).toSelf().inSingletonScope();
     bind(PluginViewWelcomePolicy).toService(QaapPluginViewWelcomePolicy);
+
+    // Settings tree keeps the curated QaapPreferenceLayoutProvider order instead of upstream's id sort.
+    rebindQaapPreferenceTreeGenerator(bind, rebind);
 });
