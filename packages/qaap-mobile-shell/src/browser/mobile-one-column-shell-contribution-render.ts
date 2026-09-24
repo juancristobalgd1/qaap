@@ -1,160 +1,51 @@
-// @ts-nocheck
+import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 // Extracted from mobile-one-column-shell-contribution.ts
 
-import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
-import { toArray } from '@lumino/algorithm';
-import { MessageLoop } from '@lumino/messaging';
-import { SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { CommandContribution, CommandRegistry } from '@theia/core/lib/common/command';
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
-import { StorageService } from '@theia/core/lib/browser/storage-service';
-import { nls } from '@theia/core/lib/common/nls';
-import { MessageService } from '@theia/core/lib/common/message-service';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
-import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
-import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
-import { RESET_LAYOUT } from '@theia/core/lib/browser/shell/shell-layout-restorer';
-import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
-import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
-import { ChatService } from '@theia/ai-chat';
-import { AIVariableService, FrontendLanguageModelRegistry, PromptService } from '@theia/ai-core';
-import { SkillService } from '@theia/ai-core/lib/browser/skill-service';
-import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
-import { QuickInputService } from '@theia/core';
-import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
-import {
-    matchesMobileOneColumnLayout,
-    matchesMobileNarrowViewport,
-    MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
-    MOBILE_ONE_COLUMN_LAYOUT_CLASS,
-} from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { hasQaapLeftRightSplitPanel } from '@theia/qaap-shell/lib/browser/qaap-shell-layout';
-import { QaapSidePanelHandler } from '@theia/qaap-shell/lib/browser/qaap-side-panel-handler';
-import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
-import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import { QaapCommitMessageAi } from './qaap-commit-message-ai';
-import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
-import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
-import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
-import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
-import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import { MobileProjectsService } from './mobile-projects-service';
 import { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
-import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { EditorManager } from '@theia/editor/lib/browser';
-import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
-import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
-import { LabelProvider } from '@theia/core/lib/browser';
-import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
-import { DecorationsService } from '@theia/core/lib/browser/decorations-service';
-import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
-import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
-import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
-import { MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
-import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';
-import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
-import { MobileSnackbar } from './mobile-snackbar';
-import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
-import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
-import { AIConfigurationSelectionService } from '@theia/ai-ide/lib/browser/ai-configuration/ai-configuration-service';
-import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import {
-    clearMobileWorkHubBootGuard,
     installMobileWorkHubBootGuard,
-    markPreferAgentsSurface,
-    markPreferDesktopIde,
     peekPreferDesktopIde,
     shouldBootstrapMobileAgentsChat,
     shouldPreferWorkHubAgentsLayout,
-    QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS,
     QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT,
     QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT,
-    setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
-    setMobileWorkHubHideBottomChrome,
-    setMobileWorkHubSideSheetOpen,
     recomputeMobileWorkHubHideIdeSidePanels,
-    syncMobileWorkHubHideIdeSidePanelsFromComposerHeader,
 } from './mobile-projects-open';
-import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
-import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
-import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
-import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
-import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
-import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
-import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
-import { QaapWorkbenchHistoryNavWidget, QaapWorkbenchRightControlsWidget } from './qaap-workbench-top-bar-widgets';
-import {
-    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-    QAAP_WORK_HUB_OVERVIEW_COMMAND,
-} from './qaap-workbench-account-menu';
-import { hasDesktopSessionsSidebarCollapsed } from './mobile-work-hub-sessions-sidebar';
-import { writeStoredComposerSurface } from '../common/qaap-composer-surface';
 import { resolveInitialLandingBodyClass } from './mobile-shell-landing-state';
-import { MobileShellLandingController, type MobileShellLandingHost } from './mobile-shell-landing-controller';
+import { MobileShellLandingController } from './mobile-shell-landing-controller';
 import {
     MobileShellBottomBarController,
-    type MobileShellBottomBarHost,
 } from './mobile-shell-bottom-bar-controller';
 import {
     MobileShellOverlayHostController,
-    type MobileShellOverlayHost,
 } from './mobile-shell-overlay-host';
 import {
     MobileShellSideSheetController,
-    type MobileShellSideSheetHost,
 } from './mobile-shell-side-sheet-controller';
 import {
     MobileShellWorkHubBootstrapController,
-    type MobileShellWorkHubBootstrapHost,
 } from './mobile-shell-work-hub-bootstrap';
 import {
     MobileShellIdeFallbackController,
-    type MobileShellIdeFallbackHost,
 } from './mobile-shell-ide-fallback';
 import {
     MobileShellHubNavigationController,
-    type MobileShellHubNavigationHost,
 } from './mobile-shell-hub-navigation-controller';
 import {
     MobileShellPullRequestPanelController,
-    type MobileShellPullRequestPanelHost,
 } from './mobile-shell-pull-request-panel-controller';
 import {
     MobileShellTranscriptChromeController,
-    type MobileShellTranscriptChromeHost,
 } from './mobile-shell-transcript-chrome-controller';
-import { MobileShellSessionState } from './mobile-shell-session-state';
 import {
-    decideLayoutRecovery,
-    QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY,
-    SHELL_LAYOUT_STORAGE_KEY,
-} from './mobile-shell-layout-recovery';
-import {
-    BottomBarSecondaryItem,
-    EXPLORER_VIEW_CONTAINER_ID,
-    isMiniBrowserPreviewWidgetId,
-    MOBILE_BOTTOM_OPEN_CLASS,
-    MobileBottomButton,
     MobileBottomButtonId,
-    WORKBENCH_CHAT_VIEW_WIDGET_ID,
 } from './mobile-shell-bottom-bar-widget';
-import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobile-one-column-shell-helpers';
 
-export function setTrackedProjectsPanelExtracted(ctx: any, panel: MobileProjectsPanel | undefined): void {
+export function setTrackedProjectsPanelExtracted(ctx: MobileOneColumnShellContributionContext, panel: MobileProjectsPanel | undefined): void {
     ctx.projectsPanelTrack?.dispose();
     ctx.projectsPanelTrack = undefined;
     ctx.projectsPanel = panel;
@@ -163,7 +54,7 @@ export function setTrackedProjectsPanelExtracted(ctx: any, panel: MobileProjects
     }
 }
 
-export function initLandingControllerExtracted(ctx: any): void {
+export function initLandingControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.initBottomBarController();
     ctx.initSideSheetController();
     ctx.initOverlayController();
@@ -179,7 +70,6 @@ export function initLandingControllerExtracted(ctx: any): void {
         ensureMainContentAfterWorkspaceReload: () => ctx.ensureMainContentAfterWorkspaceReload(),
         refreshProjectBootstrapFromWorkspace: () => { void ctx.projectBootstrap.refreshFromCurrentWorkspace(); },
         ensureDesktopWorkHubSessionsSidebarOpen: () => ctx.ensureDesktopWorkHubSessionsSidebarOpen(),
-        syncWorkHubSessionsSidebarLayout: () => ctx.projectsPanel?.syncSessionsSidebarLayout(),
         syncMobileHubPrimaryBottomChrome: () => ctx.bottomBarController.syncMobileHubPrimaryBottomChrome(),
         refreshBottomBar: () => ctx.bottomBarController.refreshBottomBar(),
         refreshWorkbenchTopBar: () => ctx.refreshWorkbenchTopBar(),
@@ -197,7 +87,7 @@ export function initLandingControllerExtracted(ctx: any): void {
     ctx.patchWorkHubBootstrapLandingHost();
 }
 
-export function initProjectsPanelFactoryExtracted(ctx: any): void {
+export function initProjectsPanelFactoryExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.projectsPanelFactory = new MobileProjectsPanelFactory({
         deps: {
             projectsService: ctx.projectsService,
@@ -289,7 +179,7 @@ export function initProjectsPanelFactoryExtracted(ctx: any): void {
     });
 }
 
-export function initTranscriptChromeControllerExtracted(ctx: any): void {
+export function initTranscriptChromeControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.transcriptChromeHost = {
         getProjectsPanel: () => ctx.projectsPanel,
         openMobileWorkHubLanding: view => ctx.hubNavigation.openMobileWorkHubLanding(view),
@@ -303,7 +193,7 @@ export function initTranscriptChromeControllerExtracted(ctx: any): void {
     });
 }
 
-export function initPullRequestPanelControllerExtracted(ctx: any): void {
+export function initPullRequestPanelControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.pullRequestPanelHost = {
         scheduleSnapAndUiRefresh: () => ctx.scheduleSnapAndUiRefresh(),
         refreshBottomBar: () => ctx.bottomBarController.refreshBottomBar(),
@@ -316,7 +206,7 @@ export function initPullRequestPanelControllerExtracted(ctx: any): void {
     });
 }
 
-export function initHubNavigationControllerExtracted(ctx: any): void {
+export function initHubNavigationControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.hubNavigationHost = {
         isMobileActive: () => ctx.mobileActive,
         enterMobileLayout: () => ctx.enterMobileLayout(),
@@ -342,7 +232,7 @@ export function initHubNavigationControllerExtracted(ctx: any): void {
     });
 }
 
-export function patchWorkHubBootstrapLandingHostExtracted(ctx: any): void {
+export function patchWorkHubBootstrapLandingHostExtracted(ctx: MobileOneColumnShellContributionContext): void {
     Object.assign(ctx.workHubBootstrapHost, {
         applyLandingChrome: () => ctx.landing.applyLandingChrome(),
         releaseMobileWorkHubBootGuardWhenReady: () => ctx.landing.releaseMobileWorkHubBootGuardWhenReady(),
@@ -352,7 +242,7 @@ export function patchWorkHubBootstrapLandingHostExtracted(ctx: any): void {
     });
 }
 
-export function initSideSheetControllerExtracted(ctx: any): void {
+export function initSideSheetControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.sideSheetHost = {
         isMobileActive: () => ctx.mobileActive,
         forceCenterColumnFullWidth: () => ctx.forceCenterColumnFullWidth(),
@@ -373,7 +263,7 @@ export function initSideSheetControllerExtracted(ctx: any): void {
     });
 }
 
-export function initOverlayControllerExtracted(ctx: any): void {
+export function initOverlayControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.overlayHost = {
         isMobileActive: () => ctx.mobileActive,
         isWorkspaceOpened: () => ctx.workspaceService.opened,
@@ -389,14 +279,14 @@ export function initOverlayControllerExtracted(ctx: any): void {
     });
 }
 
-export function syncOverlayEdgeSwipeZonesExtracted(ctx: any): void {
+export function syncOverlayEdgeSwipeZonesExtracted(ctx: MobileOneColumnShellContributionContext): void {
     if (!ctx.mobileActive) {
         return;
     }
     ctx.overlayController.syncEdgeSwipeZones();
 }
 
-export function initIdeFallbackControllerExtracted(ctx: any): void {
+export function initIdeFallbackControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.ideFallbackHost = {
         isMobileActive: () => ctx.mobileActive,
         shouldActivateMobileLayout: () => ctx.shouldActivateMobileLayout(),
@@ -424,7 +314,7 @@ export function initIdeFallbackControllerExtracted(ctx: any): void {
     });
 }
 
-export function initWorkHubBootstrapControllerExtracted(ctx: any): void {
+export function initWorkHubBootstrapControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.workHubBootstrapHost = {
         isMobileActive: () => ctx.mobileActive,
         getProjectsPanel: () => ctx.projectsPanel,
@@ -461,7 +351,7 @@ export function initWorkHubBootstrapControllerExtracted(ctx: any): void {
     });
 }
 
-export function initBottomBarControllerExtracted(ctx: any): void {
+export function initBottomBarControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
     ctx.bottomBarHost = {
         isMobileActive: () => ctx.mobileActive,
         getLandingLeftThisSession: () => ctx.sessionState.landingLeftThisSession,
@@ -506,7 +396,7 @@ export function initBottomBarControllerExtracted(ctx: any): void {
     });
 }
 
-export function onStartExtracted(ctx: any, _app: FrontendApplication): void {
+export function onStartExtracted(ctx: MobileOneColumnShellContributionContext, _app: FrontendApplication): void {
     ctx.workHubDiff.setDelegate(ctx);
     ctx.landing.syncFromStorage();
     installMobileWorkHubBootGuard();
@@ -556,7 +446,7 @@ export function onStartExtracted(ctx: any, _app: FrontendApplication): void {
     });
 }
 
-export function ensureWorkHubSurfaceMountedAfterReadyExtracted(ctx: any): void {
+export function ensureWorkHubSurfaceMountedAfterReadyExtracted(ctx: MobileOneColumnShellContributionContext): void {
     if (peekPreferDesktopIde() || !ctx.shouldActivateWorkHubLayout()) {
         return;
     }

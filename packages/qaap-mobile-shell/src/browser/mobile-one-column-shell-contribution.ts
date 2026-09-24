@@ -1,4 +1,3 @@
-// @ts-nocheck
 // *****************************************************************************
 // Copyright (C) 2026 theia-ide and others.
 //
@@ -16,20 +15,16 @@
 // *****************************************************************************
 
 import { inject, injectable, optional, postConstruct } from '@theia/core/shared/inversify';
-import { toArray } from '@lumino/algorithm';
-import { MessageLoop } from '@lumino/messaging';
 import { SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { CommandContribution, CommandRegistry } from '@theia/core/lib/common/command';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
-import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { FrontendApplication } from '@theia/core/lib/browser/frontend-application';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { ThemeService } from '@theia/core/lib/browser/theming';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
-import { RESET_LAYOUT } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { ChatService } from '@theia/ai-chat';
@@ -40,14 +35,9 @@ import { QuickInputService } from '@theia/core';
 import { PreferenceService } from '@theia/core/lib/common/preferences';
 import { FileUploadService } from '@theia/filesystem/lib/common/upload/file-upload';
 import {
-    matchesMobileOneColumnLayout,
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
-    MOBILE_ONE_COLUMN_LAYOUT_CLASS,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { hasQaapLeftRightSplitPanel } from '@theia/qaap-shell/lib/browser/qaap-shell-layout';
-import { QaapSidePanelHandler } from '@theia/qaap-shell/lib/browser/qaap-side-panel-handler';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
-import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
@@ -77,49 +67,22 @@ import { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
 import { MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
-import { MobileSnackbar } from './mobile-snackbar';
 import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';
 import {
-    clearMobileWorkHubBootGuard,
-    installMobileWorkHubBootGuard,
     markPreferAgentsSurface,
-    markPreferDesktopIde,
     peekPreferDesktopIde,
-    shouldBootstrapMobileAgentsChat,
-    shouldPreferWorkHubAgentsLayout,
-    QAAP_MOBILE_ACTIVE_TRANSCRIPT_BODY_CLASS,
-    QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT,
-    QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT,
-    setMobileActiveTranscriptChrome,
-    setMobileWorkHubComposerHeaderChrome,
-    setMobileWorkHubHideBottomChrome,
-    setMobileWorkHubSideSheetOpen,
-    recomputeMobileWorkHubHideIdeSidePanels,
-    syncMobileWorkHubHideIdeSidePanelsFromComposerHeader,
 } from './mobile-projects-open';
-import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
-import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
-import { QaapWorkbenchHistoryNavWidget, QaapWorkbenchRightControlsWidget } from './qaap-workbench-top-bar-widgets';
-import {
-    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-    QAAP_WORK_HUB_OVERVIEW_COMMAND,
-} from './qaap-workbench-account-menu';
-import { hasDesktopSessionsSidebarCollapsed } from './mobile-work-hub-sessions-sidebar';
-import { writeStoredComposerSurface } from '../common/qaap-composer-surface';
-import { resolveInitialLandingBodyClass } from './mobile-shell-landing-state';
 import { MobileShellLandingController, type MobileShellLandingHost } from './mobile-shell-landing-controller';
 import {
     MobileShellBottomBarController,
@@ -155,18 +118,10 @@ import {
 } from './mobile-shell-transcript-chrome-controller';
 import { MobileShellSessionState } from './mobile-shell-session-state';
 import {
-    decideLayoutRecovery,
-    QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY,
-    SHELL_LAYOUT_STORAGE_KEY,
-} from './mobile-shell-layout-recovery';
-import {
     BottomBarSecondaryItem,
-    EXPLORER_VIEW_CONTAINER_ID,
     isMiniBrowserPreviewWidgetId,
-    MOBILE_BOTTOM_OPEN_CLASS,
     MobileBottomButton,
     MobileBottomButtonId,
-    WORKBENCH_CHAT_VIEW_WIDGET_ID,
 } from './mobile-shell-bottom-bar-widget';
 import { isMainPreviewWidgetLive as isMainPreviewWidgetLiveHelper } from './mobile-one-column-shell-helpers';
 import { activateMainPreviewWidgetExtracted, bootstrapMobilePreviewInBackgroundExtracted, ensureMobilePreviewEditorVisibleExtracted, ensureWelcomeInMainAreaExtracted, openMobilePreviewInMainExtracted, relocatePreviewToMainIfNeededExtracted, toggleMobilePreviewExtracted } from './mobile-one-column-shell-contribution-activity';
@@ -187,199 +142,281 @@ export const LAYOUT_RECOVERY_GRACE_MS = 2000;
 export class MobileOneColumnShellContribution implements FrontendApplicationContribution, CommandContribution, QaapWorkHubDiffDelegate {
 
     @inject(ApplicationShell)
-    protected readonly shell: ApplicationShell;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly shell: ApplicationShell;
 
     @inject(FrontendApplicationStateService)
-    protected readonly frontendStateService: FrontendApplicationStateService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly frontendStateService: FrontendApplicationStateService;
 
     @inject(StatusBarImpl)
-    protected readonly statusBar: StatusBarImpl;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly statusBar: StatusBarImpl;
 
     @inject(CommandRegistry)
-    protected readonly commands: CommandRegistry;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly commands: CommandRegistry;
 
     @inject(MessageService)
-    protected readonly messageService: MessageService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly messageService: MessageService;
 
     @inject(ClipboardService)
-    protected readonly clipboardService: ClipboardService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly clipboardService: ClipboardService;
 
     @inject(MobileProjectsService)
-    protected readonly projectsService: MobileProjectsService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly projectsService: MobileProjectsService;
 
     @inject(QaapDesktopTerminalLayoutContribution)
-    protected readonly desktopTerminalLayout: QaapDesktopTerminalLayoutContribution;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly desktopTerminalLayout: QaapDesktopTerminalLayoutContribution;
 
     @inject(MobileProjectsActiveTasks)
-    protected readonly activeTasks: MobileProjectsActiveTasks;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly activeTasks: MobileProjectsActiveTasks;
 
     @inject(QaapBackgroundContextProvider)
-    protected readonly backgroundContext: QaapBackgroundContextProvider;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly backgroundContext: QaapBackgroundContextProvider;
 
     @inject(MobileProjectsConversations)
-    protected readonly conversations: MobileProjectsConversations;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly conversations: MobileProjectsConversations;
 
     @inject(MobileWorkHubInboxStream)
-    protected readonly inboxStream: MobileWorkHubInboxStream;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly inboxStream: MobileWorkHubInboxStream;
 
     @inject(MobileProjectsConversationFlags)
-    protected readonly conversationFlags: MobileProjectsConversationFlags;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly conversationFlags: MobileProjectsConversationFlags;
 
     @inject(WorkspaceService)
-    protected readonly workspaceService: WorkspaceService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly workspaceService: WorkspaceService;
 
     @inject(FileUploadService)
-    protected readonly fileUploadService: FileUploadService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly fileUploadService: FileUploadService;
 
     @inject(MobileProjectsReadmeContribution)
-    protected readonly projectsReadme: MobileProjectsReadmeContribution;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly projectsReadme: MobileProjectsReadmeContribution;
 
     @inject(WidgetManager)
-    protected readonly widgetManager: WidgetManager;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly widgetManager: WidgetManager;
 
     @inject(ScmService)
-    protected readonly scmService: ScmService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly scmService: ScmService;
 
     @inject(ChatService)
-    protected readonly chatService: ChatService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly chatService: ChatService;
 
     @inject(AIVariableService)
-    protected readonly variableService: AIVariableService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly variableService: AIVariableService;
 
     @inject(SkillService)
-    protected readonly skillService: SkillService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly skillService: SkillService;
 
     @inject(PromptService)
-    protected readonly promptService: PromptService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly promptService: PromptService;
 
     @inject(QuickInputService)
-    protected readonly quickInputService: QuickInputService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly quickInputService: QuickInputService;
 
     @inject(ChatAgentService)
-    protected readonly chatAgentService: ChatAgentService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly chatAgentService: ChatAgentService;
 
     @inject(PreferenceService)
-    protected readonly preferenceService: PreferenceService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly preferenceService: PreferenceService;
 
     @inject(QaapAppearanceModeService)
-    protected readonly appearanceModeService: QaapAppearanceModeService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly appearanceModeService: QaapAppearanceModeService;
 
     @inject(ThemeService)
-    protected readonly themeService: ThemeService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly themeService: ThemeService;
 
     @inject(MCPFrontendService) @optional()
-    protected readonly mcpFrontendService?: MCPFrontendService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly mcpFrontendService?: MCPFrontendService;
 
     @inject(FrontendLanguageModelRegistry) @optional()
-    protected readonly languageModelRegistry?: FrontendLanguageModelRegistry;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly languageModelRegistry?: FrontendLanguageModelRegistry;
 
     @inject(MobileProjectChatViewWidgetFactory)
-    protected readonly mobileProjectChatViewWidgetFactory: MobileProjectChatViewWidgetFactory;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly mobileProjectChatViewWidgetFactory: MobileProjectChatViewWidgetFactory;
 
     @inject(QaapWorkHubDiffService)
-    protected readonly workHubDiff: QaapWorkHubDiffService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly workHubDiff: QaapWorkHubDiffService;
 
     @inject(QaapCommitMessageAi) @optional()
-    protected readonly commitMessageAi?: QaapCommitMessageAi;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly commitMessageAi?: QaapCommitMessageAi;
 
     @inject(QaapComposerPromptImprover) @optional()
-    protected readonly composerPromptImprover?: QaapComposerPromptImprover;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly composerPromptImprover?: QaapComposerPromptImprover;
 
     @inject(QaapComposerEditorContextService)
-    protected readonly composerEditorContextService: QaapComposerEditorContextService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly composerEditorContextService: QaapComposerEditorContextService;
 
     @inject(QaapWorkHubComposerPromptService)
-    protected readonly composerPromptService: QaapWorkHubComposerPromptService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly composerPromptService: QaapWorkHubComposerPromptService;
 
     @inject(QaapProjectBootstrapService)
-    protected readonly projectBootstrap: QaapProjectBootstrapService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly projectBootstrap: QaapProjectBootstrapService;
 
     @inject(QaapAgentFinishedToastContribution)
-    protected readonly agentFinishedToast: QaapAgentFinishedToastContribution;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly agentFinishedToast: QaapAgentFinishedToastContribution;
 
     @inject(QaapWorkHubProjectSkillRoots)
-    protected readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots;
 
     @inject(QaapAgUiFrontendToolService) @optional()
-    protected readonly agUiFrontendTools?: QaapAgUiFrontendToolService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly agUiFrontendTools?: QaapAgUiFrontendToolService;
 
     @inject(QaapMiniBrowserOpenHandler)
-    protected readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly miniBrowserOpenHandler: QaapMiniBrowserOpenHandler;
 
     @inject(FileService)
-    protected readonly fileService: FileService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly fileService: FileService;
 
     @inject(EditorManager)
-    protected readonly editorManager: EditorManager;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly editorManager: EditorManager;
 
     @inject(MonacoEditorProvider)
-    protected readonly monacoEditorProvider: MonacoEditorProvider;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly monacoEditorProvider: MonacoEditorProvider;
 
     @inject(LabelProvider)
-    protected readonly labelProvider: LabelProvider;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly labelProvider: LabelProvider;
 
     @inject(DecorationsService)
-    protected readonly decorationsService: DecorationsService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly decorationsService: DecorationsService;
 
     @inject(ColorRegistry)
-    protected readonly colorRegistry: ColorRegistry;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly colorRegistry: ColorRegistry;
 
     @inject(MarkdownPreviewHandler)
-    protected readonly markdownPreviewHandler: MarkdownPreviewHandler;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly markdownPreviewHandler: MarkdownPreviewHandler;
 
     @inject(QaapPreviewSurfaceRegistry)
-    protected readonly previewSurfaceRegistry: QaapPreviewSurfaceRegistry;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly previewSurfaceRegistry: QaapPreviewSurfaceRegistry;
 
     @inject(ElementInspectorService)
-    protected readonly elementInspectorService: ElementInspectorService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly elementInspectorService: ElementInspectorService;
 
     @inject(TerminalService)
-    protected readonly terminalService: TerminalService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly terminalService: TerminalService;
 
     @inject(StorageService)
-    protected readonly storageService: StorageService;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly storageService: StorageService;
 
-    protected readonly toDispose = new DisposableCollection();
-    protected readonly mobileMq: MediaQueryList | undefined =
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly toDispose = new DisposableCollection();
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly mobileMq: MediaQueryList | undefined =
         typeof window !== 'undefined' ? window.matchMedia(MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY) : undefined;
 
-    protected bottomBarController!: MobileShellBottomBarController;
-    private bottomBarHost!: MobileShellBottomBarHost;
-    protected overlayController!: MobileShellOverlayHostController;
-    private overlayHost!: MobileShellOverlayHost;
-    protected sideSheetController!: MobileShellSideSheetController;
-    private sideSheetHost!: MobileShellSideSheetHost;
-    protected workHubBootstrap!: MobileShellWorkHubBootstrapController;
-    private workHubBootstrapHost!: MobileShellWorkHubBootstrapHost;
-    protected ideFallback!: MobileShellIdeFallbackController;
-    private ideFallbackHost!: MobileShellIdeFallbackHost;
-    protected hubNavigation!: MobileShellHubNavigationController;
-    private hubNavigationHost!: MobileShellHubNavigationHost;
-    protected pullRequestPanelController!: MobileShellPullRequestPanelController;
-    private pullRequestPanelHost!: MobileShellPullRequestPanelHost;
-    protected transcriptChrome!: MobileShellTranscriptChromeController;
-    private transcriptChromeHost!: MobileShellTranscriptChromeHost;
-    protected projectsPanelFactory!: MobileProjectsPanelFactory;
-    protected readonly sessionState = new MobileShellSessionState();
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public bottomBarController!: MobileShellBottomBarController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public bottomBarHost!: MobileShellBottomBarHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public overlayController!: MobileShellOverlayHostController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public overlayHost!: MobileShellOverlayHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public sideSheetController!: MobileShellSideSheetController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public sideSheetHost!: MobileShellSideSheetHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public workHubBootstrap!: MobileShellWorkHubBootstrapController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public workHubBootstrapHost!: MobileShellWorkHubBootstrapHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ideFallback!: MobileShellIdeFallbackController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ideFallbackHost!: MobileShellIdeFallbackHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public hubNavigation!: MobileShellHubNavigationController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public hubNavigationHost!: MobileShellHubNavigationHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public pullRequestPanelController!: MobileShellPullRequestPanelController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public pullRequestPanelHost!: MobileShellPullRequestPanelHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public transcriptChrome!: MobileShellTranscriptChromeController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public transcriptChromeHost!: MobileShellTranscriptChromeHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public projectsPanelFactory!: MobileProjectsPanelFactory;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly sessionState = new MobileShellSessionState();
     protected get bottomBar(): HTMLElement | undefined { return this.bottomBarController.getBottomBarNode(); }
-    protected mobileActive = false;
-    protected projectsPanel: MobileProjectsPanel | undefined;
-    protected projectsPanelTrack: Disposable | undefined;
-    protected agentTaskComposer: MobileAgentTaskComposer | undefined;
-    protected workHubPreferencesSheet: MobileWorkHubPreferencesSheet | undefined;
-    protected workHubBillingSheet: MobileWorkHubBillingSheet | undefined;
-    protected projectsCount = 0;
-    protected landing!: MobileShellLandingController;
-    private landingHost!: MobileShellLandingHost;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public mobileActive = false;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public projectsPanel: MobileProjectsPanel | undefined;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public projectsPanelTrack: Disposable | undefined;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public agentTaskComposer: MobileAgentTaskComposer | undefined;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public workHubPreferencesSheet: MobileWorkHubPreferencesSheet | undefined;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public workHubBillingSheet: MobileWorkHubBillingSheet | undefined;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public projectsCount = 0;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public landing!: MobileShellLandingController;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public landingHost!: MobileShellLandingHost;
     /**
      * True once the user has actively left the mobile landing (Projects panel) in this session,
      * either by opening a workspace from the dashboard or by tapping Focus on the active project.
      * Subsequent re-opens of the Projects view are sheet-style.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
      */
-    protected get landingLeftThisSession(): boolean {
+    public get landingLeftThisSession(): boolean {
         return this.sessionState.landingLeftThisSession;
     }
-    protected set landingLeftThisSession(value: boolean) {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public set landingLeftThisSession(value: boolean) {
         this.sessionState.landingLeftThisSession = value;
     }
     protected get transcriptOpenedFromWorkHubLanding(): boolean {
@@ -389,16 +426,19 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.sessionState.transcriptOpenedFromWorkHubLanding = value;
     }
 
-    protected readonly onDismissProjectsPanelEvent = (): void => {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly onDismissProjectsPanelEvent = (): void => {
         this.onProjectsWorkspaceOpened();
     };
 
-    protected readonly onLandingHubListChanged = (): void => {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly onLandingHubListChanged = (): void => {
         this.refreshBottomBar();
         this.scheduleSnapAndUiRefresh();
     };
 
-    protected setTrackedProjectsPanel(panel: MobileProjectsPanel | undefined): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public setTrackedProjectsPanel(panel: MobileProjectsPanel | undefined): void {
         setTrackedProjectsPanelExtracted(this, panel);
     }
 
@@ -407,47 +447,58 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         initLandingControllerExtracted(this);
     }
 
-    protected initProjectsPanelFactory(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initProjectsPanelFactory(): void {
         initProjectsPanelFactoryExtracted(this);
     }
 
-    protected initTranscriptChromeController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initTranscriptChromeController(): void {
         initTranscriptChromeControllerExtracted(this);
     }
 
-    protected initPullRequestPanelController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initPullRequestPanelController(): void {
         initPullRequestPanelControllerExtracted(this);
     }
 
-    protected initHubNavigationController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initHubNavigationController(): void {
         initHubNavigationControllerExtracted(this);
     }
 
-    protected patchWorkHubBootstrapLandingHost(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public patchWorkHubBootstrapLandingHost(): void {
         patchWorkHubBootstrapLandingHostExtracted(this);
     }
 
-    protected initSideSheetController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initSideSheetController(): void {
         initSideSheetControllerExtracted(this);
     }
 
-    protected initOverlayController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initOverlayController(): void {
         initOverlayControllerExtracted(this);
     }
 
-    protected syncOverlayEdgeSwipeZones(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public syncOverlayEdgeSwipeZones(): void {
         syncOverlayEdgeSwipeZonesExtracted(this);
     }
 
-    protected initIdeFallbackController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initIdeFallbackController(): void {
         initIdeFallbackControllerExtracted(this);
     }
 
-    protected initWorkHubBootstrapController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initWorkHubBootstrapController(): void {
         initWorkHubBootstrapControllerExtracted(this);
     }
 
-    protected initBottomBarController(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public initBottomBarController(): void {
         initBottomBarControllerExtracted(this);
     }
 
@@ -476,8 +527,9 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
      * no watchdog can recover a hub root that was never inserted. This guarantees a mount attempt at
      * a point where all async preconditions (workspace ready, 'ready' state) are already satisfied,
      * then arms the last-resort blank-shell recovery.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
      */
-    protected onFrontendReadyEnsureWorkHub(): void {
+    public onFrontendReadyEnsureWorkHub(): void {
         this.ensureWorkHubSurfaceMountedAfterReady();
         this.armLayoutRecoveryGuard();
     }
@@ -486,7 +538,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         ensureWorkHubSurfaceMountedAfterReadyExtracted(this);
     }
 
-    protected isWorkHubSurfacePresentInDom(): boolean {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public isWorkHubSurfacePresentInDom(): boolean {
         return isWorkHubSurfacePresentInDomExtracted(this);
     }
 
@@ -494,32 +547,41 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         armLayoutRecoveryGuardExtracted(this);
     }
 
-    protected async runLayoutRecoveryGuard(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async runLayoutRecoveryGuard(): Promise<void> {
         return runLayoutRecoveryGuardExtracted(this);
     }
 
-    protected hasLayoutRecoveryBeenAttempted(): boolean {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public hasLayoutRecoveryBeenAttempted(): boolean {
         return hasLayoutRecoveryBeenAttemptedExtracted(this);
     }
 
-    protected markLayoutRecoveryAttempted(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public markLayoutRecoveryAttempted(): void {
         markLayoutRecoveryAttemptedExtracted(this);
     }
 
-    protected armAgentsSurfaceWatchdog(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public armAgentsSurfaceWatchdog(): void {
         armAgentsSurfaceWatchdogExtracted(this);
     }
 
-    protected recoverEmptyAgentsSurface(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public recoverEmptyAgentsSurface(): void {
         recoverEmptyAgentsSurfaceExtracted(this);
     }
 
-    protected armBootGuardSafetyTimeout(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public armBootGuardSafetyTimeout(): void {
         armBootGuardSafetyTimeoutExtracted(this);
     }
 
-    /** Persist Agents surface choice so reload / wide viewport does not fall back to the IDE. */
-    protected readonly persistWorkHubSurfacePreference = (): void => {
+    /**
+     * Persist Agents surface choice so reload / wide viewport does not fall back to the IDE.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public readonly persistWorkHubSurfacePreference = (): void => {
         if (peekPreferDesktopIde() || !this.workspaceService.opened || this.landing.isProjectsLandingSession()) {
             return;
         }
@@ -532,7 +594,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         onDidInitializeLayoutExtracted(this, app);
     }
 
-    protected readonly onMediaChange = (): void => {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly onMediaChange = (): void => {
         this.workHubBootstrap.persistAgentsSurfaceForActiveSession();
         if (this.shouldActivateMobileLayout()) {
             this.enterMobileLayout();
@@ -548,17 +611,23 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         onStopExtracted(this, _app);
     }
 
-    protected shouldActivateMobileLayout(): boolean {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public shouldActivateMobileLayout(): boolean {
         return shouldActivateMobileLayoutExtracted(this);
     }
 
-    /** Agents / Work Hub surface — not when the user explicitly chose the classic IDE. */
-    protected shouldActivateWorkHubLayout(): boolean {
+    /**
+     * Agents / Work Hub surface — not when the user explicitly chose the classic IDE.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public shouldActivateWorkHubLayout(): boolean {
         return this.shouldActivateMobileLayout() && !peekPreferDesktopIde();
     }
 
-    protected resizeRaf = 0;
-    protected readonly onWindowResize = (): void => {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public resizeRaf = 0;
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public readonly onWindowResize = (): void => {
         // Throttle via rAF: resize fires dozens of times/sec on mobile rotation/viewport
         // adjustments; coalescing to one layout pass per frame avoids reflow storms.
         if (this.resizeRaf) {
@@ -570,7 +639,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         });
     };
 
-    protected ensureShellHooks(shell: ApplicationShell): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ensureShellHooks(shell: ApplicationShell): void {
         this.sideSheetController.ensureShellHooks(shell, this.toDispose);
     }
 
@@ -588,32 +658,41 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.bottomBarController.getBottomPanelPendingUpdate();
     }
 
-    /** Work Hub landing is active — user has not opened/focused a project in this session yet. */
-    protected isProjectsLandingSession(): boolean {
+    /**
+     * Work Hub landing is active — user has not opened/focused a project in this session yet.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public isProjectsLandingSession(): boolean {
         return this.landing.isProjectsLandingSession();
     }
 
-    protected enterMobileLayout(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public enterMobileLayout(): void {
         enterMobileLayoutExtracted(this);
     }
 
-    protected leaveMobileLayout(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public leaveMobileLayout(): void {
         leaveMobileLayoutExtracted(this);
     }
 
-    protected async ensureDesktopSidePanelSizes(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async ensureDesktopSidePanelSizes(): Promise<void> {
         return ensureDesktopSidePanelSizesExtracted(this);
     }
 
-    protected async setSidePanelSize(side: 'left' | 'right', size: number): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async setSidePanelSize(side: 'left' | 'right', size: number): Promise<void> {
         return setSidePanelSizeExtracted(this, side, size);
     }
 
-    protected restoreDesktopSplitLayout(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public restoreDesktopSplitLayout(): void {
         restoreDesktopSplitLayoutExtracted(this);
     }
 
-    protected forceCenterColumnFullWidth(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public forceCenterColumnFullWidth(): void {
         forceCenterColumnFullWidthExtracted(this);
     }
 
@@ -637,7 +716,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.bottomBarController.applyMobileBottomPanelMaximizedSize();
     }
 
-    protected restoreMobileBottomPanelFromMaximized(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public restoreMobileBottomPanelFromMaximized(): void {
         this.bottomBarController.restoreMobileBottomPanelFromMaximized();
     }
 
@@ -657,15 +737,18 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.bottomBarController.updateMobileShellStateClasses();
     }
 
-    protected requestFullShellRelayout(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public requestFullShellRelayout(): void {
         requestFullShellRelayoutExtracted(this);
     }
 
-    protected teardownMobileUi(preserveProjectsLanding = false): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public teardownMobileUi(preserveProjectsLanding = false): void {
         teardownMobileUiExtracted(this, preserveProjectsLanding);
     }
 
-    protected ensureOverlayElements(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ensureOverlayElements(): void {
         ensureOverlayElementsExtracted(this);
     }
 
@@ -677,7 +760,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.ideFallback?.disposeProjectsPanelForDesktopIde();
     }
 
-    protected tryBootstrapMobileAgentsChat(): boolean {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public tryBootstrapMobileAgentsChat(): boolean {
         return this.workHubBootstrap.tryBootstrapMobileAgentsChat();
     }
 
@@ -685,23 +769,28 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.workHubBootstrap.restoreAgentsSurfaceAfterReload();
     }
 
-    protected ensureMobileProjectsHomeVisible(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ensureMobileProjectsHomeVisible(): void {
         this.workHubBootstrap.ensureMobileProjectsHomeVisible();
     }
 
-    protected async ensureMainContentAfterWorkspaceReload(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async ensureMainContentAfterWorkspaceReload(): Promise<void> {
         return ensureMainContentAfterWorkspaceReloadExtracted(this);
     }
 
-    protected ensureProjectsPanel(forceHomeMode?: boolean): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ensureProjectsPanel(forceHomeMode?: boolean): void {
         this.workHubBootstrap.ensureProjectsPanel(forceHomeMode);
     }
 
-    protected createProjectsPanel(homeMode: boolean): MobileProjectsPanel {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public createProjectsPanel(homeMode: boolean): MobileProjectsPanel {
         return this.projectsPanelFactory.create(homeMode);
     }
 
-    protected ensureDesktopWorkHubSessionsSidebarOpen(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ensureDesktopWorkHubSessionsSidebarOpen(): void {
         ensureDesktopWorkHubSessionsSidebarOpenExtracted(this);
     }
 
@@ -722,19 +811,23 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.pullRequestPanelController.openPullRequestPanel();
     }
 
-    protected async openPullRequestFromInbox(pullRequest: QaapGithubPullRequestSummary): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openPullRequestFromInbox(pullRequest: QaapGithubPullRequestSummary): Promise<void> {
         return this.pullRequestPanelController.openPullRequestFromInbox(pullRequest);
     }
 
-    protected async refreshProjectsCount(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async refreshProjectsCount(): Promise<void> {
         return refreshProjectsCountExtracted(this);
     }
 
-    protected hideProjectsPanel(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public hideProjectsPanel(): void {
         hideProjectsPanelExtracted(this);
     }
 
-    protected hidePullRequestPanel(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public hidePullRequestPanel(): void {
         this.pullRequestPanelController.hidePullRequestPanel();
     }
 
@@ -742,20 +835,26 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         registerCommandsExtracted(this, registry);
     }
 
-    protected async openDesktopIde(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openDesktopIde(): Promise<void> {
         return openDesktopIdeExtracted(this);
     }
 
-    protected async prepareDesktopIdeWorkspaceFromHub(selectedProjectId?: string): Promise<boolean> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async prepareDesktopIdeWorkspaceFromHub(selectedProjectId?: string): Promise<boolean> {
         return prepareDesktopIdeWorkspaceFromHubExtracted(this, selectedProjectId);
     }
 
-    /** IDE | Agents switch from classic IDE — restore the Agents execution shell. */
-    protected returnToAgentsFromDesktopIde(): void {
+    /**
+     * IDE | Agents switch from classic IDE — restore the Agents execution shell.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public returnToAgentsFromDesktopIde(): void {
         this.ideFallback?.returnToAgentsFromDesktopIde();
     }
 
-    protected toggleWorkHubSessionsSidebar(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public toggleWorkHubSessionsSidebar(): void {
         this.ensureProjectsPanel();
         this.projectsPanel?.toggleWorkHubSessionsSidebar();
     }
@@ -764,7 +863,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.transcriptChrome.onEnterActiveTranscript();
     }
 
-    protected enforceWorkHubSurfaceIsolation(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public enforceWorkHubSurfaceIsolation(): void {
         enforceWorkHubSurfaceIsolationExtracted(this);
     }
 
@@ -772,27 +872,33 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.transcriptChrome.onExitActiveTranscript();
     }
 
-    protected async openAgentTaskComposer(project: MobileProjectEntry): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openAgentTaskComposer(project: MobileProjectEntry): Promise<void> {
         return openAgentTaskComposerExtracted(this, project);
     }
 
-    protected async openWorkHubPreferencesSheet(query?: string): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openWorkHubPreferencesSheet(query?: string): Promise<void> {
         return openWorkHubPreferencesSheetExtracted(this, query);
     }
 
-    protected async openWorkHubBillingSheet(options?: { readonly afterCheckout?: boolean }): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openWorkHubBillingSheet(options?: { readonly afterCheckout?: boolean }): Promise<void> {
         return openWorkHubBillingSheetExtracted(this, options);
     }
 
-    protected async openWorkHubAiConfigurationSheet(tabId?: string): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openWorkHubAiConfigurationSheet(tabId?: string): Promise<void> {
         return openWorkHubAiConfigurationSheetExtracted(this, tabId);
     }
 
-    protected async toggleProjectsPanel(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async toggleProjectsPanel(): Promise<void> {
         return toggleProjectsPanelExtracted(this);
     }
 
-    protected async showMobileProjectsHome(preferredHubView?: MobileProjectsHubView): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async showMobileProjectsHome(preferredHubView?: MobileProjectsHubView): Promise<void> {
         return this.workHubBootstrap.showMobileProjectsHome(preferredHubView);
     }
 
@@ -815,7 +921,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.hubNavigation.finalizeHubLandingNavigation();
     }
 
-    protected async openMobileWorkHubLanding(view: MobileProjectsHubView): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openMobileWorkHubLanding(view: MobileProjectsHubView): Promise<void> {
         return this.hubNavigation.openMobileWorkHubLanding(view);
     }
 
@@ -823,24 +930,28 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.pullRequestPanelController.togglePullRequestPanel();
     }
 
-    protected async onProjectsPanelOpen(project: MobileProjectEntry): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async onProjectsPanelOpen(project: MobileProjectEntry): Promise<void> {
         return onProjectsPanelOpenExtracted(this, project);
     }
 
-    protected async onProjectsPanelOpenInIde(project: MobileProjectEntry): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async onProjectsPanelOpenInIde(project: MobileProjectEntry): Promise<void> {
         return onProjectsPanelOpenInIdeExtracted(this, project);
     }
 
     /**
      * After clone/create/open, keep Work Hub Agents mounted. Disposing the home panel here left
      * an empty IDE shell (collapsed main area + hide-ide CSS) with only snackbars visible.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
      */
-    protected onProjectsWorkspaceOpened(): void {
+    public onProjectsWorkspaceOpened(): void {
         this.landing.retainAgentsHubAfterWorkspaceOpen();
         this.scheduleSnapAndUiRefresh();
     }
 
-    protected async onCurrentProjectActivated(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async onCurrentProjectActivated(): Promise<void> {
         return onCurrentProjectActivatedExtracted(this);
     }
 
@@ -868,21 +979,27 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.sideSheetController.dismissMobileSideSheets();
     }
 
-    protected scheduleSnapAndUiRefresh(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public scheduleSnapAndUiRefresh(): void {
         this.sideSheetController.scheduleSnapAndUiRefresh();
     }
 
-    /** Pause mini-browser dev-server iframes while Work Hub is foreground (avoids Vite HMR console noise). */
-    protected syncIdeMiniBrowserPreviewSuspension(): void {
+    /**
+     * Pause mini-browser dev-server iframes while Work Hub is foreground (avoids Vite HMR console noise).
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public syncIdeMiniBrowserPreviewSuspension(): void {
         const userViewingIdePreview = peekPreferDesktopIde() && !!this.getActivePreviewWidget();
         syncQaapMiniBrowserPreviewSuspension(this.shell, userViewingIdePreview);
     }
 
-    protected async prepareSideSheetOpen(side: 'left' | 'right'): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async prepareSideSheetOpen(side: 'left' | 'right'): Promise<void> {
         return prepareSideSheetOpenExtracted(this, side);
     }
 
-    protected async mountSideSheetWidget(side: 'left' | 'right', widgetId: string): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async mountSideSheetWidget(side: 'left' | 'right', widgetId: string): Promise<void> {
         return mountSideSheetWidgetExtracted(this, side, widgetId);
     }
 
@@ -898,7 +1015,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.bottomBarController.isMainAgentSurfaceEmpty();
     }
 
-    protected syncMobileHubPrimaryBottomChrome(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public syncMobileHubPrimaryBottomChrome(): void {
         this.bottomBarController.syncMobileHubPrimaryBottomChrome();
     }
 
@@ -930,11 +1048,13 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.bottomBarController.toggleTerminalBottomPanel();
     }
 
-    protected refreshWorkbenchTopBar(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public refreshWorkbenchTopBar(): void {
         refreshWorkbenchTopBarExtracted(this);
     }
 
-    protected refreshBottomBar(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public refreshBottomBar(): void {
         this.bottomBarController.refreshBottomBar();
     }
 
@@ -982,7 +1102,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.bottomBarController.getExploreSecondaryItems();
     }
 
-    protected async executeAndDismiss(commandId: string): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async executeAndDismiss(commandId: string): Promise<void> {
         return executeAndDismissExtracted(this, commandId);
     }
 
@@ -990,109 +1111,138 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.bottomBarController.onMobileBottomButtonClick(def, btn);
     }
 
-    protected resolveMobileIdeHeaderViewId(): MobileBottomButtonId {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public resolveMobileIdeHeaderViewId(): MobileBottomButtonId {
         return resolveMobileIdeHeaderViewIdExtracted(this);
     }
 
-    protected async activateMobileIdeHeaderView(id: MobileBottomButtonId): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async activateMobileIdeHeaderView(id: MobileBottomButtonId): Promise<void> {
         return activateMobileIdeHeaderViewExtracted(this, id);
     }
 
-    protected relayoutMainPreviewWidgets(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public relayoutMainPreviewWidgets(): void {
         relayoutMainPreviewWidgetsExtracted(this);
     }
 
-    protected async toggleMobileAgentSheet(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async toggleMobileAgentSheet(): Promise<void> {
         return toggleMobileAgentSheetExtracted(this);
     }
 
-    protected isMobileAgentSheetVisible(): boolean {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public isMobileAgentSheetVisible(): boolean {
         return this.shell.isExpanded('right') && !this.sideSheetController.isSidePanelSheetCollapsedInDom('right');
     }
 
-    protected async resolveCurrentProjectForAgent(): Promise<MobileProjectEntry | undefined> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async resolveCurrentProjectForAgent(): Promise<MobileProjectEntry | undefined> {
         return resolveCurrentProjectForAgentExtracted(this);
     }
 
-    protected async toggleMobileExploreSheet(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async toggleMobileExploreSheet(): Promise<void> {
         return toggleMobileExploreSheetExtracted(this);
     }
 
-    protected isMobileExploreSheetVisible(): boolean {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public isMobileExploreSheetVisible(): boolean {
         return isMobileExploreSheetVisibleExtracted(this);
     }
 
-    protected getActivePreviewWidget(): LuminoWidget | undefined {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public getActivePreviewWidget(): LuminoWidget | undefined {
         return getActivePreviewWidgetExtracted(this);
     }
 
-    protected findPreviewWidget(): LuminoWidget | undefined {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public findPreviewWidget(): LuminoWidget | undefined {
         return findPreviewWidgetExtracted(this);
     }
 
-    protected getMainPreviewWidget(): LuminoWidget | undefined {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public getMainPreviewWidget(): LuminoWidget | undefined {
         return this.shell.getWidgets('main').find(widget => isMiniBrowserPreviewWidgetId(widget.id));
     }
 
-    /** True when the preview tab has mini-browser chrome (not a layout-restore shell with no content). */
-    protected isMainPreviewWidgetLive(preview: LuminoWidget): boolean {
+    /**
+     * True when the preview tab has mini-browser chrome (not a layout-restore shell with no content).
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public isMainPreviewWidgetLive(preview: LuminoWidget): boolean {
         return isMainPreviewWidgetLiveHelper(preview);
     }
 
-    protected async closeStaleMainPreviewWidget(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async closeStaleMainPreviewWidget(): Promise<void> {
         return closeStaleMainPreviewWidgetExtracted(this);
     }
 
-    protected ensureMobilePreviewEditorVisible(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public ensureMobilePreviewEditorVisible(): void {
         ensureMobilePreviewEditorVisibleExtracted(this);
     }
 
-    protected async activateMainPreviewWidget(): Promise<boolean> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async activateMainPreviewWidget(): Promise<boolean> {
         return activateMainPreviewWidgetExtracted(this);
     }
 
-    protected async relocatePreviewToMainIfNeeded(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async relocatePreviewToMainIfNeeded(): Promise<void> {
         return relocatePreviewToMainIfNeededExtracted(this);
     }
 
-    protected async toggleMobilePreview(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async toggleMobilePreview(): Promise<void> {
         return toggleMobilePreviewExtracted(this);
     }
 
-    protected async bootstrapMobilePreviewInBackground(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async bootstrapMobilePreviewInBackground(): Promise<void> {
         return bootstrapMobilePreviewInBackgroundExtracted(this);
     }
 
-    protected async openMobilePreviewInMain(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async openMobilePreviewInMain(): Promise<void> {
         return openMobilePreviewInMainExtracted(this);
     }
 
     /**
      * Open a side sheet and show a view without `toggle` semantics (which would collapse an
      * already-active panel — the usual failure mode for Agent on mobile).
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
      */
-    protected async openMobileSideSheet(side: 'left' | 'right', widgetId: string): Promise<void> {
+    public async openMobileSideSheet(side: 'left' | 'right', widgetId: string): Promise<void> {
         return this.sideSheetController.openMobileSideSheet(side, widgetId);
     }
 
-    protected shouldDismissSheetsForButton(id: MobileBottomButtonId): boolean {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public shouldDismissSheetsForButton(id: MobileBottomButtonId): boolean {
         return this.bottomBarController.shouldDismissSheetsForButton(id);
     }
 
-    /** Collapse expanded side sheets and await layout so follow-up UI (e.g. quick input) is stable. */
-    protected async dismissSheetsAsync(): Promise<void> {
+    /**
+     * Collapse expanded side sheets and await layout so follow-up UI (e.g. quick input) is stable.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public async dismissSheetsAsync(): Promise<void> {
         return this.sideSheetController.dismissSheetsAsync();
     }
 
-    protected async collapseMobileSideSheets(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async collapseMobileSideSheets(): Promise<void> {
         return this.sideSheetController.collapseMobileSideSheets();
     }
 
-    protected async collapseMobileSidePanels(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async collapseMobileSidePanels(): Promise<void> {
         return this.sideSheetController.collapseMobileSidePanels();
     }
 
-    protected settleMobileSidePanelsCollapsed(): void {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public settleMobileSidePanelsCollapsed(): void {
         this.sideSheetController.settleMobileSidePanelsCollapsed();
     }
 
@@ -1104,7 +1254,8 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         return this.sideSheetController.isAnyMobileSideSheetVisible();
     }
 
-    protected async ensureWelcomeInMainArea(): Promise<void> {
+    /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
+    public async ensureWelcomeInMainArea(): Promise<void> {
         return ensureWelcomeInMainAreaExtracted(this);
     }
 

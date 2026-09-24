@@ -6,6 +6,7 @@
 import { expect } from 'chai';
 import { initWorkHubBootstrapControllerExtracted } from './mobile-one-column-shell-contribution-render';
 import { MobileShellSessionState } from './mobile-shell-session-state';
+import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 
 describe('mobile-shell-work-hub-bootstrap host wiring', () => {
 
@@ -25,7 +26,7 @@ describe('mobile-shell-work-hub-bootstrap host wiring', () => {
             sessionState: new MobileShellSessionState(),
         };
 
-        initWorkHubBootstrapControllerExtracted(context);
+        initWorkHubBootstrapControllerExtracted(context as unknown as MobileOneColumnShellContributionContext);
 
         expect(context.workHubBootstrapHost?.syncWorkHubSessionsSidebarLayout).to.be.a('function');
         context.workHubBootstrapHost?.syncWorkHubSessionsSidebarLayout?.();
