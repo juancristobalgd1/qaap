@@ -3,6 +3,7 @@ import {
     type PersistedAgentTaskIndex, type QaapGenericCommandResult,
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { OLLAMA_DEFAULT_HOST } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess } from 'child_process';
@@ -319,7 +320,8 @@ export function applyProviderPreferenceEnvExtracted(ctx: QaapAgentTaskRunnerCont
                 continue;
             }
             const value = readPref(mapping.pref);
-            if (typeof value === 'string' && value.trim()) {
+            // The Ollama host schema default is not a user choice (see providerHasByokCredential).
+            if (typeof value === 'string' && value.trim() && !(mapping.env === 'OLLAMA_HOST' && value.trim() === OLLAMA_DEFAULT_HOST)) {
                 env[mapping.env] = value.trim();
             }
         }

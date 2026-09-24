@@ -4,9 +4,19 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
 import { AGENT_ENV_PREFS } from './qaap-agent-task-runner-constants';
-import { preferenceReaderForOwner, stripSharedProviderEnv } from './qaap-agent-task-runner-utils2';
+import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
+import { applyProviderPreferenceEnvExtracted } from './qaap-agent-task-runner-tool-pills2';
+import {
+    preferenceReaderForOwner,
+    readUserSettingsFromDisk,
+    stripSharedProviderEnv,
+    writeUserSettingsToDisk,
+} from './qaap-agent-task-runner-utils2';
 
 describe('qaap-agent-task-runner-utils2', () => {
 
@@ -54,15 +64,44 @@ describe('qaap-agent-task-runner-utils2', () => {
         });
     });
 
-    it('stripSharedProviderEnv removes every canonical AGENT_ENV_PREFS env var', () => {
+    it('stripSharedProviderEnv removes every canonical AGENT_ENV_PREFS env var and other provider keys', () => {
         const env: NodeJS.ProcessEnv = { PATH: '/usr/bin' };
-        for (const mapping of AGENT_ENV_PREFS) {
-            env[mapping.env] = 'shared';
+        const extra = ['HF_TOKEN', 'MISTRAL_API_KEY', 'XAI_API_KEY', 'GROK_API_KEY', 'GROQ_API_KEY', 'DEEPSEEK_API_KEY', 'CODEX_API_KEY'];
+        for (const name of [...AGENT_ENV_PREFS.map(mapping => mapping.env), ...extra]) {
+            env[name] = 'shared';
         }
         stripSharedProviderEnv(env);
-        for (const mapping of AGENT_ENV_PREFS) {
-            expect(env[mapping.env], mapping.env).to.equal(undefined);
+        for (const name of [...AGENT_ENV_PREFS.map(mapping => mapping.env), ...extra]) {
+            expect(env[name], name).to.equal(undefined);
         }
         expect(env.PATH).to.equal('/usr/bin');
+    });
+
+    it('writeUserSettingsToDisk deletes AI keys patched with null and never other keys', () => {
+        const home = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-ai-null-'));
+        try {
+            writeUserSettingsToDisk('alice', { 'ai-features.openAiOfficial.officialOpenAiModels': ['gpt-5.5'] }, home);
+            const file = path.join(home, '.qaap', 'users', 'alice', 'settings.json');
+            fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), 'editor.fontSize': 14 }));
+            // eslint-disable-next-line no-null/no-null
+            writeUserSettingsToDisk('alice', { 'ai-features.openAiOfficial.officialOpenAiModels': null, 'editor.fontSize': null }, home);
+            expect(readUserSettingsFromDisk('alice', home)).to.deep.equal({ 'editor.fontSize': 14 });
+        } finally {
+            fs.rmSync(home, { recursive: true, force: true });
+        }
+    });
+
+    it('applyProviderPreferenceEnv does not export the Ollama schema-default host', () => {
+        const run = (host: string): NodeJS.ProcessEnv => {
+            const env: NodeJS.ProcessEnv = {};
+            const ctx = {
+                preferenceReaderForOwner: () => (key: string) => key === 'ai-features.ollama.ollamaHost' ? host : undefined,
+                applyOpenRouterOpenAiCompatEnv: () => undefined,
+            };
+            applyProviderPreferenceEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, env, 'alice');
+            return env;
+        };
+        expect(run('http://localhost:11434').OLLAMA_HOST).to.equal(undefined);
+        expect(run('http://gpu-box:11434').OLLAMA_HOST).to.equal('http://gpu-box:11434');
     });
 });

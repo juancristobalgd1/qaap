@@ -16,7 +16,6 @@ import { setAgentModelStorageUserLogin } from '../common/qaap-agent-model-select
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import {
     applyAiSettingsOverlay,
-    collectAiSettingsForPersist,
     overlayPrefGet,
     shouldInterceptSharedUserAiPrefWrites,
 } from '../common/qaap-user-ai-settings-overlay';
@@ -41,6 +40,8 @@ export class QaapUserAiSettingsSyncContribution implements FrontendApplicationCo
     protected pushTimer: ReturnType<typeof setTimeout> | undefined;
     protected readonly aiPrefKeys = new Set(listQaapAiSettingsPrefKeys());
     protected readonly overlay = new Map<string, unknown>();
+    /** Keys reset (set to `undefined`) by an authenticated tenant, pending deletion from their settings file. */
+    protected readonly resetKeys = new Set<string>();
     protected originalGet: PreferenceService['get'] | undefined;
     protected originalSet: PreferenceService['set'] | undefined;
 
@@ -74,11 +75,20 @@ export class QaapUserAiSettingsSyncContribution implements FrontendApplicationCo
         this.originalGet = originalGet;
         this.originalSet = originalSet;
         service.get = ((preferenceName: string, defaultValue?: unknown, resourceUri?: string) =>
-            overlayPrefGet(this.overlay, preferenceName, () => originalGet(preferenceName, defaultValue, resourceUri))
+            overlayPrefGet(this.overlay, preferenceName, () => this.aiPrefKeys.has(preferenceName) && this.shouldInterceptWrites()
+                // Authenticated tenant without an own value: the schema default, never the shared User-scope file.
+                ? service.inspect(preferenceName, resourceUri)?.defaultValue ?? defaultValue
+                : originalGet(preferenceName, defaultValue, resourceUri))
         ) as PreferenceService['get'];
         service.set = async (preferenceName, value, scope, resourceUri) => {
             if (this.shouldInterceptWrites() && this.aiPrefKeys.has(preferenceName)) {
-                this.overlay.set(preferenceName, value);
+                if (value === undefined) {
+                    this.overlay.delete(preferenceName);
+                    this.resetKeys.add(preferenceName);
+                } else {
+                    this.overlay.set(preferenceName, value);
+                    this.resetKeys.delete(preferenceName);
+                }
                 this.schedulePush();
                 return;
             }
@@ -121,14 +131,45 @@ export class QaapUserAiSettingsSyncContribution implements FrontendApplicationCo
     }
 
     protected async pushToServer(): Promise<void> {
-        const fallback = (key: string): unknown => this.originalGet
-            ? this.originalGet(key)
-            : this.preferenceService.get(key);
-        const settings = collectAiSettingsForPersist(this.overlay, this.aiPrefKeys, fallback);
+        const settings = this.collectSettingsForPersist(this.shouldInterceptWrites());
         try {
             await putQaapUserAiSettings(settings);
         } catch (error) {
             console.warn('[qaap-user-ai-settings] save failed:', error instanceof Error ? error.message : String(error));
         }
+    }
+
+    /**
+     * Patch for the per-user settings file. `null` asks the backend to delete the key (JSON drops `undefined`):
+     * sent for values reset in the overlay or equal to the schema default, so the backend reader falls back to
+     * the (current) default instead of a frozen copy. Keys the overlay does not hold are sent only for local /
+     * anonymous users, and only when set in User scope: for authenticated tenants that scope is the
+     * process-wide shared file, so it must never be copied into their own settings.
+     */
+    protected collectSettingsForPersist(intercepting: boolean): Record<string, unknown> {
+        const settings: Record<string, unknown> = {};
+        for (const key of this.aiPrefKeys) {
+            let value: unknown;
+            if (this.resetKeys.has(key)) {
+                value = undefined;
+            } else if (this.overlay.has(key)) {
+                value = this.overlay.get(key);
+            } else if (intercepting) {
+                continue;
+            } else {
+                value = this.preferenceService.inspect(key)?.globalValue;
+                if (value === undefined) {
+                    continue;
+                }
+            }
+            // eslint-disable-next-line no-null/no-null
+            settings[key] = value === undefined || value === null || this.isSchemaDefault(key, value) ? null : value;
+        }
+        return settings;
+    }
+
+    protected isSchemaDefault(key: string, value: unknown): boolean {
+        const defaultValue = this.preferenceService.inspect(key)?.defaultValue;
+        return defaultValue !== undefined && JSON.stringify(defaultValue) === JSON.stringify(value);
     }
 }

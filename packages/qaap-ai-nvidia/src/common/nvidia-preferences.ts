@@ -6,7 +6,7 @@
 
 import { AI_CORE_PREFERENCES_TITLE } from '@theia/ai-core/lib/common/ai-core-preferences';
 import { LINUX_ENV_HINT, nls, PreferenceSchema } from '@theia/core';
-import { NVIDIA_FREE_MODELS } from '../common/nvidia-models';
+import { NVIDIA_FREE_MODELS } from './nvidia-models';
 
 /** Default NVIDIA NIM endpoint. It is OpenAI Chat-Completions compatible. */
 export const NVIDIA_DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';

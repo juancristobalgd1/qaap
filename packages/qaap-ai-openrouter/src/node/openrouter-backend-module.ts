@@ -5,13 +5,10 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
-import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { PreferenceContribution } from '@theia/core';
 import { OpenRouterPreferencesSchema } from '../common/openrouter-preferences';
-import { OpenRouterFrontendApplicationContribution } from './openrouter-frontend-application-contribution';
 
+/** Registers the schema on the backend so per-user AI settings readers fall back to its defaults. */
 export default new ContainerModule(bind => {
     bind(PreferenceContribution).toConstantValue({ schema: OpenRouterPreferencesSchema });
-    bind(OpenRouterFrontendApplicationContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(OpenRouterFrontendApplicationContribution);
 });

@@ -3,7 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { filterOpenRouterModelSlugs } from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
+import {
+    filterOpenRouterModelSlugs,
+    OPENROUTER_DEFAULT_BASE_URL,
+    OPENROUTER_DEFAULT_FREE_MODELS,
+} from '@theia/qaap-ai-openrouter/lib/common/openrouter-models';
 import type { QaapQaiqModelOption } from './qaap-agent-task-client';
 
 export type QaapQaiqProviderId = QaapQaiqModelOption['provider'];
@@ -47,12 +51,6 @@ export interface QaapQaiqByokProviderDescriptor {
     }[];
 }
 
-const OPENROUTER_FALLBACK_MODELS = [
-    'nvidia/nemotron-3-super-120b-a12b:free',
-    'google/gemma-4-31b-it:free',
-    'qwen/qwen3.8-27b:free',
-] as const;
-
 const NVIDIA_FALLBACK_MODELS = [
     'meta/llama-3.3-70b-instruct',
     'nvidia/llama-3.3-nemotron-super-49b-v1',
@@ -84,12 +82,13 @@ export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[]
         provider: 'openai',
         credentialPref: 'ai-features.openrouter.openrouterApiKey',
         modelListPrefs: ['ai-features.openrouter.openrouterModels'],
-        fallbackModels: OPENROUTER_FALLBACK_MODELS,
+        // Same list as the `openrouterModels` schema default (single source in qaap-ai-openrouter).
+        fallbackModels: OPENROUTER_DEFAULT_FREE_MODELS,
         label: 'OpenRouter',
         credentialEnv: [
             { env: 'OPENROUTER_API_KEY', pref: 'ai-features.openrouter.openrouterApiKey' },
             { env: 'OPENAI_API_KEY', pref: 'ai-features.openrouter.openrouterApiKey' },
-            { env: 'OPENAI_BASE_URL', pref: 'ai-features.openrouter.openrouterBaseUrl', defaultValue: 'https://openrouter.ai/api/v1' },
+            { env: 'OPENAI_BASE_URL', pref: 'ai-features.openrouter.openrouterBaseUrl', defaultValue: OPENROUTER_DEFAULT_BASE_URL },
         ],
     },
     {
@@ -183,6 +182,9 @@ const EXTRA_AI_SETTINGS_PREF_KEYS = [
     'ai-features.vercelAi.anthropicApiKey',
     'ai-features.vercelAi.officialModels',
     'ai-features.vercelAi.customModels',
+    'ai-features.copilot.enterpriseUrl',
+    'ai-features.copilot.modelOverrides',
+    'ai-features.llamafile.llamafiles',
 ] as const;
 
 /** Preference keys persisted per authenticated user (API keys, model lists, aliases). */

@@ -5,13 +5,10 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
-import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { PreferenceContribution } from '@theia/core';
 import { NvidiaPreferencesSchema } from '../common/nvidia-preferences';
-import { NvidiaFrontendApplicationContribution } from './nvidia-frontend-application-contribution';
 
+/** Registers the schema on the backend so per-user AI settings readers fall back to its defaults. */
 export default new ContainerModule(bind => {
     bind(PreferenceContribution).toConstantValue({ schema: NvidiaPreferencesSchema });
-    bind(NvidiaFrontendApplicationContribution).toSelf().inSingletonScope();
-    bind(FrontendApplicationContribution).toService(NvidiaFrontendApplicationContribution);
 });

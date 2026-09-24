@@ -417,8 +417,11 @@ export function writeUserSettingsToDisk(
     const filePath = resolveUserSettingsFilePath(ownerLogin, homeDir);
     const current = fs.existsSync(filePath) ? parseSettingsJsonFile(filePath) : {};
     const next = { ...current, ...filterAiSettings(patch) };
+    // `null` (JSON's only way to say `undefined`) removes an AI key, so the reader falls back to the schema default.
+    const allowed = new Set(listQaapAiSettingsPrefKeys());
     for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined && key in next) {
+        // eslint-disable-next-line no-null/no-null
+        if ((value === undefined || value === null) && allowed.has(key) && key in next) {
             delete next[key];
         }
     }
@@ -458,9 +461,11 @@ export function preferenceReaderForOwner(ctx: any, ownerLogin?: string): QaapPre
     if (!usesSharedAiSettingsFallback(ownerLogin)) {
         // Authenticated tenants: their own settings.json, else the schema default — never shared/User-scope values.
         const allowedKeys = new Set(listQaapAiSettingsPrefKeys());
-        return (key: string): unknown => diskSettings[key] !== undefined
-            ? diskSettings[key]
-            : schemaDefaultForAiSetting(preferenceService, allowedKeys, key);
+        return (key: string): unknown => {
+            const value = diskSettings[key];
+            // eslint-disable-next-line no-null/no-null
+            return value !== undefined && value !== null ? value : schemaDefaultForAiSetting(preferenceService, allowedKeys, key);
+        };
     }
     return (key: string): unknown => {
         const fromPref = preferenceService?.get?.(key);
@@ -473,9 +478,26 @@ export function preferenceReaderForOwner(ctx: any, ownerLogin?: string): QaapPre
 
 // ─── Provider env stripping ──────────────────────────────────────────────────
 
+/**
+ * Provider credentials with no Settings mapping in AGENT_ENV_PREFS. They are never re-applied from the
+ * backend environment: HF_TOKEN is re-derived from the user's Hugging Face key, the rest have no per-user source.
+ */
+const SHARED_PROVIDER_ONLY_ENV = [
+    'HF_TOKEN',
+    'MISTRAL_API_KEY',
+    'XAI_API_KEY',
+    'GROK_API_KEY',
+    'GROQ_API_KEY',
+    'DEEPSEEK_API_KEY',
+    'CODEX_API_KEY',
+] as const;
+
 export function stripSharedProviderEnv(env: NodeJS.ProcessEnv): void {
     for (const mapping of AGENT_ENV_PREFS) {
         delete env[mapping.env];
+    }
+    for (const name of SHARED_PROVIDER_ONLY_ENV) {
+        delete env[name];
     }
     // Also strip compat-derived keys that would short-circuit per-user resolution.
     delete env.OPENAI_BASE_URL;

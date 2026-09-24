@@ -6,10 +6,9 @@
 
 import { AI_CORE_PREFERENCES_TITLE } from '@theia/ai-core/lib/common/ai-core-preferences';
 import { LINUX_ENV_HINT, nls, PreferenceSchema } from '@theia/core';
-import { OPENROUTER_DEFAULT_FREE_MODELS } from '../common/openrouter-models';
+import { OPENROUTER_DEFAULT_BASE_URL, OPENROUTER_DEFAULT_FREE_MODELS } from './openrouter-models';
 
-/** Default OpenRouter endpoint. It is OpenAI Chat-Completions compatible. */
-export const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
+export { OPENROUTER_DEFAULT_BASE_URL };
 
 export const API_KEY_PREF = 'ai-features.openrouter.openrouterApiKey';
 export const BASE_URL_PREF = 'ai-features.openrouter.openrouterBaseUrl';
