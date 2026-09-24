@@ -195,6 +195,26 @@ args[1]=add(String(url));
 return xhrOpen.apply(this,args);
 };
 }
+// HMR clients of Next (/_next/webpack-hmr), webpack-dev-server (/ws) and CRA (/sockjs-node)
+// build same-host socket URLs from location. Browsers never send a Referer on a WebSocket
+// handshake, so the server cannot scope those upgrades; rebase them here instead.
+var WS=globalThis.WebSocket;
+if(typeof WS==="function"){
+var PWS=function(url,protocols){
+var target=url;
+try{
+var parsed=new URL(String(url),location.href);
+if(parsed.host===location.host&&/^(wss?|https?):$/.test(parsed.protocol)&&parsed.pathname!==x&&parsed.pathname.indexOf(x+"/")!==0){
+parsed.pathname=x+parsed.pathname;
+target=parsed.href;
+}
+}catch(err){}
+return arguments.length>1?new WS(target,protocols):new WS(target);
+};
+PWS.prototype=WS.prototype;
+Object.setPrototypeOf(PWS,WS);
+globalThis.WebSocket=PWS;
+}
 try{
 if(navigator.serviceWorker&&typeof ServiceWorkerContainer!=="undefined"){
 var swProto=ServiceWorkerContainer.prototype,swRegister=swProto.register;
@@ -286,6 +306,9 @@ export function injectQaapPreviewViteEnvBootstrap(html: string, publicPrefix: st
     return `${script}${html}`;
 }
 
+/** How long the holding page polls before it stops and offers a manual retry. */
+export const QAAP_DEV_PREVIEW_WAITING_MAX_MS = 120_000;
+
 /** Friendly holding page while the dev server is still binding (v0-style auto-retry). */
 export function buildDevPreviewWaitingHtml(targetPort: number): string {
     const safePort = String(targetPort);
@@ -305,26 +328,57 @@ export function buildDevPreviewWaitingHtml(targetPort: number): string {
   @keyframes spin { to { transform: rotate(360deg); } }
   h1 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }
   p { font-size: 0.875rem; color: #8b949e; margin: 0; line-height: 1.5; }
+  button { margin-top: 1rem; padding: 0.4rem 1rem; border: 1px solid #30363d; border-radius: 6px;
+    background: #21262d; color: #e6edf3; font: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
   <div class="card">
-    <div class="spinner"></div>
-    <h1>Starting dev server</h1>
-    <p>Waiting for port ${safePort}… This page refreshes automatically.</p>
+    <div class="spinner" id="qaap-wait-spinner"></div>
+    <h1 id="qaap-wait-title">Starting dev server</h1>
+    <p id="qaap-wait-text">Waiting for port ${safePort}… This page refreshes automatically.</p>
+    <button type="button" id="qaap-wait-retry" hidden>Retry</button>
   </div>
   <script>
     // Poll with HEAD (no frame reload, no history/URL-bar churn) and back off; reload once the
-    // dev server answers with anything other than this holding page.
+    // dev server answers with anything other than 503. A dev server that keeps answering 503
+    // itself is indistinguishable from "not up yet", so polling is bounded and then falls back
+    // to a manual Retry instead of running forever.
     (function () {
-      var delay = 1000;
+      var maxMs = ${QAAP_DEV_PREVIEW_WAITING_MAX_MS};
+      var delay, startedAt;
+      var spinner = document.getElementById('qaap-wait-spinner');
+      var title = document.getElementById('qaap-wait-title');
+      var text = document.getElementById('qaap-wait-text');
+      var button = document.getElementById('qaap-wait-retry');
+      function start() {
+        delay = 1000;
+        startedAt = Date.now();
+        spinner.hidden = false;
+        button.hidden = true;
+        title.textContent = 'Starting dev server';
+        text.textContent = 'Waiting for port ${safePort}… This page refreshes automatically.';
+        setTimeout(check, delay);
+      }
       function check() {
         fetch(location.href, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
           .then(function (r) { if (r.status !== 503) { location.reload(); } else { retry(); } })
           .catch(retry);
       }
-      function retry() { delay = Math.min(delay * 1.5, 8000); setTimeout(check, delay); }
-      setTimeout(check, delay);
+      function retry() {
+        if (Date.now() - startedAt >= maxMs) {
+          spinner.hidden = true;
+          button.hidden = false;
+          title.textContent = 'Dev server still not reachable';
+          text.textContent = 'Nothing answered on port ${safePort}. Check the dev server output, then retry.';
+          return;
+        }
+        delay = Math.min(delay * 1.5, 8000);
+        setTimeout(check, delay);
+      }
+      button.addEventListener('click', start);
+      start();
     })();
   </script>
 </body>

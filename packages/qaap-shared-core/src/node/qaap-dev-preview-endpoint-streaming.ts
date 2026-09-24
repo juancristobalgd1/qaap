@@ -347,6 +347,9 @@ export function handleWebSocketUpgradeExtracted(ctx: QaapDevPreviewEndpointConte
         const identity = parseQaapIdentityPreviewRequestPath(pathname);
         const legacy = identity ? undefined : parseQaapDevPreviewRequestPath(pathname);
         if (!identity && !legacy) {
+            // Not ours (Theia's /socket.io, agent sockets, …). Unprefixed HMR sockets cannot be
+            // scoped here: browsers send no Referer on WebSocket handshakes and Origin has no
+            // path. The injected history-base script rebases them under the preview prefix.
             return;
         }
         // Reject anonymous WebSocket upgrades before resolving a tenant record. Previously an
@@ -413,8 +416,9 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
             if (head.length > 0) {
                 proxySocket.write(head);
             }
+            // Bytes the dev server sent right after its 101 belong to the browser, not back upstream.
             if (proxyHead.length > 0) {
-                proxySocket.write(proxyHead);
+                socket.write(proxyHead);
             }
             proxySocket.on('error', () => socket.destroy());
             socket.on('close', () => proxySocket.destroy());

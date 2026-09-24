@@ -205,8 +205,11 @@ export function rewriteDevPreviewBodyExtracted(ctx: QaapDevPreviewEndpointContex
             .replace(/('BASE_URL'\s*:\s*')\/'/g, `$1${prefixPath}/'`)
             .replace(/\b(src|href|action)=("|')\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1=$2${prefix}/`)
             .replace(/\burl\(\s*(["']?)\/(?!\/|qaap-(?:dev|preview)\/)/g, `url($1${prefix}/`)
-            .replace(/(\bimport\s*(?:\(|[^"'`]*from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
-            .replace(/(\bexport\s+[^"'`]*from\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
+            // Import/export clauses follow the ES grammar (default, `* as ns`, bounded `{…}`)
+            // instead of `[^"'`]*`, which rescanned to the next quote for every `import`/`export`
+            // token and went quadratic on large quote-poor bundles.
+            .replace(IMPORT_SPECIFIER_PATTERN, `$1${prefix}/`)
+            .replace(EXPORT_SPECIFIER_PATTERN, `$1${prefix}/`)
             .replace(/(\bnew\s+URL\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             .replace(/(\bfetch\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
             // Next's Webpack runtime loads App Router chunks through its public path. Those
@@ -217,18 +220,38 @@ export function rewriteDevPreviewBodyExtracted(ctx: QaapDevPreviewEndpointContex
 }
 
 export function rewriteViteHmrClientExtracted(ctx: QaapDevPreviewEndpointContext, body: string, publicPrefix: string): string {
-        if (!publicPrefix
-            || !body.includes('[vite] connecting')
-            || !body.includes('vite-hmr')
-            || !body.includes('Direct websocket connection fallback')
-            || !body.includes('import.meta.url')) {
+        // `[vite] connecting` + the `vite-hmr` subprotocol identify `/@vite/client` in Vite 4–7;
+        // application modules that merely declare `socketHost`/`base` must stay untouched.
+        if (!publicPrefix || !body.includes('[vite] connecting') || !body.includes('vite-hmr')) {
             return body;
         }
-        const publicBase = `${publicPrefix.replace(/\/+$/, '')}/`;
-        return body
-            .replace(/^const socketHost = .*;$/m, `const socketHost = importMetaUrl.host + ${JSON.stringify(publicBase)};`)
-            .replace(/^const base = .*;$/m, `const base = ${JSON.stringify(publicBase)};`);
+        const publicBase = JSON.stringify(`${publicPrefix.replace(/\/+$/, '')}/`);
+        // Older clients bind `importMetaUrl`; fall back to import.meta.url if a release drops it.
+        const hostExpression = /\bimportMetaUrl\b/.test(body) ? 'importMetaUrl.host' : 'new URL(import.meta.url).host';
+        let socketHostRewritten = false;
+        const rewritten = body
+            // Top-level single-line declarations in every Vite 4–7 client (defines already
+            // substituted); tolerant of let/var, spacing and the substituted expression's shape.
+            .replace(VITE_SOCKET_HOST_DECLARATION, (_match, keyword: string) => {
+                socketHostRewritten = true;
+                return `${keyword} socketHost = ${hostExpression} + ${publicBase};`;
+            })
+            // `base` drives hot-update imports; `base$1` (Vite 5+) drives overlay/open-in-editor fetches.
+            .replace(VITE_BASE_DECLARATION, (_match, keyword: string, name: string) => `${keyword} ${name} = ${publicBase};`);
+        if (!socketHostRewritten && !viteHmrRewriteMissLogged) {
+            viteHmrRewriteMissLogged = true;
+            console.debug('[qaap-preview] Vite HMR client detected but its socketHost declaration was not recognized; HMR may bypass the preview proxy.');
+        }
+        return rewritten;
 }
+
+const IMPORT_SPECIFIER_PATTERN =
+    /(\bimport\s*(?:\(|(?:type\s+)?(?:[\w$]+\s*,?\s*)?(?:\*\s*as\s+[\w$]+\s*|\{[^{}"'`]{0,4096}\}\s*)?from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g;
+const EXPORT_SPECIFIER_PATTERN =
+    /(\bexport\s+(?:type\s+)?(?:\*(?:\s*as\s+[\w$]+)?|\{[^{}"'`]{0,4096}\})\s*from\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g;
+const VITE_SOCKET_HOST_DECLARATION = /^(const|let|var)[ \t]+socketHost[ \t]*=[^\n]*;[ \t]*$/m;
+const VITE_BASE_DECLARATION = /^(const|let|var)[ \t]+(base(?:\$\d+)?)[ \t]*=[^\n]*;[ \t]*$/gm;
+let viteHmrRewriteMissLogged = false;
 
 export function rewritePreviewCspExtracted(ctx: QaapDevPreviewEndpointContext, raw: string | number | string[] | undefined, parentOrigin: string): string {
         // `http.OutgoingHttpHeaders` values are typed as `string | number | string[]`, but a CSP

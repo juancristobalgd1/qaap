@@ -185,6 +185,60 @@ describe('QaapDevPreviewEndpoint', () => {
         ].join('\n'));
     });
 
+    it('rebases Vite 5–7 served clients (base$1, single quotes, let) without the fallback marker', () => {
+        const prefix = '/qaap-preview/u-alice-w-site-p-site-x-run-abc1234';
+        const viteClient = [
+            'const base$1 = "/" || "/";',
+            'console.debug("[vite] connecting...");',
+            'const importMetaUrl = new URL(import.meta.url);',
+            'let socketHost = `${null || importMetaUrl.hostname}:${null || importMetaUrl.port}${\'/\'}`;',
+            'const base = \'/\' || \'/\';',
+            '\tconst base = nested;',
+            'createConnection: () => new WebSocket(`${socketProtocol}://${socketHost}?token=${wsToken}`, "vite-hmr"),',
+        ].join('\n');
+        expect(endpoint.exposeRewriteDevPreviewBody(viteClient, 5184, prefix)).to.equal([
+            `const base$1 = "${prefix}/";`,
+            'console.debug("[vite] connecting...");',
+            'const importMetaUrl = new URL(import.meta.url);',
+            `let socketHost = importMetaUrl.host + "${prefix}/";`,
+            `const base = "${prefix}/";`,
+            '\tconst base = nested;',
+            'createConnection: () => new WebSocket(`${socketProtocol}://${socketHost}?token=${wsToken}`, "vite-hmr"),',
+        ].join('\n'));
+    });
+
+    it('falls back to import.meta.url when a Vite client no longer binds importMetaUrl', () => {
+        const viteClient = 'console.debug("[vite] connecting...");\nconst socketHost = `${location.host}/`;\nnew WebSocket(u, "vite-hmr");';
+        expect(endpoint.exposeRewriteDevPreviewBody(viteClient, 5184, '/qaap-preview/abc')).to.contain(
+            'const socketHost = new URL(import.meta.url).host + "/qaap-preview/abc/";');
+    });
+
+    it('logs once when a Vite client socketHost declaration is not recognized', () => {
+        const original = console.debug;
+        const logged: unknown[] = [];
+        console.debug = (...args: unknown[]) => { logged.push(args[0]); };
+        try {
+            const unknownClient = 'console.debug("[vite] connecting...");\nconnect({ host: importMetaUrl.host }, "vite-hmr");';
+            expect(endpoint.exposeRewriteDevPreviewBody(unknownClient, 5184, '/qaap-preview/abc')).to.equal(unknownClient);
+            endpoint.exposeRewriteDevPreviewBody(unknownClient, 5184, '/qaap-preview/abc');
+        } finally {
+            console.debug = original;
+        }
+        expect(logged.filter(message => String(message).includes('Vite HMR client detected'))).to.have.length(1);
+    });
+
+    it('rewrites long import clauses and stays linear on quote-poor bodies', () => {
+        const names = Array.from({ length: 200 }, (_, index) => `icon${index}`).join(', ');
+        expect(endpoint.exposeRewriteDevPreviewBody(`import { ${names} } from "/icons.js";`, 5184))
+            .to.equal(`import { ${names} } from "/qaap-dev/5184/icons.js";`);
+        expect(endpoint.exposeRewriteDevPreviewBody('import def, * as ns from "/m.js"; export * as all from "/n.js";', 5184))
+            .to.equal('import def, * as ns from "/qaap-dev/5184/m.js"; export * as all from "/qaap-dev/5184/n.js";');
+        const hostile = 'import export '.repeat(200_000);
+        const startedAt = Date.now();
+        expect(endpoint.exposeRewriteDevPreviewBody(hostile, 5184)).to.equal(hostile);
+        expect(Date.now() - startedAt).to.be.lessThan(2000);
+    });
+
     it('does not rewrite application socketHost or base variables as Vite internals', () => {
         const applicationSource = [
             'const importMetaUrl = new URL(import.meta.url);',

@@ -96,6 +96,45 @@ export function normalizePreviewUrlForSameOrigin(url: string, publicOrigin?: str
     }
 }
 
+/**
+ * Explains why {@link normalizePreviewUrlForSameOrigin} leaves a loopback URL untouched, so the
+ * caller can tell the user it will load from their own machine rather than the workspace.
+ * Returns `undefined` for non-loopback URLs and for URLs that are rewritten to the proxy.
+ *
+ * Privileged ports (< 1024) stay unproxied on purpose: a workspace dev server cannot bind them
+ * without root, so on a shared host they belong to system services (reverse proxy, Qaap itself),
+ * and the backend claim/probe model only accepts ports 1024–65535.
+ */
+export function explainUnproxiedLocalPreviewUrl(url: string, publicOrigin?: string): string | undefined {
+    const trimmed = normalizeBareLocalDevUrl(url.trim());
+    const origin = (publicOrigin ?? ideOrigin())?.replace(/\/+$/, '');
+    if (!trimmed || !origin) {
+        return undefined;
+    }
+    try {
+        const parsed = new URL(trimmed, origin);
+        const ide = new URL(origin);
+        if (!LOCAL_DEV_HOSTS.has(parsed.hostname)
+            || parsePreviewIdentityPath(parsed.pathname)
+            || (parsed.origin === ide.origin && parsed.pathname.startsWith(`${QAAP_DEV_PREVIEW_PATH_PREFIX}/`))) {
+            return undefined;
+        }
+        const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+        const idePort = Number(ide.port || (ide.protocol === 'https:' ? 443 : 80));
+        if (port < 1024) {
+            return `Port ${port} is a privileged port, which the preview proxy does not forward. `
+                + 'This URL loads from your own computer, not the workspace. Run the dev server on a port from 1024 to 65535 (for example 5173 or 3000).';
+        }
+        if (port === idePort) {
+            return `Port ${port} is the Qaap IDE's own port and cannot be previewed. `
+                + 'Run the dev server on a different port.';
+        }
+        return undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 export function buildSameOriginDevPreviewUrl(port: number, publicOrigin?: string): string {
     const origin = (publicOrigin ?? ideOrigin())?.replace(/\/+$/, '');
     if (!origin) {
