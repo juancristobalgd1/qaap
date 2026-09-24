@@ -174,6 +174,7 @@ export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.agentsHubEmptySurfaceGuardDispose = Disposable.NULL;
     ctx.panelChromeUi.dispose();
     ctx.panelLifecycleUi.dispose();
+    ctx.executionSurfaceTabsUi.dispose();
 }
 
 export function hideExtracted(ctx: MobileProjectsPanelContext): void {

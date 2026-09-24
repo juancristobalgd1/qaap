@@ -188,20 +188,25 @@ export const DEV_PREVIEW_PORT_SCAN_CONCURRENCY = 4;
 /**
  * Runs `probe` over `items` with at most `concurrency` in flight and resolves with the result of the
  * earliest item (in list order) that produced one — the same answer as probing everything and taking
- * the first hit — without starting items once a higher-priority hit is settled.
+ * the first hit — without starting items once a higher-priority hit is settled. An aborted `signal`
+ * starts nothing further and resolves `undefined` right away (in-flight probes are left to finish).
  */
 export async function firstInPriorityOrder<T, R>(
     items: readonly T[],
     concurrency: number,
     probe: (item: T) => Promise<R | undefined>,
+    signal?: AbortSignal,
 ): Promise<R | undefined> {
+    if (signal?.aborted) {
+        return undefined;
+    }
     const results: Array<Promise<R | undefined>> = [];
     let settled = false;
     const launch = (): void => {
         const index = results.length;
         results.push(probe(items[index]).catch(() => undefined).then(result => {
             // Each finished probe frees a slot for the next item until the answer is known.
-            if (!settled && results.length < items.length) {
+            if (!settled && !signal?.aborted && results.length < items.length) {
                 launch();
             }
             return result;
@@ -210,21 +215,34 @@ export async function firstInPriorityOrder<T, R>(
     for (let i = 0; i < Math.min(concurrency, items.length); i++) {
         launch();
     }
-    for (let index = 0; index < items.length; index++) {
-        const result = await results[index];
-        if (result !== undefined) {
-            settled = true;
-            return result;
+    const aborted = signal && new Promise<undefined>(resolve => {
+        signal.addEventListener('abort', () => resolve(undefined), { once: true });
+    });
+    try {
+        for (let index = 0; index < items.length; index++) {
+            const result = await (aborted ? Promise.race([results[index], aborted]) : results[index]);
+            if (signal?.aborted) {
+                return undefined;
+            }
+            if (result !== undefined) {
+                return result;
+            }
         }
+        return undefined;
+    } finally {
+        settled = true;
     }
-    return undefined;
 }
 
-export async function discoverProjectDevPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): Promise<string | undefined> {
+export async function discoverProjectDevPreviewUrlExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+        signal?: AbortSignal): Promise<string | undefined> {
         // The preview registry knows the project's live claim even on hosted origins, where the
         // legacy localhost port-scan below is unavailable. This is what recovers a surface whose
         // stored URL was cleared after its claim was superseded by a newer run.
         const currentClaimUrl = await ctx.fetchCurrentProjectClaimUrl(project);
+        if (signal?.aborted) {
+            return undefined;
+        }
         if (currentClaimUrl && await ctx.previewUrlMatchesProject(currentClaimUrl, project)) {
             void ctx.host.projectsService.recordProjectPreviewUrl(project, currentClaimUrl);
             return currentClaimUrl;
@@ -239,7 +257,7 @@ export async function discoverProjectDevPreviewUrlExtracted(ctx: MobileProjectsT
                 return undefined;
             }
             return normalizePreviewUrlForSameOrigin(probe.previewUrl);
-        });
+        }, signal);
         if (previewUrl) {
             void ctx.host.projectsService.recordProjectPreviewUrl(project, previewUrl);
         }

@@ -480,6 +480,29 @@ describe('MobileProjectsTranscriptSurfacesUi — superseded preview fallback', (
         expect(host.projects[0].previewUrl).to.equal('http://localhost/qaap-dev/5174/');
     });
 
+    it('aborts the scan of an earlier Retry when Retry is tapped again', async () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        ui.transcriptPreviewProjectId = sampleProject().id;
+        const signals: AbortSignal[] = [];
+        ui.discoverProjectDevPreviewUrl = async (_project, signal) => {
+            signals.push(signal!);
+            return undefined;
+        };
+        const previewHost = host.transcriptPreviewHost!;
+        mountLiveRoot(ui, previewHost);
+
+        fallBackFromSupersededTranscriptPreviewExtracted(ui, previewHost, host.projects[0], sampleSummary(), PREVIEW_URL);
+        const retry = (snackbar.firstCall.args[1] as { onAction?: () => void }).onAction!;
+        retry();
+        retry();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(signals).to.have.length(2);
+        expect(signals[0].aborted).to.equal(true);
+        expect(signals[1].aborted).to.equal(false);
+    });
+
     it('offers to restart the dev server when Retry finds nothing running', async () => {
         const host = buildIdlePreviewHost();
         const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
@@ -602,6 +625,21 @@ describe('firstInPriorityOrder', () => {
         expect(started.length).to.be.lessThan(12);
     });
 
+    it('stops launching probes and resolves undefined once aborted', async () => {
+        const controller = new AbortController();
+        const started: number[] = [];
+        const result = await firstInPriorityOrder(Array.from({ length: 10 }, (_, index) => index), 2, async index => {
+            started.push(index);
+            if (index === 1) {
+                controller.abort();
+            }
+            await new Promise(resolve => setTimeout(resolve, 5));
+            return index === 8 ? 'late-hit' : undefined;
+        }, controller.signal);
+        expect(result).to.equal(undefined);
+        expect(started).to.deep.equal([0, 1]);
+    });
+
     it('treats a rejected probe as a miss and resolves undefined when nothing hits', async () => {
         const result = await firstInPriorityOrder([1, 2, 3], 2, async index => {
             if (index === 2) {
@@ -612,6 +650,14 @@ describe('firstInPriorityOrder', () => {
         expect(result).to.equal(undefined);
     });
 });
+
+class VerifyCountingTranscriptSurfacesUi extends MobileProjectsTranscriptSurfacesUi {
+    verifications = 0;
+
+    override async verifyMountedTranscriptPreviewIdentity(): Promise<void> {
+        this.verifications += 1;
+    }
+}
 
 describe('MobileProjectsTranscriptSurfacesUi — preview identity watch backoff', () => {
 
@@ -650,5 +696,26 @@ describe('MobileProjectsTranscriptSurfacesUi — preview identity watch backoff'
             TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS,
             TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS,
         ]);
+        ui.stopTranscriptPreviewIdentityWatch();
+    });
+
+    it('checks right away and restarts the backoff when the tab becomes visible again', () => {
+        const ui = new VerifyCountingTranscriptSurfacesUi(buildIdlePreviewHost(), historyUiStub);
+        const project = sampleProject();
+        ui.scheduleTranscriptPreviewIdentityWatch(project, true);
+        ui.scheduleTranscriptPreviewIdentityWatch(project, true);
+        Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+        try {
+            document.dispatchEvent(new window.Event('visibilitychange'));
+        } finally {
+            delete (document as unknown as { visibilityState?: string }).visibilityState;
+        }
+
+        expect(ui.verifications).to.equal(1);
+        expect(ui.transcriptPreviewIdentityHealthyChecks).to.equal(0);
+        expect(ui.transcriptPreviewIdentityWatchTimer).to.equal(undefined);
+        // The listener went with the timer: a second visibility change does nothing.
+        document.dispatchEvent(new window.Event('visibilitychange'));
+        expect(ui.verifications).to.equal(1);
     });
 });

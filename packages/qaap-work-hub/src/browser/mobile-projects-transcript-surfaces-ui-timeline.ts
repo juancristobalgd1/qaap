@@ -326,6 +326,8 @@ export function stopTranscriptPreviewIdentityWatchExtracted(ctx: MobileProjectsT
             window.clearTimeout(ctx.transcriptPreviewIdentityWatchTimer);
             ctx.transcriptPreviewIdentityWatchTimer = undefined;
         }
+        ctx.transcriptPreviewIdentityVisibilityCleanup?.();
+        ctx.transcriptPreviewIdentityVisibilityCleanup = undefined;
 }
 
 /** Ceiling for the identity watch once the mounted preview keeps answering healthy. */
@@ -344,9 +346,22 @@ export function scheduleTranscriptPreviewIdentityWatchExtracted(ctx: MobileProje
             TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS,
         );
         ctx.transcriptPreviewIdentityWatchTimer = window.setTimeout(() => {
-            ctx.transcriptPreviewIdentityWatchTimer = undefined;
+            ctx.stopTranscriptPreviewIdentityWatch();
             void ctx.verifyMountedTranscriptPreviewIdentity(project);
         }, delay);
+        // Back in the tab after a while: the backed-off timer may be ~30 s out, and the run could
+        // have been superseded meanwhile — check now and restart the backoff from 8 s.
+        const doc = document;
+        const onVisibilityChange = (): void => {
+            if (doc.visibilityState !== 'visible') {
+                return;
+            }
+            ctx.stopTranscriptPreviewIdentityWatch();
+            ctx.transcriptPreviewIdentityHealthyChecks = 0;
+            void ctx.verifyMountedTranscriptPreviewIdentity(project);
+        };
+        doc.addEventListener('visibilitychange', onVisibilityChange);
+        ctx.transcriptPreviewIdentityVisibilityCleanup = () => doc.removeEventListener('visibilitychange', onVisibilityChange);
 }
 
 export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): Promise<void> {
@@ -446,8 +461,16 @@ async function retrySupersededTranscriptPreview(ctx: MobileProjectsTranscriptSur
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         ctx.transcriptPreviewIdleDiscovery.delete(project.id);
+        // A newer tap supersedes the scan an earlier one started.
+        ctx.transcriptPreviewRetryScan?.abort();
+        const scan = new AbortController();
+        ctx.transcriptPreviewRetryScan = scan;
         const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
-        const url = await ctx.discoverProjectDevPreviewUrl(latestProject).catch(() => undefined);
+        const url = await ctx.discoverProjectDevPreviewUrl(latestProject, scan.signal).catch(() => undefined);
+        if (scan.signal.aborted) {
+            return;
+        }
+        ctx.transcriptPreviewRetryScan = undefined;
         if (!host.isConnected || ctx.transcriptPreviewProjectId !== project.id) {
             return;
         }

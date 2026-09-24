@@ -192,6 +192,9 @@ export class MobileProjectsTranscriptSurfacesUi {
     public transcriptPreviewProbeIdleTicks = 0;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewProbeScopeKey: string | undefined;
+    /** Scan started by the superseded-preview Retry; a newer Retry aborts it. */
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public transcriptPreviewRetryScan: AbortController | undefined;
     /** Idle-probe dev-preview discovery per project id (in flight or a recent miss). */
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public readonly transcriptPreviewIdleDiscovery = new Map<string, { readonly at: number; readonly result: Promise<string | undefined> }>();
@@ -200,6 +203,9 @@ export class MobileProjectsTranscriptSurfacesUi {
     /** Consecutive healthy identity checks; drives the identity-watch backoff. */
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewIdentityHealthyChecks = 0;
+    /** Removes the `visibilitychange` listener armed with the pending identity-watch timer. */
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public transcriptPreviewIdentityVisibilityCleanup: (() => void) | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public readonly previewRuntimeByConversationId = new Map<string, ConversationPreviewRuntimeState>();
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
@@ -709,8 +715,8 @@ export class MobileProjectsTranscriptSurfacesUi {
         return previewUrlMatchesProjectExtracted(this, previewUrl, project);
     }
 
-    async discoverProjectDevPreviewUrl(project: MobileProjectEntry): Promise<string | undefined> {
-        return discoverProjectDevPreviewUrlExtracted(this, project);
+    async discoverProjectDevPreviewUrl(project: MobileProjectEntry, signal?: AbortSignal): Promise<string | undefined> {
+        return discoverProjectDevPreviewUrlExtracted(this, project, signal);
     }
 
     beginTranscriptDevPreviewRequest(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {

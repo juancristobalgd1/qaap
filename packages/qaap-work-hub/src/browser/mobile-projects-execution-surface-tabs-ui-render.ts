@@ -500,21 +500,52 @@ export function openExecutionSurfaceSidebarWhenReadyExtracted(ctx: MobileProject
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
+    // One pending loop per UI: a newer request (or a cancel/dismiss/dispose) supersedes this one.
+    ctx.cancelExecutionSurfaceSidebarOpenRetry();
+    const retry: ExecutionSurfaceSidebarOpenRetry = { timer: undefined, clear: undefined };
+    ctx.executionSurfaceSidebarOpenRetry = retry;
     let attempts = 0;
     const attemptOpen = (): void => {
-        if (typeof document === 'undefined' || typeof window === 'undefined') {
+        retry.timer = undefined;
+        retry.clear = undefined;
+        if (ctx.executionSurfaceSidebarOpenRetry !== retry) {
             return;
         }
-        if (ctx.host.executionSurfaceSidebar?.element?.isConnected || attempts >= 100) {
+        const surfaceGone = typeof document === 'undefined' || typeof window === 'undefined'
+            // On a retry: the user went back to Chat, or another project took over the transcript.
+            || (attempts > 0 && (ctx.executionSurfaceTabForProject(project) === 'messages'
+                || (!!ctx.host.transcriptOpenProject && ctx.host.transcriptOpenProject.id !== project.id)));
+        if (surfaceGone || ctx.host.executionSurfaceSidebar?.element?.isConnected || attempts >= 100) {
+            ctx.executionSurfaceSidebarOpenRetry = undefined;
             return;
         }
         attempts += 1;
         ctx.openExecutionSurfaceSidebar(tab, project, summary, origin);
-        if (!ctx.host.executionSurfaceSidebar) {
-            window.setTimeout(attemptOpen, 100);
+        const win = window;
+        if (ctx.host.executionSurfaceSidebar || ctx.executionSurfaceSidebarOpenRetry !== retry || typeof win.setTimeout !== 'function') {
+            if (ctx.executionSurfaceSidebarOpenRetry === retry) {
+                ctx.executionSurfaceSidebarOpenRetry = undefined;
+            }
+            return;
         }
+        const timer = win.setTimeout(attemptOpen, 100);
+        retry.timer = timer;
+        retry.clear = () => win.clearTimeout(timer);
     };
     attemptOpen();
+}
+
+/** Pending retry armed by {@link openExecutionSurfaceSidebarWhenReadyExtracted}. */
+export interface ExecutionSurfaceSidebarOpenRetry {
+    timer: number | undefined;
+    /** Clears the timer on the window that armed it (tests and reloads may swap `window`). */
+    clear: (() => void) | undefined;
+}
+
+export function cancelExecutionSurfaceSidebarOpenRetryExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
+    const retry = ctx.executionSurfaceSidebarOpenRetry;
+    ctx.executionSurfaceSidebarOpenRetry = undefined;
+    retry?.clear?.();
 }
 
 export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab,
@@ -684,6 +715,7 @@ export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutio
 }
 
 export function dismissExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
+    ctx.cancelExecutionSurfaceSidebarOpenRetry();
     const sidebar = ctx.host.executionSurfaceSidebar;
     if (!sidebar) {
         return;
