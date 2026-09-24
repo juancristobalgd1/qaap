@@ -1,47 +1,31 @@
-// @ts-nocheck
+import type { MobileShellBottomBarControllerContext } from './mobile-shell-bottom-bar-controller-context';
 // Extracted from mobile-shell-bottom-bar-controller.ts
 
 import { ArrayExt } from '@lumino/algorithm';
 import { MessageLoop } from '@lumino/messaging';
 import { BoxLayout, BoxPanel, SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
 import { ApplicationShell, MAXIMIZED_CLASS } from '@theia/core/lib/browser/shell/application-shell';
-import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
-import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { MobileHaptics } from './mobile-haptics';
 import { installMobileHorizontalTouchScroll } from './mobile-horizontal-touch-scroll';
 import {
-    clearPreferAgentsSurface,
-    markPreferDesktopIde,
     peekPreferDesktopIde,
     setMobileLandingHubListChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
 } from './mobile-projects-open';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
-import type { MobileProjectsPanel } from './mobile-projects-panel';
-import type { MobileProjectsService } from './mobile-projects-service';
-import { MobileSnackbar } from './mobile-snackbar';
-import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
-    BottomBarSecondaryItem,
-    EDIT_CHAT_SESSION_SETTINGS_COMMAND,
-    MOBILE_BOTTOM_OPEN_CLASS,
     MOBILE_BOTTOM_SPLIT_DEFAULT_BOTTOM_RATIO,
     MOBILE_BOTTOM_SPLIT_MAIN_MIN_RATIO,
     MobileBottomBarWidget,
     MobileBottomButton,
     MobileBottomButtonId,
-    OPEN_AI_CONFIGURATION_COMMAND,
-    ShellWithMaximizedOverlay,
     WORKBENCH_AI_CHAT_TOGGLE,
     WORKBENCH_TOGGLE_TERMINAL,
 } from './mobile-shell-bottom-bar-widget';
 
-export function measureMobileBottomPanelHeightPxExtracted(ctx: any): number | undefined {
+export function measureMobileBottomPanelHeightPxExtracted(ctx: MobileShellBottomBarControllerContext): number | undefined {
     const parent = ctx.shell.bottomPanel.parent;
     if (!(parent instanceof SplitPanel) || !parent.isVisible) {
         return undefined;
@@ -61,7 +45,7 @@ export function measureMobileBottomPanelHeightPxExtracted(ctx: any): number | un
     return parentHeight - handle.offsetTop;
 }
 
-export function resolveMobileBottomSplitSizesExtracted(ctx: any): [number, number] {
+export function resolveMobileBottomSplitSizesExtracted(ctx: MobileShellBottomBarControllerContext): [number, number] {
     const split = ctx.getBottomAreaSplitPanel();
     const total = split?.node.clientHeight ?? 0;
     if (total <= 0) {
@@ -81,7 +65,7 @@ export function resolveMobileBottomSplitSizesExtracted(ctx: any): [number, numbe
     return [mainPx / total, adjustedBottomPx / total];
 }
 
-export function syncMobileBottomSplitExtracted(ctx: any): void {
+export function syncMobileBottomSplitExtracted(ctx: MobileShellBottomBarControllerContext): void {
     if (ctx.shell.bottomPanel.hasClass(MAXIMIZED_CLASS)) {
         return;
     }
@@ -105,7 +89,7 @@ export function syncMobileBottomSplitExtracted(ctx: any): void {
     }
 }
 
-export async function applyMobileBottomPanelMaximizedSizeExtracted(ctx: any): Promise<void> {
+export async function applyMobileBottomPanelMaximizedSizeExtracted(ctx: MobileShellBottomBarControllerContext): Promise<void> {
     if (!ctx.host.isMobileActive() || ctx.suppressMobileBottomAutoMaximize) {
         return;
     }
@@ -119,7 +103,7 @@ export async function applyMobileBottomPanelMaximizedSizeExtracted(ctx: any): Pr
     ctx.syncMobileMaximizedOverlayInsets();
 }
 
-export function restoreMobileBottomPanelFromMaximizedExtracted(ctx: any): void {
+export function restoreMobileBottomPanelFromMaximizedExtracted(ctx: MobileShellBottomBarControllerContext): void {
     const bottomPanel = ctx.shell.bottomPanel;
     if (bottomPanel.hasClass(MAXIMIZED_CLASS)) {
         bottomPanel.toggleMaximized();
@@ -127,7 +111,7 @@ export function restoreMobileBottomPanelFromMaximizedExtracted(ctx: any): void {
     ctx.clearMobileMaximizedOverlayInsets();
 }
 
-export function syncMobileMaximizedOverlayInsetsExtracted(ctx: any): void {
+export function syncMobileMaximizedOverlayInsetsExtracted(ctx: MobileShellBottomBarControllerContext): void {
     const overlay = ctx.getMaximizedOverlayElement();
     if (!overlay || !ctx.host.isMobileActive()) {
         return;
@@ -147,13 +131,13 @@ export function syncMobileMaximizedOverlayInsetsExtracted(ctx: any): void {
     ].join(' ');
 }
 
-export function clearMobileMaximizedOverlayInsetsExtracted(ctx: any): void {
+export function clearMobileMaximizedOverlayInsetsExtracted(ctx: MobileShellBottomBarControllerContext): void {
     const overlay = ctx.getMaximizedOverlayElement();
     overlay?.style.removeProperty('bottom');
     overlay?.style.removeProperty('top');
 }
 
-export function ensureBottomChromeHostExtracted(ctx: any): HTMLElement {
+export function ensureBottomChromeHostExtracted(ctx: MobileShellBottomBarControllerContext): HTMLElement {
     if (!ctx.bottomChromeHost) {
         const host = document.createElement('div');
         host.className = 'theia-mobile-bottom-chrome-host';
@@ -164,7 +148,7 @@ export function ensureBottomChromeHostExtracted(ctx: any): HTMLElement {
     return ctx.bottomChromeHost;
 }
 
-export function ensureBottomBarWidgetExtracted(ctx: any): MobileBottomBarWidget {
+export function ensureBottomBarWidgetExtracted(ctx: MobileShellBottomBarControllerContext): MobileBottomBarWidget {
     if (!ctx.bottomBarWidget) {
         ctx.bottomBarWidget = new MobileBottomBarWidget();
         ctx.bottomBarWidget.node.setAttribute(
@@ -175,7 +159,7 @@ export function ensureBottomBarWidgetExtracted(ctx: any): MobileBottomBarWidget 
     return ctx.bottomBarWidget;
 }
 
-export function pinBottomChromeToBodyExtracted(ctx: any): void {
+export function pinBottomChromeToBodyExtracted(ctx: MobileShellBottomBarControllerContext): void {
     const bottomWidget = ctx.bottomBarWidget;
     if (!bottomWidget) {
         return;
@@ -203,7 +187,7 @@ export function pinBottomChromeToBodyExtracted(ctx: any): void {
     MessageLoop.postMessage(ctx.shell, LuminoWidget.Msg.FitRequest);
 }
 
-export function installBottomChromeTouchScrollExtracted(ctx: any): void {
+export function installBottomChromeTouchScrollExtracted(ctx: MobileShellBottomBarControllerContext): void {
     ctx.bottomChromeTouchScrollDispose.dispose();
     if (typeof window === 'undefined') {
         return;
@@ -223,7 +207,7 @@ export function installBottomChromeTouchScrollExtracted(ctx: any): void {
     ctx.bottomChromeTouchScrollDispose = toDispose;
 }
 
-export function unpinBottomChromeFromBodyExtracted(ctx: any): void {
+export function unpinBottomChromeFromBodyExtracted(ctx: MobileShellBottomBarControllerContext): void {
     ctx.bottomChromeTouchScrollDispose.dispose();
     ctx.bottomChromeTouchScrollDispose = Disposable.NULL;
     if (ctx.bottomChromeHost) {
@@ -246,7 +230,7 @@ export function unpinBottomChromeFromBodyExtracted(ctx: any): void {
     ctx.statusBarShellIndex = -1;
 }
 
-export function detachBottomBarFromShellExtracted(ctx: any): void {
+export function detachBottomBarFromShellExtracted(ctx: MobileShellBottomBarControllerContext): void {
     const widget = ctx.bottomBarWidget;
     if (!widget) {
         return;
@@ -257,7 +241,7 @@ export function detachBottomBarFromShellExtracted(ctx: any): void {
     ctx.bottomBarWidget = undefined;
 }
 
-export function isWorkHubLandingBottomBarExtracted(ctx: any): boolean {
+export function isWorkHubLandingBottomBarExtracted(ctx: MobileShellBottomBarControllerContext): boolean {
     if (!ctx.host.isMobileActive() || peekPreferDesktopIde()) {
         return false;
     }
@@ -279,13 +263,13 @@ export function isWorkHubLandingBottomBarExtracted(ctx: any): boolean {
     return ctx.isMobileWorkspaceHubPrimaryBottomBar();
 }
 
-export function isMobileWorkspaceHubPrimaryBottomBarExtracted(ctx: any): boolean {
+export function isMobileWorkspaceHubPrimaryBottomBarExtracted(ctx: MobileShellBottomBarControllerContext): boolean {
     return ctx.host.getLandingLeftThisSession()
         && !document.body.classList.contains('theia-mobile-mod-landing')
         && ctx.isMainAgentSurfaceEmpty();
 }
 
-export function isMainAgentSurfaceEmptyExtracted(ctx: any): boolean {
+export function isMainAgentSurfaceEmptyExtracted(ctx: MobileShellBottomBarControllerContext): boolean {
     const shell = ctx.shell.node;
     if (shell.querySelector('.theia-mobile-agent-transcript-empty')) {
         return true;
@@ -299,7 +283,7 @@ export function isMainAgentSurfaceEmptyExtracted(ctx: any): boolean {
     return false;
 }
 
-export function syncMobileHubPrimaryBottomChromeExtracted(ctx: any): void {
+export function syncMobileHubPrimaryBottomChromeExtracted(ctx: MobileShellBottomBarControllerContext): void {
     if (peekPreferDesktopIde()) {
         setMobileWorkHubHideBottomChrome(false);
         setMobileWorkHubComposerHeaderChrome(false);
@@ -318,7 +302,7 @@ export function syncMobileHubPrimaryBottomChromeExtracted(ctx: any): void {
     }
 }
 
-export function getWorkHubLandingBottomButtonsExtracted(ctx: any): MobileBottomButton[] {
+export function getWorkHubLandingBottomButtonsExtracted(ctx: MobileShellBottomBarControllerContext): MobileBottomButton[] {
     return [
         {
             id: 'hub-projects',
@@ -328,7 +312,7 @@ export function getWorkHubLandingBottomButtonsExtracted(ctx: any): MobileBottomB
     ];
 }
 
-export function getMobileBottomButtonsExtracted(ctx: any): MobileBottomButton[] {
+export function getMobileBottomButtonsExtracted(ctx: MobileShellBottomBarControllerContext): MobileBottomButton[] {
     if (ctx.isWorkHubLandingBottomBar()) {
         return ctx.getWorkHubLandingBottomButtons();
     }
@@ -341,7 +325,7 @@ export function getMobileBottomButtonsExtracted(ctx: any): MobileBottomButton[] 
     ];
 }
 
-export function getMobileIdeHeaderViewButtonsExtracted(ctx: any): MobileBottomButton[] {
+export function getMobileIdeHeaderViewButtonsExtracted(ctx: MobileShellBottomBarControllerContext): MobileBottomButton[] {
     const chatButton: MobileBottomButton = {
         id: 'agent',
         label: nls.localize('theia/core/mobileBottomBar/agent', 'Chat'),
@@ -356,7 +340,7 @@ export function getMobileIdeHeaderViewButtonsExtracted(ctx: any): MobileBottomBu
     return [chatButton, ...rest];
 }
 
-export function isMobileBottomButtonActiveExtracted(ctx: any, id: MobileBottomButtonId): boolean {
+export function isMobileBottomButtonActiveExtracted(ctx: MobileShellBottomBarControllerContext, id: MobileBottomButtonId): boolean {
     if (!ctx.host.isMobileWorkHubLandingVisible()) {
         switch (id) {
             case 'hub-home':
@@ -409,7 +393,7 @@ export function isMobileBottomButtonActiveExtracted(ctx: any, id: MobileBottomBu
     }
 }
 
-export function canToggleTerminalBottomPanelExtracted(ctx: any): boolean {
+export function canToggleTerminalBottomPanelExtracted(ctx: MobileShellBottomBarControllerContext): boolean {
     if (ctx.isTerminalBottomPanelOpen()) {
         return true;
     }
@@ -420,7 +404,7 @@ export function canToggleTerminalBottomPanelExtracted(ctx: any): boolean {
     return !!(ctx.commands.getCommand(WORKBENCH_TOGGLE_TERMINAL) && ctx.commands.isEnabled(WORKBENCH_TOGGLE_TERMINAL));
 }
 
-export async function activateMobileIdeHeaderViewExtracted(ctx: any, id: MobileBottomButtonId): Promise<void> {
+export async function activateMobileIdeHeaderViewExtracted(ctx: MobileShellBottomBarControllerContext, id: MobileBottomButtonId): Promise<void> {
     if (id === 'agent' || id === 'editor') {
         const def = ctx.getMobileBottomButtons().find(candidate => candidate.id === id)
             ?? ({ id, label: id, icon: '' } as MobileBottomButton);

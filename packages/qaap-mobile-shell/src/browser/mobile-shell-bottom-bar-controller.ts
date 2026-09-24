@@ -2,46 +2,23 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
-import { ArrayExt } from '@lumino/algorithm';
-import { MessageLoop } from '@lumino/messaging';
-import { BoxLayout, BoxPanel, SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
-import { ApplicationShell, MAXIMIZED_CLASS } from '@theia/core/lib/browser/shell/application-shell';
+import { SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
+import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
-import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import { CommandRegistry } from '@theia/core/lib/common/command';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { nls } from '@theia/core/lib/common/nls';
-import { MobileHaptics } from './mobile-haptics';
-import { installMobileHorizontalTouchScroll } from './mobile-horizontal-touch-scroll';
-import {
-    clearPreferAgentsSurface,
-    markPreferDesktopIde,
-    peekPreferDesktopIde,
-    setMobileLandingHubListChrome,
-    setMobileWorkHubComposerHeaderChrome,
-    setMobileWorkHubHideBottomChrome,
-} from './mobile-projects-open';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from './mobile-projects-service';
-import { MobileSnackbar } from './mobile-snackbar';
-import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     BottomBarSecondaryItem,
-    EDIT_CHAT_SESSION_SETTINGS_COMMAND,
     MOBILE_BOTTOM_OPEN_CLASS,
-    MOBILE_BOTTOM_SPLIT_DEFAULT_BOTTOM_RATIO,
-    MOBILE_BOTTOM_SPLIT_MAIN_MIN_RATIO,
     MobileBottomBarWidget,
     MobileBottomButton,
     MobileBottomButtonId,
-    OPEN_AI_CONFIGURATION_COMMAND,
     ShellWithMaximizedOverlay,
-    WORKBENCH_AI_CHAT_TOGGLE,
-    WORKBENCH_TOGGLE_TERMINAL,
 } from './mobile-shell-bottom-bar-widget';
 import { activateMobileIdeHeaderViewExtracted, applyMobileBottomPanelMaximizedSizeExtracted, canToggleTerminalBottomPanelExtracted, clearMobileMaximizedOverlayInsetsExtracted, detachBottomBarFromShellExtracted, ensureBottomBarWidgetExtracted, ensureBottomChromeHostExtracted, getMobileBottomButtonsExtracted, getMobileIdeHeaderViewButtonsExtracted, getWorkHubLandingBottomButtonsExtracted, installBottomChromeTouchScrollExtracted, isMainAgentSurfaceEmptyExtracted, isMobileBottomButtonActiveExtracted, isMobileWorkspaceHubPrimaryBottomBarExtracted, isWorkHubLandingBottomBarExtracted, measureMobileBottomPanelHeightPxExtracted, pinBottomChromeToBodyExtracted, resolveMobileBottomSplitSizesExtracted, restoreMobileBottomPanelFromMaximizedExtracted, syncMobileBottomSplitExtracted, syncMobileHubPrimaryBottomChromeExtracted, syncMobileMaximizedOverlayInsetsExtracted, unpinBottomChromeFromBodyExtracted } from './mobile-shell-bottom-bar-controller-render';
 import { createMobileBottomButtonExtracted, getAgentSecondaryItemsExtracted, getBottomBarSecondaryItemsExtracted, getProjectsSecondaryItemsExtracted, getPullRequestSecondaryItemsExtracted, getTerminalSecondaryItemsExtracted, installBottomBarLongPressExtracted, refreshBottomBarExtracted, removeBottomBarSecondaryMenuExtracted, showBottomBarSecondaryMenuExtracted, toggleTerminalBottomPanelExtracted } from './mobile-shell-bottom-bar-controller-streaming';
@@ -98,19 +75,31 @@ export class MobileShellBottomBarController {
 
     suppressMobileBottomAutoMaximize = false;
 
-    protected bottomChromeHost: HTMLElement | undefined;
-    protected bottomChromeTouchScrollDispose = Disposable.NULL;
-    protected statusBarShellIndex = -1;
-    protected bottomBarWidget: MobileBottomBarWidget | undefined;
-    protected bottomBarMenuCleanup: (() => void) | undefined;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public bottomChromeHost: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public bottomChromeTouchScrollDispose = Disposable.NULL;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public statusBarShellIndex = -1;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public bottomBarWidget: MobileBottomBarWidget | undefined;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public bottomBarMenuCleanup: (() => void) | undefined;
 
-    protected readonly host: MobileShellBottomBarHost;
-    protected readonly shell: ApplicationShell;
-    protected readonly statusBar: StatusBarImpl;
-    protected readonly commands: CommandRegistry;
-    protected readonly projectsService: MobileProjectsService;
-    protected readonly projectBootstrap: QaapProjectBootstrapService;
-    protected readonly mobileMq: MediaQueryList | undefined;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public readonly host: MobileShellBottomBarHost;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public readonly shell: ApplicationShell;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public readonly statusBar: StatusBarImpl;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public readonly commands: CommandRegistry;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public readonly projectsService: MobileProjectsService;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public readonly projectBootstrap: QaapProjectBootstrapService;
+    /** @internal Used by the extracted mobile-shell-bottom-bar-controller-* modules. */
+    public readonly mobileMq: MediaQueryList | undefined;
 
     constructor(options: MobileShellBottomBarControllerOptions) {
         this.host = options.host;

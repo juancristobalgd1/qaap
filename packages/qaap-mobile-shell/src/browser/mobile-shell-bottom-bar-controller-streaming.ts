@@ -1,47 +1,22 @@
-// @ts-nocheck
+import type { MobileShellBottomBarControllerContext } from './mobile-shell-bottom-bar-controller-context';
 // Extracted from mobile-shell-bottom-bar-controller.ts
 
-import { ArrayExt } from '@lumino/algorithm';
-import { MessageLoop } from '@lumino/messaging';
-import { BoxLayout, BoxPanel, SplitPanel, Widget as LuminoWidget } from '@lumino/widgets';
-import { ApplicationShell, MAXIMIZED_CLASS } from '@theia/core/lib/browser/shell/application-shell';
-import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
+import { MAXIMIZED_CLASS } from '@theia/core/lib/browser/shell/application-shell';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
-import { CommandRegistry } from '@theia/core/lib/common/command';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { MobileHaptics } from './mobile-haptics';
-import { installMobileHorizontalTouchScroll } from './mobile-horizontal-touch-scroll';
-import {
-    clearPreferAgentsSurface,
-    markPreferDesktopIde,
-    peekPreferDesktopIde,
-    setMobileLandingHubListChrome,
-    setMobileWorkHubComposerHeaderChrome,
-    setMobileWorkHubHideBottomChrome,
-} from './mobile-projects-open';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
-import type { MobileProjectsPanel } from './mobile-projects-panel';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileSnackbar } from './mobile-snackbar';
-import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import {
     BottomBarSecondaryItem,
     EDIT_CHAT_SESSION_SETTINGS_COMMAND,
-    MOBILE_BOTTOM_OPEN_CLASS,
-    MOBILE_BOTTOM_SPLIT_DEFAULT_BOTTOM_RATIO,
-    MOBILE_BOTTOM_SPLIT_MAIN_MIN_RATIO,
-    MobileBottomBarWidget,
     MobileBottomButton,
-    MobileBottomButtonId,
     OPEN_AI_CONFIGURATION_COMMAND,
-    ShellWithMaximizedOverlay,
-    WORKBENCH_AI_CHAT_TOGGLE,
     WORKBENCH_TOGGLE_TERMINAL,
 } from './mobile-shell-bottom-bar-widget';
 
-export async function toggleTerminalBottomPanelExtracted(ctx: any): Promise<void> {
+export async function toggleTerminalBottomPanelExtracted(ctx: MobileShellBottomBarControllerContext): Promise<void> {
         if (ctx.isTerminalBottomPanelOpen()) {
             if (ctx.shell.bottomPanel.hasClass(MAXIMIZED_CLASS)) {
                 ctx.suppressMobileBottomAutoMaximize = false;
@@ -74,7 +49,7 @@ export async function toggleTerminalBottomPanelExtracted(ctx: any): Promise<void
         ctx.host.scheduleSnapAndUiRefresh();
 }
 
-export function refreshBottomBarExtracted(ctx: any): void {
+export function refreshBottomBarExtracted(ctx: MobileShellBottomBarControllerContext): void {
         const bottomBar = ctx.getBottomBarNode();
         if (!bottomBar || !ctx.host.isMobileActive()) {
             return;
@@ -90,7 +65,7 @@ export function refreshBottomBarExtracted(ctx: any): void {
         }
 }
 
-export function createMobileBottomButtonExtracted(ctx: any, def: MobileBottomButton): HTMLButtonElement {
+export function createMobileBottomButtonExtracted(ctx: MobileShellBottomBarControllerContext, def: MobileBottomButton): HTMLButtonElement {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'theia-mobile-bottom-activity-btn';
@@ -156,7 +131,7 @@ export function createMobileBottomButtonExtracted(ctx: any, def: MobileBottomBut
         return btn;
 }
 
-export function installBottomBarLongPressExtracted(ctx: any, btn: HTMLButtonElement, def: MobileBottomButton): void {
+export function installBottomBarLongPressExtracted(ctx: MobileShellBottomBarControllerContext, btn: HTMLButtonElement, def: MobileBottomButton): void {
         let timer: number | undefined;
         let startX = 0;
         let startY = 0;
@@ -216,7 +191,7 @@ export function installBottomBarLongPressExtracted(ctx: any, btn: HTMLButtonElem
         }, true);
 }
 
-export async function showBottomBarSecondaryMenuExtracted(ctx: any, anchor: HTMLElement, def: MobileBottomButton): Promise<void> {
+export async function showBottomBarSecondaryMenuExtracted(ctx: MobileShellBottomBarControllerContext, anchor: HTMLElement, def: MobileBottomButton): Promise<void> {
         const items = await ctx.getBottomBarSecondaryItems(def);
         if (items.length === 0) {
             MobileSnackbar.show(def.label, { duration: 800 });
@@ -279,14 +254,14 @@ export async function showBottomBarSecondaryMenuExtracted(ctx: any, anchor: HTML
         };
 }
 
-export function removeBottomBarSecondaryMenuExtracted(ctx: any): void {
+export function removeBottomBarSecondaryMenuExtracted(ctx: MobileShellBottomBarControllerContext): void {
         const existing = document.querySelector('.theia-mobile-bottom-actionsheet');
         existing?.parentElement?.removeChild(existing);
         ctx.bottomBarMenuCleanup?.();
         ctx.bottomBarMenuCleanup = undefined;
 }
 
-export async function getBottomBarSecondaryItemsExtracted(ctx: any, def: MobileBottomButton): Promise<BottomBarSecondaryItem[]> {
+export async function getBottomBarSecondaryItemsExtracted(ctx: MobileShellBottomBarControllerContext, def: MobileBottomButton): Promise<BottomBarSecondaryItem[]> {
         if (def.id === 'hub-home' || def.id === 'hub-projects' || def.id === 'hub-review' || def.id === 'hub-automations') {
             return [];
         }
@@ -308,7 +283,7 @@ export async function getBottomBarSecondaryItemsExtracted(ctx: any, def: MobileB
         }
 }
 
-export async function getProjectsSecondaryItemsExtracted(ctx: any): Promise<BottomBarSecondaryItem[]> {
+export async function getProjectsSecondaryItemsExtracted(ctx: MobileShellBottomBarControllerContext): Promise<BottomBarSecondaryItem[]> {
         const items: BottomBarSecondaryItem[] = [];
         let projects: MobileProjectEntry[] = [];
         try {
@@ -347,7 +322,7 @@ export async function getProjectsSecondaryItemsExtracted(ctx: any): Promise<Bott
         return items;
 }
 
-export function getTerminalSecondaryItemsExtracted(ctx: any): BottomBarSecondaryItem[] {
+export function getTerminalSecondaryItemsExtracted(ctx: MobileShellBottomBarControllerContext): BottomBarSecondaryItem[] {
         const items: BottomBarSecondaryItem[] = [];
         const newTerminal = 'terminal:new';
         if (ctx.commands.getCommand(newTerminal)) {
@@ -375,7 +350,7 @@ export function getTerminalSecondaryItemsExtracted(ctx: any): BottomBarSecondary
         return items;
 }
 
-export function getAgentSecondaryItemsExtracted(ctx: any): BottomBarSecondaryItem[] {
+export function getAgentSecondaryItemsExtracted(ctx: MobileShellBottomBarControllerContext): BottomBarSecondaryItem[] {
         const items: BottomBarSecondaryItem[] = [];
         if (ctx.commands.getCommand(EDIT_CHAT_SESSION_SETTINGS_COMMAND)) {
             items.push({
@@ -394,7 +369,7 @@ export function getAgentSecondaryItemsExtracted(ctx: any): BottomBarSecondaryIte
         return items;
 }
 
-export function getPullRequestSecondaryItemsExtracted(ctx: any): BottomBarSecondaryItem[] {
+export function getPullRequestSecondaryItemsExtracted(ctx: MobileShellBottomBarControllerContext): BottomBarSecondaryItem[] {
         return [{
             label: nls.localize('qaap/mobileBottomBar/prRefresh', 'Refresh pull requests'),
             icon: 'codicon-refresh',
