@@ -1,69 +1,27 @@
-// @ts-nocheck
+import type { MobileProjectsServiceContext } from './mobile-projects-service-context';
 // Extracted from mobile-projects-service.ts
 
-import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
-import { LabelProvider } from '@theia/core/lib/browser';
-import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    cloneQaapGithubRepository,
-    createQaapGithubRepository,
     deleteQaapGithubRepository,
-    fetchQaapAuthConfig,
-    fetchQaapGithubRepositories,
-    fetchQaapProjectSessions,
-    openQaapGithubRepository,
-    syncQaapAuthSessionFromServer,
-    upsertQaapProjectSession,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type {
     QaapProjectSessionSummary,
-    QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { readQaapAuthUser, readQaapSignedIn, type QaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     MobileProjectEntry,
-    MobileProjectFilter,
-    MobileProjectsHubView,
     mobileProjectColorForName,
-    mobileProjectInitials,
-    StoredMobileProject,
 } from './mobile-projects-types';
-import { normalizeWorkHubViewId } from '../common/qaap-work-hub-surfaces';
-import { findProjectMatchingWorkspaceCwd } from '../common/qaap-composer-workspace-project';
 import { isUserRepositoryFilesystemPath, isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import {
-    clearMobileProjectReadmeOpenRequest,
-    markMobileProjectReadmeForOpen,
-    markMobileProjectsPanelDismiss,
-    requestMobileProjectsPanelDismiss,
-} from './mobile-projects-open';
-import { MobileSnackbar } from './mobile-snackbar';
-import {
-    mergeSessionMaps,
-    patchLocalProjectSession,
     readLocalProjectSessions,
     removeLocalProjectSession,
-    writeLocalProjectSessions,
 } from './mobile-projects-session-cache';
 import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
-import {
-    MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE,
-    MOBILE_PROJECTS_DISPLAY_NAMES_BASE,
-    MOBILE_PROJECTS_HIDDEN_IDS_BASE,
-    MOBILE_PROJECTS_PINNED_IDS_BASE,
-    mobileProjectsUserStorageKey,
-} from './mobile-projects-user-storage';
-import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
-export async function renameProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<boolean> {
+export async function renameProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
         const dialog = new SingleTextInputDialog({
             title: nls.localize('qaap/mobileProjects/rename', 'Rename project'),
             initialValue: project.name,
@@ -96,7 +54,7 @@ export async function renameProjectExtracted(ctx: any, project: MobileProjectEnt
         return true;
 }
 
-export async function duplicateProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<boolean> {
+export async function duplicateProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
         const custom = ctx.readCustomProjects();
         const allNames = [
             ...custom.map(p => p.name),
@@ -128,7 +86,7 @@ export async function duplicateProjectExtracted(ctx: any, project: MobileProject
         return true;
 }
 
-export async function removeProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<boolean> {
+export async function removeProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
         if (!ctx.canRemove(project)) {
             return false;
         }
@@ -174,7 +132,7 @@ export async function removeProjectExtracted(ctx: any, project: MobileProjectEnt
         return false;
 }
 
-export function getCurrentWorkspaceDisplayNameExtracted(ctx: any): string | undefined {
+export function getCurrentWorkspaceDisplayNameExtracted(ctx: MobileProjectsServiceContext): string | undefined {
         const current = ctx.workspaceService.workspace;
         if (!current) {
             return undefined;
@@ -185,7 +143,7 @@ export function getCurrentWorkspaceDisplayNameExtracted(ctx: any): string | unde
         return ctx.resolveDisplayName(id, name);
 }
 
-export function getCurrentWorkspaceBranchExtracted(ctx: any): string | undefined {
+export function getCurrentWorkspaceBranchExtracted(ctx: MobileProjectsServiceContext): string | undefined {
         const repoKey = ctx.currentRepoKey();
         if (!repoKey) {
             return undefined;
@@ -193,7 +151,7 @@ export function getCurrentWorkspaceBranchExtracted(ctx: any): string | undefined
         return readLocalProjectSessions().get(repoKey)?.branch || 'main';
 }
 
-export function peekCachedProjectsExtracted(ctx: any): MobileProjectEntry[] {
+export function peekCachedProjectsExtracted(ctx: MobileProjectsServiceContext): MobileProjectEntry[] {
         const sessionMap = readLocalProjectSessions();
         const entries: MobileProjectEntry[] = [];
         const seen = new Set<string>();
@@ -229,14 +187,14 @@ export function peekCachedProjectsExtracted(ctx: any): MobileProjectEntry[] {
         ));
 }
 
-export function isBrowsableHubProjectExtracted(ctx: any, project: MobileProjectEntry): boolean {
+export function isBrowsableHubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): boolean {
         return isValidHubUserRepositoryProjectCandidate({
             hasGithub: !!project.github,
             filesystemPath: ctx.cwdFromFileUri(project.uri),
         });
 }
 
-export function cachedSessionToEntryExtracted(ctx: any, session: QaapProjectSessionSummary,
+export function cachedSessionToEntryExtracted(ctx: MobileProjectsServiceContext, session: QaapProjectSessionSummary,
         pinnedIds: Set<string>,
         current: URI | undefined,): MobileProjectEntry | undefined {
         if (session.repoKey.startsWith('github:')) {
@@ -248,7 +206,7 @@ export function cachedSessionToEntryExtracted(ctx: any, session: QaapProjectSess
         return undefined;
 }
 
-export function cachedGithubSessionToEntryExtracted(ctx: any, session: QaapProjectSessionSummary,
+export function cachedGithubSessionToEntryExtracted(ctx: MobileProjectsServiceContext, session: QaapProjectSessionSummary,
         pinnedIds: Set<string>,
         current: URI | undefined,): MobileProjectEntry | undefined {
         const fullName = session.repoKey.slice('github:'.length);
@@ -294,7 +252,7 @@ export function cachedGithubSessionToEntryExtracted(ctx: any, session: QaapProje
         return ctx.applySessionToEntry(entry, session);
 }
 
-export function cachedWorkspaceSessionToEntryExtracted(ctx: any, session: QaapProjectSessionSummary,
+export function cachedWorkspaceSessionToEntryExtracted(ctx: MobileProjectsServiceContext, session: QaapProjectSessionSummary,
         pinnedIds: Set<string>,
         current: URI | undefined,): MobileProjectEntry | undefined {
         const rawUri = session.repoKey.slice('ws:'.length);
@@ -330,7 +288,7 @@ export function cachedWorkspaceSessionToEntryExtracted(ctx: any, session: QaapPr
         return ctx.applySessionToEntry(entry, session);
 }
 
-export async function loadProjectsExtracted(ctx: any): Promise<MobileProjectEntry[]> {
+export async function loadProjectsExtracted(ctx: MobileProjectsServiceContext): Promise<MobileProjectEntry[]> {
         // Open the SSE stream the first time projects are queried — the panel will subscribe to
         // tracker changes to live-update cards as VPS tasks start/finish.
         ctx.activeTasks.start();
@@ -481,7 +439,7 @@ export async function loadProjectsExtracted(ctx: any): Promise<MobileProjectEntr
         ));
 }
 
-export function collapseCurrentWorkspaceDuplicatesExtracted(ctx: any, entries: MobileProjectEntry[]): MobileProjectEntry[] {
+export function collapseCurrentWorkspaceDuplicatesExtracted(ctx: MobileProjectsServiceContext, entries: MobileProjectEntry[]): MobileProjectEntry[] {
         return deduplicateMobileProjectEntries(entries, {
             normalizeName: name => ctx.normalizeProjectName(name),
             cwdFromUri: uri => ctx.cwdFromFileUri(uri),
@@ -489,7 +447,7 @@ export function collapseCurrentWorkspaceDuplicatesExtracted(ctx: any, entries: M
         });
 }
 
-export function overlayActiveTasksExtracted(ctx: any, projects: MobileProjectEntry[]): MobileProjectEntry[] {
+export function overlayActiveTasksExtracted(ctx: MobileProjectsServiceContext, projects: MobileProjectEntry[]): MobileProjectEntry[] {
         return projects.map(project => {
             const cwd = ctx.cwdForProject(project);
             if (!cwd) {
@@ -508,7 +466,7 @@ export function overlayActiveTasksExtracted(ctx: any, projects: MobileProjectEnt
         });
 }
 
-export function getProjectCwdExtracted(ctx: any, project: MobileProjectEntry): string | undefined {
+export function getProjectCwdExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): string | undefined {
         const fromUri = ctx.cwdFromFileUri(project.uri);
         if (fromUri) {
             return fromUri;

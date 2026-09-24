@@ -1,17 +1,9 @@
-// @ts-nocheck
+import type { MobileProjectsServiceContext } from './mobile-projects-service-context';
 // Extracted from mobile-projects-service.ts
 
-import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
-import { LabelProvider } from '@theia/core/lib/browser';
-import { WindowService } from '@theia/core/lib/browser/window/window-service';
-import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
-    cloneQaapGithubRepository,
-    createQaapGithubRepository,
     fetchQaapAuthConfig,
     fetchQaapGithubRepositories,
     fetchQaapProjectSessions,
@@ -23,28 +15,15 @@ import type {
     QaapProjectSessionSummary,
     QaapProjectSessionUpsertRequest,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { readQaapAuthUser, readQaapSignedIn, type QaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
+import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     MobileProjectEntry,
     MobileProjectFilter,
-    MobileProjectsHubView,
     mobileProjectColorForName,
-    mobileProjectInitials,
-    StoredMobileProject,
 } from './mobile-projects-types';
-import { normalizeWorkHubViewId } from '../common/qaap-work-hub-surfaces';
 import { findProjectMatchingWorkspaceCwd } from '../common/qaap-composer-workspace-project';
-import { isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import {
-    clearMobileProjectReadmeOpenRequest,
-    markMobileProjectReadmeForOpen,
-    markMobileProjectsPanelDismiss,
-    requestMobileProjectsPanelDismiss,
-} from './mobile-projects-open';
-import { MobileSnackbar } from './mobile-snackbar';
 import {
     mergeSessionMaps,
     patchLocalProjectSession,
@@ -52,17 +31,9 @@ import {
     removeStaleLocalGithubSessions,
     writeLocalProjectSessions,
 } from './mobile-projects-session-cache';
-import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
-import {
-    MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE,
-    MOBILE_PROJECTS_DISPLAY_NAMES_BASE,
-    MOBILE_PROJECTS_HIDDEN_IDS_BASE,
-    MOBILE_PROJECTS_PINNED_IDS_BASE,
-    mobileProjectsUserStorageKey,
-} from './mobile-projects-user-storage';
 import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 
-export async function prepareProjectCwdExtracted(ctx: any, project: MobileProjectEntry): Promise<string | undefined> {
+export async function prepareProjectCwdExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<string | undefined> {
         const existing = ctx.getProjectCwd(project);
         if (existing) {
             return existing;
@@ -82,7 +53,7 @@ export async function prepareProjectCwdExtracted(ctx: any, project: MobileProjec
         }
 }
 
-export function cwdFromFileUriExtracted(ctx: any, uri: URI | undefined): string | undefined {
+export function cwdFromFileUriExtracted(ctx: MobileProjectsServiceContext, uri: URI | undefined): string | undefined {
         if (!uri || uri.scheme !== 'file') {
             return undefined;
         }
@@ -91,7 +62,7 @@ export function cwdFromFileUriExtracted(ctx: any, uri: URI | undefined): string 
         return isQaapWorkspaceContainerPath(fsPath) ? undefined : fsPath;
 }
 
-export async function recordProjectSessionExtracted(ctx: any, patch: Omit<QaapProjectSessionUpsertRequest, 'repoKey'> & { repoKey?: string }): Promise<void> {
+export async function recordProjectSessionExtracted(ctx: MobileProjectsServiceContext, patch: Omit<QaapProjectSessionUpsertRequest, 'repoKey'> & { repoKey?: string }): Promise<void> {
         const repoKey = patch.repoKey ?? ctx.currentRepoKey();
         if (!repoKey) {
             return;
@@ -113,7 +84,7 @@ export async function recordProjectSessionExtracted(ctx: any, patch: Omit<QaapPr
         }
 }
 
-export async function recordProjectPreviewUrlExtracted(ctx: any, project: MobileProjectEntry, previewUrl: string): Promise<void> {
+export async function recordProjectPreviewUrlExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, previewUrl: string): Promise<void> {
         const repoKey = ctx.projectSessionKey(project);
         if (!repoKey) {
             return;
@@ -125,7 +96,7 @@ export async function recordProjectPreviewUrlExtracted(ctx: any, project: Mobile
         });
 }
 
-export async function resolveProjectPreviewUrlExtracted(ctx: any, project: MobileProjectEntry, cwd?: string): Promise<string | undefined> {
+export async function resolveProjectPreviewUrlExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, cwd?: string): Promise<string | undefined> {
         const repoKey = ctx.projectSessionKey(project);
         const cwdRepoKey = cwd ? `ws:${new URI(cwd).withScheme('file').toString()}` : undefined;
         if (!repoKey && !cwdRepoKey) {
@@ -137,7 +108,7 @@ export async function resolveProjectPreviewUrlExtracted(ctx: any, project: Mobil
             ?? project.previewUrl;
 }
 
-export function touchProjectActivityExtracted(ctx: any, project: MobileProjectEntry): void {
+export function touchProjectActivityExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): void {
         const repoKey = ctx.projectSessionKey(project);
         if (!repoKey) {
             return;
@@ -145,7 +116,7 @@ export function touchProjectActivityExtracted(ctx: any, project: MobileProjectEn
         ctx.touchProjectSession(repoKey, project.branch);
 }
 
-export function touchProjectSessionExtracted(ctx: any, repoKey: string, branch: string): void {
+export function touchProjectSessionExtracted(ctx: MobileProjectsServiceContext, repoKey: string, branch: string): void {
         const row: QaapProjectSessionSummary = {
             repoKey,
             branch: branch || 'main',
@@ -157,14 +128,14 @@ export function touchProjectSessionExtracted(ctx: any, repoKey: string, branch: 
         }
 }
 
-export function projectSessionKeyExtracted(ctx: any, project: MobileProjectEntry): string | undefined {
+export function projectSessionKeyExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): string | undefined {
         if (project.github) {
             return `github:${project.github.fullName}`;
         }
         return project.uri ? `ws:${project.uri.toString()}` : undefined;
 }
 
-export function currentRepoKeyExtracted(ctx: any): string | undefined {
+export function currentRepoKeyExtracted(ctx: MobileProjectsServiceContext): string | undefined {
         const fullName = ctx.currentGithubRepositoryFullName();
         if (fullName) {
             return `github:${fullName}`;
@@ -173,14 +144,14 @@ export function currentRepoKeyExtracted(ctx: any): string | undefined {
         return uri ? `ws:${uri.toString()}` : undefined;
 }
 
-export function getProjectWorkspaceMatchKeyExtracted(ctx: any, project: MobileProjectEntry): string | undefined {
+export function getProjectWorkspaceMatchKeyExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): string | undefined {
         if (project.github) {
             return `github:${project.github.fullName.toLowerCase()}`;
         }
         return project.uri ? `ws:${project.uri.toString()}` : undefined;
 }
 
-export function getCurrentWorkspaceMatchKeyExtracted(ctx: any): string | undefined {
+export function getCurrentWorkspaceMatchKeyExtracted(ctx: MobileProjectsServiceContext): string | undefined {
         const fullName = ctx.currentGithubRepositoryFullName();
         if (fullName) {
             return `github:${fullName}`;
@@ -189,7 +160,7 @@ export function getCurrentWorkspaceMatchKeyExtracted(ctx: any): string | undefin
         return uri ? `ws:${uri.toString()}` : undefined;
 }
 
-export function projectMatchesCurrentWorkspaceExtracted(ctx: any, project: MobileProjectEntry): boolean {
+export function projectMatchesCurrentWorkspaceExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): boolean {
         if (project.isCurrent) {
             return true;
         }
@@ -197,7 +168,7 @@ export function projectMatchesCurrentWorkspaceExtracted(ctx: any, project: Mobil
         return !!projectKey && projectKey === ctx.getCurrentWorkspaceMatchKey();
 }
 
-export function resolveCurrentWorkspaceProjectExtracted(ctx: any, projects: readonly MobileProjectEntry[]): MobileProjectEntry | undefined {
+export function resolveCurrentWorkspaceProjectExtracted(ctx: MobileProjectsServiceContext, projects: readonly MobileProjectEntry[]): MobileProjectEntry | undefined {
         const workspaceCwd = ctx.getCurrentWorkspaceCwd();
         const matched = findProjectMatchingWorkspaceCwd(
             projects,
@@ -220,7 +191,7 @@ export function resolveCurrentWorkspaceProjectExtracted(ctx: any, projects: read
         return ctx.buildEphemeralCurrentWorkspaceEntry();
 }
 
-export function isProjectContainerWorkspaceExtracted(ctx: any, workspaceCwd: string | undefined,
+export function isProjectContainerWorkspaceExtracted(ctx: MobileProjectsServiceContext, workspaceCwd: string | undefined,
         projects: readonly MobileProjectEntry[],): boolean {
         if (!workspaceCwd) {
             return false;
@@ -232,7 +203,7 @@ export function isProjectContainerWorkspaceExtracted(ctx: any, workspaceCwd: str
         });
 }
 
-export function buildEphemeralCurrentWorkspaceEntryExtracted(ctx: any): MobileProjectEntry | undefined {
+export function buildEphemeralCurrentWorkspaceEntryExtracted(ctx: MobileProjectsServiceContext): MobileProjectEntry | undefined {
         const uri = ctx.workspaceService.workspace?.resource;
         if (!uri || uri.scheme !== 'file' || !ctx.cwdFromFileUri(uri)) {
             // No usable repository cwd (e.g. the open workspace is the container of every repo):
@@ -260,7 +231,7 @@ export function buildEphemeralCurrentWorkspaceEntryExtracted(ctx: any): MobilePr
         };
 }
 
-export async function loadSessionMapExtracted(ctx: any): Promise<Map<string, QaapProjectSessionSummary>> {
+export async function loadSessionMapExtracted(ctx: MobileProjectsServiceContext): Promise<Map<string, QaapProjectSessionSummary>> {
         const local = readLocalProjectSessions();
         const config = await fetchQaapAuthConfig().catch(() => ({ skipAuth: false, githubOAuth: false }));
         if (!config.skipAuth) {
@@ -285,7 +256,7 @@ export async function loadSessionMapExtracted(ctx: any): Promise<Map<string, Qaa
         }
 }
 
-export function applySessionToEntryExtracted(ctx: any, entry: MobileProjectEntry, session?: QaapProjectSessionSummary): MobileProjectEntry {
+export function applySessionToEntryExtracted(ctx: MobileProjectsServiceContext, entry: MobileProjectEntry, session?: QaapProjectSessionSummary): MobileProjectEntry {
         if (!session) {
             return entry;
         }
@@ -308,7 +279,7 @@ export function applySessionToEntryExtracted(ctx: any, entry: MobileProjectEntry
         };
 }
 
-export async function loadGithubProjectsExtracted(ctx: any, sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean): Promise<MobileProjectEntry[]> {
+export async function loadGithubProjectsExtracted(ctx: MobileProjectsServiceContext, sessionMap: Map<string, QaapProjectSessionSummary>, includeUnopened: boolean): Promise<MobileProjectEntry[]> {
         if (!readQaapSignedIn()) {
             return [];
         }
@@ -331,7 +302,7 @@ export async function loadGithubProjectsExtracted(ctx: any, sessionMap: Map<stri
         }
 }
 
-export function currentGithubRepositoryFullNameExtracted(ctx: any): string | undefined {
+export function currentGithubRepositoryFullNameExtracted(ctx: MobileProjectsServiceContext): string | undefined {
         const current = ctx.workspaceService.workspace?.resource;
         if (!current) {
             return undefined;
@@ -339,7 +310,7 @@ export function currentGithubRepositoryFullNameExtracted(ctx: any): string | und
         return parseGithubFullNameFromWorkspacePath(current.path.toString());
 }
 
-export function githubRepositoryToProjectExtracted(ctx: any, repo: QaapGithubRepositorySummary, pinnedIds: Set<string>, currentFullName?: string): MobileProjectEntry {
+export function githubRepositoryToProjectExtracted(ctx: MobileProjectsServiceContext, repo: QaapGithubRepositorySummary, pinnedIds: Set<string>, currentFullName?: string): MobileProjectEntry {
         const id = `github:${repo.fullName}`;
         const name = ctx.resolveDisplayName(id, repo.name);
         const isCurrent = repo.fullName.toLowerCase() === currentFullName;
@@ -378,7 +349,7 @@ export function githubRepositoryToProjectExtracted(ctx: any, repo: QaapGithubRep
         };
 }
 
-export function relativeUpdatedAtExtracted(ctx: any, value: string): string {
+export function relativeUpdatedAtExtracted(ctx: MobileProjectsServiceContext, value: string): string {
         const updated = Date.parse(value);
         if (!Number.isFinite(updated)) {
             return '—';
@@ -396,7 +367,7 @@ export function relativeUpdatedAtExtracted(ctx: any, value: string): string {
         return nls.localize('qaap/mobileProjects/updatedDays', '{0} d', String(Math.round(diff / day)));
 }
 
-export function projectActivityTimeExtracted(ctx: any, project: MobileProjectEntry): number {
+export function projectActivityTimeExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): number {
         if (!project.lastActiveAt) {
             return 0;
         }
@@ -404,7 +375,7 @@ export function projectActivityTimeExtracted(ctx: any, project: MobileProjectEnt
         return Number.isFinite(time) ? time : 0;
 }
 
-export function latestTimestampExtracted(ctx: any, a?: string, b?: string): string | undefined {
+export function latestTimestampExtracted(ctx: MobileProjectsServiceContext, a?: string, b?: string): string | undefined {
         const timeA = a ? Date.parse(a) : NaN;
         const timeB = b ? Date.parse(b) : NaN;
         if (Number.isFinite(timeA) && Number.isFinite(timeB)) {
@@ -416,7 +387,7 @@ export function latestTimestampExtracted(ctx: any, a?: string, b?: string): stri
         return Number.isFinite(timeB) ? b : undefined;
 }
 
-export function filterProjectsExtracted(ctx: any, projects: MobileProjectEntry[], filter: MobileProjectFilter): MobileProjectEntry[] {
+export function filterProjectsExtracted(ctx: MobileProjectsServiceContext, projects: MobileProjectEntry[], filter: MobileProjectFilter): MobileProjectEntry[] {
         if (filter === 'active') {
             return projects.filter(p => p.status === 'working' || p.status === 'review');
         }

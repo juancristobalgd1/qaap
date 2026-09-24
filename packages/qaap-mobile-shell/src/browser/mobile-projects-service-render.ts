@@ -1,43 +1,20 @@
-// @ts-nocheck
+import type { MobileProjectsServiceContext } from './mobile-projects-service-context';
 // Extracted from mobile-projects-service.ts
 
-import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
-import { LabelProvider } from '@theia/core/lib/browser';
-import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { SingleTextInputDialog } from '@theia/core/lib/browser/dialogs';
 import { nls } from '@theia/core/lib/common/nls';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
     cloneQaapGithubRepository,
     createQaapGithubRepository,
-    fetchQaapAuthConfig,
-    fetchQaapGithubRepositories,
-    fetchQaapProjectSessions,
     openQaapGithubRepository,
-    syncQaapAuthSessionFromServer,
-    upsertQaapProjectSession,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import type {
-    QaapProjectSessionSummary,
-    QaapProjectSessionUpsertRequest,
-} from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { readQaapAuthUser, readQaapSignedIn, type QaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import {
     MobileProjectEntry,
-    MobileProjectFilter,
-    MobileProjectsHubView,
     mobileProjectColorForName,
-    mobileProjectInitials,
     StoredMobileProject,
 } from './mobile-projects-types';
-import { normalizeWorkHubViewId } from '../common/qaap-work-hub-surfaces';
-import { findProjectMatchingWorkspaceCwd } from '../common/qaap-composer-workspace-project';
-import { isValidHubUserRepositoryProjectCandidate } from '../common/qaap-hub-project-eligibility';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
 import {
     clearMobileProjectReadmeOpenRequest,
     markMobileProjectReadmeForOpen,
@@ -46,30 +23,18 @@ import {
 } from './mobile-projects-open';
 import { MobileSnackbar } from './mobile-snackbar';
 import {
-    mergeSessionMaps,
-    patchLocalProjectSession,
-    readLocalProjectSessions,
-    writeLocalProjectSessions,
-} from './mobile-projects-session-cache';
-import { deduplicateMobileProjectEntries } from './mobile-projects-dedup';
-import {
-    MOBILE_PROJECTS_CUSTOM_PROJECTS_BASE,
-    MOBILE_PROJECTS_DISPLAY_NAMES_BASE,
-    MOBILE_PROJECTS_HIDDEN_IDS_BASE,
-    MOBILE_PROJECTS_PINNED_IDS_BASE,
     mobileProjectsUserStorageKey,
 } from './mobile-projects-user-storage';
-import { parseGithubFullNameFromWorkspacePath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { CUSTOM_PROJECTS_STORAGE_KEY, DISPLAY_NAMES_STORAGE_KEY, HIDDEN_PROJECT_IDS_STORAGE_KEY, PINNED_PROJECT_IDS_STORAGE_KEY } from './mobile-projects-service';
 
-function clearHiddenProjectIdExtracted(ctx: any, id: string): void {
+function clearHiddenProjectIdExtracted(ctx: MobileProjectsServiceContext, id: string): void {
         const hiddenIds = ctx.readHiddenProjectIds();
         if (hiddenIds.delete(id)) {
             ctx.writeHiddenProjectIds(hiddenIds);
         }
 }
 
-export function readHiddenProjectIdsExtracted(ctx: any): Set<string> {
+export function readHiddenProjectIdsExtracted(ctx: MobileProjectsServiceContext): Set<string> {
         if (typeof localStorage === 'undefined') {
             return new Set();
         }
@@ -88,14 +53,14 @@ export function readHiddenProjectIdsExtracted(ctx: any): Set<string> {
         }
 }
 
-export function writeHiddenProjectIdsExtracted(ctx: any, ids: Set<string>): void {
+export function writeHiddenProjectIdsExtracted(ctx: MobileProjectsServiceContext, ids: Set<string>): void {
         if (typeof localStorage === 'undefined') {
             return;
         }
         localStorage.setItem(mobileProjectsUserStorageKey(HIDDEN_PROJECT_IDS_STORAGE_KEY), JSON.stringify([...ids]));
 }
 
-export function readPinnedProjectIdsExtracted(ctx: any): Set<string> {
+export function readPinnedProjectIdsExtracted(ctx: MobileProjectsServiceContext): Set<string> {
         if (typeof localStorage === 'undefined') {
             return new Set();
         }
@@ -114,14 +79,14 @@ export function readPinnedProjectIdsExtracted(ctx: any): Set<string> {
         }
 }
 
-export function writePinnedProjectIdsExtracted(ctx: any, ids: Set<string>): void {
+export function writePinnedProjectIdsExtracted(ctx: MobileProjectsServiceContext, ids: Set<string>): void {
         if (typeof localStorage === 'undefined') {
             return;
         }
         localStorage.setItem(mobileProjectsUserStorageKey(PINNED_PROJECT_IDS_STORAGE_KEY), JSON.stringify([...ids]));
 }
 
-export function isPinnedExtracted(ctx: any, id: string, pinnedIds: Set<string>, defaultPinned: boolean): boolean {
+export function isPinnedExtracted(ctx: MobileProjectsServiceContext, id: string, pinnedIds: Set<string>, defaultPinned: boolean): boolean {
         if (pinnedIds.has(id)) {
             return true;
         }
@@ -131,7 +96,7 @@ export function isPinnedExtracted(ctx: any, id: string, pinnedIds: Set<string>, 
         return defaultPinned;
 }
 
-export function togglePinExtracted(ctx: any, project: MobileProjectEntry): boolean {
+export function togglePinExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): boolean {
         const pinnedIds = ctx.readPinnedProjectIds();
         const nextPinned = !project.pinned;
         pinnedIds.delete(project.id);
@@ -145,13 +110,13 @@ export function togglePinExtracted(ctx: any, project: MobileProjectEntry): boole
         return nextPinned;
 }
 
-export function workspacePathFromUriExtracted(ctx: any, uri: URI): string {
+export function workspacePathFromUriExtracted(ctx: MobileProjectsServiceContext, uri: URI): string {
         return uri.authority
             ? `//${uri.authority}${uri.path.toString()}`
             : uri.path.toString();
 }
 
-export function openWorkspaceUriExtracted(ctx: any, uri: URI): void {
+export function openWorkspaceUriExtracted(ctx: MobileProjectsServiceContext, uri: URI): void {
         const hiddenIds = ctx.readHiddenProjectIds();
         const recentId = `recent:${uri.toString()}`;
         if (hiddenIds.delete(recentId)) {
@@ -163,7 +128,7 @@ export function openWorkspaceUriExtracted(ctx: any, uri: URI): void {
         ctx.workspaceService.open(uri, { preserveWindow: true });
 }
 
-export function formatRepositoryLabelExtracted(ctx: any, repository: string): string {
+export function formatRepositoryLabelExtracted(ctx: MobileProjectsServiceContext, repository: string): string {
         const trimmed = repository.trim().replace(/\.git$/, '');
         try {
             const url = new URL(trimmed);
@@ -179,7 +144,7 @@ export function formatRepositoryLabelExtracted(ctx: any, repository: string): st
         return trimmed;
 }
 
-export async function openInCurrentWindowAsyncExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
+export async function openInCurrentWindowAsyncExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<void> {
         markMobileProjectsPanelDismiss();
         if (project.github) {
             await ctx.openGithubProject(project);
@@ -191,7 +156,7 @@ export async function openInCurrentWindowAsyncExtracted(ctx: any, project: Mobil
         }
 }
 
-export function openInNewWindowExtracted(ctx: any, project: MobileProjectEntry): void {
+export function openInNewWindowExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): void {
         if (project.github) {
             void ctx.openGithubProject(project, true);
             return;
@@ -206,7 +171,7 @@ export function openInNewWindowExtracted(ctx: any, project: MobileProjectEntry):
         ctx.windowService.openNewWindow(url.toString());
 }
 
-export async function openGithubProjectExtracted(ctx: any, project: MobileProjectEntry, newWindow = false): Promise<void> {
+export async function openGithubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, newWindow = false): Promise<void> {
         if (!project.github) {
             return;
         }
@@ -250,7 +215,7 @@ export async function openGithubProjectExtracted(ctx: any, project: MobileProjec
         }
 }
 
-export async function createGithubProjectExtracted(ctx: any): Promise<MobileProjectEntry[] | undefined> {
+export async function createGithubProjectExtracted(ctx: MobileProjectsServiceContext): Promise<MobileProjectEntry[] | undefined> {
         const dialog = new SingleTextInputDialog({
             title: nls.localize('qaap/mobileProjects/createGithubRepo', 'Create GitHub repository'),
             placeholder: nls.localize('qaap/mobileProjects/createGithubRepoPlaceholder', 'repository-name'),
@@ -290,7 +255,7 @@ export async function createGithubProjectExtracted(ctx: any): Promise<MobileProj
         }
 }
 
-export async function cloneGithubProjectExtracted(ctx: any): Promise<MobileProjectEntry[] | undefined> {
+export async function cloneGithubProjectExtracted(ctx: MobileProjectsServiceContext): Promise<MobileProjectEntry[] | undefined> {
         const dialog = new SingleTextInputDialog({
             title: nls.localize('qaap/mobileProjects/cloneGithubRepo', 'Clone GitHub repository'),
             placeholder: nls.localize('qaap/mobileProjects/cloneGithubRepoPlaceholder', 'owner/repo or https://github.com/owner/repo'),
@@ -308,7 +273,7 @@ export async function cloneGithubProjectExtracted(ctx: any): Promise<MobileProje
         return ctx.cloneGithubProjectByRepository(repository);
 }
 
-export async function cloneGithubProjectByRepositoryExtracted(ctx: any, repository: string): Promise<MobileProjectEntry[] | undefined> {
+export async function cloneGithubProjectByRepositoryExtracted(ctx: MobileProjectsServiceContext, repository: string): Promise<MobileProjectEntry[] | undefined> {
         const trimmed = repository.trim();
         if (!trimmed) {
             return undefined;
@@ -335,7 +300,7 @@ export async function cloneGithubProjectByRepositoryExtracted(ctx: any, reposito
         }
 }
 
-export function readDisplayNamesExtracted(ctx: any): Record<string, string> {
+export function readDisplayNamesExtracted(ctx: MobileProjectsServiceContext): Record<string, string> {
         if (typeof localStorage === 'undefined') {
             return {};
         }
@@ -354,14 +319,14 @@ export function readDisplayNamesExtracted(ctx: any): Record<string, string> {
         }
 }
 
-export function writeDisplayNamesExtracted(ctx: any, names: Record<string, string>): void {
+export function writeDisplayNamesExtracted(ctx: MobileProjectsServiceContext, names: Record<string, string>): void {
         if (typeof localStorage === 'undefined') {
             return;
         }
         localStorage.setItem(mobileProjectsUserStorageKey(DISPLAY_NAMES_STORAGE_KEY), JSON.stringify(names));
 }
 
-export function readCustomProjectsExtracted(ctx: any): StoredMobileProject[] {
+export function readCustomProjectsExtracted(ctx: MobileProjectsServiceContext): StoredMobileProject[] {
         if (typeof localStorage === 'undefined') {
             return [];
         }
@@ -377,14 +342,14 @@ export function readCustomProjectsExtracted(ctx: any): StoredMobileProject[] {
         }
 }
 
-export function writeCustomProjectsExtracted(ctx: any, projects: StoredMobileProject[]): void {
+export function writeCustomProjectsExtracted(ctx: MobileProjectsServiceContext, projects: StoredMobileProject[]): void {
         if (typeof localStorage === 'undefined') {
             return;
         }
         localStorage.setItem(mobileProjectsUserStorageKey(CUSTOM_PROJECTS_STORAGE_KEY), JSON.stringify(projects));
 }
 
-export async function importGithubProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<MobileProjectEntry[] | undefined> {
+export async function importGithubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<MobileProjectEntry[] | undefined> {
         if (!project.github) {
             return undefined;
         }
@@ -409,7 +374,7 @@ export async function importGithubProjectExtracted(ctx: any, project: MobileProj
         }
 }
 
-export function registerGithubWorkspaceProjectExtracted(ctx: any, repository: QaapGithubRepositorySummary, uri: URI): void {
+export function registerGithubWorkspaceProjectExtracted(ctx: MobileProjectsServiceContext, repository: QaapGithubRepositorySummary, uri: URI): void {
         clearHiddenProjectIdExtracted(ctx, `github:${repository.fullName}`);
         ctx.touchGithubRepositoryActivity(repository);
         const custom = ctx.readCustomProjects();
@@ -445,7 +410,7 @@ export function registerGithubWorkspaceProjectExtracted(ctx: any, repository: Qa
         }
 }
 
-export function storedToEntryExtracted(ctx: any, stored: StoredMobileProject, pinnedIds: Set<string>): MobileProjectEntry {
+export function storedToEntryExtracted(ctx: MobileProjectsServiceContext, stored: StoredMobileProject, pinnedIds: Set<string>): MobileProjectEntry {
         return {
             id: stored.id,
             name: stored.name,
@@ -465,7 +430,7 @@ export function storedToEntryExtracted(ctx: any, stored: StoredMobileProject, pi
         };
 }
 
-export function uniqueCopyNameExtracted(ctx: any, base: string, existingNames: string[]): string {
+export function uniqueCopyNameExtracted(ctx: MobileProjectsServiceContext, base: string, existingNames: string[]): string {
         const trimmed = base.trim() || nls.localize('qaap/mobileProjects/untitled', 'Project');
         if (!existingNames.includes(trimmed)) {
             return trimmed;

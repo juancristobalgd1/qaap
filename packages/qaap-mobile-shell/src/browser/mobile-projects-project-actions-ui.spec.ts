@@ -8,6 +8,7 @@ import URI from '@theia/core/lib/common/uri';
 import { expect } from 'chai';
 import type { MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsServiceContext } from './mobile-projects-service-context';
 
 // Use the shared jsdom environment instead of a private linkedom DOM. Assigning
 // linkedom's DOM classes (Element/HTMLElement/Event/MouseEvent/...) onto the global
@@ -188,7 +189,7 @@ describe('MobileProjectsService.removeProject', () => {
             },
         };
 
-        expect(await removeProjectExtracted(ctx, removedProject)).to.equal(true);
+        expect(await removeProjectExtracted(ctx as unknown as MobileProjectsServiceContext, removedProject)).to.equal(true);
         expect(customProjects).to.deep.equal([]);
         expect(displayNames).to.deep.equal({});
         expect(removedRecentWorkspaces).to.deep.equal(['file:///workspace/laaaaa']);
