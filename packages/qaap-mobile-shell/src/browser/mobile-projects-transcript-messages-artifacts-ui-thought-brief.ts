@@ -1,186 +1,24 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 import { lazyTranscriptToolPillBodies,transcriptToolGroupItems,transcriptToolGroupUmbrella } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { ConfirmDialog } from '@theia/core/lib/browser';
-import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, conversationToSummary, resolveRunUserMessageId, restoreConversationCheckpoint } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
-import {
-    extractLastFailedToolFromMessage,
-    resolveAgentTurnFailureTechnicalContent,
-} from '../common/qaap-agent-failure-message';
-import { formatReadToolDetailFromArgs, formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
-import { excerptTranscriptThought, extractTranscriptDiffCard, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
-import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, isTranscriptAgentThinkingPhase, isTranscriptComposerVisualIdle, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
-import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
-import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
-import {
-    resolveTranscriptEffectiveStatus,
-} from '../common/qaap-transcript-turn-status';
-import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
-import type { TranscriptActivityNavigationItem, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
-import { groupTranscriptActivityNavigationItems, resolveTranscriptLifecycleActivityItems } from '../common/qaap-transcript-activity-navigation';
-import { conversationRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
-import {
-    resolveTranscriptBootstrapDiagnosticActivityItems,
-    toTranscriptPreviewBootstrapSnapshot,
-} from '../common/qaap-transcript-preview-bootstrap-failure';
-import { isTranscriptActivityLiveState, shouldApplyTranscriptActivitySettleMotion, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
-import { TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
-import { resolveTranscriptActivityDiffPeek } from '../common/qaap-transcript-activity-diff-peek';
-import { resolveTranscriptSubagentCardModels, transcriptActivitySubagentCardClassName } from '../common/qaap-transcript-activity-subagent-card';
-import {
-    resolveTranscriptTimelineItemTier,
-    transcriptTimelineTierClassName,
-} from '../common/qaap-transcript-timeline-tier';
-import {
-    resolveTranscriptActivityTimelineSummaryText,
-} from '../common/qaap-transcript-activity-timeline-summary';
-import { resolveTranscriptTimelineVisibilityPolicy } from '../common/qaap-transcript-timeline-visibility';
-import { resolveQaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
-import {
-    markTranscriptTimelineGapExpanded,
-    markTranscriptTimelineRevealAll,
-    readTranscriptTimelineExpandState,
-    resolveTranscriptTimelineRenderWindowWithExpand,
-    TRANSCRIPT_TIMELINE_GAP_POSITION_ATTR,
-} from '../common/qaap-transcript-timeline-gap-expand';
-import {
-    fingerprintTranscriptActivityItemContent,
-    fingerprintTranscriptActivityItemSlot,
-    fingerprintTranscriptTimelineSummary,
-    fingerprintTranscriptTimelineSync,
-    TRANSCRIPT_ACTIVITY_ITEM_CONTENT_FP_ATTR,
-    TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR,
-    TRANSCRIPT_TIMELINE_SUMMARY_FP_ATTR,
-    TRANSCRIPT_TIMELINE_SYNC_FP_ATTR,
-} from '../common/qaap-transcript-timeline-sync-fingerprint';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
+import { excerptTranscriptThought, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
+import { isTranscriptAgentThinkingPhase, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';
-import { buildTranscriptApprovalCard, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
-import { buildTranscriptDiffCardFromExtracted, buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
-import { resolveTranscriptToolUiPayloadFromSegment } from '../common/qaap-transcript-tool-ui-payloads';
-import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
-import {
-    annotateTranscriptActivityNestMetadata,
-    transcriptActivityNestDepthClassName,
-} from '../common/qaap-transcript-activity-nesting';
-import { bindTranscriptActivityListKeyboard } from '../common/qaap-transcript-activity-keyboard';
-import {
-    TRANSCRIPT_TIMELINE_VIRTUALIZE_THRESHOLD,
-} from '../common/qaap-transcript-timeline-window';
-import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
-import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
-import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import { MobileSnackbar } from './mobile-snackbar';
-import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
-import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
-import { resolveTranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-error-display';
-import {
-    resolveTranscriptActivityExpandContent,
-    shouldShowTranscriptActivityExpandContent,
-    type TranscriptActivityExpandContent,
-    type TranscriptActivityExpandDeps,
-    type TranscriptActivityTerminalExpandEntry,
-} from '../common/qaap-transcript-activity-expand-core';
-import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
-import { canRestoreConversationCheckpoint, annotateTranscriptActivityCheckpointIds } from '../common/qaap-transcript-checkpoint-restore';
-import { createAgentSetupElement, syncAgentSetupElement, destroyAgentSetupElement } from '../common/qaap-agent-setup-phrases';
-import {
-    createThinkingOrbIndicator,
-    destroyThinkingOrbIndicator,
-    QAAP_THINKING_ORB_INDICATOR_CLASS,
-    syncThinkingOrbIndicator,
-} from './qaap-thinking-orb-indicator';
-import {
-    resolveActivityToolIconMotionKind,
-    syncActivityToolIconMotion,
-} from './qaap-activity-tool-icon-motion';
+import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
+import { TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '../common/qaap-transcript-incremental-update';
 import {
     coalesceToolSegments,
     bundleToolSegmentsByUmbrella,
     summarizeToolBundle,
     type ToolUmbrella,
 } from '../common/qaap-tool-umbrella';
-import {
-    buildMobileExecutionEvents,
-    createMobileClosingErrorCardElement,
-    createMobileDiffSummaryElement,
-    createMobileExecutionEventTimeline,
-    createMobileLineDiffSummaryElement,
-    findMobileProcessAccordion,
-    hasMobileExecutionEventTimeline,
-    MOBILE_CLOSING_ERROR_CARD_CLASS,
-    MOBILE_TOOL_FILE_OPEN_EVENT,
-    refreshMobileExecutionEventTimeline,
-    resolveMobileActivityVerb,
-    syncMobileProcessAccordionState,
-    syncTranscriptStandaloneTurnProvenance,
-    wrapMobileProcessAccordion,
-} from './qaap-execution-event-timeline';
-import { ensureSlowTurnHint } from './qaap-slow-turn-hint';
-import { getFileIconClass } from '../common/qaap-file-icon-utils';
-import {
-    clearLegacyTranscriptStreamFooterHost,
-    createTranscriptLiveStatusElement,
-    ensureTranscriptLiveStatusAtScrollerTail,
-    removeNestedTranscriptLiveStatusCopies,
-    removeTranscriptLiveStatusElement,
-    resolveTranscriptChatHostFromNode,
-    resolveTranscriptLiveStatusTokenCount,
-    resolveTranscriptScroller,
-    resolveTranscriptSegmentsFooterAnchor,
-    syncTranscriptLiveStatusElement,
-    TRANSCRIPT_LIVE_STATUS_CLASS,
-    TRANSCRIPT_LIVE_STATUS_LOGO_CLASS,
-    TRANSCRIPT_STREAM_FOOTER_HOST_CLASS,
-} from '../common/qaap-transcript-live-status';
-import {
-    isTranscriptExecutionTimelineNarrative,
-    buildTranscriptExecutionTimelineItems,
-    normalizeMobileClosingNarrativeText,
-    type TranscriptActivityTimelineItem,
-} from './mobile-projects-transcript-timeline-utils';
-import {
-    destroyThinkingOrbHosts as destroyThinkingOrbHostsHelper,
-    queueExecutionTimelineRefresh as queueExecutionTimelineRefreshHelper,
-    skipExecutionTimelineRefresh as skipExecutionTimelineRefreshHelper,
-    consumeExecutionTimelineRefresh as consumeExecutionTimelineRefreshHelper,
-    consumeSkippedExecutionTimelineRefresh as consumeSkippedExecutionTimelineRefreshHelper,
-    didExecutionToolSegmentsChange as didExecutionToolSegmentsChangeHelper,
-    isConversationWorking as isConversationWorkingHelper,
-    isConversationFinalResponseCommitted as isConversationFinalResponseCommittedHelper,
-    isConversationError as isConversationErrorHelper,
-    isAgentMessageCancelled as isAgentMessageCancelledHelper,
-    resolveTranscriptStreamTimeoutDetail as resolveTranscriptStreamTimeoutDetailHelper,
-    shouldShowPinnedTranscriptLiveStatus as shouldShowPinnedTranscriptLiveStatusHelper,
-    resolveTranscriptThoughtBriefIconClass as resolveTranscriptThoughtBriefIconClassHelper,
-    isLobeWorkflowProcessText as isLobeWorkflowProcessTextHelper,
-    collectMobileClosingNarrativeTextsBefore as collectMobileClosingNarrativeTextsBeforeHelper,
-    resolveLobeVisibleTextSegmentIndexes as resolveLobeVisibleTextSegmentIndexesHelper,
-    resolveConversationElapsedMs as resolveConversationElapsedMsHelper,
-    scrollTranscriptStreamingTraceIntoView as scrollTranscriptStreamingTraceIntoViewHelper,
-    enrichChangedFilesWithComposerGitStats as enrichChangedFilesWithComposerGitStatsHelper,
-    syncTranscriptActivityThinkingCopy as syncTranscriptActivityThinkingCopyHelper,
-    populateTranscriptActivityStepCopy as populateTranscriptActivityStepCopyHelper,
-    syncTranscriptActivityHistoryGap as syncTranscriptActivityHistoryGapHelper,
-    refreshTranscriptThoughtBriefTitle as refreshTranscriptThoughtBriefTitleHelper,
-    syncTranscriptThoughtBriefElement as syncTranscriptThoughtBriefElementHelper,
-    syncTranscriptStreamStallChrome as syncTranscriptStreamStallChromeHelper,
-} from './mobile-projects-transcript-messages-artifacts-helpers';
-import {
-    bindTranscriptActivityListActions as bindTranscriptActivityListActionsHelper,
-    appendFreeModelTimeoutHint as appendFreeModelTimeoutHintHelper,
-    syncTranscriptStreamTimeoutBanner as syncTranscriptStreamTimeoutBannerHelper,
-    resolveTranscriptActivityRowContext as resolveTranscriptActivityRowContextHelper,
-} from './mobile-projects-transcript-messages-artifacts-helpers';
 
-export function patchTranscriptToolPillExtracted(ctx: any, pill: HTMLDetailsElement,
+export function patchTranscriptToolPillExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, pill: HTMLDetailsElement,
         previous: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         conv?: QaapAgentConversationDTO,): void {
@@ -294,7 +132,7 @@ export function patchTranscriptToolPillExtracted(ctx: any, pill: HTMLDetailsElem
         }
 }
 
-export function createTranscriptThoughtBriefIconExtracted(ctx: any, active: boolean): HTMLElement {
+export function createTranscriptThoughtBriefIconExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, active: boolean): HTMLElement {
         const icon = document.createElement('span');
         icon.className = 'theia-mobile-agent-lobe-status-indicator theia-mod-thinking theia-mobile-agent-thought-brief-icon';
         icon.setAttribute('aria-hidden', 'true');
@@ -304,7 +142,7 @@ export function createTranscriptThoughtBriefIconExtracted(ctx: any, active: bool
         return icon;
 }
 
-export function syncTranscriptThoughtBriefIconExtracted(ctx: any, icon: HTMLElement, active: boolean): void {
+export function syncTranscriptThoughtBriefIconExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, icon: HTMLElement, active: boolean): void {
         const glyph = icon.querySelector('.codicon');
         if (!glyph) {
             return;
@@ -312,7 +150,7 @@ export function syncTranscriptThoughtBriefIconExtracted(ctx: any, icon: HTMLElem
         glyph.className = ctx.resolveTranscriptThoughtBriefIconClass(active);
 }
 
-export function createTranscriptThoughtBriefBlockExtracted(ctx: any, segments: QaapAgentMessageSegmentDTO[],
+export function createTranscriptThoughtBriefBlockExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segments: QaapAgentMessageSegmentDTO[],
         options?: { readonly streaming?: boolean; readonly conv?: QaapAgentConversationDTO },): HTMLElement | undefined {
         const thinking = resolveTranscriptThinkingContent(segments);
         const stats = resolveTranscriptActivityStats(segments);
@@ -393,7 +231,7 @@ export function createTranscriptThoughtBriefBlockExtracted(ctx: any, segments: Q
         return block;
 }
 
-export function createTranscriptToolPillsStripExtracted(ctx: any, segments: QaapAgentMessageSegmentDTO[],
+export function createTranscriptToolPillsStripExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segments: QaapAgentMessageSegmentDTO[],
         conv?: QaapAgentConversationDTO,
         options?: { readonly deferHeavyContent?: boolean },): HTMLElement | undefined {
         const rawToolSegments = segments.filter((segment): segment is Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> =>
@@ -427,7 +265,7 @@ export function createTranscriptToolPillsStripExtracted(ctx: any, segments: Qaap
         return container;
 }
 
-export function wrapTranscriptToolGroupExtracted(ctx: any, strip: HTMLElement,
+export function wrapTranscriptToolGroupExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, strip: HTMLElement,
         umbrella?: ToolUmbrella,
         items?: ReadonlyArray<Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>>,): HTMLDetailsElement {
         const group = document.createElement('details');
@@ -461,7 +299,7 @@ export function wrapTranscriptToolGroupExtracted(ctx: any, strip: HTMLElement,
         return group;
 }
 
-export function refreshTranscriptToolGroupSummaryExtracted(ctx: any, group: HTMLElement): void {
+export function refreshTranscriptToolGroupSummaryExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, group: HTMLElement): void {
         const label = group.querySelector<HTMLElement>('.theia-mobile-agent-tool-group-label');
         if (!label) {
             return;
@@ -498,7 +336,7 @@ export function refreshTranscriptToolGroupSummaryExtracted(ctx: any, group: HTML
         }
 }
 
-export function formatTranscriptToolGroupLabelExtracted(ctx: any, stats: QaapTranscriptActivityStats): string {
+export function formatTranscriptToolGroupLabelExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, stats: QaapTranscriptActivityStats): string {
         const parts: string[] = [];
         if (stats.shells > 0) {
             parts.push(stats.shells === 1
@@ -529,7 +367,7 @@ export function formatTranscriptToolGroupLabelExtracted(ctx: any, stats: QaapTra
         return joined.charAt(0).toUpperCase() + joined.slice(1);
 }
 
-export function resolveToolRowPartsExtracted(ctx: any, segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+export function resolveToolRowPartsExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         kind: string,): ReturnType<typeof resolveTranscriptToolRowParts> {
         if (ctx.resolversUi.isTranscriptPureReadTool(segment.name)) {
             const readDetail = formatReadToolDetailFromArgs(segment.args);

@@ -1,4 +1,3 @@
-// @ts-nocheck
 // Shared module-level constants extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 // These are mutable WeakMap/WeakSet registries and must be shared across all extracted files.
 

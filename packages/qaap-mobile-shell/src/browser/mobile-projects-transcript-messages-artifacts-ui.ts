@@ -95,47 +95,60 @@ export type { TranscriptActivityTimelineOptions as TranscriptActivityTimelineOpt
  * so duplicate/failure-dialog-covered error text is suppressed consistently
  * regardless of which path first observes the segment.
  */
-type MobileClosingNarrativeAction =
+export type MobileClosingNarrativeAction =
     | { readonly kind: 'skip' }
     | { readonly kind: 'error-card'; readonly message: string }
     | { readonly kind: 'text' };
 
 export class MobileProjectsTranscriptMessagesArtifactsUi {
-    protected readonly activityTiming = new TranscriptActivityTimingStore();
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public readonly activityTiming = new TranscriptActivityTimingStore();
 
     constructor(
-        protected readonly host: MobileProjectsTranscriptMessagesHost,
-        protected readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
-        protected readonly resolversUi: MobileProjectsTranscriptMessagesResolversUi,
-        protected readonly toolUi: MobileProjectsTranscriptMessagesToolUi,
-        protected readonly onConversationMutation?: (conv: QaapAgentConversationDTO) => void,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+        public readonly host: MobileProjectsTranscriptMessagesHost,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+        public readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+        public readonly resolversUi: MobileProjectsTranscriptMessagesResolversUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+        public readonly toolUi: MobileProjectsTranscriptMessagesToolUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+        public readonly onConversationMutation?: (conv: QaapAgentConversationDTO) => void,
     ) { }
 
-    protected removeTranscriptLiveStatusWithOrb(root: ParentNode): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public removeTranscriptLiveStatusWithOrb(root: ParentNode): void {
         removeTranscriptLiveStatusWithOrbExtracted(this, root);
     }
 
-    protected destroyThinkingOrbHosts(root: ParentNode): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public destroyThinkingOrbHosts(root: ParentNode): void {
         destroyThinkingOrbHostsHelper(root);
     }
 
-    protected queueExecutionTimelineRefresh(row: HTMLElement, segments: readonly QaapAgentMessageSegmentDTO[]): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public queueExecutionTimelineRefresh(row: HTMLElement, segments: readonly QaapAgentMessageSegmentDTO[]): void {
         queueExecutionTimelineRefreshHelper(row, segments);
     }
 
-    protected skipExecutionTimelineRefresh(row: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public skipExecutionTimelineRefresh(row: HTMLElement): void {
         skipExecutionTimelineRefreshHelper(row);
     }
 
-    protected consumeExecutionTimelineRefresh(row: HTMLElement): readonly QaapAgentMessageSegmentDTO[] | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public consumeExecutionTimelineRefresh(row: HTMLElement): readonly QaapAgentMessageSegmentDTO[] | undefined {
         return consumeExecutionTimelineRefreshHelper(row);
     }
 
-    protected consumeSkippedExecutionTimelineRefresh(row: HTMLElement): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public consumeSkippedExecutionTimelineRefresh(row: HTMLElement): boolean {
         return consumeSkippedExecutionTimelineRefreshHelper(row);
     }
 
-    protected didExecutionToolSegmentsChange(previousSegments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public didExecutionToolSegmentsChange(previousSegments: readonly QaapAgentMessageSegmentDTO[],
         nextSegments: readonly QaapAgentMessageSegmentDTO[],): boolean {
         return didExecutionToolSegmentsChangeExtracted(this, previousSegments, nextSegments);
     }
@@ -156,7 +169,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptAgentSegmentsRowExtracted(this, segments, error, conv, options);
     }
 
-    protected renderMobileExecutionEventTimeline(body: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public renderMobileExecutionEventTimeline(body: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
         options: {
             readonly streaming: boolean;
@@ -173,23 +187,27 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         renderMobileExecutionEventTimelineExtracted(this, body, segments, options);
     }
 
-    protected shouldShowMobileDiffSummary(conv: QaapAgentConversationDTO | undefined,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public shouldShowMobileDiffSummary(conv: QaapAgentConversationDTO | undefined,
         renderStreaming: boolean,): boolean {
         return shouldShowMobileDiffSummaryExtracted(this, conv, renderStreaming);
     }
 
-    protected resolveRunStopHandler(conv: QaapAgentConversationDTO | undefined,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveRunStopHandler(conv: QaapAgentConversationDTO | undefined,
         message: QaapAgentMessageDTO | undefined,
         isWorking: boolean,): (() => void) | undefined {
         return resolveRunStopHandlerExtracted(this, conv, message, isWorking);
     }
 
-    protected bindMobileExecutionEventTimelineFileOpen(root: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public bindMobileExecutionEventTimelineFileOpen(root: HTMLElement): void {
         bindMobileExecutionEventTimelineFileOpenExtracted(this, root);
     }
 
     /** True when the conversation is still actively streaming/working. */
-    protected isConversationWorking(conv: QaapAgentConversationDTO | undefined, renderStreaming = false): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public isConversationWorking(conv: QaapAgentConversationDTO | undefined, renderStreaming = false): boolean {
         return isConversationWorkingHelper(conv, renderStreaming);
     }
 
@@ -198,25 +216,30 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      * (visually settled/finalizing). Collapse process chrome only once the backend
      * is actually ready/idle, not merely because this render pass is non-streaming.
      */
-    protected isConversationFinalResponseCommitted(conv: QaapAgentConversationDTO | undefined, renderStreaming: boolean): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public isConversationFinalResponseCommitted(conv: QaapAgentConversationDTO | undefined, renderStreaming: boolean): boolean {
         return isConversationFinalResponseCommittedHelper(conv, renderStreaming);
     }
 
     /** True when the conversation ended in a failure. */
-    protected isConversationError(conv: QaapAgentConversationDTO | undefined): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public isConversationError(conv: QaapAgentConversationDTO | undefined): boolean {
         return isConversationErrorHelper(conv);
     }
 
-    protected resolveLastAgentMessage(conv: QaapAgentConversationDTO | undefined): QaapAgentMessageDTO | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveLastAgentMessage(conv: QaapAgentConversationDTO | undefined): QaapAgentMessageDTO | undefined {
         return resolveLastAgentMessageExtracted(this, conv);
     }
 
     /** The failure reason recorded on the conversation's last agent message, if any. */
-    protected resolveLastAgentMessageError(conv: QaapAgentConversationDTO | undefined): string | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveLastAgentMessageError(conv: QaapAgentConversationDTO | undefined): string | undefined {
         return this.resolveLastAgentMessage(conv)?.error;
     }
 
-    protected resolveTranscriptRowAgentMessage(row: HTMLElement | undefined,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptRowAgentMessage(row: HTMLElement | undefined,
         conv: QaapAgentConversationDTO | undefined,): QaapAgentMessageDTO | undefined {
         return resolveTranscriptRowAgentMessageExtracted(this, row, conv);
     }
@@ -237,7 +260,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
      * historical (already-settled) turn's accordion would otherwise be
      * mislabeled whenever a later turn happened to end up cancelled.
      */
-    protected isAgentMessageCancelled(message: QaapAgentMessageDTO | undefined): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public isAgentMessageCancelled(message: QaapAgentMessageDTO | undefined): boolean {
         return isAgentMessageCancelledHelper(message);
     }
 
@@ -246,24 +270,28 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return resolveTurnProvenanceExtracted(this, conv, message);
     }
 
-    protected resolveMobileClosingNarrativeAction(text: string,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveMobileClosingNarrativeAction(text: string,
         seenClosingNarrativeTexts: ReadonlySet<string>,
         normalizedFailureReason: string | undefined,
         isError: boolean,): MobileClosingNarrativeAction {
         return resolveMobileClosingNarrativeActionExtracted(this, text, seenClosingNarrativeTexts, normalizedFailureReason, isError);
     }
 
-    protected resolveMobileClosingErrorCardRetry(): (() => void) | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveMobileClosingErrorCardRetry(): (() => void) | undefined {
         return resolveMobileClosingErrorCardRetryExtracted(this);
     }
 
-    protected collectMobileClosingNarrativeTextsBefore(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public collectMobileClosingNarrativeTextsBefore(segments: readonly QaapAgentMessageSegmentDTO[],
         lastToolIndex: number,
         beforeIndex: number,): Set<string> {
         return collectMobileClosingNarrativeTextsBeforeExtracted(this, segments, lastToolIndex, beforeIndex);
     }
 
-    protected isClosingNarrativeSegmentSkipped(segment: QaapAgentMessageSegmentDTO,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public isClosingNarrativeSegmentSkipped(segment: QaapAgentMessageSegmentDTO,
         segments: readonly QaapAgentMessageSegmentDTO[],
         lastToolIndex: number,
         segmentIndex: number,
@@ -289,40 +317,47 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return resolveConversationElapsedMsHelper(conv, c => this.isConversationWorking(c));
     }
 
-    protected syncRowProcessAccordion(row: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncRowProcessAccordion(row: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
         conv: QaapAgentConversationDTO | undefined,
         streaming: boolean,): void {
         syncRowProcessAccordionExtracted(this, row, segments, conv, streaming);
     }
 
-    protected upgradeToMobileExecutionEventTimeline(row: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public upgradeToMobileExecutionEventTimeline(row: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
         options: { readonly streaming: boolean; readonly conv?: QaapAgentConversationDTO },): void {
         upgradeToMobileExecutionEventTimelineExtracted(this, row, segments, options);
     }
 
-    protected resolveLobeVisibleTextSegmentIndexes(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveLobeVisibleTextSegmentIndexes(segments: readonly QaapAgentMessageSegmentDTO[],
         activityTimelineShown: boolean,): ReadonlySet<number> {
         return resolveLobeVisibleTextSegmentIndexesExtracted(this, segments, activityTimelineShown);
     }
 
-    protected shouldRenderLobeTextSegment(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public shouldRenderLobeTextSegment(segments: readonly QaapAgentMessageSegmentDTO[],
         segmentIndex: number,
         activityTimelineShown: boolean,): boolean {
         return shouldRenderLobeTextSegmentExtracted(this, segments, segmentIndex, activityTimelineShown);
     }
 
-    protected isLobeWorkflowProcessText(content: string): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public isLobeWorkflowProcessText(content: string): boolean {
         return isLobeWorkflowProcessTextHelper(content, text => this.contentUi.cleanTranscriptDisplayText(text));
     }
 
-    protected refreshMobileClosingNarrativeBlocks(segmentsBody: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public refreshMobileClosingNarrativeBlocks(segmentsBody: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],): void {
         refreshMobileClosingNarrativeBlocksExtracted(this, segmentsBody, segments);
     }
 
-    protected enrichChangedFilesWithComposerGitStats(files: ReadonlyArray<{
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public enrichChangedFilesWithComposerGitStats(files: ReadonlyArray<{
         readonly path: string;
         readonly kind: 'edited' | 'created';
         readonly added?: number;
@@ -336,7 +371,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return enrichChangedFilesWithComposerGitStatsExtracted(this, files);
     }
 
-    protected appendMobileDiffSummary(segmentsBody: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public appendMobileDiffSummary(segmentsBody: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],): void {
         appendMobileDiffSummaryExtracted(this, segmentsBody, segments);
     }
@@ -351,25 +387,29 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         scrollTranscriptStreamingTraceIntoViewHelper(this.host.transcriptChatHost, options);
     }
 
-    protected handleTranscriptActivityNavigation(item: TranscriptActivityNavigationItem,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public handleTranscriptActivityNavigation(item: TranscriptActivityNavigationItem,
         ownerRow: HTMLElement,): void {
         handleTranscriptActivityNavigationExtracted(this, item, ownerRow);
     }
 
-    protected resolveTranscriptActivityExecutionContext(): {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptActivityExecutionContext(): {
         project: MobileProjectEntry | undefined;
         summary: QaapAgentConversationSummaryDTO | undefined;
     } {
         return resolveTranscriptActivityExecutionContextExtracted(this);
     }
 
-    protected attachTranscriptActivityItemAction(li: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public attachTranscriptActivityItemAction(li: HTMLElement,
         item: TranscriptActivityNavigationItem,
         _ownerRow: HTMLElement,): void {
         attachTranscriptActivityItemActionExtracted(this, li, item, _ownerRow);
     }
 
-    protected bindTranscriptActivityListActions(list: HTMLElement, ownerRow: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public bindTranscriptActivityListActions(list: HTMLElement, ownerRow: HTMLElement): void {
         bindTranscriptActivityListActionsExtracted(this, list, ownerRow);
     }
 
@@ -387,28 +427,34 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return patchStreamingAgentToolSegmentsExtracted(this, row, prevSegments, nextSegments, conv);
     }
 
-    protected resolveTranscriptStreamHealth(conv?: QaapAgentConversationDTO) {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptStreamHealth(conv?: QaapAgentConversationDTO) {
         return resolveTranscriptStreamHealthExtracted(this, conv);
     }
 
-    protected resolveTranscriptStreamStalled(conv?: QaapAgentConversationDTO): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptStreamStalled(conv?: QaapAgentConversationDTO): boolean {
         return this.resolveTranscriptStreamHealth(conv).stalled;
     }
 
-    protected resolveTranscriptStreamTimedOut(conv?: QaapAgentConversationDTO): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptStreamTimedOut(conv?: QaapAgentConversationDTO): boolean {
         return this.resolveTranscriptStreamHealth(conv).timedOut;
     }
 
-    protected resolveTranscriptStreamVisualIdle(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptStreamVisualIdle(segments: readonly QaapAgentMessageSegmentDTO[],
         streaming: boolean,): boolean {
         return resolveTranscriptStreamVisualIdleExtracted(this, segments, streaming);
     }
 
-    protected resolveTranscriptStreamStallLabel(): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptStreamStallLabel(): string {
         return resolveTranscriptStreamStallLabelExtracted(this);
     }
 
-    protected resolveTranscriptActivityItemsForDisplay(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptActivityItemsForDisplay(segments: readonly QaapAgentMessageSegmentDTO[],
         options?: {
             readonly stalled?: boolean;
             readonly timedOut?: boolean;
@@ -420,7 +466,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return resolveTranscriptActivityItemsForDisplayExtracted(this, segments, options);
     }
 
-    protected resolveTranscriptActivityRowContext(row: HTMLElement | undefined,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptActivityRowContext(row: HTMLElement | undefined,
         segments: readonly QaapAgentMessageSegmentDTO[],
         conv?: QaapAgentConversationDTO,
         options?: { readonly stalled?: boolean; readonly streaming?: boolean },): {
@@ -438,7 +485,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return resolveTranscriptActivityRowContextExtracted(this, row, segments, conv, options);
     }
 
-    protected resolvePendingTranscriptToolUseIds(conv: QaapAgentConversationDTO | undefined,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolvePendingTranscriptToolUseIds(conv: QaapAgentConversationDTO | undefined,
         segments: readonly QaapAgentMessageSegmentDTO[],): ReadonlySet<string> | undefined {
         return resolvePendingTranscriptToolUseIdsExtracted(this, conv, segments);
     }
@@ -451,7 +499,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         syncTranscriptStreamStallChromeExtracted(this, row, conv);
     }
 
-    protected syncTranscriptStreamTimeoutBanner(segmentsBody: ParentNode,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptStreamTimeoutBanner(segmentsBody: ParentNode,
         timedOut: boolean,
         cause?: TranscriptStreamTimeoutCause,
         conv?: QaapAgentConversationDTO,): void {
@@ -467,19 +516,23 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return appendFreeModelTimeoutHintHelper(detail, conv);
     }
 
-    protected resolveTranscriptStreamTimeoutDetail(cause?: TranscriptStreamTimeoutCause,): string | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptStreamTimeoutDetail(cause?: TranscriptStreamTimeoutCause,): string | undefined {
         return resolveTranscriptStreamTimeoutDetailExtracted(this, cause);
     }
 
-    protected createTranscriptStreamTimeoutBanner(cause?: TranscriptStreamTimeoutCause,): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public createTranscriptStreamTimeoutBanner(cause?: TranscriptStreamTimeoutCause,): HTMLElement {
         return createTranscriptStreamTimeoutBannerExtracted(this, cause);
     }
 
-    protected resolveTranscriptRowSegments(conv: QaapAgentConversationDTO, row: HTMLElement): QaapAgentMessageSegmentDTO[] {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptRowSegments(conv: QaapAgentConversationDTO, row: HTMLElement): QaapAgentMessageSegmentDTO[] {
         return resolveTranscriptRowSegmentsExtracted(this, conv, row);
     }
 
-    protected syncTranscriptStreamingActivityLine(line: Element,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptStreamingActivityLine(line: Element,
         conv: QaapAgentConversationDTO,
         stalled: boolean,
         timedOut = false,): void {
@@ -501,24 +554,36 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
     }
 
     /** Suppress clear/remount flicker when status dips for a frame mid-turn. */
-    protected pinnedLiveStatusHoldUntil = 0;
-    protected pinnedLiveStatusConvId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public pinnedLiveStatusHoldUntil = 0;
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public pinnedLiveStatusConvId: string | undefined;
     /** High-water mark so the token meter never blinks away mid-turn. */
-    protected pinnedLiveStatusPeakTokens = 0;
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public pinnedLiveStatusPeakTokens = 0;
+    /**
+     * Conversation turn the peak-token meter belongs to; a new turn resets the peak. Previously
+     * assigned by the extracted tool-pills module without being declared on the class.
+     */
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public pinnedLiveStatusTurnKey: string | undefined;
 
     /**
      * True while the live-status row should stay pinned for the whole backend turn.
      * Backend `streaming` / `settled` only — never hide on mid-stream "visually settled".
      */
-    protected shouldShowPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public shouldShowPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
         return shouldShowPinnedTranscriptLiveStatusHelper(conv);
     }
 
-    protected shouldHoldPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public shouldHoldPinnedTranscriptLiveStatus(conv: QaapAgentConversationDTO): boolean {
         return shouldHoldPinnedTranscriptLiveStatusExtracted(this, conv);
     }
 
-    protected resolveTranscriptLiveStatusChatHost(hint?: HTMLElement): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptLiveStatusChatHost(hint?: HTMLElement): HTMLElement | undefined {
         return resolveTranscriptLiveStatusChatHostExtracted(this, hint);
     }
 
@@ -534,13 +599,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return patchStreamingThoughtBriefExtracted(this, row, segments, conv, streaming);
     }
 
-    protected syncTranscriptThoughtBriefElement(block: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptThoughtBriefElement(block: HTMLElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
         options: { readonly streaming?: boolean; readonly conv?: QaapAgentConversationDTO },): void {
         syncTranscriptThoughtBriefElementExtracted(this, block, segments, options);
     }
 
-    protected refreshTranscriptThoughtBriefTitle(title: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public refreshTranscriptThoughtBriefTitle(title: HTMLElement,
         block: HTMLElement,
         options: {
             readonly thinking: string | undefined;
@@ -552,17 +619,20 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         refreshTranscriptThoughtBriefTitleExtracted(this, title, block, options);
     }
 
-    protected syncTranscriptActivityTimelineElement(timeline: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityTimelineElement(timeline: HTMLElement,
         items: readonly TranscriptActivityTimelineItem[],
         options?: TranscriptActivityTimelineOptions,): void {
         syncTranscriptActivityTimelineElementExtracted(this, timeline, items, options);
     }
 
-    protected ensureLobeTranscriptWorkflowClasses(timeline: HTMLDetailsElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public ensureLobeTranscriptWorkflowClasses(timeline: HTMLDetailsElement): void {
         ensureLobeTranscriptWorkflowClassesExtracted(this, timeline);
     }
 
-    protected syncTranscriptActivityTimelineSummaryElement(timeline: HTMLDetailsElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityTimelineSummaryElement(timeline: HTMLDetailsElement,
         segments: readonly QaapAgentMessageSegmentDTO[],
         visibleItems: readonly TranscriptActivityTimelineItem[],
         policy: ReturnType<typeof resolveTranscriptTimelineVisibilityPolicy>,
@@ -570,48 +640,58 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         syncTranscriptActivityTimelineSummaryElementExtracted(this, timeline, segments, visibleItems, policy, options);
     }
 
-    protected syncTranscriptSummaryIcons(timeline: HTMLElement, streaming: boolean): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptSummaryIcons(timeline: HTMLElement, streaming: boolean): void {
         syncTranscriptSummaryIconsExtracted(this, timeline, streaming);
     }
 
-    protected bindTranscriptActivityTimelineToggle(timeline: HTMLDetailsElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public bindTranscriptActivityTimelineToggle(timeline: HTMLDetailsElement): void {
         bindTranscriptActivityTimelineToggleExtracted(this, timeline);
     }
 
-    protected bindTranscriptActivityTimelineStickyBar(timeline: HTMLDetailsElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public bindTranscriptActivityTimelineStickyBar(timeline: HTMLDetailsElement): void {
         bindTranscriptActivityTimelineStickyBarExtracted(this, timeline);
     }
 
-    protected bindTranscriptActivityTimelineGapHandlers(timeline: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public bindTranscriptActivityTimelineGapHandlers(timeline: HTMLElement): void {
         bindTranscriptActivityTimelineGapHandlersExtracted(this, timeline);
     }
 
-    protected handleTranscriptActivityTimelineGapClick(event: Event): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public handleTranscriptActivityTimelineGapClick(event: Event): void {
         handleTranscriptActivityTimelineGapClickExtracted(this, event);
     }
 
-    protected handleTranscriptActivityTimelineGapKeydown(event: KeyboardEvent): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public handleTranscriptActivityTimelineGapKeydown(event: KeyboardEvent): void {
         handleTranscriptActivityTimelineGapKeydownExtracted(this, event);
     }
 
-    protected clearPinnedTranscriptStreamFooter(chatHost?: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public clearPinnedTranscriptStreamFooter(chatHost?: HTMLElement): void {
         clearPinnedTranscriptStreamFooterExtracted(this, chatHost);
     }
 
-    protected ensureAndSyncTranscriptLiveStatusFooter(segmentsBody: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public ensureAndSyncTranscriptLiveStatusFooter(segmentsBody: HTMLElement,
         _segments: readonly QaapAgentMessageSegmentDTO[],
         conv: QaapAgentConversationDTO | undefined,
         options?: { readonly streaming?: boolean; readonly stalled?: boolean; readonly timedOut?: boolean },): void {
         ensureAndSyncTranscriptLiveStatusFooterExtracted(this, segmentsBody, _segments, conv, options);
     }
 
-    protected syncTranscriptTraceStatus(row: HTMLElement | null,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptTraceStatus(row: HTMLElement | null,
         segments: readonly QaapAgentMessageSegmentDTO[],
         options?: TranscriptActivityTimelineOptions,): void {
         syncTranscriptTraceStatusExtracted(this, row, segments, options);
     }
 
-    protected syncTranscriptActivityHistoryGap(li: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityHistoryGap(li: HTMLElement,
         hiddenCount: number,
         position: 'before' | 'after',): void {
         syncTranscriptActivityHistoryGapExtracted(this, li, hiddenCount, position);
@@ -636,15 +716,18 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         patchTranscriptToolPillExtracted(this, pill, previous, segment, conv);
     }
 
-    protected createTranscriptThoughtBriefIcon(active: boolean): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public createTranscriptThoughtBriefIcon(active: boolean): HTMLElement {
         return createTranscriptThoughtBriefIconExtracted(this, active);
     }
 
-    protected resolveTranscriptThoughtBriefIconClass(active: boolean): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptThoughtBriefIconClass(active: boolean): string {
         return resolveTranscriptThoughtBriefIconClassHelper(active);
     }
 
-    protected syncTranscriptThoughtBriefIcon(icon: HTMLElement, active: boolean): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptThoughtBriefIcon(icon: HTMLElement, active: boolean): void {
         syncTranscriptThoughtBriefIconExtracted(this, icon, active);
     }
 
@@ -659,7 +742,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptToolPillsStripExtracted(this, segments, conv, options);
     }
 
-    protected wrapTranscriptToolGroup(strip: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public wrapTranscriptToolGroup(strip: HTMLElement,
         umbrella?: ToolUmbrella,
         items?: ReadonlyArray<Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>>,): HTMLDetailsElement {
         return wrapTranscriptToolGroupExtracted(this, strip, umbrella, items);
@@ -669,11 +753,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         refreshTranscriptToolGroupSummaryExtracted(this, group);
     }
 
-    protected formatTranscriptToolGroupLabel(stats: QaapTranscriptActivityStats): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public formatTranscriptToolGroupLabel(stats: QaapTranscriptActivityStats): string {
         return formatTranscriptToolGroupLabelExtracted(this, stats);
     }
 
-    protected resolveToolRowParts(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveToolRowParts(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         kind: string,): ReturnType<typeof resolveTranscriptToolRowParts> {
         return resolveToolRowPartsExtracted(this, segment, kind);
     }
@@ -684,7 +770,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptToolPillExtracted(this, segment, conv, options);
     }
 
-    protected shouldLazyHydrateTranscriptToolPillBody(options: {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public shouldLazyHydrateTranscriptToolPillBody(options: {
         readonly segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>;
         readonly finished: boolean;
         readonly failed: boolean;
@@ -696,11 +783,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return shouldLazyHydrateTranscriptToolPillBodyExtracted(this, options);
     }
 
-    protected attachLazyTranscriptToolPillHydration(pill: HTMLDetailsElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public attachLazyTranscriptToolPillHydration(pill: HTMLDetailsElement): void {
         attachLazyTranscriptToolPillHydrationExtracted(this, pill);
     }
 
-    protected buildTranscriptToolPillBody(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public buildTranscriptToolPillBody(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         conv: QaapAgentConversationDTO | undefined,
         kind: string,
         options: {
@@ -745,13 +834,15 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return formatTranscriptActivityMetaExtracted(this, stats);
     }
 
-    protected resolveTranscriptActivityTimelineSummary(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptActivityTimelineSummary(segments: readonly QaapAgentMessageSegmentDTO[],
         hiddenCount = 0,
         options?: { readonly streaming?: boolean; readonly row?: HTMLElement },): string {
         return resolveTranscriptActivityTimelineSummaryExtracted(this, segments, hiddenCount, options);
     }
 
-    protected resolveTranscriptTurnDurationMs(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptTurnDurationMs(segments: readonly QaapAgentMessageSegmentDTO[],
         row: HTMLElement | undefined,): number | undefined {
         return resolveTranscriptTurnDurationMsExtracted(this, segments, row);
     }
@@ -761,7 +852,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptActivityTimelineExtracted(this, segments, options);
     }
 
-    protected syncTranscriptActivityItemElement(li: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityItemElement(li: HTMLElement,
         item: TranscriptActivityTimelineItem,
         isActive: boolean,
         options?: TranscriptActivityTimelineOptions,
@@ -770,18 +862,21 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         syncTranscriptActivityItemElementExtracted(this, li, item, isActive, options, tier, subagentCardChild);
     }
 
-    protected syncTranscriptExecutionNarrativeItemElement(li: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptExecutionNarrativeItemElement(li: HTMLElement,
         item: TranscriptActivityTimelineItem,
         tier: ReturnType<typeof resolveTranscriptTimelineItemTier>,): void {
         syncTranscriptExecutionNarrativeItemElementExtracted(this, li, item, tier);
     }
 
-    protected syncTranscriptCheckpointRestoreAction(li: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptCheckpointRestoreAction(li: HTMLElement,
         item: TranscriptActivityTimelineItem,): void {
         syncTranscriptCheckpointRestoreActionExtracted(this, li, item);
     }
 
-    protected guardTranscriptActivityExpandClose(host: HTMLElement | null | undefined): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public guardTranscriptActivityExpandClose(host: HTMLElement | null | undefined): void {
         guardTranscriptActivityExpandCloseExtracted(this, host);
     }
 
@@ -789,7 +884,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return restoreTranscriptCheckpointExtracted(this, checkpointId, checkpointLabel);
     }
 
-    protected applyTranscriptActivityItemClassName(li: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public applyTranscriptActivityItemClassName(li: HTMLElement,
         item: TranscriptActivityTimelineItem,
         isActive: boolean,
         tierClass: string,
@@ -801,7 +897,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         applyTranscriptActivityItemClassNameExtracted(this, li, item, isActive, tierClass, chrome);
     }
 
-    protected applyTranscriptActivityItemChrome(li: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public applyTranscriptActivityItemChrome(li: HTMLElement,
         item: TranscriptActivityTimelineItem,
         isActive: boolean,
         options: TranscriptActivityTimelineOptions | undefined,
@@ -811,114 +908,135 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         applyTranscriptActivityItemChromeExtracted(this, li, item, isActive, options, tierClass, shimmerActive, subagentCardChild);
     }
 
-    protected applyTranscriptActivityStepShimmer(copy: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public applyTranscriptActivityStepShimmer(copy: HTMLElement,
         isActive: boolean,
         shimmerActive: boolean,
         stalled: boolean,): void {
         applyTranscriptActivityStepShimmerExtracted(this, copy, isActive, shimmerActive, stalled);
     }
 
-    protected syncTranscriptActivityStepCopyCursorTrace(rowEl: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityStepCopyCursorTrace(rowEl: HTMLElement,
         item: TranscriptActivityTimelineItem,): boolean {
         return syncTranscriptActivityStepCopyCursorTraceExtracted(this, rowEl, item);
     }
 
-    protected syncTranscriptActivityDiffPeek(copy: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityDiffPeek(copy: HTMLElement,
         item: TranscriptActivityTimelineItem,
         options?: TranscriptActivityTimelineOptions,): void {
         syncTranscriptActivityDiffPeekExtracted(this, copy, item, options);
     }
 
-    protected ensureTranscriptActivityVerbDetailSpacing(rowEl: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public ensureTranscriptActivityVerbDetailSpacing(rowEl: HTMLElement): void {
         ensureTranscriptActivityVerbDetailSpacingExtracted(this, rowEl);
     }
 
-    protected appendTranscriptActivityEditDiffTail(rowEl: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public appendTranscriptActivityEditDiffTail(rowEl: HTMLElement,
         added: number,
         removed: number,): void {
         appendTranscriptActivityEditDiffTailExtracted(this, rowEl, added, removed);
     }
 
-    protected resolveTranscriptActivityExpandDeps(): TranscriptActivityExpandDeps {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptActivityExpandDeps(): TranscriptActivityExpandDeps {
         return resolveTranscriptActivityExpandDepsExtracted(this);
     }
 
-    protected resolveTranscriptActivityExpandContent(item: TranscriptActivityTimelineItem,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptActivityExpandContent(item: TranscriptActivityTimelineItem,
         options?: TranscriptActivityTimelineOptions,): TranscriptActivityExpandContent | undefined {
         return resolveTranscriptActivityExpandContentExtracted(this, item, options);
     }
 
-    protected enrichTranscriptActivityExpandContent(content: TranscriptActivityExpandContent,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public enrichTranscriptActivityExpandContent(content: TranscriptActivityExpandContent,
         item: TranscriptActivityTimelineItem,
         options?: TranscriptActivityTimelineOptions,): TranscriptActivityExpandContent {
         return enrichTranscriptActivityExpandContentExtracted(this, content, item, options);
     }
 
-    protected enrichTranscriptActivityReadExpandEntry(entry: import('../common/qaap-transcript-activity-expand-core').TranscriptActivityReadExpandEntry,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public enrichTranscriptActivityReadExpandEntry(entry: import('../common/qaap-transcript-activity-expand-core').TranscriptActivityReadExpandEntry,
         segment?: QaapAgentMessageSegmentDTO,): import('../common/qaap-transcript-activity-expand-core').TranscriptActivityReadExpandEntry {
         return enrichTranscriptActivityReadExpandEntryExtracted(this, entry, segment);
     }
 
-    protected enrichTranscriptActivityEditExpandEntry(entry: import('../common/qaap-transcript-activity-expand-core').TranscriptActivityEditExpandEntry,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public enrichTranscriptActivityEditExpandEntry(entry: import('../common/qaap-transcript-activity-expand-core').TranscriptActivityEditExpandEntry,
         segment?: QaapAgentMessageSegmentDTO,
         options?: TranscriptActivityTimelineOptions,): import('../common/qaap-transcript-activity-expand-core').TranscriptActivityEditExpandEntry {
         return enrichTranscriptActivityEditExpandEntryExtracted(this, entry, segment, options);
     }
 
-    protected shouldShowTranscriptActivityItemExpand(item: TranscriptActivityTimelineItem,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public shouldShowTranscriptActivityItemExpand(item: TranscriptActivityTimelineItem,
         options?: TranscriptActivityTimelineOptions,): boolean {
         return shouldShowTranscriptActivityItemExpandExtracted(this, item, options);
     }
 
-    protected unwrapTranscriptActivityExpandCopy(copy: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public unwrapTranscriptActivityExpandCopy(copy: HTMLElement): void {
         unwrapTranscriptActivityExpandCopyExtracted(this, copy);
     }
 
-    protected syncTranscriptActivityExpandCopy(copy: HTMLElement, content: TranscriptActivityExpandContent): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityExpandCopy(copy: HTMLElement, content: TranscriptActivityExpandContent): void {
         syncTranscriptActivityExpandCopyExtracted(this, copy, content);
     }
 
-    protected renderTranscriptActivityExpandBody(body: HTMLElement, content: TranscriptActivityExpandContent): void {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public renderTranscriptActivityExpandBody(body: HTMLElement, content: TranscriptActivityExpandContent): void {
         renderTranscriptActivityExpandBodyExtracted(this, body, content);
     }
 
-    protected syncTranscriptActivityRunningBadge(copy: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityRunningBadge(copy: HTMLElement,
         item: TranscriptActivityTimelineItem,
         isActive: boolean,
         options?: TranscriptActivityTimelineOptions,): void {
         syncTranscriptActivityRunningBadgeExtracted(this, copy, item, isActive, options);
     }
 
-    protected syncTranscriptActivityErrorCopy(copy: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityErrorCopy(copy: HTMLElement,
         item: TranscriptActivityTimelineItem,
         options?: TranscriptActivityTimelineOptions,): void {
         syncTranscriptActivityErrorCopyExtracted(this, copy, item, options);
     }
 
-    protected syncTranscriptActivityThinkingCopy(copy: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public syncTranscriptActivityThinkingCopy(copy: HTMLElement,
         item: TranscriptActivityTimelineItem,
         isActive: boolean,
         options?: TranscriptActivityTimelineOptions,): void {
         syncTranscriptActivityThinkingCopyExtracted(this, copy, item, isActive, options);
     }
 
-    protected populateTranscriptActivityStepCopy(copy: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public populateTranscriptActivityStepCopy(copy: HTMLElement,
         item: TranscriptActivityTimelineItem,
         isActive: boolean,
         options?: TranscriptActivityTimelineOptions,): void {
         populateTranscriptActivityStepCopyExtracted(this, copy, item, isActive, options);
     }
 
-    protected shouldRenderTranscriptActivityDetailAsPill(detail: string | undefined,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public shouldRenderTranscriptActivityDetailAsPill(detail: string | undefined,
         toolKind?: string,): boolean {
         return shouldRenderTranscriptActivityDetailAsPillExtracted(this, detail, toolKind);
     }
 
-    protected createTranscriptActivityFileChip(detail: string, toolKind?: string, fullPath?: string): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public createTranscriptActivityFileChip(detail: string, toolKind?: string, fullPath?: string): HTMLElement {
         return createTranscriptActivityFileChipExtracted(this, detail, toolKind, fullPath);
     }
 
-    protected readonly activityToolKindIconMap: Record<string, string> = {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public readonly activityToolKindIconMap: Record<string, string> = {
         reading: 'codicon-book',
         editing: 'codicon-pencil',
         terminal: 'codicon-terminal',
@@ -960,7 +1078,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptChangedFilesCardExtracted(this, segments);
     }
 
-    protected createTranscriptChangedFileMiniDiffPreview(segments: readonly QaapAgentMessageSegmentDTO[],
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public createTranscriptChangedFileMiniDiffPreview(segments: readonly QaapAgentMessageSegmentDTO[],
         file: { readonly path: string },): HTMLElement | undefined {
         return createTranscriptChangedFileMiniDiffPreviewExtracted(this, segments, file);
     }
@@ -969,7 +1088,8 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptChangedFilesReviewButtonExtracted(this);
     }
 
-    protected appendTranscriptChangedFileDiffStats(parent: HTMLElement,
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public appendTranscriptChangedFileDiffStats(parent: HTMLElement,
         added: number,
         removed: number,): void {
         appendTranscriptChangedFileDiffStatsExtracted(this, parent, added, removed);
@@ -999,11 +1119,13 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptStreamingActivityRowExtracted(this, conv);
     }
 
-    protected createTranscriptStreamMeta(conv: QaapAgentConversationDTO, ownerRow?: HTMLElement): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public createTranscriptStreamMeta(conv: QaapAgentConversationDTO, ownerRow?: HTMLElement): HTMLElement | undefined {
         return createTranscriptStreamMetaExtracted(this, conv, ownerRow);
     }
 
-    protected resolveTranscriptStreamDurationLabel(conv: QaapAgentConversationDTO): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
+    public resolveTranscriptStreamDurationLabel(conv: QaapAgentConversationDTO): string {
         return resolveTranscriptStreamDurationLabelExtracted(this, conv);
     }
 
