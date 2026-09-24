@@ -17,6 +17,7 @@ import {
 } from './mobile-projects-types';
 import {
     clearMobileProjectReadmeOpenRequest,
+    clearMobileProjectsPanelDismiss,
     markMobileProjectReadmeForOpen,
     markMobileProjectsPanelDismiss,
     requestMobileProjectsPanelDismiss,
@@ -116,7 +117,51 @@ export function workspacePathFromUriExtracted(ctx: MobileProjectsServiceContext,
             : uri.path.toString();
 }
 
-export function openWorkspaceUriExtracted(ctx: MobileProjectsServiceContext, uri: URI): void {
+/** Upper bound for the pre-open existence check of the workspace root. */
+const OPEN_WORKSPACE_RESOLVE_TIMEOUT_MS = 20_000;
+/** `workspaceService.open` reloads the page; if we are still alive after this, the open silently failed. */
+const OPEN_WORKSPACE_RELOAD_WATCHDOG_MS = 20_000;
+
+async function resolveWorkspaceRootExtracted(ctx: MobileProjectsServiceContext, uri: URI): Promise<void> {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(nls.localize(
+                'qaap/mobileProjects/openWorkspaceResolveTimedOut',
+                'The workspace folder did not respond in time.'
+            ))), OPEN_WORKSPACE_RESOLVE_TIMEOUT_MS);
+        });
+        try {
+            await Promise.race([ctx.fileService.resolve(uri), timeout]);
+        } finally {
+            clearTimeout(timer);
+        }
+}
+
+function failWorkspaceOpenExtracted(ctx: MobileProjectsServiceContext, uri: URI, detail: string): void {
+        MobileSnackbar.dismiss();
+        clearMobileProjectReadmeOpenRequest();
+        clearMobileProjectsPanelDismiss();
+        void ctx.messageService.error(nls.localize(
+            'qaap/mobileProjects/openWorkspaceFailed',
+            'Could not open {0}: {1}',
+            ctx.workspacePathFromUri(uri),
+            detail
+        ));
+}
+
+/**
+ * Open `uri` as the workspace of this window. Resolves `true` once the (reloading) open was
+ * issued, `false` when the workspace root could not be reached; the error is already surfaced.
+ */
+export async function openWorkspaceUriExtracted(ctx: MobileProjectsServiceContext, uri: URI): Promise<boolean> {
+        // `WorkspaceService.open` is fire-and-forget and swallows an unreachable root, which left
+        // the loading snackbar spinning forever. Check the root first so failures are visible.
+        try {
+            await resolveWorkspaceRootExtracted(ctx, uri);
+        } catch (err) {
+            failWorkspaceOpenExtracted(ctx, uri, err instanceof Error ? err.message : String(err));
+            return false;
+        }
         const hiddenIds = ctx.readHiddenProjectIds();
         const recentId = `recent:${uri.toString()}`;
         if (hiddenIds.delete(recentId)) {
@@ -126,6 +171,11 @@ export function openWorkspaceUriExtracted(ctx: MobileProjectsServiceContext, uri
         requestMobileProjectsPanelDismiss();
         markMobileProjectReadmeForOpen();
         ctx.workspaceService.open(uri, { preserveWindow: true });
+        setTimeout(() => failWorkspaceOpenExtracted(ctx, uri, nls.localize(
+            'qaap/mobileProjects/openWorkspaceNoReload',
+            'the workspace did not load. Please try again.'
+        )), OPEN_WORKSPACE_RELOAD_WATCHDOG_MS);
+        return true;
 }
 
 export function formatRepositoryLabelExtracted(ctx: MobileProjectsServiceContext, repository: string): string {
@@ -144,21 +194,21 @@ export function formatRepositoryLabelExtracted(ctx: MobileProjectsServiceContext
         return trimmed;
 }
 
-export async function openInCurrentWindowAsyncExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<void> {
+export async function openInCurrentWindowAsyncExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): Promise<boolean> {
         markMobileProjectsPanelDismiss();
         if (project.github) {
-            await ctx.openGithubProject(project);
-            return;
+            return ctx.openGithubProject(project);
         }
         if (project.uri) {
             ctx.touchProjectActivity(project);
-            ctx.openWorkspaceUri(project.uri);
+            return ctx.openWorkspaceUri(project.uri);
         }
+        return false;
 }
 
-export async function openGithubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, newWindow = false): Promise<void> {
+export async function openGithubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, newWindow = false): Promise<boolean> {
         if (!project.github) {
-            return;
+            return false;
         }
         markMobileProjectReadmeForOpen();
         const label = project.github.fullName;
@@ -176,13 +226,16 @@ export async function openGithubProjectExtracted(ctx: MobileProjectsServiceConte
                 const url = new URL(window.location.href);
                 url.hash = encodeURI(ctx.workspacePathFromUri(uri));
                 ctx.windowService.openNewWindow(url.toString());
-                return;
+                return false;
+            }
+            if (!await ctx.openWorkspaceUri(uri)) {
+                return false;
             }
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoOpened', 'Opened {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }
             );
-            ctx.openWorkspaceUri(uri);
+            return true;
         } catch (err) {
             MobileSnackbar.dismiss();
             // Without this, the backend error (e.g. failed clone, missing workspace root) is silently
@@ -197,6 +250,7 @@ export async function openGithubProjectExtracted(ctx: MobileProjectsServiceConte
                     detail
                 )
             );
+            return false;
         }
 }
 
@@ -227,7 +281,9 @@ export async function createGithubProjectExtracted(ctx: MobileProjectsServiceCon
             const result = await createQaapGithubRepository({ name, private: true });
             const workspaceUri = new URI(result.workspaceUri);
             ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
-            ctx.openWorkspaceUri(workspaceUri);
+            if (!await ctx.openWorkspaceUri(workspaceUri)) {
+                return ctx.loadProjects();
+            }
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoCreated', 'Created {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }
@@ -272,7 +328,9 @@ export async function cloneGithubProjectByRepositoryExtracted(ctx: MobileProject
             const result = await cloneQaapGithubRepository(trimmed);
             const workspaceUri = new URI(result.workspaceUri);
             ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
-            ctx.openWorkspaceUri(workspaceUri);
+            if (!await ctx.openWorkspaceUri(workspaceUri)) {
+                return ctx.loadProjects();
+            }
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoCloned', 'Cloned {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }
@@ -346,7 +404,9 @@ export async function importGithubProjectExtracted(ctx: MobileProjectsServiceCon
             const result = await openQaapGithubRepository(project.github.owner, project.github.name);
             const workspaceUri = new URI(result.workspaceUri);
             ctx.registerGithubWorkspaceProject(result.repository, workspaceUri);
-            ctx.openWorkspaceUri(workspaceUri);
+            if (!await ctx.openWorkspaceUri(workspaceUri)) {
+                return ctx.loadProjects();
+            }
             MobileSnackbar.show(
                 nls.localize('qaap/mobileProjects/repoImported', 'Imported {0}', result.repository.fullName),
                 { kind: 'success', duration: 2400 }

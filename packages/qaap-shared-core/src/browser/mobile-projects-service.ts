@@ -103,8 +103,8 @@ export class MobileProjectsService {
         return workspacePathFromUriExtracted(this, uri);
     }
 
-    openWorkspaceUri(uri: URI): void {
-        openWorkspaceUriExtracted(this, uri);
+    openWorkspaceUri(uri: URI): Promise<boolean> {
+        return openWorkspaceUriExtracted(this, uri);
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
@@ -116,12 +116,13 @@ export class MobileProjectsService {
         void this.openInCurrentWindowAsync(project);
     }
 
-    async openInCurrentWindowAsync(project: MobileProjectEntry): Promise<void> {
+    /** Resolves `true` when the workspace open (and page reload) was issued. */
+    async openInCurrentWindowAsync(project: MobileProjectEntry): Promise<boolean> {
         return openInCurrentWindowAsyncExtracted(this, project);
     }
 
     /** @internal Used by the extracted mobile-projects-service-* modules. */
-    public async openGithubProject(project: MobileProjectEntry, newWindow = false): Promise<void> {
+    public async openGithubProject(project: MobileProjectEntry, newWindow = false): Promise<boolean> {
         return openGithubProjectExtracted(this, project, newWindow);
     }
 

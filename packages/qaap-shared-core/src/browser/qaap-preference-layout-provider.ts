@@ -73,12 +73,12 @@ export class QaapPreferenceLayoutProvider extends PreferenceLayoutProvider {
             },
             {
                 id: 'ai-features.openAiOfficial',
-                label: nls.localize('theia/preferences/ai-features/open-ai-official', '{0} Official Models', 'Open AI'),
+                label: 'OpenAI',
                 settings: ['ai-features.openAiOfficial.*'],
             },
             {
                 id: 'ai-features.openAiCustom',
-                label: nls.localize('theia/preferences/ai-features/open-ai-custom', '{0} Custom Models', 'Open AI'),
+                label: nls.localize('qaap/preferences/ai-features/open-ai-custom', 'OpenAI-compatible (custom)'),
                 settings: ['ai-features.openAiCustom.*'],
             },
             {

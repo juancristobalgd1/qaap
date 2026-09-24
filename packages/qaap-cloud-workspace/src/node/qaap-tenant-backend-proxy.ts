@@ -85,7 +85,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
                 user: context.session.user,
                 githubAccessToken: context.session.accessToken,
             }, this.docker.getTenantBackendAssertionSecret(context.userLogin));
-            this.forwardHttp(req, res, target, assertion);
+            this.forwardHttp(req, res, target, assertion, context.userLogin);
         } catch (error) {
             this.writeProxyError(res, error);
         }
@@ -214,7 +214,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         }
     }
 
-    protected forwardHttp(req: Request, res: Response, target: QaapTenantBackendTarget, assertion: string): void {
+    protected forwardHttp(req: Request, res: Response, target: QaapTenantBackendTarget, assertion: string, tenantLogin?: string): void {
         const headers = this.forwardHeaders(req.headers, target, assertion);
         const body = req.body !== undefined && req.method !== 'GET' && req.method !== 'HEAD'
             ? Buffer.from(JSON.stringify(req.body), 'utf8')
@@ -229,6 +229,8 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             path: req.originalUrl || req.url,
             headers,
         }, response => {
+            // Headers arrived: streaming / long-lived bodies must not be cut by the wait timeout.
+            upstream.setTimeout(0);
             const responseHeaders = { ...response.headers };
             for (const key of Object.keys(responseHeaders)) {
                 if (HOP_BY_HOP_HEADERS.has(key.toLowerCase()) || key.toLowerCase() === 'set-cookie') {
@@ -238,7 +240,24 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             res.writeHead(response.statusCode ?? 502, responseHeaders);
             response.pipe(res);
         });
-        upstream.once('error', error => this.writeProxyError(res, error));
+        // Idle bound while waiting for the tenant backend to answer; a wedged backend otherwise
+        // leaves the browser request (e.g. repository open) pending forever.
+        let timedOut = false;
+        upstream.setTimeout(this.getTenantProxyIdleTimeoutMs(), () => {
+            timedOut = true;
+            upstream.destroy(new Error('Tenant backend did not respond in time.'));
+        });
+        upstream.once('error', error => {
+            if (timedOut || this.isTenantBackendConnectError(error)) {
+                // Drop the cached target so the next request re-ensures (restarts) the backend.
+                this.docker.invalidateTenantBackendTarget(tenantLogin, target);
+            }
+            if (timedOut && !res.headersSent) {
+                res.status(504).json({ error: 'Tenant backend timed out', detail: error.message.slice(0, 240) });
+                return;
+            }
+            this.writeProxyError(res, error);
+        });
         if (body) {
             upstream.end(body);
         } else {
@@ -296,6 +315,16 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             || pathname === QAAP_GITHUB_OAUTH_CALLBACK_PATH
             || pathname === QAAP_TENANT_RUNTIME_API_PATH
             || pathname.startsWith(`${QAAP_TENANT_RUNTIME_API_PATH}/`);
+    }
+
+    protected getTenantProxyIdleTimeoutMs(): number {
+        const configured = Number.parseInt(process.env.QAAP_TENANT_PROXY_IDLE_TIMEOUT_MS?.trim() ?? '', 10);
+        return Number.isInteger(configured) && configured > 0 ? configured : 180_000;
+    }
+
+    protected isTenantBackendConnectError(error: unknown): boolean {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        return code === 'ECONNREFUSED' || code === 'EHOSTUNREACH' || code === 'ENOTFOUND' || code === 'ETIMEDOUT';
     }
 
     protected writeProxyError(res: Response, error: unknown): void {

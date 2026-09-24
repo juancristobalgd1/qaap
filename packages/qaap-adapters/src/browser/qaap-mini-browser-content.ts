@@ -85,6 +85,8 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
 
     protected previewFrameSuspended = false;
 
+    protected lastForcedNavigation: { readonly url: string; readonly at: number } | undefined;
+
     get previewFrame(): HTMLIFrameElement {
         return this.frame;
     }
@@ -172,6 +174,28 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         split.append(frameSlot, inspectorSlot);
         wirePreviewInspectorResize(split, inspectorSlot, this.toDispose);
         return contentArea;
+    }
+
+    /**
+     * Programmatic navigations (open handler bumps, resume after hide, content-change reloads)
+     * rewrote the URL field mid-typing. Leave the field alone while the user owns it.
+     */
+    protected override setInput(value: string): void {
+        if (document.activeElement === this.input) {
+            return;
+        }
+        super.setInput(value);
+    }
+
+    /** The open lifecycle re-bumps the same start page (after layout and again after 300 ms); skip the duplicate reload. */
+    override forceNavigate(url: string): Promise<void> {
+        const now = Date.now();
+        const last = this.lastForcedNavigation;
+        if (last && last.url === url && now - last.at < 1000) {
+            return Promise.resolve();
+        }
+        this.lastForcedNavigation = { url, at: now };
+        return super.forceNavigate(url);
     }
 
     protected override go(location: string, options?: Parameters<MiniBrowserContent['go']>[1]): Promise<void> {
@@ -298,7 +322,8 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             return;
         }
         if (location !== this.input.value) {
-            this.setInput(location);
+            // The user submitted this value: write it through even though the field has focus.
+            this.input.value = location;
         }
         const normalized = normalizePreviewUrlForSameOrigin(location);
         const port = getSameOriginPreviewProxyPort(normalized);

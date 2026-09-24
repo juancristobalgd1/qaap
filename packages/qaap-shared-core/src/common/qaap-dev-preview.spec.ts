@@ -59,6 +59,7 @@ describe('qaap-dev-preview', () => {
         const html = buildDevPreviewWaitingHtml(3001);
         expect(html).to.contain('3001');
         expect(html).to.contain('location.reload');
+        expect(html).to.contain("method: 'HEAD'");
         expect(html).to.contain('Starting dev server');
     });
 

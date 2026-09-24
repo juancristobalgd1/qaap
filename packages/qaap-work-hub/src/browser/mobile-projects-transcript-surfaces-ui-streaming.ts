@@ -1,4 +1,5 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
+import { resolveTranscriptTypedPreviewUrlExtracted } from './mobile-projects-transcript-surfaces-ui-tool-pills';
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -211,9 +212,10 @@ export function getTranscriptEmbeddedPreviewUrlExtracted(ctx: MobileProjectsTran
         if (!chrome) {
             return undefined;
         }
-        const input = chrome.root.querySelector<HTMLInputElement>('.theia-mini-browser-url-field input');
-        const raw = input?.value?.trim();
-        return raw ? normalizePreviewUrlForSameOrigin(raw) : undefined;
+        // The loaded URL, never the URL field: while the user types, the field holds a partial URL
+        // and comparing against it re-navigated (reloaded) the frame on every conversation update.
+        const raw = chrome.getCurrentUrl().trim();
+        return raw && raw !== 'about:blank' ? normalizePreviewUrlForSameOrigin(raw) : undefined;
 }
 
 export function mountTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
@@ -241,7 +243,9 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTrans
             ctx.host.transcriptEmbeddedPreview = chrome;
             ctx.clearTranscriptEmptyPreviewChrome();
             const root = chrome.root;
-            const current = ctx.getTranscriptEmbeddedPreviewUrl();
+            // Compare against the URL we last mounted, not the frame's current page: in-app
+            // navigation (or a URL the user typed) must survive conversation re-renders.
+            const current = ctx.mountedPreviewUrl(conversationScopeId) ?? ctx.getTranscriptEmbeddedPreviewUrl();
             if (!host.contains(root)) {
                 host.replaceChildren(root);
             }
@@ -251,6 +255,23 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTrans
             ctx.wireTranscriptPreviewAnnotationScope(project, normalized);
             ctx.setMountedPreviewUrl(conversationScopeId, normalized);
             ctx.syncHeaderPreviewRunButton(project, summary);
+            return;
+        }
+
+        // Swapping in the project preview while the user types in the empty chrome's URL field
+        // would replace the input under their cursor; mount once they leave the field instead.
+        const typingInput = ctx.isTranscriptPreviewUrlFieldActive()
+            ? ctx.host.transcriptEmbeddedPreview?.root.querySelector<HTMLInputElement>('.theia-mini-browser-url-field input')
+            : undefined;
+        if (typingInput && host.contains(typingInput)) {
+            typingInput.addEventListener('blur', () => {
+                window.setTimeout(() => {
+                    if (host.isConnected && ctx.transcriptPreviewProjectId === project.id
+                        && !ctx.embeddedPreviewByConversationScopeId.has(conversationScopeId)) {
+                        ctx.mountTranscriptEmbeddedPreview(host, previewUrl, project, summary);
+                    }
+                });
+            }, { once: true });
             return;
         }
 
@@ -267,6 +288,7 @@ export function mountTranscriptEmbeddedPreviewExtracted(ctx: MobileProjectsTrans
             openExternal: target => {
                 window.open(target, '_blank', 'noopener,noreferrer');
             },
+            resolveTypedUrl: summary ? url => resolveTranscriptTypedPreviewUrlExtracted(ctx, summary, url) : undefined,
             getAnnotationScope: () => ctx.resolvePreviewAnnotationScope(project, normalized),
             composerSession: ctx.host.resolveAnnotationComposerSession(),
         });

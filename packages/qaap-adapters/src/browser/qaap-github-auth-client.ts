@@ -35,6 +35,9 @@ import {
 } from './qaap-auth-session';
 
 const QAAP_GITHUB_CLONE_TIMEOUT_MS = 120_000;
+/** Opening may clone/pull and first has to start the tenant runtime, so allow more than a plain clone. */
+const QAAP_GITHUB_OPEN_TIMEOUT_MS = 180_000;
+const QAAP_GITHUB_LIST_TIMEOUT_MS = 30_000;
 const QAAP_AUTH_REQUEST_TIMEOUT_MS = 6000;
 
 async function fetchQaapWithTimeout(
@@ -49,6 +52,10 @@ async function fetchQaapWithTimeout(
     } finally {
         clearTimeout(timeout);
     }
+}
+
+function isQaapAbortError(err: unknown): boolean {
+    return err instanceof Error && err.name === 'AbortError';
 }
 
 /**
@@ -123,7 +130,22 @@ export async function upsertQaapProjectSession(patch: QaapProjectSessionUpsertRe
 }
 
 export async function fetchQaapGithubRepositories(): Promise<QaapGithubRepositoriesResponse> {
-    const response = await fetch(`${QAAP_GITHUB_API_PATH}/repositories`, qaapAuthenticatedFetchInit());
+    let response: Response;
+    try {
+        response = await fetchQaapWithTimeout(
+            `${QAAP_GITHUB_API_PATH}/repositories`,
+            qaapAuthenticatedFetchInit(),
+            QAAP_GITHUB_LIST_TIMEOUT_MS,
+        );
+    } catch (err) {
+        if (isQaapAbortError(err)) {
+            throw new Error(nls.localize(
+                'qaap/githubRepositories/timedOut',
+                'Loading GitHub repositories took too long. Please try again.'
+            ));
+        }
+        throw err;
+    }
     if (response.status === 401) {
         // Stored GitHub token expired/revoked — drop the stale session so the login gate returns and
         // the user re-authorizes, instead of staying stuck on a signed-in-but-broken UI. (ONB-5)
@@ -176,7 +198,18 @@ export async function openQaapGithubRepository(owner: string, name: string): Pro
     const url = `${QAAP_GITHUB_API_PATH}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/open`;
     // POST, not GET: this endpoint clones/pulls to disk, and SameSite=Lax only protects
     // non-GET requests from cross-site initiation.
-    const response = await fetch(url, qaapAuthenticatedFetchInit({ method: 'POST' }));
+    let response: Response;
+    try {
+        response = await fetchQaapWithTimeout(url, qaapAuthenticatedFetchInit({ method: 'POST' }), QAAP_GITHUB_OPEN_TIMEOUT_MS);
+    } catch (err) {
+        if (isQaapAbortError(err)) {
+            throw new Error(nls.localize(
+                'qaap/githubOpen/timedOut',
+                'Opening the GitHub repository took too long. Please try again.'
+            ));
+        }
+        throw err;
+    }
     if (!response.ok) {
         const body = await response.json().catch(() => ({})) as { error?: string; message?: string };
         throw new Error(body.message || body.error || `Failed to open GitHub repository (${response.status})`);
@@ -221,7 +254,7 @@ export async function cloneQaapGithubRepository(repository: string): Promise<Qaa
             QAAP_GITHUB_CLONE_TIMEOUT_MS,
         );
     } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
+        if (isQaapAbortError(err)) {
             throw new Error(nls.localize(
                 'qaap/githubClone/timedOut',
                 'Cloning the GitHub repository took too long. Check the URL and try again.'

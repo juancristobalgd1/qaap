@@ -149,6 +149,11 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
+    public invalidateTargetHost(port: number): void {
+        this.targetHostResolver.invalidate(port);
+    }
+
+    /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public handleWebSocketUpgrade(req: http.IncomingMessage, socket: net.Socket, head: Buffer,): void {
         handleWebSocketUpgradeExtracted(this, req, socket, head);
     }

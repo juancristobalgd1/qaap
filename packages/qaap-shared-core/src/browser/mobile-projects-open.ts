@@ -109,6 +109,13 @@ export function markMobileProjectsPanelDismiss(): void {
     }
 }
 
+/** Undo {@link markMobileProjectsPanelDismiss} when the workspace open failed and no reload follows. */
+export function clearMobileProjectsPanelDismiss(): void {
+    if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_KEY);
+    }
+}
+
 export function peekMobileProjectsPanelDismiss(): boolean {
     if (typeof sessionStorage === 'undefined') {
         return false;

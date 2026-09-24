@@ -63,6 +63,20 @@ const HUGGINGFACE_FALLBACK_MODELS = [
     'meta-llama/Llama-3.1-8B-Instruct',
 ] as const;
 
+/** Mirrors the `ai-features.openAiOfficial.officialOpenAiModels` schema default. */
+const OPENAI_FALLBACK_MODELS = [
+    'gpt-5.5',
+    'gpt-5.4',
+    'gpt-5.4-mini',
+] as const;
+
+/** Mirrors the `ai-features.anthropic.AnthropicModels` schema default. */
+const ANTHROPIC_FALLBACK_MODELS = [
+    'claude-opus-4-8',
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5',
+] as const;
+
 /** Single registry for QAIQ Settings-backed providers. Extend when adding a new BYOK integration. */
 export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[] = [
     {
@@ -95,10 +109,9 @@ export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[]
         vendor: 'openai',
         provider: 'openai',
         credentialPref: 'ai-features.openAiOfficial.openAiApiKey',
-        modelListPrefs: [
-            'ai-features.openAiOfficial.models',
-            'ai-features.openAiOfficial.officialOpenAiModels',
-        ],
+        modelListPrefs: ['ai-features.openAiOfficial.officialOpenAiModels'],
+        // Hosted per-user readers see raw settings.json (no schema defaults): keep a fallback so a saved key alone lists OpenAI.
+        fallbackModels: OPENAI_FALLBACK_MODELS,
         label: 'OpenAI',
         credentialEnv: [{ env: 'OPENAI_API_KEY', pref: 'ai-features.openAiOfficial.openAiApiKey' }],
     },
@@ -120,6 +133,7 @@ export const QAAP_QAIQ_BYOK_PROVIDERS: readonly QaapQaiqByokProviderDescriptor[]
         provider: 'anthropic',
         credentialPref: 'ai-features.anthropic.AnthropicApiKey',
         modelListPrefs: ['ai-features.anthropic.AnthropicModels'],
+        fallbackModels: ANTHROPIC_FALLBACK_MODELS,
         label: 'Anthropic',
         credentialEnv: [{ env: 'ANTHROPIC_API_KEY', pref: 'ai-features.anthropic.AnthropicApiKey' }],
     },

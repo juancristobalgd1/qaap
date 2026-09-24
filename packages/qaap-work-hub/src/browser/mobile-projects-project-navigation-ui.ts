@@ -172,7 +172,11 @@ export class MobileProjectsProjectNavigationUi {
         try {
             if (project.github || project.uri) {
                 openedViaReload = true;
-                await this.host.projectsService.openInCurrentWindowAsync(project);
+                if (!await this.host.projectsService.openInCurrentWindowAsync(project)) {
+                    // The open failed (error already surfaced) and no reload follows: keep the
+                    // Work Hub usable instead of treating it as a workspace that is loading.
+                    this.host.render();
+                }
             } else {
                 const openFolder = WorkspaceCommands.OPEN_FOLDER.id;
                 if (this.host.commands.getCommand(openFolder)) {

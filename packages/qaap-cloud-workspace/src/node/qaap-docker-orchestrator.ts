@@ -190,7 +190,7 @@ export class QaapDockerOrchestrator {
             stoppedAt: undefined,
             destroyAfter: undefined,
         });
-        const promise = this.createOrValidateTenantBackend(tenant, tenantRootHostPath);
+        const promise = this.boundTenantEnsure(this.createOrValidateTenantBackend(tenant, tenantRootHostPath), `backend for ${tenant}`);
         this.tenantBackendEnsurePromises.set(key, promise);
         try {
             const target = await promise;
@@ -212,6 +212,42 @@ export class QaapDockerOrchestrator {
                 this.tenantBackendEnsurePromises.delete(key);
             }
         }
+    }
+
+    /**
+     * Forget a cached tenant backend target (e.g. after the proxy could not connect to it), so the
+     * next request re-runs {@link ensureTenantBackend} instead of reusing a dead loopback port.
+     */
+    invalidateTenantBackendTarget(ownerLogin: string | undefined, target?: QaapTenantBackendTarget): void {
+        const tenant = ownerLogin?.trim().toLowerCase();
+        if (!tenant) {
+            return;
+        }
+        const cached = this.tenantBackendTargets.get(tenant);
+        if (!cached || (target && cached !== target)) {
+            return;
+        }
+        this.tenantBackendTargets.delete(tenant);
+        this.tenantBackendConnectionTokens.delete(tenant);
+    }
+
+    /**
+     * Stop waiting for a Docker ensure that never settles (hung daemon, stuck pull). The deduped
+     * in-flight promise is the bounded one, so the caller's `finally` evicts it and the next
+     * request retries. The underlying Docker operation is not cancelled.
+     */
+    protected boundTenantEnsure<T>(operation: Promise<T>, label: string): Promise<T> {
+        const configured = Number.parseInt(process.env.QAAP_TENANT_ENSURE_TIMEOUT_MS?.trim() ?? '', 10);
+        const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : 180_000;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+            timer = setTimeout(
+                () => reject(new Error(`Timed out after ${timeoutMs}ms while ensuring tenant ${label}.`)),
+                timeoutMs,
+            );
+            timer.unref?.();
+        });
+        return Promise.race([operation, timeout]).finally(() => clearTimeout(timer));
     }
 
     getTenantBackendTarget(ownerLogin: string | undefined): QaapTenantBackendTarget | undefined {
@@ -621,12 +657,12 @@ export class QaapDockerOrchestrator {
         const networkMode = this.getTenantNetworkMode(ownerLogin);
         const coldStartAt = Date.now();
         const wasReady = this.isTenantContainerReady(ownerLogin, mounts.reposRoot);
-        const promise = this.createOrValidateTenantContainer(
+        const promise = this.boundTenantEnsure(this.createOrValidateTenantContainer(
             name,
             mounts,
             networkMode,
             ownerLogin,
-        );
+        ), `container ${name}`);
         this.tenantEnsurePromises.set(name, promise);
         try {
             const result = await promise;

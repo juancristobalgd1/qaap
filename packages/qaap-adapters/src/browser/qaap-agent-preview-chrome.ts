@@ -76,6 +76,9 @@ export class QaapAgentPreviewChromeController implements Disposable {
     protected historyOpen = false;
     protected historyPopoverAnchor: HTMLElement | undefined;
     protected historyPopoverQuery = '';
+    /** Last rendered history rows; identical renders are skipped so the popover does not blink while typing. */
+    protected historyRenderSignature: string | undefined;
+    protected historyQueryTimer: number | undefined;
     protected historyComboboxInput: HTMLInputElement | undefined;
     protected historyRoot: HTMLElement | undefined;
     protected historyList: HTMLElement | undefined;
@@ -136,12 +139,21 @@ export class QaapAgentPreviewChromeController implements Disposable {
 
     updateHistoryPopoverQuery(query: string): void {
         this.historyPopoverQuery = query;
-        if (this.historyOpen) {
-            this.renderHistoryList();
+        if (!this.historyOpen || this.historyQueryTimer !== undefined) {
+            return;
         }
+        // Coalesce keystrokes: rebuilding the list on every key made the popover (and favicons) flicker.
+        this.historyQueryTimer = window.setTimeout(() => {
+            this.historyQueryTimer = undefined;
+            if (this.historyOpen) {
+                this.renderHistoryList();
+            }
+        }, 120);
     }
 
     dispose(): void {
+        window.clearTimeout(this.historyQueryTimer);
+        this.historyQueryTimer = undefined;
         this.toDispose.dispose();
     }
 
@@ -182,7 +194,8 @@ export class QaapAgentPreviewChromeController implements Disposable {
             return;
         }
         recordPreviewBrowsingVisit(trimmed, this.host.getPageTitle(), this.options.historyScope);
-        if (this.historyOpen) {
+        // Frame loads (dev-server holding page, HMR reloads) must not reshuffle the list under the user's typing.
+        if (this.historyOpen && document.activeElement !== this.historyComboboxInput) {
             this.renderHistoryList();
         }
     }
@@ -315,16 +328,22 @@ export class QaapAgentPreviewChromeController implements Disposable {
             const label = previewHistoryEntryLabel(entry).toLowerCase();
             return label.includes(query) || entry.url.toLowerCase().includes(query);
         });
-        this.historyList.replaceChildren();
         const sections = groupPreviewBrowsingHistory(entries);
+        const signature = `${query}\n${sections.map(section => `${section.labelKey}:${section.entries.map(entry => `${entry.url}|${entry.title}`).join(',')}`).join('\n')}`;
+        if (signature === this.historyRenderSignature && this.historyList.firstChild) {
+            return;
+        }
+        this.historyRenderSignature = signature;
+        const rows = document.createDocumentFragment();
         if (!sections.length) {
             const empty = document.createElement('div');
             empty.className = Style.HISTORY_EMPTY;
             empty.textContent = nls.localize('qaap/preview/historyEmpty', 'No pages visited yet.');
-            this.historyList.append(empty);
+            rows.append(empty);
             if (query) {
-                this.historyList.append(this.createWebSearchItem(query));
+                rows.append(this.createWebSearchItem(query));
             }
+            this.historyList.replaceChildren(rows);
             return;
         }
         for (const section of sections) {
@@ -337,11 +356,13 @@ export class QaapAgentPreviewChromeController implements Disposable {
             for (const entry of section.entries) {
                 sectionEl.append(this.createHistoryItem(entry));
             }
-            this.historyList.append(sectionEl);
+            rows.append(sectionEl);
         }
         if (query) {
-            this.historyList.append(this.createWebSearchItem(query));
+            rows.append(this.createWebSearchItem(query));
         }
+        // Single swap: the list is never observed empty between renders.
+        this.historyList.replaceChildren(rows);
     }
 
     protected createHistoryItem(entry: QaapPreviewHistoryEntry): HTMLElement {
@@ -364,10 +385,10 @@ export class QaapAgentPreviewChromeController implements Disposable {
         label.className = Style.HISTORY_ITEM_LABEL;
         label.textContent = previewHistoryEntryLabel(entry);
         btn.append(icon, label);
-        this.toDispose.push(addEventListener(btn, 'click', () => {
+        btn.addEventListener('click', () => {
             void this.host.navigate(entry.url);
             this.toggleHistory(false);
-        }));
+        });
         return btn;
     }
 
@@ -386,10 +407,10 @@ export class QaapAgentPreviewChromeController implements Disposable {
         text.className = Style.HISTORY_ITEM_LABEL;
         text.textContent = label;
         btn.append(icon, text);
-        this.toDispose.push(addEventListener(btn, 'click', () => {
+        btn.addEventListener('click', () => {
             void this.host.navigate(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
             this.toggleHistory(false);
-        }));
+        });
         return btn;
     }
 
@@ -457,6 +478,11 @@ export interface EmbeddedAgentPreviewChromeOptions extends QaapAgentPreviewChrom
     readonly url: string;
     readonly readOnlyUrl?: boolean;
     readonly onNavigate?: (url: string) => void;
+    /**
+     * Resolves a URL the user typed before navigating (e.g. claims a `/qaap-dev/:port` target for
+     * this workspace and returns its identity URL). Without it an unclaimed port answered 403.
+     */
+    readonly resolveTypedUrl?: (url: string) => Promise<string | undefined>;
     readonly openExternal?: (url: string) => void;
     readonly previewSurfaces?: QaapPreviewSurfaceRegistry;
     readonly inspectorDeps?: QaapPreviewInspectorDeps;
@@ -476,6 +502,8 @@ export interface EmbeddedAgentPreviewChrome extends Disposable {
     readonly frame: HTMLIFrameElement;
     readonly controller: QaapAgentPreviewChromeController;
     setUrl(url: string): void;
+    /** URL actually loaded in the frame — never the (possibly half-typed) URL field value. */
+    getCurrentUrl(): string;
     navigate(url: string): void | Promise<void>;
     reload(): void;
 }
@@ -759,8 +787,15 @@ export function mountEmbeddedAgentPreviewChrome(
     }));
     disposables.push(addEventListener(urlInput, 'keydown', (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
-            void adapter.navigate(urlInput.value);
+            const typed = urlInput.value;
             controller.toggleHistory(false);
+            if (!options.resolveTypedUrl) {
+                void adapter.navigate(typed);
+                return;
+            }
+            void options.resolveTypedUrl(normalizePreviewNavigateUrl(typed))
+                .catch(() => undefined)
+                .then(target => adapter.navigate(target ?? typed));
         }
     }));
     controller.setHistoryCombobox(urlInput);
@@ -804,6 +839,7 @@ export function mountEmbeddedAgentPreviewChrome(
         setUrl: (url: string) => {
             void adapter.navigate(url);
         },
+        getCurrentUrl: () => currentUrl,
         navigate: (url: string) => adapter.navigate(url),
         reload: () => adapter.reload(),
         dispose: () => {
