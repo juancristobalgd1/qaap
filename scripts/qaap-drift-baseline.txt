@@ -5,7 +5,6 @@
 # Regenerate: node scripts/qaap-drift-check.js --write-baseline
 dev-packages/cli/package.json
 dev-packages/cli/src/download-plugins.ts
-dev-packages/cli/src/run-test.ts
 dev-packages/cli/src/test-page.ts
 dev-packages/cli/src/theia.ts
 dev-packages/cli/tsconfig.json
