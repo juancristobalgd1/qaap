@@ -11,6 +11,8 @@ import {
     injectQaapPreviewViteEnvBootstrap,
     injectQaapPreviewDiagnostics,
     injectQaapPreviewHistoryBase,
+    injectQaapPreviewDocumentScripts,
+    QAAP_DEV_PREVIEW_WAITING_HEADER,
     parseQaapDevPreviewRequestPath,
     parseQaapDevPreviewPort,
     QAAP_DEV_PREVIEW_WAITING_MAX_MS,
@@ -167,5 +169,28 @@ describe('qaap-dev-preview', () => {
         expect(html).to.contain('Dev server still not reachable');
         expect(html).to.contain('id="qaap-wait-retry" hidden>Retry</button>');
         expect(html).to.contain("button.addEventListener('click', start)");
+    });
+
+    it('injectQaapPreviewDocumentScripts equals the individual injections in proxy order', () => {
+        const documents = [
+            '<html><head><title>x</title></head><body><main>app</main></body></html>',
+            '<html lang="en"><body>no head</body></html>',
+            '<main>fragment</main>',
+            '<html><head></head><body><script type="module" src="/qaap-dev/5173/@vite/client"></script></body></html>',
+        ];
+        for (const prefix of ['/qaap-preview/abc', '/qaap-dev/5173', '']) {
+            for (const html of documents) {
+                expect(injectQaapPreviewDocumentScripts(html, prefix, 'head', true)).to.equal(injectQaapPreviewDiagnostics(
+                    injectQaapPreviewHistoryBase(injectQaapPreviewViteEnvBootstrap(html, prefix), prefix, 'head'), 'head'));
+                expect(injectQaapPreviewDocumentScripts(html, prefix, 'body-end', false)).to.equal(injectQaapPreviewDiagnostics(
+                    injectQaapPreviewHistoryBase(html, prefix, 'body-end'), 'body-end'));
+            }
+        }
+    });
+
+    it('buildDevPreviewWaitingHtml only keeps polling on the proxy-marked 503', () => {
+        const html = buildDevPreviewWaitingHtml(3001);
+        expect(html).to.contain(`var marker = '${QAAP_DEV_PREVIEW_WAITING_HEADER}';`);
+        expect(html).to.contain('r.status !== 503 || !r.headers.get(marker)');
     });
 });

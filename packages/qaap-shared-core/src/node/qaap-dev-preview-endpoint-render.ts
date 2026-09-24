@@ -13,9 +13,17 @@ import {
     QAAP_IDENTITY_PREVIEW_PREFIX,
     QAAP_IDENTITY_PREVIEW_PROBE_PATH,
     parseQaapDevPreviewPort,
+    parseQaapDevPreviewRequestPath,
     parseQaapIdentityPreviewRequestPath,
 } from '../common/qaap-dev-preview';
-import { isQaapPreviewIdentity, isQaapProcessPreviewClaimIdentity, isQaapProcessPreviewIdentity, normalizeQaapPreviewConversationId, resolveQaapPreviewIdentity, type QaapPreviewIdentity } from '../common/qaap-preview-identity';
+import {
+    isQaapPreviewIdentity,
+    isQaapProcessPreviewClaimIdentity,
+    isQaapProcessPreviewIdentity,
+    normalizeQaapPreviewConversationId,
+    resolveQaapPreviewIdentity,
+    type QaapPreviewIdentity,
+} from '../common/qaap-preview-identity';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
@@ -52,8 +60,8 @@ export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Appl
     // calls next() for preview hosts), so it only ever touches the MAIN origin's shell
     // document; proxied previews, webviews, and mini-browser endpoints keep their own rules.
     app.use((req: Request, res: Response, next: NextFunction) => {
-        const path = (req.path || '').toLowerCase();
-        if (path === '/' || path === '/index.html') {
+        const shellPath = (req.path || '').toLowerCase();
+        if (shellPath === '/' || shellPath === '/index.html') {
             res.setHeader('X-Frame-Options', 'DENY');
             res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
         }
@@ -124,30 +132,48 @@ export function configureExtracted(ctx: QaapDevPreviewEndpointContext, app: Appl
             return;
         }
         const identity = parseQaapIdentityPreviewRequestPath(refererUrl.pathname);
-        const previewId = identity?.previewId;
-        if (!previewId) {
+        // Legacy `/qaap-dev/:port` previews get the same routing, gated by port ownership.
+        const legacy = identity ? undefined : parseQaapDevPreviewRequestPath(refererUrl.pathname);
+        if (!identity && !legacy) {
             next();
             return;
         }
         if (!ctx.requireHttpAuth(req, res)) {
             return;
         }
-        const record = ctx.previewForRequest(req, previewId);
-        if (!record || ctx.isIdeListenPort(record.port)) {
-            res.status(403).type('text/plain').send('This preview belongs to another execution.');
-            return;
+        let targetPort: number;
+        let publicPrefix: string;
+        if (identity) {
+            const record = ctx.previewForRequest(req, identity.previewId);
+            if (!record || ctx.isIdeListenPort(record.port)) {
+                res.status(403).type('text/plain').send('This preview belongs to another execution.');
+                return;
+            }
+            ctx.portRegistry.touchPreview(identity.previewId, record.ownerLogin);
+            targetPort = record.port;
+            publicPrefix = `${QAAP_IDENTITY_PREVIEW_PREFIX}/${identity.previewId}`;
+        } else {
+            targetPort = legacy!.port;
+            if (ctx.isIdeListenPort(targetPort) || !ctx.mayProxyPort(req, targetPort)) {
+                res.status(403).type('text/plain').send('This preview port belongs to another workspace.');
+                return;
+            }
+            publicPrefix = `${QAAP_DEV_PREVIEW_PREFIX}/${targetPort}`;
         }
-        ctx.portRegistry.touchPreview(previewId, record.ownerLogin);
         const accept = req.get('accept') ?? '';
         const isDocumentNavigation = req.method === 'GET'
             && (req.get('sec-fetch-dest') === 'document' || /\btext\/html\b/i.test(accept));
         if (isDocumentNavigation) {
             const target = req.originalUrl || req.url || '/';
-            res.redirect(307, `${QAAP_IDENTITY_PREVIEW_PREFIX}/${encodeURIComponent(previewId)}${target}`);
+            const encodedPrefix = identity
+                ? `${QAAP_IDENTITY_PREVIEW_PREFIX}/${encodeURIComponent(identity.previewId)}`
+                : publicPrefix;
+            res.redirect(307, `${encodedPrefix}${target}`);
             return;
         }
-        req.headers['x-qaap-preview-referer-id'] = previewId;
-        void ctx.forwardHttp(req, res, record.port, req.url || '/', `${QAAP_IDENTITY_PREVIEW_PREFIX}/${previewId}`);
+        // Marks a Referer-routed response (private, Vary: Referer) in forwardHttp.
+        req.headers['x-qaap-preview-referer-id'] = identity?.previewId ?? String(targetPort);
+        void ctx.forwardHttp(req, res, targetPort, req.url || '/', publicPrefix);
     });
 }
 

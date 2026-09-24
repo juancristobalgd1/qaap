@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isAllowedDevPreviewPort, QAAP_DEV_PREVIEW_MAX_PORT, QAAP_DEV_PREVIEW_MIN_PORT } from '../common/qaap-dev-preview-ports';
+
 /** Same prefix as {@link QAAP_DEV_PREVIEW_PREFIX} in qaap-shared-core (keep in sync). */
 export const QAAP_DEV_PREVIEW_PATH_PREFIX = '/qaap-dev';
 
@@ -23,7 +25,7 @@ function normalizeBareLocalDevUrl(url: string): string {
 
 function parseDevPort(raw: string | undefined): number | undefined {
     const port = Number(raw);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    if (!isAllowedDevPreviewPort(port)) {
         return undefined;
     }
     return port;
@@ -121,9 +123,10 @@ export function explainUnproxiedLocalPreviewUrl(url: string, publicOrigin?: stri
         }
         const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
         const idePort = Number(ide.port || (ide.protocol === 'https:' ? 443 : 80));
-        if (port < 1024) {
+        if (port < QAAP_DEV_PREVIEW_MIN_PORT) {
             return `Port ${port} is a privileged port, which the preview proxy does not forward. `
-                + 'This URL loads from your own computer, not the workspace. Run the dev server on a port from 1024 to 65535 (for example 5173 or 3000).';
+                + 'This URL loads from your own computer, not the workspace. '
+                + `Run the dev server on a port from ${QAAP_DEV_PREVIEW_MIN_PORT} to ${QAAP_DEV_PREVIEW_MAX_PORT} (for example 5173 or 3000).`;
         }
         if (port === idePort) {
             return `Port ${port} is the Qaap IDE's own port and cannot be previewed. `
