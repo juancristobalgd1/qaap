@@ -49,8 +49,8 @@ export interface QaapQaiqByokProviderDescriptor {
 
 const OPENROUTER_FALLBACK_MODELS = [
     'nvidia/nemotron-3-super-120b-a12b:free',
-    'moonshotai/kimi-k2.6:free',
     'google/gemma-4-31b-it:free',
+    'qwen/qwen3.8-27b:free',
 ] as const;
 
 const NVIDIA_FALLBACK_MODELS = [

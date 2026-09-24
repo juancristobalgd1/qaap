@@ -3,6 +3,7 @@ import {
     filterOpenRouterModelSlugs,
     isExcludedOpenRouterModelSlug,
     isFreeOpenRouterModelId,
+    OPENROUTER_DEFAULT_FREE_MODELS,
 } from './openrouter-models';
 
 describe('openrouter-models', () => {
@@ -22,8 +23,8 @@ describe('openrouter-models', () => {
         expect(isExcludedOpenRouterModelSlug('tencent/hy3')).to.be.true;
         expect(filterOpenRouterModelSlugs([
             'tencent/hy3:free',
-            'moonshotai/kimi-k2.6:free',
-        ])).to.deep.equal(['moonshotai/kimi-k2.6:free']);
+            'google/gemma-4-31b-it:free',
+        ])).to.deep.equal(['google/gemma-4-31b-it:free']);
     });
 
     it('excludes Hermes catalog slugs that 404 with no OpenRouter endpoints', () => {
@@ -33,7 +34,14 @@ describe('openrouter-models', () => {
         expect(filterOpenRouterModelSlugs([
             'poolside/laguna-m.1:free',
             'nvidia/nemotron-3-ultra-550b-a55b:free',
-            'moonshotai/kimi-k2.6:free',
-        ])).to.deep.equal(['moonshotai/kimi-k2.6:free']);
+            'google/gemma-4-31b-it:free',
+        ])).to.deep.equal(['google/gemma-4-31b-it:free']);
+    });
+
+    it('excludes free slugs OpenRouter delisted and keeps them out of the defaults', () => {
+        for (const slug of ['moonshotai/kimi-k2.6:free', 'openai/gpt-oss-120b:free', 'z-ai/glm-4.5-air:free']) {
+            expect(isExcludedOpenRouterModelSlug(slug), slug).to.be.true;
+            expect(OPENROUTER_DEFAULT_FREE_MODELS, slug).to.not.include(slug);
+        }
     });
 });

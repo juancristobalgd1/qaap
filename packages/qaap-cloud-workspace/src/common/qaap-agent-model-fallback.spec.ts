@@ -26,6 +26,7 @@ describe('qaap-agent-model-fallback', () => {
             'openrouter/moonshotai/kimi-k2.6:free',
             'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
             'openrouter/google/gemma-4-31b-it:free',
+            'openrouter/qwen/qwen3.8-27b:free',
         ]);
     });
 
