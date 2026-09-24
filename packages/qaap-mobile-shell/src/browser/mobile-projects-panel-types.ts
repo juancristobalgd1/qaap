@@ -1,8 +1,35 @@
-// @ts-nocheck
 // Types and interfaces extracted from mobile-projects-panel.ts
 
-import type { ExecutionSurfaceTabId } from './mobile-projects-types';
-import { QuickPickItem } from '@theia/core/lib/browser';
+import type { QuickPickItem } from '@theia/core/lib/browser';
+import type { QuickInputService } from '@theia/core/lib/browser/quick-input';
+import type { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
+import type { MessageService } from '@theia/core/lib/common/message-service';
+import type { PreferenceService } from '@theia/core/lib/common/preferences';
+import type { URI } from '@theia/core/lib/common/uri';
+import type { AIVariable, AIVariableResolutionRequest } from '@theia/ai-core';
+import type { ChatService } from '@theia/ai-chat';
+import type { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
+import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
+import type { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
+import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
+import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
+import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
+import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
+import type { WorkHubCatalogAction } from '../common/mobile-work-hub-catalog';
+import type { QaapAttachComposerImageAttachment } from '../common/qaap-preview-feedback-context';
+import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
+import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
+import type { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
+import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
+import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
+import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
+import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
+import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
+import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
+import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
 export interface MobileProjectsPanelDelegate {
     onProjectOpen(project: MobileProjectEntry): void;

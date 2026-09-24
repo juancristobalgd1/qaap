@@ -1,48 +1,17 @@
-// @ts-nocheck
+import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 // Extracted from mobile-projects-panel.ts
 
-import { Event as TheiaEvent } from '@theia/core/lib/common/event';
-import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable } from '@theia/core/lib/common/disposable';
-import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
-import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
-import * as markdownit from '@theia/core/shared/markdown-it';
-import * as markdownitemoji from '@theia/core/shared/markdown-it-emoji';
-import type { QuickPick } from '@theia/core/lib/common/quick-pick-service';
-import { QuickInputService, QuickPickItem } from '@theia/core/lib/browser';
-import { PreferenceService } from '@theia/core/lib/common/preferences';
-import { AIVariable, AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia/ai-core';
-import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
-import { ChatAgent, ChatService, ChatSession } from '@theia/ai-chat';
-import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
-import { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
-import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import {
     MobileProjectEntry,
-    MobileProjectFilter,
     MobileProjectsHubView,
 } from './mobile-projects-types';
-import { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
-import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
-import { MobileProjectsTeamHubUi, type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
-import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
-import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import {
     type WorkHubTeamMember,
 } from '../common/qaap-work-hub-team';
-import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
-import { MobileProjectsService } from './mobile-projects-service';
-import {
-    isAgentsHubExecutionSurfacePainted,
-    isAgentsHubIdleConversationSummary,
-} from '../common/qaap-agents-hub-landing';
-import { normalizeQaapPreviewConversationId } from '../common/qaap-preview-identity';
-import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
 import {
     buildProbeStreamingSummaries,
     ensureProbeWorkspaceProject,
@@ -50,266 +19,16 @@ import {
 } from './qaap-work-hub-perf-probe-host';
 import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
 import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
-import { QaapBoundedLruMap } from './qaap-bounded-lru-map';
 import {
-    QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
 import {
-    agentHasCliOAuthLogin,
-    localizeAgentSettingsApiKeyLoginMessage,
-} from '../common/qaap-agent-auth-login';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { MobileSnackbar } from './mobile-snackbar';
-import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
-import {
-    type QaapAgentTaskAgentOption,
-    type QaapQaiqModelOption,
-    type QaapAgentTaskListSnapshot,
-} from '../common/qaap-agent-task-client';
-import {
-    type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
-import {
-    type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
-import {
-    type StickyComposerContextChipView,
-} from './qaap-sticky-composer-context-ui';
-import {
-    createComposerContextEntry,
-    revokeComposerContextPreview,
-    type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
-import {
-    buildPreviewFeedbackAttachmentRequest,
-    findPreviewFeedbackEntryIndex,
-    normalizeAttachComposerImages,
-    type QaapAttachComposerImageAttachment,
-} from '../common/qaap-preview-feedback-context';
-import { URI } from '@theia/core/lib/common/uri';
-import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
-import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
-import {
-    buildQaapAccountMenuEntries,
+    QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-    toggleQaapAccountMenu,
-    type MobileViewToggleId,
 } from './qaap-workbench-account-menu';
-import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
-import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
-import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
-import { createAnnotationComposerSessionControls } from './qaap-preview-annotation-composer-session';
-import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import {
-    type ExecutionSurfaceTabId,
-} from '../common/qaap-execution-surface-tabs';
-import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
-import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-host';
-import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
-import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcript-overlay-state';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
-import type { MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
-import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
-import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
-import { MobileProjectsTheiaChatSessionUi, type MobileProjectsTheiaChatSessionHost } from './mobile-projects-theia-chat-session-ui';
-import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from './mobile-projects-hub-catalog-ui';
-import { MobileProjectsHubRoutineEditorUi, type MobileProjectsHubRoutineEditorHost } from './mobile-projects-hub-routine-editor-ui';
-import { MobileProjectsProjectActionsUi, type MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
-import { MobileProjectsInboxPrUi, type MobileProjectsInboxPrHost } from './mobile-projects-inbox-pr-ui';
-import { MobileProjectsCardMenuUi, type MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
-import {
-    MobileProjectsProjectRowsUi,
-    MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT,
-    type MobileProjectsProjectRowsHost,
-} from './mobile-projects-project-rows-ui';
-import { MobileProjectsHubTeamDataUi, type MobileProjectsHubTeamDataHost } from './mobile-projects-hub-team-data-ui';
-import { MobileProjectsConversationActionsUi, type MobileProjectsConversationActionsHost } from './mobile-projects-conversation-actions-ui';
-import { MobileProjectsAgentsHubInlineUi, type MobileProjectsAgentsHubInlineHost } from './mobile-projects-agents-hub-inline-ui';
-import {
-    MobileProjectsBackgroundTaskUi,
-    type MobileProjectsBackgroundTaskHost,
-} from './mobile-projects-background-task-ui';
-import {
-    MobileProjectsChatServiceSummariesUi,
-    type MobileProjectsChatServiceSummariesHost,
-} from './mobile-projects-chat-service-summaries-ui';
-import {
-    MobileProjectsComposerHeaderUi,
-    type MobileProjectsComposerHeaderHost,
-} from './mobile-projects-composer-header-ui';
-import {
-    MobileProjectsConversationIndexUi,
-    type MobileProjectsConversationIndexHost,
-} from './mobile-projects-conversation-index-ui';
-import {
-    MobileProjectsConversationOpenUi,
-    type MobileProjectsConversationOpenHost,
-} from './mobile-projects-conversation-open-ui';
-import {
-    MobileProjectsDiffHubUi,
-    type MobileProjectsDiffHubHost,
-} from './mobile-projects-diff-hub-ui';
-import {
-    MobileProjectsHomeHubUi,
-    type MobileProjectsHomeHubHost,
-} from './mobile-projects-home-hub-ui';
-import {
-    MobileProjectsMissionControlHubUi,
-} from './mobile-projects-mission-control-hub-ui';
-import type {
-    MissionControlLaneFilter,
-    MissionControlSurfaceFilter,
-} from './mobile-work-mission-control';
-import {
-    MobileProjectsHubHeaderUi,
-    type MobileProjectsHubHeaderHost,
-} from './mobile-projects-hub-header-ui';
-import {
-    MobileProjectsHubLandingUi,
-    type MobileProjectsHubLandingHost,
-} from './mobile-projects-hub-landing-ui';
-import {
-    MobileProjectsHubListChromeUi,
-    type MobileProjectsHubListChromeHost,
-} from './mobile-projects-hub-list-chrome-ui';
-import {
-    MobileProjectsHubQueryUi,
-    type MobileProjectsHubQueryHost,
-} from './mobile-projects-hub-query-ui';
-import {
-    MobileProjectsHubRenderUi,
-    type MobileProjectsHubRenderHost,
-} from './mobile-projects-hub-render-ui';
-import {
-    MobileProjectsOverlayFactoryUi,
-    type MobileProjectsOverlayFactoryHost,
-} from './mobile-projects-overlay-factory-ui';
-import {
-    MobileProjectsProjectDetailUi,
-    type MobileProjectsProjectDetailHost,
-} from './mobile-projects-project-detail-ui';
-import {
-    MobileProjectsProjectNavigationUi,
-    type MobileProjectsProjectNavigationHost,
-} from './mobile-projects-project-navigation-ui';
-import {
-    MobileProjectsHubIncrementalUi,
-    type MobileProjectsHubIncrementalPatchHost,
-} from './mobile-projects-hub-incremental-ui';
-import {
-    MobileProjectsRenderListUi,
-    type MobileProjectsRenderListHost,
-} from './mobile-projects-render-list-ui';
-import {
-    MobileProjectsRepoFiltersUi,
-    type MobileProjectsRepoFiltersHost,
-} from './mobile-projects-repo-filters-ui';
-import {
-    MobileProjectsRepoLifecycleUi,
-    type MobileProjectsRepoLifecycleHost,
-} from './mobile-projects-repo-lifecycle-ui';
-import {
-    MobileProjectsSubtitleUi,
-    type MobileProjectsSubtitleHost,
-} from './mobile-projects-subtitle-ui';
-import {
-    MobileProjectsTasksHubAttentionUi,
-    type MobileProjectsTasksHubAttentionHost,
-} from './mobile-projects-tasks-hub-attention-ui';
-import {
-    MobileProjectsPanelLifecycleUi,
-    type MobileProjectsPanelLifecycleHost,
-} from './mobile-projects-panel-lifecycle-ui';
-import {
-    MobileProjectsPanelChromeUi,
-    type MobileProjectsPanelChromeHost,
-} from './mobile-projects-panel-chrome-ui';
-import {
-    MobileProjectsActiveTaskActionsUi,
-    type MobileProjectsActiveTaskActionsHost,
-} from './mobile-projects-active-task-actions-ui';
-import {
-    MobileProjectsWorkHubSearchUi,
-    type MobileProjectsWorkHubSearchHost,
-} from './mobile-projects-work-hub-search-ui';
-import {
-    MobileProjectsStickyComposerContextUi,
-    type MobileProjectsStickyComposerContextHost,
-} from './mobile-projects-sticky-composer-context-ui';
-import {
-    MobileProjectsStickyComposerAgentsUi,
-    type MobileProjectsStickyComposerAgentsHost,
-} from './mobile-projects-sticky-composer-agents-ui';
-import {
-    MobileProjectsStickyComposerSheetsUi,
-    type MobileProjectsStickyComposerSheetsHost,
-} from './mobile-projects-sticky-composer-sheets-ui';
-import {
-    MobileProjectsStickyComposerWorkspaceUi,
-    type MobileProjectsStickyComposerWorkspaceHost,
-} from './mobile-projects-sticky-composer-workspace-ui';
-import {
-    MobileProjectsStickyComposerColumnUi,
-    type MobileProjectsStickyComposerColumnHost,
-} from './mobile-projects-sticky-composer-column-ui';
-import {
-    MobileProjectsStickyComposerRenderUi,
-    type MobileProjectsStickyComposerRenderHost,
-} from './mobile-projects-sticky-composer-render-ui';
-import {
-    type QaapTranscriptLiveRefreshOptions,
-} from './qaap-transcript-live-controller';
-import {
-    MobileProjectsSessionsSidebarUi,
-    type MobileProjectsSessionsSidebarHost,
-} from './mobile-projects-sessions-sidebar-ui';
-import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
-import {
-    type WorkHubHomeAttentionItem,
-    type WorkHubHomeRecentItem,
-    type WorkHubHomeSnapshot,
-} from '../common/qaap-work-hub-home';
-import {
-    type QaapComposerSurface,
-} from '../common/qaap-composer-surface';
-import {
-    QAAP_WORK_HUB_GETTING_STARTED,
-    type WorkHubCatalogAction,
-} from '../common/mobile-work-hub-catalog';
-import {
-    type QaapWorkHubRoutine,
-} from '../common/qaap-work-hub-routine';
-import {
-    type MobileWorkHubInboxItem,
-} from './mobile-work-hub-inbox';
-import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
-import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
-import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
-import {
-    type TranscriptWorkspaceSurfaceKey,
-} from './qaap-transcript-workspace-surfaces-cache';
-import {
-    createHeaderIdeViewIcon as createHeaderIdeViewIconHelper,
-    createHeaderIdeViewChevron as createHeaderIdeViewChevronHelper,
-    appendHeaderOverflowSeparator as appendHeaderOverflowSeparatorHelper,
-    positionHeaderIdeViewPickerMenu as positionHeaderIdeViewPickerMenuHelper,
-    positionHeaderOverflowMenu as positionHeaderOverflowMenuHelper,
-} from './mobile-projects-panel-dom-helpers';
-import {
-    projectOwnsActiveBootstrap as projectOwnsActiveBootstrapHelper,
-    isCopyConversationEnabled as isCopyConversationEnabledHelper,
-    resolveActiveConversationForCopy as resolveActiveConversationForCopyHelper,
-    renderHeaderOverflowMenuItems as renderHeaderOverflowMenuItemsHelper,
-    sendExternalComposerContext as sendExternalComposerContextHelper,
-} from './mobile-projects-panel-helpers';
 
-export function bindAgentFinishedToastCallbacksExtracted(ctx: any): void {
+export function bindAgentFinishedToastCallbacksExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.agentFinishedToast?.bindPanelCallbacks({
         resolveOpenConversationId: () => ctx.transcriptController.state.transcriptOpenSummaryId,
         openConversation: (project, summary) => { void ctx.openConversationSummary(project, summary); },
@@ -337,7 +56,7 @@ export function bindAgentFinishedToastCallbacksExtracted(ctx: any): void {
  * can still route the user to the exact session the agent was working on instead of the classic-IDE
  * chat panel.
  */
-export function onNavigateToConversationHandler(ctx: any, event: Event): void {
+export function onNavigateToConversationHandler(ctx: MobileProjectsPanelContext, event: Event): void {
     const detail = (event as CustomEvent<{ conversationId?: string }>).detail;
     const conversationId = detail?.conversationId;
     if (!conversationId) {
@@ -349,7 +68,7 @@ export function onNavigateToConversationHandler(ctx: any, event: Event): void {
             continue;
         }
         const summary = ctx.conversations?.threadStore.getSummariesForCwd(cwd)
-            .find((s: any) => s.id === conversationId);
+            .find(s => s.id === conversationId);
         if (summary) {
             void ctx.openConversationSummary(project, summary);
             return;
@@ -357,7 +76,7 @@ export function onNavigateToConversationHandler(ctx: any, event: Event): void {
     }
 }
 
-export function ensureAgentsHubExecutionShellRenderedExtracted(ctx: any): void {
+export function ensureAgentsHubExecutionShellRenderedExtracted(ctx: MobileProjectsPanelContext): void {
     if (ctx.pullRequestDetail !== undefined || ctx.isPullRequestsSidebarVisible?.() === true) {
         return;
     }
@@ -391,14 +110,14 @@ export function ensureAgentsHubExecutionShellRenderedExtracted(ctx: any): void {
     }
 }
 
-export function syncCurrentProjectsScrollHostExtracted(ctx: any): void {
+export function syncCurrentProjectsScrollHostExtracted(ctx: MobileProjectsPanelContext): void {
     const current = ctx.currentProjectsScrollHost();
     if (current !== ctx.scroll) {
         (ctx as unknown as { scroll: HTMLElement }).scroll = current;
     }
 }
 
-export function installAgentsHubEmptySurfaceGuardExtracted(ctx: any): void {
+export function installAgentsHubEmptySurfaceGuardExtracted(ctx: MobileProjectsPanelContext): void {
     if (!ctx.homeMode || typeof window === 'undefined') {
         return;
     }
@@ -433,13 +152,13 @@ export function installAgentsHubEmptySurfaceGuardExtracted(ctx: any): void {
     schedule();
 }
 
-export function selectHubLandingViewExtracted(ctx: any, view: MobileProjectsHubView,
+export function selectHubLandingViewExtracted(ctx: MobileProjectsPanelContext, view: MobileProjectsHubView,
     preferredDiffProjectId?: string,
     options?: { force?: boolean },): void {
     ctx.hubLandingUi.selectHubLandingView(view, preferredDiffProjectId, options);
 }
 
-export function disposeExtracted(ctx: any): void {
+export function disposeExtracted(ctx: MobileProjectsPanelContext): void {
     window.removeEventListener(QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT, ctx.onBootstrapPreviewOpened);
     window.removeEventListener(QAAP_NAVIGATE_TO_CONVERSATION_EVENT, ctx.onNavigateToConversation);
     ctx.closeHeaderOverflowMenu();
@@ -457,13 +176,13 @@ export function disposeExtracted(ctx: any): void {
     ctx.panelLifecycleUi.dispose();
 }
 
-export function hideExtracted(ctx: any): void {
+export function hideExtracted(ctx: MobileProjectsPanelContext): void {
     document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');
     ctx.closeHeaderIdeViewPickerMenu();
     ctx.panelLifecycleUi.hide();
 }
 
-export async function activateAgentsHubProjectExtracted(ctx: any, project: MobileProjectEntry): Promise<void> {
+export async function activateAgentsHubProjectExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry): Promise<void> {
     ctx.agentsHubSelectedProjectId = project.id;
     ctx.expandedId = undefined;
     ctx.soloExpanded = false;
@@ -493,7 +212,7 @@ export async function activateAgentsHubProjectExtracted(ctx: any, project: Mobil
     ctx.notifyWorkspaceHubBottomBarRefresh();
 }
 
-export function touchProjectActivityByConversationIdExtracted(ctx: any, conversationId: string): void {
+export function touchProjectActivityByConversationIdExtracted(ctx: MobileProjectsPanelContext, conversationId: string): void {
     if (!conversationId) {
         return;
     }
@@ -528,7 +247,7 @@ export function touchProjectActivityByConversationIdExtracted(ctx: any, conversa
     }
 }
 
-export function syncWorkHubProjectSkillRootsExtracted(ctx: any): void {
+export function syncWorkHubProjectSkillRootsExtracted(ctx: MobileProjectsPanelContext): void {
     if (!ctx.workHubProjectSkillRoots) {
         return;
     }
@@ -542,7 +261,7 @@ export function syncWorkHubProjectSkillRootsExtracted(ctx: any): void {
     ctx.workHubProjectSkillRoots.syncProjectCwds(cwds);
 }
 
-export function tryPatchHubListBeforeRebuildExtracted(ctx: any): boolean {
+export function tryPatchHubListBeforeRebuildExtracted(ctx: MobileProjectsPanelContext): boolean {
     if (ctx.hubQueryUi.isHomeHubView() && ctx.missionControlHubUi.tryPatchBeforeRebuild()) {
         ctx.subtitleUi.renderSubtitle();
         return true;
@@ -550,8 +269,8 @@ export function tryPatchHubListBeforeRebuildExtracted(ctx: any): boolean {
     return ctx.hubIncrementalUi.tryPatchBeforeRebuild();
 }
 
-export function maybeInstallWorkHubPerfProbeExtracted(ctx: any): void {
-    const panel = ctx as MobileProjectsPanel & {
+export function maybeInstallWorkHubPerfProbeExtracted(ctx: MobileProjectsPanelContext): void {
+    const panel = ctx as MobileProjectsPanelContext & {
         transcriptSheet?: HTMLElement;
         transcriptChatHost?: HTMLElement;
         transcriptOpenSummaryId?: string;
@@ -674,14 +393,14 @@ export function maybeInstallWorkHubPerfProbeExtracted(ctx: any): void {
     });
 }
 
-export function getFilteredTeamHubStateExtracted(ctx: any): {
+export function getFilteredTeamHubStateExtracted(ctx: MobileProjectsPanelContext): {
     members: WorkHubTeamMember[];
     filteredApprovals: WorkHubApprovalItem[];
 } {
     return ctx.tasksHubAttentionUi.getFilteredTeamHubState();
 }
 
-export async function openDesktopIdeFromAgentsHubExtracted(ctx: any): Promise<void> {
+export async function openDesktopIdeFromAgentsHubExtracted(ctx: MobileProjectsPanelContext): Promise<void> {
     if (ctx.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)
         && ctx.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
         await ctx.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, 'editor');
@@ -696,30 +415,30 @@ export async function openDesktopIdeFromAgentsHubExtracted(ctx: any): Promise<vo
     ctx.hide();
 }
 
-export function collectSessionsSidebarPinnedGroupsExtracted(ctx: any, projects: MobileProjectEntry[],
+export function collectSessionsSidebarPinnedGroupsExtracted(ctx: MobileProjectsPanelContext, projects: MobileProjectEntry[],
     query: string,): Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }> {
     return ctx.sessionsSidebarUi.collectSessionsSidebarPinnedGroups(projects, query);
 }
 
-export function createSessionsSidebarPinnedSectionExtracted(ctx: any, groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>,
+export function createSessionsSidebarPinnedSectionExtracted(ctx: MobileProjectsPanelContext, groups: Array<{ project: MobileProjectEntry; conversations: QaapAgentConversationSummaryDTO[] }>,
     onActivate: () => void,
     bypassConversationLimit = false,): HTMLElement {
     return ctx.sessionsSidebarUi.createSessionsSidebarPinnedSection(groups, onActivate, bypassConversationLimit);
 }
 
-export function getSessionsSidebarConversationDisplayLimitExtracted(ctx: any, project: MobileProjectEntry,
+export function getSessionsSidebarConversationDisplayLimitExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,
     totalCount: number,
     bypassLimit: boolean,): number {
     return ctx.sessionsSidebarUi.getSessionsSidebarConversationDisplayLimit(project, totalCount, bypassLimit);
 }
 
-export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: any, project: MobileProjectEntry,
+export function resolveSessionsSidebarVisibleConversationsExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
     bypassLimit: boolean,): { visible: QaapAgentConversationSummaryDTO[]; hiddenCount: number; showLess: boolean } {
     return ctx.sessionsSidebarUi.resolveSessionsSidebarVisibleConversations(project, conversations, bypassLimit);
 }
 
-export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHost: HTMLElement,
+export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProjectsPanelContext, listHost: HTMLElement,
     project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
     onActivate: () => void,
@@ -727,33 +446,33 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: any, listHo
     ctx.sessionsSidebarUi.appendSessionsSidebarConversationItems(listHost, project, conversations, onActivate, bypassLimit);
 }
 
-export function createSessionsSidebarShowMoreControlExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarShowMoreControlExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,
     hiddenCount: number,
     totalCount: number,): HTMLButtonElement {
     return ctx.sessionsSidebarUi.createSessionsSidebarShowMoreControl(project, hiddenCount, totalCount);
 }
 
-export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarPinnedProjectGroupExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
     onActivate: () => void,
     bypassConversationLimit = false,): HTMLElement {
     return ctx.sessionsSidebarUi.createSessionsSidebarPinnedProjectGroup(project, conversations, onActivate, bypassConversationLimit);
 }
 
-export function createSessionsSidebarProjectGroupExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
     onActivate: () => void,
     bypassConversationLimit = false,): HTMLElement {
     return ctx.sessionsSidebarUi.createSessionsSidebarProjectGroup(project, conversations, onActivate, bypassConversationLimit);
 }
 
-export function createSessionsSidebarProjectRowHeadExtracted(ctx: any, project: MobileProjectEntry,
+export function createSessionsSidebarProjectRowHeadExtracted(ctx: MobileProjectsPanelContext, project: MobileProjectEntry,
     expanded: boolean,
     onToggleExpand: () => void,): HTMLElement {
     return ctx.sessionsSidebarUi.createSessionsSidebarProjectRowHead(project, expanded, onToggleExpand);
 }
 
-export function onHeaderProjectClickExtracted(ctx: any, anchor: HTMLButtonElement): void {
+export function onHeaderProjectClickExtracted(ctx: MobileProjectsPanelContext, anchor: HTMLButtonElement): void {
     const project = ctx.hubHeaderUi.resolveHeaderProject();
     if (!project) {
         return;
@@ -761,7 +480,7 @@ export function onHeaderProjectClickExtracted(ctx: any, anchor: HTMLButtonElemen
     ctx.stickyComposerWorkspaceUi.openComposerWorkspaceProjectSheet(project, false, anchor);
 }
 
-export function syncHeaderIdeViewPickerExtracted(ctx: any): void {
+export function syncHeaderIdeViewPickerExtracted(ctx: MobileProjectsPanelContext): void {
     ctx.headerIdeViewPickerHost.hidden = true;
     ctx.headerIdeViewPickerHost.setAttribute('aria-hidden', 'true');
     document.body.classList.remove('theia-mobile-mod-ide-header-view-picker');

@@ -1,6 +1,6 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 103 files.
+# 97 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
@@ -17,12 +17,6 @@ packages/qaap-mobile-shell/src/browser/mobile-projects-execution-surface-tabs-ui
 packages/qaap-mobile-shell/src/browser/mobile-projects-execution-surface-tabs-ui-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-execution-surface-tabs-ui-timeline.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-execution-surface-tabs-ui.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-panel-activity.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-panel-init.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-panel-render.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-panel-streaming.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-panel-timeline.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-panel-types.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-project-rows-ui-activity.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-project-rows-ui-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-project-rows-ui-streaming.ts

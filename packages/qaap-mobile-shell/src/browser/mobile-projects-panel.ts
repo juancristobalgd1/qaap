@@ -323,15 +323,18 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** Max automatic verify→fix loops before the closed loop gives up (avoids runaway turns/cost). */
     protected readonly transcriptMarkdownIt = markdownit({ linkify: true }).use(markdownitemoji.full);
 
-    protected readonly root: HTMLElement;
-    protected readonly scroll: HTMLElement;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly root: HTMLElement;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly scroll: HTMLElement;
     protected readonly stickyComposerHost: HTMLElement;
     protected readonly subtitleEl: HTMLElement;
     protected readonly filtersHost: HTMLElement;
     protected readonly searchToggleBtn: HTMLButtonElement;
     protected workHubSearchQuickPick: QuickPick<WorkHubSearchPickItem> | undefined;
     protected workHubSearchQuickPickDispose: Disposable = Disposable.NULL;
-    protected readonly accountBtn: HTMLButtonElement;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly accountBtn: HTMLButtonElement;
     protected readonly accountAvatar: HTMLSpanElement;
     protected readonly titleBlock: HTMLElement;
     protected readonly titleRow: HTMLElement;
@@ -344,9 +347,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerProjectLabelEl: HTMLSpanElement;
     protected readonly headerConversationsBtn: HTMLButtonElement;
     protected readonly headerNewChatBtn: HTMLButtonElement;
-    protected readonly headerOverflowMenuBtn: HTMLButtonElement;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly headerOverflowMenuBtn: HTMLButtonElement;
     protected readonly newFabBtn: HTMLButtonElement;
-    protected readonly headerIdeViewPickerHost: HTMLElement;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly headerIdeViewPickerHost: HTMLElement;
     protected readonly headerSurfacePickerHost: HTMLElement;
     protected readonly headerExecutionCluster: HTMLElement;
     protected readonly headerPreviewRunHost: HTMLElement;
@@ -356,12 +361,16 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected readonly headerExecutionTabsHost: HTMLElement;
     protected readonly pullRequestHeaderEl: HTMLElement;
     protected headerSurfacePicker?: QaapSegmentedFieldController<MobileBottomButtonId>;
-    protected headerIdeViewPickerBtn: HTMLButtonElement | undefined;
-    protected headerIdeViewPickerMenu: HTMLElement | undefined;
-    protected headerIdeViewPickerDismiss: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public headerIdeViewPickerBtn: HTMLButtonElement | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public headerIdeViewPickerMenu: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public headerIdeViewPickerDismiss: Disposable = Disposable.NULL;
     protected headerExecutionTabsProjectId: string | undefined;
     protected filter: MobileProjectFilter = 'all';
-    protected hubView: MobileProjectsHubView = 'tasks';
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public hubView: MobileProjectsHubView = 'tasks';
     protected query = '';
     protected missionControlExpanded = false;
     protected missionControlLaneFilter: MissionControlLaneFilter = 'all';
@@ -379,23 +388,28 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected diffScopedToProject = false;
     /** Project row to restore when leaving a scoped diff via the header back control. */
     protected diffReturnProjectId: string | undefined;
-    protected projects: MobileProjectEntry[] = [];
-    protected visible = false;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public projects: MobileProjectEntry[] = [];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public visible = false;
     /** Id of the single project row currently expanded; undefined when all are collapsed. */
-    protected expandedId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public expandedId: string | undefined;
     /**
      * True when the expansion was driven by the user (vs. the auto-expand of the current workspace
      * at render time). When true, renderList hides the other project rows so the user can focus
      * on the expanded project's chats without surrounding noise; collapsing restores the full list.
      */
-    protected soloExpanded = false;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public soloExpanded = false;
     /** Once the user collapses the current workspace row, do not auto-expand it again. */
     protected suppressCurrentAutoExpand = false;
     /** Last measured lift for the home FAB so it does not jump when the sticky composer hides. */
     protected stickyComposerFabLiftPx = 0;
     protected stickyComposerFabLiftObserver: ResizeObserver | undefined;
     protected stickyComposerDraft = '';
-    protected stickyComposerContext: StickyComposerContextEntry[] = [];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public stickyComposerContext: StickyComposerContextEntry[] = [];
     protected stickyComposerFilesExpanded = true;
     protected stickyComposerPinnedAgentId: string | undefined;
     protected stickyComposerAgentModel: QaapCreateAgentTaskQaiqModel | undefined;
@@ -407,7 +421,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected stickyComposerWorkspaceSheet: HTMLElement | undefined;
     protected stickyComposerContextUsageSheet: HTMLElement | undefined;
     protected stickyComposerCapabilitySheet: HTMLElement | undefined;
-    protected agentsHubSelectedProjectId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public agentsHubSelectedProjectId: string | undefined;
     protected readonly composerWorkspaceBranchByProjectId = new Map<string, string>();
     protected stickyComposerModeId: string | undefined;
     protected stickyComposerCapabilityLevel: import('../common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
@@ -416,8 +431,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected stickyComposerSurface: QaapComposerSurface = 'task';
     protected tasksHubSurface: QaapComposerSurface = 'task';
     /** When true, Agents tab shows the legacy full inbox instead of the new landing. */
-    protected agentsHubLegacyInbox = false;
-    protected sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public agentsHubLegacyInbox = false;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public sessionsSidebar: MobileWorkHubSessionsSidebar | undefined;
     /** Project session groups expanded in the sessions sidebar accordion. */
     protected readonly sessionsSidebarExpandedProjectIds = new Set<string>();
     /** Per-project visible session count in the sidebar (undefined → default collapsed limit). */
@@ -426,11 +443,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected agentChatInputSession: ChatSession | undefined;
     // Bounded so a long-lived tab that opens many conversations does not retain every full DTO for
     // the tab's lifetime (each can be tens of KB). LRU keeps the recently-viewed ones hot.
-    protected readonly transcriptConversationCache: Map<string, QaapAgentConversationDTO> =
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly transcriptConversationCache: Map<string, QaapAgentConversationDTO> =
         new QaapBoundedLruMap<string, QaapAgentConversationDTO>(TRANSCRIPT_CONVERSATION_CACHE_LIMIT);
 
     /** Transcript overlay controller — state bag + `MobileProjectsTranscript*Ui` modules (Phase 3). */
-    protected transcriptController!: TranscriptOverlayController;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public transcriptController!: TranscriptOverlayController;
 
     /** Single cast surface for all `MobileProjectsTranscript*Ui` host contracts. */
     protected get transcriptOverlayHost(): MobileProjectsTranscriptOverlayHost {
@@ -439,67 +458,102 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected get transcriptUi() { return this.transcriptController.transcriptUi; }
     protected get transcriptHistoryUi() { return this.transcriptController.historyUi; }
-    protected get transcriptComposerUi() { return this.transcriptController.composerUi; }
-    protected get transcriptStickyComposerUi() { return this.transcriptController.stickyComposerUi; }
-    protected get transcriptSheetUi() { return this.transcriptController.sheetUi; }
-    protected get transcriptSurfacesUi() { return this.transcriptController.surfacesUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptComposerUi() { return this.transcriptController.composerUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptStickyComposerUi() { return this.transcriptController.stickyComposerUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptSheetUi() { return this.transcriptController.sheetUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptSurfacesUi() { return this.transcriptController.surfacesUi; }
     protected get transcriptHeaderUi() { return this.transcriptController.headerUi; }
-    protected get transcriptSubmitUi() { return this.transcriptController.submitUi; }
-    protected get transcriptMessagesUi() { return this.transcriptController.messagesUi; }
-    protected get transcriptLiveUi() { return this.transcriptController.liveUi; }
-    protected get transcriptVerifyUi() { return this.transcriptController.verifyUi; }
-    protected readonly backgroundTaskUi = new MobileProjectsBackgroundTaskUi(this as unknown as MobileProjectsBackgroundTaskHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptSubmitUi() { return this.transcriptController.submitUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptMessagesUi() { return this.transcriptController.messagesUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptLiveUi() { return this.transcriptController.liveUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public get transcriptVerifyUi() { return this.transcriptController.verifyUi; }
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly backgroundTaskUi = new MobileProjectsBackgroundTaskUi(this as unknown as MobileProjectsBackgroundTaskHost);
     protected readonly chatServiceSummariesUi = new MobileProjectsChatServiceSummariesUi(this as unknown as MobileProjectsChatServiceSummariesHost);
-    protected readonly composerHeaderUi = new MobileProjectsComposerHeaderUi(this as unknown as MobileProjectsComposerHeaderHost);
-    protected readonly sessionsSidebarUi = new MobileProjectsSessionsSidebarUi(this as unknown as MobileProjectsSessionsSidebarHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly composerHeaderUi = new MobileProjectsComposerHeaderUi(this as unknown as MobileProjectsComposerHeaderHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly sessionsSidebarUi = new MobileProjectsSessionsSidebarUi(this as unknown as MobileProjectsSessionsSidebarHost);
     protected readonly conversationIndexUi = new MobileProjectsConversationIndexUi(this as unknown as MobileProjectsConversationIndexHost);
-    protected readonly conversationOpenUi = new MobileProjectsConversationOpenUi(this as unknown as MobileProjectsConversationOpenHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly conversationOpenUi = new MobileProjectsConversationOpenUi(this as unknown as MobileProjectsConversationOpenHost);
     protected readonly diffHubUi = new MobileProjectsDiffHubUi(this as unknown as MobileProjectsDiffHubHost);
     protected readonly homeHubUi = new MobileProjectsHomeHubUi(this as unknown as MobileProjectsHomeHubHost);
-    protected readonly missionControlHubUi = new MobileProjectsMissionControlHubUi(this as unknown as import('./mobile-projects-mission-control-hub-ui').MobileProjectsMissionControlHubHost);
-    protected readonly hubHeaderUi = new MobileProjectsHubHeaderUi(this as unknown as MobileProjectsHubHeaderHost);
-    protected readonly hubLandingUi = new MobileProjectsHubLandingUi(this as unknown as MobileProjectsHubLandingHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly missionControlHubUi = new MobileProjectsMissionControlHubUi(this as unknown as import('./mobile-projects-mission-control-hub-ui').MobileProjectsMissionControlHubHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly hubHeaderUi = new MobileProjectsHubHeaderUi(this as unknown as MobileProjectsHubHeaderHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly hubLandingUi = new MobileProjectsHubLandingUi(this as unknown as MobileProjectsHubLandingHost);
     protected readonly hubListChromeUi = new MobileProjectsHubListChromeUi(this as unknown as MobileProjectsHubListChromeHost);
-    protected readonly hubQueryUi = new MobileProjectsHubQueryUi(this as unknown as MobileProjectsHubQueryHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly hubQueryUi = new MobileProjectsHubQueryUi(this as unknown as MobileProjectsHubQueryHost);
     protected readonly hubRenderUi = new MobileProjectsHubRenderUi(this as unknown as MobileProjectsHubRenderHost);
-    protected readonly overlayFactoryUi = new MobileProjectsOverlayFactoryUi(this as unknown as MobileProjectsOverlayFactoryHost);
-    protected readonly panelLifecycleUi = new MobileProjectsPanelLifecycleUi(this as unknown as MobileProjectsPanelLifecycleHost);
-    protected readonly panelChromeUi = new MobileProjectsPanelChromeUi(this as unknown as MobileProjectsPanelChromeHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly overlayFactoryUi = new MobileProjectsOverlayFactoryUi(this as unknown as MobileProjectsOverlayFactoryHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly panelLifecycleUi = new MobileProjectsPanelLifecycleUi(this as unknown as MobileProjectsPanelLifecycleHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly panelChromeUi = new MobileProjectsPanelChromeUi(this as unknown as MobileProjectsPanelChromeHost);
     protected readonly activeTaskActionsUi = new MobileProjectsActiveTaskActionsUi(this as unknown as MobileProjectsActiveTaskActionsHost);
     protected readonly projectDetailUi = new MobileProjectsProjectDetailUi(this as unknown as MobileProjectsProjectDetailHost);
-    protected readonly projectNavigationUi = new MobileProjectsProjectNavigationUi(this as unknown as MobileProjectsProjectNavigationHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly projectNavigationUi = new MobileProjectsProjectNavigationUi(this as unknown as MobileProjectsProjectNavigationHost);
     protected readonly renderListUi = new MobileProjectsRenderListUi(this as unknown as MobileProjectsRenderListHost);
-    protected readonly hubIncrementalUi = new MobileProjectsHubIncrementalUi(this as unknown as MobileProjectsHubIncrementalPatchHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly hubIncrementalUi = new MobileProjectsHubIncrementalUi(this as unknown as MobileProjectsHubIncrementalPatchHost);
     /** Coalesces bursty hub list rebuilds from WS/SSE into one paint per animation frame. */
-    protected readonly hubListRenderScheduler = new QaapChatViewStreamUpdateScheduler(
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly hubListRenderScheduler = new QaapChatViewStreamUpdateScheduler(
         () => this.renderListUi.renderList(),
         () => 0,
     );
     protected readonly repoFiltersUi = new MobileProjectsRepoFiltersUi(this as unknown as MobileProjectsRepoFiltersHost);
     protected readonly repoLifecycleUi = new MobileProjectsRepoLifecycleUi(this as unknown as MobileProjectsRepoLifecycleHost);
-    protected readonly subtitleUi = new MobileProjectsSubtitleUi(this as unknown as MobileProjectsSubtitleHost);
-    protected readonly tasksHubAttentionUi = new MobileProjectsTasksHubAttentionUi(this as unknown as MobileProjectsTasksHubAttentionHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly subtitleUi = new MobileProjectsSubtitleUi(this as unknown as MobileProjectsSubtitleHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly tasksHubAttentionUi = new MobileProjectsTasksHubAttentionUi(this as unknown as MobileProjectsTasksHubAttentionHost);
     protected readonly workHubSearchUi = new MobileProjectsWorkHubSearchUi(this as unknown as MobileProjectsWorkHubSearchHost);
     protected readonly stickyComposerContextUi = new MobileProjectsStickyComposerContextUi(this as unknown as MobileProjectsStickyComposerContextHost);
-    protected readonly stickyComposerAgentsUi = new MobileProjectsStickyComposerAgentsUi(this as unknown as MobileProjectsStickyComposerAgentsHost);
-    protected readonly stickyComposerSheetsUi = new MobileProjectsStickyComposerSheetsUi(this as unknown as MobileProjectsStickyComposerSheetsHost);
-    protected readonly stickyComposerWorkspaceUi = new MobileProjectsStickyComposerWorkspaceUi(this as unknown as MobileProjectsStickyComposerWorkspaceHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly stickyComposerAgentsUi = new MobileProjectsStickyComposerAgentsUi(this as unknown as MobileProjectsStickyComposerAgentsHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly stickyComposerSheetsUi = new MobileProjectsStickyComposerSheetsUi(this as unknown as MobileProjectsStickyComposerSheetsHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly stickyComposerWorkspaceUi = new MobileProjectsStickyComposerWorkspaceUi(this as unknown as MobileProjectsStickyComposerWorkspaceHost);
     protected readonly stickyComposerColumnUi = new MobileProjectsStickyComposerColumnUi(this as unknown as MobileProjectsStickyComposerColumnHost);
-    protected readonly stickyComposerRenderUi = new MobileProjectsStickyComposerRenderUi(this as unknown as MobileProjectsStickyComposerRenderHost);
-    protected readonly executionSurfaceTabsUi = new MobileProjectsExecutionSurfaceTabsUi(this as unknown as MobileProjectsExecutionSurfaceTabsHost);
-    protected readonly tasksHubUi = new MobileProjectsTasksHubUi(this as unknown as MobileProjectsTasksHubHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly stickyComposerRenderUi = new MobileProjectsStickyComposerRenderUi(this as unknown as MobileProjectsStickyComposerRenderHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly executionSurfaceTabsUi = new MobileProjectsExecutionSurfaceTabsUi(this as unknown as MobileProjectsExecutionSurfaceTabsHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly tasksHubUi = new MobileProjectsTasksHubUi(this as unknown as MobileProjectsTasksHubHost);
     protected readonly hubCatalogUi = new MobileProjectsHubCatalogUi(this as unknown as MobileProjectsHubCatalogHost);
-    protected readonly inboxPrUi = new MobileProjectsInboxPrUi(this as unknown as MobileProjectsInboxPrHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly inboxPrUi = new MobileProjectsInboxPrUi(this as unknown as MobileProjectsInboxPrHost);
     protected readonly pullRequestsSidebarUi = new MobileProjectsPullRequestsSidebarUi(this as unknown as MobileProjectsPullRequestsSidebarHost);
     protected readonly pullRequestDetailUi = new MobileProjectsPullRequestDetailUi(this as unknown as MobileProjectsPullRequestDetailHost);
     protected readonly cardMenuUi = new MobileProjectsCardMenuUi(this as unknown as MobileProjectsCardMenuHost);
     protected readonly projectRowsUi = new MobileProjectsProjectRowsUi(this as unknown as MobileProjectsProjectRowsHost);
     protected readonly hubTeamDataUi = new MobileProjectsHubTeamDataUi(this as unknown as MobileProjectsHubTeamDataHost);
-    protected readonly conversationActionsUi = new MobileProjectsConversationActionsUi(this as unknown as MobileProjectsConversationActionsHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly conversationActionsUi = new MobileProjectsConversationActionsUi(this as unknown as MobileProjectsConversationActionsHost);
     protected readonly projectActionsUi = new MobileProjectsProjectActionsUi(this as unknown as MobileProjectsProjectActionsHost);
-    protected readonly workHubInboxUi = new MobileProjectsWorkHubInboxUi(this as unknown as MobileProjectsWorkHubInboxHost);
-    protected readonly theiaChatSessionUi = new MobileProjectsTheiaChatSessionUi(this as unknown as MobileProjectsTheiaChatSessionHost);
-    protected readonly agentsHubInlineUi = new MobileProjectsAgentsHubInlineUi(this as unknown as MobileProjectsAgentsHubInlineHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly workHubInboxUi = new MobileProjectsWorkHubInboxUi(this as unknown as MobileProjectsWorkHubInboxHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly theiaChatSessionUi = new MobileProjectsTheiaChatSessionUi(this as unknown as MobileProjectsTheiaChatSessionHost);
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly agentsHubInlineUi = new MobileProjectsAgentsHubInlineUi(this as unknown as MobileProjectsAgentsHubInlineHost);
     /** Shared Changes · Preview · Files · Terminal tab per project (task surface + transcript sheet). */
     protected readonly executionSurfaceTabByProjectId = new Map<string, TranscriptTab>();
     protected projectDetailExpandedId: string | undefined;
@@ -515,12 +569,14 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** Last-flashed task id — drives the highlight animation when a fresh task appears. */
     protected justAddedTaskId: string | undefined;
     /** cwd resolved after clone/prepare — keyed by project id when uri is not yet on the card. */
-    protected readonly preparedCwdByProjectId = new Map<string, string>();
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly preparedCwdByProjectId = new Map<string, string>();
     protected inboxPullRequests: QaapGithubPullRequestSummary[] = [];
     protected inboxPullRequestsLoading = false;
     protected inboxPullRequestsLoaded = false;
     protected inboxGithubLogin: string | undefined;
-    protected pullRequestDetail: QaapGithubPullRequestSummary | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public pullRequestDetail: QaapGithubPullRequestSummary | undefined;
     /** Server GitHub session for inbox PRs (undefined when no GitHub repos in the hub). */
     protected inboxGithubSignedIn: boolean | undefined;
     /** Bumps when the inbox tab is re-entered so stale PR fetches cannot repaint. */
@@ -534,77 +590,135 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     protected executionTabOverflowMenu: HTMLElement | undefined;
     protected executionTabOverflowAnchor: HTMLElement | undefined;
     protected executionTabOverflowDispose: Disposable = Disposable.NULL;
-    protected headerOverflowMenu: HTMLElement | undefined;
-    protected headerOverflowMenuDismiss: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public headerOverflowMenu: HTMLElement | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public headerOverflowMenuDismiss: Disposable = Disposable.NULL;
     protected openRepoDialog: MobileOpenRepositoryDialog | undefined;
     protected dragDismissDispose: Disposable = Disposable.NULL;
     protected pullToRefreshDispose: Disposable = Disposable.NULL;
     protected lastTitleTap = 0;
-    protected readonly homeMode: boolean;
-    protected readonly whenFrontendReadyProvider: (() => Promise<void>) | undefined;
-    protected readonly activeTasks: MobileProjectsActiveTasks | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly homeMode: boolean;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly whenFrontendReadyProvider: (() => Promise<void>) | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly activeTasks: MobileProjectsActiveTasks | undefined;
 
     /** Resolves when the frontend app is 'ready'; immediately when no provider was wired. */
     whenFrontendReady(): Promise<void> {
         return this.whenFrontendReadyProvider?.() ?? Promise.resolve();
     }
-    protected readonly conversations: MobileProjectsConversations | undefined;
-    protected readonly backgroundContext: QaapBackgroundContextProvider | undefined;
-    protected readonly inboxStream: MobileWorkHubInboxStream | undefined;
-    protected readonly conversationFlags: MobileProjectsConversationFlags | undefined;
-    protected readonly createChatInputWidget: MobileProjectsPanelOptions['createChatInputWidget'];
-    protected readonly createChatViewWidget: MobileProjectsPanelOptions['createChatViewWidget'];
-    protected readonly createDiffReviewWidget: MobileProjectsPanelOptions['createDiffReviewWidget'];
-    protected readonly pickContextVariable: MobileProjectsPanelOptions['pickContextVariable'];
-    protected readonly dropComposerFiles: MobileProjectsPanelOptions['dropComposerFiles'];
-    protected readonly formatContextChip: MobileProjectsPanelOptions['formatContextChip'];
-    protected readonly resolveAttachmentPreview: MobileProjectsPanelOptions['resolveAttachmentPreview'];
-    protected readonly getComposerVariables: MobileProjectsPanelOptions['getComposerVariables'];
-    protected readonly getComposerSkills: MobileProjectsPanelOptions['getComposerSkills'];
-    protected readonly getComposerSlashCommands: MobileProjectsPanelOptions['getComposerSlashCommands'];
-    protected readonly chatService: ChatService | undefined;
-    protected readonly chatAgentService: ChatAgentService | undefined;
-    protected readonly messageService: MessageService | undefined;
-    protected readonly resolveVerifyChecks: MobileProjectsPanelOptions['resolveVerifyChecks'];
-    protected readonly openTranscriptFile: MobileProjectsPanelOptions['openTranscriptFile'];
-    protected readonly uploadComposerFeedbackImages: MobileProjectsPanelOptions['uploadComposerFeedbackImages'];
-    protected readonly openTranscriptReviewFile: (filePath: string) => void | Promise<void>;
-    protected readonly createTranscriptFilesViewServices: MobileProjectsPanelOptions['createTranscriptFilesViewServices'];
-    protected readonly createTranscriptTerminalViewServices: MobileProjectsPanelOptions['createTranscriptTerminalViewServices'];
-    protected readonly previewSurfaceRegistry: MobileProjectsPanelOptions['previewSurfaceRegistry'];
-    protected readonly previewInspectorDeps: MobileProjectsPanelOptions['previewInspectorDeps'];
-    protected readonly previewClipboard: MobileProjectsPanelOptions['clipboard'];
-    protected readonly readPreference: MobileProjectsPanelOptions['readPreference'];
-    protected readonly preferenceService: PreferenceService | undefined;
-    protected readonly getRegisteredLanguageModels: MobileProjectsPanelOptions['getRegisteredLanguageModels'];
-    protected readonly quickInputService: QuickInputService | undefined;
-    protected readonly commitMessageAi: MobileProjectsPanelOptions['commitMessageAi'];
-    protected readonly composerPromptImprover: MobileProjectsPanelOptions['composerPromptImprover'];
-    protected readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
-    protected readonly openBillingSheet: MobileProjectsPanelOptions['openBillingSheet'];
-    protected readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
-    protected readonly headerOverflowMenuGroups: MobileProjectsPanelOptions['headerOverflowMenuGroups'];
-    protected readonly sessionsSidebarContainer: MobileProjectsPanelOptions['sessionsSidebarContainer'];
-    protected readonly mobileIdeViewPicker: MobileProjectsPanelOptions['mobileIdeViewPicker'];
-    protected readonly agentFinishedToast: MobileProjectsPanelOptions['agentFinishedToast'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly conversations: MobileProjectsConversations | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly backgroundContext: QaapBackgroundContextProvider | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly inboxStream: MobileWorkHubInboxStream | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly conversationFlags: MobileProjectsConversationFlags | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly createChatInputWidget: MobileProjectsPanelOptions['createChatInputWidget'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly createChatViewWidget: MobileProjectsPanelOptions['createChatViewWidget'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly createDiffReviewWidget: MobileProjectsPanelOptions['createDiffReviewWidget'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly pickContextVariable: MobileProjectsPanelOptions['pickContextVariable'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly dropComposerFiles: MobileProjectsPanelOptions['dropComposerFiles'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly formatContextChip: MobileProjectsPanelOptions['formatContextChip'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly resolveAttachmentPreview: MobileProjectsPanelOptions['resolveAttachmentPreview'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly getComposerVariables: MobileProjectsPanelOptions['getComposerVariables'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly getComposerSkills: MobileProjectsPanelOptions['getComposerSkills'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly getComposerSlashCommands: MobileProjectsPanelOptions['getComposerSlashCommands'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly chatService: ChatService | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly chatAgentService: ChatAgentService | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly messageService: MessageService | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly resolveVerifyChecks: MobileProjectsPanelOptions['resolveVerifyChecks'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly openTranscriptFile: MobileProjectsPanelOptions['openTranscriptFile'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly uploadComposerFeedbackImages: MobileProjectsPanelOptions['uploadComposerFeedbackImages'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly openTranscriptReviewFile: (filePath: string) => void | Promise<void>;
+    /**
+     * Opens the IDE Source Control view for aggregate transcript changes. Assigned from the options
+     * by `applyPanelOptions` and read through {@link MobileProjectsExecutionSurfaceTabsHost}; it was
+     * previously set without being declared on the class.
+     * @internal Used by the extracted mobile-projects-panel-* modules.
+     */
+    public openTranscriptChanges: MobileProjectsPanelOptions['openTranscriptChanges'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly createTranscriptFilesViewServices: MobileProjectsPanelOptions['createTranscriptFilesViewServices'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly createTranscriptTerminalViewServices: MobileProjectsPanelOptions['createTranscriptTerminalViewServices'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly previewSurfaceRegistry: MobileProjectsPanelOptions['previewSurfaceRegistry'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly previewInspectorDeps: MobileProjectsPanelOptions['previewInspectorDeps'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly previewClipboard: MobileProjectsPanelOptions['clipboard'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly readPreference: MobileProjectsPanelOptions['readPreference'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly preferenceService: PreferenceService | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly getRegisteredLanguageModels: MobileProjectsPanelOptions['getRegisteredLanguageModels'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly quickInputService: QuickInputService | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly commitMessageAi: MobileProjectsPanelOptions['commitMessageAi'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly composerPromptImprover: MobileProjectsPanelOptions['composerPromptImprover'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly openPreferencesSheet: MobileProjectsPanelOptions['openPreferencesSheet'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly openBillingSheet: MobileProjectsPanelOptions['openBillingSheet'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly openAiConfigurationSheet: MobileProjectsPanelOptions['openAiConfigurationSheet'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly headerOverflowMenuGroups: MobileProjectsPanelOptions['headerOverflowMenuGroups'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly sessionsSidebarContainer: MobileProjectsPanelOptions['sessionsSidebarContainer'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly mobileIdeViewPicker: MobileProjectsPanelOptions['mobileIdeViewPicker'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly agentFinishedToast: MobileProjectsPanelOptions['agentFinishedToast'];
     readonly projectBootstrap: QaapProjectBootstrapService | undefined;
     readonly agUiFrontendTools: MobileProjectsPanelOptions['agUiFrontendTools'];
-    protected readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
-    protected readonly applyComposerAttachmentsToDraft: MobileProjectsPanelOptions['applyComposerAttachmentsToDraft'];
-    protected readonly composerEditorContextService: MobileProjectsPanelOptions['composerEditorContextService'];
-    protected readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly expandComposerDraftForSubmit: MobileProjectsPanelOptions['expandComposerDraftForSubmit'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly applyComposerAttachmentsToDraft: MobileProjectsPanelOptions['applyComposerAttachmentsToDraft'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly composerEditorContextService: MobileProjectsPanelOptions['composerEditorContextService'];
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly workHubProjectSkillRoots: QaapWorkHubProjectSkillRoots | undefined;
     protected activeTasksDispose: Disposable = Disposable.NULL;
     protected conversationsDispose: Disposable = Disposable.NULL;
     protected inboxStreamDispose: Disposable = Disposable.NULL;
     protected chatServiceDispose: Disposable = Disposable.NULL;
-    protected agentsHubEmptySurfaceGuardDispose: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public agentsHubEmptySurfaceGuardDispose: Disposable = Disposable.NULL;
     protected readonly chatSessionModelDisposables = new Map<string, Disposable>();
     protected readonly chatSessionProjectIds = new Map<string, string>();
     protected chatServiceRefreshHandle: number | undefined;
     /** Agents tab: unified execution shell (tabs + surfaces) in-panel, no body overlay. */
-    protected agentsHubShellActive = false;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public agentsHubShellActive = false;
     /** Agents tab: a real session is open in the shell (header back returns to idle shell). */
-    protected agentsHubInlineActive = false;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public agentsHubInlineActive = false;
     protected agentsHubInlineChatHost: HTMLElement | undefined;
     protected agentsHubInlineTranscriptRoot: HTMLElement | undefined;
     protected agentsHubInlineExecutionRoot: HTMLElement | undefined;
@@ -613,7 +727,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.cardMenuUi.handleDocumentPointerDown(ev);
     };
 
-    protected refreshProjectsInFlight: Promise<void> | undefined;
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public refreshProjectsInFlight: Promise<void> | undefined;
 
     protected readonly onAuthSessionChanged = (): void => {
         this.panelLifecycleUi.updateAccountAvatar();
@@ -637,8 +752,10 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     };
 
     constructor(
-        protected readonly projectsService: MobileProjectsService,
-        protected readonly commands: CommandRegistry,
+        /** @internal Used by the extracted mobile-projects-panel-* modules. */
+        public readonly projectsService: MobileProjectsService,
+        /** @internal Used by the extracted mobile-projects-panel-* modules. */
+        public readonly commands: CommandRegistry,
         protected readonly delegate: MobileProjectsPanelDelegate,
         options: MobileProjectsPanelOptions = {},
     ) {
@@ -663,16 +780,19 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         bindAgentFinishedToastCallbacksExtracted(this);
     }
 
-    protected readonly onBootstrapPreviewOpened = (event: Event): void => {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly onBootstrapPreviewOpened = (event: Event): void => {
         onBootstrapPreviewOpenedHandler(this, event);
     };
 
-    protected readonly onNavigateToConversation = (event: Event): void => {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public readonly onNavigateToConversation = (event: Event): void => {
         onNavigateToConversationHandler(this, event);
     };
 
     /** True when `project`'s clone directory is the workspace the bootstrap service operates on. */
-    protected projectOwnsActiveBootstrap(project: MobileProjectEntry): boolean {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public projectOwnsActiveBootstrap(project: MobileProjectEntry): boolean {
         return projectOwnsActiveBootstrapHelper(project, this.projectBootstrap, this.projectsService, this.preparedCwdByProjectId);
     }
 
@@ -684,7 +804,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubHeaderUi.handleHeaderBackClick();
     }
 
-    protected selectTranscriptTab(tab: ExecutionSurfaceTabId, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public selectTranscriptTab(tab: ExecutionSurfaceTabId, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void {
         this.executionSurfaceTabsUi.selectTranscriptTab(tab, project, summary);
     }
 
@@ -736,11 +857,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         }
     }
 
-    protected currentProjectsScrollHost(): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public currentProjectsScrollHost(): HTMLElement {
         return this.root.querySelector<HTMLElement>(':scope > .theia-mobile-projects-scroll') ?? this.scroll;
     }
 
-    protected syncCurrentProjectsScrollHost(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public syncCurrentProjectsScrollHost(): void {
         syncCurrentProjectsScrollHostExtracted(this);
     }
 
@@ -848,7 +971,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.panelLifecycleUi.applyActiveTasksRefresh();
     }
 
-    protected renderHeader(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public renderHeader(): void {
         this.hubHeaderUi.renderHeader();
         this.syncHeaderIdeViewPicker();
         this.panelChromeUi.syncHeaderIdeAgentsSwitch();
@@ -859,7 +983,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubHeaderUi.syncAgentsHubAccountChrome();
     }
 
-    protected renderSubtitle(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public renderSubtitle(): void {
         this.subtitleUi.renderSubtitle();
     }
 
@@ -883,7 +1008,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.repoLifecycleUi.onCloneClick();
     }
 
-    protected async refreshProjects(): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async refreshProjects(): Promise<void> {
         await this.repoLifecycleUi.refreshProjects();
     }
 
@@ -895,7 +1021,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         syncWorkHubProjectSkillRootsExtracted(this);
     }
 
-    protected render(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public render(): void {
         this.hubRenderUi.render();
     }
 
@@ -919,7 +1046,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
      * and aborts live refresh until the user reopens the conversation.
      */
 
-    protected renderList(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public renderList(): void {
         this.renderListUi.renderList();
     }
 
@@ -950,7 +1078,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.pullRequestDetailUi.toggleMergeConfirmation();
     }
 
-    protected isPullRequestsSidebarVisible(): boolean {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public isPullRequestsSidebarVisible(): boolean {
         return this.sessionsSidebar?.isPullRequestsModeActive() === true;
     }
 
@@ -966,7 +1095,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubIncrementalUi.resetStructureFingerprint();
     }
 
-    protected setMissionControlExpanded(expanded: boolean): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public setMissionControlExpanded(expanded: boolean): void {
         this.missionControlExpanded = expanded;
     }
 
@@ -999,7 +1129,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
      * Landing hub list (no expanded project): show the global bottom nav. Hide it while a project
      * row is expanded so the user can focus on chats and the sticky composer.
      */
-    protected syncLandingHubListChrome(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public syncLandingHubListChrome(): void {
         this.hubListChromeUi.syncLandingHubListChrome();
     }
 
@@ -1306,7 +1437,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubHeaderUi.openHeaderConversationMenu(anchor);
     }
 
-    protected syncHeaderIdeViewPicker(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public syncHeaderIdeViewPicker(): void {
         syncHeaderIdeViewPickerExtracted(this);
     }
 
@@ -1314,7 +1446,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.sessionsSidebarUi.onSessionsSidebarViewModeChange(id);
     }
 
-    protected createHeaderIdeViewIcon(icon: string): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public createHeaderIdeViewIcon(icon: string): HTMLElement {
         return createHeaderIdeViewIconHelper(icon);
     }
 
@@ -1326,19 +1459,23 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         onHeaderIdeViewPickerClickExtracted(this, event);
     }
 
-    protected openHeaderIdeViewPickerMenu(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public openHeaderIdeViewPickerMenu(): void {
         openHeaderIdeViewPickerMenuExtracted(this);
     }
 
-    protected ensureHeaderIdeViewPickerMenu(): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public ensureHeaderIdeViewPickerMenu(): HTMLElement {
         return ensureHeaderIdeViewPickerMenuExtracted(this);
     }
 
-    protected closeHeaderIdeViewPickerMenu(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public closeHeaderIdeViewPickerMenu(): void {
         closeHeaderIdeViewPickerMenuExtracted(this);
     }
 
-    protected positionHeaderIdeViewPickerMenu(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public positionHeaderIdeViewPickerMenu(): void {
         positionHeaderIdeViewPickerMenuHelper(this.headerIdeViewPickerMenu, this.headerIdeViewPickerBtn);
     }
 
@@ -1346,47 +1483,58 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         onHeaderOverflowMenuClickExtracted(this, event);
     }
 
-    protected openHeaderOverflowMenu(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public openHeaderOverflowMenu(): void {
         openHeaderOverflowMenuExtracted(this);
     }
 
-    protected ensureHeaderOverflowMenu(): HTMLElement {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public ensureHeaderOverflowMenu(): HTMLElement {
         return ensureHeaderOverflowMenuExtracted(this);
     }
 
-    protected closeHeaderOverflowMenu(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public closeHeaderOverflowMenu(): void {
         closeHeaderOverflowMenuExtracted(this);
     }
 
-    protected positionHeaderOverflowMenu(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public positionHeaderOverflowMenu(): void {
         positionHeaderOverflowMenuHelper(this.headerOverflowMenu, this.headerOverflowMenuBtn);
     }
 
-    protected renderHeaderOverflowMenuItems(menu: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public renderHeaderOverflowMenuItems(menu: HTMLElement): void {
         renderHeaderOverflowMenuItemsExtracted(this, menu);
     }
 
-    protected isHeaderOverflowMenuItemVisible(item: MobileProjectsHeaderOverflowMenuItem): boolean {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public isHeaderOverflowMenuItemVisible(item: MobileProjectsHeaderOverflowMenuItem): boolean {
         return isHeaderOverflowMenuItemVisibleExtracted(this, item);
     }
 
-    protected isHeaderOverflowMenuItemEnabled(item: MobileProjectsHeaderOverflowMenuItem): boolean {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public isHeaderOverflowMenuItemEnabled(item: MobileProjectsHeaderOverflowMenuItem): boolean {
         return isHeaderOverflowMenuItemEnabledExtracted(this, item);
     }
 
-    protected appendHeaderOverflowSeparator(menu: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public appendHeaderOverflowSeparator(menu: HTMLElement): void {
         appendHeaderOverflowSeparatorHelper(menu);
     }
 
-    protected isCopyConversationEnabled(): boolean {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public isCopyConversationEnabled(): boolean {
         return isCopyConversationEnabledHelper(this.transcriptController, this.transcriptConversationCache);
     }
 
-    protected async resolveActiveConversationForCopy(): Promise<QaapAgentConversationDTO | undefined> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async resolveActiveConversationForCopy(): Promise<QaapAgentConversationDTO | undefined> {
         return resolveActiveConversationForCopyHelper(this.transcriptController, this.transcriptConversationCache, this.conversations);
     }
 
-    protected async copyActiveConversationToClipboard(): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async copyActiveConversationToClipboard(): Promise<void> {
         return copyActiveConversationToClipboardExtracted(this);
     }
 
@@ -1398,7 +1546,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.hubHeaderUi.resolveHeaderNewChatVisible();
     }
 
-    protected shouldEmbedSessionsSidebarInPanel(): boolean {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public shouldEmbedSessionsSidebarInPanel(): boolean {
         return shouldEmbedSessionsSidebarInPanelExtracted(this);
     }
 
@@ -1415,7 +1564,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.sessionsSidebarUi.openSessionsSidebarSearch();
     }
 
-    protected notifyWorkspaceHubBottomBarRefresh(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public notifyWorkspaceHubBottomBarRefresh(): void {
         this.repoLifecycleUi.notifyWorkspaceHubBottomBarRefresh();
     }
 
@@ -1435,7 +1585,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.conversationOpenUi.openTaskInAgent(project, task);
     }
 
-    protected async openConversationSummary(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async openConversationSummary(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return openConversationSummaryExtracted(this, project, summary);
     }
 
@@ -1451,7 +1602,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.backgroundTaskUi.ensureInlineComposerCwd(project);
     }
 
-    protected async submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: { openConversation?: boolean; forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; worktree?: boolean; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<QaapAgentConversationSummaryDTO | undefined> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: { openConversation?: boolean; forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; worktree?: boolean; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<QaapAgentConversationSummaryDTO | undefined> {
         return submitBackgroundAgentTaskExtracted(this, project, draft, options);
     }
 
@@ -1467,23 +1619,28 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return sendExternalComposerContextExtracted(this, args);
     }
 
-    protected resolveExternalComposerUploadDir(project: MobileProjectEntry): URI | undefined {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public resolveExternalComposerUploadDir(project: MobileProjectEntry): URI | undefined {
         return resolveExternalComposerUploadDirExtracted(this, project);
     }
 
-    protected attachExternalFeedbackImageEntries(requests: readonly AIVariableResolutionRequest[]): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public attachExternalFeedbackImageEntries(requests: readonly AIVariableResolutionRequest[]): void {
         attachExternalFeedbackImageEntriesExtracted(this, requests);
     }
 
-    protected activateMessagesSurfaceForExternalSubmit(project: MobileProjectEntry): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public activateMessagesSurfaceForExternalSubmit(project: MobileProjectEntry): void {
         activateMessagesSurfaceForExternalSubmitExtracted(this, project);
     }
 
-    protected ensureExternalSubmitConversationRendered(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public ensureExternalSubmitConversationRendered(): void {
         ensureExternalSubmitConversationRenderedExtracted(this);
     }
 
-    protected removeExternalPreviewFeedbackChip(dedupeKey: string): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public removeExternalPreviewFeedbackChip(dedupeKey: string): void {
         removeExternalPreviewFeedbackChipExtracted(this, dedupeKey);
     }
 
@@ -1499,7 +1656,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return openExternalParallelRunsSheetExtracted(this, prompt);
     }
 
-    protected resolveExternalComposerProject(): MobileProjectEntry | undefined {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public resolveExternalComposerProject(): MobileProjectEntry | undefined {
         return resolveExternalComposerProjectExtracted(this);
     }
 
@@ -1566,7 +1724,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         await this.projectNavigationUi.openProject(project);
     }
 
-    protected async submitTranscriptViaBackendConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, content: string, options: { selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: AIVariableResolutionRequest[]; widget?: AIChatInputWidget; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[]; parallel?: boolean; deliveryMode?: import('../common/qaap-agent-conversation-client').QaapMessageDeliveryMode; } = {},): Promise<boolean> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async submitTranscriptViaBackendConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, content: string, options: { selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: AIVariableResolutionRequest[]; widget?: AIChatInputWidget; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[]; parallel?: boolean; deliveryMode?: import('../common/qaap-agent-conversation-client').QaapMessageDeliveryMode; } = {},): Promise<boolean> {
         return submitTranscriptViaBackendConversationExtracted(this, project, summary, content, options);
     }
 
@@ -1602,7 +1761,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.hubCatalogUi.runCatalogAction(action);
     }
 
-    protected resetInboxPullRequestState(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public resetInboxPullRequestState(): void {
         this.inboxPrUi.resetInboxPullRequestState();
     }
 
@@ -1610,7 +1770,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.inboxPrUi.mergeInboxPullRequests(polled);
     }
 
-    protected async refreshInboxPullRequests(projects: MobileProjectEntry[] | undefined = undefined, force = false,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async refreshInboxPullRequests(projects: MobileProjectEntry[] | undefined = undefined, force = false,): Promise<void> {
         return refreshInboxPullRequestsExtracted(this, projects, force);
     }
 
@@ -1650,7 +1811,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return onSetConversationAutoApproveExtracted(this, summary, autoApprove);
     }
 
-    protected onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public onCancelConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): void {
         onCancelConversationExtracted(this, project, summary);
     }
 
@@ -1658,7 +1820,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.transcriptStickyComposerUi.isTranscriptStickyComposerAgentWorking();
     }
 
-    protected async onRetryConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async onRetryConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return onRetryConversationExtracted(this, project, summary);
     }
 
@@ -1682,7 +1845,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         openAgentSignInTerminalExtracted(this, agentId, project);
     }
 
-    protected notifyAgentUsesSettingsApiKey(agentId: string): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public notifyAgentUsesSettingsApiKey(agentId: string): void {
         notifyAgentUsesSettingsApiKeyExtracted(this, agentId);
     }
 
@@ -1854,7 +2018,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         renderIdleSubmitOptimisticExtracted(this, chatHost, summary, draft, selectedAgentId, imagePreviews, contentOverride);
     }
 
-    protected shouldUseAgentsHubLanding(): boolean {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public shouldUseAgentsHubLanding(): boolean {
         return this.agentsHubInlineUi.shouldUseAgentsHubLanding();
     }
 
@@ -1892,11 +2057,13 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         patchWorkHubConversationRowInPlaceExtracted(this, conversationId);
     }
 
-    protected resolveAgentsHubShellProject(): MobileProjectEntry | undefined {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public resolveAgentsHubShellProject(): MobileProjectEntry | undefined {
         return this.agentsHubInlineUi.resolveAgentsHubShellProject();
     }
 
-    protected resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO {
         return this.agentsHubInlineUi.resolveAgentsHubShellSummary(project);
     }
 
@@ -1904,19 +2071,23 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.conversationIndexUi.conversationsForProject(project);
     }
 
-    protected renderAgentsHubExecutionShell(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public renderAgentsHubExecutionShell(): void {
         this.agentsHubInlineUi.renderAgentsHubExecutionShell();
     }
 
-    protected renderAgentsHubIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, agentId: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public renderAgentsHubIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, agentId: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
         renderAgentsHubIdleSubmitOptimisticExtracted(this, chatHost, summary, draft, agentId, imagePreviews, contentOverride);
     }
 
-    protected teardownAgentsHubExecutionShell(): void {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public teardownAgentsHubExecutionShell(): void {
         this.agentsHubInlineUi.teardownAgentsHubExecutionShell();
     }
 
-    protected async openAgentsHubInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public async openAgentsHubInlineTranscript(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return openAgentsHubInlineTranscriptExtracted(this, project, summary);
     }
 
@@ -1948,7 +2119,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.transcriptLiveUi.isActiveTranscriptConversation(summaryId);
     }
 
-    protected resolveActiveTranscriptChatHost(): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public resolveActiveTranscriptChatHost(): HTMLElement | undefined {
         return this.transcriptLiveUi.resolveActiveTranscriptChatHost();
     }
 
@@ -2004,7 +2176,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         stageTranscriptPreviewReadyUrlExtracted(this, readyUrl);
     }
 
-    protected ensureOverlayUi(): {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public ensureOverlayUi(): {
         parallel: MobileProjectsParallelUi;
         team: MobileProjectsTeamUi;
         teamHub: MobileProjectsTeamHubUi;
@@ -2085,7 +2258,8 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return createComposerEditorContextPanelDelegateExtracted(this);
     }
 
-    protected resolveActiveComposerContextTarget(): import('./qaap-composer-editor-context-service').ComposerEditorContextTarget {
+    /** @internal Used by the extracted mobile-projects-panel-* modules. */
+    public resolveActiveComposerContextTarget(): import('./qaap-composer-editor-context-service').ComposerEditorContextTarget {
         return resolveActiveComposerContextTargetExtracted(this);
     }
 }

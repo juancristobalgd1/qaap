@@ -1,18 +1,14 @@
-// @ts-nocheck
+import type { MobileProjectsPanelContext } from './mobile-projects-panel-context';
 // Constructor initialization and arrow-function fields extracted from mobile-projects-panel.ts
 
-import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
-import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcript-overlay-controller';
-import type { MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-controller';
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
-import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './mobile-projects-types';
 import { peekPreferDesktopIde } from './mobile-projects-open';
 
 /**
  * Copies options fields onto the panel instance. Extracted from the constructor
  * to keep the main file under control.
  */
-export function applyPanelOptions(self: any, options: MobileProjectsPanelOptions): void {
+export function applyPanelOptions(self: MobileProjectsPanelContext, options: MobileProjectsPanelOptions): void {
     self.homeMode = !!options.homeMode;
     self.whenFrontendReadyProvider = options.whenFrontendReady;
     self.activeTasks = options.activeTasks;
@@ -66,7 +62,7 @@ export function applyPanelOptions(self: any, options: MobileProjectsPanelOptions
  * Wires `openTranscriptFile` / `openTranscriptReviewFile` callbacks that delegate
  * to the transcript surfaces UI when a project+summary are active.
  */
-export function wireTranscriptFileOpeners(self: any, options: MobileProjectsPanelOptions): void {
+export function wireTranscriptFileOpeners(self: MobileProjectsPanelContext, options: MobileProjectsPanelOptions): void {
     const editorOpenFallback = options.openTranscriptFile;
     self.openTranscriptFile = (filePath: string) => {
         if (peekPreferDesktopIde()) {
@@ -98,7 +94,7 @@ export function wireTranscriptFileOpeners(self: any, options: MobileProjectsPane
 /**
  * Creates the root DOM element for the panel.
  */
-export function createPanelRoot(self: any): void {
+export function createPanelRoot(self: MobileProjectsPanelContext): void {
     self.root = document.createElement('div');
     self.root.className = self.homeMode ? 'theia-mobile-projects theia-mod-home' : 'theia-mobile-projects';
     if (!self.homeMode) {
@@ -116,7 +112,7 @@ export function createPanelRoot(self: any): void {
  * navigation into the hub's own Preview tab — but only for explicit user-initiated opens
  * (pill / link / manual). Agent/auto paths must not yank the transcript to Browser.
  */
-export function onBootstrapPreviewOpenedHandler(self: any, event: Event): void {
+export function onBootstrapPreviewOpenedHandler(self: MobileProjectsPanelContext, event: Event): void {
     if (!self.visible || !self.agentsHubShellActive) {
         return;
     }
@@ -143,16 +139,10 @@ export function onBootstrapPreviewOpenedHandler(self: any, event: Event): void {
     self.selectTranscriptTab('preview', project, summary);
 }
 
-/** Account button click handler — opens the account menu without surface switching. */
-export function onAccountClickHandler(self: any): void {
-    // toggleQaapAccountMenu is imported in the main file; delegate via self
-    self._toggleAccountMenu(self.accountBtn);
-}
-
 /**
  * Auth session changed handler.
  */
-export function onAuthSessionChangedHandler(self: any): void {
+export function onAuthSessionChangedHandler(self: MobileProjectsPanelContext): void {
     if (self.hubView === 'tasks') {
         self.resetInboxPullRequestState();
         void self.refreshInboxPullRequests(undefined, true);
