@@ -11,6 +11,7 @@ import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-s
 import { AGENT_ENV_PREFS } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { applyProviderPreferenceEnvExtracted } from './qaap-agent-task-runner-tool-pills2';
+import { previewProviderEnvExtracted } from './qaap-agent-task-runner-streaming2';
 import {
     preferenceReaderForOwner,
     readUserSettingsFromDisk,
@@ -58,6 +59,27 @@ describe('qaap-agent-task-runner-utils2', () => {
             expect(read('ai-features.openAiOfficial.openAiApiKey')).to.equal(undefined);
             expect(read('files.autoSave')).to.equal(undefined);
             expect(scopesSeen.every(scope => scope === PreferenceScope.Default)).to.equal(true);
+        });
+
+        it('no login / anonymous on a multi-user backend: schema defaults only, never the shared settings', () => {
+            const saved = process.env.QAAP_CLOUD_MODE;
+            process.env.QAAP_CLOUD_MODE = 'docker';
+            try {
+                for (const owner of [undefined, '_anonymous']) {
+                    const read = preferenceReaderForOwner({
+                        readUserSettingsFromDisk: () => ({ 'ai-features.openAiOfficial.openAiApiKey': 'sk-shared-file' }),
+                        preferenceService,
+                    }, owner);
+                    expect(read('ai-features.openAiOfficial.openAiApiKey'), String(owner)).to.equal(undefined);
+                    expect(read('ai-features.openAiOfficial.officialOpenAiModels'), String(owner)).to.deep.equal(['gpt-5.5', 'gpt-5.4']);
+                }
+            } finally {
+                if (saved === undefined) {
+                    delete process.env.QAAP_CLOUD_MODE;
+                } else {
+                    process.env.QAAP_CLOUD_MODE = saved;
+                }
+            }
         });
 
         it('tolerates a preference service without inspectInScope', () => {
@@ -134,6 +156,16 @@ describe('qaap-agent-task-runner-utils2', () => {
                 expect(SHARED_PROVIDER_ONLY_ENV, name).to.include(name);
             }
         });
+    });
+
+    it('previewProviderEnv applies the same credential policy as the real spawn env', () => {
+        const calls: string[] = [];
+        const ctx = {
+            stripSharedProviderEnv: (env: NodeJS.ProcessEnv, owner: string | undefined) => calls.push(`strip:${owner}`),
+            applyProviderPreferenceEnv: (env: NodeJS.ProcessEnv, owner?: string) => calls.push(`apply:${owner}`),
+        };
+        previewProviderEnvExtracted(ctx as unknown as QaapAgentTaskRunnerContext, 'alice');
+        expect(calls).to.deep.equal(['strip:alice', 'apply:alice']);
     });
 
     it('applyProviderPreferenceEnv prefers the user\'s Settings over inherited env keys', () => {
