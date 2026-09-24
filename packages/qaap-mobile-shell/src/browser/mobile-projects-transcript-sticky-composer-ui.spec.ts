@@ -11,6 +11,7 @@ import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conve
 import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-landing';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
+import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 
 describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
 
@@ -178,7 +179,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
             remountTranscriptStickyComposer: () => undefined,
         };
 
-        timelineModule.refreshComposerActivityStackExtracted(ctx);
+        timelineModule.refreshComposerActivityStackExtracted(ctx as unknown as MobileProjectsTranscriptStickyComposerUiContext);
 
         expect(host.transcriptComposerQueueExpanded).to.equal(false);
         root.remove();
@@ -326,7 +327,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         seam.remountTranscriptStickyComposer = () => undefined;
 
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            seam,
+            seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'follow-up',
             project,
             { ...summary, status: 'idle' },
@@ -376,7 +377,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
         seam.remountTranscriptStickyComposer = () => undefined;
 
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            seam,
+            seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'start the task',
             project,
             { ...summary, id: QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID, status: 'idle' },
@@ -458,7 +459,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     it('queues a busy follow-up by default', async () => {
         const probe = createBusySubmitProbe();
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            probe.seam,
+            probe.seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'wait for me',
             project,
             { ...summary, status: 'streaming' },
@@ -476,7 +477,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     it('ignores a leftover Parallel preference and still queues busy Send', async () => {
         const probe = createBusySubmitProbe();
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            probe.seam,
+            probe.seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'run alongside',
             project,
             { ...summary, status: 'streaming' },
@@ -494,7 +495,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     it('lets Cmd/Ctrl+Enter interrupt without a composer selector', async () => {
         const probe = createBusySubmitProbe();
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            probe.seam,
+            probe.seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'stop and do this',
             project,
             { ...summary, status: 'streaming' },
@@ -513,7 +514,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     it('clears the draft once the local queue accepts it, but warns when the server mirror fails', async () => {
         const probe = createBusySubmitProbe({ mirrorFollowUpToServerQueue: false });
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            probe.seam,
+            probe.seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'wait for me',
             project,
             { ...summary, status: 'streaming' },
@@ -534,7 +535,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     it('keeps the draft in the composer when the local follow-up queue is full', async () => {
         const probe = createBusySubmitProbe({ queuePeerRunMessage: false });
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            probe.seam,
+            probe.seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'one more thing',
             project,
             { ...summary, status: 'streaming' },
@@ -555,7 +556,7 @@ describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
     it('restores the draft when an interrupt/parallel dispatch fails', async () => {
         const probe = createBusySubmitProbe({ startPeerRunOrQueue: false });
         await liveStatusModule.submitTranscriptComposerDraftExtracted(
-            probe.seam,
+            probe.seam as unknown as MobileProjectsTranscriptStickyComposerUiContext,
             'stop and do this',
             project,
             { ...summary, status: 'streaming' },

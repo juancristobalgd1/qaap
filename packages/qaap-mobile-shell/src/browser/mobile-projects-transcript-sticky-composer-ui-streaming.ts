@@ -1,98 +1,22 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
 import { evaluateVerifyCommitReadiness, invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
 import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
 import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
-import URI from '@theia/core/lib/common/uri';
-import { FileUri } from '@theia/core/lib/common/file-uri';
 import { ConfirmDialog } from '@theia/core/lib/browser';
-import { MessageService } from '@theia/core/lib/common/message-service';
-import type { CommandRegistry } from '@theia/core/lib/common/command';
-import type { QuickInputService } from '@theia/core/lib/common/quick-pick-service';
-import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
-import { ChatMode, ChatModel } from '@theia/ai-chat';
-import { Disposable } from '@theia/core/lib/common/disposable';
 import {
-    conversationToSummary,
-    getConversation,
-    isMaxConcurrentRunsError,
-    recordConversationGitAction,
-    updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageDTO,
 } from '../common/qaap-agent-conversation-client';
-import { createComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
-import {
-    QAAP_COMPOSER_DEFAULT_AGENT_ID,
-    QAAP_PRIMARY_AGENT_ID,
-    readStoredAgentModel,
-    resolveExplicitAgentForSubmit,
-    type QaapAgentTaskAgentOption,
-} from '../common/qaap-agent-task-client';
-import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
+import { type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
-import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
-import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
-import {
-    resolveChatModelContextUsageBreakdown,
-    resolveVpsContextUsageBreakdown,
-} from './qaap-chat-context-usage-panel';
-import {
-    applyConversationComposerPrefs,
-    applyProjectComposerDefaults,
-    buildRuntimeComposerPersistPatch,
-    clearConversationComposerDraft,
-    extractConversationComposerPrefs,
-    extractConversationComposerPrefsFromSummary,
-    readConversationComposerDraft,
-    writeConversationComposerDraft,
-} from '../common/qaap-conversation-composer-state';
-import {
-    describeComposerInteractionMode,
-    reconcileComposerModeId,
-    resolveComposerModeLabel,
-    resolveStickyComposerModes,
-} from '../common/qaap-sticky-composer-mode';
-import {
-    reconcileModelCapabilityLevel,
-} from '../common/qaap-sticky-composer-model-capability';
 import {
     agentSupportsApprovalPolicy,
-    reconcileAgentApprovalPolicyId,
-    resolveComposerAutoApprove,
-    type QaapAgentApprovalPolicyId,
 } from '../common/qaap-sticky-composer-approval-policy';
-import {
-    reconcileAgentToolApprovalRules,
-    type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
-import {
-    MAX_TRANSCRIPT_FOLLOW_UP_QUEUE,
-    TranscriptFollowUpQueue,
-    type TranscriptFollowUpEntry,
-} from '../common/qaap-transcript-follow-up-queue';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
-import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
-import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
-import {
-    composerContextRequests,
-    disposeComposerContextEntries,
-    hasPendingComposerContextEntries,
-    revokeComposerContextPreview,
-    type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
-import type { StickyComposerTokenOption } from '../common/qaap-sticky-composer-mention';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
 import { MobileSnackbar } from './mobile-snackbar';
 import {
     QAAP_GIT_REVIEW_API_PATH,
@@ -100,43 +24,16 @@ import {
     type QaapGitCommitWorkflowAction,
 } from '../common/qaap-git-review';
 import {
-    renderStickyComposerActivityStack,
-    buildStickyComposerActivityStackFingerprint,
     buildStickyComposerChangesPillFingerprint,
-    patchStickyComposerActivityStack,
-    patchStickyComposerChangesPillHost,
-    renderStickyComposerChangesPill,
-    selectComposerPillChanges,
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
-import { syncTranscriptQueuedBubbles } from './qaap-transcript-queued-bubbles';
 import {
-    mergeFailedComposerDraft,
-    isIdleComposerFocusStealable,
-    hasComposerAgentActivity as hasComposerAgentActivityHelper,
-    resolveChangedFilesStats as resolveChangedFilesStatsHelper,
-    mapGitChangedFileToComposerView as mapGitChangedFileToComposerViewHelper,
-    resolveGitCommitWorkflowLabel as resolveGitCommitWorkflowLabelHelper,
-    isComposerBackgroundWorkAllowed as isComposerBackgroundWorkAllowedHelper,
-} from './mobile-projects-transcript-sticky-composer-helpers';
-import {
-    parkWorkingControlFromAncestor,
-    transferWorkingControlToHost,
-} from './qaap-sticky-composer-working-agents-popover';
-import { transferStepPillToHost } from './qaap-sticky-composer-step-pill';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
-import { extractTranscriptPreviewId } from './mobile-projects-transcript-messages-content-ui';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
-import {
-    openCurrentComposerPreview,
     resolveComposerPreviewCandidate,
     resolveVerifiedComposerPreviewUrl,
-    type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
 
-export async function runComposerGitFileActionExtracted(ctx: any, project: MobileProjectEntry,
+export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     endpoint: 'stage' | 'discard',
     files: readonly StickyComposerChangedFileView[],): Promise<void> {
@@ -158,14 +55,14 @@ export async function runComposerGitFileActionExtracted(ctx: any, project: Mobil
     }
 }
 
-export async function syncComposerGitSnapshotExtracted(ctx: any, project: MobileProjectEntry,
+export async function syncComposerGitSnapshotExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<StickyComposerChangedFileView[]> {
     const files = await ctx.fetchWorkspaceChangedFiles(project, summary);
     ctx.composerActivityGitFilesByConversationId.set(summary.id, files);
     return files;
 }
 
-export async function undoAllComposerChangedFilesExtracted(ctx: any, project: MobileProjectEntry,
+export async function undoAllComposerChangedFilesExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
     if (ctx.composerChangedFilesBulkBusy) {
         return;
@@ -207,7 +104,7 @@ export async function undoAllComposerChangedFilesExtracted(ctx: any, project: Mo
     }
 }
 
-export async function keepAllComposerChangedFilesExtracted(ctx: any, project: MobileProjectEntry,
+export async function keepAllComposerChangedFilesExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
     if (ctx.composerChangedFilesBulkBusy) {
         return;
@@ -237,7 +134,7 @@ export async function keepAllComposerChangedFilesExtracted(ctx: any, project: Mo
     }
 }
 
-export async function refreshComposerActivityGitFilesIfNeededExtracted(ctx: any, project: MobileProjectEntry,
+export async function refreshComposerActivityGitFilesIfNeededExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     conv: QaapAgentConversationDTO | undefined,
     activityFiles: {
@@ -294,7 +191,7 @@ export async function refreshComposerActivityGitFilesIfNeededExtracted(ctx: any,
     }
 }
 
-export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, project: MobileProjectEntry,
+export function buildTranscriptComposerActivityOptionsExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): StickyComposerActivityStackOptions {
     const conv = ctx.host.transcriptLastConv?.id === summary.id ? ctx.host.transcriptLastConv : undefined;
     const activityFiles = ctx.resolveComposerActivityFilesForStack(project, summary, conv);
@@ -408,7 +305,7 @@ export function buildTranscriptComposerActivityOptionsExtracted(ctx: any, projec
     };
 }
 
-export async function launchComposerDevPreviewExtracted(ctx: any, project: MobileProjectEntry,
+export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
     if (typeof ctx.host.requestTranscriptPreview === 'function') {
         // Same launcher as header Play: managed bootstrap, nested identity URL, Stop latch.
@@ -464,7 +361,7 @@ export async function launchComposerDevPreviewExtracted(ctx: any, project: Mobil
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', readyProject, summary);
 }
 
-export async function submitRunGeneratedAppFollowUpExtracted(ctx: any, project: MobileProjectEntry,
+export async function submitRunGeneratedAppFollowUpExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,): Promise<void> {
     const chatHost = ctx.host.resolveActiveTranscriptChatHost() ?? ctx.host.transcriptChatHost;
     if (!chatHost) {
@@ -492,7 +389,7 @@ export async function submitRunGeneratedAppFollowUpExtracted(ctx: any, project: 
     );
 }
 
-export async function runComposerCommitActionExtracted(ctx: any, project: MobileProjectEntry,
+export async function runComposerCommitActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     action: QaapGitCommitWorkflowAction,): Promise<void> {
     const cwd = ctx.host.projectsService.getProjectCwd(project) ?? summary.cwd;
@@ -604,7 +501,7 @@ export async function runComposerCommitActionExtracted(ctx: any, project: Mobile
     }
 }
 
-export function buildGitActionMetadataExtracted(ctx: any, action: QaapGitCommitWorkflowAction,
+export function buildGitActionMetadataExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, action: QaapGitCommitWorkflowAction,
     status: ComposerGitActionDisplayMetadata['status'],
     options: {
         readonly branch?: string;

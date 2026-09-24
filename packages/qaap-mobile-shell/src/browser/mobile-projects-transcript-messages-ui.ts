@@ -12,6 +12,8 @@ import {
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
     type QaapAgentMessageSegmentDTO,
+    type QaapMessageDeliveryMode,
+    type QaapPendingUserMessageDTO,
 } from '../common/qaap-agent-conversation-client';
 import { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -155,6 +157,20 @@ export class MobileProjectsTranscriptMessagesUi {
 
     settleVisuallySettledAgentTranscript(messageHost: HTMLElement, conv: QaapAgentConversationDTO): void {
         this.renderUi.settleVisuallySettledAgentTranscript(messageHost, conv);
+    }
+
+    /** Cancel a server-queued follow-up — removes it from the conversation's pending queue. */
+    cancelQueuedMessage(conversationId: string, queuedMessageId: string): Promise<void> {
+        return this.renderUi.cancelQueuedMessage(conversationId, queuedMessageId);
+    }
+
+    /** Dispatch a server-queued follow-up immediately with the given delivery mode. */
+    dispatchQueuedMessage(
+        conversationId: string,
+        pending: QaapPendingUserMessageDTO,
+        deliveryMode: QaapMessageDeliveryMode,
+    ): Promise<void> {
+        return this.renderUi.dispatchQueuedMessage(conversationId, pending, deliveryMode);
     }
 
     focusTranscriptComposerInput(): void {

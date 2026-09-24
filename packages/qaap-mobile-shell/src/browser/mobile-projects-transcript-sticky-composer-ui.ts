@@ -2,12 +2,8 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
-import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
-import { FileUri } from '@theia/core/lib/common/file-uri';
-import { ConfirmDialog } from '@theia/core/lib/browser';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
 import type { QuickInputService } from '@theia/core/lib/common/quick-pick-service';
@@ -15,127 +11,60 @@ import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatMode, ChatModel } from '@theia/ai-chat';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
-    conversationToSummary,
-    getConversation,
-    isMaxConcurrentRunsError,
-    recordConversationGitAction,
-    updateConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageDTO,
+    type QaapMessageDeliveryMode,
 } from '../common/qaap-agent-conversation-client';
-import { createComposerGitActionDisplayMarker, type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
+import { type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
-    QAAP_PRIMARY_AGENT_ID,
-    readStoredAgentModel,
-    resolveExplicitAgentForSubmit,
     type QaapAgentTaskAgentOption,
 } from '../common/qaap-agent-task-client';
-import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
-import { formatCommitFeedback } from '../common/qaap-commit-feedback';
-import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
-import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isTranscriptSummaryAgentWorking, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import { mergePendingUserMessagesWithLocalQueue } from '../common/qaap-pending-user-messages-merge';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
-    resolveChatModelContextUsageBreakdown,
-    resolveVpsContextUsageBreakdown,
-} from './qaap-chat-context-usage-panel';
-import {
-    applyConversationComposerPrefs,
-    applyProjectComposerDefaults,
-    buildRuntimeComposerPersistPatch,
-    clearConversationComposerDraft,
     extractConversationComposerPrefs,
-    extractConversationComposerPrefsFromSummary,
-    readConversationComposerDraft,
-    writeConversationComposerDraft,
 } from '../common/qaap-conversation-composer-state';
 import {
-    describeComposerInteractionMode,
-    reconcileComposerModeId,
-    resolveComposerModeLabel,
-    resolveStickyComposerModes,
-} from '../common/qaap-sticky-composer-mode';
-import {
-    reconcileModelCapabilityLevel,
-} from '../common/qaap-sticky-composer-model-capability';
-import {
-    agentSupportsApprovalPolicy,
-    reconcileAgentApprovalPolicyId,
-    resolveComposerAutoApprove,
     type QaapAgentApprovalPolicyId,
 } from '../common/qaap-sticky-composer-approval-policy';
 import {
-    reconcileAgentToolApprovalRules,
     type QaapAgentToolApprovalRules,
 } from '../common/qaap-agent-tool-approval-rules';
 import {
-    MAX_TRANSCRIPT_FOLLOW_UP_QUEUE,
     TranscriptFollowUpQueue,
     type TranscriptFollowUpEntry,
 } from '../common/qaap-transcript-follow-up-queue';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { readProjectComposerDraft, writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
-import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
 import {
-    composerContextRequests,
-    disposeComposerContextEntries,
-    hasPendingComposerContextEntries,
-    revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
 import type { StickyComposerTokenOption } from '../common/qaap-sticky-composer-mention';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsTranscriptSurfacesHost, MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
+import type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
 import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
-import { MobileSnackbar } from './mobile-snackbar';
 import {
-    QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
     type QaapGitCommitWorkflowAction,
 } from '../common/qaap-git-review';
 import {
-    renderStickyComposerActivityStack,
-    buildStickyComposerActivityStackFingerprint,
-    buildStickyComposerChangesPillFingerprint,
-    patchStickyComposerActivityStack,
-    patchStickyComposerChangesPillHost,
-    renderStickyComposerChangesPill,
-    selectComposerPillChanges,
     type StickyComposerActivityStackOptions,
     type StickyComposerChangedFileView,
 } from './qaap-sticky-composer-activity-stack';
 import { syncTranscriptQueuedBubbles } from './qaap-transcript-queued-bubbles';
 import {
-    mergeFailedComposerDraft,
-    isIdleComposerFocusStealable,
-    hasComposerAgentActivity as hasComposerAgentActivityHelper,
-    resolveChangedFilesStats as resolveChangedFilesStatsHelper,
     mapGitChangedFileToComposerView as mapGitChangedFileToComposerViewHelper,
     resolveGitCommitWorkflowLabel as resolveGitCommitWorkflowLabelHelper,
     isComposerBackgroundWorkAllowed as isComposerBackgroundWorkAllowedHelper,
 } from './mobile-projects-transcript-sticky-composer-helpers';
 // Re-export public API functions from the helpers module.
 export { mergeFailedComposerDraft, isIdleComposerFocusStealable } from './mobile-projects-transcript-sticky-composer-helpers';
-import {
-    parkWorkingControlFromAncestor,
-    transferWorkingControlToHost,
-} from './qaap-sticky-composer-working-agents-popover';
-import { transferStepPillToHost } from './qaap-sticky-composer-step-pill';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
-import { extractTranscriptPreviewId } from './mobile-projects-transcript-messages-content-ui';
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
 import {
-    openCurrentComposerPreview,
-    resolveComposerPreviewCandidate,
-    resolveVerifiedComposerPreviewUrl,
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
 import { applyTranscriptComposerPrefsExtracted, applyTranscriptComposerPrefsFromConversationExtracted, ensureTranscriptComposerPrefsForMountExtracted, flushTranscriptComposerDraftExtracted, flushTranscriptComposerPrefsExtracted, hydrateTranscriptComposerPrefsExtracted, isTranscriptStickyComposerAgentWorkingExtracted, mirrorFollowUpToServerQueueExtracted, mountTranscriptStickyComposerExtracted, persistTranscriptComposerPrefsExtracted, queuePeerRunMessageExtracted, resetToProjectComposerDefaultsExtracted, schedulePersistTranscriptComposerDraftExtracted, schedulePersistTranscriptComposerPrefsExtracted, startPeerRunOrQueueExtracted, stopOpenComposerAgentLikeComposerStopExtracted, submitQueuedFollowUpEntryExtracted } from './mobile-projects-transcript-sticky-composer-ui-activity';
@@ -286,85 +215,125 @@ export interface MobileProjectsTranscriptStickyComposerHost {
             readonly allowAgentFallback?: boolean;
         },
     ): Promise<void>;
+    transcriptLastFingerprint: string | undefined;
+    transcriptSurfacesUi: MobileProjectsTranscriptSurfacesUi;
+    projects: MobileProjectsTranscriptSurfacesHost['projects'];
+    preparedCwdByProjectId: MobileProjectsTranscriptSurfacesHost['preparedCwdByProjectId'];
+    transcriptPreviewRequestRunning: boolean;
+    transcriptPreviewRequestPending: boolean;
+    transcriptPreviewSuppressedByUser: boolean;
+    diffReviewWidget: MobileProjectsTranscriptSurfacesHost['diffReviewWidget'];
+    verifyChecksLoading: boolean;
+    verifyRunning: boolean;
+    verifyResults: MobileProjectsTranscriptVerifyHost['verifyResults'];
 }
 
 /** Transcript overlay sticky composer: mount, prefs, follow-up queue, and submit wiring. */
 export class MobileProjectsTranscriptStickyComposerUi {
 
-    protected lastComposerActivityFingerprint = '';
-    protected lastComposerChangesPillFingerprint = '';
-    protected lastComposerActivityStackFingerprint = '';
-    protected readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public lastComposerActivityFingerprint = '';
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public lastComposerChangesPillFingerprint = '';
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public lastComposerActivityStackFingerprint = '';
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public readonly composerActivityGitFilesByConversationId = new Map<string, StickyComposerChangedFileView[]>();
     /** Conversations whose changes were resolved while the git snapshot was absent or clean. */
-    protected readonly composerChangesResolvedByConversationId = new Set<string>();
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public readonly composerChangesResolvedByConversationId = new Set<string>();
     /** Conversations whose working tree is clean (nothing to commit) — the Commit button stays
      *  hidden across a momentary snapshot gap until fresh changes appear. */
-    protected readonly composerCleanTreeByConversationId = new Set<string>();
-    protected composerChangedFilesBulkBusy = false;
-    protected composerCommitBusy = false;
-    protected verifiedComposerPreview: { readonly projectId: string; readonly url: string } | undefined;
-    protected composerPreviewProbeInFlight: Promise<void> | undefined;
-    protected composerPreviewLastCheckedAt = 0;
-    protected composerPreviewHealthTimer: number | undefined;
-    protected pendingGitActionMessageId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public readonly composerCleanTreeByConversationId = new Set<string>();
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerChangedFilesBulkBusy = false;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerCommitBusy = false;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public verifiedComposerPreview: { readonly projectId: string; readonly url: string } | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerPreviewProbeInFlight: Promise<void> | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerPreviewLastCheckedAt = 0;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public composerPreviewHealthTimer: number | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public pendingGitActionMessageId: string | undefined;
 
     /** Tracks whether the Agents Hub idle (pre-conversation) composer is currently mounted, to drive autofocus-on-ready. */
-    protected agentsHubIdleComposerMounted = false;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public agentsHubIdleComposerMounted = false;
 
     /** Disposer for the idle-composer focus-retention watchers (see mount). */
-    protected idleComposerFocusRetentionDispose: (() => void) | undefined;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public idleComposerFocusRetentionDispose: (() => void) | undefined;
 
     /** Autofocus is only attempted during the boot window after construction. */
-    protected readonly idleComposerAutofocusDeadline = Date.now() + 20_000;
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public readonly idleComposerAutofocusDeadline = Date.now() + 20_000;
 
-    protected clearIdleComposerFocusRetention(): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public clearIdleComposerFocusRetention(): void {
         this.idleComposerFocusRetentionDispose?.();
         this.idleComposerFocusRetentionDispose = undefined;
     }
 
-    protected scheduleIdleComposerFocusRetention(textarea: HTMLTextAreaElement): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public scheduleIdleComposerFocusRetention(textarea: HTMLTextAreaElement): void {
         scheduleIdleComposerFocusRetentionExtracted(this, textarea);
     }
 
     constructor(
-        protected readonly host: MobileProjectsTranscriptStickyComposerHost,
-        protected readonly workHub: WorkHubTranscriptBridge,
+        /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+        public readonly host: MobileProjectsTranscriptStickyComposerHost,
+        /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+        public readonly workHub: WorkHubTranscriptBridge,
     ) { }
 
-    protected isComposerBackgroundWorkAllowed(): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public isComposerBackgroundWorkAllowed(): boolean {
         return isComposerBackgroundWorkAllowedHelper();
     }
 
-    protected resolveComposerPreviewRuntime(project: MobileProjectEntry): ComposerPreviewRuntime {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resolveComposerPreviewRuntime(project: MobileProjectEntry): ComposerPreviewRuntime {
         return resolveComposerPreviewRuntimeExtracted(this, project);
     }
 
-    protected clearComposerPreviewHealthTimer(): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public clearComposerPreviewHealthTimer(): void {
         clearComposerPreviewHealthTimerExtracted(this);
     }
 
-    protected scheduleComposerPreviewHealthCheck(projectId: string): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public scheduleComposerPreviewHealthCheck(projectId: string): void {
         scheduleComposerPreviewHealthCheckExtracted(this, projectId);
     }
 
-    protected syncComposerPreviewAvailability(project: MobileProjectEntry, candidate: string | undefined): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public syncComposerPreviewAvailability(project: MobileProjectEntry, candidate: string | undefined): void {
         syncComposerPreviewAvailabilityExtracted(this, project, candidate);
     }
 
-    protected async openComposerPreview(projectId: string): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async openComposerPreview(projectId: string): Promise<void> {
         return openComposerPreviewExtracted(this, projectId);
     }
 
-    protected peekTranscriptComposerChangedFilesExpanded(summaryId: string): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public peekTranscriptComposerChangedFilesExpanded(summaryId: string): boolean {
         return this.host.transcriptComposerChangedFilesExpandedById.get(summaryId) ?? true;
     }
 
-    protected setTranscriptComposerChangedFilesExpanded(summaryId: string, expanded: boolean): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public setTranscriptComposerChangedFilesExpanded(summaryId: string, expanded: boolean): void {
         this.host.transcriptComposerChangedFilesExpandedById.set(summaryId, expanded);
     }
 
     /** Prefer the live inline/overlay host — mount-time chatHost can go stale after renderList(). */
-    protected resolveComposerTranscriptChatHost(fallback?: HTMLElement): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resolveComposerTranscriptChatHost(fallback?: HTMLElement): HTMLElement | undefined {
         const active = this.host.resolveActiveTranscriptChatHost();
         if (active?.isConnected) {
             return active;
@@ -380,7 +349,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return onTranscriptComposerAttachExtracted(this, project, anchor);
     }
 
-    protected resolveComposerUploadTargetDir(project: MobileProjectEntry): URI | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resolveComposerUploadTargetDir(project: MobileProjectEntry): URI | undefined {
         return resolveComposerUploadTargetDirExtracted(this, project);
     }
 
@@ -400,14 +370,16 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return enqueueTranscriptFollowUpExtracted(this, conversationId, entry);
     }
 
-    protected resolveComposerActivityFilesForStack(_project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO | undefined,): {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resolveComposerActivityFilesForStack(_project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO | undefined,): {
         readonly files: StickyComposerChangedFileView[];
         readonly stats?: { readonly added: number; readonly removed: number };
     } {
         return resolveComposerActivityFilesForStackExtracted(this, _project, summary, conv);
     }
 
-    protected hasComposerFileActivity(conv: QaapAgentConversationDTO | undefined): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public hasComposerFileActivity(conv: QaapAgentConversationDTO | undefined): boolean {
         return hasComposerFileActivityExtracted(this, conv);
     }
 
@@ -415,40 +387,49 @@ export class MobileProjectsTranscriptStickyComposerUi {
      * A premature empty git snapshot during streaming must not permanently latch the tree as
      * clean — that hides the Changes / Commit row even after the agent finishes editing.
      */
-    protected clearStaleComposerGitLatches(summaryId: string): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public clearStaleComposerGitLatches(summaryId: string): void {
         this.composerCleanTreeByConversationId.delete(summaryId);
         this.composerChangesResolvedByConversationId.delete(summaryId);
     }
 
-    protected shouldRefetchComposerGitSnapshot(summaryId: string, conv: QaapAgentConversationDTO | undefined,): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public shouldRefetchComposerGitSnapshot(summaryId: string, conv: QaapAgentConversationDTO | undefined,): boolean {
         return shouldRefetchComposerGitSnapshotExtracted(this, summaryId, conv);
     }
 
-    protected hasComposerCommittableChangesFromGit(summary: QaapAgentConversationSummaryDTO): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public hasComposerCommittableChangesFromGit(summary: QaapAgentConversationSummaryDTO): boolean {
         return hasComposerCommittableChangesFromGitExtracted(this, summary);
     }
 
-    protected hasComposerAgentActivity(activityFiles: { readonly files: readonly StickyComposerChangedFileView[]; readonly stats?: { readonly added: number; readonly removed: number }; }): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public hasComposerAgentActivity(activityFiles: { readonly files: readonly StickyComposerChangedFileView[]; readonly stats?: { readonly added: number; readonly removed: number }; }): boolean {
         return hasComposerAgentActivityExtracted(this, activityFiles);
     }
 
-    protected resolveChangedFilesStats(files: readonly StickyComposerChangedFileView[], fallback?: { readonly added: number; readonly removed: number },): { readonly added: number; readonly removed: number } | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resolveChangedFilesStats(files: readonly StickyComposerChangedFileView[], fallback?: { readonly added: number; readonly removed: number },): { readonly added: number; readonly removed: number } | undefined {
         return resolveChangedFilesStatsExtracted(this, files, fallback);
     }
 
-    protected resolveComposerWorkspaceRoot(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): string | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resolveComposerWorkspaceRoot(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): string | undefined {
         return resolveComposerWorkspaceRootExtracted(this, project, summary);
     }
 
-    protected async fetchWorkspaceChangedFiles(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<StickyComposerChangedFileView[]> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async fetchWorkspaceChangedFiles(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<StickyComposerChangedFileView[]> {
         return fetchWorkspaceChangedFilesExtracted(this, project, summary);
     }
 
-    protected async runComposerGitFileAction(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, endpoint: 'stage' | 'discard', files: readonly StickyComposerChangedFileView[],): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async runComposerGitFileAction(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, endpoint: 'stage' | 'discard', files: readonly StickyComposerChangedFileView[],): Promise<void> {
         return runComposerGitFileActionExtracted(this, project, summary, endpoint, files);
     }
 
-    protected async syncComposerGitSnapshot(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<StickyComposerChangedFileView[]> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async syncComposerGitSnapshot(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<StickyComposerChangedFileView[]> {
         return syncComposerGitSnapshotExtracted(this, project, summary);
     }
 
@@ -457,23 +438,28 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return this.composerActivityGitFilesByConversationId.get(conversationId);
     }
 
-    protected async undoAllComposerChangedFiles(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async undoAllComposerChangedFiles(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return undoAllComposerChangedFilesExtracted(this, project, summary);
     }
 
-    protected async keepAllComposerChangedFiles(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async keepAllComposerChangedFiles(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return keepAllComposerChangedFilesExtracted(this, project, summary);
     }
 
-    protected mapGitChangedFileToComposerView(file: QaapGitChangedFile): StickyComposerChangedFileView {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public mapGitChangedFileToComposerView(file: QaapGitChangedFile): StickyComposerChangedFileView {
         return mapGitChangedFileToComposerViewHelper(file);
     }
 
-    protected async refreshComposerActivityGitFilesIfNeeded(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO | undefined, activityFiles: { readonly files: readonly StickyComposerChangedFileView[]; readonly stats?: { readonly added: number; readonly removed: number }; },): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async refreshComposerActivityGitFilesIfNeeded(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO | undefined, activityFiles: { readonly files: readonly StickyComposerChangedFileView[]; readonly stats?: { readonly added: number; readonly removed: number }; },): Promise<void> {
         return refreshComposerActivityGitFilesIfNeededExtracted(this, project, summary, conv, activityFiles);
     }
 
-    protected buildTranscriptComposerActivityOptions(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): StickyComposerActivityStackOptions {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public buildTranscriptComposerActivityOptions(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): StickyComposerActivityStackOptions {
         return buildTranscriptComposerActivityOptionsExtracted(this, project, summary);
     }
 
@@ -485,31 +471,38 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return submitRunGeneratedAppFollowUpExtracted(this, project, summary);
     }
 
-    protected async runComposerCommitAction(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async runComposerCommitAction(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction,): Promise<void> {
         return runComposerCommitActionExtracted(this, project, summary, action);
     }
 
-    protected buildGitActionMetadata(action: QaapGitCommitWorkflowAction, status: ComposerGitActionDisplayMetadata['status'], options: { readonly branch?: string; readonly stat?: { files: number; insertions: number; deletions: number }; } = {},): ComposerGitActionDisplayMetadata {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public buildGitActionMetadata(action: QaapGitCommitWorkflowAction, status: ComposerGitActionDisplayMetadata['status'], options: { readonly branch?: string; readonly stat?: { files: number; insertions: number; deletions: number }; } = {},): ComposerGitActionDisplayMetadata {
         return buildGitActionMetadataExtracted(this, action, status, options);
     }
 
-    protected appendRunningGitActionToTranscript(summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction,): string | undefined {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public appendRunningGitActionToTranscript(summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction,): string | undefined {
         return appendRunningGitActionToTranscriptExtracted(this, summary, action);
     }
 
-    protected markPendingGitActionFailed(summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public markPendingGitActionFailed(summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction,): void {
         markPendingGitActionFailedExtracted(this, summary, action);
     }
 
-    protected applyGitActionTranscriptConversation(summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public applyGitActionTranscriptConversation(summary: QaapAgentConversationSummaryDTO, conv: QaapAgentConversationDTO,): void {
         applyGitActionTranscriptConversationExtracted(this, summary, conv);
     }
 
-    protected resolveGitCommitWorkflowLabel(action: QaapGitCommitWorkflowAction): string {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public resolveGitCommitWorkflowLabel(action: QaapGitCommitWorkflowAction): string {
         return resolveGitCommitWorkflowLabelHelper(action);
     }
 
-    protected async recordComposerGitActionInTranscript(summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction, options: { readonly branch?: string; readonly stat?: { files: number; insertions: number; deletions: number }; readonly status: 'completed' | 'failed'; readonly replaceMessageId?: string; },): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async recordComposerGitActionInTranscript(summary: QaapAgentConversationSummaryDTO, action: QaapGitCommitWorkflowAction, options: { readonly branch?: string; readonly stat?: { files: number; insertions: number; deletions: number }; readonly status: 'completed' | 'failed'; readonly replaceMessageId?: string; },): Promise<void> {
         return recordComposerGitActionInTranscriptExtracted(this, summary, action, options);
     }
 
@@ -521,7 +514,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return buildTranscriptComposerChangesPillExtracted(this, project, summary);
     }
 
-    protected buildComposerActivityFingerprint(summary: QaapAgentConversationSummaryDTO, activityOptions: StickyComposerActivityStackOptions, activityFiles: { readonly files: readonly StickyComposerChangedFileView[]; readonly stats?: { readonly added: number; readonly removed: number }; },): string {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public buildComposerActivityFingerprint(summary: QaapAgentConversationSummaryDTO, activityOptions: StickyComposerActivityStackOptions, activityFiles: { readonly files: readonly StickyComposerChangedFileView[]; readonly stats?: { readonly added: number; readonly removed: number }; },): string {
         return buildComposerActivityFingerprintExtracted(this, summary, activityOptions, activityFiles);
     }
 
@@ -549,7 +543,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
      * Keeps same-session queued follow-ups visible in the transcript footer (`pendingUserMessages`)
      * in lockstep with the composer queue — including optimistic local rows before the mirror POST.
      */
-    protected syncTranscriptQueuedFollowUpBubbles(summary: QaapAgentConversationSummaryDTO): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public syncTranscriptQueuedFollowUpBubbles(summary: QaapAgentConversationSummaryDTO): void {
         const chatHost = this.host.resolveActiveTranscriptChatHost() ?? this.host.transcriptChatHost;
         // Legacy DOM cleanup (old in-scroller queued bubbles).
         syncTranscriptQueuedBubbles(chatHost, this.host.transcriptFollowUpQueue.peek(summary.id));
@@ -592,24 +587,29 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return interruptQueuedFollowUpExtracted(this, project, summary, index);
     }
 
-    protected async dispatchQueuedFollowUpInParallel(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async dispatchQueuedFollowUpInParallel(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): Promise<void> {
         return dispatchQueuedFollowUpInParallelExtracted(this, project, summary, entry);
     }
 
-    protected async startIsolatedRunIfRequested(project: MobileProjectEntry, entry: TranscriptFollowUpEntry,): Promise<boolean> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async startIsolatedRunIfRequested(project: MobileProjectEntry, entry: TranscriptFollowUpEntry,): Promise<boolean> {
         return startIsolatedRunIfRequestedExtracted(this, project, entry);
     }
 
-    protected async startPeerRunOrQueue(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): Promise<boolean> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async startPeerRunOrQueue(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): Promise<boolean> {
         return startPeerRunOrQueueExtracted(this, project, summary, entry);
     }
 
-    protected queuePeerRunMessage(summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public queuePeerRunMessage(summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry,): boolean {
         return queuePeerRunMessageExtracted(this, summary, entry);
     }
 
     /** Resolves `false` when the mirror to durable server storage could not be confirmed. */
-    protected async mirrorFollowUpToServerQueue(
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async mirrorFollowUpToServerQueue(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         entry: TranscriptFollowUpEntry,
@@ -617,7 +617,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return mirrorFollowUpToServerQueueExtracted(this, project, summary, entry);
     }
 
-    protected async submitQueuedFollowUpEntry(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry, options: { readonly parallel?: boolean } = {},): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async submitQueuedFollowUpEntry(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, entry: TranscriptFollowUpEntry, options: { readonly parallel?: boolean; readonly deliveryMode?: QaapMessageDeliveryMode } = {},): Promise<void> {
         return submitQueuedFollowUpEntryExtracted(this, project, summary, entry, options);
     }
 
@@ -637,7 +638,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         applyTranscriptComposerPrefsFromConversationExtracted(this, conv, project, summary);
     }
 
-    protected applyTranscriptComposerPrefs(prefs: ReturnType<typeof extractConversationComposerPrefs>, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conversationId: string,): void {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public applyTranscriptComposerPrefs(prefs: ReturnType<typeof extractConversationComposerPrefs>, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, conversationId: string,): void {
         applyTranscriptComposerPrefsExtracted(this, prefs, project, summary, conversationId);
     }
 
@@ -669,7 +671,8 @@ export class MobileProjectsTranscriptStickyComposerUi {
         return persistTranscriptComposerPrefsExtracted(this, project, summary);
     }
 
-    protected async ensureTranscriptComposerPrefsForMount(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async ensureTranscriptComposerPrefsForMount(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO,): Promise<void> {
         return ensureTranscriptComposerPrefsForMountExtracted(this, project, summary);
     }
 
@@ -677,11 +680,13 @@ export class MobileProjectsTranscriptStickyComposerUi {
         mountTranscriptStickyComposerExtracted(this, host, project, summary, chatHost);
     }
 
-    protected async mountTranscriptStickyComposerAsync(host: HTMLElement, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement,): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async mountTranscriptStickyComposerAsync(host: HTMLElement, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement,): Promise<void> {
         return mountTranscriptStickyComposerAsyncExtracted(this, host, project, summary, chatHost);
     }
 
-    protected async submitTranscriptComposerDraft(draft: string, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement, options: { readonly resolvedPinnedId: string; readonly showApprovalPolicy: boolean; readonly isLegacyTheiaChat: boolean; readonly forceDeliveryMode?: 'queue' | 'parallel' | 'interrupt'; },): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-transcript-sticky-composer-ui-* modules. */
+    public async submitTranscriptComposerDraft(draft: string, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, chatHost: HTMLElement, options: { readonly resolvedPinnedId: string; readonly showApprovalPolicy: boolean; readonly isLegacyTheiaChat: boolean; readonly forceDeliveryMode?: 'queue' | 'parallel' | 'interrupt'; },): Promise<void> {
         return submitTranscriptComposerDraftExtracted(this, draft, project, summary, chatHost, options);
     }
 

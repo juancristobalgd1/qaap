@@ -1,6 +1,6 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 75 files.
+# 68 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
@@ -55,13 +55,6 @@ packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-tool-
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-tool-ui-timeline.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-tool-ui-tool-pills.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-tool-ui.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-activity.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-live-status.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-render.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-streaming.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-timeline.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui-tool-pills.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-sticky-composer-ui.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-timeline.ts
