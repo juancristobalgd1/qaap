@@ -1,36 +1,18 @@
-// @ts-nocheck
+import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-project-rows-ui-context';
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { conversationTurnProgressRatio } from '../common/qaap-agent-conversation-list-metrics';
-import {
-    isConversationAutoApproveEnabled,
-    type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus, type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
-import {
-    QAAP_INBOX_ROW_FP_ATTR,
-    QAAP_INBOX_ROW_ID_ATTR,
-} from './mobile-projects-hub-incremental-ui';
-import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
-import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
-import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
-import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
-import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
-import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import { type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { mobileProjectInitials, type MobileProjectEntry } from './mobile-projects-types';
 
-export function createTaskLeadingGlyphExtracted(ctx: any, codiconClass: string): HTMLElement {
+export function createTaskLeadingGlyphExtracted(ctx: MobileProjectsProjectRowsUiContext, codiconClass: string): HTMLElement {
         const glyph = document.createElement('span');
         glyph.className = `theia-mobile-projects-task-leading-glyph codicon ${codiconClass}`;
         glyph.setAttribute('aria-hidden', 'true');
         return glyph;
 }
 
-export function createSidebarStatusChipExtracted(ctx: any, visualStatus: QaapAgentTaskVisualStatus): HTMLElement {
+export function createSidebarStatusChipExtracted(ctx: MobileProjectsProjectRowsUiContext, visualStatus: QaapAgentTaskVisualStatus): HTMLElement {
         const chip = document.createElement('span');
         chip.className = `theia-mobile-projects-task-status-chip theia-mod-${visualStatus.id}`;
         chip.textContent = nls.localize(visualStatus.labelKey, visualStatus.label);
@@ -39,7 +21,7 @@ export function createSidebarStatusChipExtracted(ctx: any, visualStatus: QaapAge
         return chip;
 }
 
-export function createRowExtracted(ctx: any, project: MobileProjectEntry): HTMLElement {
+export function createRowExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry): HTMLElement {
         const card = document.createElement('div');
         card.className = 'theia-mobile-projects-card';
         card.dataset.qaapProjectId = project.id;
@@ -267,7 +249,7 @@ export function createRowExtracted(ctx: any, project: MobileProjectEntry): HTMLE
         return card;
 }
 
-export function createHomeRowAvatarExtracted(ctx: any, project: MobileProjectEntry): HTMLSpanElement {
+export function createHomeRowAvatarExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry): HTMLSpanElement {
         const avatar = document.createElement('span');
         avatar.className = 'theia-mobile-projects-row-avatar';
         avatar.textContent = mobileProjectInitials(project.name);
@@ -275,7 +257,7 @@ export function createHomeRowAvatarExtracted(ctx: any, project: MobileProjectEnt
         return avatar;
 }
 
-export function createHomeRowStatusExtracted(ctx: any, project: MobileProjectEntry,
+export function createHomeRowStatusExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry,
         state: {
             unreadCount: number;
             running: boolean;
@@ -318,7 +300,7 @@ export function createHomeRowStatusExtracted(ctx: any, project: MobileProjectEnt
         return undefined;
 }
 
-export function createWorkspaceOpenControlExtracted(ctx: any, project: MobileProjectEntry): HTMLButtonElement {
+export function createWorkspaceOpenControlExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry): HTMLButtonElement {
         const openBtn = document.createElement('button');
         openBtn.type = 'button';
         openBtn.className = 'theia-mobile-projects-row-meta-open';
@@ -337,7 +319,7 @@ export function createWorkspaceOpenControlExtracted(ctx: any, project: MobilePro
         return openBtn;
 }
 
-export function createWorkspaceBlockExtracted(ctx: any, project: MobileProjectEntry): HTMLElement | undefined {
+export function createWorkspaceBlockExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry): HTMLElement | undefined {
         if (project.isCurrent) {
             return undefined;
         }

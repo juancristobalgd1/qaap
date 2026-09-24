@@ -224,3 +224,38 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
         expect(row.querySelector('.theia-qaap-agent-identity-label')?.textContent).to.equal('gpt-5.6-astra');
     });
 });
+
+describe('MobileProjectsProjectRowsUi — task block', () => {
+
+    it('collapses a long conversation list behind a "More tasks" row', () => {
+        const conversations = Array.from({ length: 8 }, (_, index) => ({
+            id: `conv-${index}`,
+            title: `Task ${index}`,
+            status: 'idle',
+            createdAt: index,
+            updatedAt: index,
+            messageCount: 1,
+            agentId: 'qaiq',
+            cwd: '/repo',
+        }) as QaapAgentConversationSummaryDTO);
+        const ui = new MobileProjectsProjectRowsUi({
+            activeTasks: undefined,
+            expandedConversationProjectIds: new Set<string>(),
+            conversationIndexUi: {
+                isConversationUnread: () => false,
+                vpsTasksForProject: () => conversations,
+                localChatsForProject: () => conversations,
+                summaryToTaskView: (c: QaapAgentConversationSummaryDTO) => ({
+                    id: c.id, title: c.title, command: '', cwd: c.cwd, state: 'done', createdAt: c.createdAt,
+                }),
+            },
+        } as never);
+        const project = { id: 'p1', name: 'repo' } as never;
+        (ui as unknown as { detailComposerSurfaceForProject: () => string }).detailComposerSurfaceForProject = () => 'tasks';
+        (ui as unknown as { createTaskItem: () => HTMLElement }).createTaskItem = () => document.createElement('div');
+
+        const block = ui.createTaskBlock(project, undefined as never);
+
+        expect(block.querySelector('.theia-mobile-projects-tasks-more-btn')?.textContent).to.contain('(2)');
+    });
+});

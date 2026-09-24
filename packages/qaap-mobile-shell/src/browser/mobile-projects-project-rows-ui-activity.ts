@@ -1,30 +1,20 @@
-// @ts-nocheck
+import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-project-rows-ui-context';
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { conversationTurnProgressRatio } from '../common/qaap-agent-conversation-list-metrics';
 import {
-    isConversationAutoApproveEnabled,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus, type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
-import {
-    QAAP_INBOX_ROW_FP_ATTR,
-    QAAP_INBOX_ROW_ID_ATTR,
-} from './mobile-projects-hub-incremental-ui';
+import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
 import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
-import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { createAgentIdentityElement, createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
 import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
-import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
-import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import type { MobileProjectTaskView } from './mobile-projects-active-tasks';
+import { type MobileProjectEntry } from './mobile-projects-types';
 import { setTaskTitleText } from './mobile-projects-task-title-marquee';
 
-export function patchSidebarCompactTaskRowExtracted(ctx: any, row: HTMLElement,
+export function patchSidebarCompactTaskRowExtracted(ctx: MobileProjectsProjectRowsUiContext, row: HTMLElement,
         project: MobileProjectEntry,
         task: MobileProjectTaskView,
         summary: QaapAgentConversationSummaryDTO,
@@ -35,7 +25,7 @@ export function patchSidebarCompactTaskRowExtracted(ctx: any, row: HTMLElement,
         return ctx.patchWorkHubTaskRowContent(row, task, summary, options);
 }
 
-export function patchWorkHubTaskRowExtracted(ctx: any, row: HTMLElement,
+export function patchWorkHubTaskRowExtracted(ctx: MobileProjectsProjectRowsUiContext, row: HTMLElement,
         project: MobileProjectEntry,
         task: MobileProjectTaskView,
         summary: QaapAgentConversationSummaryDTO,
@@ -56,7 +46,7 @@ export function patchWorkHubTaskRowExtracted(ctx: any, row: HTMLElement,
         return ctx.patchWorkHubTaskRowContent(row, task, summary, options, { isRunning });
 }
 
-export function patchWorkHubTaskRowContentExtracted(ctx: any, row: HTMLElement,
+export function patchWorkHubTaskRowContentExtracted(ctx: MobileProjectsProjectRowsUiContext, row: HTMLElement,
         task: MobileProjectTaskView,
         summary: QaapAgentConversationSummaryDTO,
         options?: { readonly isCurrent?: boolean },
@@ -142,7 +132,7 @@ export function patchWorkHubTaskRowContentExtracted(ctx: any, row: HTMLElement,
         return true;
 }
 
-export function registerTaskElapsedTickersExtracted(ctx: any, row: HTMLElement,
+export function registerTaskElapsedTickersExtracted(ctx: MobileProjectsProjectRowsUiContext, row: HTMLElement,
         task: MobileProjectTaskView,
         summary: QaapAgentConversationSummaryDTO | undefined,
         isRunning: boolean,): void {
@@ -178,7 +168,7 @@ export function registerTaskElapsedTickersExtracted(ctx: any, row: HTMLElement,
         }
 }
 
-export function formatTaskSinceExtracted(ctx: any, task: MobileProjectTaskView, summary?: QaapAgentConversationSummaryDTO): string {
+export function formatTaskSinceExtracted(ctx: MobileProjectsProjectRowsUiContext, task: MobileProjectTaskView, summary?: QaapAgentConversationSummaryDTO): string {
         const anchor = task.state === 'running'
             ? task.createdAt
             : (task.finishedAt ?? summary?.updatedAt ?? task.createdAt);
@@ -201,14 +191,14 @@ export function formatTaskSinceExtracted(ctx: any, task: MobileProjectTaskView, 
         return nls.localize('qaap/mobileProjects/taskSinceDays', '{0} d', String(Math.round(diff / day)));
 }
 
-export function appendTaskFootSeparatorExtracted(ctx: any, footRow: HTMLElement): void {
+export function appendTaskFootSeparatorExtracted(ctx: MobileProjectsProjectRowsUiContext, footRow: HTMLElement): void {
         const sep = document.createElement('span');
         sep.className = 'theia-mobile-projects-task-foot-sep';
         sep.textContent = '·';
         footRow.append(sep);
 }
 
-export function populateWorkHubTaskFootRowExtracted(ctx: any, footRow: HTMLElement,
+export function populateWorkHubTaskFootRowExtracted(ctx: MobileProjectsProjectRowsUiContext, footRow: HTMLElement,
         task: MobileProjectTaskView,
         summary: QaapAgentConversationSummaryDTO | undefined,
         isRunning: boolean,): void {
@@ -262,7 +252,7 @@ export function populateWorkHubTaskFootRowExtracted(ctx: any, footRow: HTMLEleme
         footRow.dataset.qaapFootFp = ctx.computeTaskFootFingerprint(task, summary, isRunning);
 }
 
-export function computeTaskFootFingerprintExtracted(ctx: any, task: MobileProjectTaskView,
+export function computeTaskFootFingerprintExtracted(ctx: MobileProjectsProjectRowsUiContext, task: MobileProjectTaskView,
         summary: QaapAgentConversationSummaryDTO | undefined,
         isRunning: boolean,): string {
         return [
@@ -277,7 +267,7 @@ export function computeTaskFootFingerprintExtracted(ctx: any, task: MobileProjec
         ].join('|');
 }
 
-export function appendConversationFootMetricsExtracted(ctx: any, footRow: HTMLElement,
+export function appendConversationFootMetricsExtracted(ctx: MobileProjectsProjectRowsUiContext, footRow: HTMLElement,
         summary: QaapAgentConversationSummaryDTO | undefined,
         isRunning: boolean,): void {
         if (!summary) {
@@ -303,7 +293,7 @@ export function appendConversationFootMetricsExtracted(ctx: any, footRow: HTMLEl
         }
 }
 
-export function localizeActivityLabelExtracted(ctx: any, label: string): string {
+export function localizeActivityLabelExtracted(ctx: MobileProjectsProjectRowsUiContext, label: string): string {
         switch (label) {
             case 'Searching':
                 return nls.localize('qaap/mobileProjects/activitySearching', 'Searching');
@@ -322,14 +312,14 @@ export function localizeActivityLabelExtracted(ctx: any, label: string): string 
         }
 }
 
-export function hasConversationDiffStatsExtracted(ctx: any, summary?: QaapAgentConversationSummaryDTO): boolean {
+export function hasConversationDiffStatsExtracted(ctx: MobileProjectsProjectRowsUiContext, summary?: QaapAgentConversationSummaryDTO): boolean {
         if (!summary) {
             return false;
         }
         return (summary.linesAdded ?? 0) > 0 || (summary.linesRemoved ?? 0) > 0;
 }
 
-export function appendConversationDiffFootExtracted(ctx: any, footRow: HTMLElement, summary: QaapAgentConversationSummaryDTO): void {
+export function appendConversationDiffFootExtracted(ctx: MobileProjectsProjectRowsUiContext, footRow: HTMLElement, summary: QaapAgentConversationSummaryDTO): void {
         const added = summary.linesAdded ?? 0;
         const removed = summary.linesRemoved ?? 0;
         ctx.appendTaskFootSeparator(footRow);
@@ -345,7 +335,7 @@ export function appendConversationDiffFootExtracted(ctx: any, footRow: HTMLEleme
         footRow.append(diff);
 }
 
-export function formatConversationRunDurationExtracted(ctx: any, summary: QaapAgentConversationSummaryDTO,
+export function formatConversationRunDurationExtracted(ctx: MobileProjectsProjectRowsUiContext, summary: QaapAgentConversationSummaryDTO,
         isRunning: boolean,): string | undefined {
         let durationMs: number | undefined;
         if (isRunning && summary.turnStartedAt) {
@@ -359,7 +349,7 @@ export function formatConversationRunDurationExtracted(ctx: any, summary: QaapAg
         return ctx.formatDurationShort(durationMs);
 }
 
-export function formatDurationShortExtracted(ctx: any, durationMs: number): string {
+export function formatDurationShortExtracted(ctx: MobileProjectsProjectRowsUiContext, durationMs: number): string {
         const minute = 60_000;
         const hour = 60 * minute;
         const day = 24 * hour;
@@ -391,7 +381,7 @@ export function formatDurationShortExtracted(ctx: any, durationMs: number): stri
         );
 }
 
-export function resolveConversationAgentLabelExtracted(ctx: any, summary?: QaapAgentConversationSummaryDTO): string {
+export function resolveConversationAgentLabelExtracted(ctx: MobileProjectsProjectRowsUiContext, summary?: QaapAgentConversationSummaryDTO): string {
         const raw = summary?.agentId?.trim();
         // 'task' is the idle-placeholder sentinel (buildAgentsHubIdleConversationSummary), not a
         // real agent — rendering it produced a confusing "@task" chip on optimistic rows.

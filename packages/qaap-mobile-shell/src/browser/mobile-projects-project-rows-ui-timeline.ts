@@ -1,4 +1,4 @@
-// @ts-nocheck
+import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-project-rows-ui-context';
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -8,20 +8,16 @@ import {
     isFailedRunSummary,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus, type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
 import {
     QAAP_INBOX_ROW_FP_ATTR,
     QAAP_INBOX_ROW_ID_ATTR,
 } from './mobile-projects-hub-incremental-ui';
-import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
 import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
-import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { createAgentTaskBadge, createAgentTaskVerificationBadge, createAgentIdentityElement } from './qaap-agent-ui';
-import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
+import { createAgentIdentityElement } from './qaap-agent-ui';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
-import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types'; import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import { type MobileProjectEntry } from './mobile-projects-types'; import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
 const TASK_FAILURE_HINT_MAX_LENGTH = 120;
@@ -55,7 +51,7 @@ function createTaskFailureHintElement(hint: string): HTMLElement {
     return failure;
 }
 
-export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
+export function createTaskItemExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry,
     task: MobileProjectTaskView,
     _activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
     summary?: QaapAgentConversationSummaryDTO,
@@ -387,7 +383,7 @@ export function createTaskItemExtracted(ctx: any, project: MobileProjectEntry,
     return row;
 }
 
-export function createConversationActivityRowExtracted(ctx: any, project: MobileProjectEntry,
+export function createConversationActivityRowExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO | undefined,
     state: {
         readonly isRunning: boolean;
@@ -465,7 +461,7 @@ export function createConversationActivityRowExtracted(ctx: any, project: Mobile
     return row;
 }
 
-export function createConversationActivityChipExtracted(ctx: any, options: {
+export function createConversationActivityChipExtracted(ctx: MobileProjectsProjectRowsUiContext, options: {
     readonly iconClass: string;
     readonly label: string;
     readonly variant: 'working' | 'needs-you' | 'ready' | 'failed' | 'surface';
@@ -483,7 +479,7 @@ export function createConversationActivityChipExtracted(ctx: any, options: {
     return chip;
 }
 
-export function renderConversationTurnProgressExtracted(ctx: any, host: HTMLElement,
+export function renderConversationTurnProgressExtracted(ctx: MobileProjectsProjectRowsUiContext, host: HTMLElement,
     summary?: QaapAgentConversationSummaryDTO,): void {
     const hasSteps = summary?.turnProgressTotal !== undefined
         && summary.turnProgressCurrent !== undefined

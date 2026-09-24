@@ -2,31 +2,16 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
-import { nls } from '@theia/core/lib/common/nls';
-import { conversationTurnProgressRatio } from '../common/qaap-agent-conversation-list-metrics';
 import {
-    isConversationAutoApproveEnabled,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus, type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
-import {
-    QAAP_INBOX_ROW_FP_ATTR,
-    QAAP_INBOX_ROW_ID_ATTR,
-} from './mobile-projects-hub-incremental-ui';
-import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
-import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
-import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
-import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
+import { type QaapComposerSurface } from '../common/qaap-composer-surface';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectsService } from './mobile-projects-service';
-import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
-import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import { type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
 import { appendConversationDiffFootExtracted, appendConversationFootMetricsExtracted, appendTaskFootSeparatorExtracted, computeTaskFootFingerprintExtracted, formatConversationRunDurationExtracted, formatDurationShortExtracted, formatTaskSinceExtracted, hasConversationDiffStatsExtracted, localizeActivityLabelExtracted, patchSidebarCompactTaskRowExtracted, patchWorkHubTaskRowContentExtracted, patchWorkHubTaskRowExtracted, populateWorkHubTaskFootRowExtracted, registerTaskElapsedTickersExtracted, resolveConversationAgentLabelExtracted } from './mobile-projects-project-rows-ui-activity';
-import { createHomeRowAvatarExtracted, createHomeRowStatusExtracted, createRowExtracted, createSidebarStatusChipExtracted, createTaskLeadingGlyphExtracted, createWorkspaceBlockExtracted, createWorkspaceOpenControlExtracted } from './mobile-projects-project-rows-ui-render';
+import { createHomeRowAvatarExtracted, createHomeRowStatusExtracted, createRowExtracted, createTaskLeadingGlyphExtracted, createWorkspaceBlockExtracted, createWorkspaceOpenControlExtracted } from './mobile-projects-project-rows-ui-render';
 import { createTaskBlockExtracted, detailComposerSurfaceForProjectExtracted, groupConversationTasksExtracted } from './mobile-projects-project-rows-ui-streaming';
 import { createConversationActivityChipExtracted, createConversationActivityRowExtracted, createTaskItemExtracted, renderConversationTurnProgressExtracted } from './mobile-projects-project-rows-ui-timeline';
 
@@ -62,7 +47,10 @@ export interface MobileProjectsProjectRowsHost {
 /** Project list cards, expanded task blocks, and conversation row rendering. */
 export class MobileProjectsProjectRowsUi {
 
-    constructor(protected readonly host: MobileProjectsProjectRowsHost) { }
+    constructor(
+        /** @internal Used by the extracted mobile-projects-project-rows-ui-* modules. */
+        public readonly host: MobileProjectsProjectRowsHost,
+    ) { }
 
     createTaskLeadingGlyph(codiconClass: string): HTMLElement {
         return createTaskLeadingGlyphExtracted(this, codiconClass);
@@ -128,11 +116,13 @@ export class MobileProjectsProjectRowsUi {
         return patchWorkHubTaskRowExtracted(this, row, project, task, summary, options);
     }
 
-    protected patchWorkHubTaskRowContent(row: HTMLElement, task: MobileProjectTaskView, summary: QaapAgentConversationSummaryDTO, options?: { readonly isCurrent?: boolean }, state?: { readonly isRunning?: boolean },): boolean {
+    /** @internal Used by the extracted mobile-projects-project-rows-ui-* modules. */
+    public patchWorkHubTaskRowContent(row: HTMLElement, task: MobileProjectTaskView, summary: QaapAgentConversationSummaryDTO, options?: { readonly isCurrent?: boolean }, state?: { readonly isRunning?: boolean },): boolean {
         return patchWorkHubTaskRowContentExtracted(this, row, task, summary, options, state);
     }
 
-    protected registerTaskElapsedTickers(row: HTMLElement, task: MobileProjectTaskView, summary: QaapAgentConversationSummaryDTO | undefined, isRunning: boolean,): void {
+    /** @internal Used by the extracted mobile-projects-project-rows-ui-* modules. */
+    public registerTaskElapsedTickers(row: HTMLElement, task: MobileProjectTaskView, summary: QaapAgentConversationSummaryDTO | undefined, isRunning: boolean,): void {
         registerTaskElapsedTickersExtracted(this, row, task, summary, isRunning);
     }
 
@@ -148,7 +138,8 @@ export class MobileProjectsProjectRowsUi {
         populateWorkHubTaskFootRowExtracted(this, footRow, task, summary, isRunning);
     }
 
-    protected computeTaskFootFingerprint(task: MobileProjectTaskView, summary: QaapAgentConversationSummaryDTO | undefined, isRunning: boolean,): string {
+    /** @internal Used by the extracted mobile-projects-project-rows-ui-* modules. */
+    public computeTaskFootFingerprint(task: MobileProjectTaskView, summary: QaapAgentConversationSummaryDTO | undefined, isRunning: boolean,): string {
         return computeTaskFootFingerprintExtracted(this, task, summary, isRunning);
     }
 

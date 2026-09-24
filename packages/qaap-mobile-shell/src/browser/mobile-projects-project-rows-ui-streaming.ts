@@ -1,29 +1,13 @@
-// @ts-nocheck
+import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-project-rows-ui-context';
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { conversationTurnProgressRatio } from '../common/qaap-agent-conversation-list-metrics';
-import {
-    isConversationAutoApproveEnabled,
-    type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus, type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
-import {
-    QAAP_INBOX_ROW_FP_ATTR,
-    QAAP_INBOX_ROW_ID_ATTR,
-} from './mobile-projects-hub-incremental-ui';
-import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
-import { formatConversationComposerSessionMeta } from '../common/qaap-conversation-composer-state';
 import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
-import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
-import { mobileProjectInitials, type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
-import { attachSwipeToDelete } from './qaap-mobile-swipe-to-delete';
+import { type MobileProjectEntry } from './mobile-projects-types';
+import { MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT } from './mobile-projects-project-rows-ui';
 
-export function createTaskBlockExtracted(ctx: any, project: MobileProjectEntry,
+export function createTaskBlockExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry,
         activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,): HTMLElement {
         const block = document.createElement('div');
         block.className = 'theia-mobile-projects-tasks-block';
@@ -146,7 +130,7 @@ export function createTaskBlockExtracted(ctx: any, project: MobileProjectEntry,
         return block;
 }
 
-export function detailComposerSurfaceForProjectExtracted(ctx: any, project: MobileProjectEntry): QaapComposerSurface {
+export function detailComposerSurfaceForProjectExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry): QaapComposerSurface {
         if (!ctx.host.homeMode || ctx.host.hubView !== 'repos' || ctx.host.expandedId !== project.id) {
             return 'task';
         }
@@ -154,7 +138,7 @@ export function detailComposerSurfaceForProjectExtracted(ctx: any, project: Mobi
         return readStoredComposerSurface(cwd) ?? ctx.host.stickyComposerSurface ?? 'task';
 }
 
-export function groupConversationTasksExtracted(ctx: any, tasks: MobileProjectTaskView[]): Array<{
+export function groupConversationTasksExtracted(ctx: MobileProjectsProjectRowsUiContext, tasks: MobileProjectTaskView[]): Array<{
         id: 'working' | 'needs-you' | 'recent' | 'done';
         label: string;
         tasks: MobileProjectTaskView[];
