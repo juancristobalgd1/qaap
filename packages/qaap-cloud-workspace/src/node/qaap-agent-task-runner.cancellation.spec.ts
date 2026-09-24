@@ -199,7 +199,7 @@ describe('QaapAgentTaskRunner cancellation', () => {
             repoMapCache: new Map(),
         });
 
-        expect(runner.exposeDeleteForCwd('/repo/project')).to.equal(2);
+        expect(runner.exposeDeleteForCwd('/repo/project/')).to.equal(2);
         expect([...tasks.keys()]).to.deep.equal(['other-task']);
         expect(deletedEvents).to.have.members(['project-task', 'nested-task']);
         expect(runner['projectNameCache'].has('/repo/project')).to.equal(false);

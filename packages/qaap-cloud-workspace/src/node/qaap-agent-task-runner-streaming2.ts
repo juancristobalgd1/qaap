@@ -661,7 +661,8 @@ export function cancelExtracted(ctx: QaapAgentTaskRunnerContext, id: string): Qa
 
 /** Remove every persisted task rooted in a project after the user confirms project deletion. */
 export function deleteForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string): number {
-        const root = cwd.trim().replace(/\\+$/, '');
+        // Task cwds are POSIX paths matched on `${root}/`, so strip trailing `/` (and `\`) separators.
+        const root = cwd.trim().replace(/[\\/]+$/, '');
         if (!root) {
             return 0;
         }
