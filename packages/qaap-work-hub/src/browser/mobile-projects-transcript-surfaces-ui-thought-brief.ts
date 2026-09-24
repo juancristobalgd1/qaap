@@ -251,13 +251,23 @@ export async function discoverProjectDevPreviewUrlExtracted(ctx: MobileProjectsT
             return undefined;
         }
         const ports = [8080, 3333, 3001, 4173, ...Array.from({ length: 18 }, (_, index) => 5173 + index)];
-        const previewUrl = await firstInPriorityOrder(ports, DEV_PREVIEW_PORT_SCAN_CONCURRENCY, async port => {
-            const probe = await probeQaapDevPreviewPort(port);
-            if (!probe.ready || !await ctx.previewUrlMatchesProject(probe.previewUrl, project)) {
-                return undefined;
-            }
-            return normalizePreviewUrlForSameOrigin(probe.previewUrl);
-        }, signal);
+        // Once the answer is known (or the caller aborts), cancel the probes still in flight.
+        const scan = new AbortController();
+        const onAbort = (): void => scan.abort();
+        signal?.addEventListener('abort', onAbort, { once: true });
+        let previewUrl: string | undefined;
+        try {
+            previewUrl = await firstInPriorityOrder(ports, DEV_PREVIEW_PORT_SCAN_CONCURRENCY, async port => {
+                const probe = await probeQaapDevPreviewPort(port, scan.signal);
+                if (!probe.ready || !await ctx.previewUrlMatchesProject(probe.previewUrl, project)) {
+                    return undefined;
+                }
+                return normalizePreviewUrlForSameOrigin(probe.previewUrl);
+            }, scan.signal);
+        } finally {
+            signal?.removeEventListener('abort', onAbort);
+            scan.abort();
+        }
         if (previewUrl) {
             void ctx.host.projectsService.recordProjectPreviewUrl(project, previewUrl);
         }
