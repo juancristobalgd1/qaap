@@ -125,3 +125,31 @@ describe('QaapDevPreviewPortRegistry persistence', () => {
         }
     });
 });
+
+describe('QaapDevPreviewPortRegistry onDidReleasePort', () => {
+    it('fires for new registrations, rebinds, releases and preview releases', () => {
+        const identity = resolveQaapPreviewIdentity({
+            userId: 'alice',
+            workspaceId: 'file:///workspace/alice/site',
+            projectId: 'file:///workspace/alice/site',
+            conversationId: 'section-a',
+            processId: 'process-a',
+        });
+        const registry = new QaapDevPreviewPortRegistry();
+        const fired: number[] = [];
+        registry.onDidReleasePort(port => fired.push(port));
+        const registration = { ...identity, ownerLogin: 'alice', root: '/workspace/alice/site', port: 8124 };
+        const record = registry.register(registration)!;
+        expect(fired).to.deep.equal([8124]);
+        registry.register(registration);
+        expect(fired).to.deep.equal([8124], 'refreshing the same registration keeps the caches');
+        registry.rebindPort(record.previewId, 'alice', 8123);
+        expect(fired).to.deep.equal([8124, 8124, 8123]);
+        registry.releasePreview(record.previewId, 'alice');
+        expect(fired).to.deep.equal([8124, 8124, 8123, 8123]);
+        registry.claim(9000, 'bob');
+        registry.release(9000);
+        expect(fired).to.deep.equal([8124, 8124, 8123, 8123, 9000]);
+    });
+});
+

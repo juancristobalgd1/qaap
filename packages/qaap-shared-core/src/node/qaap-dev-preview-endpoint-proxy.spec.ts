@@ -13,7 +13,7 @@ import { MAX_REWRITE_BODY_BYTES } from './qaap-dev-preview-endpoint-timeline';
 import { holdUpgradeSocket, proxyWebSocketExtracted } from './qaap-dev-preview-endpoint-streaming';
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import type { QaapGithubAuthGuard } from './qaap-github-auth-guard';
-import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
+import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewBridgeLoader, injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { injectQaapPreviewDocumentScripts } from '../common/qaap-dev-preview';
 
@@ -310,6 +310,37 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
                 // HEAD hangs: the probe times out and retries with GET.
             };
             expect(await new ProxyTestEndpoint().probeLocalDevServer(upstreamPort)).to.equal(true);
+            expect(methods).to.deep.equal(['HEAD', 'GET']);
+        });
+
+        it('forgets HEAD support and the target host when the registry releases the port', async () => {
+            const methods: string[] = [];
+            upstreamHandler = (req, res) => {
+                methods.push(req.method ?? '');
+                res.writeHead(req.method === 'HEAD' ? 405 : 200);
+                res.end();
+            };
+            const invalidated: number[] = [];
+            class RegistryBackedEndpoint extends ProxyTestEndpoint {
+                override invalidateTargetHost(port: number): void {
+                    invalidated.push(port);
+                }
+                start(registry: QaapDevPreviewPortRegistry): void {
+                    (this as unknown as { portRegistry: QaapDevPreviewPortRegistry }).portRegistry = registry;
+                    this.init();
+                }
+            }
+            const registry = new QaapDevPreviewPortRegistry();
+            const withRegistry = new RegistryBackedEndpoint();
+            withRegistry.start(registry);
+            await withRegistry.probeLocalDevServer(upstreamPort);
+            await withRegistry.probeLocalDevServer(upstreamPort);
+            expect(methods).to.deep.equal(['HEAD', 'GET', 'GET']);
+            registry.claim(upstreamPort, 'alice');
+            registry.release(upstreamPort);
+            expect(invalidated).to.deep.equal([upstreamPort]);
+            methods.length = 0;
+            await withRegistry.probeLocalDevServer(upstreamPort);
             expect(methods).to.deep.equal(['HEAD', 'GET']);
         });
 

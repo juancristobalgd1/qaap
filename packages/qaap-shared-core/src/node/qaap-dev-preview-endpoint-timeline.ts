@@ -422,6 +422,11 @@ export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointCo
 export const HEAD_UNSUPPORTED_TTL_MS = 5 * 60_000;
 const headUnsupportedByEndpoint = new WeakMap<QaapDevPreviewEndpointContext, Map<number, number>>();
 
+/** Drops the cached "HEAD unsupported" verdict for `port` (its preview claim changed hands). */
+export function forgetHeadUnsupportedPort(ctx: QaapDevPreviewEndpointContext, port: number): void {
+    headUnsupportedByEndpoint.get(ctx)?.delete(port);
+}
+
 function headUnsupportedPorts(ctx: QaapDevPreviewEndpointContext): Map<number, number> {
     let ports = headUnsupportedByEndpoint.get(ctx);
     if (!ports) {
