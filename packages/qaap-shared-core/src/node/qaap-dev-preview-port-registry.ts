@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
+import { Emitter, type Event } from '@theia/core/lib/common/event';
 import {
     isQaapProcessPreviewIdentity,
     type QaapResolvedPreviewIdentity,
@@ -74,6 +75,15 @@ export class QaapDevPreviewPortRegistry {
     protected readonly storePath = resolvePreviewRegistryPath();
     protected persistTimer: NodeJS.Timeout | undefined;
     protected persistenceEnabled = false;
+    protected readonly onDidReleasePortEmitter = new Emitter<number>();
+    /** Claim timestamp already reported as expired, per port, so each expiry fires once. */
+    protected readonly expiryReportedAt = new Map<number, number>();
+
+    /**
+     * Fires with a port whose preview claim was released, expired, rebound or handed to a new
+     * registration: per-port caches (target host, HEAD support) describe a server that may be gone.
+     */
+    readonly onDidReleasePort: Event<number> = this.onDidReleasePortEmitter.event;
 
     @postConstruct()
     protected init(): void {
@@ -149,6 +159,7 @@ export class QaapDevPreviewPortRegistry {
         this.previewIdByPort.set(registration.port, registration.previewId);
         this.claims.set(registration.port, { ownerLogin: registration.ownerLogin, at: now });
         this.schedulePersist();
+        this.onDidReleasePortEmitter.fire(registration.port);
         return record;
     }
 
@@ -184,6 +195,7 @@ export class QaapDevPreviewPortRegistry {
             this.claims.delete(record.port);
         }
         this.schedulePersist();
+        this.onDidReleasePortEmitter.fire(record.port);
     }
 
     get(previewId: string): QaapDevPreviewRecord | undefined {
@@ -249,6 +261,7 @@ export class QaapDevPreviewPortRegistry {
         }
         this.claims.delete(port);
         this.schedulePersist();
+        this.onDidReleasePortEmitter.fire(port);
     }
 
     releasePreview(previewId: string, ownerLogin: string): boolean {
@@ -264,6 +277,7 @@ export class QaapDevPreviewPortRegistry {
             this.claims.delete(record.port);
         }
         this.schedulePersist();
+        this.onDidReleasePortEmitter.fire(record.port);
         return true;
     }
 
@@ -307,6 +321,8 @@ export class QaapDevPreviewPortRegistry {
         this.previewIdByPort.set(nextPort, previewId);
         this.claims.set(nextPort, { ownerLogin, at: now });
         this.schedulePersist();
+        this.onDidReleasePortEmitter.fire(existing.port);
+        this.onDidReleasePortEmitter.fire(nextPort);
         return rebound;
     }
 
@@ -345,6 +361,30 @@ export class QaapDevPreviewPortRegistry {
             return undefined;
         }
         return entry.ownerLogin;
+    }
+
+    /**
+     * Fires {@link onDidReleasePort} once for every claim that expired by TTL since the last sweep.
+     * Expired claims are kept (see {@link ownerOf}); a refreshed claim re-arms its port. Meant for a
+     * periodic timer (the endpoint's reaper), not the request path: it walks all claims.
+     */
+    sweepExpiredClaims(now: number = Date.now()): number[] {
+        const expired: number[] = [];
+        for (const [port, entry] of this.claims) {
+            if (now - entry.at > QaapDevPreviewPortRegistry.CLAIM_TTL_MS && this.expiryReportedAt.get(port) !== entry.at) {
+                this.expiryReportedAt.set(port, entry.at);
+                expired.push(port);
+            }
+        }
+        for (const port of this.expiryReportedAt.keys()) {
+            if (!this.claims.has(port)) {
+                this.expiryReportedAt.delete(port);
+            }
+        }
+        for (const port of expired) {
+            this.onDidReleasePortEmitter.fire(port);
+        }
+        return expired;
     }
 
     /** The login of an EXPIRED claim, or undefined when unclaimed or the claim is still live. */

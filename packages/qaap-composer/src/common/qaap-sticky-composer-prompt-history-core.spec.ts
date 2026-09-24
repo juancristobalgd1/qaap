@@ -3,14 +3,26 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import {
     isTextareaCaretAtBeginning,
     isTextareaCaretAtEnd,
     textareaCaretLineColumn,
 } from './qaap-sticky-composer-prompt-history-core';
+import { useSuiteJSDOM } from '../browser/test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('qaap-sticky-composer-prompt-history-core', () => {
+
+    useSuiteJSDOM();
+
     function createTextarea(value: string, start: number, end = start): HTMLTextAreaElement {
         const textarea = document.createElement('textarea');
         textarea.value = value;

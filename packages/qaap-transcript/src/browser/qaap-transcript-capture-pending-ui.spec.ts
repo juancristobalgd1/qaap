@@ -3,6 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import { parseHTML } from 'linkedom';
 import {
@@ -18,8 +24,14 @@ import {
     enhanceTranscriptMarkdownRichContent,
     TRANSCRIPT_MARKDOWN_TABLE_SCROLL_CLASS,
 } from './qaap-transcript-rich-content-ui';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('qaap-transcript-capture-pending-ui', () => {
+
+    useSuiteJSDOM();
+
     const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
     let previousDocument: Document | undefined;
 

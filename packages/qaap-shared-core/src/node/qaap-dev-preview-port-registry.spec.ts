@@ -125,3 +125,57 @@ describe('QaapDevPreviewPortRegistry persistence', () => {
         }
     });
 });
+
+describe('QaapDevPreviewPortRegistry onDidReleasePort', () => {
+    it('fires for new registrations, rebinds, releases and preview releases', () => {
+        const identity = resolveQaapPreviewIdentity({
+            userId: 'alice',
+            workspaceId: 'file:///workspace/alice/site',
+            projectId: 'file:///workspace/alice/site',
+            conversationId: 'section-a',
+            processId: 'process-a',
+        });
+        const registry = new QaapDevPreviewPortRegistry();
+        const fired: number[] = [];
+        registry.onDidReleasePort(port => fired.push(port));
+        const registration = { ...identity, ownerLogin: 'alice', root: '/workspace/alice/site', port: 8124 };
+        const record = registry.register(registration)!;
+        expect(fired).to.deep.equal([8124]);
+        registry.register(registration);
+        expect(fired).to.deep.equal([8124], 'refreshing the same registration keeps the caches');
+        registry.rebindPort(record.previewId, 'alice', 8123);
+        expect(fired).to.deep.equal([8124, 8124, 8123]);
+        registry.releasePreview(record.previewId, 'alice');
+        expect(fired).to.deep.equal([8124, 8124, 8123, 8123]);
+        registry.claim(9000, 'bob');
+        registry.release(9000);
+        expect(fired).to.deep.equal([8124, 8124, 8123, 8123, 9000]);
+    });
+});
+
+describe('QaapDevPreviewPortRegistry sweepExpiredClaims', () => {
+    class AgingRegistry extends QaapDevPreviewPortRegistry {
+        age(port: number, ms: number): void {
+            const entry = this.claims.get(port)!;
+            this.claims.set(port, { ...entry, at: entry.at - ms });
+        }
+    }
+
+    it('reports each TTL expiry once and re-arms when the claim is refreshed', () => {
+        const registry = new AgingRegistry();
+        const fired: number[] = [];
+        registry.onDidReleasePort(port => fired.push(port));
+        registry.claim(5173, 'alice');
+        registry.claim(5174, 'alice');
+        expect(registry.sweepExpiredClaims()).to.deep.equal([]);
+        registry.age(5173, 31 * 60_000);
+        expect(registry.sweepExpiredClaims()).to.deep.equal([5173]);
+        expect(registry.sweepExpiredClaims()).to.deep.equal([], 'reported once');
+        expect(registry.staleOwnerOf(5173)).to.equal('alice', 'the stale claim itself is kept');
+        registry.claim(5173, 'alice');
+        registry.age(5173, 31 * 60_000);
+        expect(registry.sweepExpiredClaims()).to.deep.equal([5173]);
+        expect(fired).to.deep.equal([5173, 5173]);
+    });
+});
+

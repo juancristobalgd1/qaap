@@ -5,7 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import {
@@ -22,8 +24,13 @@ import {
     ensureTranscriptToolSpeculativePlaceholderExtracted,
 } from './mobile-projects-transcript-messages-tool-ui-streaming';
 import { patchTranscriptToolResultStreamBodyExtracted } from './mobile-projects-transcript-messages-tool-ui-timeline';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('mobile-projects-transcript-messages-tool-ui', () => {
+
+    useSuiteJSDOM();
 
     describe('formatTranscriptExecutionTime', () => {
         it('formats sub-second durations as milliseconds', () => {

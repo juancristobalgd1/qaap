@@ -5,7 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { QAAP_GIT_REVIEW_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
@@ -13,8 +15,13 @@ import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import { MobileProjectsStickyComposerWorkspaceUi, type MobileProjectsStickyComposerWorkspaceHost } from './mobile-projects-sticky-composer-workspace-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { COMPOSER_BRANCH_SHEET_ROW_SELECTOR } from './qaap-composer-branch-sheet-row';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('MobileProjectsStickyComposerWorkspaceUi', () => {
+
+    useSuiteJSDOM();
 
     let originalFetch: typeof globalThis.fetch;
 

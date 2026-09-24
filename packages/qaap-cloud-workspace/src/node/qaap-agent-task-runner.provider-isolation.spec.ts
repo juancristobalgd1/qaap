@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { PreferenceScope } from '@theia/core/lib/common/preferences/preference-scope';
-import type { QaapAgentTask } from '../common/qaap-agent-task';
+import type { QaapAgentTask, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
 /**
@@ -60,7 +60,7 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         Object.assign(runner, {
             helperApiUrl: '',
             tenantHomeEnvOverlay: undefined,
-            detectedAgents: new Map(),
+            detectedAgents: new Map([['qaiq', { id: 'qaiq', label: 'QAIQ', bin: 'qaiq', template: 'qaiq {qaiq_flags} -p {prompt}' }]]),
             resolveAgentSpawnIdentity: () => ({}),
             readUserSettingsFromDisk: (login?: string) => login === 'alice' ? { ...ALICE_SETTINGS } : { ...SHARED_SETTINGS },
             preferenceService: {
@@ -71,9 +71,9 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         return runner;
     }
 
-    function run(ownerLogin: string | undefined): { flags: string; env: NodeJS.ProcessEnv } {
+    function run(ownerLogin: string | undefined, agentModel?: QaapCreateAgentTaskQaiqModel): { flags: string; env: NodeJS.ProcessEnv } {
         const runner = createRunner();
-        const flags = runner.buildTemplateVars('qaiq', undefined, {}, ownerLogin).qaiq_flags;
+        const flags = runner.buildTemplateVars('qaiq', agentModel, {}, ownerLogin).qaiq_flags;
         const task = {
             id: 'task-1',
             title: 'QAIQ task',
@@ -83,6 +83,7 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
             state: 'running',
             createdAt: 0,
             ...(ownerLogin ? { ownerLogin } : {}),
+            ...(agentModel ? { agentModel, qaiqModel: agentModel } : {}),
         } as QaapAgentTask;
         const env = (runner as unknown as { buildChildEnv(task: QaapAgentTask): NodeJS.ProcessEnv }).buildChildEnv(task);
         return { flags, env };
@@ -106,6 +107,42 @@ describe('QaapAgentTaskRunner provider credential isolation (QAIQ end to end)', 
         const { flags, env } = run(undefined);
         expect(flags).not.to.contain('--provider anthropic');
         expect(leakedValues(env, [...Object.values(OPERATOR_ENV), 'sk-shared-anthropic'])).to.deep.equal([]);
+    });
+
+    it('hosted backend, explicit picker model: the pick is honoured with the tenant\'s own key only', () => {
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        const pick = { provider: 'openai', vendor: 'openrouter', modelId: 'qwen/qwen3-coder:free', label: 'Qwen' } as QaapCreateAgentTaskQaiqModel;
+        const { flags, env } = run('alice', pick);
+        expect(flags).to.contain('--provider openai').and.contain('qwen/qwen3-coder:free');
+        expect(env.OPENROUTER_API_KEY).to.equal('sk-alice-openrouter');
+        expect(env.OPENAI_API_KEY).to.equal('sk-alice-openrouter');
+        expect(leakedValues(env, [...Object.values(OPERATOR_ENV), 'sk-shared-anthropic'])).to.deep.equal([]);
+    });
+
+    it('hosted backend, explicit pick of a provider the tenant has no key for: no operator or shared key fills the gap', () => {
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        const pick = { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4-6', label: 'Sonnet' } as QaapCreateAgentTaskQaiqModel;
+        const { flags, env } = run('alice', pick);
+        expect(flags).to.contain('--provider anthropic');
+        expect(env.ANTHROPIC_API_KEY).to.equal(undefined);
+        expect(leakedValues(env, [...Object.values(OPERATOR_ENV), 'sk-shared-anthropic'])).to.deep.equal([]);
+    });
+
+    it('hosted backend, Improve Prompt one-shot: runs as the requesting tenant with only their keys', async () => {
+        process.env.QAAP_CLOUD_MODE = 'docker';
+        const runner = createRunner();
+        let spawned: { command: string; env: NodeJS.ProcessEnv } | undefined;
+        Object.assign(runner, {
+            runOneShotCommand: async (command: string, _cwd: string, env: NodeJS.ProcessEnv) => {
+                spawned = { command, env };
+                return 'better prompt';
+            },
+        });
+        const improved = await runner.improveComposerPrompt({ prompt: 'hola', agentId: 'qaiq', cwd: '/repo', ownerLogin: 'alice' });
+        expect(improved).to.equal('better prompt');
+        expect(spawned?.command).to.contain('--provider openai').and.contain('meta-llama/llama-3.3-70b-instruct:free');
+        expect(spawned?.env.OPENROUTER_API_KEY).to.equal('sk-alice-openrouter');
+        expect(leakedValues(spawned!.env, [...Object.values(OPERATOR_ENV), 'sk-shared-anthropic'])).to.deep.equal([]);
     });
 
     it('local single user: Settings drive the model and win over env, operator env stays available', () => {

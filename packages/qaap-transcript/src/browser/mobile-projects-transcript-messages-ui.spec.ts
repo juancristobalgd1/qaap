@@ -5,7 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 const browserGlobals = globalThis as unknown as { DragEvent?: unknown };
 if (!browserGlobals.DragEvent) {
     browserGlobals.DragEvent = class DragEvent { };
@@ -14,8 +16,13 @@ if (!browserGlobals.DragEvent) {
 import { expect } from 'chai';
 import type { QaapMessageDeliveryMode, QaapPendingUserMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('MobileProjectsTranscriptMessagesUi queued-message delegation', () => {
+
+    useSuiteJSDOM();
 
     // The sticky composer reaches the server pending queue through `host.transcriptMessagesUi`
     // and feature-checks `cancelQueuedMessage` / `dispatchQueuedMessage` before calling them;

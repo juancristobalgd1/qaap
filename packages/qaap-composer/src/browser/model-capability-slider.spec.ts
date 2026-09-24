@@ -5,12 +5,20 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { createModelCapabilitySlider } from './model-capability-slider';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('model-capability-slider', () => {
+
+    useSuiteJSDOM();
+
     it('renders a discrete slider with four marks and localized aria metadata', () => {
         const slider = createModelCapabilitySlider({
             level: 1,

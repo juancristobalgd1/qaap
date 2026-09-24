@@ -5,7 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import {
@@ -13,8 +15,14 @@ import {
     createStickyComposerSendIcon,
     playStickyComposerSendFly,
 } from './mobile-projects-sticky-composer-send-icon';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('sticky-composer-send-icon', () => {
+
+    useSuiteJSDOM();
+
     it('renders a Lucide-style send plane with a transform group', () => {
         const host = createStickyComposerSendIcon();
         expect(host.classList.contains('theia-mobile-projects-sticky-composer-send-icon')).to.equal(true);
