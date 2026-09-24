@@ -52,7 +52,7 @@ import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
-import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';

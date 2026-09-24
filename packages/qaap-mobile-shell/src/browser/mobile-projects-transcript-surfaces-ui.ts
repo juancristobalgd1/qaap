@@ -21,7 +21,7 @@ import {
     normalizeQaapPreviewConversationId,
     type QaapPreviewIdentity,
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
-import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
+import type { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import {

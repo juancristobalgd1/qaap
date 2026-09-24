@@ -1,0 +1,37 @@
+{
+  "extends": "../../configs/base.tsconfig",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "lib"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../ai-core"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../filesystem"
+    },
+    {
+      "path": "../qaap-adapters"
+    },
+    {
+      "path": "../qaap-mobile-mechanics"
+    },
+    {
+      "path": "../qaap-shared-core"
+    },
+    {
+      "path": "../qaap-transcript-overlay"
+    },
+    {
+      "path": "../scm"
+    }
+  ]
+}

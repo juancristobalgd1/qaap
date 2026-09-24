@@ -40,7 +40,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { ComposerTranscriptSurfacesApi } from './qaap-composer-host-contracts';
-import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
+import type { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
 import type { ChatSessionActivityApi } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
 import type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
@@ -120,7 +120,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     /** Quick input for the commit split-button branch-name prompt (and message fallback). */
     quickInputService?: QuickInputService;
     /** Generates commit messages automatically from the diff (Cursor-agents style). */
-    commitMessageAi?: import('./qaap-commit-message-ai').QaapCommitMessageAi;
+    commitMessageAi?: import('@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai').QaapCommitMessageAi;
     /** Rewrites composer drafts via the selected language model. */
     composerPromptImprover?: import('./qaap-composer-prompt-improver').QaapComposerPromptImprover;
     /** Command registry for opening the Create-PR flow after a commit. */

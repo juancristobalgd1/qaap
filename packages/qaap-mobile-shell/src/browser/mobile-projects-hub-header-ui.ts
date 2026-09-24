@@ -16,7 +16,7 @@ import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-exe
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import { layoutHeaderProjectClusterContents } from './mobile-projects-panel-chrome-ui';
-import type { MobileProjectsPullRequestDetailTab } from './mobile-projects-pull-request-detail-ui';
+import type { MobileProjectsPullRequestDetailTab } from '@theia/qaap-diff-review/lib/browser/mobile-projects-pull-request-detail-ui';
 
 export interface MobileProjectsHubHeaderHost {
     sessionsMenuBtn: HTMLButtonElement;

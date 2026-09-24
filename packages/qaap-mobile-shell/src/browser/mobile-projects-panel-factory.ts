@@ -42,8 +42,8 @@ import type { MobileProjectsPanel, MobileProjectsPanelDelegate, MobileProjectsPa
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
-import { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
+import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';

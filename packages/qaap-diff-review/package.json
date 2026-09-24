@@ -1,0 +1,49 @@
+{
+  "name": "@theia/qaap-diff-review",
+  "version": "1.73.0",
+  "description": "Qaap — diff review: review widget, pull-request panel, git-review endpoint, commit helpers (product layer)",
+  "dependencies": {
+    "@theia/ai-core": "1.73.0",
+    "@theia/core": "1.73.0",
+    "@theia/filesystem": "1.73.0",
+    "@theia/qaap-adapters": "1.73.0",
+    "@theia/qaap-mobile-mechanics": "1.73.0",
+    "@theia/qaap-shared-core": "1.73.0",
+    "@theia/qaap-transcript-overlay": "1.73.0",
+    "@theia/scm": "1.73.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "theiaExtensions": [
+    {
+      "backend": "lib/node/qaap-diff-review-backend-module"
+    }
+  ],
+  "keywords": [
+    "theia-extension"
+  ],
+  "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juancristobalgd1/theia.git"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "theiaext build",
+    "clean": "theiaext clean",
+    "compile": "theiaext compile",
+    "lint": "theiaext lint",
+    "test": "nyc mocha --config ../../configs/mocharc.yml --require ./test-support/ensure-jsdom.js \"./lib/**/*.*spec.js\"",
+    "watch": "theiaext watch"
+  },
+  "devDependencies": {
+    "@theia/ext-scripts": "1.73.0"
+  },
+  "nyc": {
+    "extends": "../../configs/nyc.json"
+  }
+}

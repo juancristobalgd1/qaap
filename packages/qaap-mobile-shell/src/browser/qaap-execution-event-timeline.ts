@@ -145,9 +145,9 @@ import { createMobileExecutionEventElement } from './mobile-execution-event-rend
 export { MOBILE_CLOSING_ERROR_CARD_CLASS, createMobileClosingErrorCardElement } from './mobile-closing-error-card';
 
 // ─── Diff Summary (extracted to mobile-diff-summary-renderer.ts) ─────────────
-export type { MobileDiffFileEntry } from './mobile-diff-summary-renderer';
+export type { MobileDiffFileEntry } from '@theia/qaap-diff-review/lib/browser/mobile-diff-summary-renderer';
 export {
     resolveMobileDiffFileLanguageBadge,
     createMobileDiffSummaryElement,
     createMobileLineDiffSummaryElement
-} from './mobile-diff-summary-renderer';
+} from '@theia/qaap-diff-review/lib/browser/mobile-diff-summary-renderer';

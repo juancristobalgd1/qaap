@@ -5,7 +5,7 @@
 
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import type { QaapDiffProjectTab } from './mobile-projects-diff-hub-ui';
+import type { QaapDiffProjectTab } from '@theia/qaap-diff-review/lib/browser/mobile-projects-diff-hub-ui';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';

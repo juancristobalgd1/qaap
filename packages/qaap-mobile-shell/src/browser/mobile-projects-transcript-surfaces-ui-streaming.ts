@@ -2,7 +2,7 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
+import { invalidateVerifyWorkspaceSnapshots } from '@theia/qaap-diff-review/lib/common/qaap-verify-commit-readiness';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import {
     mountEmbeddedAgentPreviewChrome,

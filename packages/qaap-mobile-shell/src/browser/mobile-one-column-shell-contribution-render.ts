@@ -37,7 +37,7 @@ import {
 } from './mobile-shell-hub-navigation-controller';
 import {
     MobileShellPullRequestPanelController,
-} from './mobile-shell-pull-request-panel-controller';
+} from '@theia/qaap-diff-review/lib/browser/mobile-shell-pull-request-panel-controller';
 import {
     MobileShellTranscriptChromeController,
 } from './mobile-shell-transcript-chrome-controller';

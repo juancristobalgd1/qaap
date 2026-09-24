@@ -38,11 +38,11 @@ import {
     MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
-import { QaapCommitMessageAi } from './qaap-commit-message-ai';
+import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
-import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
+import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from '@theia/qaap-diff-review/lib/browser/qaap-work-hub-diff-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
@@ -111,7 +111,7 @@ import {
 import {
     MobileShellPullRequestPanelController,
     type MobileShellPullRequestPanelHost,
-} from './mobile-shell-pull-request-panel-controller';
+} from '@theia/qaap-diff-review/lib/browser/mobile-shell-pull-request-panel-controller';
 import {
     MobileShellTranscriptChromeController,
     type MobileShellTranscriptChromeHost,

@@ -67,6 +67,9 @@
       "path": "../qaap-ai-openrouter"
     },
     {
+      "path": "../qaap-diff-review"
+    },
+    {
       "path": "../qaap-element-inspector"
     },
     {

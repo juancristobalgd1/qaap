@@ -23,7 +23,7 @@ import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/br
 import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import type { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
+import type { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
@@ -154,7 +154,7 @@ export interface MobileProjectsPanelOptions {
     /** Monaco quick input — Work Hub search opens as a top overlay instead of an inline field. */
     quickInputService?: QuickInputService;
     /** Generates commit messages automatically from the diff for the commit split-button. */
-    commitMessageAi?: import('./qaap-commit-message-ai').QaapCommitMessageAi;
+    commitMessageAi?: import('@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai').QaapCommitMessageAi;
     /** Rewrites composer drafts via the selected language model. */
     composerPromptImprover?: import('./qaap-composer-prompt-improver').QaapComposerPromptImprover;
     /** Opens AI / Settings preferences inside the Work Hub instead of the IDE main area. */

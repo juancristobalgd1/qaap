@@ -2,8 +2,8 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 // Extracted from mobile-projects-transcript-sticky-composer-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { evaluateVerifyCommitReadiness, invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
-import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
+import { evaluateVerifyCommitReadiness, invalidateVerifyWorkspaceSnapshots } from '@theia/qaap-diff-review/lib/common/qaap-verify-commit-readiness';
+import { confirmVerifyCommitReadiness } from '@theia/qaap-diff-review/lib/browser/qaap-verify-commit-confirm';
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import {
@@ -11,7 +11,7 @@ import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
-import { formatCommitFeedback } from '../common/qaap-commit-feedback';
+import { formatCommitFeedback } from '@theia/qaap-diff-review/lib/common/qaap-commit-feedback';
 import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';

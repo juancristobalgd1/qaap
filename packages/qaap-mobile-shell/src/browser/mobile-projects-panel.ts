@@ -91,7 +91,7 @@ import { MobileProjectsHubCatalogUi, type MobileProjectsHubCatalogHost } from '.
 import { MobileProjectsProjectActionsUi, type MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
 import { MobileProjectsInboxPrUi, type MobileProjectsInboxPrHost } from './mobile-projects-inbox-pr-ui';
 import { MobileProjectsPullRequestsSidebarUi, type MobileProjectsPullRequestsSidebarHost } from './mobile-projects-pull-requests-sidebar-ui';
-import { MobileProjectsPullRequestDetailUi, type MobileProjectsPullRequestDetailHost } from './mobile-projects-pull-request-detail-ui';
+import { MobileProjectsPullRequestDetailUi, type MobileProjectsPullRequestDetailHost } from '@theia/qaap-diff-review/lib/browser/mobile-projects-pull-request-detail-ui';
 import { MobileProjectsCardMenuUi, type MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
 import {
     MobileProjectsProjectRowsUi,
@@ -124,7 +124,7 @@ import {
 import {
     MobileProjectsDiffHubUi,
     type MobileProjectsDiffHubHost,
-} from './mobile-projects-diff-hub-ui';
+} from '@theia/qaap-diff-review/lib/browser/mobile-projects-diff-hub-ui';
 import {
     MobileProjectsHomeHubUi,
     type MobileProjectsHomeHubHost,
