@@ -1,4 +1,4 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-projects-transcript-messages-tool-ui-context';
 // Extracted from mobile-projects-transcript-messages-tool-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
@@ -8,54 +8,19 @@ import {
     type QaapAgentAuthLoginChallenge,
 } from '../common/qaap-agent-auth-login';
 import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage, summarizeCollapsedAgentFailure } from '../common/qaap-agent-failure-message';
-import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
-import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
+import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
 import {
     registerDeferredTranscriptMarkdown,
-    registerDeferredTranscriptToolBody,
-    type TranscriptDeferredToolBodyHydrate,
 } from './qaap-transcript-row-defer';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import type { QaapTranscriptTodoItem } from '../common/qaap-agent-transcript-segments';
-import type {
-    TranscriptActivityEditExpandEntry,
-    TranscriptActivityReadExpandEntry,
-    TranscriptActivityTerminalExpandEntry,
-} from '../common/qaap-transcript-activity-expand-core';
-import type { TranscriptSearchMatch } from '../common/qaap-transcript-search-matches-core';
-import type { TranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-error-display';
-import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
-import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { tryBuildTranscriptRichToolBody } from './qaap-transcript-rich-content-ui';
+import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {
     isTranscriptWebSearchTool,
     resolveTranscriptWebSearchPayload,
 } from '../common/qaap-transcript-web-search-core';
 import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
-import {
-    createLobeToolTitle,
-    createLobeTraceStatusIndicator,
-    parseLobeToolTitleParamSummary,
-    type LobeTraceStatus,
-    type LobeToolTitleParam,
-} from './mobile-projects-transcript-lobehub-ui';
-import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
-import {
-    transcriptToolIconClass as transcriptToolIconClassHelper,
-    transcriptToolVerb as transcriptToolVerbHelper,
-    transcriptShellStateAriaLabel as transcriptShellStateAriaLabelHelper,
-    resolveLobeTraceStatus as resolveLobeTraceStatusHelper,
-    parseTranscriptShellExitCode as parseTranscriptShellExitCodeHelper,
-    isTranscriptActivityTerminalEntryFailed as isTranscriptActivityTerminalEntryFailedHelper,
-    resolveTranscriptActivityTerminalDefaultOpenIndex as resolveTranscriptActivityTerminalDefaultOpenIndexHelper,
-    transcriptFileIconClass as transcriptFileIconClassHelper,
-} from './mobile-projects-transcript-messages-tool-helpers';
 
-export function renderTranscriptRichContentExtracted(ctx: any, host: HTMLElement,
+export function renderTranscriptRichContentExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, host: HTMLElement,
         content: string,
         options?: { readonly streaming?: boolean; readonly defer?: boolean; readonly sync?: boolean },): void {
         const clean = ctx.contentUi.cleanTranscriptDisplayText(content).trim();
@@ -87,7 +52,7 @@ export function renderTranscriptRichContentExtracted(ctx: any, host: HTMLElement
         ctx.contentUi.renderTranscriptMarkdown(host, clean, { defer: options?.defer });
 }
 
-export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: string,
+export function createTranscriptAgentFailureDialogExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, error: string,
         technicalContent?: string,
         options?: {
             readonly failedToolName?: string;
@@ -98,13 +63,8 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
             readonly onOpenAgentSignIn?: () => void | Promise<void>;
             readonly agentLabel?: string;
             readonly agentId?: string;
-            readonly agentMessage?: {
-                readonly role?: string;
-                readonly content?: string;
-                readonly error?: string;
-                readonly segments?: unknown;
-                readonly traceEvents?: unknown;
-            };
+            readonly onOpenAiFeaturesSettings?: () => void | Promise<void>;
+            readonly agentMessage?: Pick<QaapAgentMessageDTO, 'role' | 'content' | 'error' | 'segments' | 'traceEvents'>;
         },): HTMLElement {
         const persisted = formatStoredAgentFailureMessage(error);
         const resolved = resolveAgentTurnFailureMessage(technicalContent, {
@@ -257,7 +217,7 @@ export function createTranscriptAgentFailureDialogExtracted(ctx: any, error: str
         return details;
 }
 
-export function createTranscriptAgentAuthLoginCardExtracted(ctx: any, challenge: QaapAgentAuthLoginChallenge,
+export function createTranscriptAgentAuthLoginCardExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, challenge: QaapAgentAuthLoginChallenge,
         options?: {
             readonly onOpenAuthUrl?: (url: string) => void;
             readonly onOpenAgentSignIn?: () => void | Promise<void>;
@@ -406,7 +366,7 @@ export function createTranscriptAgentAuthLoginCardExtracted(ctx: any, challenge:
         return card;
 }
 
-export function createTranscriptTextTerminalWindowExtracted(ctx: any, content: string): HTMLElement {
+export function createTranscriptTextTerminalWindowExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, content: string): HTMLElement {
         const details = document.createElement('details');
         const failed = isTranscriptErrorOutput(content);
         details.className = `theia-mobile-agent-shell-window ${failed ? 'theia-mod-failed' : 'theia-mod-done'} theia-mod-text-output`;
@@ -430,7 +390,7 @@ export function createTranscriptTextTerminalWindowExtracted(ctx: any, content: s
         return details;
 }
 
-export function createTranscriptSegmentDetailsExtracted(ctx: any, segment: QaapAgentMessageSegmentDTO,
+export function createTranscriptSegmentDetailsExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, segment: QaapAgentMessageSegmentDTO,
         options?: { readonly defer?: boolean; readonly streaming?: boolean },): HTMLElement {
         if (segment.type === 'thinking') {
             const isStreaming = !!options?.streaming;
@@ -498,7 +458,7 @@ export function createTranscriptSegmentDetailsExtracted(ctx: any, segment: QaapA
         return block;
 }
 
-export function createTranscriptClampedPreExtracted(ctx: any, text: string, className: string): HTMLElement {
+export function createTranscriptClampedPreExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, text: string, className: string): HTMLElement {
         const pre = document.createElement('pre');
         pre.className = className;
         pre.textContent = text;

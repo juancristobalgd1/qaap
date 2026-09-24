@@ -1,40 +1,8 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-projects-transcript-messages-tool-ui-context';
 // Extracted from mobile-projects-transcript-messages-tool-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import {
-    extractAgentAuthLoginChallenge,
-    type QaapAgentAuthLoginChallenge,
-} from '../common/qaap-agent-auth-login';
-import { detectAgentFailureKind, formatStoredAgentFailureMessage } from '../common/qaap-agent-failure-message';
-import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
-import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
-import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
-import {
-    registerDeferredTranscriptMarkdown,
-    registerDeferredTranscriptToolBody,
-    type TranscriptDeferredToolBodyHydrate,
-} from './qaap-transcript-row-defer';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import type { QaapTranscriptTodoItem } from '../common/qaap-agent-transcript-segments';
-import type {
-    TranscriptActivityEditExpandEntry,
-    TranscriptActivityReadExpandEntry,
-    TranscriptActivityTerminalExpandEntry,
-} from '../common/qaap-transcript-activity-expand-core';
-import type { TranscriptSearchMatch } from '../common/qaap-transcript-search-matches-core';
-import type { TranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-error-display';
-import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
-import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { tryBuildTranscriptRichToolBody } from './qaap-transcript-rich-content-ui';
-import {
-    isTranscriptWebSearchTool,
-    resolveTranscriptWebSearchPayload,
-} from '../common/qaap-transcript-web-search-core';
-import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
 import {
     createLobeToolTitle,
     createLobeTraceStatusIndicator,
@@ -42,21 +10,13 @@ import {
     type LobeTraceStatus,
     type LobeToolTitleParam,
 } from './mobile-projects-transcript-lobehub-ui';
-import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
 import {
-    transcriptToolIconClass as transcriptToolIconClassHelper,
-    transcriptToolVerb as transcriptToolVerbHelper,
-    transcriptShellStateAriaLabel as transcriptShellStateAriaLabelHelper,
     resolveLobeTraceStatus as resolveLobeTraceStatusHelper,
-    parseTranscriptShellExitCode as parseTranscriptShellExitCodeHelper,
-    isTranscriptActivityTerminalEntryFailed as isTranscriptActivityTerminalEntryFailedHelper,
-    resolveTranscriptActivityTerminalDefaultOpenIndex as resolveTranscriptActivityTerminalDefaultOpenIndexHelper,
-    transcriptFileIconClass as transcriptFileIconClassHelper,
 } from './mobile-projects-transcript-messages-tool-helpers';
-import { syncTranscriptToolExecutionTime } from './mobile-projects-transcript-messages-tool-ui';
+import { syncTranscriptToolExecutionTime, TRANSCRIPT_TOOL_RESULT_STREAM_CLASS } from './mobile-projects-transcript-messages-tool-ui';
 import { peekPreferDesktopIde } from './mobile-projects-open';
 
-export function patchTranscriptToolResultStreamBodyExtracted(ctx: any, pillBody: HTMLElement,
+export function patchTranscriptToolResultStreamBodyExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, pillBody: HTMLElement,
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,): boolean {
         const streamHost = pillBody.querySelector<HTMLElement>(`.${TRANSCRIPT_TOOL_RESULT_STREAM_CLASS}`);
         if (!streamHost) {
@@ -66,7 +26,7 @@ export function patchTranscriptToolResultStreamBodyExtracted(ctx: any, pillBody:
         return true;
 }
 
-export function canPatchTranscriptToolResultStreamExtracted(ctx: any, previous: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
+export function canPatchTranscriptToolResultStreamExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, previous: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,
         next: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,): boolean {
         if (next.finished || previous.finished) {
             return false;
@@ -85,7 +45,7 @@ export function canPatchTranscriptToolResultStreamExtracted(ctx: any, previous: 
             || (incomingResult.startsWith(previousResult) && incomingResult.length >= previousResult.length);
 }
 
-export function handleTranscriptFileOpenExtracted(ctx: any, filePath: string): void {
+export function handleTranscriptFileOpenExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, filePath: string): void {
         if (!ctx.host.openTranscriptFile) {
             return;
         }
@@ -97,7 +57,7 @@ export function handleTranscriptFileOpenExtracted(ctx: any, filePath: string): v
         });
 }
 
-export function handleTranscriptReviewFileOpenExtracted(ctx: any, filePath: string): void {
+export function handleTranscriptReviewFileOpenExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, filePath: string): void {
         if (!ctx.host.openTranscriptReviewFile) {
             return;
         }
@@ -111,7 +71,7 @@ export function handleTranscriptReviewFileOpenExtracted(ctx: any, filePath: stri
         });
 }
 
-export function attachTranscriptReviewFileOpenActionExtracted(ctx: any, row: HTMLElement, filePath: string): void {
+export function attachTranscriptReviewFileOpenActionExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, row: HTMLElement, filePath: string): void {
         if (!ctx.host.openTranscriptReviewFile) {
             return;
         }
@@ -134,7 +94,7 @@ export function attachTranscriptReviewFileOpenActionExtracted(ctx: any, row: HTM
         });
 }
 
-export function attachTranscriptFileOpenActionExtracted(ctx: any, head: HTMLElement, filePath: string): void {
+export function attachTranscriptFileOpenActionExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, head: HTMLElement, filePath: string): void {
         if (!ctx.host.openTranscriptFile) {
             return;
         }
@@ -149,7 +109,7 @@ export function attachTranscriptFileOpenActionExtracted(ctx: any, head: HTMLElem
         });
 }
 
-export function createTranscriptToolHeadExtracted(ctx: any, options: {
+export function createTranscriptToolHeadExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, options: {
         args?: string;
         kind: string;
         toolName: string;
@@ -233,7 +193,7 @@ export function createTranscriptToolHeadExtracted(ctx: any, options: {
         return head;
 }
 
-export function createTranscriptTraceStatusIndicatorExtracted(ctx: any, options: {
+export function createTranscriptTraceStatusIndicatorExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, options: {
         finished: boolean;
         failed: boolean;
         kind?: string;
@@ -241,14 +201,14 @@ export function createTranscriptTraceStatusIndicatorExtracted(ctx: any, options:
         return createLobeTraceStatusIndicator(ctx.resolveLobeTraceStatus(options), options.kind);
 }
 
-export function resolveLobeTraceStatusExtracted(ctx: any, options: {
+export function resolveLobeTraceStatusExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, options: {
         readonly finished: boolean;
         readonly failed: boolean;
     }): LobeTraceStatus {
         return resolveLobeTraceStatusHelper(options);
 }
 
-export function resolveLobeToolTitleOptionsExtracted(ctx: any, options: {
+export function resolveLobeToolTitleOptionsExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, options: {
         readonly args?: string;
         readonly finished: boolean;
         readonly fullPath?: string;
@@ -276,7 +236,7 @@ export function resolveLobeToolTitleOptionsExtracted(ctx: any, options: {
         };
 }
 
-export function collectTranscriptShellBodyCopyTextExtracted(ctx: any, body: HTMLElement): string {
+export function collectTranscriptShellBodyCopyTextExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, body: HTMLElement): string {
         const parts: string[] = [];
         const command = body.querySelector('.theia-mobile-agent-shell-command code')?.textContent?.trim();
         if (command) {
@@ -295,7 +255,7 @@ export function collectTranscriptShellBodyCopyTextExtracted(ctx: any, body: HTML
         return body.textContent?.trim() ?? '';
 }
 
-export function createTranscriptToolPillSummaryExtracted(ctx: any, options: {
+export function createTranscriptToolPillSummaryExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, options: {
         kind: string;
         verb: string;
         label: string;
@@ -335,7 +295,7 @@ export function createTranscriptToolPillSummaryExtracted(ctx: any, options: {
         return summary;
 }
 
-export function createTranscriptMcpBadgeExtracted(ctx: any, server?: string): HTMLElement {
+export function createTranscriptMcpBadgeExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, server?: string): HTMLElement {
         const badge = document.createElement('span');
         badge.className = 'theia-mobile-agent-tool-pill-badge theia-mod-mcp';
         badge.textContent = server ? `MCP · ${server}` : 'MCP';
@@ -346,7 +306,7 @@ export function createTranscriptMcpBadgeExtracted(ctx: any, server?: string): HT
         return badge;
 }
 
-export function syncTranscriptToolPillSummaryExtracted(ctx: any, summary: HTMLElement,
+export function syncTranscriptToolPillSummaryExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, summary: HTMLElement,
         options: {
             kind?: string;
             verb: string;
@@ -393,12 +353,12 @@ export function syncTranscriptToolPillSummaryExtracted(ctx: any, summary: HTMLEl
         }
 }
 
-export function appendTranscriptToolPillSummaryTailExtracted(ctx: any, summary: HTMLElement,
+export function appendTranscriptToolPillSummaryTailExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, summary: HTMLElement,
         options: { finished: boolean; failed: boolean; copyFrom?: () => string },): void {
         ctx.appendTranscriptShellSummaryTail(summary, { ...options, showState: false });
 }
 
-export function appendTranscriptCardCopyTailExtracted(ctx: any, summary: HTMLElement, copyFrom: () => string): void {
+export function appendTranscriptCardCopyTailExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, summary: HTMLElement, copyFrom: () => string): void {
         ctx.appendTranscriptShellSummaryTail(summary, {
             finished: true,
             failed: false,
@@ -407,7 +367,7 @@ export function appendTranscriptCardCopyTailExtracted(ctx: any, summary: HTMLEle
         });
 }
 
-export function createTranscriptShellWindowHeadExtracted(ctx: any, options: {
+export function createTranscriptShellWindowHeadExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, options: {
         title: string;
         finished: boolean;
         failed: boolean;

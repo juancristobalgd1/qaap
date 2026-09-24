@@ -1,61 +1,14 @@
-// @ts-nocheck
+import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-projects-transcript-messages-tool-ui-context';
 // Extracted from mobile-projects-transcript-messages-tool-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import {
-    extractAgentAuthLoginChallenge,
-    type QaapAgentAuthLoginChallenge,
-} from '../common/qaap-agent-auth-login';
-import { detectAgentFailureKind, formatStoredAgentFailureMessage } from '../common/qaap-agent-failure-message';
-import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
-import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
-import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
-import {
-    registerDeferredTranscriptMarkdown,
-    registerDeferredTranscriptToolBody,
-    type TranscriptDeferredToolBodyHydrate,
-} from './qaap-transcript-row-defer';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import type { QaapTranscriptTodoItem } from '../common/qaap-agent-transcript-segments';
 import type {
     TranscriptActivityEditExpandEntry,
-    TranscriptActivityReadExpandEntry,
-    TranscriptActivityTerminalExpandEntry,
 } from '../common/qaap-transcript-activity-expand-core';
 import type { TranscriptSearchMatch } from '../common/qaap-transcript-search-matches-core';
-import type { TranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-error-display';
-import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
-import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
-import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { tryBuildTranscriptRichToolBody } from './qaap-transcript-rich-content-ui';
-import {
-    isTranscriptWebSearchTool,
-    resolveTranscriptWebSearchPayload,
-} from '../common/qaap-transcript-web-search-core';
-import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
-import {
-    createLobeToolTitle,
-    createLobeTraceStatusIndicator,
-    parseLobeToolTitleParamSummary,
-    type LobeTraceStatus,
-    type LobeToolTitleParam,
-} from './mobile-projects-transcript-lobehub-ui';
-import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
-import {
-    transcriptToolIconClass as transcriptToolIconClassHelper,
-    transcriptToolVerb as transcriptToolVerbHelper,
-    transcriptShellStateAriaLabel as transcriptShellStateAriaLabelHelper,
-    resolveLobeTraceStatus as resolveLobeTraceStatusHelper,
-    parseTranscriptShellExitCode as parseTranscriptShellExitCodeHelper,
-    isTranscriptActivityTerminalEntryFailed as isTranscriptActivityTerminalEntryFailedHelper,
-    resolveTranscriptActivityTerminalDefaultOpenIndex as resolveTranscriptActivityTerminalDefaultOpenIndexHelper,
-    transcriptFileIconClass as transcriptFileIconClassHelper,
-} from './mobile-projects-transcript-messages-tool-helpers';
 import { TRANSCRIPT_EXPAND_STICKY_READ_MIN } from './mobile-projects-transcript-messages-tool-ui';
 
-export function createTranscriptActivityEditExpandPanelExtracted(ctx: any, entries: readonly TranscriptActivityEditExpandEntry[],
+export function createTranscriptActivityEditExpandPanelExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, entries: readonly TranscriptActivityEditExpandEntry[],
         options?: { readonly single?: boolean },): HTMLElement {
         const panel = document.createElement('div');
         const showHead = !options?.single && entries.length >= 2;
@@ -116,7 +69,7 @@ export function createTranscriptActivityEditExpandPanelExtracted(ctx: any, entri
         return panel;
 }
 
-export function createTranscriptActivityEditExpandRowExtracted(ctx: any, entry: TranscriptActivityEditExpandEntry): HTMLElement {
+export function createTranscriptActivityEditExpandRowExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, entry: TranscriptActivityEditExpandEntry): HTMLElement {
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'theia-mobile-agent-activity-edit-row';
@@ -170,7 +123,7 @@ export function createTranscriptActivityEditExpandRowExtracted(ctx: any, entry: 
         return row;
 }
 
-export function createTranscriptActivityRunningBadgeExtracted(ctx: any): HTMLElement {
+export function createTranscriptActivityRunningBadgeExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext): HTMLElement {
         const badge = document.createElement('span');
         badge.className = 'theia-mobile-agent-activity-running-badge';
         const dot = document.createElement('span');
@@ -183,7 +136,7 @@ export function createTranscriptActivityRunningBadgeExtracted(ctx: any): HTMLEle
         return badge;
 }
 
-export function createTranscriptActivitySearchMatchesPanelExtracted(ctx: any, matches: readonly TranscriptSearchMatch[]): HTMLElement {
+export function createTranscriptActivitySearchMatchesPanelExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, matches: readonly TranscriptSearchMatch[]): HTMLElement {
         const panel = document.createElement('div');
         panel.className = matches.length >= 8
             ? 'theia-mobile-agent-activity-search-panel theia-mobile-agent-premium-card'

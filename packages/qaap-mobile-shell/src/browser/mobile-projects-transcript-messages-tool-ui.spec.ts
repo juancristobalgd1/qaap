@@ -11,7 +11,17 @@ import { expect } from 'chai';
 import {
     formatTranscriptExecutionTime,
     syncTranscriptToolExecutionTime,
+    TRANSCRIPT_TOOL_RESULT_STREAM_CLASS,
+    TRANSCRIPT_TOOL_SPECULATIVE_CLASS,
 } from './mobile-projects-transcript-messages-tool-ui';
+import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-projects-transcript-messages-tool-ui-context';
+import {
+    createTranscriptToolResultStreamBodyExtracted,
+    createTranscriptToolSpeculativePlaceholderExtracted,
+    ensureTranscriptToolSpeculativePlaceholderExtracted,
+} from './mobile-projects-transcript-messages-tool-ui-streaming';
+import { patchTranscriptToolResultStreamBodyExtracted } from './mobile-projects-transcript-messages-tool-ui-timeline';
 
 describe('mobile-projects-transcript-messages-tool-ui', () => {
 
@@ -135,6 +145,33 @@ describe('mobile-projects-transcript-messages-tool-ui', () => {
             expect(chip2?.textContent).to.match(/^\(5\.0s\)$/);
             syncTranscriptToolExecutionTime(parent, chevron, earlierStart, false);
             done();
+        });
+    });
+
+    // These helpers referenced the class-name constants without importing them, so the first
+    // streaming tool pill threw a ReferenceError instead of rendering its placeholder / stream body.
+    describe('tool pill streaming bodies', () => {
+        type ToolSegment = Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>;
+        const toolSegment = (patch: Partial<ToolSegment>): ToolSegment => ({ type: 'tool', name: 'Bash', ...patch }) as ToolSegment;
+        const ctx = {
+            createTranscriptToolSpeculativePlaceholder: () => createTranscriptToolSpeculativePlaceholderExtracted(ctx),
+            resolversUi: { formatTranscriptToolResult: (text: string) => text },
+        } as unknown as MobileProjectsTranscriptMessagesToolUiContext;
+
+        it('adds and removes the speculative placeholder', () => {
+            const body = document.createElement('div');
+            ensureTranscriptToolSpeculativePlaceholderExtracted(ctx, body, toolSegment({ finished: false }));
+            expect(body.querySelector('.' + TRANSCRIPT_TOOL_SPECULATIVE_CLASS)).to.not.equal(null);
+            ensureTranscriptToolSpeculativePlaceholderExtracted(ctx, body, toolSegment({ finished: true }));
+            expect(body.querySelector('.' + TRANSCRIPT_TOOL_SPECULATIVE_CLASS)).to.equal(null);
+        });
+
+        it('creates and patches the result stream body', () => {
+            const body = document.createElement('div');
+            body.append(createTranscriptToolResultStreamBodyExtracted(ctx, 'one'));
+            expect(body.querySelector('.' + TRANSCRIPT_TOOL_RESULT_STREAM_CLASS)?.textContent).to.equal('one');
+            expect(patchTranscriptToolResultStreamBodyExtracted(ctx, body, toolSegment({ result: 'one two' }))).to.equal(true);
+            expect(body.querySelector('.' + TRANSCRIPT_TOOL_RESULT_STREAM_CLASS)?.textContent).to.equal('one two');
         });
     });
 });

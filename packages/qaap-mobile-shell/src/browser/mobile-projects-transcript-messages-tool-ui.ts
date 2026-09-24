@@ -2,24 +2,11 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
-import { nls } from '@theia/core/lib/common/nls';
 import {
-    extractAgentAuthLoginChallenge,
     type QaapAgentAuthLoginChallenge,
 } from '../common/qaap-agent-auth-login';
-import { detectAgentFailureKind, formatStoredAgentFailureMessage } from '../common/qaap-agent-failure-message';
-import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
-import { isTranscriptTodoTool, parseTranscriptTodoChecklist, shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
-import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
 
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
-import {
-    registerDeferredTranscriptMarkdown,
-    registerDeferredTranscriptToolBody,
-    type TranscriptDeferredToolBodyHydrate,
-} from './qaap-transcript-row-defer';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapTranscriptTodoItem } from '../common/qaap-agent-transcript-segments';
 import type {
@@ -32,29 +19,17 @@ import type { TranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { tryBuildTranscriptRichToolBody } from './qaap-transcript-rich-content-ui';
-import {
-    isTranscriptWebSearchTool,
-    resolveTranscriptWebSearchPayload,
-} from '../common/qaap-transcript-web-search-core';
-import { createTranscriptWebSearchCard } from './qaap-transcript-web-search-ui';
 import {
     createLobeToolTitle,
-    createLobeTraceStatusIndicator,
-    parseLobeToolTitleParamSummary,
     type LobeTraceStatus,
-    type LobeToolTitleParam,
 } from './mobile-projects-transcript-lobehub-ui';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
 import {
     transcriptToolIconClass as transcriptToolIconClassHelper,
     transcriptToolVerb as transcriptToolVerbHelper,
     transcriptShellStateAriaLabel as transcriptShellStateAriaLabelHelper,
-    resolveLobeTraceStatus as resolveLobeTraceStatusHelper,
     parseTranscriptShellExitCode as parseTranscriptShellExitCodeHelper,
     isTranscriptActivityTerminalEntryFailed as isTranscriptActivityTerminalEntryFailedHelper,
-    resolveTranscriptActivityTerminalDefaultOpenIndex as resolveTranscriptActivityTerminalDefaultOpenIndexHelper,
     transcriptFileIconClass as transcriptFileIconClassHelper,
 } from './mobile-projects-transcript-messages-tool-helpers';
 import { appendTranscriptShellSummaryTailExtracted, copyTranscriptShellTextExtracted, createTranscriptActivityReadExpandCardExtracted, createTranscriptActivityReadExpandPanelExtracted, createTranscriptActivityTerminalExpandCardExtracted, createTranscriptActivityTerminalExpandPanelExtracted, createTranscriptShellDetailsExtracted, flashTranscriptShellCopyTooltipExtracted, resolveTranscriptActivityTerminalDefaultOpenIndexExtracted } from './mobile-projects-transcript-messages-tool-ui-activity';
@@ -135,9 +110,12 @@ export function syncTranscriptToolExecutionTime(
 
 export class MobileProjectsTranscriptMessagesToolUi {
     constructor(
-        protected readonly host: MobileProjectsTranscriptMessagesHost,
-        protected readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
-        protected readonly resolversUi: MobileProjectsTranscriptMessagesResolversUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+        public readonly host: MobileProjectsTranscriptMessagesHost,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+        public readonly contentUi: MobileProjectsTranscriptMessagesContentUi,
+        /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+        public readonly resolversUi: MobileProjectsTranscriptMessagesResolversUi,
     ) { }
 
     renderTranscriptRichContent(host: HTMLElement, content: string, options?: { readonly streaming?: boolean; readonly defer?: boolean; readonly sync?: boolean },): void {
@@ -260,11 +238,13 @@ export class MobileProjectsTranscriptMessagesToolUi {
         return createTranscriptTraceStatusIndicatorExtracted(this, options);
     }
 
-    protected resolveLobeTraceStatus(options: { readonly finished: boolean; readonly failed: boolean; }): LobeTraceStatus {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+    public resolveLobeTraceStatus(options: { readonly finished: boolean; readonly failed: boolean; }): LobeTraceStatus {
         return resolveLobeTraceStatusExtracted(this, options);
     }
 
-    protected resolveLobeToolTitleOptions(options: { readonly args?: string; readonly finished: boolean; readonly fullPath?: string; readonly kind: string; readonly target?: string; readonly toolName: string; }): Parameters<typeof createLobeToolTitle>[0] {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+    public resolveLobeToolTitleOptions(options: { readonly args?: string; readonly finished: boolean; readonly fullPath?: string; readonly kind: string; readonly target?: string; readonly toolName: string; }): Parameters<typeof createLobeToolTitle>[0] {
         return resolveLobeToolTitleOptionsExtracted(this, options);
     }
 
@@ -320,11 +300,13 @@ export class MobileProjectsTranscriptMessagesToolUi {
         return createTranscriptActivityTerminalExpandPanelExtracted(this, entries, options);
     }
 
-    protected isTranscriptActivityTerminalEntryFailed(entry: TranscriptActivityTerminalExpandEntry): boolean {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+    public isTranscriptActivityTerminalEntryFailed(entry: TranscriptActivityTerminalExpandEntry): boolean {
         return isTranscriptActivityTerminalEntryFailedHelper(entry);
     }
 
-    protected resolveTranscriptActivityTerminalDefaultOpenIndex(entries: readonly TranscriptActivityTerminalExpandEntry[],): number {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+    public resolveTranscriptActivityTerminalDefaultOpenIndex(entries: readonly TranscriptActivityTerminalExpandEntry[],): number {
         return resolveTranscriptActivityTerminalDefaultOpenIndexExtracted(this, entries);
     }
 
@@ -356,7 +338,8 @@ export class MobileProjectsTranscriptMessagesToolUi {
         return createTranscriptActivitySearchMatchesPanelExtracted(this, matches);
     }
 
-    protected transcriptFileIconClass(path: string): string {
+    /** @internal Used by the extracted mobile-projects-transcript-messages-tool-ui-* modules. */
+    public transcriptFileIconClass(path: string): string {
         return transcriptFileIconClassHelper(path);
     }
 }
