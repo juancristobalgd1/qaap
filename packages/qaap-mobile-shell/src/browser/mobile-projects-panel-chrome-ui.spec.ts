@@ -13,7 +13,7 @@ import {
     layoutHeaderProjectClusterContents,
     type MobileProjectsPanelChromeHost,
 } from './mobile-projects-panel-chrome-ui';
-import type { MobileViewToggleId } from './qaap-workbench-account-menu';
+import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 
 describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
 

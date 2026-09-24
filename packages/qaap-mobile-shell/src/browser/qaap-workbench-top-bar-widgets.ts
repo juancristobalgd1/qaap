@@ -18,15 +18,7 @@ import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaa
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
-import {
-    buildQaapAccountMenuEntries,
-    createQaapViewModeSwitch,
-    dismissQaapAccountMenu,
-    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-    toggleQaapAccountMenu,
-    type MobileViewToggleId,
-    type QaapAccountMenuEntry,
-} from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, createQaapViewModeSwitch, dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu, type QaapAccountMenuEntry } from './qaap-workbench-account-menu';
 import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
 import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
 import {
@@ -37,6 +29,7 @@ import { MobileProjectsService } from './mobile-projects-service';
 import { type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 
 const WORKBENCH_NAV_GO_BACK = 'textEditor.commands.go.back';
 const WORKBENCH_NAV_GO_FORWARD = 'textEditor.commands.go.forward';

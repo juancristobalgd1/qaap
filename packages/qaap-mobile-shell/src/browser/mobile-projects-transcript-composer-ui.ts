@@ -90,7 +90,7 @@ export interface MobileProjectsTranscriptComposerHost {
         defaultAgent?: string;
     }>;
     resolveConversationAgentLabel(summary: QaapAgentConversationSummaryDTO | undefined): string;
-    projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    projectRowsUi: import('./qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
 }
 
 /** Transcript sticky-composer agent/mode/approval sheets and backend agent list refresh. */

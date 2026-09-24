@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
+import type { QaapProjectChatSessionCreated } from './qaap-transcript-host-contracts';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import { GenericCapabilitySelections } from '@theia/ai-core';
@@ -76,11 +77,6 @@ export interface MobileProjectsBackgroundTaskHost {
     /** Roll back the pre-create idle optimistic paint when the create is rejected (e.g. 400 needs-project). */
     rollbackTranscriptOptimisticSubmit?(): void;
     syncWorkHubProjectSkillRoots(): void;
-}
-
-export interface QaapProjectChatSessionCreated {
-    readonly summary: QaapAgentConversationSummaryDTO;
-    readonly outbound: string;
 }
 
 export class MobileProjectsBackgroundTaskUi {

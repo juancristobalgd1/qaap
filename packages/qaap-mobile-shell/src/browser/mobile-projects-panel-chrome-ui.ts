@@ -14,11 +14,9 @@ import {
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileSnackbar } from './mobile-snackbar';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
-import {
-    createQaapViewModeSwitch,
-    type MobileViewToggleId,
-} from './qaap-workbench-account-menu';
+import { createQaapViewModeSwitch } from './qaap-workbench-account-menu';
 import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
+import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 /** Panel surface for DOM shell construction and sheet gestures. */
 export interface MobileProjectsPanelChromeHost {
     homeMode: boolean;

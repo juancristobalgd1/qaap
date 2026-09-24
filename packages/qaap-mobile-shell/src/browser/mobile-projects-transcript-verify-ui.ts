@@ -21,7 +21,7 @@ import {
 } from '../common/qaap-verify-commit-readiness';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
+import type { TranscriptExecutionSurfaceTabsApi } from './qaap-transcript-host-contracts';
 
 interface VerifyCheck {
     readonly label: string;
@@ -57,7 +57,7 @@ export interface MobileProjectsTranscriptVerifyHost {
     verifyRunning: boolean;
     verifyResults: VerifyCheckResult[];
     resolveVerifyChecks: ((cwd: string) => Promise<VerifyCheck[]>) | undefined;
-    executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
+    executionSurfaceTabsUi: TranscriptExecutionSurfaceTabsApi;
     /** Refresh the Changes commit badge when check evidence changes. */
     diffReviewWidget?: { update(): void } | undefined;
 }

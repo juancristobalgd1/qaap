@@ -21,10 +21,7 @@ import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
 } from '../common/qaap-git-review';
-import {
-    selectComposerPillChanges,
-    type StickyComposerChangedFileView,
-} from './qaap-sticky-composer-activity-stack';
+import { selectComposerPillChanges } from './qaap-sticky-composer-activity-stack';
 import {
     isIdleComposerFocusStealable,
     hasComposerAgentActivity as hasComposerAgentActivityHelper,
@@ -40,6 +37,7 @@ import {
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
 import { COMPOSER_PREVIEW_HEALTH_INTERVAL_MS } from './mobile-projects-transcript-sticky-composer-ui';
+import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
 
 export function scheduleIdleComposerFocusRetentionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, textarea: HTMLTextAreaElement): void {
         ctx.clearIdleComposerFocusRetention();

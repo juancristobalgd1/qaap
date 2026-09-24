@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from './qaap-transcript-agent-types';
 import {
     buildConversationTranscriptFingerprint,
     canPatchToolSegmentGrowth,
@@ -23,7 +23,7 @@ import {
     resolveStreamingTranscriptPatchKind,
     shouldForceTranscriptRenderOnStatusSettle,
     transcriptFingerprintChanged,
-} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
+} from './qaap-transcript-incremental-update';
 
 function conv(partial: Partial<QaapAgentConversationDTO> & Pick<QaapAgentConversationDTO, 'messages'>): QaapAgentConversationDTO {
     return {

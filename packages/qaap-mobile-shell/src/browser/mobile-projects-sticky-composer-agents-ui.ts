@@ -47,7 +47,7 @@ export interface MobileProjectsStickyComposerAgentsHost {
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     loadBackendAgentSnapshot(options?: { readonly forceRefresh?: boolean }): Promise<QaapAgentTaskListSnapshot>;
     resolveConversationAgentLabel(agentId: string | undefined): string;
-    projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    projectRowsUi: import('./qaap-transcript-host-contracts').TranscriptProjectLabelsApi;
 }
 
 export class MobileProjectsStickyComposerAgentsUi {

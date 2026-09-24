@@ -133,7 +133,7 @@ export interface MobileProjectsStickyComposerRenderHost {
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
     updateNewFabVisibility(): void;
     submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: Record<string, unknown>): Promise<void>;
-    executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
+    executionSurfaceTabsUi: import('./qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
     transcriptComposerUi: MobileProjectsTranscriptComposerUi;
     transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;

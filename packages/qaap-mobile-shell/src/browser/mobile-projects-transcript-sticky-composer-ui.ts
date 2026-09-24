@@ -39,7 +39,9 @@ import {
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsTranscriptSurfacesHost, MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
+import type { ComposerTranscriptSurfacesApi } from './qaap-composer-host-contracts';
+import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
+import type { ChatSessionActivityApi } from './mobile-projects-conversation-index-ui';
 import type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -49,10 +51,7 @@ import {
     type QaapGitChangedFile,
     type QaapGitCommitWorkflowAction,
 } from '../common/qaap-git-review';
-import {
-    type StickyComposerActivityStackOptions,
-    type StickyComposerChangedFileView,
-} from './qaap-sticky-composer-activity-stack';
+import { type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import { syncTranscriptQueuedBubbles } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-queued-bubbles';
 import {
     mapGitChangedFileToComposerView as mapGitChangedFileToComposerViewHelper,
@@ -71,6 +70,7 @@ import { clearComposerPreviewHealthTimerExtracted, enqueueTranscriptFollowUpExtr
 import { buildGitActionMetadataExtracted, buildTranscriptComposerActivityOptionsExtracted, keepAllComposerChangedFilesExtracted, launchComposerDevPreviewExtracted, refreshComposerActivityGitFilesIfNeededExtracted, runComposerCommitActionExtracted, runComposerGitFileActionExtracted, syncComposerGitSnapshotExtracted, undoAllComposerChangedFilesExtracted } from './mobile-projects-transcript-sticky-composer-ui-streaming';
 import { appendRunningGitActionToTranscriptExtracted, applyGitActionTranscriptConversationExtracted, buildComposerActivityFingerprintExtracted, dispatchQueuedFollowUpInParallelExtracted, flushTranscriptFollowUpQueueExtracted, interruptQueuedFollowUpExtracted, isTranscriptFollowUpReadyExtracted, markPendingGitActionFailedExtracted, recordComposerGitActionInTranscriptExtracted, refreshComposerActivityStackExtracted, refreshTranscriptComposerActivityIfNeededExtracted, sendQueuedFollowUpNowExtracted, startIsolatedRunIfRequestedExtracted, syncComposerActivityFingerprintExtracted } from './mobile-projects-transcript-sticky-composer-ui-timeline';
 import { mountTranscriptStickyComposerAsyncExtracted } from './mobile-projects-transcript-sticky-composer-ui-tool-pills';
+import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
 
 export const COMPOSER_PREVIEW_HEALTH_INTERVAL_MS = 5_000;
 
@@ -159,10 +159,10 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     updateWorkingPillChrome(): void;
     conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-    chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
+    chatServiceSummariesUi: ChatSessionActivityApi;
     transcriptMessagesUi: import('./mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
     handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;
-    executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
+    executionSurfaceTabsUi: import('./qaap-transcript-host-contracts').TranscriptExecutionSurfaceTabsApi;
     transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
     beginTranscriptDevPreviewRequest(
         project: MobileProjectEntry,
@@ -178,13 +178,13 @@ export interface MobileProjectsTranscriptStickyComposerHost {
         },
     ): Promise<void>;
     transcriptLastFingerprint: string | undefined;
-    transcriptSurfacesUi: MobileProjectsTranscriptSurfacesUi;
-    projects: MobileProjectsTranscriptSurfacesHost['projects'];
-    preparedCwdByProjectId: MobileProjectsTranscriptSurfacesHost['preparedCwdByProjectId'];
+    transcriptSurfacesUi: ComposerTranscriptSurfacesApi;
+    projects: MobileProjectEntry[];
+    preparedCwdByProjectId: Map<string, string>;
     transcriptPreviewRequestRunning: boolean;
     transcriptPreviewRequestPending: boolean;
     transcriptPreviewSuppressedByUser: boolean;
-    diffReviewWidget: MobileProjectsTranscriptSurfacesHost['diffReviewWidget'];
+    diffReviewWidget: QaapDiffReviewWidget | undefined;
     verifyChecksLoading: boolean;
     verifyRunning: boolean;
     verifyResults: MobileProjectsTranscriptVerifyHost['verifyResults'];

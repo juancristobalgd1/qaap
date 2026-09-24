@@ -1,9 +1,9 @@
 
-import { type MobileViewToggleId } from './qaap-workbench-account-menu';
 import { writeStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { QAAP_PRIMARY_AGENT_ID, writeStoredAgent } from '../common/qaap-agent-task-client';
 import type { MobileProjectEntry, MobileProjectFilter } from './mobile-projects-types';
 import type { MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
+import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 
 export interface MobileProjectsComposerHeaderHost {
     visible: boolean;
@@ -23,7 +23,7 @@ export interface MobileProjectsComposerHeaderHost {
     isProjectDetailView(): boolean;
     syncAgentsHubAccountChrome(): void;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
-    projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
+    projectNavigationUi: import('./qaap-composer-host-contracts').ComposerProjectNavigationApi;
     projectsService: import('./mobile-projects-service').MobileProjectsService;
     stickyComposerPinnedAgentId: string | undefined;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;

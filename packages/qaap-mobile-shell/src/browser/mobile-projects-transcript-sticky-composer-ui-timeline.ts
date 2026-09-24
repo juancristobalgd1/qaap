@@ -18,16 +18,7 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import {
     type QaapGitCommitWorkflowAction,
 } from '../common/qaap-git-review';
-import {
-    renderStickyComposerActivityStack,
-    buildStickyComposerActivityStackFingerprint,
-    buildStickyComposerChangesPillFingerprint,
-    patchStickyComposerActivityStack,
-    patchStickyComposerChangesPillHost,
-    renderStickyComposerChangesPill,
-    type StickyComposerActivityStackOptions,
-    type StickyComposerChangedFileView,
-} from './qaap-sticky-composer-activity-stack';
+import { renderStickyComposerActivityStack, buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     ensureQueueControlInPillRow,
     ensureQueueControlPositionObserver,
@@ -37,6 +28,7 @@ import {
     transferWorkingControlToHost,
 } from './qaap-sticky-composer-working-agents-popover';
 import { transferStepPillToHost } from './qaap-sticky-composer-step-pill';
+import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
 
 export function appendRunningGitActionToTranscriptExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, summary: QaapAgentConversationSummaryDTO,
     action: QaapGitCommitWorkflowAction,): string | undefined {

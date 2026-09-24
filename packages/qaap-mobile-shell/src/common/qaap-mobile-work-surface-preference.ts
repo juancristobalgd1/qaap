@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+/** Work surface picked in the IDE / Agents view toggle. */
+export type MobileViewToggleId = 'editor' | 'agent';
+
 export const QAAP_MOBILE_PREFER_DESKTOP_IDE_KEY = 'qaap.mobileProjects.preferDesktopIde';
 
 /** Kept for compatibility with builds that wrote this explicit IDE marker. */

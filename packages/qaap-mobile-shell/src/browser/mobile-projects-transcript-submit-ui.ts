@@ -82,7 +82,7 @@ export interface MobileProjectsTranscriptSubmitHost {
             agentModel?: QaapCreateAgentTaskQaiqModel;
             latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
         },
-    ): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated>;
+    ): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;
     applyTaskStartedToProject(cwd: string, title: string, taskId: string): void;
     seedTranscriptOptimisticSubmit(

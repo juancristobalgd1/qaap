@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { CommandRegistry, nls } from '@theia/core/lib/common';
+import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '../common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
@@ -78,8 +79,6 @@ let activeDismiss: (() => void) | undefined;
 let activeAnchor: HTMLElement | undefined;
 
 export const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
-
-export type MobileViewToggleId = 'editor' | 'agent';
 
 export interface QaapAccountMenuEntriesOptions {
     /**

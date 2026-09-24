@@ -73,11 +73,7 @@ import {
 } from '../common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
 import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
-import {
-    buildQaapAccountMenuEntries,
-    toggleQaapAccountMenu,
-    type MobileViewToggleId,
-} from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import { } from './qaap-preview-annotation-composer-session';
@@ -314,6 +310,7 @@ import {
     onBootstrapPreviewOpenedHandler,
     onAuthSessionChangedHandler,
 } from './mobile-projects-panel-init';
+import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** Max conversation rows per repo card before "More" expands the list. */
@@ -1652,7 +1649,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return resolveExternalComposerProjectExtracted(this);
     }
 
-    protected async createProjectChatSession(project: MobileProjectEntry, cwd: string, draft: string, options: { forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks']; },): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated> {
+    protected async createProjectChatSession(project: MobileProjectEntry, cwd: string, draft: string, options: { forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks']; },): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
         return createProjectChatSessionExtracted(this, project, cwd, draft, options);
     }
 

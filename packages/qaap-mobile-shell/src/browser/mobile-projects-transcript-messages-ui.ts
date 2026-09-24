@@ -29,8 +29,7 @@ import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-mod
 import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
-import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
+import type { TranscriptExecutionSurfaceTabsApi, TranscriptProjectLabelsApi, TranscriptStickyComposerApi } from './qaap-transcript-host-contracts';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 /** Panel surface consumed by transcript message rendering (keeps deps narrow vs. the full panel). */
@@ -67,11 +66,11 @@ export interface MobileProjectsTranscriptMessagesHost {
         item: import('@theia/ai-core').AIVariableResolutionRequest,
     ) => Promise<string | undefined>;
 
-    projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
+    projectRowsUi: TranscriptProjectLabelsApi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
-    transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
-    executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
+    transcriptStickyComposerUi: TranscriptStickyComposerApi;
+    executionSurfaceTabsUi: TranscriptExecutionSurfaceTabsApi;
     maybeSyncTranscriptVisuallySettledChrome(conv: QaapAgentConversationDTO): void;
     cancelOpenTranscriptStream?(): void;
     retryOpenTranscriptStream?(): void | Promise<void>;

@@ -138,7 +138,7 @@ export async function createProjectChatSessionExtracted(ctx: MobileProjectsPanel
         variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
         agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
         latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
-    },): Promise<import('./mobile-projects-background-task-ui').QaapProjectChatSessionCreated> {
+    },): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
     return ctx.backgroundTaskUi.createProjectChatSession(project, cwd, draft, options);
 }
 

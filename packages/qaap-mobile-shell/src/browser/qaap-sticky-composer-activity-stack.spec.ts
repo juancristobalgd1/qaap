@@ -8,16 +8,8 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import {
-    buildStickyComposerActivityStackFingerprint,
-    buildStickyComposerChangesPillFingerprint,
-    patchStickyComposerActivityStack,
-    patchStickyComposerChangesPillHost,
-    renderStickyComposerActivityStack,
-    renderStickyComposerChangesPill,
-    selectComposerPillChanges,
-    type StickyComposerChangedFileView,
-} from './qaap-sticky-composer-activity-stack';
+import { buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerActivityStack, renderStickyComposerChangesPill, selectComposerPillChanges } from './qaap-sticky-composer-activity-stack';
+import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
 
 describe('qaap-sticky-composer-activity-stack', () => {
 

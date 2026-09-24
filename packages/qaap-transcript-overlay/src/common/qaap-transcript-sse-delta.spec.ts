@@ -4,14 +4,14 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from './qaap-transcript-agent-types';
 import {
     applyConversationMessageDelta,
     appendOptimisticPendingUserMessage,
     agentMessageDeltaChanged,
     canApplySseMessageDelta,
     shouldSkipStreamingTranscriptRefetch,
-} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
+} from './qaap-transcript-sse-delta';
 
 const baseConv = (): QaapAgentConversationDTO => ({
     id: 'conv-1',

@@ -33,8 +33,7 @@ import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
-import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
-import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
+import type { TranscriptExecutionSurfaceTabsApi, TranscriptStickyComposerApi } from './qaap-transcript-host-contracts';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridge';
 import { applyCachedTranscriptOnOpenExtracted, doRefreshOpenTranscriptConversationExtracted, isTrustedOpenTranscriptCache, reconcileConversationListSummaryExtracted, refreshOpenTranscriptConversationExtracted, renderOpenTranscriptPlaceholderExtracted, resolveOpenTranscriptConversationExtracted, scheduleTranscriptConversationRefreshExtracted } from './mobile-projects-transcript-live-ui-activity';
@@ -73,9 +72,9 @@ export interface MobileProjectsTranscriptLiveHost {
     conversations: MobileProjectsConversations | undefined;
     transcriptMessagesUi: MobileProjectsTranscriptMessagesUi;
     transcriptUi: MobileProjectsTranscriptUi;
-    transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
+    transcriptStickyComposerUi: TranscriptStickyComposerApi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
-    executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
+    executionSurfaceTabsUi: TranscriptExecutionSurfaceTabsApi;
 
     conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     findConversationSummaryById(id: string): QaapAgentConversationSummaryDTO | undefined;

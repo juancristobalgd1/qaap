@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { ChatService } from '@theia/ai-chat';
+import { ChatService, ChatSession } from '@theia/ai-chat';
 import {
     isFailedRunSummary,
     preferQaapConversationSummary,
@@ -18,6 +18,12 @@ import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
 
 /** Panel surface for per-project conversation queries and task counters. */
+/** Chat-session activity probes; implemented by `MobileProjectsChatServiceSummariesUi` (Work Hub). */
+export interface ChatSessionActivityApi {
+    isChatSessionWorking(session: ChatSession): boolean;
+    isChatSessionWaitingForInput(session: ChatSession): boolean;
+}
+
 export interface MobileProjectsConversationIndexHost {
     chatService: ChatService | undefined;
     conversationFlags: MobileProjectsConversationFlags | undefined;
@@ -27,7 +33,7 @@ export interface MobileProjectsConversationIndexHost {
     activeTasks: MobileProjectsActiveTasks | undefined;
     chatServiceSessionSummariesByProjectId: Map<string, QaapAgentConversationSummaryDTO[]>;
 
-    chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
+    chatServiceSummariesUi: ChatSessionActivityApi;
 }
 
 /** Conversation list queries, ordering, flags, and legacy task-view projection. */

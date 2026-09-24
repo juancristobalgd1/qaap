@@ -8,8 +8,9 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapGitChangedFile, QaapGitCommitWorkflowAction } from '../common/qaap-git-review';
-import type { StickyComposerChangedFileView } from './qaap-sticky-composer-activity-stack';
+
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
+import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
 
 // ─── Draft merge ─────────────────────────────────────────────────────────────
 

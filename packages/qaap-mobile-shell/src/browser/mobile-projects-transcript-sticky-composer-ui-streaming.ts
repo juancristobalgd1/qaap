@@ -20,15 +20,12 @@ import {
     type QaapGitChangedFile,
     type QaapGitCommitWorkflowAction,
 } from '../common/qaap-git-review';
-import {
-    buildStickyComposerChangesPillFingerprint,
-    type StickyComposerActivityStackOptions,
-    type StickyComposerChangedFileView,
-} from './qaap-sticky-composer-activity-stack';
+import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     resolveComposerPreviewCandidate,
     resolveVerifiedComposerPreviewUrl,
 } from './qaap-composer-preview-action';
+import type { StickyComposerChangedFileView } from './qaap-transcript-host-contracts';
 
 export async function runComposerGitFileActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,

@@ -11,14 +11,9 @@ import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conve
 import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import {
-    buildQaapAccountMenuEntries,
-    QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
-    QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
-    toggleQaapAccountMenu,
-    type MobileViewToggleId,
-} from './qaap-workbench-account-menu';
+import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
 
 export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],
