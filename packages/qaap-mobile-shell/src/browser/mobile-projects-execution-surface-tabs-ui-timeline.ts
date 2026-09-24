@@ -1,34 +1,15 @@
-// @ts-nocheck
+import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
+import type { ExecutionSurfaceTabId as TranscriptTab } from '../common/qaap-execution-surface-tabs';
 import { Disposable } from '@theia/core/lib/common/disposable';
-import { nls } from '@theia/core/lib/common/nls';
 import {
-    type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import {
-    type ExecutionSurfaceTabId,
-    recordExecutionSurfaceTabUse,
-} from '../common/qaap-execution-surface-tabs';
-import {
-    appendExecutionSurfaceTabIcon,
-    createExecutionSurfaceIconElement,
-    isExecutionSurfaceIconElement,
-    QAAP_MESSAGE_CIRCLE_ICON_CLASS,
-    QAAP_SCM_CHANGES_ICON_CLASS,
-} from '../common/qaap-scm-changes-icon';
-import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from './qaap-execution-surface-header-chrome';
-import { appendAgentBrandIcon, createAgentBrandIcon } from '../common/qaap-agent-branding';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
 import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
 
-export function positionExecutionTabOverflowMenuExtracted(ctx: any, menu: HTMLElement, anchor: HTMLElement): void {
+export function positionExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, menu: HTMLElement, anchor: HTMLElement): void {
     const margin = 8;
     const gap = 6;
     const anchorRect = anchor.getBoundingClientRect();
@@ -52,7 +33,7 @@ export function positionExecutionTabOverflowMenuExtracted(ctx: any, menu: HTMLEl
     menu.style.left = `${left}px`;
 }
 
-export function closeExecutionTabOverflowMenuExtracted(ctx: any): void {
+export function closeExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
     const menu = ctx.host.executionTabOverflowMenu;
     const anchor = ctx.host.executionTabOverflowAnchor;
     if (!menu) {
@@ -75,7 +56,7 @@ export function closeExecutionTabOverflowMenuExtracted(ctx: any): void {
     ctx.host.executionTabOverflowAnchor = undefined;
 }
 
-export function mountTranscriptSurfaceTabExtracted(ctx: any, project: MobileProjectEntry,
+export function mountTranscriptSurfaceTabExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     tab: TranscriptTab,): void {
     if (tab === 'review') {

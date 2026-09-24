@@ -2,30 +2,17 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
 import { Disposable } from '@theia/core/lib/common/disposable';
-import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import {
     type ExecutionSurfaceTabId,
-    recordExecutionSurfaceTabUse,
 } from '../common/qaap-execution-surface-tabs';
-import {
-    appendExecutionSurfaceTabIcon,
-    createExecutionSurfaceIconElement,
-    isExecutionSurfaceIconElement,
-    QAAP_MESSAGE_CIRCLE_ICON_CLASS,
-    QAAP_SCM_CHANGES_ICON_CLASS,
-} from '../common/qaap-scm-changes-icon';
-import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from './qaap-execution-surface-header-chrome';
-import { appendAgentBrandIcon, createAgentBrandIcon } from '../common/qaap-agent-branding';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
 import type { MobileProjectEntry } from './mobile-projects-types';
+import type { TranscriptWorkspaceSurfacesCache } from './qaap-transcript-workspace-surfaces-cache';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
@@ -46,6 +33,9 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     transcriptPreviewHost: HTMLElement | undefined;
     transcriptFilesHost: HTMLElement | undefined;
     transcriptTerminalHost: HTMLElement | undefined;
+    transcriptTerminalToolbar: HTMLElement | undefined;
+    transcriptTerminalPinnedMode: string | undefined;
+    transcriptWorkspaceSurfaces: TranscriptWorkspaceSurfacesCache;
     transcriptHeaderSubtitle: HTMLElement | undefined;
     transcriptOpenSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptOpenProject: MobileProjectEntry | undefined;
@@ -128,10 +118,16 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     syncDesktopWorkHubLayout?(): void;
 }
 
+/** The open execution-surface sidebar drawer state. */
+export type MobileProjectsExecutionSurfaceSidebarState = NonNullable<MobileProjectsExecutionSurfaceTabsHost['executionSurfaceSidebar']>;
+
 /** Tab strip, overflow picker, and execution-surface visibility for transcript and project detail. */
 export class MobileProjectsExecutionSurfaceTabsUi {
 
-    constructor(protected readonly host: MobileProjectsExecutionSurfaceTabsHost) { }
+    constructor(
+        /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
+        public readonly host: MobileProjectsExecutionSurfaceTabsHost,
+    ) { }
 
     resolveExecutionSurfaceProject(): MobileProjectEntry | undefined {
         return resolveExecutionSurfaceProjectExtracted(this);
@@ -218,15 +214,18 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         restoreActiveExecutionSurfaceExtracted(this, project, summary);
     }
 
-    protected syncConnectedTranscriptSurfaceHosts(): void {
+    /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
+    public syncConnectedTranscriptSurfaceHosts(): void {
         syncConnectedTranscriptSurfaceHostsExtracted(this);
     }
 
-    protected syncSurfaceHostsFromContainer(container: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
+    public syncSurfaceHostsFromContainer(container: HTMLElement): void {
         syncSurfaceHostsFromContainerExtracted(this, container);
     }
 
-    protected directChildWithClass(parent: HTMLElement, className: string): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
+    public directChildWithClass(parent: HTMLElement, className: string): HTMLElement | undefined {
         return directChildWithClassExtracted(this, parent, className);
     }
 
@@ -254,11 +253,13 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         refreshExecutionSurfaceTabStripStateExtracted(this, strip, activeTab);
     }
 
-    protected centerExecutionSurfaceActiveControl(strip: HTMLElement): void {
+    /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
+    public centerExecutionSurfaceActiveControl(strip: HTMLElement): void {
         centerExecutionSurfaceActiveControlExtracted(this, strip);
     }
 
-    protected scheduleExecutionSurfaceFrame(callback: () => void): void {
+    /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
+    public scheduleExecutionSurfaceFrame(callback: () => void): void {
         scheduleExecutionSurfaceFrameExtracted(this, callback);
     }
 

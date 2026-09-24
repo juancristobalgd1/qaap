@@ -1,35 +1,26 @@
-// @ts-nocheck
+import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
-import { Disposable } from '@theia/core/lib/common/disposable';
+import type { ExecutionSurfaceTabId as TranscriptTab } from '../common/qaap-execution-surface-tabs';
+import type { MobileProjectsExecutionSurfaceSidebarState } from './mobile-projects-execution-surface-tabs-ui';
 import { nls } from '@theia/core/lib/common/nls';
 import {
-    type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
 import {
-    type ExecutionSurfaceTabId,
     recordExecutionSurfaceTabUse,
 } from '../common/qaap-execution-surface-tabs';
 import {
-    appendExecutionSurfaceTabIcon,
     createExecutionSurfaceIconElement,
-    isExecutionSurfaceIconElement,
     QAAP_MESSAGE_CIRCLE_ICON_CLASS,
     QAAP_SCM_CHANGES_ICON_CLASS,
 } from '../common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from './qaap-execution-surface-header-chrome';
-import { appendAgentBrandIcon, createAgentBrandIcon } from '../common/qaap-agent-branding';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
 import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
 import { peekPreferDesktopIde } from './mobile-projects-open';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
 
-export function resolveExecutionSurfaceProjectExtracted(ctx: any): MobileProjectEntry | undefined {
+export function resolveExecutionSurfaceProjectExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): MobileProjectEntry | undefined {
     const projectId = ctx.host.projectDetailExpandedId ?? ctx.host.expandedId;
     if (projectId) {
         return ctx.host.projects.find(p => p.id === projectId)
@@ -43,7 +34,7 @@ export function resolveExecutionSurfaceProjectExtracted(ctx: any): MobileProject
     return undefined;
 }
 
-export function syncExecutionSurfaceChromeExtracted(ctx: any, project: MobileProjectEntry): void {
+export function syncExecutionSurfaceChromeExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry): void {
     const tab = ctx.executionSurfaceTabForProject(project);
     ctx.syncExecutionSurfaceChromeInHost(ctx.host.headerExecutionTabsHost, tab, linked => {
         ctx.host.projectDetailTabStrip = linked;
@@ -57,7 +48,7 @@ export function syncExecutionSurfaceChromeExtracted(ctx: any, project: MobilePro
     }
 }
 
-export function syncExecutionSurfaceChromeInHostExtracted(ctx: any, host: HTMLElement,
+export function syncExecutionSurfaceChromeInHostExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, host: HTMLElement,
     tab: TranscriptTab,
     linkStrip: (strip: HTMLElement) => void,): void {
     const strips = host.querySelectorAll<HTMLElement>('.theia-mobile-transcript-tabs.theia-mod-header-inline');
@@ -68,7 +59,7 @@ export function syncExecutionSurfaceChromeInHostExtracted(ctx: any, host: HTMLEl
     linkStrip(strips[strips.length - 1]!);
 }
 
-export function resolveExecutionSurfaceTabStripHostExtracted(ctx: any, strip: HTMLElement | undefined): HTMLElement | undefined {
+export function resolveExecutionSurfaceTabStripHostExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement | undefined): HTMLElement | undefined {
     if (!strip) {
         return undefined;
     }
@@ -76,14 +67,14 @@ export function resolveExecutionSurfaceTabStripHostExtracted(ctx: any, strip: HT
     return host instanceof HTMLElement ? host : strip.parentElement ?? undefined;
 }
 
-export function appendExecutionSurfaceTabStripToTitleRowExtracted(ctx: any, titleRow: HTMLElement, strip: HTMLElement): void {
+export function appendExecutionSurfaceTabStripToTitleRowExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, titleRow: HTMLElement, strip: HTMLElement): void {
     const host = document.createElement('div');
     host.className = 'theia-mobile-projects-header-execution-tabs';
     host.append(strip);
     titleRow.append(host);
 }
 
-export function mountTranscriptExecutionHeaderExtracted(ctx: any, header: HTMLElement,
+export function mountTranscriptExecutionHeaderExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, header: HTMLElement,
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     titleText: string,): { back: HTMLButtonElement; tabStrip: HTMLElement } {
@@ -103,7 +94,7 @@ export function mountTranscriptExecutionHeaderExtracted(ctx: any, header: HTMLEl
     return { back, tabStrip };
 }
 
-export function restoreActiveExecutionSurfaceExtracted(ctx: any, project: MobileProjectEntry,
+export function restoreActiveExecutionSurfaceExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
     summary?: QaapAgentConversationSummaryDTO,): void {
     let activeTab = ctx.executionSurfaceTabForProject(project);
     if (activeTab === 'review') {
@@ -126,7 +117,7 @@ export function restoreActiveExecutionSurfaceExtracted(ctx: any, project: Mobile
     }
 }
 
-function resolveExecutionSurfaceSidebarHostExtracted(ctx: any, tab: TranscriptTab): HTMLElement | undefined {
+function resolveExecutionSurfaceSidebarHostExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab): HTMLElement | undefined {
     const activeSurface = tab === 'review' ? 'files' : tab;
     const transcriptHost = activeSurface === 'preview'
         ? ctx.host.transcriptPreviewHost
@@ -179,7 +170,7 @@ function resolveExecutionSurfaceSidebarHostExtracted(ctx: any, tab: TranscriptTa
     return transcriptHost;
 }
 
-function restoreExecutionSurfaceSidebarHostExtracted(sidebar: any): void {
+function restoreExecutionSurfaceSidebarHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     const host = sidebar.activeHost as HTMLElement | undefined;
     if (!host) {
         return;
@@ -195,7 +186,7 @@ function restoreExecutionSurfaceSidebarHostExtracted(sidebar: any): void {
     sidebar.placeholder = undefined;
 }
 
-function restoreExecutionSurfaceSidebarViewModeHostExtracted(sidebar: any): void {
+function restoreExecutionSurfaceSidebarViewModeHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     sidebar.viewModeObserver?.disconnect();
     sidebar.viewModeObserver = undefined;
     const host = sidebar.viewModeHost as HTMLElement | undefined;
@@ -214,7 +205,7 @@ function restoreExecutionSurfaceSidebarViewModeHostExtracted(sidebar: any): void
     sidebar.viewModeCandidate = undefined;
 }
 
-function restoreExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): void {
+function restoreExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     sidebar.previewHeaderObserver?.disconnect();
     sidebar.previewHeaderObserver = undefined;
     const previewHeader = sidebar.previewHeaderHost as HTMLElement | undefined;
@@ -229,7 +220,7 @@ function restoreExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): voi
     }
     previewHeader.classList.remove('theia-mobile-execution-surface-sidebar-preview-header');
     const changesHeader = sidebar.previewChangesHeaderHost as HTMLElement | undefined;
-    if (changesHeader?.parentElement === sidebar.element?.querySelector('.theia-mobile-execution-surface-sidebar-header')) {
+    if (changesHeader && changesHeader.parentElement === sidebar.element.querySelector('.theia-mobile-execution-surface-sidebar-header')) {
         changesHeader.remove();
     }
     sidebar.previewHeaderHost = undefined;
@@ -237,7 +228,7 @@ function restoreExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): voi
     sidebar.previewChangesHeaderHost = undefined;
 }
 
-function restoreExecutionSurfaceSidebarPreviewHeaderMountExtracted(sidebar: any): void {
+function restoreExecutionSurfaceSidebarPreviewHeaderMountExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     const mount = sidebar.previewHeaderMount as {
         attachPreviewHeaderHost?: (host: HTMLElement | undefined) => void;
         attachChangesHeaderActionHost?: (host: HTMLElement | undefined) => void;
@@ -259,14 +250,14 @@ function createExecutionSurfaceSidebarChangesHeaderExtracted(): HTMLElement {
     return changesHeader;
 }
 
-function executionSurfaceSidebarChangesModeSelectedExtracted(sidebar: any): boolean {
+function executionSurfaceSidebarChangesModeSelectedExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): boolean {
     const switchElement = sidebar.element?.querySelector<HTMLElement>('.theia-mobile-transcript-files-view-mode-switch');
     const changesButton = switchElement?.querySelector<HTMLElement>('[data-view-mode="changes"]')
         ?? switchElement?.querySelectorAll<HTMLElement>('[aria-selected]')[1];
     return changesButton?.getAttribute('aria-selected') === 'true';
 }
 
-function syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar: any,
+function syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState,
     header: HTMLElement,
     close: HTMLElement,
     previewHeader: HTMLElement,): void {
@@ -293,7 +284,7 @@ function syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar: any,
     }
 }
 
-function restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar: any): void {
+function restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     sidebar.toolbarObserver?.disconnect();
     sidebar.toolbarObserver = undefined;
     const host = sidebar.toolbarHost as HTMLElement | undefined;
@@ -313,15 +304,15 @@ function restoreExecutionSurfaceSidebarToolbarHostExtracted(sidebar: any): void 
 
 function resolveExecutionSurfaceSidebarToolbarHostExtracted(activeSurface: string, host: HTMLElement): HTMLElement | undefined {
     if (activeSurface === 'preview') {
-        return host.querySelector<HTMLElement>('.qaap-agent-preview-embedded-toolbar');
+        return host.querySelector<HTMLElement>('.qaap-agent-preview-embedded-toolbar') ?? undefined;
     }
     if (activeSurface === 'terminal') {
-        return host.querySelector<HTMLElement>('.theia-mobile-transcript-terminal-toolbar');
+        return host.querySelector<HTMLElement>('.theia-mobile-transcript-terminal-toolbar') ?? undefined;
     }
     return undefined;
 }
 
-function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: any): void {
+function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     const activeHost = sidebar.activeHost as HTMLElement | undefined;
     const header = sidebar.element?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-header');
     const close = header?.querySelector<HTMLElement>('.theia-mobile-execution-surface-sidebar-close');
@@ -350,7 +341,7 @@ function promoteExecutionSurfaceSidebarToolbarExtracted(sidebar: any): void {
     sidebar.toolbarHost = toolbar;
 }
 
-function observeExecutionSurfaceSidebarToolbarExtracted(sidebar: any): void {
+function observeExecutionSurfaceSidebarToolbarExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     if (sidebar.toolbarObserver || typeof MutationObserver === 'undefined') {
         return;
     }
@@ -363,7 +354,7 @@ function observeExecutionSurfaceSidebarToolbarExtracted(sidebar: any): void {
     sidebar.toolbarObserver = observer;
 }
 
-function promoteExecutionSurfaceSidebarViewModeHostExtracted(sidebar: any): void {
+function promoteExecutionSurfaceSidebarViewModeHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     if (sidebar.activeTab !== 'files') {
         return;
     }
@@ -399,7 +390,7 @@ function promoteExecutionSurfaceSidebarViewModeHostExtracted(sidebar: any): void
     }
 }
 
-function observeExecutionSurfaceSidebarViewModeHostExtracted(sidebar: any): void {
+function observeExecutionSurfaceSidebarViewModeHostExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     if (sidebar.viewModeObserver || typeof MutationObserver === 'undefined' || !sidebar.viewModeCandidate) {
         return;
     }
@@ -422,7 +413,7 @@ function observeExecutionSurfaceSidebarViewModeHostExtracted(sidebar: any): void
     sidebar.viewModeObserver = observer;
 }
 
-function promoteExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): void {
+function promoteExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     if (sidebar.activeTab !== 'files') {
         return;
     }
@@ -473,7 +464,7 @@ function promoteExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): voi
     syncExecutionSurfaceSidebarFallbackPreviewHeaderExtracted(sidebar, header, close, previewHeader);
 }
 
-function observeExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): void {
+function observeExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: MobileProjectsExecutionSurfaceSidebarState): void {
     if (sidebar.previewHeaderObserver || typeof MutationObserver === 'undefined' || !sidebar.activeHost) {
         return;
     }
@@ -496,7 +487,7 @@ function observeExecutionSurfaceSidebarPreviewHeaderExtracted(sidebar: any): voi
     sidebar.previewHeaderObserver = observer;
 }
 
-function executionSurfaceSidebarSpecExtracted(ctx: any, tab: TranscriptTab): { label: string; icon: string } {
+function executionSurfaceSidebarSpecExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab): { label: string; icon: string } {
     const activeSurface = tab === 'review' ? 'files' : tab;
     return ctx.executionSurfaceTabSpecs().find((entry: { id: TranscriptTab }) => entry.id === activeSurface)
         ?? {
@@ -505,7 +496,7 @@ function executionSurfaceSidebarSpecExtracted(ctx: any, tab: TranscriptTab): { l
         };
 }
 
-export function openExecutionSurfaceSidebarWhenReadyExtracted(ctx: any, tab: TranscriptTab,
+export function openExecutionSurfaceSidebarWhenReadyExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab,
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
@@ -526,7 +517,7 @@ export function openExecutionSurfaceSidebarWhenReadyExtracted(ctx: any, tab: Tra
     attemptOpen();
 }
 
-export function openExecutionSurfaceSidebarExtracted(ctx: any, tab: TranscriptTab,
+export function openExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab,
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
@@ -692,7 +683,7 @@ export function openExecutionSurfaceSidebarExtracted(ctx: any, tab: TranscriptTa
     }
 }
 
-export function dismissExecutionSurfaceSidebarExtracted(ctx: any): void {
+export function dismissExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
     const sidebar = ctx.host.executionSurfaceSidebar;
     if (!sidebar) {
         return;
@@ -713,7 +704,7 @@ export function dismissExecutionSurfaceSidebarExtracted(ctx: any): void {
     }, 220);
 }
 
-export function closeExecutionSurfaceSidebarExtracted(ctx: any): void {
+export function closeExecutionSurfaceSidebarExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
     const sidebar = ctx.host.executionSurfaceSidebar;
     const project = sidebar?.project ?? ctx.resolveExecutionSurfaceProject();
     const summary = sidebar?.summary
@@ -726,7 +717,7 @@ export function closeExecutionSurfaceSidebarExtracted(ctx: any): void {
     }
 }
 
-export function replaceExecutionSurfaceTabStripExtracted(ctx: any, currentStrip: HTMLElement | undefined, nextStrip: HTMLElement): void {
+export function replaceExecutionSurfaceTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, currentStrip: HTMLElement | undefined, nextStrip: HTMLElement): void {
     const host = ctx.resolveExecutionSurfaceTabStripHost(currentStrip);
     if (host) {
         host.replaceChildren(nextStrip);
@@ -735,7 +726,7 @@ export function replaceExecutionSurfaceTabStripExtracted(ctx: any, currentStrip:
     currentStrip?.replaceWith(nextStrip);
 }
 
-export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTab,
+export function activateExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab,
     project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     origin: 'transcript' | 'project-detail',): void {
@@ -805,7 +796,7 @@ export function activateExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     }
 }
 
-export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTab): void {
+export function showOnlyExecutionSurfaceTabExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, tab: TranscriptTab): void {
     ctx.syncConnectedTranscriptSurfaceHosts();
     const activeSurface = tab === 'review' ? 'files' : tab;
     if (activeSurface === 'messages') {
@@ -881,7 +872,7 @@ export function showOnlyExecutionSurfaceTabExtracted(ctx: any, tab: TranscriptTa
     }
 }
 
-export function syncConnectedTranscriptSurfaceHostsExtracted(ctx: any): void {
+export function syncConnectedTranscriptSurfaceHostsExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
     const inlineRoot = ctx.host.agentsHubInlineExecutionRoot;
     if (inlineRoot?.isConnected) {
         const transcriptRoot = ctx.directChildWithClass(inlineRoot, 'theia-mobile-agents-hub-inline-transcript');
@@ -910,14 +901,14 @@ export function syncConnectedTranscriptSurfaceHostsExtracted(ctx: any): void {
     }
 }
 
-export function syncSurfaceHostsFromContainerExtracted(ctx: any, container: HTMLElement): void {
+export function syncSurfaceHostsFromContainerExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, container: HTMLElement): void {
     ctx.host.transcriptReviewHost = ctx.directChildWithClass(container, 'theia-mobile-transcript-review') ?? ctx.host.transcriptReviewHost;
     ctx.host.transcriptPreviewHost = ctx.directChildWithClass(container, 'theia-mobile-transcript-preview') ?? ctx.host.transcriptPreviewHost;
     ctx.host.transcriptFilesHost = ctx.directChildWithClass(container, 'theia-mobile-transcript-files-host') ?? ctx.host.transcriptFilesHost;
     ctx.host.transcriptTerminalHost = ctx.directChildWithClass(container, 'theia-mobile-transcript-terminal-host') ?? ctx.host.transcriptTerminalHost;
 }
 
-export function directChildWithClassExtracted(ctx: any, parent: HTMLElement, className: string): HTMLElement | undefined {
+export function directChildWithClassExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, parent: HTMLElement, className: string): HTMLElement | undefined {
     let firstMatch: HTMLElement | undefined;
     let populatedMatch: HTMLElement | undefined;
     let visibleMatch: HTMLElement | undefined;
@@ -941,7 +932,7 @@ export function directChildWithClassExtracted(ctx: any, parent: HTMLElement, cla
     return populatedMatch ?? visibleMatch ?? firstMatch;
 }
 
-export function mountExecutionSurfaceTabContentExtracted(ctx: any, project: MobileProjectEntry,
+export function mountExecutionSurfaceTabContentExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     tab: TranscriptTab,): void {
     if (ctx.host.transcriptSheet || ctx.host.agentsHubShellActive) {
@@ -951,7 +942,7 @@ export function mountExecutionSurfaceTabContentExtracted(ctx: any, project: Mobi
     ctx.host.transcriptSurfacesUi.mountProjectDetailSurfaceTab(project, summary, tab);
 }
 
-export function syncHeaderExecutionTabStripExtracted(ctx: any): void {
+export function syncHeaderExecutionTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
     if (ctx.host.agentsHubShellActive) {
         return;
     }
@@ -985,7 +976,7 @@ export function syncHeaderExecutionTabStripExtracted(ctx: any): void {
     ctx.syncProjectDetailTabStrip();
 }
 
-export function syncProjectDetailTabStripExtracted(ctx: any): void {
+export function syncProjectDetailTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): void {
     const project = ctx.resolveExecutionSurfaceProject();
     if (!project) {
         return;
@@ -993,14 +984,14 @@ export function syncProjectDetailTabStripExtracted(ctx: any): void {
     ctx.syncExecutionSurfaceChrome(project);
 }
 
-export function syncTranscriptTabStripExtracted(ctx: any, project: MobileProjectEntry): void {
+export function syncTranscriptTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry): void {
     if (!ctx.host.transcriptTabStrip) {
         return;
     }
     ctx.refreshExecutionSurfaceTabStripState(ctx.host.transcriptTabStrip, ctx.executionSurfaceTabForProject(project));
 }
 
-export function rebuildExecutionSurfaceTabStripsExtracted(ctx: any, project: MobileProjectEntry, activeTab: TranscriptTab): void {
+export function rebuildExecutionSurfaceTabStripsExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry, activeTab: TranscriptTab): void {
     ctx.closeExecutionTabOverflowMenu();
     const summary = ctx.host.transcriptOpenSummary ?? ctx.host.resolveAgentsHubShellSummary(project);
     if (ctx.host.agentsHubShellActive && !ctx.host.headerExecutionTabsHost.hidden) {
@@ -1034,7 +1025,7 @@ export function rebuildExecutionSurfaceTabStripsExtracted(ctx: any, project: Mob
     }
 }
 
-export function refreshExecutionSurfaceTabStripStateExtracted(ctx: any, strip: HTMLElement, activeTab: TranscriptTab): void {
+export function refreshExecutionSurfaceTabStripStateExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     if (activeTab === 'messages') {
         ctx.closeExecutionTabOverflowMenu();
     }
@@ -1046,7 +1037,7 @@ export function refreshExecutionSurfaceTabStripStateExtracted(ctx: any, strip: H
     ctx.centerExecutionSurfaceActiveControl(strip);
 }
 
-export function centerExecutionSurfaceActiveControlExtracted(ctx: any, strip: HTMLElement): void {
+export function centerExecutionSurfaceActiveControlExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement): void {
     ctx.scheduleExecutionSurfaceFrame(() => {
         const active = strip.querySelector<HTMLElement>(
             '.theia-mobile-transcript-tab-icon-select[data-surface-active="true"]:not(.theia-mobile-transcript-terminal-agent-tui), .theia-mobile-transcript-tab.theia-mod-active',
@@ -1058,7 +1049,7 @@ export function centerExecutionSurfaceActiveControlExtracted(ctx: any, strip: HT
     });
 }
 
-export function scheduleExecutionSurfaceFrameExtracted(ctx: any, callback: () => void): void {
+export function scheduleExecutionSurfaceFrameExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, callback: () => void): void {
     if (typeof window.requestAnimationFrame === 'function') {
         window.requestAnimationFrame(callback);
         return;
@@ -1066,7 +1057,7 @@ export function scheduleExecutionSurfaceFrameExtracted(ctx: any, callback: () =>
     window.setTimeout(callback, 0);
 }
 
-export function navigateExecutionSurfaceBackExtracted(ctx: any, project: MobileProjectEntry): boolean {
+export function navigateExecutionSurfaceBackExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry): boolean {
     if (ctx.executionSurfaceTabForProject(project) === 'messages') {
         return false;
     }

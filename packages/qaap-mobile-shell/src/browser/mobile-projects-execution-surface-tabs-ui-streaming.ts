@@ -1,22 +1,17 @@
-// @ts-nocheck
+import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
+import type { ExecutionSurfaceTabId as TranscriptTab } from '../common/qaap-execution-surface-tabs';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import {
-    type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
 } from '../common/qaap-agent-conversation-client';
-import {
-    type ExecutionSurfaceTabId,
-    recordExecutionSurfaceTabUse,
-} from '../common/qaap-execution-surface-tabs';
 import {
     appendExecutionSurfaceTabIcon,
     createExecutionSurfaceIconElement,
     isExecutionSurfaceIconElement,
     QAAP_MESSAGE_CIRCLE_ICON_CLASS,
-    QAAP_SCM_CHANGES_ICON_CLASS,
 } from '../common/qaap-scm-changes-icon';
 import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from './qaap-execution-surface-header-chrome';
 import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
@@ -24,11 +19,8 @@ import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
 import { peekPreferDesktopIde } from './mobile-projects-open';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
-import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
-import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
 
-export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: any, strip: HTMLElement, activeTab: TranscriptTab): void {
+export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);
     const symbol = selectBtn?.querySelector<HTMLElement>('.theia-mobile-transcript-tab-icon-select-symbol');
     if (!selectBtn || !symbol) {
@@ -60,14 +52,14 @@ export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: any, strip:
     }
 }
 
-export function buildTranscriptTabStripExtracted(ctx: any, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): HTMLElement {
+export function buildTranscriptTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): HTMLElement {
     return ctx.buildExecutionViewTabStrip(
         ctx.executionSurfaceTabForProject(project),
         tab => ctx.selectTranscriptTab(tab, project, summary),
     );
 }
 
-export function buildExecutionViewTabStripExtracted(ctx: any, activeTab: TranscriptTab,
+export function buildExecutionViewTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, activeTab: TranscriptTab,
     onSelect: (tab: TranscriptTab) => void,): HTMLElement {
     const strip = document.createElement('div');
     strip.className = 'theia-mobile-transcript-tabs theia-mod-header-inline';
@@ -88,7 +80,7 @@ export function buildExecutionViewTabStripExtracted(ctx: any, activeTab: Transcr
     return strip;
 }
 
-export function createTerminalAgentTuiSelectExtracted(ctx: any): HTMLElement {
+export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'theia-mobile-transcript-tab-icon-select-host theia-mobile-transcript-terminal-agent-tui-host';
 
@@ -209,7 +201,7 @@ export function createTerminalAgentTuiSelectExtracted(ctx: any): HTMLElement {
     return wrap;
 }
 
-export function resolveTerminalAgentTuiActiveAgentIdExtracted(ctx: any, project?: MobileProjectEntry): string | undefined {
+export function resolveTerminalAgentTuiActiveAgentIdExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project?: MobileProjectEntry): string | undefined {
     // The terminal menu has its own pinned mode ('terminal' for a plain shell,
     // or an agent id) that is independent from the composer's agent selection.
     // Default to 'terminal' (plain shell) when nothing is pinned yet.
@@ -219,7 +211,7 @@ export function resolveTerminalAgentTuiActiveAgentIdExtracted(ctx: any, project?
     return 'terminal';
 }
 
-export function syncTerminalAgentTuiTriggersInStripExtracted(ctx: any, strip: HTMLElement): void {
+export function syncTerminalAgentTuiTriggersInStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement): void {
     for (const trigger of Array.from(strip.querySelectorAll<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui'))) {
         ctx.syncTerminalAgentTuiTrigger(trigger);
     }
@@ -232,7 +224,7 @@ export function syncTerminalAgentTuiTriggersInStripExtracted(ctx: any, strip: HT
     }
 }
 
-export function syncTerminalAgentTuiTriggerExtracted(ctx: any, trigger: HTMLButtonElement, agentId?: string): void {
+export function syncTerminalAgentTuiTriggerExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, trigger: HTMLButtonElement, agentId?: string): void {
     const resolvedId = agentId ?? ctx.resolveTerminalAgentTuiActiveAgentId();
     const isPlainTerminal = resolvedId === 'terminal';
     const label = isPlainTerminal
@@ -261,7 +253,7 @@ export function syncTerminalAgentTuiTriggerExtracted(ctx: any, trigger: HTMLButt
     trigger.removeAttribute('aria-selected');
 }
 
-export function executionSurfaceTabSpecsExtracted(ctx: any): Array<{ id: TranscriptTab; label: string; icon: string }> {
+export function executionSurfaceTabSpecsExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): Array<{ id: TranscriptTab; label: string; icon: string }> {
     if (peekPreferDesktopIde()) {
         return [
             { id: 'preview', label: nls.localize('qaap/mobileProjects/tabPreview', 'Navegador'), icon: 'codicon-globe' },
@@ -274,7 +266,7 @@ export function executionSurfaceTabSpecsExtracted(ctx: any): Array<{ id: Transcr
     ];
 }
 
-export function createExecutionSurfaceIconSelectExtracted(ctx: any, displayTabId: TranscriptTab,
+export function createExecutionSurfaceIconSelectExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, displayTabId: TranscriptTab,
     activeTab: TranscriptTab,
     tabSpecs: Array<{ id: TranscriptTab; label: string; icon: string }>,
     onSelect: (tab: TranscriptTab) => void,): HTMLElement {
@@ -356,7 +348,7 @@ export function createExecutionSurfaceIconSelectExtracted(ctx: any, displayTabId
     return wrap;
 }
 
-export function resolveExecutionTabOverflowMenuPortalExtracted(ctx: any, anchor: HTMLElement): HTMLElement {
+export function resolveExecutionTabOverflowMenuPortalExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, anchor: HTMLElement): HTMLElement {
     // Secondary surfaces are mounted as full-screen drawers above the persistent
     // Chat root. Keep their menus inside the drawer's stacking context; otherwise
     // the menu is appended to the underlying Work Hub root and ends up behind the
@@ -372,7 +364,7 @@ export function resolveExecutionTabOverflowMenuPortalExtracted(ctx: any, anchor:
     return ctx.host.root;
 }
 
-export function openExecutionTabOverflowMenuExtracted(ctx: any, anchor: HTMLButtonElement, menu: HTMLElement): void {
+export function openExecutionTabOverflowMenuExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, anchor: HTMLButtonElement, menu: HTMLElement): void {
     ctx.closeExecutionTabOverflowMenu();
     ctx.host.cardMenuUi.closeCardMenu();
     ctx.host.executionTabOverflowAnchor = anchor;
@@ -410,7 +402,7 @@ export function openExecutionTabOverflowMenuExtracted(ctx: any, anchor: HTMLButt
     });
 }
 
-export function executionTabOverflowMenuMinTopExtracted(ctx: any, anchor: HTMLElement): number {
+export function executionTabOverflowMenuMinTopExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, anchor: HTMLElement): number {
     const gap = 6;
     const titleRow = anchor.closest('.theia-mobile-transcript-tabs')
         ?.closest('.theia-mobile-projects-title-row, .theia-mobile-agent-log-title-row');
