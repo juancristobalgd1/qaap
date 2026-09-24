@@ -9,11 +9,11 @@ import * as path from 'path';
 
 describe('header IDE/Agents switch CSS', () => {
     const projectsCss = fs.readFileSync(
-        path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-projects.css'),
+        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-projects.css'),
         'utf8',
     );
     const sidebarCss = fs.readFileSync(
-        path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'qaap-work-hub-sessions-sidebar.css'),
+        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'qaap-work-hub-sessions-sidebar.css'),
         'utf8',
     );
     const ideCss = fs.readFileSync(
@@ -21,11 +21,11 @@ describe('header IDE/Agents switch CSS', () => {
         'utf8',
     );
     const workHubCss = fs.readFileSync(
-        path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
+        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-work-hub.css'),
         'utf8',
     );
     const conversationCss = fs.readFileSync(
-        path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-conversation.css'),
+        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css'),
         'utf8',
     );
 

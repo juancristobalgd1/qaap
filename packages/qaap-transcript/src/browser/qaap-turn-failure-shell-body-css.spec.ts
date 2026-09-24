@@ -10,7 +10,7 @@ import * as path from 'path';
 describe('turn-failure shell body padding', () => {
 
     const css = fs.readFileSync(
-        path.join(__dirname, '..', '..', '..', 'qaap-mobile-shell', 'src', 'browser', 'style', 'mobile-workbench-transcript.css'),
+        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-transcript.css'),
         'utf8',
     );
 

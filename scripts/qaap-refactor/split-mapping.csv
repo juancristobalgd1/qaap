@@ -402,7 +402,7 @@ packages/qaap-mobile-shell/src/browser/qaap-execution-surface-header-chrome.ts,s
 packages/qaap-mobile-shell/src/browser/qaap-file-navigator-contribution.ts,shared-core
 packages/qaap-mobile-shell/src/browser/qaap-file-navigator-model.ts,shared-core
 packages/qaap-mobile-shell/src/browser/qaap-file-navigator-widget.ts,shared-core
-packages/qaap-mobile-shell/src/browser/qaap-header-ide-agents-switch-css.spec.ts,shared-core
+packages/qaap-mobile-shell/src/browser/qaap-header-ide-agents-switch-css.spec.ts,work-hub
 packages/qaap-mobile-shell/src/browser/qaap-ide-preferences-resizer.ts,work-hub
 packages/qaap-mobile-shell/src/browser/qaap-keybinding-registry.spec.ts,shared-core
 packages/qaap-mobile-shell/src/browser/qaap-keybinding-registry.ts,shared-core
@@ -560,7 +560,7 @@ packages/qaap-mobile-shell/src/browser/qaap-transcript-terminal-view.ts,transcri
 packages/qaap-mobile-shell/src/browser/qaap-transcript-timeline-render-bench.spec.ts,transcript
 packages/qaap-mobile-shell/src/browser/qaap-transcript-user-attachment-preview-ui.ts,transcript
 packages/qaap-mobile-shell/src/browser/qaap-transcript-web-search-ui.ts,transcript
-packages/qaap-mobile-shell/src/browser/qaap-turn-failure-shell-body-css.spec.ts,shared-core
+packages/qaap-mobile-shell/src/browser/qaap-turn-failure-shell-body-css.spec.ts,transcript
 packages/qaap-mobile-shell/src/browser/qaap-turn-provenance-badge-e2e.spec.ts,transcript
 packages/qaap-mobile-shell/src/browser/qaap-turn-settle-notifier.spec.ts,transcript
 packages/qaap-mobile-shell/src/browser/qaap-turn-settle-notifier.ts,shared-core

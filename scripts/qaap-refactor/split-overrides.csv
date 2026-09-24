@@ -19,3 +19,6 @@ re:^(mobile-work-hub-catalog|qaap-work-hub-team|mobile-projects-dashboard-comman
 # The App Tester agent integration is AI product behaviour, not a mobile mechanic.
 re:^qaap-mobile-app-tester-contribution\.ts$,work-hub
 re:^qaap-css-modules\.d\.ts$,work-hub
+# CSS-only specs live with the stylesheet they read.
+re:^qaap-turn-failure-shell-body-css\.spec\.ts$,transcript
+re:^qaap-header-ide-agents-switch-css\.spec\.ts$,work-hub
