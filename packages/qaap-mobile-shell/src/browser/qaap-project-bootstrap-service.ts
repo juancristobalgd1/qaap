@@ -2,30 +2,19 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { generateUuid } from '@theia/core/lib/common/uuid';
-import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
-import { FileUri } from '@theia/core/lib/common/file-uri';
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
-import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
-import {
-    parsePreviewIdentityPath,
-    parsePreviewProxyPath,
-    rebasePreviewUrlToIdentityClaim,
-} from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
 import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
-import { QaapPreviewWidgetKey, QaapProjectPreviewOpener } from './qaap-project-preview-opener';
+import { QaapPreviewWidgetKey } from './qaap-project-preview-opener';
 import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import {
     QaapBootstrapPhase,
@@ -36,56 +25,20 @@ import {
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
 import {
-    fetchQaapCurrentDevPreview,
-    probeQaapDevPreviewPort,
-    probeQaapIdentityPreview,
-    toDevPreviewUrl,
     waitForQaapDevPreviewPort,
 } from './qaap-dev-preview-client';
 import {
-    getImplicitDevPort,
-    getQaapIdeListenPort,
-    isReservedIdePort,
-    pickNextDevPort,
-    resolveBootstrapDevPort,
-    wrapCommandForDevNodeEnv,
-    wrapDevCommandForPort,
-} from './qaap-project-bootstrap-port';
-import {
-    diagnoseBootstrapFailure,
-    extractDevOutputProbePorts,
-    extractTerminalFailureLine,
-    isTerminalDoesNotExistError,
-    terminalOutputNeedsInstall,
-    terminalOutputNextDevLock,
     type QaapBootstrapFailureKind,
 } from './qaap-project-bootstrap-dev-errors';
 import { MobileProjectsService } from './mobile-projects-service';
-import { peekPreferDesktopIde } from './mobile-projects-open';
 import {
     enrichBootstrapDevRunError,
-    resolveBootstrapDevTarget,
-    resolveBootstrapInstallTarget,
 } from '../common/qaap-project-bootstrap-scaffold-plan';
 import type { QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
-import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
-import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
+import { type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
 import {
-    normalizeQaapPreviewConversationId,
     QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
-    qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
-import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
-import {
-    QAAP_PREVIEW_TERMINAL_KIND,
-    extractQaapPreviewTerminalPort,
-    isQaapBootRestoredPreviewTerminal,
-    isQaapRestoredPreviewTerminal,
-    isRestoredPreviewProbeOwned,
-    shouldDisposeRestoredPreviewTerminal,
-} from './qaap-preview-terminal-lifecycle';
-import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
-import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
 import {
     previewProjectId as previewProjectIdHelper,
     normalizeDevUrl as normalizeDevUrlHelper,
@@ -187,7 +140,7 @@ export interface QaapBootstrapStateChange {
     readonly missingDescriptorHint?: string;
 }
 
-interface PersistedEntry {
+export interface PersistedEntry {
     /** Workspace root URI string, used as map key. */
     readonly root: string;
     /** Phase the user "left" the bootstrap in; used so we do not re-prompt forever. */
@@ -209,34 +162,45 @@ interface PersistedEntry {
 export class QaapProjectBootstrapService {
 
     @inject(WorkspaceService)
-    protected readonly workspaceService: WorkspaceService;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly workspaceService: WorkspaceService;
 
     @inject(QaapProjectBootstrapDetector)
-    protected readonly detector: QaapProjectBootstrapDetector;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly detector: QaapProjectBootstrapDetector;
 
     @inject(TerminalService)
-    protected readonly terminalService: TerminalService;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly terminalService: TerminalService;
 
     @inject(TerminalWatcher)
-    protected readonly terminalWatcher: TerminalWatcher;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly terminalWatcher: TerminalWatcher;
 
     @inject(MiniBrowserOpenHandler)
-    protected readonly miniBrowser: MiniBrowserOpenHandler;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly miniBrowser: MiniBrowserOpenHandler;
 
     @inject(MobileProjectsService)
-    protected readonly hubProjects: MobileProjectsService;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly hubProjects: MobileProjectsService;
 
     @inject(ApplicationShell)
-    protected readonly shell: ApplicationShell;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly shell: ApplicationShell;
 
     @inject(QaapPreviewPortClaimService)
-    protected readonly previewPortClaimService: QaapPreviewPortClaimService;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly previewPortClaimService: QaapPreviewPortClaimService;
 
-    protected readonly toDispose = new DisposableCollection();
-    protected readonly stateEmitter = new Emitter<QaapBootstrapStateChange>();
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly toDispose = new DisposableCollection();
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly stateEmitter = new Emitter<QaapBootstrapStateChange>();
     readonly onStateChange: Event<QaapBootstrapStateChange> = this.stateEmitter.event;
 
-    protected readonly forwardedPortsEmitter = new Emitter<QaapForwardedPort[]>();
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly forwardedPortsEmitter = new Emitter<QaapForwardedPort[]>();
     /** Fires whenever the list of detected ports changes (added / removed / opened in preview). */
     readonly onForwardedPortsChanged: Event<QaapForwardedPort[]> = this.forwardedPortsEmitter.event;
 
@@ -244,45 +208,85 @@ export class QaapProjectBootstrapService {
     /** Fires whenever new dev-server output is appended (for live streaming in the Preview tab). */
     readonly onDevOutput: Event<string> = this.devOutputEmitter.event;
 
-    protected _forwardedPorts: QaapForwardedPort[] = [];
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _forwardedPorts: QaapForwardedPort[] = [];
     get forwardedPorts(): QaapForwardedPort[] { return this._forwardedPorts.slice(); }
 
-    protected _phase: QaapBootstrapPhase = 'idle';
-    protected _descriptor: QaapProjectDescriptor | undefined;
-    protected _previewUrl: string | undefined;
-    protected _previewReadiness: QaapPreviewReadiness | undefined;
-    protected _previewWaitTimedOut = false;
-    protected _error: string | undefined;
-    /** Set when dev stdout indicates missing devDependencies (typical on NODE_ENV=production hosts). */
-    protected _needsInstall = false;
-    protected _selectedApp: QaapMonorepoAppCandidate | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _phase: QaapBootstrapPhase = 'idle';
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _descriptor: QaapProjectDescriptor | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _previewUrl: string | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _previewReadiness: QaapPreviewReadiness | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _previewWaitTimedOut = false;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _error: string | undefined;
+    /**
+     * Set when dev stdout indicates missing devDependencies (typical on NODE_ENV=production hosts).
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public _needsInstall = false;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _selectedApp: QaapMonorepoAppCandidate | undefined;
     /**
      * Monotonically invalidates an app switch which was overtaken by a later picker tap.
      * We keep the currently-running app selected until its Qaap-managed terminal is stopped, so
      * the UI can never label app B as running while app A is still the live process.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */
-    protected monorepoAppSwitchGeneration = 0;
-    /** Target currently being switched to; makes a repeated tap on the same item idempotent. */
-    protected pendingMonorepoAppPath: string | undefined;
-    protected monorepoAppSwitchPromise: Promise<void> | undefined;
-    /** Primary port the dev server last bound to. Used to label "resume preview" once we restore. */
-    protected _lastPort: number | undefined;
-    /** Set when stdout mentions `EADDRINUSE` so failure handlers can offer recovery. */
-    protected _portConflictDetected = false;
-    protected _portConflictPort: number | undefined;
-    /** Invalidates stale terminal exit/close callbacks when a new dev run starts. */
-    protected devRunGeneration = 0;
-    protected devRunCancelledByUser = false;
-    /** Invalidates in-flight install when the workspace session is reset. */
-    protected installGeneration = 0;
-    protected refreshDebounceTimer: number | undefined;
-    /** Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000). */
-    protected activeDevPortHint: number | undefined;
-    protected activePreviewRunId: string | undefined;
-    protected activePreviewConversationId: string = QAAP_DEFAULT_PREVIEW_CONVERSATION_ID;
-    protected readonly previewRunIdByConversation = new Map<string, string>();
-    /** Live claims keyed by conversation/section so section B cannot release section A's preview. */
-    protected readonly previewClaimByConversation = new Map<string, {
+    public monorepoAppSwitchGeneration = 0;
+    /**
+     * Target currently being switched to; makes a repeated tap on the same item idempotent.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public pendingMonorepoAppPath: string | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public monorepoAppSwitchPromise: Promise<void> | undefined;
+    /**
+     * Primary port the dev server last bound to. Used to label "resume preview" once we restore.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public _lastPort: number | undefined;
+    /**
+     * Set when stdout mentions `EADDRINUSE` so failure handlers can offer recovery.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public _portConflictDetected = false;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public _portConflictPort: number | undefined;
+    /**
+     * Invalidates stale terminal exit/close callbacks when a new dev run starts.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devRunGeneration = 0;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public devRunCancelledByUser = false;
+    /**
+     * Invalidates in-flight install when the workspace session is reset.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public installGeneration = 0;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public refreshDebounceTimer: number | undefined;
+    /**
+     * Port we asked the dev server to bind to (may differ from the framework default when Qaap uses :3000).
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public activeDevPortHint: number | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public activePreviewRunId: string | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public activePreviewConversationId: string = QAAP_DEFAULT_PREVIEW_CONVERSATION_ID;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly previewRunIdByConversation = new Map<string, string>();
+    /**
+     * Live claims keyed by conversation/section so section B cannot release section A's preview.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public readonly previewClaimByConversation = new Map<string, {
         readonly previewId: string;
         readonly previewUrl: string;
         readonly port: number;
@@ -292,46 +296,81 @@ export class QaapProjectBootstrapService {
      * (one per section/conversation). The singular {@link devTerminal} field remains as
      * a pointer to the active conversation's terminal for backward compatibility with the
      * ~75 existing references; this map is the source of truth.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */
-    protected readonly devTerminalByConversationId = new Map<string, {
+    public readonly devTerminalByConversationId = new Map<string, {
         readonly terminal: TerminalWidget;
         readonly listener: Disposable;
     }>();
-    /** Conversation that owns {@link devTerminal}, when a dev run is in flight or attached. */
-    protected devTerminalConversationId: string | undefined;
-    /** Project selected in Work Hub; hosted `/workspace` is never a valid substitute. */
-    protected activeProjectId: string | undefined;
-    protected activeWorkspaceRoot: URI | undefined;
+    /**
+     * Conversation that owns {@link devTerminal}, when a dev run is in flight or attached.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devTerminalConversationId: string | undefined;
+    /**
+     * Project selected in Work Hub; hosted `/workspace` is never a valid substitute.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public activeProjectId: string | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public activeWorkspaceRoot: URI | undefined;
     /**
      * Work Hub project root pinned by {@link refreshFromProjectRoot}. While set, Theia workspace
      * change events must not rewrite preview identity back to the currently open IDE folder.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */
-    protected hubPinnedWorkspaceRoot: URI | undefined;
-    protected activePreviewClaim: {
+    public hubPinnedWorkspaceRoot: URI | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public activePreviewClaim: {
         readonly previewId: string;
         readonly previewUrl: string;
         readonly port: number;
     } | undefined;
-    /** One-run override used after an occupied port fails to expose a usable HTTP preview. */
-    protected devPortOverride: number | undefined;
-    /** Prevents an unhealthy project from cycling through ports forever. */
-    protected automaticPortRecoveryAttempts = 0;
-    protected readonly attemptedDevPorts = new Set<number>();
-    protected portRecoveryFrom: number | undefined;
-    protected previewAutoRetryAttempts = 0;
-    protected previewAutoRetryTimer: number | undefined;
-    /** Tracks the in-flight install/dev terminals so we can clean up on workspace switch. */
-    protected installTerminal: TerminalWidget | undefined;
-    protected devTerminal: TerminalWidget | undefined;
-    protected devTerminalListener = Disposable.NULL;
-    protected devPreviewFallbackTimers: number[] = [];
-    protected devPreviewWarmupTimer: number | undefined;
-    protected devPreviewHealthTimer: number | undefined;
-    protected devPreviewHealthFailures = 0;
-    /** Rolling tail of the current dev terminal output for failure diagnostics. */
-    protected devOutputTail = '';
-    /** Set when detection finds no runnable project — explains orphan scaffolds vs empty workspace. */
-    protected _missingDescriptorHint: string | undefined;
+    /**
+     * One-run override used after an occupied port fails to expose a usable HTTP preview.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devPortOverride: number | undefined;
+    /**
+     * Prevents an unhealthy project from cycling through ports forever.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public automaticPortRecoveryAttempts = 0;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readonly attemptedDevPorts = new Set<number>();
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public portRecoveryFrom: number | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public previewAutoRetryAttempts = 0;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public previewAutoRetryTimer: number | undefined;
+    /**
+     * Tracks the in-flight install/dev terminals so we can clean up on workspace switch.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public installTerminal: TerminalWidget | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public devTerminal: TerminalWidget | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public devTerminalListener = Disposable.NULL;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public devPreviewFallbackTimers: number[] = [];
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public devPreviewWarmupTimer: number | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public devPreviewHealthTimer: number | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public devPreviewHealthFailures = 0;
+    /**
+     * Rolling tail of the current dev terminal output for failure diagnostics.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public devOutputTail = '';
+    /**
+     * Set when detection finds no runnable project — explains orphan scaffolds vs empty workspace.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
+     */
+    public _missingDescriptorHint: string | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -349,15 +388,18 @@ export class QaapProjectBootstrapService {
     /** Stable identity URL of the live claim — the authoritative navigation target for the primary preview. */
     get previewClaimUrl(): string | undefined { return this.activePreviewClaim?.previewUrl; }
 
-    protected bindPreviewConversation(conversationId?: string): string {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public bindPreviewConversation(conversationId?: string): string {
         return bindPreviewConversationExtracted(this, conversationId);
     }
 
-    protected rememberActivePreviewClaim(claim: { readonly previewId: string; readonly previewUrl: string; readonly port: number; }): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public rememberActivePreviewClaim(claim: { readonly previewId: string; readonly previewUrl: string; readonly port: number; }): void {
         rememberActivePreviewClaimExtracted(this, claim);
     }
 
-    protected ensurePreviewProcessIdForConversation(conversationId?: string): string {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public ensurePreviewProcessIdForConversation(conversationId?: string): string {
         return ensurePreviewProcessIdForConversationExtracted(this, conversationId);
     }
 
@@ -391,11 +433,13 @@ export class QaapProjectBootstrapService {
         return getBootstrapFailureDetailExtracted(this);
     }
 
-    protected resolveDevPlan(): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind } | undefined {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public resolveDevPlan(): { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind } | undefined {
         return resolveDevPlanExtracted(this);
     }
 
-    protected resolveInstallPlan(): { command: string; cwd: URI } | undefined {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public resolveInstallPlan(): { command: string; cwd: URI } | undefined {
         return resolveInstallPlanExtracted(this);
     }
 
@@ -407,11 +451,13 @@ export class QaapProjectBootstrapService {
         return getMissingDescriptorHintExtracted(this, explicitRoot);
     }
 
-    protected buildDevSpawnPlan(plan: { command: string; expectedPort?: number; kind: QaapProjectKind; }): { command: string; targetPort?: number } {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public buildDevSpawnPlan(plan: { command: string; expectedPort?: number; kind: QaapProjectKind; }): { command: string; targetPort?: number } {
         return buildDevSpawnPlanExtracted(this, plan);
     }
 
-    protected reserveActivePreview(port: number, cwd: URI, osProcessId?: number): Promise<QaapPreviewPortClaimResult> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public reserveActivePreview(port: number, cwd: URI, osProcessId?: number): Promise<QaapPreviewPortClaimResult> {
         return reserveActivePreviewExtracted(this, port, cwd, osProcessId);
     }
 
@@ -424,8 +470,9 @@ export class QaapProjectBootstrapService {
      * on the VPS as duplicate registry records (ports 3000 and 3003 for one project) that the
      * server-side supersede could not match. The root URI is invariant across flows: one project
      * root ⇒ one preview identity ⇒ one widget.
+     * @internal Used by the extracted qaap-project-bootstrap-service-* modules.
      */
-    protected previewProjectId(workspaceRoot: URI): string {
+    public previewProjectId(workspaceRoot: URI): string {
         return previewProjectIdHelper(workspaceRoot);
     }
 
@@ -433,11 +480,13 @@ export class QaapProjectBootstrapService {
         return selectMonorepoAppExtracted(this, candidate, options);
     }
 
-    protected async switchMonorepoApp(candidate: QaapMonorepoAppCandidate | undefined, descriptor: QaapProjectDescriptor, switchGeneration: number, options?: { readonly conversationId?: string },): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async switchMonorepoApp(candidate: QaapMonorepoAppCandidate | undefined, descriptor: QaapProjectDescriptor, switchGeneration: number, options?: { readonly conversationId?: string },): Promise<void> {
         return switchMonorepoAppExtracted(this, candidate, descriptor, switchGeneration, options);
     }
 
-    protected async stopManagedDevServerForAppSwitch(): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async stopManagedDevServerForAppSwitch(): Promise<void> {
         return stopManagedDevServerForAppSwitchExtracted(this);
     }
 
@@ -449,7 +498,8 @@ export class QaapProjectBootstrapService {
         return runDevServerExtracted(this, options);
     }
 
-    protected async startDevServer(plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, descriptor: QaapProjectDescriptor,): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async startDevServer(plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, descriptor: QaapProjectDescriptor,): Promise<void> {
         return startDevServerExtracted(this, plan, descriptor);
     }
 
@@ -473,7 +523,8 @@ export class QaapProjectBootstrapService {
         return openExistingPreviewExtracted(this, options);
     }
 
-    protected scheduleRefreshFromCurrentWorkspace(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public scheduleRefreshFromCurrentWorkspace(): void {
         scheduleRefreshFromCurrentWorkspaceExtracted(this);
     }
 
@@ -481,7 +532,8 @@ export class QaapProjectBootstrapService {
         return refreshFromCurrentWorkspaceExtracted(this);
     }
 
-    protected async refreshFromRoot(resource: URI | undefined): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async refreshFromRoot(resource: URI | undefined): Promise<void> {
         return refreshFromRootExtracted(this, resource);
     }
 
@@ -494,27 +546,33 @@ export class QaapProjectBootstrapService {
         return normalizeRestoredPhaseHelper(phase, descriptor);
     }
 
-    protected scanDevOutput(data: string, plan: { expectedPort?: number }): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public scanDevOutput(data: string, plan: { expectedPort?: number }): void {
         scanDevOutputExtracted(this, data, plan);
     }
 
-    protected scanForDevUrl(data: string): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public scanForDevUrl(data: string): void {
         scanForDevUrlExtracted(this, data);
     }
 
-    protected normalizeDevUrl(raw: string): string | undefined {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public normalizeDevUrl(raw: string): string | undefined {
         return normalizeDevUrlHelper(raw);
     }
 
-    protected extractPort(url: string): number | undefined {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public extractPort(url: string): number | undefined {
         return extractPortExtracted(this, url);
     }
 
-    protected recordForwardedPort(port: number, url: string, options?: { alreadyReady?: boolean },): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public recordForwardedPort(port: number, url: string, options?: { alreadyReady?: boolean },): void {
         recordForwardedPortExtracted(this, port, url, options);
     }
 
-    protected resolvePrimaryPreviewTarget(port: number, url: string): { port: number; url: string } {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public resolvePrimaryPreviewTarget(port: number, url: string): { port: number; url: string } {
         return resolvePrimaryPreviewTargetExtracted(this, port, url);
     }
 
@@ -528,21 +586,26 @@ export class QaapProjectBootstrapService {
         this.previewAutoOpenGate = gate;
     }
 
-    protected previewAutoOpenGate: (() => boolean) | undefined;
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public previewAutoOpenGate: (() => boolean) | undefined;
 
-    protected mayAutoOpenPreviewNow(): boolean {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public mayAutoOpenPreviewNow(): boolean {
         return mayAutoOpenPreviewNowExtracted(this);
     }
 
-    protected async claimDevPreviewPort(port: number): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async claimDevPreviewPort(port: number): Promise<void> {
         return claimDevPreviewPortExtracted(this, port);
     }
 
-    protected async openPrimaryPreviewWhenReady(port: number, url: string, options?: { auto?: boolean }): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async openPrimaryPreviewWhenReady(port: number, url: string, options?: { auto?: boolean }): Promise<void> {
         return openPrimaryPreviewWhenReadyExtracted(this, port, url, options);
     }
 
-    protected async healPreviewClaimToListeningPort(deadPort: number,): Promise<Awaited<ReturnType<typeof waitForQaapDevPreviewPort>>> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async healPreviewClaimToListeningPort(deadPort: number,): Promise<Awaited<ReturnType<typeof waitForQaapDevPreviewPort>>> {
         return healPreviewClaimToListeningPortExtracted(this, deadPort);
     }
 
@@ -550,52 +613,64 @@ export class QaapProjectBootstrapService {
         return openForwardedPortExtracted(this, port);
     }
 
-    protected markPortOpened(port: number, open: boolean): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public markPortOpened(port: number, open: boolean): void {
         markPortOpenedExtracted(this, port, open);
     }
 
-    protected collectProbePorts(plan?: { expectedPort?: number }): number[] {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public collectProbePorts(plan?: { expectedPort?: number }): number[] {
         return collectProbePortsExtracted(this, plan);
     }
 
-    protected extractPortFromInUseMessage(text: string): number | undefined {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public extractPortFromInUseMessage(text: string): number | undefined {
         return extractPortFromInUseMessageHelper(text);
     }
 
-    protected scheduleDevPreviewFallback(runId: number, port: number): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public scheduleDevPreviewFallback(runId: number, port: number): void {
         scheduleDevPreviewFallbackExtracted(this, runId, port);
     }
 
-    protected async tryAttachToExistingServer(ports: number[]): Promise<boolean> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async tryAttachToExistingServer(ports: number[]): Promise<boolean> {
         return tryAttachToExistingServerExtracted(this, ports);
     }
 
-    protected adoptExistingPreviewIdentity(port: number, probe: QaapDevPreviewProbeResponse): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public adoptExistingPreviewIdentity(port: number, probe: QaapDevPreviewProbeResponse): void {
         adoptExistingPreviewIdentityExtracted(this, port, probe);
     }
 
-    protected probeBelongsToActiveProject(projectId: string | undefined): boolean {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public probeBelongsToActiveProject(projectId: string | undefined): boolean {
         return probeBelongsToActiveProjectExtracted(this, projectId);
     }
 
-    protected monitorPreviewProcessLifetime(terminal: TerminalWidget, previewId: string): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public monitorPreviewProcessLifetime(terminal: TerminalWidget, previewId: string): void {
         monitorPreviewProcessLifetimeExtracted(this, terminal, previewId);
     }
 
-    protected attachTerminalOsProcessId(terminal: TerminalWidget, previewId: string, port: number, cwd: URI): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public attachTerminalOsProcessId(terminal: TerminalWidget, previewId: string, port: number, cwd: URI): void {
         attachTerminalOsProcessIdExtracted(this, terminal, previewId, port, cwd);
     }
 
-    protected async failDevRun(message: string, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, runId: number,): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async failDevRun(message: string, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind }, runId: number,): Promise<void> {
         return failDevRunExtracted(this, message, plan, runId);
     }
 
-    protected enrichDevRunError(message: string): string {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public enrichDevRunError(message: string): string {
         const previewRoot = this._selectedApp?.relativePath ?? this._descriptor?.scaffoldRelativePath;
         return enrichBootstrapDevRunError(message, previewRoot);
     }
 
-    protected appendDevOutput(data: string): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public appendDevOutput(data: string): void {
         this.devOutputTail = (this.devOutputTail + data).slice(-DEV_OUTPUT_TAIL_MAX);
         this.devOutputEmitter.fire(this.devOutputTail);
     }
@@ -603,27 +678,33 @@ export class QaapProjectBootstrapService {
     /** Returns the recent dev-server output tail (for live streaming in the Preview tab). */
     get devOutput(): string { return this.devOutputTail; }
 
-    protected readTerminalTail(terminal: TerminalWidget, maxLines: number = 40): string {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readTerminalTail(terminal: TerminalWidget, maxLines: number = 40): string {
         return readTerminalTailHelper(terminal, maxLines);
     }
 
-    protected async spawnCommandWithRetry(options: { title: string; command: string; cwd: URI; reveal?: boolean; }): Promise<TerminalWidget> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async spawnCommandWithRetry(options: { title: string; command: string; cwd: URI; reveal?: boolean; }): Promise<TerminalWidget> {
         return spawnCommandWithRetryExtracted(this, options);
     }
 
-    protected delay(ms: number): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public delay(ms: number): Promise<void> {
         return delayHelper(ms);
     }
 
-    protected async refreshDescriptorAfterInstall(): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async refreshDescriptorAfterInstall(): Promise<void> {
         return refreshDescriptorAfterInstallExtracted(this);
     }
 
-    protected previewWidgetKey(): QaapPreviewWidgetKey | undefined {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public previewWidgetKey(): QaapPreviewWidgetKey | undefined {
         return previewWidgetKeyExtracted(this);
     }
 
-    protected async openPreviewWidget(url: string): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async openPreviewWidget(url: string): Promise<void> {
         return openPreviewWidgetExtracted(this, url);
     }
 
@@ -631,43 +712,53 @@ export class QaapProjectBootstrapService {
         return openPreviewExtracted(this, url, isPrimary, options);
     }
 
-    protected syncMiniBrowserPreviewSuspensionAfterOpen(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public syncMiniBrowserPreviewSuspensionAfterOpen(): void {
         syncMiniBrowserPreviewSuspensionAfterOpenExtracted(this);
     }
 
-    protected async spawnCommand(options: { title: string; command: string; cwd: URI; kind?: string; reveal?: boolean; }): Promise<TerminalWidget> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async spawnCommand(options: { title: string; command: string; cwd: URI; kind?: string; reveal?: boolean; }): Promise<TerminalWidget> {
         return spawnCommandExtracted(this, options);
     }
 
-    protected async reconcileRestoredPreviewTerminals(): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async reconcileRestoredPreviewTerminals(): Promise<void> {
         return reconcileRestoredPreviewTerminalsExtracted(this);
     }
 
-    protected async disposeRestoredPreviewTerminals(cwd: URI, title: string, keepPort?: number,): Promise<TerminalWidget | undefined> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async disposeRestoredPreviewTerminals(cwd: URI, title: string, keepPort?: number,): Promise<TerminalWidget | undefined> {
         return disposeRestoredPreviewTerminalsExtracted(this, cwd, title, keepPort);
     }
 
-    protected watchAttachedDevTerminal(terminal: TerminalWidget, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public watchAttachedDevTerminal(terminal: TerminalWidget, plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },): void {
         watchAttachedDevTerminalExtracted(this, terminal, plan);
     }
 
-    protected toUserFacingDevError(message: string): string {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public toUserFacingDevError(message: string): string {
         return toUserFacingDevErrorExtracted(this, message);
     }
 
-    protected buildShellInvocation(command: string, cwd: string): { shellPath: string; shellArgs: string[] } {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public buildShellInvocation(command: string, cwd: string): { shellPath: string; shellArgs: string[] } {
         return buildShellInvocationExtracted(this, command, cwd);
     }
 
-    protected waitForExit(terminal: TerminalWidget): Promise<number | undefined> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public waitForExit(terminal: TerminalWidget): Promise<number | undefined> {
         return waitForExitExtracted(this, terminal);
     }
 
-    protected beginDevRun(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public beginDevRun(): void {
         beginDevRunExtracted(this);
     }
 
-    protected releaseActivePreview(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public releaseActivePreview(): void {
         releaseActivePreviewExtracted(this);
     }
 
@@ -675,11 +766,13 @@ export class QaapProjectBootstrapService {
         releasePreviewForConversationExtracted(this, conversationId);
     }
 
-    protected registerDevTerminalForConversation(conversationId: string | undefined, terminal: TerminalWidget, listener: Disposable,): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public registerDevTerminalForConversation(conversationId: string | undefined, terminal: TerminalWidget, listener: Disposable,): void {
         registerDevTerminalForConversationExtracted(this, conversationId, terminal, listener);
     }
 
-    protected releaseDevTerminalForConversation(conversationId: string): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public releaseDevTerminalForConversation(conversationId: string): void {
         releaseDevTerminalForConversationExtracted(this, conversationId);
     }
 
@@ -702,67 +795,83 @@ export class QaapProjectBootstrapService {
             });
     }
 
-    protected resetBootstrapSessionForWorkspace(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public resetBootstrapSessionForWorkspace(): void {
         resetBootstrapSessionForWorkspaceExtracted(this);
     }
 
-    protected cancelDevPreviewFallbacks(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public cancelDevPreviewFallbacks(): void {
         cancelDevPreviewFallbacksExtracted(this);
     }
 
-    protected scheduleDevPreviewWarmup(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public scheduleDevPreviewWarmup(): void {
         scheduleDevPreviewWarmupExtracted(this);
     }
 
-    protected cancelDevPreviewWarmup(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public cancelDevPreviewWarmup(): void {
         cancelDevPreviewWarmupExtracted(this);
     }
 
-    protected startDevPreviewHealthMonitor(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public startDevPreviewHealthMonitor(): void {
         startDevPreviewHealthMonitorExtracted(this);
     }
 
-    protected cancelDevPreviewHealthMonitor(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public cancelDevPreviewHealthMonitor(): void {
         cancelDevPreviewHealthMonitorExtracted(this);
     }
 
-    protected async warmupDevPreview(): Promise<void> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public async warmupDevPreview(): Promise<void> {
         return warmupDevPreviewExtracted(this);
     }
 
-    protected cleanupDevTerminal(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public cleanupDevTerminal(): void {
         cleanupDevTerminalExtracted(this);
     }
 
-    protected disposeBootstrapTerminal(terminal: TerminalWidget | undefined): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public disposeBootstrapTerminal(terminal: TerminalWidget | undefined): void {
         disposeBootstrapTerminalHelper(terminal);
     }
 
-    protected clearForwardedPorts(): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public clearForwardedPorts(): void {
         clearForwardedPortsExtracted(this);
     }
 
-    protected buildStateChange(phase: QaapBootstrapPhase): QaapBootstrapStateChange {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public buildStateChange(phase: QaapBootstrapPhase): QaapBootstrapStateChange {
         return buildStateChangeExtracted(this, phase);
     }
 
-    protected setPhase(phase: QaapBootstrapPhase): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public setPhase(phase: QaapBootstrapPhase): void {
         setPhaseExtracted(this, phase);
     }
 
-    protected syncHubSession(phase: QaapBootstrapPhase): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public syncHubSession(phase: QaapBootstrapPhase): void {
         syncHubSessionExtracted(this, phase);
     }
 
-    protected persistPhase(phase: QaapBootstrapPhase, selectedApp?: QaapMonorepoAppCandidate): void {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public persistPhase(phase: QaapBootstrapPhase, selectedApp?: QaapMonorepoAppCandidate): void {
         persistPhaseExtracted(this, phase, selectedApp);
     }
 
-    protected readPersisted(rootKey: string): PersistedEntry | undefined {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readPersisted(rootKey: string): PersistedEntry | undefined {
         return this.readAllPersisted()[rootKey];
     }
 
-    protected readAllPersisted(): Record<string, PersistedEntry> {
+    /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
+    public readAllPersisted(): Record<string, PersistedEntry> {
         return readAllPersistedExtracted(this);
     }
 }

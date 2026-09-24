@@ -1,14 +1,10 @@
-// @ts-nocheck
+import type { QaapProjectBootstrapServiceContext } from './qaap-project-bootstrap-service-context';
 // Extracted from qaap-project-bootstrap-service.ts
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { generateUuid } from '@theia/core/lib/common/uuid';
+import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import {
     parsePreviewIdentityPath,
@@ -16,37 +12,19 @@ import {
     resolveEffectivePreviewUrl,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
-import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
 import { qaapPreviewWidgetKeyFromCoordinates } from '@theia/qaap-adapters/lib/browser/qaap-preview-widget-uri';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
-import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
 import { QaapPreviewWidgetKey, QaapProjectPreviewOpener } from './qaap-project-preview-opener';
-import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import {
-    QaapBootstrapPhase,
-    QaapForwardedPort,
-    QaapMonorepoAppCandidate,
-    QaapProjectDescriptor,
     QaapProjectKind,
 } from './qaap-project-bootstrap-types';
 import {
-    fetchQaapCurrentDevPreview,
     probeQaapDevPreviewPort,
     probeQaapIdentityPreview,
-    toDevPreviewUrl,
-    waitForQaapDevPreviewPort,
 } from './qaap-dev-preview-client';
 import {
-    getImplicitDevPort,
-    getQaapIdeListenPort,
     isReservedIdePort,
     pickNextDevPort,
-    resolveBootstrapDevPort,
-    wrapCommandForDevNodeEnv,
-    wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
 import {
     diagnoseBootstrapFailure,
@@ -55,46 +33,20 @@ import {
     isTerminalDoesNotExistError,
     terminalOutputNeedsInstall,
     terminalOutputNextDevLock,
-    type QaapBootstrapFailureKind,
 } from './qaap-project-bootstrap-dev-errors';
-import { MobileProjectsService } from './mobile-projects-service';
 import { peekPreferDesktopIde } from './mobile-projects-open';
+import { resolveDevPreviewPublicOrigin } from '../common/qaap-dev-preview';
 import {
-    enrichBootstrapDevRunError,
-    resolveBootstrapDevTarget,
-    resolveBootstrapInstallTarget,
-} from '../common/qaap-project-bootstrap-scaffold-plan';
-import type { QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
-import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
-import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
-import {
-    normalizeQaapPreviewConversationId,
-    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
-    qaapPreviewProjectIdMatches,
-} from '../common/qaap-preview-identity';
-import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
-import {
-    QAAP_PREVIEW_TERMINAL_KIND,
     extractQaapPreviewTerminalPort,
     isQaapBootRestoredPreviewTerminal,
     isQaapRestoredPreviewTerminal,
     isRestoredPreviewProbeOwned,
     shouldDisposeRestoredPreviewTerminal,
 } from './qaap-preview-terminal-lifecycle';
-import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
 import { buildQaapManagedShellInvocation, resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
-import {
-    previewProjectId as previewProjectIdHelper,
-    normalizeDevUrl as normalizeDevUrlHelper,
-    extractPortFromInUseMessage as extractPortFromInUseMessageHelper,
-    normalizeRestoredPhase as normalizeRestoredPhaseHelper,
-    readTerminalTail as readTerminalTailHelper,
-    disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
-    delay as delayHelper,
-} from './qaap-project-bootstrap-helpers';
 import { DEV_PREVIEW_AUTO_RETRY_DELAY_MS, DEV_PREVIEW_AUTO_RETRY_MAX_ATTEMPTS, DEV_PORT_RECOVERY_MAX_ATTEMPTS, PORT_IN_USE_REGEX, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS, TERMINAL_READY_DELAY_MS, TERMINAL_SPAWN_MAX_ATTEMPTS, TERMINAL_SPAWN_RETRY_DELAY_MS } from './qaap-project-bootstrap-service';
 
-export async function failDevRunExtracted(ctx: any, message: string,
+export async function failDevRunExtracted(ctx: QaapProjectBootstrapServiceContext, message: string,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },
         runId: number,): Promise<void> {
         if (runId !== ctx.devRunGeneration || ctx.devRunCancelledByUser) {
@@ -185,7 +137,7 @@ export async function failDevRunExtracted(ctx: any, message: string,
         ctx.setPhase('run-failed');
 }
 
-export async function spawnCommandWithRetryExtracted(ctx: any, options: {
+export async function spawnCommandWithRetryExtracted(ctx: QaapProjectBootstrapServiceContext, options: {
         title: string;
         command: string;
         cwd: URI;
@@ -211,7 +163,7 @@ export async function spawnCommandWithRetryExtracted(ctx: any, options: {
         throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-export async function refreshDescriptorAfterInstallExtracted(ctx: any): Promise<void> {
+export async function refreshDescriptorAfterInstallExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
         const roots = ctx.activeWorkspaceRoot ? undefined : await ctx.workspaceService.roots;
         const root = ctx.activeWorkspaceRoot ?? ctx._descriptor?.rootUri ?? roots?.[0]?.resource;
         if (!root) {
@@ -223,7 +175,7 @@ export async function refreshDescriptorAfterInstallExtracted(ctx: any): Promise<
         }
 }
 
-export function previewWidgetKeyExtracted(ctx: any): QaapPreviewWidgetKey | undefined {
+export function previewWidgetKeyExtracted(ctx: QaapProjectBootstrapServiceContext): QaapPreviewWidgetKey | undefined {
         const workspaceRoot = ctx.activeWorkspaceRoot ?? ctx._descriptor?.rootUri;
         if (!workspaceRoot) {
             return undefined;
@@ -234,7 +186,7 @@ export function previewWidgetKeyExtracted(ctx: any): QaapPreviewWidgetKey | unde
         };
 }
 
-export async function openPreviewWidgetExtracted(ctx: any, url: string): Promise<void> {
+export async function openPreviewWidgetExtracted(ctx: QaapProjectBootstrapServiceContext, url: string): Promise<void> {
         let key = ctx.previewWidgetKey();
         if (!key) {
             key = await resolvePreviewWidgetKeyFromUrl(url);
@@ -272,7 +224,7 @@ async function resolvePreviewWidgetKeyFromUrl(url: string): Promise<QaapPreviewW
         return undefined;
 }
 
-export async function openPreviewExtracted(ctx: any, url: string,
+export async function openPreviewExtracted(ctx: QaapProjectBootstrapServiceContext, url: string,
         isPrimary: boolean = true,
         options?: { auto?: boolean; silent?: boolean },): Promise<void> {
         let identity: ReturnType<typeof parsePreviewIdentityPath>;
@@ -337,14 +289,14 @@ export async function openPreviewExtracted(ctx: any, url: string,
         }
 }
 
-export function syncMiniBrowserPreviewSuspensionAfterOpenExtracted(ctx: any): void {
+export function syncMiniBrowserPreviewSuspensionAfterOpenExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         if (!matchesMobileOneColumnLayout()) {
             return;
         }
         syncQaapMiniBrowserPreviewSuspension(ctx.shell, peekPreferDesktopIde());
 }
 
-export async function spawnCommandExtracted(ctx: any, options: {
+export async function spawnCommandExtracted(ctx: QaapProjectBootstrapServiceContext, options: {
         title: string;
         command: string;
         cwd: URI;
@@ -374,7 +326,7 @@ export async function spawnCommandExtracted(ctx: any, options: {
         return terminal;
 }
 
-export async function reconcileRestoredPreviewTerminalsExtracted(ctx: any): Promise<void> {
+export async function reconcileRestoredPreviewTerminalsExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
         const roots = await ctx.workspaceService.roots;
         const workspaceRoots = roots.map(entry => entry.resource.toString());
         if (workspaceRoots.length === 0) {
@@ -428,7 +380,7 @@ export async function reconcileRestoredPreviewTerminalsExtracted(ctx: any): Prom
         await new Promise<void>(resolve => window.setTimeout(resolve, RESTORED_PREVIEW_TERMINAL_STOP_DELAY_MS));
 }
 
-export async function disposeRestoredPreviewTerminalsExtracted(ctx: any, cwd: URI,
+export async function disposeRestoredPreviewTerminalsExtracted(ctx: QaapProjectBootstrapServiceContext, cwd: URI,
         title: string,
         keepPort?: number,): Promise<TerminalWidget | undefined> {
         const expectedCwd = cwd.toString();
@@ -480,7 +432,7 @@ export async function disposeRestoredPreviewTerminalsExtracted(ctx: any, cwd: UR
         return retained;
 }
 
-export function watchAttachedDevTerminalExtracted(ctx: any, terminal: TerminalWidget,
+export function watchAttachedDevTerminalExtracted(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget,
         plan: { command: string; cwd: URI; expectedPort?: number; kind: QaapProjectKind },): void {
         if (terminal === ctx.devTerminal) {
             return;
@@ -525,7 +477,7 @@ export function watchAttachedDevTerminalExtracted(ctx: any, terminal: TerminalWi
         }
 }
 
-export function toUserFacingDevErrorExtracted(ctx: any, message: string): string {
+export function toUserFacingDevErrorExtracted(ctx: QaapProjectBootstrapServiceContext, message: string): string {
         if (isTerminalDoesNotExistError(message)) {
             return 'The install/dev terminal was closed too early (often a double tap on Preview or a workspace refresh). Wait a moment, then tap Retry once.';
         }
@@ -550,7 +502,7 @@ export function toUserFacingDevErrorExtracted(ctx: any, message: string): string
         return message;
 }
 
-export function buildShellInvocationExtracted(ctx: any, command: string, cwd: string): { shellPath: string; shellArgs: string[] } {
+export function buildShellInvocationExtracted(ctx: QaapProjectBootstrapServiceContext, command: string, cwd: string): { shellPath: string; shellArgs: string[] } {
         // Keep `cwd` in the terminal options for normal Theia behavior AND make it part of the
         // managed command. The latter is a fail-safe for mobile terminal restoration: live VPS
         // evidence showed a recreated widget falling back to the IDE's `/app/examples/browser`

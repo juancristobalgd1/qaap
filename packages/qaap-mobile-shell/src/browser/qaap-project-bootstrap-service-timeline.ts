@@ -1,101 +1,39 @@
-// @ts-nocheck
+import type { QaapProjectBootstrapServiceContext } from './qaap-project-bootstrap-service-context';
 // Extracted from qaap-project-bootstrap-service.ts
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { generateUuid } from '@theia/core/lib/common/uuid';
+import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
-import { FileUri } from '@theia/core/lib/common/file-uri';
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
-import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
 import {
-    parsePreviewIdentityPath,
     parsePreviewProxyPath,
     rebasePreviewUrlToIdentityClaim,
     resolveEffectivePreviewUrl,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
-import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
-import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
-import { QaapPreviewWidgetKey, QaapProjectPreviewOpener } from './qaap-project-preview-opener';
-import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import {
-    QaapBootstrapPhase,
     QaapForwardedPort,
-    QaapMonorepoAppCandidate,
-    QaapProjectDescriptor,
-    QaapProjectKind,
 } from './qaap-project-bootstrap-types';
 import {
-    fetchQaapCurrentDevPreview,
     probeQaapDevPreviewPort,
     probeQaapIdentityPreview,
-    toDevPreviewUrl,
     waitForQaapDevPreviewPort,
 } from './qaap-dev-preview-client';
 import {
-    getImplicitDevPort,
     getQaapIdeListenPort,
     isReservedIdePort,
-    pickNextDevPort,
-    resolveBootstrapDevPort,
-    wrapCommandForDevNodeEnv,
-    wrapDevCommandForPort,
 } from './qaap-project-bootstrap-port';
 import {
-    diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
-    extractTerminalFailureLine,
-    isTerminalDoesNotExistError,
-    terminalOutputNeedsInstall,
-    terminalOutputNextDevLock,
-    type QaapBootstrapFailureKind,
 } from './qaap-project-bootstrap-dev-errors';
-import { MobileProjectsService } from './mobile-projects-service';
-import { peekPreferDesktopIde } from './mobile-projects-open';
-import {
-    enrichBootstrapDevRunError,
-    resolveBootstrapDevTarget,
-    resolveBootstrapInstallTarget,
-} from '../common/qaap-project-bootstrap-scaffold-plan';
-import type { QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
-import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
 import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
 import {
-    normalizeQaapPreviewConversationId,
-    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
     qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
 import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
-import {
-    QAAP_PREVIEW_TERMINAL_KIND,
-    extractQaapPreviewTerminalPort,
-    isQaapBootRestoredPreviewTerminal,
-    isQaapRestoredPreviewTerminal,
-    isRestoredPreviewProbeOwned,
-    shouldDisposeRestoredPreviewTerminal,
-} from './qaap-preview-terminal-lifecycle';
-import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
-import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
-import {
-    previewProjectId as previewProjectIdHelper,
-    normalizeDevUrl as normalizeDevUrlHelper,
-    extractPortFromInUseMessage as extractPortFromInUseMessageHelper,
-    normalizeRestoredPhase as normalizeRestoredPhaseHelper,
-    readTerminalTail as readTerminalTailHelper,
-    disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
-    delay as delayHelper,
-} from './qaap-project-bootstrap-helpers';
 import { ANSI_REGEX, DEV_PREVIEW_FALLBACK_MS, DEV_PREVIEW_OPEN_PROBE_ATTEMPTS, DEV_PREVIEW_OPEN_PROBE_INTERVAL_MS, DEV_URL_REGEX, PORT_IN_USE_REGEX } from './qaap-project-bootstrap-service';
 
-export function scanDevOutputExtracted(ctx: any, data: string, plan: { expectedPort?: number }): void {
+export function scanDevOutputExtracted(ctx: QaapProjectBootstrapServiceContext, data: string, plan: { expectedPort?: number }): void {
         if (ctx._phase !== 'starting' && ctx._phase !== 'running') {
             return;
         }
@@ -117,7 +55,7 @@ export function scanDevOutputExtracted(ctx: any, data: string, plan: { expectedP
         ctx.scanForDevUrl(clean);
 }
 
-export function scanForDevUrlExtracted(ctx: any, data: string): void {
+export function scanForDevUrlExtracted(ctx: QaapProjectBootstrapServiceContext, data: string): void {
         if (ctx._phase !== 'starting' && ctx._phase !== 'running') {
             return;
         }
@@ -144,7 +82,7 @@ export function scanForDevUrlExtracted(ctx: any, data: string): void {
         }
 }
 
-export function extractPortExtracted(ctx: any, url: string): number | undefined {
+export function extractPortExtracted(ctx: QaapProjectBootstrapServiceContext, url: string): number | undefined {
         try {
             const parsed = new URL(url);
             const proxied = parsePreviewProxyPath(parsed.pathname);
@@ -165,7 +103,7 @@ export function extractPortExtracted(ctx: any, url: string): number | undefined 
         return undefined;
 }
 
-export function recordForwardedPortExtracted(ctx: any, port: number,
+export function recordForwardedPortExtracted(ctx: QaapProjectBootstrapServiceContext, port: number,
         url: string,
         options?: { alreadyReady?: boolean },): void {
         if (isReservedIdePort(port)) {
@@ -214,7 +152,7 @@ export function recordForwardedPortExtracted(ctx: any, port: number,
         }
 }
 
-function previewUrlForIdentityOpen(ctx: any, discoveredUrl: string, identityPreviewUrl?: string): string {
+function previewUrlForIdentityOpen(ctx: QaapProjectBootstrapServiceContext, discoveredUrl: string, identityPreviewUrl?: string): string {
         const nestedEntry = staticEntryPathFromDevCommand(ctx._descriptor?.devCommand);
         return resolveEffectivePreviewUrl({
             candidateUrl: discoveredUrl || identityPreviewUrl || '',
@@ -224,7 +162,7 @@ function previewUrlForIdentityOpen(ctx: any, discoveredUrl: string, identityPrev
         });
 }
 
-export function resolvePrimaryPreviewTargetExtracted(ctx: any, port: number, url: string): { port: number; url: string } {
+export function resolvePrimaryPreviewTargetExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, url: string): { port: number; url: string } {
         const claim = ctx.activePreviewClaim;
         if (claim && claim.port !== undefined && claim.port !== port) {
             return { port: claim.port, url: previewUrlForIdentityOpen(ctx, url, claim.previewUrl) };
@@ -232,7 +170,7 @@ export function resolvePrimaryPreviewTargetExtracted(ctx: any, port: number, url
         return { port, url: previewUrlForIdentityOpen(ctx, url, claim?.previewUrl) };
 }
 
-export function mayAutoOpenPreviewNowExtracted(ctx: any): boolean {
+export function mayAutoOpenPreviewNowExtracted(ctx: QaapProjectBootstrapServiceContext): boolean {
         try {
             return ctx.previewAutoOpenGate?.() ?? true;
         } catch {
@@ -240,7 +178,7 @@ export function mayAutoOpenPreviewNowExtracted(ctx: any): boolean {
         }
 }
 
-export async function claimDevPreviewPortExtracted(ctx: any, port: number): Promise<void> {
+export async function claimDevPreviewPortExtracted(ctx: QaapProjectBootstrapServiceContext, port: number): Promise<void> {
         const processRoot = ctx._descriptor?.rootUri ?? ctx.activeWorkspaceRoot;
         const claim = ctx.activePreviewRunId && processRoot
             ? await ctx.reserveActivePreview(port, processRoot)
@@ -254,7 +192,7 @@ export async function claimDevPreviewPortExtracted(ctx: any, port: number): Prom
         }
 }
 
-export async function openPrimaryPreviewWhenReadyExtracted(ctx: any, port: number, url: string, options?: { auto?: boolean }): Promise<void> {
+export async function openPrimaryPreviewWhenReadyExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, url: string, options?: { auto?: boolean }): Promise<void> {
         if (ctx._previewUrl) {
             return;
         }
@@ -301,7 +239,7 @@ export async function openPrimaryPreviewWhenReadyExtracted(ctx: any, port: numbe
         await ctx.openPreview(previewUrlForIdentityOpen(ctx, url, activeUrl ?? ready.previewUrl), true, options);
 }
 
-export async function healPreviewClaimToListeningPortExtracted(ctx: any, deadPort: number,): Promise<Awaited<ReturnType<typeof waitForQaapDevPreviewPort>>> {
+export async function healPreviewClaimToListeningPortExtracted(ctx: QaapProjectBootstrapServiceContext, deadPort: number,): Promise<Awaited<ReturnType<typeof waitForQaapDevPreviewPort>>> {
         const candidates = [
             ctx.activeDevPortHint,
             ctx._lastPort,
@@ -346,7 +284,7 @@ export async function healPreviewClaimToListeningPortExtracted(ctx: any, deadPor
         return undefined;
 }
 
-export async function openForwardedPortExtracted(ctx: any, port: QaapForwardedPort): Promise<void> {
+export async function openForwardedPortExtracted(ctx: QaapProjectBootstrapServiceContext, port: QaapForwardedPort): Promise<void> {
         if (port.primary) {
             // Primary ports go through the shared preview widget so users can swap between dev URLs
             // without spawning new tabs by accident.
@@ -361,7 +299,7 @@ export async function openForwardedPortExtracted(ctx: any, port: QaapForwardedPo
         }
 }
 
-export function markPortOpenedExtracted(ctx: any, port: number, open: boolean): void {
+export function markPortOpenedExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, open: boolean): void {
         let changed = false;
         ctx._forwardedPorts = ctx._forwardedPorts.map(p => {
             if (p.port !== port || p.previewOpen === open) {
@@ -375,7 +313,7 @@ export function markPortOpenedExtracted(ctx: any, port: number, open: boolean): 
         }
 }
 
-export function collectProbePortsExtracted(ctx: any, plan?: { expectedPort?: number }): number[] {
+export function collectProbePortsExtracted(ctx: QaapProjectBootstrapServiceContext, plan?: { expectedPort?: number }): number[] {
         const idePort = getQaapIdeListenPort();
         const ports: number[] = [];
         if (ctx._portConflictPort !== undefined) {
@@ -396,7 +334,7 @@ export function collectProbePortsExtracted(ctx: any, plan?: { expectedPort?: num
         return [...new Set(ports.filter(p => p > 0 && p < 65536 && p !== idePort))];
 }
 
-export function scheduleDevPreviewFallbackExtracted(ctx: any, runId: number, port: number): void {
+export function scheduleDevPreviewFallbackExtracted(ctx: QaapProjectBootstrapServiceContext, runId: number, port: number): void {
         const tryOpen = async (): Promise<void> => {
             if (runId !== ctx.devRunGeneration) {
                 return;
@@ -419,7 +357,7 @@ export function scheduleDevPreviewFallbackExtracted(ctx: any, runId: number, por
         );
 }
 
-export async function tryAttachToExistingServerExtracted(ctx: any, ports: number[]): Promise<boolean> {
+export async function tryAttachToExistingServerExtracted(ctx: QaapProjectBootstrapServiceContext, ports: number[]): Promise<boolean> {
         if (ports.length === 0 || ctx._previewUrl) {
             return !!ctx._previewUrl;
         }
@@ -455,7 +393,7 @@ export async function tryAttachToExistingServerExtracted(ctx: any, ports: number
         return false;
 }
 
-export function adoptExistingPreviewIdentityExtracted(ctx: any, port: number, probe: QaapDevPreviewProbeResponse): void {
+export function adoptExistingPreviewIdentityExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, probe: QaapDevPreviewProbeResponse): void {
         const restored = resolveQaapReattachedPreviewIdentity(port, probe);
         if (!restored) {
             return;
@@ -465,7 +403,7 @@ export function adoptExistingPreviewIdentityExtracted(ctx: any, port: number, pr
         ctx.rememberActivePreviewClaim(restored.claim);
 }
 
-export function probeBelongsToActiveProjectExtracted(ctx: any, projectId: string | undefined): boolean {
+export function probeBelongsToActiveProjectExtracted(ctx: QaapProjectBootstrapServiceContext, projectId: string | undefined): boolean {
         const workspaceRoot = ctx.activeWorkspaceRoot ?? ctx._descriptor?.rootUri;
         if (!workspaceRoot) {
             return true;
@@ -480,7 +418,7 @@ export function probeBelongsToActiveProjectExtracted(ctx: any, projectId: string
         return isLocalQaapPreviewOrigin(resolveDevPreviewPublicOrigin());
 }
 
-export function monitorPreviewProcessLifetimeExtracted(ctx: any, terminal: TerminalWidget, previewId: string): void {
+export function monitorPreviewProcessLifetimeExtracted(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget, previewId: string): void {
         const lifecycle = new DisposableCollection();
         let settled = false;
         const release = (): void => {
@@ -500,7 +438,7 @@ export function monitorPreviewProcessLifetimeExtracted(ctx: any, terminal: Termi
         ctx.toDispose.push(lifecycle);
 }
 
-export function attachTerminalOsProcessIdExtracted(ctx: any, terminal: TerminalWidget, previewId: string, port: number, cwd: URI): void {
+export function attachTerminalOsProcessIdExtracted(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget, previewId: string, port: number, cwd: URI): void {
         void terminal.processId.then(pid => {
             if (ctx.activePreviewClaim?.previewId === previewId) {
                 void ctx.reserveActivePreview(port, cwd, pid);

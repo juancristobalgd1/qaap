@@ -1,99 +1,29 @@
-// @ts-nocheck
+import type { QaapProjectBootstrapServiceContext } from './qaap-project-bootstrap-service-context';
 // Extracted from qaap-project-bootstrap-service.ts
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { generateUuid } from '@theia/core/lib/common/uuid';
+import type { PersistedEntry, QaapBootstrapStateChange } from './qaap-project-bootstrap-service';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import URI from '@theia/core/lib/common/uri';
-import { FileUri } from '@theia/core/lib/common/file-uri';
-import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
-import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
-import {
-    parsePreviewIdentityPath,
-    parsePreviewProxyPath,
-    rebasePreviewUrlToIdentityClaim,
-} from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { QaapPreviewPortClaimService } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import { TerminalWatcher } from '@theia/terminal/lib/common/terminal-watcher';
-import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
-import { QaapPreviewWidgetKey, QaapProjectPreviewOpener } from './qaap-project-preview-opener';
-import { QaapProjectBootstrapDetector } from './qaap-project-bootstrap-detector';
 import {
     QaapBootstrapPhase,
-    QaapForwardedPort,
     QaapMonorepoAppCandidate,
-    QaapProjectDescriptor,
-    QaapProjectKind,
 } from './qaap-project-bootstrap-types';
 import {
-    fetchQaapCurrentDevPreview,
     probeQaapDevPreviewPort,
-    probeQaapIdentityPreview,
-    toDevPreviewUrl,
-    waitForQaapDevPreviewPort,
 } from './qaap-dev-preview-client';
-import {
-    getImplicitDevPort,
-    getQaapIdeListenPort,
-    isReservedIdePort,
-    pickNextDevPort,
-    resolveBootstrapDevPort,
-    wrapCommandForDevNodeEnv,
-    wrapDevCommandForPort,
-} from './qaap-project-bootstrap-port';
 import {
     diagnoseBootstrapFailure,
     extractDevOutputProbePorts,
-    extractTerminalFailureLine,
-    isTerminalDoesNotExistError,
-    terminalOutputNeedsInstall,
     terminalOutputNextDevLock,
-    type QaapBootstrapFailureKind,
 } from './qaap-project-bootstrap-dev-errors';
-import { MobileProjectsService } from './mobile-projects-service';
-import { peekPreferDesktopIde } from './mobile-projects-open';
-import {
-    enrichBootstrapDevRunError,
-    resolveBootstrapDevTarget,
-    resolveBootstrapInstallTarget,
-} from '../common/qaap-project-bootstrap-scaffold-plan';
-import type { QaapPreviewPortClaimResult } from '@theia/qaap-adapters/lib/browser/qaap-preview-port-claim-service';
-import { normalizePersistedBootstrapPhase } from '../common/qaap-project-bootstrap-phase';
-import { isLocalQaapPreviewOrigin, resolveDevPreviewPublicOrigin, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
 import {
     normalizeQaapPreviewConversationId,
     QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
-    qaapPreviewProjectIdMatches,
 } from '../common/qaap-preview-identity';
-import { resolveQaapReattachedPreviewIdentity } from './qaap-preview-reattachment';
-import {
-    QAAP_PREVIEW_TERMINAL_KIND,
-    extractQaapPreviewTerminalPort,
-    isQaapBootRestoredPreviewTerminal,
-    isQaapRestoredPreviewTerminal,
-    isRestoredPreviewProbeOwned,
-    shouldDisposeRestoredPreviewTerminal,
-} from './qaap-preview-terminal-lifecycle';
-import { switchQaapMonorepoPreviewApp } from './qaap-monorepo-preview-switch';
-import { buildQaapManagedShellInvocation } from './qaap-project-bootstrap-shell';
-import {
-    previewProjectId as previewProjectIdHelper,
-    normalizeDevUrl as normalizeDevUrlHelper,
-    extractPortFromInUseMessage as extractPortFromInUseMessageHelper,
-    normalizeRestoredPhase as normalizeRestoredPhaseHelper,
-    readTerminalTail as readTerminalTailHelper,
-    disposeBootstrapTerminal as disposeBootstrapTerminalHelper,
-    delay as delayHelper,
-} from './qaap-project-bootstrap-helpers';
 import { DEV_PREVIEW_HEALTH_FAILURE_LIMIT, DEV_PREVIEW_HEALTH_INTERVAL_MS, DEV_PREVIEW_WARMUP_DELAY_MS, PORT_IN_USE_REGEX, STORAGE_KEY } from './qaap-project-bootstrap-service';
 
-export function waitForExitExtracted(ctx: any, terminal: TerminalWidget): Promise<number | undefined> {
+export function waitForExitExtracted(ctx: QaapProjectBootstrapServiceContext, terminal: TerminalWidget): Promise<number | undefined> {
         return new Promise(resolve => {
             // Edge case: the process may already be gone by the time we subscribe (very fast
             // commands), so check the synchronous status first.
@@ -117,7 +47,7 @@ export function waitForExitExtracted(ctx: any, terminal: TerminalWidget): Promis
         });
 }
 
-export function beginDevRunExtracted(ctx: any): void {
+export function beginDevRunExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         ctx.devRunCancelledByUser = false;
         ctx.devRunGeneration++;
         ctx.releaseActivePreview();
@@ -127,7 +57,7 @@ export function beginDevRunExtracted(ctx: any): void {
         }
 }
 
-export function releaseActivePreviewExtracted(ctx: any): void {
+export function releaseActivePreviewExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         const scope = ctx.activePreviewConversationId;
         const claim = ctx.previewClaimByConversation.get(scope);
         ctx.previewClaimByConversation.delete(scope);
@@ -138,7 +68,7 @@ export function releaseActivePreviewExtracted(ctx: any): void {
         ctx.activePreviewRunId = ctx.previewRunIdByConversation.get(scope);
 }
 
-export function releasePreviewForConversationExtracted(ctx: any, conversationId: string | undefined): void {
+export function releasePreviewForConversationExtracted(ctx: QaapProjectBootstrapServiceContext, conversationId: string | undefined): void {
         const scope = normalizeQaapPreviewConversationId(conversationId);
         const claim = ctx.previewClaimByConversation.get(scope);
         if (!claim) {
@@ -164,7 +94,7 @@ export function releasePreviewForConversationExtracted(ctx: any, conversationId:
         ctx.releaseDevTerminalForConversation(scope);
 }
 
-export function registerDevTerminalForConversationExtracted(ctx: any, conversationId: string | undefined,
+export function registerDevTerminalForConversationExtracted(ctx: QaapProjectBootstrapServiceContext, conversationId: string | undefined,
         terminal: TerminalWidget,
         listener: Disposable,): void {
         if (!conversationId) {
@@ -179,7 +109,7 @@ export function registerDevTerminalForConversationExtracted(ctx: any, conversati
         ctx.devTerminalByConversationId.set(conversationId, { terminal, listener });
 }
 
-export function releaseDevTerminalForConversationExtracted(ctx: any, conversationId: string): void {
+export function releaseDevTerminalForConversationExtracted(ctx: QaapProjectBootstrapServiceContext, conversationId: string): void {
         const entry = ctx.devTerminalByConversationId.get(conversationId);
         if (!entry) {
             return;
@@ -189,7 +119,7 @@ export function releaseDevTerminalForConversationExtracted(ctx: any, conversatio
         ctx.devTerminalByConversationId.delete(conversationId);
 }
 
-export function resetBootstrapSessionForWorkspaceExtracted(ctx: any): void {
+export function resetBootstrapSessionForWorkspaceExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         ctx.installGeneration++;
         // A hosted Work Hub switches between many project roots inside one Theia workspace. Do
         // not dispose the previous project's terminal/process here: doing so made simultaneous
@@ -221,7 +151,7 @@ export function resetBootstrapSessionForWorkspaceExtracted(ctx: any): void {
         ctx.installTerminal = undefined;
 }
 
-export function cancelDevPreviewFallbacksExtracted(ctx: any): void {
+export function cancelDevPreviewFallbacksExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         for (const timerId of ctx.devPreviewFallbackTimers) {
             window.clearTimeout(timerId);
         }
@@ -229,7 +159,7 @@ export function cancelDevPreviewFallbacksExtracted(ctx: any): void {
         ctx.cancelDevPreviewWarmup();
 }
 
-export function scheduleDevPreviewWarmupExtracted(ctx: any): void {
+export function scheduleDevPreviewWarmupExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         if (typeof window === 'undefined') {
             return;
         }
@@ -243,14 +173,14 @@ export function scheduleDevPreviewWarmupExtracted(ctx: any): void {
         }, DEV_PREVIEW_WARMUP_DELAY_MS);
 }
 
-export function cancelDevPreviewWarmupExtracted(ctx: any): void {
+export function cancelDevPreviewWarmupExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         if (typeof window !== 'undefined' && ctx.devPreviewWarmupTimer !== undefined) {
             window.clearTimeout(ctx.devPreviewWarmupTimer);
             ctx.devPreviewWarmupTimer = undefined;
         }
 }
 
-export function startDevPreviewHealthMonitorExtracted(ctx: any): void {
+export function startDevPreviewHealthMonitorExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         ctx.cancelDevPreviewHealthMonitor();
         if (typeof window === 'undefined') {
             return;
@@ -291,7 +221,7 @@ export function startDevPreviewHealthMonitorExtracted(ctx: any): void {
         ctx.devPreviewHealthTimer = window.setTimeout(() => void check(), DEV_PREVIEW_HEALTH_INTERVAL_MS);
 }
 
-export function cancelDevPreviewHealthMonitorExtracted(ctx: any): void {
+export function cancelDevPreviewHealthMonitorExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         if (typeof window !== 'undefined' && ctx.devPreviewHealthTimer !== undefined) {
             window.clearTimeout(ctx.devPreviewHealthTimer);
         }
@@ -299,7 +229,7 @@ export function cancelDevPreviewHealthMonitorExtracted(ctx: any): void {
         ctx.devPreviewHealthFailures = 0;
 }
 
-export async function warmupDevPreviewExtracted(ctx: any): Promise<void> {
+export async function warmupDevPreviewExtracted(ctx: QaapProjectBootstrapServiceContext): Promise<void> {
         if (ctx._phase !== 'ready-to-run' || ctx._previewUrl || ctx._lastPort === undefined) {
             return;
         }
@@ -312,7 +242,7 @@ export async function warmupDevPreviewExtracted(ctx: any): Promise<void> {
         }
 }
 
-export function cleanupDevTerminalExtracted(ctx: any): void {
+export function cleanupDevTerminalExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         ctx.devTerminalListener.dispose();
         ctx.devTerminalListener = Disposable.NULL;
         ctx.disposeBootstrapTerminal(ctx.devTerminal);
@@ -324,7 +254,7 @@ export function cleanupDevTerminalExtracted(ctx: any): void {
         ctx.devTerminalConversationId = undefined;
 }
 
-export function clearForwardedPortsExtracted(ctx: any): void {
+export function clearForwardedPortsExtracted(ctx: QaapProjectBootstrapServiceContext): void {
         if (ctx._forwardedPorts.length === 0) {
             return;
         }
@@ -332,7 +262,7 @@ export function clearForwardedPortsExtracted(ctx: any): void {
         ctx.forwardedPortsEmitter.fire([]);
 }
 
-export function buildStateChangeExtracted(ctx: any, phase: QaapBootstrapPhase): QaapBootstrapStateChange {
+export function buildStateChangeExtracted(ctx: QaapProjectBootstrapServiceContext, phase: QaapBootstrapPhase): QaapBootstrapStateChange {
         const portInUse = phase === 'run-failed'
             && (ctx._portConflictDetected
                 || PORT_IN_USE_REGEX.test(ctx._error ?? '')
@@ -366,7 +296,7 @@ export function buildStateChangeExtracted(ctx: any, phase: QaapBootstrapPhase): 
         };
 }
 
-export function setPhaseExtracted(ctx: any, phase: QaapBootstrapPhase): void {
+export function setPhaseExtracted(ctx: QaapProjectBootstrapServiceContext, phase: QaapBootstrapPhase): void {
         const previousPhase = ctx._phase;
         ctx._phase = phase;
         if (phase === 'running') {
@@ -388,7 +318,7 @@ export function setPhaseExtracted(ctx: any, phase: QaapBootstrapPhase): void {
         ctx.syncHubSession(phase);
 }
 
-export function syncHubSessionExtracted(ctx: any, phase: QaapBootstrapPhase): void {
+export function syncHubSessionExtracted(ctx: QaapProjectBootstrapServiceContext, phase: QaapBootstrapPhase): void {
         const agentState = phase === 'running' ? 'working'
             : phase === 'install-failed' || phase === 'run-failed' ? 'review'
                 : phase === 'idle' || phase === 'dismissed' ? 'idle'
@@ -408,7 +338,7 @@ export function syncHubSessionExtracted(ctx: any, phase: QaapBootstrapPhase): vo
         }).catch(() => undefined);
 }
 
-export function persistPhaseExtracted(ctx: any, phase: QaapBootstrapPhase, selectedApp?: QaapMonorepoAppCandidate): void {
+export function persistPhaseExtracted(ctx: QaapProjectBootstrapServiceContext, phase: QaapBootstrapPhase, selectedApp?: QaapMonorepoAppCandidate): void {
         const descriptor = ctx._descriptor;
         if (!descriptor || typeof localStorage === 'undefined') {
             return;
@@ -429,7 +359,7 @@ export function persistPhaseExtracted(ctx: any, phase: QaapBootstrapPhase, selec
         }
 }
 
-export function readAllPersistedExtracted(ctx: any): Record<string, PersistedEntry> {
+export function readAllPersistedExtracted(ctx: QaapProjectBootstrapServiceContext): Record<string, PersistedEntry> {
         if (typeof localStorage === 'undefined') {
             return {};
         }
