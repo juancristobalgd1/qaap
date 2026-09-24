@@ -250,11 +250,6 @@ export class MobileProjectsTranscriptComposerUi {
             anchor,
             transcriptOverlay: true,
             selectedId: reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, cwd),
-            toolRules: reconcileAgentToolApprovalRules(
-                reconcileAgentApprovalPolicyId(this.host.transcriptComposerApprovalPolicyId, cwd),
-                cwd,
-                this.host.transcriptComposerToolApprovalRules,
-            ),
             isOpen: () => this.host.transcriptComposerApprovalSheet !== undefined,
             onSelect: policyId => {
                 this.host.transcriptComposerApprovalPolicyId = policyId;
@@ -270,13 +265,6 @@ export class MobileProjectsTranscriptComposerUi {
                 this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
                 this.closeAllComposerSheets();
                 this.host.transcriptStickyComposerUi.remountTranscriptStickyComposer();
-            },
-            onToolRulesChange: rules => {
-                this.host.transcriptComposerToolApprovalRules = rules;
-                if (cwd) {
-                    writeStoredAgentToolApprovalRules(cwd, rules);
-                }
-                this.host.transcriptStickyComposerUi.schedulePersistTranscriptComposerPrefs(project, summary);
             },
             onClose: () => this.closeAllComposerSheets(),
             assignSheet: sheet => { this.host.transcriptComposerApprovalSheet = sheet; },

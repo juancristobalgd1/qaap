@@ -1,8 +1,8 @@
-// @ts-nocheck
+import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
+import type { ComposerAgentPickerChrome, ComposerAgentPickerView } from './mobile-projects-sticky-composer-sheets-ui';
 import { nls } from '@theia/core/lib/common/nls';
-import { ChatMode } from '@theia/ai-chat';
 import {
     localizeHostedComposerNoAgentsFilteredMessage,
     localizeHostedComposerNoAgentsMessage,
@@ -10,85 +10,30 @@ import {
 } from '../common/qaap-hosted-agent-auth-policy';
 import {
     agentSupportsModelPicker,
-    agentUsesSettingsModelCatalog,
     ensureStoredAgentModel,
-    fetchAgentModelsForAgent,
     isSameAgentModel,
     isStickyComposerAgentSelected,
     readStoredAgentModel,
-    writeStoredAgent,
-    writeStoredAgentModel,
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
 import {
-    reconcileComposerModeId,
-    resolveStickyComposerModes,
-    writeStoredComposerMode,
-} from '../common/qaap-sticky-composer-mode';
-import {
-    QAAP_AGENT_APPROVAL_POLICIES,
-    reconcileAgentApprovalPolicyId,
-    writeStoredAgentApprovalPolicy,
-    type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
-import {
-    reconcileAgentToolApprovalRules,
-    writeStoredAgentToolApprovalRules,
-    type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
-import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
     createUnavailableAgentSheetOption,
-    createApprovalPolicySheetOptionButton,
-    createModeSheetOptionButton,
-    createPickerSheetOptionButton,
-    createToolApprovalRuleToggle,
 } from './qaap-agent-ui';
-import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
-import {
-    canonicalModelStatsKey,
-    formatTurnDuration,
-    MODEL_TURN_STATS_SLOW_THRESHOLD_MS,
-    resolveModelTurnStats,
-} from '../common/qaap-model-latency-stats';
-import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
-import { formatQaiqModelProviderLabel, hasAnyConfiguredByokCredential } from '../common/qaap-qaiq-byok-provider-registry';
+import { hasAnyConfiguredByokCredential } from '../common/qaap-qaiq-byok-provider-registry';
 import {
     formatQaiqModelSelectionLabel,
-    filterQaiqModelsWithConfiguredCredentials,
-    groupQaiqModelsByProvider,
-    listQaiqModelsFromPreferences,
-    listQaiqModelsFromRegisteredLanguageModels,
-    mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
 import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
 import {
-    reconcileModelCapabilityLevel,
-    writeStoredModelCapabilityLevel,
-    type ModelCapabilityLevelValue,
-} from '../common/qaap-sticky-composer-model-capability';
-import { renderModelCapabilityPopoverPanel } from './model-capability-popover';
-import {
-    renderContextUsagePopover,
-    renderContextUsageSheet,
-    wireContextUsagePopoverDismiss,
-    type ContextUsageBreakdownView,
-} from './qaap-chat-context-usage-panel';
-import {
     isStickyComposerAnnotationPopoverAnchor,
-    markStickyComposerPopoverAnchor,
     mountStickyComposerBottomSheet,
     mountStickyComposerSheetPopover,
-    scheduleStickyComposerPopoverPosition,
-    shouldUseStickyComposerDesktopPopover,
-    shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
 } from './qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import {
     activateAgentPickerEntry,
     buildAgentPickerSearchResults,
@@ -98,7 +43,7 @@ import {
 } from './qaap-agent-picker-search';
 import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from './qaap-agent-picker-loading';
 
-export function createComposerAgentPickerChromeExtracted(ctx: any, options: {
+export function createComposerAgentPickerChromeExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
     readonly closeTitle: string;
     readonly onClose: () => void;
     readonly anchor?: HTMLElement;
@@ -212,7 +157,7 @@ export function createComposerAgentPickerChromeExtracted(ctx: any, options: {
     };
 }
 
-export async function renderComposerAgentPickerExtracted(ctx: any, chrome: ComposerAgentPickerChrome,
+export async function renderComposerAgentPickerExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, chrome: ComposerAgentPickerChrome,
     options: {
         readonly view: ComposerAgentPickerView;
         readonly modelPickerAgentId?: string;
@@ -379,7 +324,7 @@ export async function renderComposerAgentPickerExtracted(ctx: any, chrome: Compo
         if (entry.available === false) {
             const missingQaiqByok = agentId.toLowerCase() === QAIQ_AGENT_ID
                 && !!ctx.host.readPreference
-                && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference(key));
+                && !hasAnyConfiguredByokCredential(key => ctx.host.readPreference?.(key));
             content.append(createUnavailableAgentSheetOption({
                 agentId,
                 label,

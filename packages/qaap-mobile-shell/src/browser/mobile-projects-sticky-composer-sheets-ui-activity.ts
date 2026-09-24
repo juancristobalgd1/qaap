@@ -1,44 +1,15 @@
-// @ts-nocheck
+import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { ChatMode } from '@theia/ai-chat';
-import { agentHasCliOAuthLogin } from '../common/qaap-agent-auth-login';
 import {
-    agentSupportsModelPicker,
     agentUsesSettingsModelCatalog,
-    fetchAgentModelsForAgent,
     isSameAgentModel,
-    isStickyComposerAgentSelected,
     readStoredAgentModel,
-    writeStoredAgent,
-    writeStoredAgentModel,
-    type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
 import {
-    reconcileComposerModeId,
-    resolveStickyComposerModes,
-    writeStoredComposerMode,
-} from '../common/qaap-sticky-composer-mode';
-import {
-    QAAP_AGENT_APPROVAL_POLICIES,
-    reconcileAgentApprovalPolicyId,
-    writeStoredAgentApprovalPolicy,
-    type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
-import {
-    reconcileAgentToolApprovalRules,
-    writeStoredAgentToolApprovalRules,
-    type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
-import {
-    createAgentBrandChip,
-    createAgentSheetOptionButton,
-    createApprovalPolicySheetOptionButton,
-    createModeSheetOptionButton,
     createPickerSheetOptionButton,
-    createToolApprovalRuleToggle,
 } from './qaap-agent-ui';
 import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
 import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
@@ -51,49 +22,10 @@ import {
 import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
 import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
 import {
-    formatQaiqModelSelectionLabel,
-    filterQaiqModelsWithConfiguredCredentials,
     groupQaiqModelsByProvider,
-    listQaiqModelsFromPreferences,
-    listQaiqModelsFromRegisteredLanguageModels,
-    mergeQaiqModelOptions,
 } from '../common/qaap-qaiq-model-catalog';
-import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
-import {
-    reconcileModelCapabilityLevel,
-    writeStoredModelCapabilityLevel,
-    type ModelCapabilityLevelValue,
-} from '../common/qaap-sticky-composer-model-capability';
-import { renderModelCapabilityPopoverPanel } from './model-capability-popover';
-import {
-    renderContextUsagePopover,
-    renderContextUsageSheet,
-    wireContextUsagePopoverDismiss,
-    type ContextUsageBreakdownView,
-} from './qaap-chat-context-usage-panel';
-import {
-    isStickyComposerAnnotationPopoverAnchor,
-    markStickyComposerPopoverAnchor,
-    mountStickyComposerBottomSheet,
-    mountStickyComposerSheetPopover,
-    scheduleStickyComposerPopoverPosition,
-    shouldUseStickyComposerDesktopPopover,
-    shouldUseStickyComposerPopover,
-    type StickyComposerPopoverAlign,
-} from './qaap-sticky-composer-popover';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import {
-    activateAgentPickerEntry,
-    buildAgentPickerSearchResults,
-    createAgentPickerInlineModelButton,
-    modelMatchesAgentPickerQuery,
-    type QaapAgentPickerSearchEntry,
-} from './qaap-agent-picker-search';
-import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from './qaap-agent-picker-loading';
 
-export function createAgentPickerNoResultsHintExtracted(ctx: any): HTMLElement {
+export function createAgentPickerNoResultsHintExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): HTMLElement {
         const hint = document.createElement('p');
         hint.className = 'theia-qaap-agent-sheet-empty-models theia-qaap-agent-sheet-no-results';
         hint.setAttribute('role', 'status');
@@ -105,7 +37,7 @@ export function createAgentPickerNoResultsHintExtracted(ctx: any): HTMLElement {
         return hint;
 }
 
-export function appendAgentModelPickerListExtracted(ctx: any, list: HTMLElement,
+export function appendAgentModelPickerListExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, list: HTMLElement,
         agentId: string,
         models: readonly QaapQaiqModelOption[],
         storedModel: ReturnType<typeof readStoredAgentModel>,

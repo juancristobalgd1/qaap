@@ -1,62 +1,17 @@
-// @ts-nocheck
+import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
+import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
 import { nls } from '@theia/core/lib/common/nls';
-import { ChatMode } from '@theia/ai-chat';
 import {
-    agentSupportsModelPicker,
-    agentUsesSettingsModelCatalog,
-    fetchAgentModelsForAgent,
-    isSameAgentModel,
-    isStickyComposerAgentSelected,
-    readStoredAgentModel,
     writeStoredAgent,
     writeStoredAgentModel,
-    type QaapAgentTaskAgentOption,
-    type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
 import {
     reconcileComposerModeId,
     resolveStickyComposerModes,
     writeStoredComposerMode,
 } from '../common/qaap-sticky-composer-mode';
-import {
-    QAAP_AGENT_APPROVAL_POLICIES,
-    reconcileAgentApprovalPolicyId,
-    writeStoredAgentApprovalPolicy,
-    type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
-import {
-    reconcileAgentToolApprovalRules,
-    writeStoredAgentToolApprovalRules,
-    type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
-import {
-    createAgentBrandChip,
-    createAgentSheetOptionButton,
-    createApprovalPolicySheetOptionButton,
-    createModeSheetOptionButton,
-    createPickerSheetOptionButton,
-    createToolApprovalRuleToggle,
-} from './qaap-agent-ui';
-import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
-import {
-    canonicalModelStatsKey,
-    formatTurnDuration,
-    MODEL_TURN_STATS_SLOW_THRESHOLD_MS,
-    resolveModelTurnStats,
-} from '../common/qaap-model-latency-stats';
-import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
-import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
-import {
-    formatQaiqModelSelectionLabel,
-    filterQaiqModelsWithConfiguredCredentials,
-    groupQaiqModelsByProvider,
-    listQaiqModelsFromPreferences,
-    listQaiqModelsFromRegisteredLanguageModels,
-    mergeQaiqModelOptions,
-} from '../common/qaap-qaiq-model-catalog';
-import { THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
 import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '../common/qaap-agent-auth-login';
 import {
     reconcileModelCapabilityLevel,
@@ -78,27 +33,16 @@ import {
     scheduleStickyComposerPopoverPosition,
     shouldUseStickyComposerDesktopPopover,
     shouldUseStickyComposerPopover,
-    type StickyComposerPopoverAlign,
 } from './qaap-sticky-composer-popover';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import {
-    activateAgentPickerEntry,
-    buildAgentPickerSearchResults,
-    createAgentPickerInlineModelButton,
-    modelMatchesAgentPickerQuery,
-    type QaapAgentPickerSearchEntry,
-} from './qaap-agent-picker-search';
-import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from './qaap-agent-picker-loading';
 
-export function shouldElevateComposerSheetsExtracted(ctx: any): boolean {
+export function shouldElevateComposerSheetsExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): boolean {
         return ctx.host.agentsHubShellActive === true
             || document.body.classList.contains('theia-mobile-mod-workhub-composer-header')
             || document.body.classList.contains('theia-mobile-mod-workhub-no-bottom-chrome');
 }
 
-export function closeStickyComposerSheetsExtracted(ctx: any): void {
+export function closeStickyComposerSheetsExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
         ctx.teardownAgentPickerPopover();
         if (ctx.host.stickyComposerAgentSheet) {
             ctx.host.stickyComposerAgentSheet.remove();
@@ -119,7 +63,7 @@ export function closeStickyComposerSheetsExtracted(ctx: any): void {
         ctx.teardownCapabilityPresentation();
 }
 
-export function teardownCapabilityPresentationExtracted(ctx: any): void {
+export function teardownCapabilityPresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
         ctx.capabilityPopoverCleanup?.();
         ctx.capabilityPopoverCleanup = undefined;
         if (ctx.capabilitySheetAnchor) {
@@ -132,7 +76,7 @@ export function teardownCapabilityPresentationExtracted(ctx: any): void {
         }
 }
 
-export function teardownContextUsagePresentationExtracted(ctx: any): void {
+export function teardownContextUsagePresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
         ctx.contextUsagePopoverCleanup?.();
         ctx.contextUsagePopoverCleanup = undefined;
         if (ctx.contextUsageAnchor) {
@@ -146,7 +90,7 @@ export function teardownContextUsagePresentationExtracted(ctx: any): void {
         }
 }
 
-export function openStickyComposerContextUsageSheetExtracted(ctx: any, refreshBreakdown: () => ContextUsageBreakdownView,
+export function openStickyComposerContextUsageSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, refreshBreakdown: () => ContextUsageBreakdownView,
         transcriptOverlay?: boolean,
         anchor?: HTMLElement,): void {
         const usePopover = shouldUseStickyComposerDesktopPopover(anchor);
@@ -181,7 +125,7 @@ export function openStickyComposerContextUsageSheetExtracted(ctx: any, refreshBr
         ctx.host.stickyComposerContextUsageSheet = sheet;
 }
 
-export function openStickyComposerModelCapabilityPopoverExtracted(ctx: any, options: {
+export function openStickyComposerModelCapabilityPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
         readonly anchor: HTMLButtonElement;
         readonly cwd: string | undefined;
         readonly transcriptOverlay?: boolean;
@@ -238,7 +182,7 @@ export function openStickyComposerModelCapabilityPopoverExtracted(ctx: any, opti
         markStickyComposerPopoverAnchor(options.anchor, true);
 }
 
-export function teardownAgentPickerPopoverExtracted(ctx: any): void {
+export function teardownAgentPickerPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
         ctx.agentPopoverCleanup?.();
         ctx.agentPopoverCleanup = undefined;
         if (ctx.agentSheetAnchor) {
@@ -247,21 +191,21 @@ export function teardownAgentPickerPopoverExtracted(ctx: any): void {
         }
 }
 
-export function syncAgentPickerPopoverPositionExtracted(ctx: any, root: HTMLElement | undefined): void {
+export function syncAgentPickerPopoverPositionExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, root: HTMLElement | undefined): void {
         if (!root?.classList.contains('qaap-sticky-composer-sheet-popover') || !ctx.agentSheetAnchor) {
             return;
         }
         scheduleStickyComposerPopoverPosition(root, ctx.agentSheetAnchor, ctx.agentPopoverAlign);
 }
 
-export function assignAgentPickerPopoverExtracted(ctx: any, anchor: HTMLElement, cleanup: (() => void) | undefined): void {
+export function assignAgentPickerPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, anchor: HTMLElement, cleanup: (() => void) | undefined): void {
         ctx.agentSheetAnchor = anchor;
         // Annotation footer chip sits mid-card; start-align so the menu stays over the comment UI.
         ctx.agentPopoverAlign = isStickyComposerAnnotationPopoverAnchor(anchor) ? 'start' : 'end';
         ctx.agentPopoverCleanup = cleanup;
 }
 
-export function openStickyComposerAgentSheetExtracted(ctx: any, project: MobileProjectEntry, anchor?: HTMLElement): void {
+export function openStickyComposerAgentSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, project: MobileProjectEntry, anchor?: HTMLElement): void {
         if (ctx.host.stickyComposerSurface === 'chat') {
             return;
         }
@@ -343,7 +287,7 @@ export function openStickyComposerAgentSheetExtracted(ctx: any, project: MobileP
         loadAgentCatalog();
 }
 
-export function openExternalAgentPickerForSubmitExtracted(ctx: any, project: MobileProjectEntry,
+export function openExternalAgentPickerForSubmitExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, project: MobileProjectEntry,
         draft: string,
         options: {
             readonly title?: string;
@@ -439,7 +383,7 @@ export function openExternalAgentPickerForSubmitExtracted(ctx: any, project: Mob
         loadAgentCatalog();
 }
 
-export function teardownModeSheetPopoverExtracted(ctx: any): void {
+export function teardownModeSheetPopoverExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): void {
         ctx.modePopoverCleanup?.();
         ctx.modePopoverCleanup = undefined;
         if (ctx.modeSheetAnchor) {
@@ -448,7 +392,7 @@ export function teardownModeSheetPopoverExtracted(ctx: any): void {
         }
 }
 
-export function mountModeSheetPresentationExtracted(ctx: any, panel: HTMLElement,
+export function mountModeSheetPresentationExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, panel: HTMLElement,
         options: {
             readonly anchor?: HTMLElement;
             readonly transcriptOverlay: boolean;
