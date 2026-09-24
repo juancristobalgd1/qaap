@@ -1,49 +1,27 @@
-// @ts-nocheck
+import type { MobileProjectsConversationsContext } from './mobile-projects-conversations-context';
 // Extracted from mobile-projects-conversations.ts
 
 import URI from '@theia/core/lib/common/uri';
-import { Disposable } from '@theia/core/lib/common/disposable';
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { BinaryBuffer } from '@theia/core/lib/common/buffer';
-import { EnvVariablesServer } from '@theia/core/lib/common/env-variables';
-import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { inject, injectable } from '@theia/core/shared/inversify';
 import {
-    QAAP_AGENT_CONVERSATION_API_PATH,
-    QAAP_AGENT_CONVERSATION_WS_PATH,
-    cancelConversationHttp,
-    getConversation,
-    listAllConversationGroups,
-    registerConversationLiveCancel,
-    type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageDTO,
 } from '../common/qaap-agent-conversation-client';
-import { isQaapWorkHubPerfProbeEnabled } from '../common/qaap-work-hub-perf-probe';
 import {
-    QaapConversationStreamMetricsCollector,
     countCompressedWireFields,
     logQaapStreamMetrics,
-    type QaapTurnLatencyMark,
 } from '../common/qaap-agent-stream-metrics';
 import {
     expandAgentMessageForWire,
     expandAgentMessageWireDelta,
 } from '../common/qaap-agent-message-wire-compress';
 import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
-import { normalizeAgentMessageContentForDisplay, resolveMessagePreviewText } from '../common/qaap-agent-message-content';
-import {
-    type QaapConversationChangeEvent,
-} from '../common/qaap-conversation-change';
-import { backfillConversationTraceEvents } from '../common/qaap-transcript-trace-backfill';
-import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-landing';
-import { QaapThreadStore } from '../common/qaap-thread-store';
-import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
-import { cwdMatchesProject, lookupByCwd, normalizeCwd } from './mobile-projects-active-tasks';
+import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
+import { normalizeCwd } from './mobile-projects-active-tasks';
 import { sortConversations } from './mobile-projects-conversations';
 import { SSE_RECONNECT_DELAY_MS, WS_RECONNECT_MAX_MS } from './mobile-projects-conversations';
+import type { ConversationMessageDeltaEvent, ConversationMessageEvent, ConversationServerEvent } from './mobile-projects-conversations';
+import type { BinaryBuffer } from '@theia/core/lib/common/buffer';
 
-export function dispatchServerPayloadExtracted(ctx: any, payload: ConversationServerEvent): void {
+export function dispatchServerPayloadExtracted(ctx: MobileProjectsConversationsContext, payload: ConversationServerEvent): void {
         switch (payload.type) {
             case 'snapshot':
                 if (ctx.wsSnapshotFallbackHandle !== undefined) {
@@ -109,7 +87,7 @@ export function dispatchServerPayloadExtracted(ctx: any, payload: ConversationSe
         }
 }
 
-export function scheduleWebSocketReconnectExtracted(ctx: any): void {
+export function scheduleWebSocketReconnectExtracted(ctx: MobileProjectsConversationsContext): void {
         if (ctx.wsReconnectHandle !== undefined || typeof WebSocket === 'undefined') {
             return;
         }
@@ -121,7 +99,7 @@ export function scheduleWebSocketReconnectExtracted(ctx: any): void {
         }, delay);
 }
 
-export function scheduleSseReconnectExtracted(ctx: any): void {
+export function scheduleSseReconnectExtracted(ctx: MobileProjectsConversationsContext): void {
         if (ctx.sseReconnectHandle !== undefined || ctx.transport === 'ws') {
             return;
         }
@@ -133,7 +111,7 @@ export function scheduleSseReconnectExtracted(ctx: any): void {
         }, SSE_RECONNECT_DELAY_MS);
 }
 
-export function closeWebSocketExtracted(ctx: any): void {
+export function closeWebSocketExtracted(ctx: MobileProjectsConversationsContext): void {
         ctx.socket?.close();
         ctx.socket = undefined;
         if (ctx.transport === 'ws') {
@@ -141,7 +119,7 @@ export function closeWebSocketExtracted(ctx: any): void {
         }
 }
 
-export function closeSseExtracted(ctx: any): void {
+export function closeSseExtracted(ctx: MobileProjectsConversationsContext): void {
         ctx.source?.close();
         ctx.source = undefined;
         if (ctx.transport === 'sse') {
@@ -149,7 +127,7 @@ export function closeSseExtracted(ctx: any): void {
         }
 }
 
-export function clearReconnectTimersExtracted(ctx: any): void {
+export function clearReconnectTimersExtracted(ctx: MobileProjectsConversationsContext): void {
         if (ctx.sseReconnectHandle !== undefined) {
             window.clearTimeout(ctx.sseReconnectHandle);
             ctx.sseReconnectHandle = undefined;
@@ -160,7 +138,7 @@ export function clearReconnectTimersExtracted(ctx: any): void {
         }
 }
 
-export async function dispatchLiveMessageExtracted(ctx: any, payload: ConversationMessageEvent): Promise<void> {
+export async function dispatchLiveMessageExtracted(ctx: MobileProjectsConversationsContext, payload: ConversationMessageEvent): Promise<void> {
         try {
             const message = await expandAgentMessageForWire(payload.message);
             const expanded: ConversationMessageEvent = message === payload.message
@@ -174,7 +152,7 @@ export async function dispatchLiveMessageExtracted(ctx: any, payload: Conversati
         }
 }
 
-export async function dispatchLiveMessageDeltaExtracted(ctx: any, payload: ConversationMessageDeltaEvent): Promise<void> {
+export async function dispatchLiveMessageDeltaExtracted(ctx: MobileProjectsConversationsContext, payload: ConversationMessageDeltaEvent): Promise<void> {
         try {
             const delta = await expandAgentMessageWireDelta(payload.delta);
             const expanded: ConversationMessageDeltaEvent = delta === payload.delta
@@ -188,7 +166,7 @@ export async function dispatchLiveMessageDeltaExtracted(ctx: any, payload: Conve
         }
 }
 
-export function recordClientStreamMetricsExtracted(ctx: any, wirePayload: ConversationServerEvent,
+export function recordClientStreamMetricsExtracted(ctx: MobileProjectsConversationsContext, wirePayload: ConversationServerEvent,
         expandedPayload?: ConversationServerEvent,): void {
         if (wirePayload.type !== 'message'
             && wirePayload.type !== 'message_delta'
@@ -215,7 +193,7 @@ export function recordClientStreamMetricsExtracted(ctx: any, wirePayload: Conver
         }
 }
 
-export function refreshSummaryFromLiveMessageExtracted(ctx: any, payload: ConversationMessageEvent): void {
+export function refreshSummaryFromLiveMessageExtracted(ctx: MobileProjectsConversationsContext, payload: ConversationMessageEvent): void {
         // Keep cached documents fresh for non-active conversations so the
         // transcript hydrates instantly when the user switches back.
         ctx.threadStore.appendLiveMessage(payload.conversationId, payload.message);
@@ -247,7 +225,7 @@ export function refreshSummaryFromLiveMessageExtracted(ctx: any, payload: Conver
         });
 }
 
-export function refreshSummaryFromLiveDeltaExtracted(ctx: any, payload: ConversationMessageDeltaEvent): void {
+export function refreshSummaryFromLiveDeltaExtracted(ctx: MobileProjectsConversationsContext, payload: ConversationMessageDeltaEvent): void {
         const existing = ctx.threadStore.findSummaryById(payload.conversationId);
         if (!existing) {
             ctx.emitConversationChange({
@@ -276,7 +254,7 @@ export function refreshSummaryFromLiveDeltaExtracted(ctx: any, payload: Conversa
         });
 }
 
-export function resolvePreviewDeltaExtracted(ctx: any, delta: QaapAgentMessageWireDelta): string | undefined {
+export function resolvePreviewDeltaExtracted(ctx: MobileProjectsConversationsContext, delta: QaapAgentMessageWireDelta): string | undefined {
         switch (delta.kind) {
             case 'append_content':
             case 'append_segment_text':
@@ -297,13 +275,13 @@ export function resolvePreviewDeltaExtracted(ctx: any, delta: QaapAgentMessageWi
         }
 }
 
-export function markStreamingTransportsExtracted(ctx: any, transport: 'ws' | 'sse'): void {
+export function markStreamingTransportsExtracted(ctx: MobileProjectsConversationsContext, transport: 'ws' | 'sse'): void {
         for (const conversation of ctx.threadStore.listStreamingSummaries()) {
             ctx.streamMetrics.setTransport(conversation.id, transport);
         }
 }
 
-export function getAllConversationBucketsExtracted(ctx: any): Array<[string, QaapAgentConversationSummaryDTO[]]> {
+export function getAllConversationBucketsExtracted(ctx: MobileProjectsConversationsContext): Array<[string, QaapAgentConversationSummaryDTO[]]> {
         const buckets = new Map<string, QaapAgentConversationSummaryDTO[]>();
         for (const [cwd, list] of ctx.theiaByCwd) {
             buckets.set(cwd, [...list]);
@@ -316,7 +294,7 @@ export function getAllConversationBucketsExtracted(ctx: any): Array<[string, Qaa
         return [...buckets];
 }
 
-export function findTheiaSummaryExtracted(ctx: any, id: string): QaapAgentConversationSummaryDTO | undefined {
+export function findTheiaSummaryExtracted(ctx: MobileProjectsConversationsContext, id: string): QaapAgentConversationSummaryDTO | undefined {
         for (const list of ctx.theiaByCwd.values()) {
             const found = list.find(c => c.id === id);
             if (found) {
@@ -326,7 +304,7 @@ export function findTheiaSummaryExtracted(ctx: any, id: string): QaapAgentConver
         return undefined;
 }
 
-export async function readJsonExtracted(ctx: any, uri: URI): Promise<T | undefined> {
+export async function readJsonExtracted<T>(ctx: MobileProjectsConversationsContext, uri: URI): Promise<T | undefined> {
         try {
             const content = await ctx.fileService.readFile(uri);
             return JSON.parse(bufferToString(content.value)) as T;
@@ -335,3 +313,11 @@ export async function readJsonExtracted(ctx: any, uri: URI): Promise<T | undefin
         }
 }
 
+function excerpt(text: string | undefined): string {
+    const clean = (text ?? '').replace(/\s+/g, ' ').trim();
+    return clean.length > 160 ? `${clean.slice(0, 157)}…` : clean;
+}
+
+function bufferToString(buffer: BinaryBuffer | { toString(): string }): string {
+    return buffer.toString();
+}

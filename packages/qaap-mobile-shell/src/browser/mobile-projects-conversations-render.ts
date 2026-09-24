@@ -1,15 +1,8 @@
-// @ts-nocheck
+import type { MobileProjectsConversationsContext } from './mobile-projects-conversations-context';
 // Extracted from mobile-projects-conversations.ts
 
 import URI from '@theia/core/lib/common/uri';
-import { Disposable } from '@theia/core/lib/common/disposable';
-import { Emitter, Event } from '@theia/core/lib/common/event';
-import { BinaryBuffer } from '@theia/core/lib/common/buffer';
-import { EnvVariablesServer } from '@theia/core/lib/common/env-variables';
-import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { inject, injectable } from '@theia/core/shared/inversify';
 import {
-    QAAP_AGENT_CONVERSATION_API_PATH,
     QAAP_AGENT_CONVERSATION_WS_PATH,
     cancelConversationHttp,
     getConversation,
@@ -17,33 +10,24 @@ import {
     registerConversationLiveCancel,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageDTO,
 } from '../common/qaap-agent-conversation-client';
 import { isQaapWorkHubPerfProbeEnabled } from '../common/qaap-work-hub-perf-probe';
 import {
-    QaapConversationStreamMetricsCollector,
-    countCompressedWireFields,
-    logQaapStreamMetrics,
     type QaapTurnLatencyMark,
 } from '../common/qaap-agent-stream-metrics';
-import {
-    expandAgentMessageForWire,
-    expandAgentMessageWireDelta,
-} from '../common/qaap-agent-message-wire-compress';
-import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
-import { normalizeAgentMessageContentForDisplay, resolveMessagePreviewText } from '../common/qaap-agent-message-content';
 import {
     type QaapConversationChangeEvent,
 } from '../common/qaap-conversation-change';
 import { backfillConversationTraceEvents } from '../common/qaap-transcript-trace-backfill';
 import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-landing';
-import { QaapThreadStore } from '../common/qaap-thread-store';
-import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
 import { cwdMatchesProject, lookupByCwd, normalizeCwd } from './mobile-projects-active-tasks';
 import { sortConversations } from './mobile-projects-conversations';
 import { PRIME_FROM_ALL_TTL_MS, STREAM_URL } from './mobile-projects-conversations';
+import type { ConversationServerEvent } from './mobile-projects-conversations';
+import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
+import type { QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
 
-export function recordSubmitLatencyMarkExtracted(ctx: any, conversationId: string | undefined, mark: QaapTurnLatencyMark, at?: number): void {
+export function recordSubmitLatencyMarkExtracted(ctx: MobileProjectsConversationsContext, conversationId: string | undefined, mark: QaapTurnLatencyMark, at?: number): void {
         ctx.streamMetrics.recordLatencyMark(conversationId, mark, at);
         if (!conversationId) {
             return;
@@ -55,7 +39,7 @@ export function recordSubmitLatencyMarkExtracted(ctx: any, conversationId: strin
         }
 }
 
-export function getSubmitLatencyMarksExtracted(ctx: any, conversationId: string | undefined): Partial<Record<QaapTurnLatencyMark, number>> | undefined {
+export function getSubmitLatencyMarksExtracted(ctx: MobileProjectsConversationsContext, conversationId: string | undefined): Partial<Record<QaapTurnLatencyMark, number>> | undefined {
         if (!conversationId) {
             return undefined;
         }
@@ -63,7 +47,7 @@ export function getSubmitLatencyMarksExtracted(ctx: any, conversationId: string 
         return marks ? { ...marks } : undefined;
 }
 
-export function startExtracted(ctx: any): void {
+export function startExtracted(ctx: MobileProjectsConversationsContext): void {
         if (ctx.started) {
             return;
         }
@@ -73,14 +57,14 @@ export function startExtracted(ctx: any): void {
         ctx.installVisibilityReconnect();
 }
 
-export function perfProbeSeedSummariesExtracted(ctx: any, cwd: string, summaries: readonly QaapAgentConversationSummaryDTO[]): void {
+export function perfProbeSeedSummariesExtracted(ctx: MobileProjectsConversationsContext, cwd: string, summaries: readonly QaapAgentConversationSummaryDTO[]): void {
         if (!isQaapWorkHubPerfProbeEnabled()) {
             return;
         }
         ctx.perfProbeByCwd.set(normalizeCwd(cwd), sortConversations([...summaries]));
 }
 
-export function perfProbeTickStreamingSummariesExtracted(ctx: any, cwd: string): void {
+export function perfProbeTickStreamingSummariesExtracted(ctx: MobileProjectsConversationsContext, cwd: string): void {
         if (!isQaapWorkHubPerfProbeEnabled()) {
             return;
         }
@@ -97,7 +81,7 @@ export function perfProbeTickStreamingSummariesExtracted(ctx: any, cwd: string):
         ctx.emitConversationChange({ kind: 'updated' });
 }
 
-export function schedulePrimeFromAllExtracted(ctx: any): void {
+export function schedulePrimeFromAllExtracted(ctx: MobileProjectsConversationsContext): void {
         // Collapse redundant primes (boot warms + SSE/WS open listeners fire together); live
         // events reconcile anything that changes inside the window.
         if (Date.now() - ctx.lastPrimeFromAllAt < PRIME_FROM_ALL_TTL_MS) {
@@ -111,7 +95,7 @@ export function schedulePrimeFromAllExtracted(ctx: any): void {
         }
 }
 
-export function installVisibilityReconnectExtracted(ctx: any): void {
+export function installVisibilityReconnectExtracted(ctx: MobileProjectsConversationsContext): void {
         if (ctx.visibilityListenerInstalled || typeof document === 'undefined' || typeof window === 'undefined') {
             return;
         }
@@ -129,7 +113,7 @@ export function installVisibilityReconnectExtracted(ctx: any): void {
         window.addEventListener('pageshow', reconnect);
 }
 
-export function getConversationsForCwdExtracted(ctx: any, cwd: string): QaapAgentConversationSummaryDTO[] {
+export function getConversationsForCwdExtracted(ctx: MobileProjectsConversationsContext, cwd: string): QaapAgentConversationSummaryDTO[] {
         const probe = isQaapWorkHubPerfProbeEnabled()
             ? lookupByCwd(ctx.perfProbeByCwd, cwd) ?? []
             : [];
@@ -140,7 +124,7 @@ export function getConversationsForCwdExtracted(ctx: any, cwd: string): QaapAgen
         );
 }
 
-export function mergeCwdConversationListsExtracted(ctx: any, ...lists: ReadonlyArray<readonly QaapAgentConversationSummaryDTO[]>): QaapAgentConversationSummaryDTO[] {
+export function mergeCwdConversationListsExtracted(ctx: MobileProjectsConversationsContext, ...lists: ReadonlyArray<readonly QaapAgentConversationSummaryDTO[]>): QaapAgentConversationSummaryDTO[] {
         const byId = new Map<string, QaapAgentConversationSummaryDTO>();
         for (const list of lists) {
             for (const summary of list) {
@@ -150,7 +134,7 @@ export function mergeCwdConversationListsExtracted(ctx: any, ...lists: ReadonlyA
         return sortConversations([...byId.values()]);
 }
 
-export function findConversationsForProjectExtracted(ctx: any, project: {
+export function findConversationsForProjectExtracted(ctx: MobileProjectsConversationsContext, project: {
         readonly name: string;
         readonly github?: { readonly owner: string; readonly name: string };
     }): QaapAgentConversationSummaryDTO[] {
@@ -158,7 +142,7 @@ export function findConversationsForProjectExtracted(ctx: any, project: {
         return sortConversations(merged);
 }
 
-export async function refreshTheiaChatSessionsForProjectsExtracted(ctx: any, _projects: ReadonlyArray<{
+export async function refreshTheiaChatSessionsForProjectsExtracted(ctx: MobileProjectsConversationsContext, _projects: ReadonlyArray<{
         readonly name: string;
         readonly uri?: URI;
         readonly github?: { readonly owner: string; readonly name: string };
@@ -169,7 +153,7 @@ export async function refreshTheiaChatSessionsForProjectsExtracted(ctx: any, _pr
         ctx.theiaSessionFiles.clear();
 }
 
-export function resolveWorkspaceMetadataCwdExtracted(ctx: any, project: { readonly name: string; readonly uri?: URI; readonly github?: { readonly owner: string; readonly name: string } },
+export function resolveWorkspaceMetadataCwdExtracted(ctx: MobileProjectsConversationsContext, project: { readonly name: string; readonly uri?: URI; readonly github?: { readonly owner: string; readonly name: string } },
         workspaceIndex: Record<string, string>,): string | undefined {
         const fromUri = project.uri?.scheme === 'file' ? normalizeCwd(uriToFsPath(project.uri)) : undefined;
         if (fromUri && workspaceIndex[fromUri]) {
@@ -195,7 +179,7 @@ export function resolveWorkspaceMetadataCwdExtracted(ctx: any, project: { readon
         return fromUri;
 }
 
-export async function getTheiaConversationExtracted(ctx: any, id: string): Promise<QaapAgentConversationDTO | undefined> {
+export async function getTheiaConversationExtracted(ctx: MobileProjectsConversationsContext, id: string): Promise<QaapAgentConversationDTO | undefined> {
         const file = ctx.theiaSessionFiles.get(id);
         if (!file) {
             return undefined;
@@ -218,7 +202,7 @@ export async function getTheiaConversationExtracted(ctx: any, id: string): Promi
         };
 }
 
-export async function findTheiaSerializedConversationBySessionIdExtracted(ctx: any, sessionId: string, cwd?: string): Promise<unknown | undefined> {
+export async function findTheiaSerializedConversationBySessionIdExtracted(ctx: MobileProjectsConversationsContext, sessionId: string, cwd?: string): Promise<unknown | undefined> {
         const normalizedCwd = cwd ? normalizeCwd(cwd) : undefined;
         for (const [id, file] of ctx.theiaSessionFiles) {
             const summary = ctx.findTheiaSummary(id);
@@ -233,7 +217,7 @@ export async function findTheiaSerializedConversationBySessionIdExtracted(ctx: a
         return undefined;
 }
 
-export function recordSnapshotExtracted(ctx: any, conv: QaapAgentConversationSummaryDTO): void {
+export function recordSnapshotExtracted(ctx: MobileProjectsConversationsContext, conv: QaapAgentConversationSummaryDTO): void {
         const result = ctx.upsert(conv);
         ctx.emitConversationChange({
             kind: 'updated',
@@ -244,7 +228,7 @@ export function recordSnapshotExtracted(ctx: any, conv: QaapAgentConversationSum
         });
 }
 
-export function cacheDocumentExtracted(ctx: any, document: QaapAgentConversationDTO): boolean {
+export function cacheDocumentExtracted(ctx: MobileProjectsConversationsContext, document: QaapAgentConversationDTO): boolean {
         const normalized = backfillConversationTraceEvents(document).conversation;
         const isFirstLoad = !ctx.threadStore.getDocument(normalized.id);
         ctx.threadStore.setDocument(normalized);
@@ -258,7 +242,7 @@ export function cacheDocumentExtracted(ctx: any, document: QaapAgentConversation
         return isFirstLoad;
 }
 
-export function prefetchDocumentExtracted(ctx: any, conversationId: string): void {
+export function prefetchDocumentExtracted(ctx: MobileProjectsConversationsContext, conversationId: string): void {
         if (!conversationId || conversationId.startsWith('pending-') || conversationId === QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID) {
             return;
         }
@@ -286,13 +270,13 @@ export function prefetchDocumentExtracted(ctx: any, conversationId: string): voi
             });
 }
 
-export function prefetchDocumentsExtracted(ctx: any, conversationIds: readonly string[]): void {
+export function prefetchDocumentsExtracted(ctx: MobileProjectsConversationsContext, conversationIds: readonly string[]): void {
         for (const conversationId of conversationIds) {
             ctx.prefetchDocument(conversationId);
         }
 }
 
-export function findSummaryByIdExtracted(ctx: any, id: string): QaapAgentConversationSummaryDTO | undefined {
+export function findSummaryByIdExtracted(ctx: MobileProjectsConversationsContext, id: string): QaapAgentConversationSummaryDTO | undefined {
         const fromStore = ctx.threadStore.findSummaryById(id);
         if (fromStore) {
             return fromStore;
@@ -306,7 +290,7 @@ export function findSummaryByIdExtracted(ctx: any, id: string): QaapAgentConvers
         return undefined;
 }
 
-export function removeSnapshotExtracted(ctx: any, conversationId: string, cwd: string, source?: QaapAgentConversationSummaryDTO['source']): void {
+export function removeSnapshotExtracted(ctx: MobileProjectsConversationsContext, conversationId: string, cwd: string, source?: QaapAgentConversationSummaryDTO['source']): void {
         ctx.deletedConversationIds.add(conversationId);
         if (source === 'theia-chat') {
             const map = ctx.theiaByCwd;
@@ -328,7 +312,7 @@ export function removeSnapshotExtracted(ctx: any, conversationId: string, cwd: s
         ctx.emitConversationChange({ kind: 'deleted', conversationId, cwd });
 }
 
-export async function primeFromAllExtracted(ctx: any): Promise<void> {
+export async function primeFromAllExtracted(ctx: MobileProjectsConversationsContext): Promise<void> {
         try {
             const groups = await listAllConversationGroups();
             ctx.applyConversationGroups(groups);
@@ -340,7 +324,7 @@ export async function primeFromAllExtracted(ctx: any): Promise<void> {
         }
 }
 
-export function applyConversationGroupsExtracted(ctx: any, groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,): void {
+export function applyConversationGroupsExtracted(ctx: MobileProjectsConversationsContext, groups: ReadonlyArray<{ readonly cwd: string; readonly conversations: ReadonlyArray<QaapAgentConversationSummaryDTO> }>,): void {
         ctx.snapshotState = 'ready';
         ctx.threadStore.applySummarySnapshot(groups.map(group => ({
             ...group,
@@ -349,13 +333,13 @@ export function applyConversationGroupsExtracted(ctx: any, groups: ReadonlyArray
         ctx.emitConversationChange({ kind: 'snapshot' });
 }
 
-export function emitConversationChangeExtracted(ctx: any, event: QaapConversationChangeEvent): void {
+export function emitConversationChangeExtracted(ctx: MobileProjectsConversationsContext, event: QaapConversationChangeEvent): void {
         ctx.lastConversationChange = event;
         ctx.onDidChangeDetailEmitter.fire(event);
         ctx.onDidChangeEmitter.fire();
 }
 
-export async function cancelConversationLiveExtracted(ctx: any, id: string): Promise<void> {
+export async function cancelConversationLiveExtracted(ctx: MobileProjectsConversationsContext, id: string): Promise<void> {
         if (ctx.socket?.readyState === WebSocket.OPEN) {
             ctx.socket.send(JSON.stringify({ op: 'cancel', conversationId: id }));
             const existing = ctx.findSummaryById(id);
@@ -367,7 +351,7 @@ export async function cancelConversationLiveExtracted(ctx: any, id: string): Pro
         await cancelConversationHttp(id);
 }
 
-export function openWebSocketExtracted(ctx: any): void {
+export function openWebSocketExtracted(ctx: MobileProjectsConversationsContext): void {
         if (typeof WebSocket === 'undefined') {
             ctx.openSseStream();
             void ctx.primeFromAll();
@@ -427,7 +411,7 @@ export function openWebSocketExtracted(ctx: any): void {
         }
 }
 
-export function openSseStreamExtracted(ctx: any): void {
+export function openSseStreamExtracted(ctx: MobileProjectsConversationsContext): void {
         if (ctx.transport === 'ws' || typeof EventSource === 'undefined' || ctx.source) {
             return;
         }
@@ -461,11 +445,81 @@ export function openSseStreamExtracted(ctx: any): void {
         }
 }
 
-export function dispatchSseEventExtracted(ctx: any, ev: MessageEvent): void {
+export function dispatchSseEventExtracted(ctx: MobileProjectsConversationsContext, ev: MessageEvent): void {
         try {
             ctx.dispatchServerPayload(JSON.parse(ev.data) as ConversationServerEvent);
         } catch {
             /* drop malformed payload */
         }
+}
+
+function cwdBaseName(cwd: string): string {
+    return normalizeCwd(cwd).split('/').pop()?.toLowerCase() ?? '';
+}
+
+function uriToFsPath(uri: URI): string {
+    const raw = uri.path.toString();
+    if (/^\/[A-Za-z]:/.test(raw)) {
+        return raw.slice(1);
+    }
+    return raw;
+}
+
+interface TheiaSerializedChatData {
+    readonly title?: string;
+    readonly pinnedAgentId?: string;
+    readonly saveDate: number;
+    readonly model: {
+        readonly requests?: ReadonlyArray<{ readonly id: string; readonly text?: string }>;
+        readonly responses?: ReadonlyArray<TheiaSerializedChatResponse>;
+    };
+}
+
+interface TheiaSerializedChatResponse {
+    readonly requestId: string;
+    readonly content?: ReadonlyArray<TheiaSerializedChatResponsePart>;
+}
+
+interface TheiaSerializedChatResponsePart {
+    readonly kind: string;
+    readonly fallbackMessage?: string;
+    readonly data?: { readonly content?: string; readonly code?: string };
+}
+
+function theiaMessagesToConversationMessages(data: TheiaSerializedChatData): QaapAgentMessageDTO[] {
+    const responsesByRequestId = new Map((data.model.responses ?? []).map(response => [response.requestId, response]));
+    const messages: QaapAgentMessageDTO[] = [];
+    let offset = 0;
+    for (const request of data.model.requests ?? []) {
+        const userText = request.text ? normalizeAgentMessageContentForDisplay(request.text).trim() : '';
+        if (userText) {
+            messages.push({
+                id: `${request.id}:user`,
+                role: 'user',
+                content: userText,
+                createdAt: data.saveDate + offset++,
+            });
+        }
+        const responseText = normalizeAgentMessageContentForDisplay(responseToText(responsesByRequestId.get(request.id))).trim();
+        if (responseText) {
+            messages.push({
+                id: `${request.id}:agent`,
+                role: 'agent',
+                content: responseText,
+                createdAt: data.saveDate + offset++,
+            });
+        }
+    }
+    return messages;
+}
+
+function responseToText(response: TheiaSerializedChatResponse | undefined): string {
+    if (!response?.content) {
+        return '';
+    }
+    return response.content
+        .map(part => part.data?.content ?? part.data?.code ?? part.fallbackMessage ?? '')
+        .filter(Boolean)
+        .join('\n\n');
 }
 
