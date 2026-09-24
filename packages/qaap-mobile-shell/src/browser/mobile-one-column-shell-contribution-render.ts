@@ -16,6 +16,7 @@ import {
     recomputeMobileWorkHubHideIdeSidePanels,
 } from './mobile-projects-open';
 import { resolveInitialLandingBodyClass } from './mobile-shell-landing-state';
+import { MobileShellLandingController } from './mobile-shell-landing-controller';
 import {
     MobileShellBottomBarController,
 } from './mobile-shell-bottom-bar-controller';
@@ -51,6 +52,39 @@ export function setTrackedProjectsPanelExtracted(ctx: MobileOneColumnShellContri
     if (panel) {
         ctx.projectsPanelTrack = ctx.composerPromptService.trackPanel(panel);
     }
+}
+
+export function initLandingControllerExtracted(ctx: MobileOneColumnShellContributionContext): void {
+    ctx.initBottomBarController();
+    ctx.initSideSheetController();
+    ctx.initOverlayController();
+    ctx.initPullRequestPanelController();
+    ctx.initIdeFallbackController();
+    ctx.initWorkHubBootstrapController();
+    ctx.landingHost = {
+        getProjectsPanel: () => ctx.projectsPanel,
+        setProjectsPanel: panel => ctx.setTrackedProjectsPanel(panel),
+        ensureProjectsPanel: forceHomeMode => ctx.workHubBootstrap.ensureProjectsPanel(forceHomeMode),
+        hideProjectsPanel: () => ctx.hideProjectsPanel(),
+        tryBootstrapMobileAgentsChat: () => ctx.workHubBootstrap.tryBootstrapMobileAgentsChat(),
+        ensureMainContentAfterWorkspaceReload: () => ctx.ensureMainContentAfterWorkspaceReload(),
+        refreshProjectBootstrapFromWorkspace: () => { void ctx.projectBootstrap.refreshFromCurrentWorkspace(); },
+        ensureDesktopWorkHubSessionsSidebarOpen: () => ctx.ensureDesktopWorkHubSessionsSidebarOpen(),
+        syncMobileHubPrimaryBottomChrome: () => ctx.bottomBarController.syncMobileHubPrimaryBottomChrome(),
+        refreshBottomBar: () => ctx.bottomBarController.refreshBottomBar(),
+        refreshWorkbenchTopBar: () => ctx.refreshWorkbenchTopBar(),
+        scheduleSnapAndUiRefresh: () => ctx.scheduleSnapAndUiRefresh(),
+    };
+    ctx.landing = new MobileShellLandingController({
+        host: ctx.landingHost,
+        projectsService: ctx.projectsService,
+        sessionState: ctx.sessionState,
+        mobileMq: ctx.mobileMq,
+    });
+    ctx.initHubNavigationController();
+    ctx.initTranscriptChromeController();
+    ctx.initProjectsPanelFactory();
+    ctx.patchWorkHubBootstrapLandingHost();
 }
 
 export function initProjectsPanelFactoryExtracted(ctx: MobileOneColumnShellContributionContext): void {

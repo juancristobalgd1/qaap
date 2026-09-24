@@ -33,6 +33,8 @@ for (const f of walk(path.join(repoRoot, pkg, 'src'))) {
                 if (!m.name || !ts.isIdentifier(m.name) || ts.isConstructorDeclaration(m)) { continue; }
                 const mods = ts.canHaveModifiers(m) ? ts.getModifiers(m) || [] : [];
                 if (mods.some(x => x.kind === ts.SyntaxKind.OverrideKeyword)) { continue; }
+                // decorated members (@postConstruct, @inject, ...) are invoked by the DI container, not by name
+                if (ts.canHaveDecorators(m) && (ts.getDecorators(m) || []).length) { continue; }
                 const name = m.name.text;
                 if ((counts.get(name) || 0) === 1) {
                     result.push({ file: rel(f), name, kind: ts.SyntaxKind[m.kind] });
