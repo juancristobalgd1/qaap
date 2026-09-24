@@ -21,8 +21,8 @@ import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
-import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
+import type { MobileProjectsTranscriptComposerUi } from '@theia/qaap-composer/lib/browser/mobile-projects-transcript-composer-ui';
+import type { MobileProjectsTranscriptStickyComposerUi } from '@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptMessagesUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui';
@@ -105,7 +105,7 @@ export interface MobileProjectsAgentsHubInlineHost {
     renderHeader(): void;
     renderSubtitle(): void;
     renderList(): void;
-    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerRenderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     detachTranscriptReviewWidget(): void;
     disposeTranscriptEmbeddedPreview(): void;
     notifyWorkspaceHubBottomBarRefresh(): void;

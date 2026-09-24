@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
+import type { QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
@@ -24,7 +24,7 @@ export interface MobileProjectsRepoFiltersHost {
     hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     renderList(): void;
-    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerRenderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     workHubSearchUi: import('./mobile-projects-work-hub-search-ui').MobileProjectsWorkHubSearchUi;
     detailComposerSurfaceForProject(project: MobileProjectEntry): QaapComposerSurface;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;

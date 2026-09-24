@@ -17,7 +17,7 @@ import {
     MutableChatModel,
 } from '@theia/ai-chat';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
-import { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
+import { MobileProjectChatViewWidget } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { Widget as LuminoWidget } from '@lumino/widgets';
 import {
     getConversation,

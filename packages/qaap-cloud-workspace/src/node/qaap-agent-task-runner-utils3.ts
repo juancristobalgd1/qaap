@@ -32,7 +32,7 @@ import {
     removeAgentPromptTempDir,
     type QaapAgentStdinPromptMode,
 } from './qaap-agent-task-runner-utils';
-import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
+import { extractImprovedComposerPromptFromAgentStdout } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 
 const AGENT_CANDIDATES: readonly AgentCandidate[] = QAAP_BUILTIN_AGENT_DEFINITIONS;
 const QAAP_AGENT_RETRIEVAL_ENABLED = !/^(0|false|off)$/i.test(process.env.QAAP_AGENT_RETRIEVAL?.trim() ?? '');

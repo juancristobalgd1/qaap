@@ -9,7 +9,7 @@ import {
     buildWorkHubInboxStructureFingerprint,
     type WorkHubInboxProjectGroupFingerprintInput,
 } from '../common/qaap-work-hub-inbox-fingerprint';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
+import type { QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import type { WorkHubApprovalItem } from './mobile-projects-team-hub-ui';

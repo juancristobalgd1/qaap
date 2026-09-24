@@ -58,7 +58,7 @@ export interface MobileProjectsHomeHubHost {
     openProjectDetail(project: MobileProjectEntry): void | Promise<void>;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     selectHubLandingView(view: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView, preferredDiffProjectId?: string, options?: { force?: boolean }): void;
-    preferComposerSurface(surface: import('../common/qaap-composer-surface').QaapComposerSurface, projectCwd?: string): void;
+    preferComposerSurface(surface: import('@theia/qaap-composer/lib/common/qaap-composer-surface').QaapComposerSurface, projectCwd?: string): void;
     conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     missionControlHubUi: MobileProjectsMissionControlHubUi;
     missionControlExpanded: boolean;

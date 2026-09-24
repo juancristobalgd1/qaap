@@ -39,8 +39,8 @@ import {
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { QaapDesktopTerminalLayoutContribution } from './qaap-desktop-terminal-layout-contribution';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
-import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
-import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
+import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
+import { QaapComposerEditorContextService } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from '@theia/qaap-diff-review/lib/browser/qaap-work-hub-diff-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
@@ -55,7 +55,7 @@ import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
 import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { EditorManager } from '@theia/editor/lib/browser';
-import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
+import { MobileProjectChatViewWidgetFactory } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { MonacoEditorProvider } from '@theia/monaco/lib/browser/monaco-editor-provider';
 import { LabelProvider } from '@theia/core/lib/browser';
@@ -69,7 +69,7 @@ import { MobileProjectEntry, type MobileProjectsHubView } from '@theia/qaap-shar
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
-import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
+import { MobileAgentTaskComposer } from '@theia/qaap-composer/lib/browser/mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager';

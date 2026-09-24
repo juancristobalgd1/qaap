@@ -29,7 +29,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
-import { createAnnotationComposerSessionControls } from './qaap-preview-annotation-composer-session';
+import { createAnnotationComposerSessionControls } from '@theia/qaap-composer/lib/browser/qaap-preview-annotation-composer-session';
 import {
     renderHeaderOverflowMenuItems as renderHeaderOverflowMenuItemsHelper,
     sendExternalComposerContext as sendExternalComposerContextHelper,

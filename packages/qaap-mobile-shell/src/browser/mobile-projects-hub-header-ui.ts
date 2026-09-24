@@ -54,7 +54,7 @@ export interface MobileProjectsHubHeaderHost {
     conversationIndexUi: {
         conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     };
-    composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
+    composerHeaderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;

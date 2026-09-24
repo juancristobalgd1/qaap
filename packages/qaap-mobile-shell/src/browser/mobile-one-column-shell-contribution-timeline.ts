@@ -15,7 +15,7 @@ import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-p
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import { MobileAgentTaskComposer } from './mobile-agent-task-composer';
+import { MobileAgentTaskComposer } from '@theia/qaap-composer/lib/browser/mobile-agent-task-composer';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import {
@@ -44,7 +44,7 @@ import {
     QAAP_WORK_HUB_SEARCH_COMMAND,
 } from '../common/qaap-work-hub-command-palette';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
-import { writeStoredComposerSurface } from '../common/qaap-composer-surface';
+import { writeStoredComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import {
     EXPLORER_VIEW_CONTAINER_ID,
     isMiniBrowserPreviewWidgetId,

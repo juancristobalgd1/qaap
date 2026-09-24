@@ -9,7 +9,7 @@ import { type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/li
 import {
     QAAP_AGENTS_HUB_RECENT_LIMIT,
 } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { type QaapComposerSurface } from '../common/qaap-composer-surface';
+import { type QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
@@ -17,10 +17,10 @@ import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qa
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     filterWorkingTeamMembers,
-} from './qaap-sticky-composer-working-agents-popover';
+} from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-agents-popover';
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
-} from './qaap-sticky-composer-working-detail-activity';
+} from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-detail-activity';
 import {
     resolveTodoStepProgress,
 } from '@theia/qaap-transcript/lib/common/qaap-transcript-todo-step';
@@ -73,8 +73,8 @@ export interface MobileProjectsTasksHubHost {
     vpsTasksForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     conversationMatchesQuery(summary: QaapAgentConversationSummaryDTO, query: string): boolean;
     transcriptMessagesUi: import('@theia/qaap-transcript/lib/browser/mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
-    transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
-    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    transcriptStickyComposerUi: import('@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
+    stickyComposerRenderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     activeInfoForProject(project: MobileProjectEntry): ReturnType<MobileProjectsActiveTasks['getForCwd']>;
     summaryToTaskView(conversation: QaapAgentConversationSummaryDTO): MobileProjectTaskView;
     createTaskItem(

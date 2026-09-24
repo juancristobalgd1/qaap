@@ -16,10 +16,10 @@ import {
     getWorkingAgentsDetailMember,
     getWorkingAgentsDetailMemberId,
     refreshWorkingAgentsDetailCommandLog,
-} from './qaap-sticky-composer-working-agents-popover';
+} from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-agents-popover';
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
-} from './qaap-sticky-composer-working-detail-activity';
+} from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-detail-activity';
 import { parseWorkingDetailTaskLogSegments, shouldShowWorkingDetailTaskLog } from '@theia/qaap-shared-core/lib/browser/qaap-sticky-composer-working-detail-task-log';
 import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';

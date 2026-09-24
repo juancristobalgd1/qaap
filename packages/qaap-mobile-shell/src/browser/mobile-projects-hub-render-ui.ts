@@ -24,7 +24,7 @@ export interface MobileProjectsHubRenderHost {
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     renderHeader(): void;
     renderSubtitle(): void;
-    composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
+    composerHeaderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     syncHubViewAvailability(): void;
     renderFilters(): void;
     renderList(): void;

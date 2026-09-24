@@ -13,8 +13,8 @@ import {
     setMobileLandingHubListChrome,
     setMobileWorkHubComposerHeaderChrome,
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
-import { isWorkingAgentsExpandPinnedOpen } from './qaap-sticky-composer-working-agents-popover';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
+import { isWorkingAgentsExpandPinnedOpen } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-agents-popover';
+import type { QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
@@ -25,7 +25,7 @@ import type { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
-import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
+import type { MobileProjectsTranscriptComposerUi } from '@theia/qaap-composer/lib/browser/mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 
@@ -76,7 +76,7 @@ export interface MobileProjectsPanelLifecycleHost {
     transcriptSheetUi: MobileProjectsTranscriptSheetUi;
 
     closeCardMenu(): void;
-    stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
+    stickyComposerSheetsUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     workHubSearchUi: import('./mobile-projects-work-hub-search-ui').MobileProjectsWorkHubSearchUi;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     disposeTranscriptTerminalSlides(): void;
@@ -92,7 +92,7 @@ export interface MobileProjectsPanelLifecycleHost {
     scheduleRenderList(): void;
     renderSubtitle(): void;
     renderFilters(): void;
-    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerRenderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     syncLandingHubListChrome(): void;
     markTasksFirstLoadComplete(render: boolean): void;
     maybeInstallWorkHubPerfProbe(): void;

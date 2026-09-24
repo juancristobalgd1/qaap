@@ -20,7 +20,7 @@ import type {
     QaapAttachComposerContextArgs,
     QaapWorkHubPickAgentAndSubmitPromptOptions,
     QaapWorkHubSubmitComposerPromptOptions,
-} from '../common/qaap-work-hub-composer-prompt';
+} from '@theia/qaap-composer/lib/common/qaap-work-hub-composer-prompt';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 
 /**

@@ -8,7 +8,7 @@ import {
     isTextareaCaretAtBeginning,
     isTextareaCaretAtEnd,
     textareaCaretLineColumn,
-} from '../common/qaap-sticky-composer-prompt-history-core';
+} from './qaap-sticky-composer-prompt-history-core';
 
 describe('qaap-sticky-composer-prompt-history-core', () => {
     function createTextarea(value: string, start: number, end = start): HTMLTextAreaElement {

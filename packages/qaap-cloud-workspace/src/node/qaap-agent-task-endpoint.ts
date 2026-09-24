@@ -17,7 +17,7 @@ import {
     type QaapAgentTaskListResponse,
     type QaapCreateAgentTaskRequest,
 } from '../common/qaap-agent-task';
-import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
+import type { QaapImproveComposerPromptRequestBody } from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapAgentQueueFullError } from './qaap-agent-queue-policy';
 import { QaapAgentStorageUnavailableError } from './qaap-agent-storage-unavailable-error';

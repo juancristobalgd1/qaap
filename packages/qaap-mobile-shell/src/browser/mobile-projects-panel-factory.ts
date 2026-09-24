@@ -41,25 +41,25 @@ import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobil
 import type { MobileProjectsPanel, MobileProjectsPanelDelegate, MobileProjectsPanelOptions } from './mobile-projects-panel';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
+import { MobileProjectChatViewWidgetFactory } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
-import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
+import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { resolveAgentVerifyChecksForCwd } from '@theia/qaap-shared-core/lib/browser/qaap-agent-verify-checks-resolver';
 import { openTranscriptWorkspaceChange, openTranscriptWorkspaceChanges, openTranscriptWorkspaceFile, createTranscriptFilesViewServices } from '@theia/qaap-transcript/lib/browser/qaap-transcript-file-open';
 import { createTranscriptTerminalViewServices } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
-import { pickMobileContextVariable } from './qaap-mobile-context-attach-menu';
-import { attachDeviceFilesOptimistic } from './qaap-mobile-composer-device-attach';
+import { pickMobileContextVariable } from '@theia/qaap-composer/lib/browser/qaap-mobile-context-attach-menu';
+import { attachDeviceFilesOptimistic } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
 import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
-import { resolveStickyComposerAttachmentPreview } from './qaap-sticky-composer-attachment-preview';
-import { resolveStickyComposerContextChip } from './qaap-sticky-composer-context-ui';
-import { resolvePinnedEditorContextVariable } from './qaap-composer-editor-context-resolver';
-import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
+import { resolveStickyComposerAttachmentPreview } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-attachment-preview';
+import { resolveStickyComposerContextChip } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-context-ui';
+import { resolvePinnedEditorContextVariable } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-resolver';
+import { QaapComposerEditorContextService } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import { resolvePreviewFeedbackVariable } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
-import { uploadInlineComposerImagesToWorkspace } from './qaap-mobile-composer-device-attach';
+import { uploadInlineComposerImagesToWorkspace } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
 
 export interface MobileProjectsPanelFactoryDelegate {
     onProjectOpen(project: MobileProjectEntry): void;

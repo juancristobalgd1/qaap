@@ -43,6 +43,9 @@
       "path": "../qaap-agents-ui"
     },
     {
+      "path": "../qaap-composer"
+    },
+    {
       "path": "../qaap-mobile-shell"
     },
     {

@@ -12,7 +12,7 @@ import { writeJsonAtomic } from './qaap-write-json-atomic';
 import * as path from 'path';
 import {
     buildImproveComposerPromptRequest,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-composer-prompt-improve';
+} from '@theia/qaap-composer/lib/common/qaap-composer-prompt-improve';
 import {
     isQaapAgentTaskFinished,
     type QaapCreateAgentTaskQaiqModel,

@@ -9,7 +9,7 @@ import type { QuickInputService } from '@theia/core/lib/browser';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QAAP_WORK_HUB_WORKFLOWS, type WorkHubCatalogAction } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
+import type { QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export type WorkHubSearchTarget =
@@ -40,7 +40,7 @@ export interface MobileProjectsWorkHubSearchHost {
     conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     isProjectDetailView(): boolean;
-    detailComposerSurfaceForProject(project: MobileProjectEntry): import('../common/qaap-composer-surface').QaapComposerSurface;
+    detailComposerSurfaceForProject(project: MobileProjectEntry): import('@theia/qaap-composer/lib/common/qaap-composer-surface').QaapComposerSurface;
     openProjectDetail(project: MobileProjectEntry): void | Promise<void>;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     runCatalogAction(action: WorkHubCatalogAction): Promise<void>;

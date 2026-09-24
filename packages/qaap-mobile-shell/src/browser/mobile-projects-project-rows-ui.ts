@@ -6,7 +6,7 @@
 import {
     type QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
-import { type QaapComposerSurface } from '../common/qaap-composer-surface';
+import { type QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { type MobileProjectEntry, type MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';

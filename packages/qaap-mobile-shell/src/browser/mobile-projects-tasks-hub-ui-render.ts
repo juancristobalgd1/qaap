@@ -11,10 +11,10 @@ import {
     QAAP_AGENTS_HUB_QUICK_ACTIONS,
     QAAP_AGENTS_HUB_RECENT_LIMIT,
 } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
-import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
+import { bindStickyComposerControlClick } from '@theia/qaap-composer/lib/common/qaap-sticky-composer-control-click';
 import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
-import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
+import { syncStickyComposerWorkingPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-pill';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {
     closeWorkingAgentsPopover,
@@ -28,8 +28,8 @@ import {
     refreshWorkingAgentsDetailActivityFeed,
     restoreWorkingAgentsExpandIfNeeded,
     syncWorkingAgentsExpandContent,
-} from './qaap-sticky-composer-working-agents-popover';
-import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-pill';
+} from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-agents-popover';
+import { syncStickyComposerStepPillInRoots } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-step-pill';
 import {
     resolveLatestTranscriptTodos,
     resolveTodoStepProgress,

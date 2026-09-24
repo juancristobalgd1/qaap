@@ -5,8 +5,8 @@
 
 import { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import { MobileProjectsTranscriptHistoryUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-history-ui';
-import { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
+import { MobileProjectsTranscriptComposerUi } from '@theia/qaap-composer/lib/browser/mobile-projects-transcript-composer-ui';
+import { MobileProjectsTranscriptStickyComposerUi } from '@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui';
 import { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
 import { MobileProjectsTranscriptVerifyUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-verify-ui';

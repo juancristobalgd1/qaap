@@ -13,7 +13,7 @@ import {
     type QaapAttachComposerContextArgs,
     type QaapWorkHubPickAgentAndSubmitPromptOptions,
     type QaapWorkHubSubmitComposerPromptOptions,
-} from '../common/qaap-work-hub-composer-prompt';
+} from '@theia/qaap-composer/lib/common/qaap-work-hub-composer-prompt';
 import { isQaapAttachComposerContextArgs } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 

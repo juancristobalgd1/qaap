@@ -24,8 +24,8 @@ import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/li
 import type { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
-import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
-import type { StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
+import type { MobileComposerAttachHandlers } from '@theia/qaap-composer/lib/browser/qaap-mobile-composer-device-attach';
+import type { StickyComposerContextChipView } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-context-ui';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import type { TranscriptFilesViewServices } from '@theia/qaap-transcript/lib/browser/qaap-transcript-files-view';
 import type { TranscriptTerminalViewServices } from '@theia/qaap-transcript/lib/browser/qaap-transcript-terminal-view';
@@ -156,7 +156,7 @@ export interface MobileProjectsPanelOptions {
     /** Generates commit messages automatically from the diff for the commit split-button. */
     commitMessageAi?: import('@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai').QaapCommitMessageAi;
     /** Rewrites composer drafts via the selected language model. */
-    composerPromptImprover?: import('./qaap-composer-prompt-improver').QaapComposerPromptImprover;
+    composerPromptImprover?: import('@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver').QaapComposerPromptImprover;
     /** Opens AI / Settings preferences inside the Work Hub instead of the IDE main area. */
     openPreferencesSheet?: (query?: string) => Promise<void>;
     /** Opens Billing (plan, runtime, Codex credits) inside the Work Hub overlay. */
@@ -188,7 +188,7 @@ export interface MobileProjectsPanelOptions {
         variables?: import('@theia/ai-core').AIVariableResolutionRequest[],
     ) => Promise<string>;
     /** Bridges Monaco editor selection into sticky/transcript composer context chips. */
-    composerEditorContextService?: import('./qaap-composer-editor-context-service').QaapComposerEditorContextService;
+    composerEditorContextService?: import('@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service').QaapComposerEditorContextService;
 }
 
 export interface MobileProjectsHeaderOverflowMenuItem {

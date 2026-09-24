@@ -18,7 +18,7 @@ import {
     resolveStickyComposerContextChip,
     resolveStickyComposerContextEntry,
     resolveDocumentIconClasses,
-} from '../browser/qaap-sticky-composer-context-ui';
+} from './qaap-sticky-composer-context-ui';
 
 describe('qaap-sticky-composer-context-ui', () => {
 

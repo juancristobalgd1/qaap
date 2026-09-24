@@ -7,7 +7,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
+import { formatConversationExecutionSessionMeta } from '@theia/qaap-composer/lib/common/qaap-conversation-composer-state';
 import { createAgentIdentityElement, createAgentTaskBadge, createAgentTaskVerificationBadge } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { sharedSecondTicker } from '@theia/qaap-transcript/lib/browser/qaap-shared-elapsed-ticker';
 import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';

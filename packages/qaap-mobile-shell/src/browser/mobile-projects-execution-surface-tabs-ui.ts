@@ -58,8 +58,8 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     stickyComposerHost: HTMLElement;
     transcriptComposerMountKey?: string | undefined;
     transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
-    transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
-    stickyComposerSheetsUi?: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
+    transcriptStickyComposerUi: import('@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
+    stickyComposerSheetsUi?: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     root: HTMLElement;
     scroll: HTMLElement;
     executionTabOverflowMenu: HTMLElement | undefined;
@@ -103,8 +103,8 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     appendTranscriptHeaderActions(header: HTMLElement, title: HTMLElement): HTMLButtonElement;
     renderHeader(): void;
     renderSubtitle(): void;
-    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
-    stickyComposerAgentsUi: import('./mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
+    stickyComposerRenderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerAgentsUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-agents-ui').MobileProjectsStickyComposerAgentsUi;
     stickyComposerPinnedAgentId: string | undefined;
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO;

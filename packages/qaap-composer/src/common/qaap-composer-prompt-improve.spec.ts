@@ -11,7 +11,7 @@ import {
     looksLikeAgentNdjsonStream,
     normalizeImprovedComposerPromptText,
     sanitizeImprovedComposerPrompt,
-} from '../common/qaap-composer-prompt-improve';
+} from './qaap-composer-prompt-improve';
 
 describe('qaap-composer-prompt-improve', () => {
 

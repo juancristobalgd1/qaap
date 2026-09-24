@@ -21,9 +21,9 @@ import '../../src/browser/style/qaap-empty-workbench-brand.css';
 import '../../src/browser/style/qaap-ide-preferences.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
 import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-toast.css';
-import '../../src/browser/style/qaap-chat-mic.css';
-import '../../src/browser/style/qaap-composer-prompt-improve.css';
-import '../../src/browser/style/qaap-chat-select-dropdown.css';
+import '@theia/qaap-composer/src/browser/style/qaap-chat-mic.css';
+import '@theia/qaap-composer/src/browser/style/qaap-composer-prompt-improve.css';
+import '@theia/qaap-composer/src/browser/style/qaap-chat-select-dropdown.css';
 import '@theia/qaap-diff-review/src/browser/style/qaap-diff-review.css';
 import '../../src/browser/style/qaap-work-mission-control.css';
 import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
@@ -83,7 +83,7 @@ import {
     MobileProjectAIChatInputWidget,
     MobileProjectChatViewWidget,
     MobileProjectChatViewWidgetFactory,
-} from './mobile-project-ai-chat-input-widget';
+} from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
 import { QaapProjectSwitcherContribution } from './qaap-project-switcher-contribution';
@@ -98,9 +98,9 @@ import { QaapWorkspacePreviewPortClaimService } from '@theia/qaap-shared-core/li
 import { QaapBootstrapVariableContribution } from '@theia/qaap-shared-core/lib/browser/qaap-bootstrap-variable-contribution';
 import { createQaapScmWidgetContainer } from '@theia/qaap-shared-core/lib/browser/qaap-scm-tree-widget';
 import { QaapSelectComponentOverlayContribution } from '@theia/qaap-shared-core/lib/browser/qaap-select-component-overlay-contribution';
-import { QaapChatMicTranscribeContribution } from './qaap-chat-mic-transcribe-contribution';
-import { QaapChatInputCodexLayoutContribution } from './qaap-chat-input-codex-contribution';
-import { QaapChatInputProductContribution } from './qaap-chat-input-product-contribution';
+import { QaapChatMicTranscribeContribution } from '@theia/qaap-composer/lib/browser/qaap-chat-mic-transcribe-contribution';
+import { QaapChatInputCodexLayoutContribution } from '@theia/qaap-composer/lib/browser/qaap-chat-input-codex-contribution';
+import { QaapChatInputProductContribution } from '@theia/qaap-composer/lib/browser/qaap-chat-input-product-contribution';
 import { MobileConnectionStatusContribution } from './mobile-connection-status-contribution';
 import { MobileChatSessionRestoreContribution } from './mobile-chat-session-restore-contribution';
 import { QaapQaiqChatAgentContribution } from '@theia/qaap-shared-core/lib/browser/qaap-qaiq-chat-agent-contribution';
@@ -116,12 +116,12 @@ import { QaapTerminalFrontendContribution } from '@theia/qaap-shared-core/lib/br
 import { XtermLinkFactory } from '@theia/terminal/lib/browser/terminal-link-provider';
 import { createQaapXtermLinkFactory } from '@theia/qaap-shared-core/lib/browser/qaap-xterm-link-adapter';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
-import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
-import { QaapComposerEditorContextContribution } from './qaap-composer-editor-context-contribution';
+import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
+import { QaapComposerEditorContextContribution } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-contribution';
 import { QaapWorkHubComposerPromptContribution } from './qaap-work-hub-composer-prompt-contribution';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
-import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
-import { QaapStickyComposerPromptHistoryContribution } from './qaap-sticky-composer-prompt-history';
+import { QaapComposerEditorContextService } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service';
+import { QaapStickyComposerPromptHistoryContribution } from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-prompt-history';
 import { QaapDiffReviewWidget } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-widget';
 import { QaapDiffReviewContribution } from '@theia/qaap-diff-review/lib/browser/qaap-diff-review-contribution';
 import { QaapWorkHubDiffService } from '@theia/qaap-diff-review/lib/browser/qaap-work-hub-diff-service';
@@ -144,7 +144,7 @@ import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigato
 import { NavigatorTabBarDecorator } from '@theia/navigator/lib/browser/navigator-tab-bar-decorator';
 import { QaapAiChatMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-ai-chat-mobile-contribution';
 import { QaapWorkHubChatViewWidget } from './qaap-work-hub-chat-view-widget';
-import { WorkHubShellAIChatInputWidget } from './work-hub-shell-ai-chat-input-widget';
+import { WorkHubShellAIChatInputWidget } from '@theia/qaap-composer/lib/browser/work-hub-shell-ai-chat-input-widget';
 import { QaapOutlineMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-outline-mobile-contribution';
 import { QaapMemoryInspectorMobileContribution } from '@theia/qaap-shared-core/lib/browser/qaap-memory-inspector-mobile-contribution';
 import { QaapScmContribution } from '@theia/qaap-shared-core/lib/browser/qaap-scm-contribution';

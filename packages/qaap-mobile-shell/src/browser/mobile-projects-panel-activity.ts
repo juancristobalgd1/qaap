@@ -2,7 +2,7 @@ import type { MobileProjectsPanelContext } from './mobile-projects-panel-context
 // Extracted from mobile-projects-panel.ts
 
 import { ChatSession } from '@theia/ai-chat';
-import { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
+import { MobileProjectChatViewWidget } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import {
     MobileProjectEntry,
 } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
@@ -99,7 +99,7 @@ export function attachTranscriptChatViewWidgetExtracted(ctx: MobileProjectsPanel
     return ctx.theiaChatSessionUi.attachTranscriptChatViewWidget(widget, chatHost, session);
 }
 
-export function createComposerEditorContextPanelDelegateExtracted(ctx: MobileProjectsPanelContext): import('./qaap-composer-editor-context-service').QaapComposerEditorContextPanelDelegate {
+export function createComposerEditorContextPanelDelegateExtracted(ctx: MobileProjectsPanelContext): import('@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service').QaapComposerEditorContextPanelDelegate {
     return {
         resolveActiveComposerContextTarget: () => ctx.resolveActiveComposerContextTarget(),
         getComposerContextEntries: target => target === 'transcript'
@@ -134,7 +134,7 @@ export function createComposerEditorContextPanelDelegateExtracted(ctx: MobilePro
     };
 }
 
-export function resolveActiveComposerContextTargetExtracted(ctx: MobileProjectsPanelContext): import('./qaap-composer-editor-context-service').ComposerEditorContextTarget {
+export function resolveActiveComposerContextTargetExtracted(ctx: MobileProjectsPanelContext): import('@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service').ComposerEditorContextTarget {
     const state = ctx.transcriptController.state;
     if (state.transcriptOpenSummary || state.transcriptComposerSummary) {
         return 'transcript';

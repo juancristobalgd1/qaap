@@ -8,7 +8,7 @@ import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
-import type { QaapComposerSurface } from '../common/qaap-composer-surface';
+import type { QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 
 export interface MobileProjectsRepoLifecycleHost {
     hubView: MobileProjectsHubView;

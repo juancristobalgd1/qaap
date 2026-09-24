@@ -12,7 +12,7 @@ import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobil
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { ensureTranscriptDevPreview, extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { probeQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
-import { QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-composer-prompt';
+import { QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND } from '@theia/qaap-composer/lib/common/qaap-work-hub-composer-prompt';
 import type { QaapPreviewWidgetKey } from '@theia/qaap-adapters/lib/browser/qaap-preview-widget-uri';
 import { qaapHubPreviewWidgetKeyFromProject } from './qaap-hub-resume-preview';
 

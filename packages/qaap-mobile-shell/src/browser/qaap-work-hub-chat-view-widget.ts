@@ -47,14 +47,14 @@ import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobil
 import { markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
+import { MobileProjectChatViewWidgetFactory } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
 import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import { QaapCommitMessageAi } from '@theia/qaap-diff-review/lib/browser/qaap-commit-message-ai';
-import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
-import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
+import { QaapComposerEditorContextService } from '@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service';
+import { QaapComposerPromptImprover } from '@theia/qaap-composer/lib/browser/qaap-composer-prompt-improver';
 import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';

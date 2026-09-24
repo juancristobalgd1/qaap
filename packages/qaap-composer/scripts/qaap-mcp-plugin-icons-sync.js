@@ -60,7 +60,7 @@ function buildIconAssetsSource() {
     const slugLines = Object.entries(slugToAssetKey).map(([slug, assetKey]) => `    '${slug}': '${assetKey}',`);
 
     return {
-        source: `// Auto-generated from resources/mcp-plugins/*.svg — re-run: npm run sync:mcp-plugin-icons --prefix packages/qaap-mobile-shell
+        source: `// Auto-generated from resources/mcp-plugins/*.svg — re-run: npm run sync:mcp-plugin-icons --prefix packages/qaap-composer
 
 export const MCP_PLUGIN_ICON_SVGS: Readonly<Record<string, string>> = {
 ${svgLines.join('\n')}
@@ -80,7 +80,7 @@ if (checkOnly) {
     const existing = fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : '';
     if (existing !== source) {
         console.error(`MCP plugin icon assets out of sync: ${path.relative(process.cwd(), outFile)}`);
-        console.error('Run: npm run sync:mcp-plugin-icons --prefix packages/qaap-mobile-shell');
+        console.error('Run: npm run sync:mcp-plugin-icons --prefix packages/qaap-composer');
         process.exit(1);
     }
     console.log(`MCP plugin icon assets in sync (${iconCount} icons)`);

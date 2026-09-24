@@ -12,15 +12,15 @@ import type { QaapGitHistoryCommit } from '@theia/qaap-shared-core/lib/common/qa
 import { setMobileActiveTranscriptChrome } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
-import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
-import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
+import type { MobileProjectsTranscriptComposerUi } from '@theia/qaap-composer/lib/browser/mobile-projects-transcript-composer-ui';
+import type { MobileProjectsTranscriptStickyComposerUi } from '@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsTranscriptLiveUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import { TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
-import type { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
+import type { MobileProjectChatViewWidget } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import { disposeComposerContextEntries, type StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 

@@ -2,7 +2,7 @@ import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-proje
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
+import { readStoredComposerSurface, type QaapComposerSurface } from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT } from './mobile-projects-project-rows-ui';

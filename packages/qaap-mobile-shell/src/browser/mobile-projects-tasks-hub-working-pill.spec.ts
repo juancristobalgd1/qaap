@@ -14,7 +14,7 @@ import {
     isWorkingAgentsExpandPinnedOpen,
     isWorkingAgentsExpandSessionOpen,
     isWorkingPillSuppressedAfterStopAll,
-} from './qaap-sticky-composer-working-agents-popover';
+} from '@theia/qaap-composer/lib/browser/qaap-sticky-composer-working-agents-popover';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';

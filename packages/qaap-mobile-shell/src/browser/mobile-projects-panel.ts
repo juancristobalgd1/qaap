@@ -17,7 +17,7 @@ import { AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia
 import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatAgent, ChatService, ChatSession } from '@theia/ai-chat';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
-import { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
+import { MobileProjectChatViewWidget } from '@theia/qaap-composer/lib/browser/mobile-project-ai-chat-input-widget';
 import {
     MobileProjectEntry,
     MobileProjectFilter,
@@ -76,7 +76,7 @@ import { type QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/b
 import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
-import { } from './qaap-preview-annotation-composer-session';
+import { } from '@theia/qaap-composer/lib/browser/qaap-preview-annotation-composer-session';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
 import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-host';
@@ -112,7 +112,7 @@ import {
 import {
     MobileProjectsComposerHeaderUi,
     type MobileProjectsComposerHeaderHost,
-} from './mobile-projects-composer-header-ui';
+} from '@theia/qaap-composer/lib/browser/mobile-projects-composer-header-ui';
 import {
     MobileProjectsConversationIndexUi,
     type MobileProjectsConversationIndexHost,
@@ -211,27 +211,27 @@ import {
 import {
     MobileProjectsStickyComposerContextUi,
     type MobileProjectsStickyComposerContextHost,
-} from './mobile-projects-sticky-composer-context-ui';
+} from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-context-ui';
 import {
     MobileProjectsStickyComposerAgentsUi,
     type MobileProjectsStickyComposerAgentsHost,
-} from './mobile-projects-sticky-composer-agents-ui';
+} from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-agents-ui';
 import {
     MobileProjectsStickyComposerSheetsUi,
     type MobileProjectsStickyComposerSheetsHost,
-} from './mobile-projects-sticky-composer-sheets-ui';
+} from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-sheets-ui';
 import {
     MobileProjectsStickyComposerWorkspaceUi,
     type MobileProjectsStickyComposerWorkspaceHost,
-} from './mobile-projects-sticky-composer-workspace-ui';
+} from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-workspace-ui';
 import {
     MobileProjectsStickyComposerColumnUi,
     type MobileProjectsStickyComposerColumnHost,
-} from './mobile-projects-sticky-composer-column-ui';
+} from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-column-ui';
 import {
     MobileProjectsStickyComposerRenderUi,
     type MobileProjectsStickyComposerRenderHost,
-} from './mobile-projects-sticky-composer-render-ui';
+} from '@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui';
 import {
     type QaapTranscriptLiveRefreshOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
@@ -247,7 +247,7 @@ import {
 } from '../common/qaap-work-hub-home';
 import {
     type QaapComposerSurface,
-} from '../common/qaap-composer-surface';
+} from '@theia/qaap-composer/lib/common/qaap-composer-surface';
 import {
     QAAP_WORK_HUB_GETTING_STARTED,
     type WorkHubCatalogAction,
@@ -421,7 +421,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     public agentsHubSelectedProjectId: string | undefined;
     protected readonly composerWorkspaceBranchByProjectId = new Map<string, string>();
     protected stickyComposerModeId: string | undefined;
-    protected stickyComposerCapabilityLevel: import('../common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
+    protected stickyComposerCapabilityLevel: import('@theia/qaap-composer/lib/common/qaap-sticky-composer-model-capability').ModelCapabilityLevelValue | undefined;
     protected stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     protected stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     protected stickyComposerSurface: QaapComposerSurface = 'task';
@@ -2242,12 +2242,12 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.composerEditorContextService?.notifyEditorContextRemoved(entry);
     }
 
-    protected createComposerEditorContextPanelDelegate(): import('./qaap-composer-editor-context-service').QaapComposerEditorContextPanelDelegate {
+    protected createComposerEditorContextPanelDelegate(): import('@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service').QaapComposerEditorContextPanelDelegate {
         return createComposerEditorContextPanelDelegateExtracted(this);
     }
 
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
-    public resolveActiveComposerContextTarget(): import('./qaap-composer-editor-context-service').ComposerEditorContextTarget {
+    public resolveActiveComposerContextTarget(): import('@theia/qaap-composer/lib/browser/qaap-composer-editor-context-service').ComposerEditorContextTarget {
         return resolveActiveComposerContextTargetExtracted(this);
     }
 }

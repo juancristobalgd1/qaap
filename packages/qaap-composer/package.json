@@ -1,60 +1,30 @@
 {
-  "name": "@theia/qaap-mobile-shell",
+  "name": "@theia/qaap-composer",
   "version": "1.73.0",
-  "description": "Qaap — narrow-viewport mobile shell contributions (product layer)",
+  "description": "Qaap — sticky composer: prompt input, agent/model sheets, attachments, slash commands and context (product layer)",
   "dependencies": {
-    "@lumino/algorithm": "^2.0.4",
-    "@lumino/messaging": "^2.0.4",
     "@lumino/widgets": "2.7.5",
     "@theia/ai-chat": "1.73.0",
     "@theia/ai-chat-ui": "1.73.0",
-    "@theia/ai-claude-code": "1.73.0",
-    "@theia/ai-copilot": "1.73.0",
     "@theia/ai-core": "1.73.0",
-    "@theia/ai-ide": "1.73.0",
     "@theia/ai-mcp": "1.73.0",
     "@theia/core": "1.73.0",
     "@theia/editor": "1.73.0",
     "@theia/filesystem": "1.73.0",
-    "@theia/memory-inspector": "1.73.0",
-    "@theia/mini-browser": "1.73.0",
     "@theia/monaco": "1.73.0",
-    "@theia/navigator": "1.73.0",
-    "@theia/outline-view": "1.73.0",
-    "@theia/preferences": "1.73.0",
-    "@theia/preview": "1.73.0",
     "@theia/qaap-adapters": "1.73.0",
     "@theia/qaap-agents-ui": "1.73.0",
-    "@theia/qaap-ai-openrouter": "1.73.0",
-    "@theia/qaap-composer": "1.73.0",
     "@theia/qaap-diff-review": "1.73.0",
-    "@theia/qaap-element-inspector": "1.73.0",
     "@theia/qaap-mobile-mechanics": "1.73.0",
-    "@theia/qaap-persistence": "1.73.0",
     "@theia/qaap-shared-core": "1.73.0",
-    "@theia/qaap-shell": "1.73.0",
     "@theia/qaap-transcript": "1.73.0",
     "@theia/qaap-transcript-overlay": "1.73.0",
-    "@theia/scm": "1.73.0",
-    "@theia/terminal": "1.73.0",
-    "@theia/vsx-registry": "1.73.0",
-    "@theia/workspace": "1.73.0",
-    "cron-parser": "^5.5.0",
-    "linkedom": "^0.18.12",
-    "thinking-orbs": "^0.1.1",
-    "tslib": "^2.8.1"
+    "@theia/workspace": "1.73.0"
   },
   "publishConfig": {
     "access": "public"
   },
-  "theiaExtensions": [
-    {
-      "frontend": "lib/browser/qaap-workbench-frontend-module"
-    },
-    {
-      "frontend": "lib/browser/qaap-mobile-shell-frontend-module"
-    }
-  ],
+  "theiaExtensions": [],
   "keywords": [
     "theia-extension"
   ],
@@ -65,12 +35,16 @@
   },
   "files": [
     "lib",
+    "resources",
     "src"
   ],
   "scripts": {
     "build": "theiaext build",
     "clean": "theiaext clean",
+    "precompile": "node scripts/qaap-mcp-plugin-icons-sync.js",
     "compile": "theiaext compile",
+    "sync:mcp-plugin-icons": "node scripts/qaap-mcp-plugin-icons-sync.js",
+    "check:mcp-plugin-icons": "node scripts/qaap-mcp-plugin-icons-sync.js --check",
     "lint": "theiaext lint",
     "test": "nyc mocha --config ../../configs/mocharc.yml --require ./test-support/ensure-jsdom.js \"./lib/**/*.*spec.js\"",
     "watch": "theiaext watch"

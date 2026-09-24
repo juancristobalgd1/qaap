@@ -51,7 +51,7 @@ export interface MobileProjectsProjectNavigationHost {
 
     onHubExpandedProjectChanged?(project: MobileProjectEntry): void;
     closeCardMenu(): void;
-    stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
+    stickyComposerSheetsUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
     transcriptSurfacesUi: import('./mobile-projects-transcript-surfaces-ui').MobileProjectsTranscriptSurfacesUi;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;

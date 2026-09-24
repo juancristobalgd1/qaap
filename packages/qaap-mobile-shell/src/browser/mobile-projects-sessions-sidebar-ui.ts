@@ -90,7 +90,7 @@ export interface MobileProjectsSessionsSidebarHost {
     agentsHubSelectedProjectId: string | undefined;
     visible: boolean;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
-    transcriptStickyComposerUi: import('./mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
+    transcriptStickyComposerUi: import('@theia/qaap-composer/lib/browser/mobile-projects-transcript-sticky-composer-ui').MobileProjectsTranscriptStickyComposerUi;
     executionSurfaceTabsUi: import('./mobile-projects-execution-surface-tabs-ui').MobileProjectsExecutionSurfaceTabsUi;
     closeAgentsHubSession(): void;
     resetAgentsHubIdleTranscriptShell(project: MobileProjectEntry): void;
@@ -105,7 +105,7 @@ export interface MobileProjectsSessionsSidebarHost {
     closePullRequestDetail(): void;
     renderHeader(): void;
     renderSubtitle(): void;
-    stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
+    stickyComposerRenderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     closeCurrentWorkspace(): Promise<void>;
     openConversationSummary(project: MobileProjectEntry, summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
     runCatalogAction(action: import('@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;

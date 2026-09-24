@@ -66,7 +66,7 @@ export interface MobileProjectsPanelChromeHost {
     workHubSearchUi: import('./mobile-projects-work-hub-search-ui').MobileProjectsWorkHubSearchUi;
     onNewClick(): Promise<void>;
     onTitleTap(): void;
-    composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
+    composerHeaderUi: import('@theia/qaap-composer/lib/browser/mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     onHeaderViewModeChange(id: MobileViewToggleId): void;
     updateAccountAvatar(): void;
     hide(): void;
