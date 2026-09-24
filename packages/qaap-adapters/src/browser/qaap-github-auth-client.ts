@@ -312,7 +312,7 @@ export async function createQaapGithubRepository(request: QaapGithubCreateReposi
     // Creating also clones the new repository into the workspace, so it gets the workspace budget.
     const createTimedOut = (): string => nls.localize(
         'qaap/githubCreate/timedOut',
-        'Creating the GitHub repository took too long. It may still have been created; refresh and try opening it.'
+        'Creating the GitHub repository took too long. It may already exist on GitHub: find it in your repository list and open it, which clones it into your workspace.'
     );
     const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/repositories`, qaapAuthenticatedFetchInit({
         method: 'POST',

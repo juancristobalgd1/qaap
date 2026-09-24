@@ -13,6 +13,7 @@ import * as fsp from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
+    isQaapMultiUserBackend,
     mustWithholdOperatorProviderCredentials,
     resolveUserSettingsFilePath,
     usesSharedAiSettingsFallback,
@@ -435,9 +436,15 @@ export function writeUserSettingsToDisk(
 }
 
 /** Minimal preference seam: the runner passes the backend `PreferenceService`; tests may pass a stub. */
-interface QaapOwnerPreferenceSource {
+export interface QaapOwnerPreferenceSource {
     get?(key: string): unknown;
     inspectInScope?(key: string, scope: PreferenceScope): unknown;
+}
+
+/** What {@link preferenceReaderForOwner} needs from the runner (tests pass plain objects). */
+export interface QaapOwnerSettingsSource {
+    readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown>;
+    readonly preferenceService?: QaapOwnerPreferenceSource;
 }
 
 /**
@@ -451,9 +458,19 @@ function schemaDefaultForAiSetting(preferenceService: QaapOwnerPreferenceSource 
     return preferenceService.inspectInScope(key, PreferenceScope.Default);
 }
 
-export function preferenceReaderForOwner(ctx: any, ownerLogin?: string): QaapPreferenceReader {
+/**
+ * AI settings reader for work done on behalf of `ownerLogin`:
+ * - authenticated tenant: their own `~/.qaap/users/{login}/settings.json`, else the schema default;
+ * - no login / anonymous on a multi-user backend: schema defaults only (the shared User settings belong to
+ *   nobody there, mirroring the operator-credential policy of {@link isQaapMultiUserBackend});
+ * - local single user: the shared PreferenceService (User scope + defaults), then the shared settings file.
+ */
+export function preferenceReaderForOwner(ctx: QaapOwnerSettingsSource, ownerLogin?: string): QaapPreferenceReader {
+    const preferenceService = ctx.preferenceService;
+    if (usesSharedAiSettingsFallback(ownerLogin) && isQaapMultiUserBackend()) {
+        return (key: string): unknown => schemaDefaultForAiSetting(preferenceService, key);
+    }
     const diskSettings = ctx.readUserSettingsFromDisk(ownerLogin);
-    const preferenceService: QaapOwnerPreferenceSource | undefined = ctx.preferenceService;
     if (!usesSharedAiSettingsFallback(ownerLogin)) {
         // Authenticated tenants: their own settings.json, else the schema default — never shared/User-scope values.
         return (key: string): unknown => {
@@ -464,6 +481,7 @@ export function preferenceReaderForOwner(ctx: any, ownerLogin?: string): QaapPre
     }
     return (key: string): unknown => {
         const fromPref = preferenceService?.get?.(key);
+        // eslint-disable-next-line no-null/no-null
         if (fromPref !== undefined && fromPref !== null && fromPref !== '') {
             return fromPref;
         }

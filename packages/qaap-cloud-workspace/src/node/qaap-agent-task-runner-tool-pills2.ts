@@ -4,7 +4,6 @@ import {
 } from './qaap-agent-task-runner-constants';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
 import { OLLAMA_DEFAULT_HOST } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
-import { stripSharedProviderEnv } from './qaap-agent-task-runner-utils2';
 // Extracted from qaap-agent-task-runner.ts
 
 import { ChildProcess } from 'child_process';
@@ -226,8 +225,7 @@ export function buildChildEnvExtracted(ctx: QaapAgentTaskRunnerContext, task: Qa
         // Strip shared provider API keys from process.env so per-user settings
         // are the sole source. Without this, User B's agent would inherit User
         // A's keys (or operator-level keys) from the shared backend process.
-        // Called directly (not through ctx) so the owner decides local vs multi-tenant stripping.
-        stripSharedProviderEnv(env, task.ownerLogin);
+        ctx.stripSharedProviderEnv(env, task.ownerLogin);
         // QAIQ and OpenClaude share the hosted protocol, but OpenClaude must not inherit QAIQ's
         // Settings → AI Features credentials/base URL as an implicit model selection. Explicit
         // OpenClaude picks still receive their own binding below.
@@ -490,6 +488,8 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         readonly agentId: string;
         readonly agentModel?: QaapCreateAgentTaskQaiqModel;
         readonly cwd?: string;
+        /** Requesting user: their own AI settings/keys drive the one-shot run, like a regular task. */
+        readonly ownerLogin?: string;
     }): Promise<string> {
         if (ctx.preferenceService) {
             await ctx.preferenceService.ready;
@@ -500,7 +500,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         }
         const improveText = buildImproveComposerPromptRequest(trimmed);
         const agentId = ctx.resolveAgentId(improveText, options.agentId);
-        ctx.assertQaiqConfigured(agentId);
+        ctx.assertQaiqConfigured(agentId, options.ownerLogin);
         const detected = ctx.detectedAgents.get(agentId);
         if (!detected) {
             throw new Error(`Agent "${agentId}" is not available for prompt improvement.`);
@@ -508,7 +508,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
         const vars = ctx.buildTemplateVars(agentId, options.agentModel, {
             autoApprove: true,
             approvalPolicyId: 'approve-for-me',
-        });
+        }, options.ownerLogin);
         const template = detected.template
             .replace(/--output-format\s+\S+/g, '')
             .replace(/--include-partial-messages/g, '')
@@ -541,6 +541,7 @@ export async function improveComposerPromptExtracted(ctx: QaapAgentTaskRunnerCon
             createdAt,
             startedAt: createdAt,
             autoApprove: true,
+            ...(options.ownerLogin ? { ownerLogin: options.ownerLogin } : {}),
             ...(options.agentModel ? { agentModel: options.agentModel, qaiqModel: options.agentModel } : {}),
         };
         return ctx.runOneShotCommand(

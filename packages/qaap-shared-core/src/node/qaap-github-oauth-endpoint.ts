@@ -660,7 +660,21 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 private: body.private ?? true,
                 description: typeof body.description === 'string' ? body.description.trim() : undefined,
             });
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, signal);
+            let workspacePath: string;
+            try {
+                workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, signal);
+            } catch (err) {
+                if (this.respondBillingQuotaError(err, res)) {
+                    return;
+                }
+                // The GitHub repository exists now; only the clone failed or was cancelled.
+                const detail = err instanceof Error ? err.message : String(err);
+                res.status(502).json({
+                    error: `Repository ${repository.fullName} was created on GitHub, but it could not be cloned yet (${detail}). `
+                        + 'Open it from your repository list to clone it into your workspace.',
+                });
+                return;
+            }
             this.rememberGithubCloneSession(auth.userLogin, repository);
             res.json({
                 repository,

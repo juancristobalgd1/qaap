@@ -202,14 +202,16 @@ export interface QaapAgentTaskRunnerContext {
     extractLastAgentMention(prompt: string): string | undefined;
     extractLastAgentMentionToken(prompt: string): string | undefined;
     stripLeadingAgentMention(prompt: string): string;
-    buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions): Record<string, string>;
-    resolveQaiqProviderFlags(): string;
+    buildTemplateVars(agentId: string, agentModel?: QaapCreateAgentTaskQaiqModel, interaction?: QaapQaiqInteractionFlagOptions,
+        ownerLogin?: string): Record<string, string>;
+    resolveQaiqProviderFlags(ownerLogin?: string): string;
     resolveQaapQaiqBinding(ownerLogin?: string): QaapQaiqModelBinding | undefined;
     resolveAgentBindingForTask(task: QaapAgentTask): QaapQaiqModelBinding | undefined;
     normalizeAgentBinding(binding: QaapQaiqModelBinding, ownerLogin?: string): QaapQaiqModelBinding;
-    previewProviderEnv(): NodeJS.ProcessEnv;
+    /** Provider env an agent spawned for `ownerLogin` would see (operator keys withheld where required). */
+    previewProviderEnv(ownerLogin?: string): NodeJS.ProcessEnv;
     resolveQaiqProviderFlagsFromEnv(env: NodeJS.ProcessEnv): string;
-    assertQaiqConfigured(agentId: string): void;
+    assertQaiqConfigured(agentId: string, ownerLogin?: string): void;
     applyTemplate(template: string, prompt: string, vars?: Record<string, string>): string;
     applyTemplateWithoutPrompt(template: string, vars?: Record<string, string>): string;
     shellQuote(value: string): string;
@@ -301,7 +303,8 @@ export interface QaapAgentTaskRunnerContext {
     applyOpenAiVendorCompatEnv(env: NodeJS.ProcessEnv, binding: QaapQaiqModelBinding): void;
     applyQaiqProviderEnv(env: NodeJS.ProcessEnv, command: string, binding?: QaapQaiqModelBinding): void;
     applyProviderPreferenceEnv(env: NodeJS.ProcessEnv, ownerLogin?: string): void;
-    stripSharedProviderEnv(env: NodeJS.ProcessEnv): void;
+    stripSharedProviderEnv(env: NodeJS.ProcessEnv, ownerLogin: string | undefined): void;
+    readUserSettingsFromDisk(ownerLogin?: string): Record<string, unknown>;
     preferenceReaderForOwner(ownerLogin?: string): QaapPreferenceReader;
     applyOpenRouterOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;
     applyNvidiaOpenAiCompatEnv(env: NodeJS.ProcessEnv): void;

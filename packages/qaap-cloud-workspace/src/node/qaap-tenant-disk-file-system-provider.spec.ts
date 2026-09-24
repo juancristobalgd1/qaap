@@ -8,8 +8,15 @@ import * as path from 'path';
 import * as os from 'os';
 import URI from '@theia/core/lib/common/uri';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { FileSystemProviderErrorCode } from '@theia/filesystem/lib/common/files';
-import { QaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
+import { Container } from '@theia/core/shared/inversify';
+import { ILogger } from '@theia/core/lib/common/logger';
+import { EncodingService } from '@theia/core/lib/common/encoding-service';
+import { FileSystemProvider, FileSystemProviderErrorCode } from '@theia/filesystem/lib/common/files';
+import { FileSystemProviderServer } from '@theia/filesystem/lib/common/remote-file-system-provider';
+import { FileSystemWatcherServer } from '@theia/filesystem/lib/common/filesystem-watcher-protocol';
+import { DiskFileSystemProvider } from '@theia/filesystem/lib/node/disk-file-system-provider';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { bindQaapTenantDiskFileSystemProvider, QaapTenantDiskFileSystemProvider } from './qaap-tenant-disk-file-system-provider';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { resolveQaapTenantConfigDir } from './qaap-tenant-config-scope';
 import { resolveQaapParallelRoot, resolveQaapWorktreesRoot } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
@@ -193,5 +200,66 @@ describe('QaapTenantDiskFileSystemProvider', () => {
             expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(bobWorktree)).to.throw();
             expect(() => (provider as unknown as { assertAllowed(uri: URI): void }).assertAllowed(bobParallel)).to.throw();
         });
+    });
+});
+
+describe('QaapTenantDiskFileSystemProvider lifecycle per browser connection', () => {
+    interface FakeWatcher {
+        client?: { onDidFilesChanged(event: { changes: Array<{ uri: string; type: number }> }): void };
+        disposed: boolean;
+        setClient(client: FakeWatcher['client']): void;
+        watchFileChanges(): Promise<number>;
+        unwatchFileChanges(): Promise<void>;
+        dispose(): void;
+    }
+
+    function createContainer(watchers: FakeWatcher[]): Container {
+        const container = new Container();
+        // Upstream filesystem bindings this fix interacts with.
+        container.bind(DiskFileSystemProvider).toSelf();
+        container.bind(FileSystemProvider).toService(DiskFileSystemProvider);
+        container.bind(FileSystemProviderServer).toSelf();
+        container.bind(FileSystemWatcherServer).toDynamicValue(() => {
+            const watcher: FakeWatcher = {
+                disposed: false,
+                setClient: client => { watcher.client = client; },
+                watchFileChanges: async () => 1,
+                unwatchFileChanges: async () => undefined,
+                dispose: () => { watcher.disposed = true; },
+            };
+            watchers.push(watcher);
+            return watcher;
+        });
+        container.bind(EncodingService).toSelf().inSingletonScope();
+        container.bind(ILogger).toConstantValue({} as ILogger).whenTargetNamed('filesystem:DiskFileSystemProvider');
+        container.bind(QaapGithubAuthGuard).toConstantValue({ isSkipAuthEnabled: () => true } as unknown as QaapGithubAuthGuard);
+        container.bind(QaapWebsocketAuthRegistry).toSelf().inSingletonScope();
+        bindQaapTenantDiskFileSystemProvider(container.bind.bind(container), container.rebind.bind(container));
+        return container;
+    }
+
+    it('gives every connection its own provider, so closing one keeps the others watching', () => {
+        const watchers: FakeWatcher[] = [];
+        const container = createContainer(watchers);
+        const first = container.get(FileSystemProviderServer);
+        const second = container.get(FileSystemProviderServer);
+        const firstEvents: string[] = [];
+        const secondEvents: string[] = [];
+        first.setClient({ notifyDidChangeFile: ({ changes }: { changes: Array<{ resource: string }> }) => firstEvents.push(...changes.map(c => c.resource)) } as never);
+        second.setClient({ notifyDidChangeFile: ({ changes }: { changes: Array<{ resource: string }> }) => secondEvents.push(...changes.map(c => c.resource)) } as never);
+        expect(watchers).to.have.length(2);
+        expect((first as unknown as { provider: unknown }).provider).to.be.instanceOf(QaapTenantDiskFileSystemProvider);
+        expect((first as unknown as { provider: unknown }).provider).not.to.equal((second as unknown as { provider: unknown }).provider);
+
+        // Only the connection that owns a watcher sees its events (no cross-tenant broadcast).
+        watchers[1].client?.onDidFilesChanged({ changes: [{ uri: 'file:///workspace/repos/users/bob/a.ts', type: 0 }] });
+        expect(firstEvents).to.deep.equal([]);
+        expect(secondEvents).to.deep.equal(['file:///workspace/repos/users/bob/a.ts']);
+
+        first.dispose();
+        expect(watchers[0].disposed).to.equal(true);
+        expect(watchers[1].disposed).to.equal(false);
+        watchers[1].client?.onDidFilesChanged({ changes: [{ uri: 'file:///workspace/repos/users/bob/b.ts', type: 0 }] });
+        expect(secondEvents).to.deep.equal(['file:///workspace/repos/users/bob/a.ts', 'file:///workspace/repos/users/bob/b.ts']);
     });
 });
