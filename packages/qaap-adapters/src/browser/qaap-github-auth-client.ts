@@ -43,8 +43,13 @@ import {
  */
 const QAAP_GITHUB_WORKSPACE_TIMEOUT_MS = 210_000;
 const QAAP_GITHUB_LIST_TIMEOUT_MS = 30_000;
-/** Pull request listing fans out over several repositories and merging waits for GitHub. */
+/** Pull request listing fans out over several repositories (server deadline 45 s). */
 const QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS = 60_000;
+/**
+ * The server merges (GitHub timeout 30 s) and, when the outcome is unknown, re-reads the pull request
+ * (15 s) before answering, so this stays above that worst case.
+ */
+const QAAP_GITHUB_MERGE_TIMEOUT_MS = 90_000;
 /** Removing a clone deletes a whole working tree on the server. */
 const QAAP_GITHUB_DELETE_TIMEOUT_MS = 60_000;
 /** Small JSON reads/writes against the Qaap backend (project sessions, settings, billing). */
@@ -245,14 +250,14 @@ export async function fetchQaapGithubPullRequests(
 }
 
 export async function mergeQaapGithubPullRequest(request: QaapGithubMergePullRequestRequest): Promise<QaapGithubMergePullRequestResponse> {
-    // A timeout does not mean the merge failed: GitHub may still complete it.
+    // The server already confirms ambiguous outcomes; a client timeout still leaves it unknown.
     const response = await fetchQaapOrTimeoutError(`${QAAP_GITHUB_API_PATH}/pull-requests/merge`, qaapAuthenticatedFetchInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
-    }), QAAP_GITHUB_PULL_REQUESTS_TIMEOUT_MS, () => nls.localize(
+    }), QAAP_GITHUB_MERGE_TIMEOUT_MS, () => nls.localize(
         'qaap/githubMerge/timedOut',
-        'Merging the pull request took too long. Refresh to check whether it was merged.'
+        'Merging the pull request took too long; it may still complete on GitHub. Refresh the pull requests to check before retrying.'
     ));
     const body = await response.json().catch(() => ({})) as Partial<QaapGithubMergePullRequestResponse> & { error?: string };
     if (!response.ok) {
