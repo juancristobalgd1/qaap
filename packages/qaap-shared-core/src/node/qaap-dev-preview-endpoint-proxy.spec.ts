@@ -14,6 +14,8 @@ import { holdUpgradeSocket, proxyWebSocketExtracted } from './qaap-dev-preview-e
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import type { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
+import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
+import { injectQaapPreviewDocumentScripts } from '../common/qaap-dev-preview';
 
 /** The chained multi-pass rewrite this module replaced; kept as the equivalence oracle. */
 function legacyChainedRewrite(body: string, prefix: string): string {
@@ -190,6 +192,77 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             };
             const chunked = await request('GET', '/vendor.js');
             expect(chunked.body).to.equal(large);
+        });
+
+        const serveHtml = (html: string, chunked: boolean): void => {
+            upstreamHandler = (_req, res) => {
+                res.writeHead(200, chunked
+                    ? { 'content-type': 'text/html; charset=utf-8' }
+                    : { 'content-type': 'text/html; charset=utf-8', 'content-length': Buffer.byteLength(html) });
+                if (chunked) {
+                    res.write(html.slice(0, 7));
+                    res.end(html.slice(7));
+                } else {
+                    res.end(html);
+                }
+            };
+        };
+
+        it('renders small HTML exactly like the buffered pipeline (Vite and Next)', async () => {
+            const prefix = `/qaap-dev/${upstreamPort}`;
+            const documents = [
+                '<!doctype html><html><head><script type="module" src="/@vite/client"></script></head><body><div id="app"></div></body></html>',
+                '<html><head><link href="/_next/static/css/app.css"></head><body><script>self.__next_f=[]</script></body></html>',
+            ];
+            for (const html of documents) {
+                const isNext = html.includes('_next/static');
+                const placement = isNext ? 'body-end' : 'head';
+                const rewritten = isNext ? html : endpoint.rewriteDevPreviewBody(html, upstreamPort, prefix);
+                const expected = injectQaapPreviewDocumentScripts(
+                    injectQaapPreviewBridgeLoader(rewritten, 'http://ide.test', placement), prefix, placement, !isNext);
+                for (const chunked of [false, true]) {
+                    serveHtml(html, chunked);
+                    expect((await request('GET', '/')).body).to.equal(expected);
+                }
+            }
+        });
+
+        it('streams huge HTML after patching the head look-ahead', async () => {
+            const tail = '<p>tail é</p>'.repeat(10);
+            const html = '<html><head><title>big</title></head><body><img src="/logo.png">'
+                + '<p>x</p>'.repeat(Math.ceil(MAX_REWRITE_BODY_BYTES / 8)) + tail + '</body></html>';
+            serveHtml(html, true);
+            const body = (await request('GET', '/')).body;
+            const head = body.slice(0, body.indexOf('</head>'));
+            expect(head).to.contain('data-qaap-preview-bridge-loader');
+            expect(head).to.contain('data-qaap-preview-history-base');
+            expect(body).to.contain(`<img src="/qaap-dev/${upstreamPort}/logo.png">`);
+            expect(body.endsWith(`${tail}</body></html>`)).to.equal(true);
+        });
+
+        it('appends Next body-end scripts after a huge streamed document', async () => {
+            const html = '<html><head><script src="/_next/static/chunks/main.js"></script></head><body>'
+                + '<p>x</p>'.repeat(Math.ceil(MAX_REWRITE_BODY_BYTES / 8)) + '</body></html>';
+            serveHtml(html, false);
+            const body = (await request('GET', '/'));
+            expect(body.headers['content-length']).to.equal(undefined);
+            expect(body.body.startsWith(html)).to.equal(true);
+            const trailer = body.body.slice(html.length);
+            expect(trailer.indexOf('data-qaap-preview-bridge-loader')).to.be.lessThan(trailer.indexOf('data-qaap-preview-history-base'));
+            expect(trailer.indexOf('data-qaap-preview-history-base')).to.be.lessThan(trailer.indexOf('data-qaap-preview-diagnostics'));
+        });
+
+        it('probe treats the app\'s own 503 as served and the proxy-marked 503 as not ready', async () => {
+            upstreamHandler = (_req, res) => {
+                res.writeHead(503);
+                res.end();
+            };
+            expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(true);
+            upstreamHandler = (_req, res) => {
+                res.writeHead(503, { 'x-qaap-preview-waiting': '1' });
+                res.end();
+            };
+            expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(false);
         });
 
         it('strips a spoofed waiting marker from upstream and sets it on its own 503', async () => {

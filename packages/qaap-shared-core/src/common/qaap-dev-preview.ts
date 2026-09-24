@@ -323,10 +323,31 @@ export function injectQaapPreviewDocumentScripts(
 }
 
 /**
+ * History-base + diagnostics scripts for a document whose `</body>` lies beyond the proxy's
+ * bounded look-ahead. Appended after the streamed document, the HTML parser moves them to the
+ * end of `<body>` — the same DOM position (and parse-time execution) as `body-end` placement.
+ * `sentHtml` is what was already sent, so markers present there are not injected twice.
+ */
+export function buildQaapPreviewTrailingScripts(sentHtml: string, publicPrefix: string): string {
+    // The builders treat an empty document as "nothing to inject"; a trailer always has a document.
+    const probe = sentHtml || ' ';
+    return buildHistoryBaseScript(probe, publicPrefix) + buildDiagnosticsScript(probe);
+}
+
+/**
  * Marks the proxy's own "dev server unreachable" 503 (holding page and its HEAD polls) so the
  * page can tell it apart from a 503 the dev server returns itself. Stripped from upstream responses.
  */
 export const QAAP_DEV_PREVIEW_WAITING_HEADER = 'x-qaap-preview-waiting';
+
+/**
+ * Single readiness rule shared by the backend probe and the holding page: any HTTP answer from
+ * the dev server counts as served — including its own 503, which the proxy relays and the user
+ * must see — except the proxy's marked "not reachable yet" 503.
+ */
+export function isQaapDevPreviewServedResponse(status: number, waitingMarker: string | null | undefined): boolean {
+    return status > 0 && !(status === 503 && !!waitingMarker);
+}
 
 /** How long the holding page polls before it stops and offers a manual retry. */
 export const QAAP_DEV_PREVIEW_WAITING_MAX_MS = 120_000;
@@ -369,6 +390,7 @@ export function buildDevPreviewWaitingHtml(targetPort: number): string {
     (function () {
       var maxMs = ${QAAP_DEV_PREVIEW_WAITING_MAX_MS};
       var marker = '${QAAP_DEV_PREVIEW_WAITING_HEADER}';
+      var served = ${isQaapDevPreviewServedResponse.toString()};
       var delay, startedAt;
       var spinner = document.getElementById('qaap-wait-spinner');
       var title = document.getElementById('qaap-wait-title');
@@ -385,7 +407,7 @@ export function buildDevPreviewWaitingHtml(targetPort: number): string {
       }
       function check() {
         fetch(location.href, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
-          .then(function (r) { if (r.status !== 503 || !r.headers.get(marker)) { location.reload(); } else { retry(); } })
+          .then(function (r) { if (served(r.status, r.headers.get(marker))) { location.reload(); } else { retry(); } })
           .catch(retry);
       }
       function retry() {
