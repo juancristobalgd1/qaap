@@ -121,6 +121,19 @@ Cada backend valida una aserción HMAC de corta duración y recibe un token inte
 de BrowserConnection sólo para su propia conexión. Si falta el flag, el secreto,
 el worker o el wiring del proxy, el arranque hospedado falla cerrado.
 
+Timeouts del router y de la preparación de repositorios (todos en milisegundos, opcionales):
+
+- `QAAP_TENANT_ENSURE_TIMEOUT_MS` — espera máxima para arrancar/validar el contenedor o backend de un
+  tenant (por defecto `180000`).
+- `QAAP_TENANT_BACKEND_READY_TIMEOUT_MS` — espera al health del backend recién arrancado (por defecto `30000`).
+- `QAAP_TENANT_PROXY_IDLE_TIMEOUT_MS` — presupuesto por petición HTTP proxificada: arranque en frío más
+  espera de cabeceras; al agotarse responde `504` y cierra la petición al backend (por defecto `180000`).
+  El navegador espera 210 s en abrir/clonar/crear repositorio, por encima de este valor.
+- `QAAP_TENANT_PROXY_WS_CONNECT_TIMEOUT_MS` — límite sólo del handshake WebSocket hacia el backend
+  (por defecto `15000`); la conexión establecida no tiene límite.
+- `QAAP_GITHUB_API_TIMEOUT_MS` — límite por llamada a la API REST / OAuth de GitHub, cabeceras y cuerpo
+  incluidos (por defecto `30000`).
+
 La prueba local de dos tenants confirmó contenedores, puertos y redes distintos y
 rechazo de autenticación cruzada. La validación de producción requiere además
 `scripts/qaap-vps-launch-gate.sh` y `scripts/qaap-verify-multitenant.sh` en un VPS

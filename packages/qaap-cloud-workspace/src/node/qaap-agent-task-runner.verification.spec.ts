@@ -172,6 +172,20 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
         runGit(cwd, 'config', 'user.name', 'Qaap Test');
     };
 
+    /** Git reads go through the tenant spawn seam; outside isolation it is a plain local `git -C cwd`. */
+    const createBaselineRunner = (): TestableQaapAgentTaskRunner => {
+        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        Object.assign(runner, {
+            tenantSpawn: {
+                wrapGitForTenant: (cwd: string, args: readonly string[]) => ({
+                    file: 'git',
+                    args: ['-c', 'core.hooksPath=/dev/null', '-C', cwd, ...args],
+                }),
+            },
+        });
+        return runner;
+    };
+
     it('does not attribute unchanged pre-existing dirty files to the agent task', async () => {
         const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-agent-baseline-'));
         try {
@@ -182,7 +196,7 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             runGit(cwd, 'commit', '-m', 'initial');
             fs.writeFileSync(tracked, 'dirty before task\n', 'utf8');
 
-            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const runner = createBaselineRunner();
             const baseline = runner.worktreeBaseline(cwd);
             if (!baseline.worktreeBaselineFingerprint || baseline.worktreeBaselineStatus === undefined) {
                 throw new Error('Expected a worktree baseline.');
@@ -209,7 +223,7 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             runGit(cwd, 'add', 'tracked.txt');
             runGit(cwd, 'commit', '-m', 'initial');
 
-            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const runner = createBaselineRunner();
             const baseline = runner.worktreeBaseline(cwd);
             if (!baseline.worktreeBaselineFingerprint) {
                 throw new Error('Expected a worktree fingerprint.');
@@ -232,7 +246,7 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             const untracked = path.join(cwd, 'untracked.txt');
             fs.writeFileSync(untracked, 'before\n', 'utf8');
 
-            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const runner = createBaselineRunner();
             const baseline = runner.worktreeBaseline(cwd);
             if (!baseline.worktreeBaselineFingerprint) {
                 throw new Error('Expected a worktree fingerprint.');
@@ -257,7 +271,7 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             runGit(cwd, 'commit', '-m', 'initial');
             fs.writeFileSync(tracked, 'dirty before task\n', 'utf8');
 
-            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const runner = createBaselineRunner();
             const baseline = runner.worktreeBaseline(cwd);
             if (baseline.worktreeBaselineStatus === undefined) {
                 throw new Error('Expected a porcelain baseline.');
@@ -283,7 +297,7 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
     });
 
     it('fail-closed: never falls back to bare dirty-check when a baseline status exists but git status dies', async () => {
-        const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+        const runner = createBaselineRunner();
         let porcelainProbes = 0;
         Object.assign(runner, {
             captureWorktreeFingerprint: () => undefined,
@@ -311,7 +325,7 @@ describe('QaapAgentTaskRunner worktree baseline', () => {
             runGit(cwd, 'add', 'tracked.txt');
             runGit(cwd, 'commit', '-m', 'initial');
 
-            const runner = Object.create(TestableQaapAgentTaskRunner.prototype) as TestableQaapAgentTaskRunner;
+            const runner = createBaselineRunner();
             const baselineA = runner.worktreeBaseline(cwd);
             const baselineB = runner.worktreeBaseline(cwd);
             expect(baselineA.worktreeBaselineFingerprint).to.equal(baselineB.worktreeBaselineFingerprint);

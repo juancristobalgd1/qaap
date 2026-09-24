@@ -13,7 +13,7 @@ import { FrontendApplicationContribution, WidgetFactory } from '@theia/core/lib/
 import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { QaapCoderPromptContribution } from './qaap-coder-prompt-contribution';
 import { QaapTasksBackgroundPromptContribution } from './qaap-tasks-background-prompt-contribution';
-import { QaapAiModelDefaultsContribution } from './qaap-ai-model-defaults-contribution';
+import { QaapAiModelDefaultsContribution } from '../common/qaap-ai-model-defaults-contribution';
 import { LanguageModelOptionContribution } from '@theia/ai-ide/lib/browser/ai-configuration/language-model-option-contribution';
 import { QaapLanguageModelOptionContribution } from './qaap-language-model-option-contribution';
 import { QaapIncrementalStreamParsingContribution } from './qaap-incremental-stream-parsing-contribution';

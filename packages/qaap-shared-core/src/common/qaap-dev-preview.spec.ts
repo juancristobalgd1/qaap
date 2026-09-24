@@ -11,8 +11,11 @@ import {
     injectQaapPreviewViteEnvBootstrap,
     injectQaapPreviewDiagnostics,
     injectQaapPreviewHistoryBase,
+    injectQaapPreviewDocumentScripts,
+    QAAP_DEV_PREVIEW_WAITING_HEADER,
     parseQaapDevPreviewRequestPath,
     parseQaapDevPreviewPort,
+    QAAP_DEV_PREVIEW_WAITING_MAX_MS,
 } from './qaap-dev-preview';
 
 describe('qaap-dev-preview', () => {
@@ -128,5 +131,66 @@ describe('qaap-dev-preview', () => {
         // Isolated-host mode keeps the app at the origin root — no rebase script at all.
         expect(injectQaapPreviewViteEnvBootstrap('<html><head></head></html>', ''))
             .to.not.contain('TSS_ROUTER_BASEPATH');
+    });
+
+    it('injectQaapPreviewHistoryBase rebases same-host HMR WebSockets under the proxy prefix', () => {
+        const injected = injectQaapPreviewHistoryBase('<html><head></head></html>', '/qaap-preview/abc');
+        const source = /<script data-qaap-preview-history-base>([\s\S]*?)<\/script>/.exec(injected)![1];
+        const opened: Array<{ url: string; protocols?: string }> = [];
+        class FakeWebSocket {
+            static readonly OPEN = 1;
+            constructor(url: string, protocols?: string) {
+                opened.push(protocols === undefined ? { url } : { url, protocols });
+            }
+        }
+        const sandbox: Record<string, unknown> = { WebSocket: FakeWebSocket };
+        const location = { href: 'https://ide.test/qaap-preview/abc/page', host: 'ide.test', origin: 'https://ide.test' };
+        // eslint-disable-next-line no-new-func
+        new Function('globalThis', 'location', 'Location', 'History', 'navigator', source)(
+            sandbox, location, class { }, class { pushState(): void { } replaceState(): void { } }, {});
+        const Patched = sandbox.WebSocket as new (url: string, protocols?: string) => unknown;
+        const socket = new Patched('wss://ide.test/_next/webpack-hmr');
+        new Patched('ws://ide.test/ws', 'vite-hmr');
+        new Patched('wss://ide.test/qaap-preview/abc/sockjs-node');
+        new Patched('wss://other.test/socket');
+        expect(opened).to.deep.equal([
+            { url: 'wss://ide.test/qaap-preview/abc/_next/webpack-hmr' },
+            { url: 'ws://ide.test/qaap-preview/abc/ws', protocols: 'vite-hmr' },
+            { url: 'wss://ide.test/qaap-preview/abc/sockjs-node' },
+            { url: 'wss://other.test/socket' },
+        ]);
+        expect(socket).to.be.instanceOf(FakeWebSocket);
+        expect((Patched as unknown as { OPEN: number }).OPEN).to.equal(1);
+    });
+
+    it('buildDevPreviewWaitingHtml stops polling after the cap and offers a manual retry', () => {
+        const html = buildDevPreviewWaitingHtml(3001);
+        expect(html).to.contain(`var maxMs = ${QAAP_DEV_PREVIEW_WAITING_MAX_MS};`);
+        expect(html).to.contain('Dev server still not reachable');
+        expect(html).to.contain('id="qaap-wait-retry" hidden>Retry</button>');
+        expect(html).to.contain("button.addEventListener('click', start)");
+    });
+
+    it('injectQaapPreviewDocumentScripts equals the individual injections in proxy order', () => {
+        const documents = [
+            '<html><head><title>x</title></head><body><main>app</main></body></html>',
+            '<html lang="en"><body>no head</body></html>',
+            '<main>fragment</main>',
+            '<html><head></head><body><script type="module" src="/qaap-dev/5173/@vite/client"></script></body></html>',
+        ];
+        for (const prefix of ['/qaap-preview/abc', '/qaap-dev/5173', '']) {
+            for (const html of documents) {
+                expect(injectQaapPreviewDocumentScripts(html, prefix, 'head', true)).to.equal(injectQaapPreviewDiagnostics(
+                    injectQaapPreviewHistoryBase(injectQaapPreviewViteEnvBootstrap(html, prefix), prefix, 'head'), 'head'));
+                expect(injectQaapPreviewDocumentScripts(html, prefix, 'body-end', false)).to.equal(injectQaapPreviewDiagnostics(
+                    injectQaapPreviewHistoryBase(html, prefix, 'body-end'), 'body-end'));
+            }
+        }
+    });
+
+    it('buildDevPreviewWaitingHtml only keeps polling on the proxy-marked 503', () => {
+        const html = buildDevPreviewWaitingHtml(3001);
+        expect(html).to.contain(`var marker = '${QAAP_DEV_PREVIEW_WAITING_HEADER}';`);
+        expect(html).to.contain('r.status !== 503 || !r.headers.get(marker)');
     });
 });

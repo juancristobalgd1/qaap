@@ -13,7 +13,8 @@
   },
   "theiaExtensions": [
     {
-      "frontend": "lib/browser/openrouter-frontend-module"
+      "frontend": "lib/browser/openrouter-frontend-module",
+      "backend": "lib/node/openrouter-backend-module"
     }
   ],
   "keywords": [

@@ -5,14 +5,21 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { MobileProjectsBackgroundTaskUi } from './mobile-projects-background-task-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('MobileProjectsBackgroundTaskUi', () => {
+
+    useSuiteJSDOM();
 
     function withAgentSnapshot(snapshot: {
         agents: Array<{ id: string; label: string; available: boolean }>;

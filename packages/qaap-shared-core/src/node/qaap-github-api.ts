@@ -72,16 +72,45 @@ interface GithubMergePullResponse {
     sha?: string;
 }
 
-const GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * Per-request bound (headers + body) for every GitHub REST / OAuth call made by the backend.
+ * Override with `QAAP_GITHUB_API_TIMEOUT_MS` (see packages/qaap-cloud-workspace/README.md).
+ */
+export function resolveGithubApiTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+    const configured = Number.parseInt(env.QAAP_GITHUB_API_TIMEOUT_MS?.trim() ?? '', 10);
+    return Number.isInteger(configured) && configured > 0 ? configured : 30_000;
+}
 
-async function fetchGithubRepositoryRequest(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+/** Overall budget for the pull request listing; stays below the browser's 60 s request timeout. */
+const GITHUB_PULL_REQUESTS_DEADLINE_MS = 45_000;
+/** Repositories scanned concurrently by the pull request listing. */
+const GITHUB_PULL_REQUESTS_CONCURRENCY = 4;
+
+/** Statuses whose `Response` must be constructed without a body. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * GitHub request with one deadline covering the headers AND the body: the body is buffered before
+ * the timer is cleared, so a connection that stalls mid-body cannot hang the caller. Exported for tests.
+ */
+export async function fetchGithubRepositoryRequest(
+    input: RequestInfo | URL,
+    init: RequestInit,
+    timeoutMs = resolveGithubApiTimeoutMs(),
+): Promise<Response> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(input, { ...init, signal: controller.signal });
+        const response = await fetch(input, { ...init, signal: controller.signal });
+        const body = NULL_BODY_STATUSES.has(response.status) ? undefined : await response.arrayBuffer();
+        return new Response(body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+        });
     } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') {
-            throw new Error('GitHub repository request timed out after 30 seconds');
+        if (controller.signal.aborted) {
+            throw new Error(`GitHub repository request timed out after ${Math.ceil(timeoutMs / 1000)} seconds`);
         }
         throw err;
     } finally {
@@ -99,7 +128,7 @@ export async function exchangeGithubCode(
         code,
         redirect_uri: config.callbackUrl,
     });
-    const response = await fetch('https://github.com/login/oauth/access_token', {
+    const response = await fetchGithubRepositoryRequest('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
             Accept: 'application/json',
@@ -107,15 +136,24 @@ export async function exchangeGithubCode(
         },
         body: body.toString(),
     });
-    const data = await response.json() as GithubTokenResponse;
+    // GitHub answers errors (5xx, rate limits, maintenance) with HTML; parsing that as JSON used to
+    // surface an opaque "Unexpected token <" instead of an OAuth error.
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.toLowerCase().includes('json')) {
+        throw new Error(`GitHub token exchange failed (HTTP ${response.status}${contentType ? `, ${contentType.split(';', 1)[0]}` : ''}).`);
+    }
+    const data = await response.json().catch(() => undefined) as GithubTokenResponse | undefined;
+    if (!data) {
+        throw new Error(`GitHub token exchange failed (HTTP ${response.status}, invalid JSON).`);
+    }
     if (!response.ok || !data.access_token) {
-        throw new Error(data.error_description || data.error || 'GitHub token exchange failed');
+        throw new Error(data.error_description || data.error || `GitHub token exchange failed (HTTP ${response.status}).`);
     }
     return data.access_token;
 }
 
 export async function fetchGithubUser(accessToken: string): Promise<QaapAuthSessionUser> {
-    const response = await fetch('https://api.github.com/user', {
+    const response = await fetchGithubRepositoryRequest('https://api.github.com/user', {
         headers: {
             Accept: 'application/vnd.github+json',
             Authorization: `Bearer ${accessToken}`,
@@ -197,7 +235,7 @@ export async function createGithubRepository(
     accessToken: string,
     input: { name: string; private?: boolean; description?: string }
 ): Promise<QaapGithubRepositorySummary> {
-    const response = await fetch('https://api.github.com/user/repos', {
+    const response = await fetchGithubRepositoryRequest('https://api.github.com/user/repos', {
         method: 'POST',
         headers: {
             Accept: 'application/vnd.github+json',
@@ -222,59 +260,85 @@ export async function createGithubRepository(
 export async function fetchGithubPullRequests(
     accessToken: string,
     repositories: QaapGithubRepositorySummary[],
+    deadlineMs = GITHUB_PULL_REQUESTS_DEADLINE_MS,
 ): Promise<QaapGithubPullRequestSummary[]> {
-    const pulls: QaapGithubPullRequestSummary[] = [];
     const reposToScan = repositories.slice(0, 30);
     const maxTotal = Math.min(24, Math.max(8, repositories.length * 2));
-    for (const repo of reposToScan) {
-        if (pulls.length >= maxTotal) {
-            break;
+    const deadline = Date.now() + deadlineMs;
+    // Results stay in repository order even though repositories are scanned concurrently.
+    const perRepository: QaapGithubPullRequestSummary[][] = [];
+    let collected = 0;
+    let nextIndex = 0;
+    const worker = async (): Promise<void> => {
+        while (nextIndex < reposToScan.length && collected < maxTotal && deadline > Date.now()) {
+            const index = nextIndex++;
+            // One slow or failing repository must not fail the whole listing.
+            const pulls = await fetchRepositoryPullRequests(accessToken, reposToScan[index], deadline).catch(() => []);
+            perRepository[index] = pulls;
+            collected += pulls.length;
         }
-        const url = new URL(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/pulls`);
-        url.searchParams.set('state', 'open');
-        url.searchParams.set('per_page', '3');
-        const response = await fetch(url.toString(), {
-            headers: githubHeaders(accessToken),
-        });
-        if (!response.ok) {
-            continue;
-        }
-        const batch = await response.json() as GithubPullResponse[];
-        for (const pull of batch) {
-            if (pulls.length >= maxTotal) {
-                break;
-            }
-            const filesPreview = await fetchGithubPullRequestFiles(accessToken, repo.owner, repo.name, pull.number);
-            pulls.push({
-                owner: repo.owner,
-                repo: repo.name,
-                number: pull.number,
-                title: pull.title,
-                description: pull.body ?? undefined,
-                branch: pull.head.ref,
-                base: pull.base.ref,
-                author: pull.user?.login || 'unknown',
-                files: pull.changed_files,
-                adds: pull.additions,
-                dels: pull.deletions,
-                tests: 'unknown',
-                state: pull.merged_at ? 'merged' : pull.state,
-                draft: pull.draft === true,
-                htmlUrl: pull.html_url,
-                mergeable: pull.mergeable ?? undefined,
-                filesPreview,
-                updatedAt: pull.updated_at,
-            });
-        }
+    };
+    await Promise.all(Array.from({ length: Math.min(GITHUB_PULL_REQUESTS_CONCURRENCY, reposToScan.length) }, worker));
+    return perRepository.flat().slice(0, maxTotal);
+}
+
+/** Time left before `deadline`, capped at the per-request GitHub timeout. */
+function githubRequestBudgetMs(deadline: number): number {
+    return Math.min(resolveGithubApiTimeoutMs(), deadline - Date.now());
+}
+
+async function fetchRepositoryPullRequests(
+    accessToken: string,
+    repo: QaapGithubRepositorySummary,
+    deadline: number,
+): Promise<QaapGithubPullRequestSummary[]> {
+    const budget = githubRequestBudgetMs(deadline);
+    if (budget <= 0) {
+        return [];
     }
-    return pulls;
+    const url = new URL(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/pulls`);
+    url.searchParams.set('state', 'open');
+    url.searchParams.set('per_page', '3');
+    const response = await fetchGithubRepositoryRequest(url.toString(), {
+        headers: githubHeaders(accessToken),
+    }, budget);
+    if (!response.ok) {
+        return [];
+    }
+    const batch = await response.json() as GithubPullResponse[];
+    return Promise.all(batch.map(async pull => {
+        const filesBudget = githubRequestBudgetMs(deadline);
+        const filesPreview = filesBudget > 0
+            ? await fetchGithubPullRequestFiles(accessToken, repo.owner, repo.name, pull.number, filesBudget)
+            : [];
+        return {
+            owner: repo.owner,
+            repo: repo.name,
+            number: pull.number,
+            title: pull.title,
+            description: pull.body ?? undefined,
+            branch: pull.head.ref,
+            base: pull.base.ref,
+            author: pull.user?.login || 'unknown',
+            files: pull.changed_files,
+            adds: pull.additions,
+            dels: pull.deletions,
+            tests: 'unknown' as const,
+            state: pull.merged_at ? 'merged' as const : pull.state,
+            draft: pull.draft === true,
+            htmlUrl: pull.html_url,
+            mergeable: pull.mergeable ?? undefined,
+            filesPreview,
+            updatedAt: pull.updated_at,
+        };
+    }));
 }
 
 export async function mergeGithubPullRequest(
     accessToken: string,
     input: { owner: string; repo: string; number: number }
 ): Promise<QaapGithubMergePullRequestResponse> {
-    const response = await fetch(
+    const response = await fetchGithubRepositoryRequest(
         `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/pulls/${input.number}/merge`,
         {
             method: 'PUT',
@@ -304,12 +368,19 @@ export async function fetchGithubPullRequestFiles(
     owner: string,
     repo: string,
     number: number,
+    timeoutMs = resolveGithubApiTimeoutMs(),
 ): Promise<QaapGithubPullRequestFile[]> {
     const url = new URL(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files`);
     url.searchParams.set('per_page', '8');
-    const response = await fetch(url.toString(), {
-        headers: githubHeaders(accessToken),
-    });
+    let response: Response;
+    try {
+        response = await fetchGithubRepositoryRequest(url.toString(), {
+            headers: githubHeaders(accessToken),
+        }, timeoutMs);
+    } catch {
+        // The files preview is optional; a slow or failed call must not fail the whole PR list.
+        return [];
+    }
     if (!response.ok) {
         return [];
     }

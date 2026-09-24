@@ -109,58 +109,62 @@ export class QaapTenantDiskFileSystemProvider extends DiskFileSystemProvider {
             .some(root => isRealPathUnder(fsPath, root));
     }
 
+    /**
+     * Promise-returning operations are `async` so a forbidden path surfaces as a rejected promise
+     * (handled by the caller's `.catch`) rather than a synchronous throw that escapes it.
+     */
     protected forbidden(): never {
         throw createFileSystemProviderError('Forbidden workspace path', FileSystemProviderErrorCode.NoPermissions);
     }
 
-    override stat(resource: URI): Promise<Stat> {
+    override async stat(resource: URI): Promise<Stat> {
         this.assertAllowed(resource);
         return super.stat(resource);
     }
 
-    override readdir(resource: URI): Promise<[string, import('@theia/filesystem/lib/common/files').FileType][]> {
+    override async readdir(resource: URI): Promise<[string, import('@theia/filesystem/lib/common/files').FileType][]> {
         this.assertAllowed(resource);
         return super.readdir(resource);
     }
 
-    override readFile(resource: URI): Promise<Uint8Array> {
+    override async readFile(resource: URI): Promise<Uint8Array> {
         this.assertAllowed(resource);
         return super.readFile(resource);
     }
 
-    override writeFile(resource: URI, content: Uint8Array, opts: FileWriteOptions): Promise<void> {
+    override async writeFile(resource: URI, content: Uint8Array, opts: FileWriteOptions): Promise<void> {
         this.assertAllowed(resource, 'write');
         return super.writeFile(resource, content, opts);
     }
 
-    override mkdir(resource: URI): Promise<void> {
+    override async mkdir(resource: URI): Promise<void> {
         this.assertAllowed(resource, 'write');
         return super.mkdir(resource);
     }
 
-    override delete(resource: URI, opts: FileDeleteOptions): Promise<void> {
+    override async delete(resource: URI, opts: FileDeleteOptions): Promise<void> {
         this.assertAllowed(resource, 'write');
         return super.delete(resource, opts);
     }
 
-    override rename(from: URI, to: URI, opts: FileOverwriteOptions): Promise<void> {
+    override async rename(from: URI, to: URI, opts: FileOverwriteOptions): Promise<void> {
         this.assertAllowed(from, 'write');
         this.assertAllowed(to, 'write');
         return super.rename(from, to, opts);
     }
 
-    override copy(from: URI, to: URI, opts: FileOverwriteOptions): Promise<void> {
+    override async copy(from: URI, to: URI, opts: FileOverwriteOptions): Promise<void> {
         this.assertAllowed(from, 'write');
         this.assertAllowed(to, 'write');
         return super.copy(from, to, opts);
     }
 
-    override access(resource: URI, mode?: number): Promise<void> {
+    override async access(resource: URI, mode?: number): Promise<void> {
         this.assertAllowed(resource);
         return super.access(resource, mode);
     }
 
-    override open(resource: URI, opts: FileOpenOptions): Promise<number> {
+    override async open(resource: URI, opts: FileOpenOptions): Promise<number> {
         this.assertAllowed(resource, opts.create ? 'write' : 'read');
         return super.open(resource, opts);
     }

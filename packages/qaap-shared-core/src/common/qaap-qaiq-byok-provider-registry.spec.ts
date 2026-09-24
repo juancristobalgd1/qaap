@@ -4,8 +4,12 @@ import {
     findCustomOpenAiEndpointForModelId,
     findQaiqByokProvider,
     hasAnyConfiguredByokCredential,
+    isQaapAiSettingsPrefKey,
+    isQaapIsolatedAiSettingsPrefKey,
+    listByokModelIds,
     formatQaiqModelProviderLabel,
     listCustomOpenAiModels,
+    listQaapAiSettingsPrefKeys,
     parseTheiaLanguageModelId,
     QAAP_CUSTOM_OPENAI_API_KEY_PREF,
     QAAP_CUSTOM_OPENAI_BASE_URL_PREF,
@@ -16,6 +20,29 @@ import {
 } from './qaap-qaiq-byok-provider-registry';
 
 describe('qaap-qaiq-byok-provider-registry', () => {
+    it('persists non-secret provider options per user and lists no unregistered providers', () => {
+        const keys = listQaapAiSettingsPrefKeys();
+        expect(keys).to.include('ai-features.openAiOfficial.useResponseApi');
+        expect(keys).to.include('ai-features.anthropicCustom.customAnthropicModels');
+        expect(keys).to.include('ai-features.vercelAi.openaiApiKey');
+        expect(keys.some(key => key.startsWith('ai-features.mistral.'))).to.equal(false);
+        expect(findQaiqByokProvider('mistral')).to.equal(undefined);
+    });
+
+    it('persists every ai-features.* key per user, isolating credentials/BYOK keys from the shared scope', () => {
+        expect(isQaapAiSettingsPrefKey('ai-features.chat.defaultChatAgent')).to.equal(true);
+        expect(isQaapAiSettingsPrefKey('editor.fontSize')).to.equal(false);
+        expect(isQaapIsolatedAiSettingsPrefKey('ai-features.openrouter.openrouterApiKey')).to.equal(true);
+        expect(isQaapIsolatedAiSettingsPrefKey('ai-features.mcp.mcpServers')).to.equal(true);
+        expect(isQaapIsolatedAiSettingsPrefKey('ai-features.chat.defaultChatAgent')).to.equal(false);
+    });
+
+    it('takes NVIDIA fallbacks from qaap-ai-nvidia and lists no invented Ollama model', () => {
+        const nvidia = findQaiqByokProvider('nvidia')!;
+        expect(listByokModelIds(() => undefined, nvidia)).to.include('meta/llama-3.3-70b-instruct');
+        expect(listByokModelIds(() => undefined, findQaiqByokProvider('ollama')!)).to.deep.equal([]);
+    });
+
     it('resolves alias vendors to the canonical provider', () => {
         expect(findQaiqByokProvider('gemini')?.vendor).to.equal('google');
         expect(parseTheiaLanguageModelId('gemini/gemini-2.5-flash')?.vendor).to.equal('google');

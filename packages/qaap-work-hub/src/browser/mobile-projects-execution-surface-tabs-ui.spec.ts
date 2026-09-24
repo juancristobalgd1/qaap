@@ -3,19 +3,35 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     MobileProjectsExecutionSurfaceTabsUi,
     type MobileProjectsExecutionSurfaceTabsHost,
 } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+
+disableImportJSDOM();
 
 describe('mobile-projects-execution-surface-tabs-ui', () => {
 
     let disableJSDOM: (() => void) | undefined;
+    const createdUis: MobileProjectsExecutionSurfaceTabsUi[] = [];
+
+    /** Every UI a test builds is disposed afterwards so no sidebar-open retry outlives its test. */
+    function createUi(host: MobileProjectsExecutionSurfaceTabsHost): MobileProjectsExecutionSurfaceTabsUi {
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        createdUis.push(ui);
+        return ui;
+    }
 
     before(() => {
         disableJSDOM = enableJSDOM();
@@ -27,6 +43,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
     afterEach(() => {
         clearPreferDesktopIde();
+        createdUis.splice(0).forEach(ui => ui.dispose());
     });
 
     after(() => {
@@ -151,7 +168,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 agentsHubInlineExecutionRoot: executionRoot,
                 transcriptTerminalHost: staleTerminalHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.showOnlyExecutionSurfaceTab('terminal');
 
@@ -187,7 +204,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 agentsHubInlineExecutionRoot: executionRoot,
                 transcriptFilesHost: staleFilesHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.showOnlyExecutionSurfaceTab('files');
 
@@ -213,7 +230,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 transcriptChatHost: chatHost,
                 transcriptFilesHost: filesHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             // This is the path used while opening another conversation: the active surface is
             // already set in the project map and only the shared visibility sync is called.
@@ -267,7 +284,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                     mountProjectDetailSurfaceTab: () => undefined,
                 } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptSurfacesUi'],
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.activateExecutionSurfaceTab('files', project, summary, 'project-detail');
 
@@ -317,7 +334,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 agentsHubInlineExecutionRoot: executionRoot,
                 headerViewModeSwitchHost: viewModeHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.openExecutionSurfaceSidebar('files', project, summary, 'transcript');
 
@@ -369,7 +386,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 transcriptFilesHost: filesHost,
                 agentsHubInlineExecutionRoot: executionRoot,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.openExecutionSurfaceSidebar('files', project, summary, 'transcript');
 
@@ -421,7 +438,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 agentsHubInlineExecutionRoot: executionRoot,
                 headerViewModeSwitchHost: viewModeHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.openExecutionSurfaceSidebar('files', project, summary, 'transcript');
 
@@ -451,7 +468,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         document.body.append(root);
         try {
             const host = createHost({ root, transcriptPreviewHost: previewHost });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.openExecutionSurfaceSidebar('preview', project, summary!, 'transcript');
 
@@ -482,7 +499,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         document.body.append(root);
         try {
             const host = createHost({ root, transcriptTerminalHost: terminalHost });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.openExecutionSurfaceSidebar('terminal', project, summary!, 'transcript');
 
@@ -513,7 +530,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         document.body.append(root);
         try {
             const host = createHost({ root, transcriptTerminalHost: terminalHost });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             ui.openExecutionSurfaceSidebar('terminal', project, summary!, 'transcript');
 
@@ -589,7 +606,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 transcriptPreviewHost: previewHost,
                 transcriptTerminalHost: terminalHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
 
             // The click path must commit the map before any asynchronous Files work begins.
             ui.selectTranscriptTab('files', project, summary);
@@ -651,7 +668,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 transcriptChatHost: chatHost,
                 transcriptFilesHost: filesHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
             host.transcriptSurfacesUi.ensureTranscriptFilesTab = () => {
                 if (!mountRestoreScheduled) {
                     mountRestoreScheduled = true;
@@ -707,7 +724,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 transcriptPreviewHost: previewHost,
                 transcriptTerminalHost: terminalHost,
             });
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+            const ui = createUi(host);
             const expected = [
                 ['messages', chatHost],
                 ['files', filesHost],
@@ -746,7 +763,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         };
         const host = createHost({ projects: [project] });
         host.executionSurfaceTabByProjectId.set(project.id, 'files');
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
 
         ui.mountTranscriptExecutionHeader(document.createElement('header'), project, summary, 'Header');
 
@@ -779,7 +796,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             updatedAt: 2,
             messageCount: 2,
         };
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost({
+        const ui = createUi(createHost({
             transcriptOpenProject: project,
             transcriptOpenSummary: summary,
             transcriptLastConv: {
@@ -860,7 +877,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
             },
             projects: [project],
         });
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
 
         ui.selectTranscriptTab('review', project, summary);
 
@@ -879,7 +896,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         }).ensureTranscriptFilesTab = (_project, _summary, mode) => {
             requestedMode = mode;
         };
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
         const project = { id: 'p-files', name: 'Files' } as MobileProjectEntry;
         const summary = {
             id: 'conv-files',
@@ -930,7 +947,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 changesOpened += 1;
             },
         });
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
 
         ui.selectTranscriptTab('review', project, summary);
 
@@ -939,7 +956,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
     });
 
     it('keeps Chat as the trigger and excludes it from the execution view overflow menu', () => {
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
+        const ui = createUi(createHost());
         const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
 
         const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
@@ -962,7 +979,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
     it('limits the IDE execution view picker to Preview', () => {
         markPreferDesktopIde();
         try {
-            const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
+            const ui = createUi(createHost());
             expect(ui.executionSurfaceTabSpecs().map(spec => spec.id)).to.deep.equal(['preview']);
             const strip = ui.buildExecutionViewTabStrip('messages', () => undefined);
             const labels = Array.from(strip.querySelectorAll('.theia-mobile-transcript-tab-icon-select-option-label'))
@@ -974,7 +991,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
     });
 
     it('keeps the agent TUI selector in the terminal toolbar, outside the header strip', () => {
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(createHost());
+        const ui = createUi(createHost());
         const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
         const tuiHost = ui.createTerminalAgentTuiSelect();
         const viewSelect = strip.querySelector('.theia-mobile-transcript-tab-icon-select-host:not(.theia-mobile-transcript-terminal-agent-tui-host)');
@@ -997,7 +1014,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         });
         (host.transcriptSurfacesUi as unknown as { launchAgentTuiInTranscriptTerminal: (p: unknown, s: unknown, id: string) => Promise<void> })
             .launchAgentTuiInTranscriptTerminal = async (_project, _summary, id) => { launched.push(id); };
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
         const tuiHost = ui.createTerminalAgentTuiSelect();
         document.body.append(tuiHost);
         try {
@@ -1019,7 +1036,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
     it('keeps view-switcher chrome on the Terminal picker, not the agent TUI trigger', () => {
         const host = createHost();
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
         const strip = ui.buildExecutionViewTabStrip('terminal', () => undefined);
         const toolbar = document.createElement('div');
         toolbar.append(ui.createTerminalAgentTuiSelect());
@@ -1066,7 +1083,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 resolveStickyComposerPinnedAgentId: () => 'qaiq',
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
         });
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
         expect(ui.resolveExecutionSurfaceProject()?.id).to.equal('p-qaap');
 
         const tuiHost = ui.createTerminalAgentTuiSelect();
@@ -1088,7 +1105,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
     it('keeps the terminal agent menu above an open execution-surface drawer', () => {
         const host = createHost();
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
         const drawer = document.createElement('section');
         drawer.className = 'theia-mobile-execution-surface-sidebar theia-mod-open';
         const anchor = document.createElement('button');
@@ -1107,7 +1124,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 syncTranscriptComposerQuickActionsVisibility: () => undefined,
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptStickyComposerUi'],
         });
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
 
         ui.showOnlyExecutionSurfaceTab('review');
         expect(flushed).to.deep.equal([]);
@@ -1128,7 +1145,7 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
                 },
             } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptStickyComposerUi'],
         });
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
 
         // A secondary view does not tear down the underlying composer.
         host.stickyComposerHost.classList.add('theia-mod-show-quick-actions');
@@ -1146,9 +1163,86 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
 
     it('keeps quick-action chips when returning to Messages with no conversation yet', () => {
         const host = createHost();
-        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const ui = createUi(host);
 
         ui.showOnlyExecutionSurfaceTab('messages');
         expect(host.stickyComposerHost.classList.contains('theia-mod-show-quick-actions')).to.equal(true);
+    });
+
+    describe('openExecutionSurfaceSidebarWhenReady retry', () => {
+
+        let timers: Map<number, () => void>;
+        let originalSetTimeout: typeof window.setTimeout;
+        let originalClearTimeout: typeof window.clearTimeout;
+
+        beforeEach(() => {
+            timers = new Map();
+            let nextId = 1;
+            originalSetTimeout = window.setTimeout;
+            originalClearTimeout = window.clearTimeout;
+            window.setTimeout = ((handler: () => void) => {
+                const id = nextId++;
+                timers.set(id, handler);
+                return id;
+            }) as typeof window.setTimeout;
+            window.clearTimeout = ((id?: number) => {
+                timers.delete(id as number);
+            }) as typeof window.clearTimeout;
+        });
+
+        afterEach(() => {
+            window.setTimeout = originalSetTimeout;
+            window.clearTimeout = originalClearTimeout;
+        });
+
+        function retryingUi(): { ui: MobileProjectsExecutionSurfaceTabsUi; host: MobileProjectsExecutionSurfaceTabsHost; opens: () => number } {
+            const host = createHost();
+            const ui = createUi(host);
+            let opens = 0;
+            // The surface host never appears, so every attempt schedules another retry.
+            ui.openExecutionSurfaceSidebar = () => {
+                opens += 1;
+            };
+            return { ui, host, opens: () => opens };
+        }
+
+        const project = { id: 'p-retry', name: 'Retry' } as MobileProjectEntry;
+        const summary = { id: 'conv-retry' } as QaapAgentConversationSummaryDTO;
+
+        it('keeps a single pending loop per UI and lets a newer request supersede it', () => {
+            const { ui, host } = retryingUi();
+            host.executionSurfaceTabByProjectId.set(project.id, 'preview');
+
+            ui.openExecutionSurfaceSidebarWhenReady('preview', project, summary, 'transcript');
+            ui.openExecutionSurfaceSidebarWhenReady('files', project, summary, 'transcript');
+
+            expect(timers.size).to.equal(1);
+        });
+
+        it('stops retrying once cancelled, dismissed or disposed', () => {
+            const { ui, host, opens } = retryingUi();
+            host.executionSurfaceTabByProjectId.set(project.id, 'preview');
+
+            ui.openExecutionSurfaceSidebarWhenReady('preview', project, summary, 'transcript');
+            ui.dismissExecutionSurfaceSidebar();
+            expect(timers.size).to.equal(0);
+
+            ui.openExecutionSurfaceSidebarWhenReady('preview', project, summary, 'transcript');
+            ui.dispose();
+            expect(timers.size).to.equal(0);
+            expect(opens()).to.equal(2);
+        });
+
+        it('gives up when the user went back to Chat before the host appeared', () => {
+            const { ui, host, opens } = retryingUi();
+            host.executionSurfaceTabByProjectId.set(project.id, 'preview');
+            ui.openExecutionSurfaceSidebarWhenReady('preview', project, summary, 'transcript');
+
+            host.executionSurfaceTabByProjectId.set(project.id, 'messages');
+            [...timers.values()].forEach(handler => handler());
+
+            expect(opens()).to.equal(1);
+            expect(ui.executionSurfaceSidebarOpenRetry).to.equal(undefined);
+        });
     });
 });

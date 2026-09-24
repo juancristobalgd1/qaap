@@ -16,11 +16,14 @@ describe('parseTheiaLanguageModelId', () => {
         expect(parseTheiaLanguageModelId('gemini/gemini-2.5-flash')?.provider).to.equal('gemini');
     });
 
-    it('parses ollama, anthropic, mistral and huggingface ids', () => {
+    it('parses ollama, anthropic and huggingface ids', () => {
         expect(parseTheiaLanguageModelId('ollama/qwen2.5-coder:7b')?.provider).to.equal('ollama');
         expect(parseTheiaLanguageModelId('anthropic/claude-sonnet-4-20250514')?.provider).to.equal('anthropic');
-        expect(parseTheiaLanguageModelId('mistral/ministral-8b-latest')?.provider).to.equal('mistral');
         expect(parseTheiaLanguageModelId('huggingface/meta-llama/Llama-3.1-8B-Instruct')?.vendor).to.equal('huggingface');
+    });
+
+    it('does not treat mistral as a Settings BYOK vendor (no Theia Mistral provider/preferences)', () => {
+        expect(parseTheiaLanguageModelId('mistral/ministral-8b-latest')?.vendor).to.equal('unknown');
     });
 
     it('parses openai ids with openai provider', () => {
@@ -97,6 +100,9 @@ describe('resolveQaapQaiqModelBinding', () => {
 
     it('resolves nvidia from model list when aliases are empty', () => {
         const binding = resolveQaapQaiqModelBinding(key => {
+            if (key === 'ai-features.nvidia.nvidiaApiKey') {
+                return 'nvapi-test';
+            }
             if (key === 'ai-features.nvidia.nvidiaModels') {
                 return ['meta/llama-3.3-70b-instruct'];
             }
@@ -104,6 +110,23 @@ describe('resolveQaapQaiqModelBinding', () => {
         });
         expect(binding?.vendor).to.equal('nvidia');
         expect(binding?.provider).to.equal('openai');
+    });
+
+    it('skips model lists of providers without a credential (schema-default lists)', () => {
+        const binding = resolveQaapQaiqModelBinding(key => {
+            if (key === 'ai-features.openAiOfficial.officialOpenAiModels') {
+                return ['gpt-5.5'];
+            }
+            if (key === 'ai-features.anthropic.AnthropicApiKey') {
+                return 'sk-ant-test';
+            }
+            if (key === 'ai-features.anthropic.AnthropicModels') {
+                return ['claude-sonnet-4-6'];
+            }
+            return undefined;
+        });
+        expect(binding?.vendor).to.equal('anthropic');
+        expect(binding?.modelId).to.equal('claude-sonnet-4-6');
     });
 
     it('returns undefined when no prefs are set', () => {

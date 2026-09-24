@@ -351,12 +351,12 @@ describe('other harness prompt transport', () => {
             undefined,
             'full-access',
         );
-        const match = /--prompt-file\s+"?([^"]+)"?/.exec(result.command)
-            ?? /--prompt-file\s+'([^']+)'/.exec(result.command);
+        // The path is shell-quoted (single quotes on POSIX, double quotes on Windows) or bare.
+        const match = /--prompt-file\s+(?:'([^']+)'|"([^"]+)"|(\S+))/.exec(result.command);
         expect(result.stdinPromptMode).to.equal(undefined);
         expect(result.command).not.to.contain(longPrompt);
         expect(match, result.command).to.not.equal(null);
-        const file = match![1];
+        const file = match![1] ?? match![2] ?? match![3];
         try {
             expect(fs.readFileSync(file, 'utf8')).to.contain(longPrompt);
         } finally {

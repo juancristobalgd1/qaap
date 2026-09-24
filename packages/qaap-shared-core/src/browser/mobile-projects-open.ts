@@ -42,6 +42,12 @@ export const QAAP_MOBILE_PROJECTS_HOME_VISIBLE_KEY = 'qaap.mobileProjects.homeVi
 /** Dispatched synchronously so the sheet can close before `workspaceService.open` reloads the page. */
 export const QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT = 'qaap-mobile-projects-dismiss-panel';
 
+/**
+ * Symmetric to {@link QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT}: the workspace open failed after the
+ * sheet was dismissed and no reload follows, so the Work Hub must bring the Projects panel back.
+ */
+export const QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT = 'qaap-mobile-projects-restore-panel';
+
 /** After GitHub OAuth, open the repository picker (or auto-open a single repo). */
 export const QAAP_AUTH_OPEN_FIRST_REPO_EVENT = 'qaap-auth-open-first-repo';
 
@@ -143,6 +149,14 @@ export function requestMobileProjectsPanelDismiss(): void {
     markMobileProjectsPanelDismiss();
     if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT));
+    }
+}
+
+/** Undo {@link requestMobileProjectsPanelDismiss} when the open failed and the page will not reload. */
+export function requestMobileProjectsPanelRestore(): void {
+    clearMobileProjectsPanelDismiss();
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT));
     }
 }
 

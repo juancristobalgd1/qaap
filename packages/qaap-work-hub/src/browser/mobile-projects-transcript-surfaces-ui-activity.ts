@@ -15,6 +15,7 @@ import { probeQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaa
 import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { transcriptPreviewTabProbeModeExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
 
 export function stopTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
     if (ctx.transcriptPreviewProbeTimer !== undefined) {
@@ -23,17 +24,41 @@ export function stopTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTransc
     }
 }
 
+/** Probe cadence while a turn / preview request is actively bringing the dev server up. */
+export const TRANSCRIPT_PREVIEW_TAB_PROBE_MS = 900;
+/** Backoff ceiling once the agent finished but a dev server is still expected on the visible Preview tab. */
+export const TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS = 10_000;
+
+export function transcriptPreviewTabProbeDelayMs(idleTicks: number): number {
+    return Math.min(TRANSCRIPT_PREVIEW_TAB_PROBE_MS * 2 ** idleTicks, TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS);
+}
+
 export function scheduleTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
     summary: QaapAgentConversationSummaryDTO,
     conv: QaapAgentConversationDTO | undefined,): void {
     ctx.stopTranscriptPreviewTabProbe();
-    if (!conv || !ctx.shouldKeepTranscriptPreviewTabProbe(project, summary, conv)) {
+    const mode = conv ? transcriptPreviewTabProbeModeExtracted(ctx, project, summary, conv) : undefined;
+    const scopeKey = `${project.id}\u0000${ctx.previewScopeId(summary)}`;
+    if (mode !== 'idle' || ctx.transcriptPreviewProbeScopeKey !== scopeKey) {
+        // Fresh backoff for a new project / conversation, an active turn, or after the probe stopped.
+        ctx.transcriptPreviewProbeIdleTicks = 0;
+    }
+    ctx.transcriptPreviewProbeScopeKey = mode ? scopeKey : undefined;
+    if (!mode) {
         return;
     }
     ctx.transcriptPreviewProbeTimer = window.setTimeout(() => {
         ctx.transcriptPreviewProbeTimer = undefined;
+        if (mode === 'idle') {
+            ctx.transcriptPreviewProbeIdleTicks += 1;
+            if (document.hidden) {
+                // Background tab: no network, just keep backing off until the user returns.
+                ctx.scheduleTranscriptPreviewTabProbe(project, summary);
+                return;
+            }
+        }
         void ctx.refreshTranscriptPreviewTabProbe(project, summary);
-    }, 900);
+    }, mode === 'idle' ? transcriptPreviewTabProbeDelayMs(ctx.transcriptPreviewProbeIdleTicks) : TRANSCRIPT_PREVIEW_TAB_PROBE_MS);
 }
 
 export async function refreshTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
@@ -78,8 +103,10 @@ export async function refreshTranscriptPreviewTabProbeExtracted(ctx: MobileProje
     } catch {
         /* best-effort */
     } finally {
-        if (ctx.shouldKeepTranscriptPreviewTabProbe(project, summary, conv)) {
-            ctx.scheduleTranscriptPreviewTabProbe(project, summary, conv);
+        // The probe awaited network: judge (and reschedule) against the conversation as it is now.
+        const latestConv = ctx.host.transcriptLastConv;
+        if (latestConv && ctx.shouldKeepTranscriptPreviewTabProbe(project, summary, latestConv)) {
+            ctx.scheduleTranscriptPreviewTabProbe(project, summary, latestConv);
         }
     }
 }

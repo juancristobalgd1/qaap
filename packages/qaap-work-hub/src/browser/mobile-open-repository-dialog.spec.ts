@@ -3,17 +3,29 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 const STYLE_DIR = path.join(__dirname, '..', '..', 'src', 'browser', 'style');
 const BROWSER_DIR = path.join(__dirname, '..', '..', 'src', 'browser');
 
 describe('mobile-open-repository-dialog styles', () => {
+
+    useSuiteJSDOM();
+
     it('is imported from the boot-critical frontend module', () => {
         const src = fs.readFileSync(
             path.join(BROWSER_DIR, 'qaap-work-hub-frontend-module.ts'),
@@ -37,6 +49,9 @@ describe('mobile-open-repository-dialog styles', () => {
 });
 
 describe('MobileOpenRepositoryDialog clone flow', () => {
+
+    useSuiteJSDOM();
+
     it('opens the returned workspace and notifies the host after cloning', async () => {
         const nextProjects: MobileProjectEntry[] = [];
         let clonedRepository: string | undefined;

@@ -49,6 +49,9 @@
       "path": "../qaap-adapters"
     },
     {
+      "path": "../qaap-ai-nvidia"
+    },
+    {
       "path": "../qaap-ai-openrouter"
     },
     {

@@ -20,6 +20,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS } from './mobile-projects-transcript-surfaces-ui';
 
 export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
@@ -66,10 +67,10 @@ export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProj
                 void ctx.tryMountProjectScopedPreview(host, project, summary, adopted, reconciled);
                 return;
             }
-            const cleared = ctx.clearMismatchedProjectPreviewUrl(latestProject, readyUrl);
             if (ctx.transcriptPreviewProjectId === project.id && host.isConnected) {
-                resetTranscriptPreviewToEmptyExtracted(ctx, host, cleared, summary);
-                void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
+                fallBackFromSupersededTranscriptPreviewExtracted(ctx, host, latestProject, summary, readyUrl);
+            } else {
+                ctx.clearMismatchedProjectPreviewUrl(latestProject, readyUrl);
             }
             return;
         }
@@ -132,19 +133,92 @@ export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProj
         ctx.mountTranscriptEmbeddedPreview(host, executionUrl, latestProject, summary);
 }
 
+/**
+ * How the Preview tab probe should run: `fast` while a turn / request is actively producing the
+ * dev server, `idle` (backed off) while the Preview tab sits empty but a dev server is still
+ * expected after the agent finished, `undefined` to stop.
+ */
+export type TranscriptPreviewTabProbeMode = 'fast' | 'idle';
+
+export function transcriptPreviewTabProbeModeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        conv: QaapAgentConversationDTO,): TranscriptPreviewTabProbeMode | undefined {
+        if (!ctx.matchesActivePreviewSummary(summary)) {
+            return undefined;
+        }
+        const previewTabActive = ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview';
+        if (previewTabActive && ctx.isTranscriptPreviewWaiting(conv, project)) {
+            return 'fast';
+        }
+        if (conv.status === 'streaming'
+            && (conversationShouldWatchDevPreview(conv, window.location.origin)
+                || ctx.host.transcriptPreviewRequestPending)) {
+            return 'fast';
+        }
+        return previewTabActive
+            && ctx.executionPreviewHost()?.isConnected === true
+            && transcriptPreviewShowsEmptyChrome(ctx)
+            && isTranscriptPreviewDevServerExpectedExtracted(ctx, project, conv)
+            ? 'idle'
+            : undefined;
+}
+
 export function shouldKeepTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
         conv: QaapAgentConversationDTO,): boolean {
-        if (!ctx.matchesActivePreviewSummary(summary)) {
+        return transcriptPreviewTabProbeModeExtracted(ctx, project, summary, conv) !== undefined;
+}
+
+/** Nothing is mounted yet: the live chrome is the empty state (not a page, not a user-typed URL). */
+function transcriptPreviewShowsEmptyChrome(ctx: MobileProjectsTranscriptSurfacesUiContext): boolean {
+        const root = ctx.host.transcriptEmbeddedPreview?.root;
+        return !root?.isConnected || root.classList.contains('theia-mod-empty-preview');
+}
+
+/**
+ * A dev server may still come up for this project after the agent turn ended: the bootstrap run is
+ * in flight, a preview URL / port is already known, or the conversation asked for a dev preview.
+ */
+export function isTranscriptPreviewDevServerExpectedExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+        conv: QaapAgentConversationDTO | undefined,): boolean {
+        if (ctx.host.transcriptPreviewSuppressedByUser) {
             return false;
         }
-        if (ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) === 'preview'
-            && ctx.isTranscriptPreviewWaiting(conv, project)) {
+        if (ctx.isProjectBootstrapPreviewActive()) {
             return true;
         }
-        return conv.status === 'streaming'
-            && (conversationShouldWatchDevPreview(conv, window.location.origin)
-                || ctx.host.transcriptPreviewRequestPending);
+        const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
+        return !!latestProject.previewUrl
+            || !!ctx.bootstrapPreviewUrlForProject(latestProject)
+            || (!!conv && conversationShouldWatchDevPreview(conv, window.location.origin));
+}
+
+/** How long an idle-probe discovery miss (claim lookup + localhost port scan) is reused per project. */
+export const TRANSCRIPT_PREVIEW_IDLE_DISCOVERY_TTL_MS = 15_000;
+
+/**
+ * Idle probe ticks come back every few seconds for as long as the Preview tab stays empty; share one
+ * in-flight discovery and reuse a miss for {@link TRANSCRIPT_PREVIEW_IDLE_DISCOVERY_TTL_MS} instead of
+ * re-running the claim lookup and port scan each tick. Hits are never cached (they get mounted).
+ */
+function discoverProjectDevPreviewUrlForIdleProbe(ctx: MobileProjectsTranscriptSurfacesUiContext,
+        project: MobileProjectEntry): Promise<string | undefined> {
+        const cache = ctx.transcriptPreviewIdleDiscovery;
+        const cached = cache.get(project.id);
+        if (cached && Date.now() - cached.at < TRANSCRIPT_PREVIEW_IDLE_DISCOVERY_TTL_MS) {
+            return cached.result;
+        }
+        const entry = {
+            at: Date.now(),
+            result: ctx.discoverProjectDevPreviewUrl(project).catch(() => undefined),
+        };
+        cache.set(project.id, entry);
+        void entry.result.then(url => {
+            if (url && cache.get(project.id) === entry) {
+                cache.delete(project.id);
+            }
+        });
+        return entry.result;
 }
 
 export async function discoverAndMountTranscriptPreviewIfReadyExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
@@ -157,7 +231,8 @@ export async function discoverAndMountTranscriptPreviewIfReadyExtracted(ctx: Mob
         if (ctx.host.executionSurfaceTabsUi.activeExecutionTab(project) !== 'preview') {
             return;
         }
-        if (!ctx.isTranscriptPreviewWaiting(conv, project)) {
+        const waiting = ctx.isTranscriptPreviewWaiting(conv, project);
+        if (!waiting && !isTranscriptPreviewDevServerExpectedExtracted(ctx, project, conv)) {
             return;
         }
         const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
@@ -179,7 +254,9 @@ export async function discoverAndMountTranscriptPreviewIfReadyExtracted(ctx: Mob
             );
             return;
         }
-        const discovered = await ctx.discoverProjectDevPreviewUrl(latestProject);
+        const discovered = waiting
+            ? await ctx.discoverProjectDevPreviewUrl(latestProject)
+            : await discoverProjectDevPreviewUrlForIdleProbe(ctx, latestProject);
         if (!discovered || !host.isConnected || !ctx.matchesActivePreviewSummary(summary)) {
             return;
         }
@@ -249,14 +326,42 @@ export function stopTranscriptPreviewIdentityWatchExtracted(ctx: MobileProjectsT
             window.clearTimeout(ctx.transcriptPreviewIdentityWatchTimer);
             ctx.transcriptPreviewIdentityWatchTimer = undefined;
         }
+        ctx.transcriptPreviewIdentityVisibilityCleanup?.();
+        ctx.transcriptPreviewIdentityVisibilityCleanup = undefined;
 }
 
-export function scheduleTranscriptPreviewIdentityWatchExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): void {
+/** Ceiling for the identity watch once the mounted preview keeps answering healthy. */
+export const TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS = 30_000;
+
+/**
+ * `healthy` grows the interval (8 s → 16 s → 30 s) after a check that found the mount alive (or a
+ * hidden page that was not checked); any other call — a new mount, a dead claim — resets it to 8 s.
+ */
+export function scheduleTranscriptPreviewIdentityWatchExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
+        healthy: boolean = false): void {
         ctx.stopTranscriptPreviewIdentityWatch();
+        ctx.transcriptPreviewIdentityHealthyChecks = healthy ? ctx.transcriptPreviewIdentityHealthyChecks + 1 : 0;
+        const delay = Math.min(
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS * 2 ** ctx.transcriptPreviewIdentityHealthyChecks,
+            TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MAX_MS,
+        );
         ctx.transcriptPreviewIdentityWatchTimer = window.setTimeout(() => {
-            ctx.transcriptPreviewIdentityWatchTimer = undefined;
+            ctx.stopTranscriptPreviewIdentityWatch();
             void ctx.verifyMountedTranscriptPreviewIdentity(project);
-        }, TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS);
+        }, delay);
+        // Back in the tab after a while: the backed-off timer may be ~30 s out, and the run could
+        // have been superseded meanwhile — check now and restart the backoff from 8 s.
+        const doc = document;
+        const onVisibilityChange = (): void => {
+            if (doc.visibilityState !== 'visible') {
+                return;
+            }
+            ctx.stopTranscriptPreviewIdentityWatch();
+            ctx.transcriptPreviewIdentityHealthyChecks = 0;
+            void ctx.verifyMountedTranscriptPreviewIdentity(project);
+        };
+        doc.addEventListener('visibilitychange', onVisibilityChange);
+        ctx.transcriptPreviewIdentityVisibilityCleanup = () => doc.removeEventListener('visibilitychange', onVisibilityChange);
 }
 
 export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): Promise<void> {
@@ -267,7 +372,7 @@ export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: Mobil
             return;
         }
         if (document.hidden) {
-            ctx.scheduleTranscriptPreviewIdentityWatch(project);
+            ctx.scheduleTranscriptPreviewIdentityWatch(project, true);
             return;
         }
         const conversationScopeId = ctx.previewScopeId();
@@ -293,7 +398,7 @@ export async function verifyMountedTranscriptPreviewIdentityExtracted(ctx: Mobil
             return;
         }
         if (probe.ready) {
-            ctx.scheduleTranscriptPreviewIdentityWatch(project);
+            ctx.scheduleTranscriptPreviewIdentityWatch(project, true);
             return;
         }
         const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
@@ -321,6 +426,74 @@ export function clearMismatchedProjectPreviewUrlExtracted(ctx: MobileProjectsTra
         return cleared;
 }
 
+/**
+ * Last resort once a superseded preview URL could not be reconciled with a live claim: forget the
+ * stale URL and rediscover. The chrome goes through {@link resetTranscriptPreviewToEmptyExtracted},
+ * so a URL the user is typing or navigated to by hand survives; when a live page does get blanked,
+ * say so instead of leaving an unexplained empty Preview tab.
+ */
+export function fallBackFromSupersededTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,
+        staleUrl: string,): void {
+        const live = ctx.host.transcriptEmbeddedPreview?.root;
+        const showedPage = !!live?.isConnected && host.contains(live) && !live.classList.contains('theia-mod-empty-preview');
+        const cleared = ctx.clearMismatchedProjectPreviewUrl(project, staleUrl);
+        const blanked = resetTranscriptPreviewToEmptyExtracted(ctx, host, cleared, summary);
+        if (blanked && showedPage) {
+            MobileSnackbar.show(nls.localize(
+                'qaap/mobileProjects/previewSuperseded',
+                'This preview was replaced by a newer run and is no longer available. Looking for the current one…',
+            ), {
+                kind: 'warning',
+                duration: 6000,
+                actionLabel: nls.localizeByDefault('Retry'),
+                onAction: () => {
+                    void retrySupersededTranscriptPreview(ctx, host, cleared, summary);
+                },
+            });
+        }
+        void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
+}
+
+/** Snackbar "Retry": look the project's live preview up again and mount it, bypassing the idle-probe cache. */
+async function retrySupersededTranscriptPreview(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
+        project: MobileProjectEntry,
+        summary: QaapAgentConversationSummaryDTO,): Promise<void> {
+        ctx.transcriptPreviewIdleDiscovery.delete(project.id);
+        // A newer tap supersedes the scan an earlier one started.
+        ctx.transcriptPreviewRetryScan?.abort();
+        const scan = new AbortController();
+        ctx.transcriptPreviewRetryScan = scan;
+        const latestProject = ctx.host.projects.find(candidate => candidate.id === project.id) ?? project;
+        const url = await ctx.discoverProjectDevPreviewUrl(latestProject, scan.signal).catch(() => undefined);
+        if (scan.signal.aborted) {
+            return;
+        }
+        ctx.transcriptPreviewRetryScan = undefined;
+        if (!host.isConnected || ctx.transcriptPreviewProjectId !== project.id) {
+            return;
+        }
+        if (!url) {
+            // Nothing is serving this project any more: offer to start its dev server again
+            // (bootstrap only — never hand the request to the agent from a snackbar tap).
+            MobileSnackbar.show(nls.localize(
+                'qaap/mobileProjects/previewSupersededRetryMissing',
+                'No running preview was found for this project.',
+            ), {
+                kind: 'warning',
+                duration: 6000,
+                actionLabel: nls.localize('qaap/mobileProjects/previewRestartDevServer', 'Restart dev server'),
+                onAction: () => {
+                    void ctx.requestTranscriptPreview(latestProject, summary, { allowAgentFallback: false });
+                },
+            });
+            return;
+        }
+        const adopted = ctx.adoptReconciledProjectPreviewUrl(latestProject, url);
+        void ctx.tryMountProjectScopedPreview(host, project, summary, adopted, url);
+}
+
 export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -342,9 +515,7 @@ export async function tryMountProjectScopedPreviewExtracted(ctx: MobileProjectsT
                 void ctx.tryMountProjectScopedPreview(host, project, summary, adopted, reconciled);
                 return;
             }
-            const cleared = ctx.clearMismatchedProjectPreviewUrl(latestProject, candidateUrl);
-            resetTranscriptPreviewToEmptyExtracted(ctx, host, cleared, summary);
-            void ctx.discoverAndMountTranscriptPreviewIfReady(cleared, summary);
+            fallBackFromSupersededTranscriptPreviewExtracted(ctx, host, latestProject, summary, candidateUrl);
             return;
         }
         let identityPath: ReturnType<typeof parseQaapIdentityPreviewRequestPath>;

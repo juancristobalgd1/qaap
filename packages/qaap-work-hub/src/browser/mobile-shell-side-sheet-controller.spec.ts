@@ -3,8 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import type { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
@@ -13,6 +18,8 @@ import type {
     MobileShellSideSheetHost,
 } from './mobile-shell-side-sheet-controller';
 import type { MobileShellBottomBarController } from './mobile-shell-bottom-bar-controller';
+
+disableImportJSDOM();
 
 describe('mobile-shell-side-sheet-controller', () => {
 

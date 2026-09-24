@@ -3,8 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
+import { expect } from 'chai';
 import type { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import {
     clearPreferAgentsSurface,
@@ -21,6 +26,8 @@ import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mob
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { WorkspaceService } from '@theia/workspace/lib/browser';
+
+disableImportJSDOM();
 
 describe('mobile-shell-work-hub-bootstrap', () => {
 

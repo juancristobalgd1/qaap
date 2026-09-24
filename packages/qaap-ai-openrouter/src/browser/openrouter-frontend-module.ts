@@ -7,7 +7,7 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { PreferenceContribution } from '@theia/core';
-import { OpenRouterPreferencesSchema } from './openrouter-preferences';
+import { OpenRouterPreferencesSchema } from '../common/openrouter-preferences';
 import { OpenRouterFrontendApplicationContribution } from './openrouter-frontend-application-contribution';
 
 export default new ContainerModule(bind => {

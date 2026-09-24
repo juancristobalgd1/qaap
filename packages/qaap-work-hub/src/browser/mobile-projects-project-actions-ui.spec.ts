@@ -4,6 +4,11 @@
 // ****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import URI from '@theia/core/lib/common/uri';
 import { expect } from 'chai';
 import type { MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
@@ -15,10 +20,11 @@ import type { MobileProjectsServiceContext } from '@theia/qaap-shared-core/lib/b
 // scope at load time leaked those classes for the rest of the mocha process, so later
 // jsdom-based specs ended up with a jsdom window/document but linkedom event classes —
 // producing "Cannot set property eventPhase", "instanceof", and "extends undefined" errors.
-enableJSDOM();
 // The action module imports Theia browser widgets, which inspect the DOM while loading.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { MobileProjectsProjectActionsUi } = require('./mobile-projects-project-actions-ui') as typeof import('./mobile-projects-project-actions-ui');
+
+disableImportJSDOM();
 
 const project = (id: string): MobileProjectEntry => ({
     id,

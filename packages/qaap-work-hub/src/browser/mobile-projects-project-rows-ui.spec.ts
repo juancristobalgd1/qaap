@@ -5,14 +5,21 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import { MobileProjectsProjectRowsUi } from './mobile-projects-project-rows-ui';
 import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
+
+    useSuiteJSDOM();
 
     function newUi(): MobileProjectsProjectRowsUi {
         return new MobileProjectsProjectRowsUi({
@@ -226,6 +233,8 @@ describe('MobileProjectsProjectRowsUi — foot metrics patch', () => {
 });
 
 describe('MobileProjectsProjectRowsUi — task block', () => {
+
+    useSuiteJSDOM();
 
     it('collapses a long conversation list behind a "More tasks" row', () => {
         const conversations = Array.from({ length: 8 }, (_, index) => ({

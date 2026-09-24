@@ -3,6 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { isAllowedDevPreviewPort } from '@theia/qaap-adapters/lib/common/qaap-dev-preview-ports';
+
 /** HTTP path prefix for proxied dev-server preview (Codespaces-style, same origin as Qaap). */
 export const QAAP_DEV_PREVIEW_PREFIX = '/qaap-dev';
 
@@ -45,12 +47,8 @@ export interface QaapDevPreviewProbeResponse {
     readonly conversationId?: string;
 }
 
-const MIN_DEV_PORT = 1024;
-const MAX_DEV_PORT = 65535;
-
-export function isAllowedDevPreviewPort(port: number): boolean {
-    return Number.isInteger(port) && port >= MIN_DEV_PORT && port <= MAX_DEV_PORT;
-}
+/** Single definition in qaap-adapters, shared with the browser preview URL helpers. */
+export { isAllowedDevPreviewPort };
 
 export function parseQaapDevPreviewPort(raw: string | number | undefined): number | undefined {
     const port = typeof raw === 'number' ? raw : Number(raw);
@@ -113,22 +111,19 @@ export const QAAP_PREVIEW_HISTORY_BASE_MARKER = 'data-qaap-preview-history-base'
 type PreviewScriptPlacement = 'head' | 'body-end';
 
 function insertPreviewScript(html: string, script: string, placement: PreviewScriptPlacement): string {
+    if (!script) {
+        return html;
+    }
     if (placement === 'body-end') {
-        const bodyClose = /<\/body\s*>/i;
-        if (bodyClose.test(html)) {
-            return html.replace(bodyClose, match => `${script}${match}`);
-        }
-        return `${html}${script}`;
+        const bodyClose = /<\/body\s*>/i.exec(html);
+        return bodyClose ? `${html.slice(0, bodyClose.index)}${script}${html.slice(bodyClose.index)}` : `${html}${script}`;
     }
-    const headOpen = /<head(?:\s[^>]*)?>/i;
-    if (headOpen.test(html)) {
-        return html.replace(headOpen, match => `${match}${script}`);
+    const open = /<head(?:\s[^>]*)?>/i.exec(html) ?? /<html(?:\s[^>]*)?>/i.exec(html);
+    if (!open) {
+        return `${script}${html}`;
     }
-    const htmlOpen = /<html(?:\s[^>]*)?>/i;
-    if (htmlOpen.test(html)) {
-        return html.replace(htmlOpen, match => `${match}${script}`);
-    }
-    return `${script}${html}`;
+    const end = open.index + open[0].length;
+    return `${html.slice(0, end)}${script}${html.slice(end)}`;
 }
 
 /**
@@ -141,11 +136,15 @@ export function injectQaapPreviewHistoryBase(
     publicPrefix: string,
     placement: PreviewScriptPlacement = 'head',
 ): string {
+    return insertPreviewScript(html, buildHistoryBaseScript(html, publicPrefix), placement);
+}
+
+function buildHistoryBaseScript(html: string, publicPrefix: string): string {
     const prefix = publicPrefix.replace(/\/+$/, '');
     if (!html || !prefix || html.includes(QAAP_PREVIEW_HISTORY_BASE_MARKER)) {
-        return html;
+        return '';
     }
-    const script = `<script ${QAAP_PREVIEW_HISTORY_BASE_MARKER}>(function(){
+    return `<script ${QAAP_PREVIEW_HISTORY_BASE_MARKER}>(function(){
 var x=${JSON.stringify(prefix)};
 function strip(p){return p.indexOf(x)===0?(p.slice(x.length)||"/"):p;}
 function add(u){
@@ -195,6 +194,26 @@ args[1]=add(String(url));
 return xhrOpen.apply(this,args);
 };
 }
+// HMR clients of Next (/_next/webpack-hmr), webpack-dev-server (/ws) and CRA (/sockjs-node)
+// build same-host socket URLs from location. Browsers never send a Referer on a WebSocket
+// handshake, so the server cannot scope those upgrades; rebase them here instead.
+var WS=globalThis.WebSocket;
+if(typeof WS==="function"){
+var PWS=function(url,protocols){
+var target=url;
+try{
+var parsed=new URL(String(url),location.href);
+if(parsed.host===location.host&&/^(wss?|https?):$/.test(parsed.protocol)&&parsed.pathname!==x&&parsed.pathname.indexOf(x+"/")!==0){
+parsed.pathname=x+parsed.pathname;
+target=parsed.href;
+}
+}catch(err){}
+return arguments.length>1?new WS(target,protocols):new WS(target);
+};
+PWS.prototype=WS.prototype;
+Object.setPrototypeOf(PWS,WS);
+globalThis.WebSocket=PWS;
+}
 try{
 if(navigator.serviceWorker&&typeof ServiceWorkerContainer!=="undefined"){
 var swProto=ServiceWorkerContainer.prototype,swRegister=swProto.register;
@@ -207,7 +226,6 @@ return swRegister.call(this,scriptPath,scoped);
 }
 }catch(err){}
 })();</script>`;
-    return insertPreviewScript(html, script, placement);
 }
 
 /**
@@ -216,10 +234,14 @@ return swRegister.call(this,scriptPath,scoped);
  * a transport probe cannot distinguish from a healthy render.
  */
 export function injectQaapPreviewDiagnostics(html: string, placement: PreviewScriptPlacement = 'head'): string {
+    return insertPreviewScript(html, buildDiagnosticsScript(html), placement);
+}
+
+function buildDiagnosticsScript(html: string): string {
     if (!html || html.includes(QAAP_PREVIEW_DIAGNOSTICS_MARKER)) {
-        return html;
+        return '';
     }
-    const script = `<script ${QAAP_PREVIEW_DIAGNOSTICS_MARKER}>(function(){
+    return `<script ${QAAP_PREVIEW_DIAGNOSTICS_MARKER}>(function(){
 var root=globalThis;
 if(root.__qaapPreviewDiagnostics){return;}
 var errors=[];
@@ -234,7 +256,6 @@ var original=console.error;
 console.error=function(){var values=Array.prototype.slice.call(arguments);add('console.error',values.map(text).join(' '));
 return original.apply(console,arguments);};
 })();</script>`;
-    return insertPreviewScript(html, script, placement);
 }
 
 /**
@@ -254,8 +275,12 @@ return original.apply(console,arguments);};
  * the VPS with a Lovable-generated app that renders fine when served without the proxy).
  */
 export function injectQaapPreviewViteEnvBootstrap(html: string, publicPrefix: string): string {
+    return insertPreviewScript(html, buildViteEnvBootstrapScript(html, publicPrefix), 'head');
+}
+
+function buildViteEnvBootstrapScript(html: string, publicPrefix: string): string {
     if (!html || html.includes(QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER) || html.includes('/@vite/client')) {
-        return html;
+        return '';
     }
     // The rebase must be a CLASSIC inline script: it executes during parsing, before ANY module —
     // the app entry is an async module and can call hydrateStart before deferred modules run, so a
@@ -271,20 +296,40 @@ export function injectQaapPreviewViteEnvBootstrap(html: string, publicPrefix: st
         + 'Object.defineProperty(e,"TSS_ROUTER_BASEPATH",{configurable:true,get:function(){return v;},set:function(){}});'
         + '}catch(err){}</script>'
         : '';
-    const script = rebase
+    return rebase
         + `<script type="module" ${QAAP_PREVIEW_VITE_ENV_BOOTSTRAP_MARKER}>`
         + `try{await import(${JSON.stringify(`${publicPrefix}/@vite/env`)})}catch{}`
         + '</script>';
-    const headOpen = /<head(?:\s[^>]*)?>/i;
-    if (headOpen.test(html)) {
-        return html.replace(headOpen, match => `${match}${script}`);
-    }
-    const htmlOpen = /<html(?:\s[^>]*)?>/i;
-    if (htmlOpen.test(html)) {
-        return html.replace(htmlOpen, match => `${match}${script}`);
-    }
-    return `${script}${html}`;
 }
+
+/**
+ * Injects the diagnostics, history-base and (optionally, always into `<head>`) Vite env bootstrap
+ * scripts with one insertion per location instead of one full-document pass per script. The
+ * result is identical to calling the individual `inject*` functions in the proxy's order.
+ */
+export function injectQaapPreviewDocumentScripts(
+    html: string,
+    publicPrefix: string,
+    placement: PreviewScriptPlacement,
+    includeViteEnvBootstrap: boolean,
+): string {
+    const diagnostics = buildDiagnosticsScript(html);
+    const historyBase = buildHistoryBaseScript(html, publicPrefix);
+    const viteEnv = includeViteEnvBootstrap ? buildViteEnvBootstrapScript(html, publicPrefix) : '';
+    if (placement === 'head') {
+        return insertPreviewScript(html, diagnostics + historyBase + viteEnv, 'head');
+    }
+    return insertPreviewScript(insertPreviewScript(html, viteEnv, 'head'), historyBase + diagnostics, placement);
+}
+
+/**
+ * Marks the proxy's own "dev server unreachable" 503 (holding page and its HEAD polls) so the
+ * page can tell it apart from a 503 the dev server returns itself. Stripped from upstream responses.
+ */
+export const QAAP_DEV_PREVIEW_WAITING_HEADER = 'x-qaap-preview-waiting';
+
+/** How long the holding page polls before it stops and offers a manual retry. */
+export const QAAP_DEV_PREVIEW_WAITING_MAX_MS = 120_000;
 
 /** Friendly holding page while the dev server is still binding (v0-style auto-retry). */
 export function buildDevPreviewWaitingHtml(targetPort: number): string {
@@ -305,26 +350,57 @@ export function buildDevPreviewWaitingHtml(targetPort: number): string {
   @keyframes spin { to { transform: rotate(360deg); } }
   h1 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }
   p { font-size: 0.875rem; color: #8b949e; margin: 0; line-height: 1.5; }
+  button { margin-top: 1rem; padding: 0.4rem 1rem; border: 1px solid #30363d; border-radius: 6px;
+    background: #21262d; color: #e6edf3; font: inherit; cursor: pointer; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
   <div class="card">
-    <div class="spinner"></div>
-    <h1>Starting dev server</h1>
-    <p>Waiting for port ${safePort}… This page refreshes automatically.</p>
+    <div class="spinner" id="qaap-wait-spinner"></div>
+    <h1 id="qaap-wait-title">Starting dev server</h1>
+    <p id="qaap-wait-text">Waiting for port ${safePort}… This page refreshes automatically.</p>
+    <button type="button" id="qaap-wait-retry" hidden>Retry</button>
   </div>
   <script>
     // Poll with HEAD (no frame reload, no history/URL-bar churn) and back off; reload once the
-    // dev server answers with anything other than this holding page.
+    // response is no longer the proxy's own holding 503 (a 503 from the dev server lacks the
+    // marker header). Polling is also bounded and then falls back to a manual Retry.
     (function () {
-      var delay = 1000;
+      var maxMs = ${QAAP_DEV_PREVIEW_WAITING_MAX_MS};
+      var marker = '${QAAP_DEV_PREVIEW_WAITING_HEADER}';
+      var delay, startedAt;
+      var spinner = document.getElementById('qaap-wait-spinner');
+      var title = document.getElementById('qaap-wait-title');
+      var text = document.getElementById('qaap-wait-text');
+      var button = document.getElementById('qaap-wait-retry');
+      function start() {
+        delay = 1000;
+        startedAt = Date.now();
+        spinner.hidden = false;
+        button.hidden = true;
+        title.textContent = 'Starting dev server';
+        text.textContent = 'Waiting for port ${safePort}… This page refreshes automatically.';
+        setTimeout(check, delay);
+      }
       function check() {
         fetch(location.href, { method: 'HEAD', cache: 'no-store', credentials: 'same-origin' })
-          .then(function (r) { if (r.status !== 503) { location.reload(); } else { retry(); } })
+          .then(function (r) { if (r.status !== 503 || !r.headers.get(marker)) { location.reload(); } else { retry(); } })
           .catch(retry);
       }
-      function retry() { delay = Math.min(delay * 1.5, 8000); setTimeout(check, delay); }
-      setTimeout(check, delay);
+      function retry() {
+        if (Date.now() - startedAt >= maxMs) {
+          spinner.hidden = true;
+          button.hidden = false;
+          title.textContent = 'Dev server still not reachable';
+          text.textContent = 'Nothing answered on port ${safePort}. Check the dev server output, then retry.';
+          return;
+        }
+        delay = Math.min(delay * 1.5, 8000);
+        setTimeout(check, delay);
+      }
+      button.addEventListener('click', start);
+      start();
     })();
   </script>
 </body>

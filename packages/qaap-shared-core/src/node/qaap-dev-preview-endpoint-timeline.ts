@@ -11,12 +11,11 @@ import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } f
 import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import {
     QAAP_DEV_PREVIEW_PREFIX,
+    QAAP_DEV_PREVIEW_WAITING_HEADER,
     QAAP_IDENTITY_PREVIEW_PREFIX,
     buildDevPreviewWaitingHtml,
     buildQaapIdentityPreviewUrl,
-    injectQaapPreviewViteEnvBootstrap,
-    injectQaapPreviewDiagnostics,
-    injectQaapPreviewHistoryBase,
+    injectQaapPreviewDocumentScripts,
     isAllowedDevPreviewPort,
 } from '../common/qaap-dev-preview';
 import { QAAP_PREVIEW_ACCESS_QUERY } from './qaap-dev-preview-endpoint';
@@ -48,6 +47,8 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
             clearTimeout(headersTimer);
             const responseHeaders = { ...proxyRes.headers };
             sanitizeQaapPreviewResponseHeaders(responseHeaders);
+            // Only the proxy's own holding 503 may carry the waiting marker.
+            delete responseHeaders[QAAP_DEV_PREVIEW_WAITING_HEADER];
             // Every proxied preview is rendered inside Qaap's mini-browser. Remove upstream
             // anti-frame headers and scope frame-ancestors to this Qaap origin for identity,
             // legacy-port, and isolated-host preview routes alike.
@@ -65,20 +66,42 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                 responseHeaders.location = ctx.rewriteDevPreviewLocation(location, targetPort, publicPrefix);
             }
 
-            if (!ctx.shouldRewriteProxyBody(proxyRes)) {
-                outgoing.writeHead(proxyRes.statusCode ?? 502, responseHeaders);
+            const statusCode = proxyRes.statusCode ?? 502;
+            const contentType = proxyRes.headers['content-type'];
+            const isHtml = typeof contentType === 'string' && /\btext\/html\b/i.test(contentType);
+            if (!ctx.shouldRewriteProxyBody(proxyRes)
+                // No body to rewrite: keep content-length (HEAD reports the GET size).
+                || incoming.method === 'HEAD' || statusCode === 204 || statusCode === 304
+                // Large JS/CSS (vendor bundles) stream through unrewritten. HTML is always
+                // buffered because the bridge scripts must be injected.
+                || (!isHtml && Number(proxyRes.headers['content-length']) > MAX_REWRITE_BODY_BYTES)) {
+                outgoing.writeHead(statusCode, responseHeaders);
                 proxyRes.pipe(outgoing);
                 return;
             }
 
             delete responseHeaders['content-length'];
-            outgoing.writeHead(proxyRes.statusCode ?? 502, responseHeaders);
+            outgoing.writeHead(statusCode, responseHeaders);
             const chunks: Buffer[] = [];
-            proxyRes.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-            proxyRes.on('end', () => {
+            let bufferedBytes = 0;
+            const onData = (chunk: Buffer | string): void => {
+                const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                chunks.push(buffer);
+                bufferedBytes += buffer.length;
+                if (isHtml || bufferedBytes <= MAX_REWRITE_BODY_BYTES) {
+                    return;
+                }
+                // A chunked body without a declared length outgrew the cap: flush what was
+                // buffered unrewritten and stream the rest.
+                proxyRes.off('data', onData);
+                proxyRes.off('end', onEnd);
+                outgoing.write(Buffer.concat(chunks));
+                chunks.length = 0;
+                proxyRes.pipe(outgoing);
+            };
+            const onEnd = (): void => {
                 const body = Buffer.concat(chunks).toString('utf8');
-                const contentType = proxyRes.headers['content-type'];
-                if (typeof contentType !== 'string' || !/\btext\/html\b/i.test(contentType)) {
+                if (!isHtml) {
                     outgoing.end(ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix));
                     return;
                 }
@@ -99,14 +122,10 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                     ctx.resolvePublicOrigin(incoming),
                     placement,
                 );
-                const bootstrapped = isNextDocument
-                    ? bridged
-                    : injectQaapPreviewViteEnvBootstrap(bridged, publicPrefix);
-                outgoing.end(injectQaapPreviewDiagnostics(
-                    injectQaapPreviewHistoryBase(bootstrapped, publicPrefix, placement),
-                    placement,
-                ));
-            });
+                outgoing.end(injectQaapPreviewDocumentScripts(bridged, publicPrefix, placement, !isNextDocument));
+            };
+            proxyRes.on('data', onData);
+            proxyRes.on('end', onEnd);
         });
         // A dev server that accepts the connection but never answers used to hang the iframe
         // forever. Bound only the wait for response headers: streamed bodies (SSE HMR) stay open.
@@ -129,6 +148,9 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
 
 const DEV_PREVIEW_HEADERS_TIMEOUT_MS = 60_000;
 
+/** Non-HTML text bodies above this size stream through without URL rewriting. */
+export const MAX_REWRITE_BODY_BYTES = 5 * 1024 * 1024;
+
 /**
  * The holding page is only useful for document loads. Scripts/styles/fetches that received it
  * were parsed as HTML (syntax errors, MIME blocks) and each re-ran the auto-reload.
@@ -139,6 +161,7 @@ function sendDevPreviewUnavailable(incoming: Request, outgoing: Response, target
     const isDocument = dest ? dest === 'document' || dest === 'iframe' : /\btext\/html\b/i.test(accept);
     outgoing.setHeader('cache-control', 'no-store');
     outgoing.setHeader('retry-after', '2');
+    outgoing.setHeader(QAAP_DEV_PREVIEW_WAITING_HEADER, '1');
     if (isDocument && incoming.method !== 'HEAD') {
         outgoing.status(503).type('text/html').send(buildDevPreviewWaitingHtml(targetPort));
     } else {
@@ -200,35 +223,71 @@ export function rewriteDevPreviewBodyExtracted(ctx: QaapDevPreviewEndpointContex
         // `createWebHistory(BASE_URL)` then treats `/qaap-preview/<id>/` as an unknown route
         // (vitesse-lite "Not Found"). Location.pathname is unforgeable in Chromium, so the
         // history-base inject cannot hide the prefix; pin BASE_URL to the proxy path instead.
-        const rewritten = body
-            .replace(/("BASE_URL"\s*:\s*")\/"/g, `$1${prefixPath}/"`)
-            .replace(/('BASE_URL'\s*:\s*')\/'/g, `$1${prefixPath}/'`)
-            .replace(/\b(src|href|action)=("|')\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1=$2${prefix}/`)
-            .replace(/\burl\(\s*(["']?)\/(?!\/|qaap-(?:dev|preview)\/)/g, `url($1${prefix}/`)
-            .replace(/(\bimport\s*(?:\(|[^"'`]*from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
-            .replace(/(\bexport\s+[^"'`]*from\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
-            .replace(/(\bnew\s+URL\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
-            .replace(/(\bfetch\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/g, `$1${prefix}/`)
-            // Next's Webpack runtime loads App Router chunks through its public path. Those
-            // URLs are built from this assignment rather than markup/import/fetch syntax, so
-            // rewrite this framework-owned asset prefix without touching app route strings.
-            .replace(/(__webpack_require__\.p\s*=\s*["'`])\/_next\//g, `$1${prefixPath}/_next/`);
+        // One pass over the body: every rule is an alternative of DEV_PREVIEW_BODY_URL_PATTERN.
+        const rewritten = body.replace(DEV_PREVIEW_BODY_URL_PATTERN, (_match, ...groups: Array<string | undefined>) => {
+            const [baseDouble, baseSingle, markup, cssUrlQuote, importLead, exportLead, newUrlLead, fetchLead, webpackLead] = groups;
+            if (baseDouble !== undefined || baseSingle !== undefined) {
+                return `${baseDouble ?? baseSingle}${prefixPath}/`;
+            }
+            if (cssUrlQuote !== undefined) {
+                return `url(${cssUrlQuote}${prefix}/`;
+            }
+            if (webpackLead !== undefined) {
+                return `${webpackLead}${prefixPath}/`;
+            }
+            return `${markup ?? importLead ?? exportLead ?? newUrlLead ?? fetchLead}${prefix}/`;
+        });
         return ctx.rewriteViteHmrClient(rewritten, prefix);
 }
 
 export function rewriteViteHmrClientExtracted(ctx: QaapDevPreviewEndpointContext, body: string, publicPrefix: string): string {
-        if (!publicPrefix
-            || !body.includes('[vite] connecting')
-            || !body.includes('vite-hmr')
-            || !body.includes('Direct websocket connection fallback')
-            || !body.includes('import.meta.url')) {
+        // `[vite] connecting` + the `vite-hmr` subprotocol identify `/@vite/client` in Vite 4–7;
+        // application modules that merely declare `socketHost`/`base` must stay untouched.
+        if (!publicPrefix || !body.includes('[vite] connecting') || !body.includes('vite-hmr')) {
             return body;
         }
-        const publicBase = `${publicPrefix.replace(/\/+$/, '')}/`;
-        return body
-            .replace(/^const socketHost = .*;$/m, `const socketHost = importMetaUrl.host + ${JSON.stringify(publicBase)};`)
-            .replace(/^const base = .*;$/m, `const base = ${JSON.stringify(publicBase)};`);
+        const publicBase = JSON.stringify(`${publicPrefix.replace(/\/+$/, '')}/`);
+        // Older clients bind `importMetaUrl`; fall back to import.meta.url if a release drops it.
+        const hostExpression = /\bimportMetaUrl\b/.test(body) ? 'importMetaUrl.host' : 'new URL(import.meta.url).host';
+        let socketHostRewritten = false;
+        const rewritten = body
+            // Top-level single-line declarations in every Vite 4–7 client (defines already
+            // substituted); tolerant of let/var, spacing and the substituted expression's shape.
+            .replace(VITE_SOCKET_HOST_DECLARATION, (_match, keyword: string) => {
+                socketHostRewritten = true;
+                return `${keyword} socketHost = ${hostExpression} + ${publicBase};`;
+            })
+            // `base` drives hot-update imports; `base$1` (Vite 5+) drives overlay/open-in-editor fetches.
+            .replace(VITE_BASE_DECLARATION, (_match, keyword: string, name: string) => `${keyword} ${name} = ${publicBase};`);
+        if (!socketHostRewritten && !viteHmrRewriteMissLogged) {
+            viteHmrRewriteMissLogged = true;
+            console.debug('[qaap-preview] Vite HMR client detected but its socketHost declaration was not recognized; HMR may bypass the preview proxy.');
+        }
+        return rewritten;
 }
+
+/**
+ * Every URL-by-construction position rewritten in proxied bodies, as one alternation so the body
+ * is scanned once. Each alternative captures the text preceding the rewritten `/`:
+ * 1–2 Vite `BASE_URL` (`"/"` only), 3 markup `src|href|action=`, 4 the quote of CSS `url(`,
+ * 5–6 `import`/`export … from` (ES clause grammar with a bounded `{…}` so it stays linear on
+ * quote-poor bundles), 7 `new URL(`, 8 `fetch(`, 9 Next's `__webpack_require__.p = "/_next/"`.
+ * 3–8 skip protocol-relative (`//`) and already-proxied paths.
+ */
+const DEV_PREVIEW_BODY_URL_PATTERN = new RegExp([
+    /("BASE_URL"\s*:\s*")\/(?=")/,
+    /('BASE_URL'\s*:\s*')\/(?=')/,
+    /(\b(?:src|href|action)=["'])\/(?!\/|qaap-(?:dev|preview)\/)/,
+    /\burl\(\s*(["']?)\/(?!\/|qaap-(?:dev|preview)\/)/,
+    /(\bimport\s*(?:\(|(?:type\s+)?(?:[\w$]+\s*,?\s*)?(?:\*\s*as\s+[\w$]+\s*|\{[^{}"'`]{0,4096}\}\s*)?from\s*)?["'`])\/(?!\/|qaap-(?:dev|preview)\/)/,
+    /(\bexport\s+(?:type\s+)?(?:\*(?:\s*as\s+[\w$]+)?|\{[^{}"'`]{0,4096}\})\s*from\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/,
+    /(\bnew\s+URL\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/,
+    /(\bfetch\(\s*["'`])\/(?!\/|qaap-(?:dev|preview)\/)/,
+    /(__webpack_require__\.p\s*=\s*["'`])\/(?=_next\/)/,
+].map(pattern => pattern.source).join('|'), 'g');
+const VITE_SOCKET_HOST_DECLARATION = /^(const|let|var)[ \t]+socketHost[ \t]*=[^\n]*;[ \t]*$/m;
+const VITE_BASE_DECLARATION = /^(const|let|var)[ \t]+(base(?:\$\d+)?)[ \t]*=[^\n]*;[ \t]*$/gm;
+let viteHmrRewriteMissLogged = false;
 
 export function rewritePreviewCspExtracted(ctx: QaapDevPreviewEndpointContext, raw: string | number | string[] | undefined, parentOrigin: string): string {
         // `http.OutgoingHttpHeaders` values are typed as `string | number | string[]`, but a CSP

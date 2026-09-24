@@ -7,7 +7,7 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { PreferenceContribution } from '@theia/core';
-import { NvidiaPreferencesSchema } from './nvidia-preferences';
+import { NvidiaPreferencesSchema } from '../common/nvidia-preferences';
 import { NvidiaFrontendApplicationContribution } from './nvidia-frontend-application-contribution';
 
 export default new ContainerModule(bind => {

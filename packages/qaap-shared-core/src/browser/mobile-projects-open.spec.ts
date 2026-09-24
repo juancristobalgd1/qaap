@@ -13,7 +13,12 @@ import {
     markMobileProjectsPanelDismiss,
     markPreferAgentsSurface,
     markPreferDesktopIde,
+    peekMobileProjectsPanelDismiss,
+    QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT,
+    QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT,
     recomputeMobileWorkHubHideIdeSidePanels,
+    requestMobileProjectsPanelDismiss,
+    requestMobileProjectsPanelRestore,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubSideSheetOpen,
     shouldBootstrapMobileAgentsChat,
@@ -98,6 +103,29 @@ describe('mobile-projects-open work hub bootstrap', () => {
         markPreferDesktopIde();
         installMobileWorkHubBootGuard();
         expect(document.documentElement.classList.contains('theia-mobile-workhub-boot')).to.equal(false);
+    });
+
+    it('restore undoes a dismiss and notifies the Work Hub', () => {
+        const events: string[] = [];
+        const onDismiss = (): void => { events.push('dismiss'); };
+        const onRestore = (): void => { events.push('restore'); };
+        window.addEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, onDismiss);
+        window.addEventListener(QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT, onRestore);
+        // Node ships its own CustomEvent, which the jsdom window rejects; use the jsdom one.
+        const globalScope = global as unknown as { CustomEvent: typeof CustomEvent };
+        const nodeCustomEvent = globalScope.CustomEvent;
+        globalScope.CustomEvent = (window as unknown as { CustomEvent: typeof CustomEvent }).CustomEvent;
+        try {
+            requestMobileProjectsPanelDismiss();
+            expect(peekMobileProjectsPanelDismiss()).to.equal(true);
+            requestMobileProjectsPanelRestore();
+            expect(peekMobileProjectsPanelDismiss()).to.equal(false);
+            expect(events).to.deep.equal(['dismiss', 'restore']);
+        } finally {
+            globalScope.CustomEvent = nodeCustomEvent;
+            window.removeEventListener(QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT, onDismiss);
+            window.removeEventListener(QAAP_MOBILE_PROJECTS_RESTORE_PANEL_EVENT, onRestore);
+        }
     });
 
 });

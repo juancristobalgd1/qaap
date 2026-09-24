@@ -21,6 +21,7 @@ import {
     markMobileProjectReadmeForOpen,
     markMobileProjectsPanelDismiss,
     requestMobileProjectsPanelDismiss,
+    requestMobileProjectsPanelRestore,
 } from './mobile-projects-open';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
 import {
@@ -137,10 +138,42 @@ async function resolveWorkspaceRootExtracted(ctx: MobileProjectsServiceContext, 
         }
 }
 
-function failWorkspaceOpenExtracted(ctx: MobileProjectsServiceContext, uri: URI, detail: string): void {
+/**
+ * Fire `onNoReload` if the page is still alive {@link OPEN_WORKSPACE_RELOAD_WATCHDOG_MS} after the
+ * open. `pagehide` means the reload is committing, so the watchdog is cancelled instead of flashing
+ * an error and the restored panel right before the reload. `beforeunload` only restarts the grace
+ * period: navigation has started but may be slow, or vetoed (dirty-editor prompt), in which case
+ * the error must still appear.
+ */
+export function armWorkspaceReloadWatchdog(onNoReload: () => void, timeoutMs = OPEN_WORKSPACE_RELOAD_WATCHDOG_MS): () => void {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const arm = (): void => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                cancel();
+                onNoReload();
+            }, timeoutMs);
+        };
+        const cancel = (): void => {
+            clearTimeout(timer);
+            window.removeEventListener('beforeunload', arm);
+            window.removeEventListener('pagehide', cancel);
+        };
+        window.addEventListener('beforeunload', arm);
+        window.addEventListener('pagehide', cancel);
+        arm();
+        return cancel;
+}
+
+function failWorkspaceOpenExtracted(ctx: MobileProjectsServiceContext, uri: URI, detail: string, panelDismissed = false): void {
         MobileSnackbar.dismiss();
         clearMobileProjectReadmeOpenRequest();
-        clearMobileProjectsPanelDismiss();
+        if (panelDismissed) {
+            // The Work Hub already left the Projects panel; bring it back so the error has context.
+            requestMobileProjectsPanelRestore();
+        } else {
+            clearMobileProjectsPanelDismiss();
+        }
         void ctx.messageService.error(nls.localize(
             'qaap/mobileProjects/openWorkspaceFailed',
             'Could not open {0}: {1}',
@@ -171,10 +204,10 @@ export async function openWorkspaceUriExtracted(ctx: MobileProjectsServiceContex
         requestMobileProjectsPanelDismiss();
         markMobileProjectReadmeForOpen();
         ctx.workspaceService.open(uri, { preserveWindow: true });
-        setTimeout(() => failWorkspaceOpenExtracted(ctx, uri, nls.localize(
+        armWorkspaceReloadWatchdog(() => failWorkspaceOpenExtracted(ctx, uri, nls.localize(
             'qaap/mobileProjects/openWorkspaceNoReload',
             'the workspace did not load. Please try again.'
-        )), OPEN_WORKSPACE_RELOAD_WATCHDOG_MS);
+        ), true));
         return true;
 }
 
@@ -241,6 +274,8 @@ export async function openGithubProjectExtracted(ctx: MobileProjectsServiceConte
             // Without this, the backend error (e.g. failed clone, missing workspace root) is silently
             // dropped on the floor and the user sees the project tap as a no-op.
             clearMobileProjectReadmeOpenRequest();
+            // No reload follows, so a later F5 must not skip the Projects landing.
+            clearMobileProjectsPanelDismiss();
             const detail = err instanceof Error ? err.message : String(err);
             await ctx.messageService.error(
                 nls.localize(

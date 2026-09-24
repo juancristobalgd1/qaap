@@ -437,6 +437,10 @@ function loadBaseline() {
 const baseCommit = resolveCommit(base);
 if (!baseCommit) {
     console.error(`[qaap-drift-check] Base ref "${base}" not found. Fetch upstream or set QAAP_DIFF_BASE.`);
+    if (/^[0-9a-f]{7,40}$/i.test(base)) {
+        // Fresh/shallow clones (cloud sessions, CI) lack the upstream commit; one shallow fetch is enough.
+        console.error(`[qaap-drift-check] e.g. git fetch --depth=1 https://github.com/eclipse-theia/theia.git ${base}`);
+    }
     process.exit(2);
 }
 
@@ -497,6 +501,9 @@ if (newDrift.length) {
 } else if (!reportOnly) {
     console.log('[qaap-drift-check] OK — no new upstream drift outside allowlist.');
     if (resolvedBaseline.length) {
-        console.log(`[qaap-drift-check] ${resolvedBaseline.length} baseline path(s) no longer differ — consider trimming qaap-drift-baseline.txt`);
+        console.log(`[qaap-drift-check] ${resolvedBaseline.length} baseline path(s) no longer differ — consider trimming qaap-drift-baseline.txt:`);
+        for (const p of resolvedBaseline) {
+            console.log(`  ${p}`);
+        }
     }
 }

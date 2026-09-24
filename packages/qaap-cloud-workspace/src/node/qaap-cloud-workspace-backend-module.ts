@@ -8,7 +8,6 @@ import { bindRootContributionProvider } from '@theia/core';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
 import { FileSystemProvider } from '@theia/filesystem/lib/common/files';
-import { DiskFileSystemProvider } from '@theia/filesystem/lib/node/disk-file-system-provider';
 import { NodeFileUploadService } from '@theia/filesystem/lib/node/upload/node-file-upload-service';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { DefaultWorkspaceServer } from '@theia/workspace/lib/node/default-workspace-server';
@@ -190,7 +189,12 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind, _unbindAsyn
         return environments;
     });
     bind(QaapTenantDiskFileSystemProvider).toSelf().inSingletonScope();
-    rebind(DiskFileSystemProvider).toService(QaapTenantDiskFileSystemProvider);
+    // Guard the browser-reachable provider: `FileSystemProvider` is what the remote filesystem
+    // RPC server injects. `DiskFileSystemProvider` stays upstream's transient, unguarded instance:
+    // its only direct consumer is the backend's own preference storage (backend config dir, never
+    // a browser-supplied URI), which runs at boot without any tenant login and disposes its
+    // provider on dispose — routing it through this shared singleton guard made the boot-time
+    // `watch` of backend-settings.json throw an uncaught "Forbidden workspace path".
     rebind(FileSystemProvider).toService(QaapTenantDiskFileSystemProvider);
     bind(QaapHostedWorkspaceServer).toSelf().inSingletonScope();
     rebind(DefaultWorkspaceServer).toService(QaapHostedWorkspaceServer);

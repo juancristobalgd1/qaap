@@ -7,6 +7,7 @@ import { expect } from 'chai';
 import {
     buildSameOriginDevPreviewUrl,
     canonicalPreviewHistoryKey,
+    explainUnproxiedLocalPreviewUrl,
     getSameOriginPreviewProxyPort,
     normalizePreviewUrlForSameOrigin,
     applyNestedPathToPreviewUrl,
@@ -138,5 +139,22 @@ describe('qaap-preview-url-utils', () => {
             identityUrl: 'http://localhost:3000/qaap-preview/live-execution/',
             nestedEntry: '/docs/demo/',
         })).to.equal('http://localhost:3000/qaap-preview/live-execution/settings');
+    });
+
+    it('explains why privileged and IDE-port localhost URLs are not proxied', () => {
+        const vps = 'http://178.1.2.3:3000';
+        expect(normalizePreviewUrlForSameOrigin('http://localhost/', vps)).to.equal('http://localhost/');
+        expect(explainUnproxiedLocalPreviewUrl('http://localhost/', vps)).to.contain('Port 80 is a privileged port');
+        expect(explainUnproxiedLocalPreviewUrl('https://127.0.0.1/app', vps)).to.contain('Port 443');
+        expect(explainUnproxiedLocalPreviewUrl('localhost:3000', vps)).to.contain('Port 3000 is the Qaap IDE');
+    });
+
+    it('does not explain URLs that are proxied or not loopback', () => {
+        const vps = 'http://178.1.2.3:3000';
+        expect(explainUnproxiedLocalPreviewUrl('http://localhost:5173/', vps)).to.equal(undefined);
+        expect(explainUnproxiedLocalPreviewUrl('http://localhost:8080/', vps)).to.equal(undefined);
+        expect(explainUnproxiedLocalPreviewUrl('https://example.com/', vps)).to.equal(undefined);
+        expect(explainUnproxiedLocalPreviewUrl('http://localhost:3000/qaap-dev/5173/', 'http://localhost:3000')).to.equal(undefined);
+        expect(explainUnproxiedLocalPreviewUrl('http://localhost:3000/qaap-preview/abc/', 'http://localhost:3000')).to.equal(undefined);
     });
 });

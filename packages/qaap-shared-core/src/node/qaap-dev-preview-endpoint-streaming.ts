@@ -330,7 +330,10 @@ export function handleIdentityProxyExtracted(ctx: QaapDevPreviewEndpointContext,
 export function handleWebSocketUpgradeExtracted(ctx: QaapDevPreviewEndpointContext, req: http.IncomingMessage,
         socket: net.Socket,
         head: Buffer,): void {
-        const pathname = (req.url ?? '').split('?')[0];
+        const rawUrl = req.url ?? '';
+        const queryIndex = rawUrl.indexOf('?');
+        const pathname = queryIndex < 0 ? rawUrl : rawUrl.slice(0, queryIndex);
+        const query = queryIndex < 0 ? '' : rawUrl.slice(queryIndex);
         const hostPreviewId = ctx.previewIdFromHost(req);
         if (hostPreviewId) {
             const hostRecord = ctx.portRegistry.get(hostPreviewId);
@@ -340,13 +343,15 @@ export function handleWebSocketUpgradeExtracted(ctx: QaapDevPreviewEndpointConte
                 return;
             }
             ctx.portRegistry.touchPreview(hostPreviewId, hostRecord.ownerLogin);
-            const hostPath = `${pathname || '/'}${(req.url ?? '').includes('?') ? (req.url ?? '').slice((req.url ?? '').indexOf('?')) : ''}`;
-            void ctx.proxyWebSocket(req, socket, head, hostRecord.port, hostPath);
+            void ctx.proxyWebSocket(req, socket, head, hostRecord.port, `${pathname || '/'}${query}`);
             return;
         }
         const identity = parseQaapIdentityPreviewRequestPath(pathname);
         const legacy = identity ? undefined : parseQaapDevPreviewRequestPath(pathname);
         if (!identity && !legacy) {
+            // Not ours (Theia's /socket.io, agent sockets, …). Unprefixed HMR sockets cannot be
+            // scoped here: browsers send no Referer on WebSocket handshakes and Origin has no
+            // path. The injected history-base script rebases them under the preview prefix.
             return;
         }
         // Reject anonymous WebSocket upgrades before resolving a tenant record. Previously an
@@ -374,20 +379,21 @@ export function handleWebSocketUpgradeExtracted(ctx: QaapDevPreviewEndpointConte
             socket.destroy();
             return;
         }
-        const query = (req.url ?? '').includes('?') ? (req.url ?? '').slice((req.url ?? '').indexOf('?')) : '';
-        const path = `${targetPath}${query}`;
-        void ctx.proxyWebSocket(req, socket, head, targetPort, path);
+        void ctx.proxyWebSocket(req, socket, head, targetPort, `${targetPath}${query}`);
 }
 
 export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext, req: http.IncomingMessage,
         socket: net.Socket,
         head: Buffer,
         port: number,
-        path: string,): Promise<void> {
+        path: string,
+        handshakeTimeoutMs: number = DEV_PREVIEW_WS_HANDSHAKE_TIMEOUT_MS,): Promise<void> {
         // Without an error listener an ECONNRESET on an HMR socket is an uncaught backend exception.
         socket.on('error', () => socket.destroy());
+        const releaseUpgradeHold = holdUpgradeSocket(socket);
         const targetHost = await ctx.resolveTargetHost(port);
         if (!targetHost) {
+            releaseUpgradeHold();
             socket.destroy();
             return;
         }
@@ -400,7 +406,15 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
             method: req.method,
             headers,
         });
+        // The hold keeps engine.io from reaping this socket, so bound the upstream handshake here.
+        const handshakeTimer = setTimeout(() => {
+            releaseUpgradeHold();
+            socket.end('HTTP/1.1 504 Gateway Timeout\r\nConnection: close\r\n\r\n');
+            proxyReq.destroy();
+        }, handshakeTimeoutMs);
         proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+            clearTimeout(handshakeTimer);
+            releaseUpgradeHold();
             const upgradeHeaders = { ...proxyRes.headers };
             sanitizeQaapPreviewResponseHeaders(upgradeHeaders);
             const headerLines = Object.entries(upgradeHeaders)
@@ -413,8 +427,9 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
             if (head.length > 0) {
                 proxySocket.write(head);
             }
+            // Bytes the dev server sent right after its 101 belong to the browser, not back upstream.
             if (proxyHead.length > 0) {
-                proxySocket.write(proxyHead);
+                socket.write(proxyHead);
             }
             proxySocket.on('error', () => socket.destroy());
             socket.on('close', () => proxySocket.destroy());
@@ -424,12 +439,38 @@ export async function proxyWebSocketExtracted(ctx: QaapDevPreviewEndpointContext
         });
         // Dev server refused the upgrade (404/400): relay the status instead of leaving the client socket hanging.
         proxyReq.on('response', proxyRes => {
+            clearTimeout(handshakeTimer);
+            releaseUpgradeHold();
             socket.end(`HTTP/1.1 ${proxyRes.statusCode ?? 502} ${proxyRes.statusMessage ?? 'Bad Gateway'}\r\nConnection: close\r\n\r\n`);
             proxyRes.resume();
         });
         proxyReq.on('error', () => {
+            clearTimeout(handshakeTimer);
+            releaseUpgradeHold();
             ctx.invalidateTargetHost(port);
             socket.destroy();
         });
         proxyReq.end();
+}
+
+/** Upper bound for the dev server's answer (101 or refusal) to a proxied WebSocket upgrade. */
+export const DEV_PREVIEW_WS_HANDSHAKE_TIMEOUT_MS = 30_000;
+
+/**
+ * Theia's socket.io server (engine.io, `destroyUpgrade` on by default) ends every upgrade socket
+ * outside `/socket.io` that is still writable with `bytesWritten <= 0` one second after the
+ * upgrade event. A dev server that takes longer to send its 101 (first HMR compile, slow host
+ * resolution) lost its socket that way. While the proxy owns the socket and the upstream answer
+ * is pending, report a non-zero `bytesWritten` on this instance only; the returned release
+ * restores the real accessor before anything is written. Upstream Theia stays untouched.
+ */
+export function holdUpgradeSocket(socket: net.Socket): () => void {
+    let held = true;
+    Object.defineProperty(socket, 'bytesWritten', { configurable: true, get: () => 1 });
+    return () => {
+        if (held) {
+            held = false;
+            Reflect.deleteProperty(socket, 'bytesWritten');
+        }
+    };
 }

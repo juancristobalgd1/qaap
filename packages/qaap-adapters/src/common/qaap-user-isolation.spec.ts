@@ -37,9 +37,11 @@ describe('normalizeIsolationPath (cross-OS)', () => {
     });
 
     it('win32 host: does not treat "/\\workspace\\..." mangling as a UNC share', () => {
-        // Must become C:\workspace\... (or equivalent), not \\workspace\repos\...
+        // Must become a rooted path: `C:\workspace\...` on a Windows machine (win32.resolve adds the
+        // cwd drive) or drive-less `\workspace\...` when the win32 API runs on a POSIX CI host —
+        // never the UNC share `\\workspace\repos\...`.
         const normalized = normalizeIsolationPath('/\\workspace\\repos\\users\\alice\\o\\r', 'win32');
-        expect(normalized.toLowerCase().replace(/\//g, '\\')).to.match(/^([a-z]:\\)?workspace\\repos\\users\\alice\\o\\r$/i);
+        expect(normalized.replace(/\//g, '\\')).to.match(/^([a-z]:)?\\workspace\\repos\\users\\alice\\o\\r$/i);
         expect(normalized.startsWith('\\\\')).to.equal(false);
     });
 

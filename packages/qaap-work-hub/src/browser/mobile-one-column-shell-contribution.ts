@@ -430,6 +430,19 @@ export class MobileOneColumnShellContribution implements FrontendApplicationCont
         this.onProjectsWorkspaceOpened();
     };
 
+    /**
+     * Symmetric to {@link onDismissProjectsPanelEvent}: the open failed after the panel was dismissed
+     * and the page will not reload, so return to the Projects panel where the error is visible.
+     * @internal Used by the extracted mobile-one-column-shell-contribution-* modules.
+     */
+    public readonly onRestoreProjectsPanelEvent = (): void => {
+        if (peekPreferDesktopIde()) {
+            // The classic IDE stays the active surface; the error toast is already visible there.
+            return;
+        }
+        void this.showMobileProjectsHome();
+    };
+
     /** @internal Used by the extracted mobile-one-column-shell-contribution-* modules. */
     public readonly onLandingHubListChanged = (): void => {
         this.refreshBottomBar();

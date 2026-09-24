@@ -42,6 +42,9 @@ export const OPENROUTER_EXCLUDED_MODEL_SLUGS: ReadonlySet<string> = new Set([
     'nousresearch/hermes-3-llama-3.1-405b:free',
 ]);
 
+/** Default OpenRouter endpoint. It is OpenAI Chat-Completions compatible. */
+export const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
+
 export const OPENROUTER_DEFAULT_FREE_MODELS: readonly string[] = [
     // The OpenRouter free catalog (https://openrouter.ai/models?max_price=0) churns frequently —
     // upstream sponsors go offline (status -2/-5) without the slug being removed from the catalog,

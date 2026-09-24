@@ -4,6 +4,11 @@
 // *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import {
     attachTaskTitleMarquee,
@@ -12,6 +17,8 @@ import {
     setTaskTitleText,
     TASK_TITLE_OVERFLOW_CLASS,
 } from './mobile-projects-task-title-marquee';
+
+disableImportJSDOM();
 
 describe('task title marquee', () => {
     let disableJSDOM: (() => void) | undefined;

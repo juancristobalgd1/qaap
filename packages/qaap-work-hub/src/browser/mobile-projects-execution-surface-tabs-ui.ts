@@ -16,7 +16,7 @@ import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-ov
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
-import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, closeExecutionSurfaceSidebarExtracted, directChildWithClassExtracted, dismissExecutionSurfaceSidebarExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, openExecutionSurfaceSidebarExtracted, openExecutionSurfaceSidebarWhenReadyExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted } from './mobile-projects-execution-surface-tabs-ui-render';
+import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, closeExecutionSurfaceSidebarExtracted, directChildWithClassExtracted, dismissExecutionSurfaceSidebarExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, openExecutionSurfaceSidebarExtracted, openExecutionSurfaceSidebarWhenReadyExtracted, cancelExecutionSurfaceSidebarOpenRetryExtracted, type ExecutionSurfaceSidebarOpenRetry, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted } from './mobile-projects-execution-surface-tabs-ui-render';
 import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabStripExtracted, buildTranscriptTabStripExtracted, createExecutionSurfaceIconSelectExtracted, createTerminalAgentTuiSelectExtracted, executionSurfaceTabSpecsExtracted, executionTabOverflowMenuMinTopExtracted, openExecutionTabOverflowMenuExtracted, resolveExecutionTabOverflowMenuPortalExtracted, resolveTerminalAgentTuiActiveAgentIdExtracted, syncTerminalAgentTuiTriggerExtracted, syncTerminalAgentTuiTriggersInStripExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
 import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline';
 
@@ -123,6 +123,9 @@ export type MobileProjectsExecutionSurfaceSidebarState = NonNullable<MobileProje
 
 /** Tab strip, overflow picker, and execution-surface visibility for transcript and project detail. */
 export class MobileProjectsExecutionSurfaceTabsUi {
+    /** @internal The single pending "open the sidebar once its host exists" retry, if any. */
+    public executionSurfaceSidebarOpenRetry: ExecutionSurfaceSidebarOpenRetry | undefined;
+
     constructor(
         /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
         public readonly host: MobileProjectsExecutionSurfaceTabsHost,
@@ -198,6 +201,15 @@ export class MobileProjectsExecutionSurfaceTabsUi {
         origin: 'transcript' | 'project-detail',
     ): void {
         openExecutionSurfaceSidebarWhenReadyExtracted(this, tab, project, summary, origin);
+    }
+
+    /** Stops a pending {@link openExecutionSurfaceSidebarWhenReady} retry. */
+    cancelExecutionSurfaceSidebarOpenRetry(): void {
+        cancelExecutionSurfaceSidebarOpenRetryExtracted(this);
+    }
+
+    dispose(): void {
+        this.cancelExecutionSurfaceSidebarOpenRetry();
     }
 
     closeExecutionSurfaceSidebar(): void {

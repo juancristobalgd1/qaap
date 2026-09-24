@@ -9,7 +9,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { PreferenceService } from '@theia/core';
 import { AICorePreferences, PREFERENCE_NAME_MAX_RETRIES } from '@theia/ai-core/lib/common/ai-core-preferences';
 import { OpenAiLanguageModelsManager, OpenAiModelDescription } from '@theia/ai-openai/lib/common';
-import { API_KEY_PREF, BASE_URL_PREF, MODELS_PREF, OPENROUTER_DEFAULT_BASE_URL } from './openrouter-preferences';
+import { API_KEY_PREF, BASE_URL_PREF, MODELS_PREF, OPENROUTER_DEFAULT_BASE_URL } from '../common/openrouter-preferences';
 import { filterOpenRouterModelSlugs, normalizeOpenRouterModelSlug, OPENROUTER_PROVIDER_ID } from '../common/openrouter-models';
 
 /**
