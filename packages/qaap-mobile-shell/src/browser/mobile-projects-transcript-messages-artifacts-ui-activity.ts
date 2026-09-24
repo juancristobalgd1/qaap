@@ -12,7 +12,7 @@ import {
 import { resolveQaapTranscriptTrace } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
-import { syncAgentSetupElement } from '../common/qaap-agent-setup-phrases';
+import { syncAgentSetupElement } from '@theia/qaap-agents-ui/lib/common/qaap-agent-setup-phrases';
 import {
     hasMobileExecutionEventTimeline,
     refreshMobileExecutionEventTimeline,

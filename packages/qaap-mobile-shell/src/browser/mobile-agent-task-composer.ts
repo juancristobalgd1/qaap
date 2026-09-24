@@ -16,7 +16,7 @@ import {
     type QaapAgentTaskCreated,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
-import { createAgentSelectField } from './qaap-agent-ui';
+import { createAgentSelectField } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';

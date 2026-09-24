@@ -10,7 +10,7 @@ import {
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     createPickerSheetOptionButton,
-} from './qaap-agent-ui';
+} from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
 import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import {

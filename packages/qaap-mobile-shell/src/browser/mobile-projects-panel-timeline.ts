@@ -22,7 +22,7 @@ import {
     isAgentHiddenOnHostedRuntime,
     localizeHostedLocalhostOAuthAgentMessage,
 } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
 import { isConversationError } from './mobile-projects-transcript-messages-artifacts-helpers';
 import {

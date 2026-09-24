@@ -7,7 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
-import { populateAgentToolbarButton } from './qaap-agent-ui';
+import { populateAgentToolbarButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 
 export interface AnnotationComposerSessionDeps {
     readonly resolveAgentId: () => string;

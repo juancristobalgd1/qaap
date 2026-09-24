@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { createAgentTaskVerificationBadge } from './qaap-agent-ui';
+import { createAgentTaskVerificationBadge } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveLeaderTaskIdFromMessages } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-tree';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';

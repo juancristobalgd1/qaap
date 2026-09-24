@@ -16,6 +16,7 @@
     "@theia/core": "1.73.0",
     "@theia/filesystem": "1.73.0",
     "@theia/qaap-adapters": "1.73.0",
+    "@theia/qaap-agents-ui": "1.73.0",
     "@theia/qaap-ai-nvidia": "1.73.0",
     "@theia/qaap-ai-openrouter": "1.73.0",
     "@theia/qaap-cloud-workspace": "1.73.0",

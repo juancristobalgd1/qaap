@@ -15,7 +15,7 @@ import {
     QAAP_INBOX_ROW_ID_ATTR,
 } from './mobile-projects-hub-incremental-ui';
 import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
-import { createAgentIdentityElement } from './qaap-agent-ui';
+import { createAgentIdentityElement } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-mechanics/lib/browser/qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';

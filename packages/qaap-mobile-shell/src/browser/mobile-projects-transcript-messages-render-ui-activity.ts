@@ -6,7 +6,7 @@ import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/
 import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import {
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,

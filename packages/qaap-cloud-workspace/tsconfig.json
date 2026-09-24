@@ -40,6 +40,9 @@
       "path": "../qaap-adapters"
     },
     {
+      "path": "../qaap-agents-ui"
+    },
+    {
       "path": "../qaap-mobile-shell"
     },
     {

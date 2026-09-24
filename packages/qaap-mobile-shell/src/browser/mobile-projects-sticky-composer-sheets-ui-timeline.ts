@@ -21,7 +21,7 @@ import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
     createUnavailableAgentSheetOption,
-} from './qaap-agent-ui';
+} from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     formatQaiqModelSelectionLabel,
@@ -40,8 +40,8 @@ import {
     createAgentPickerInlineModelButton,
     modelMatchesAgentPickerQuery,
     type QaapAgentPickerSearchEntry,
-} from './qaap-agent-picker-search';
-import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from './qaap-agent-picker-loading';
+} from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-search';
+import { renderAgentPickerSkeleton, replaceAgentPickerLoading } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
 
 export function createComposerAgentPickerChromeExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
     readonly closeTitle: string;

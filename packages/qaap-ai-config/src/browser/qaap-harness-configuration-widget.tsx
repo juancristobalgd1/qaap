@@ -15,7 +15,7 @@ import {
     type QaapHarnessDefinition,
 } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
-import { requestAgentCliUpdate } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-cli-update';
+import { requestAgentCliUpdate } from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import {
     isQaapHarnessEnabled,
     QAAP_DISABLED_HARNESSES_PREF,

@@ -12,7 +12,7 @@ import {
     type QaapAgentCliUpdateInfo,
     type QaapAgentCliUpdateResult,
     type QaapAgentCliUpdatesResponse,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-cli-update';
+} from '@theia/qaap-agents-ui/lib/common/qaap-agent-cli-update';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
 import { isOnPath } from './qaap-agent-task-runner-utils';
 

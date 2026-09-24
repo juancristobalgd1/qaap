@@ -32,7 +32,7 @@ import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mob
 import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
-import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from './qaap-agent-picker-loading';
+import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-picker-loading';
 
 export interface MobileProjectsStickyComposerAgentsHost {
     stickyComposerPinnedAgentId: string | undefined;

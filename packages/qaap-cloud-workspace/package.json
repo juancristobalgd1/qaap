@@ -13,6 +13,7 @@
     "@theia/filesystem": "1.73.0",
     "@theia/process": "1.73.0",
     "@theia/qaap-adapters": "1.73.0",
+    "@theia/qaap-agents-ui": "1.73.0",
     "@theia/qaap-mobile-shell": "1.73.0",
     "@theia/qaap-persistence": "1.73.0",
     "@theia/qaap-shared-core": "1.73.0",

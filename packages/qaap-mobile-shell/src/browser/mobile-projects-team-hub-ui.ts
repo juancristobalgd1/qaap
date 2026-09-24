@@ -19,7 +19,7 @@ import {
     appendSubtitleMetaPart,
     createAgentMetaBadge,
     createAgentRowAvatar,
-} from './qaap-agent-ui';
+} from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 
 export interface WorkHubApprovalItem {
     readonly member: WorkHubTeamMember;

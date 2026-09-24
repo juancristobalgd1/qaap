@@ -1,0 +1,41 @@
+{
+  "name": "@theia/qaap-agents-ui",
+  "version": "1.73.0",
+  "description": "Qaap — agents UI: agent picker, sign-in dialogs and CLI update notices (product layer)",
+  "dependencies": {
+    "@theia/core": "1.73.0",
+    "@theia/qaap-adapters": "1.73.0",
+    "@theia/qaap-mobile-mechanics": "1.73.0",
+    "@theia/qaap-shared-core": "1.73.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "theiaExtensions": [],
+  "keywords": [
+    "theia-extension"
+  ],
+  "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juancristobalgd1/theia.git"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "theiaext build",
+    "clean": "theiaext clean",
+    "compile": "theiaext compile",
+    "lint": "theiaext lint",
+    "test": "nyc mocha --config ../../configs/mocharc.yml --require ./test-support/ensure-jsdom.js \"./lib/**/*.*spec.js\"",
+    "watch": "theiaext watch"
+  },
+  "devDependencies": {
+    "@theia/ext-scripts": "1.73.0"
+  },
+  "nyc": {
+    "extends": "../../configs/nyc.json"
+  }
+}

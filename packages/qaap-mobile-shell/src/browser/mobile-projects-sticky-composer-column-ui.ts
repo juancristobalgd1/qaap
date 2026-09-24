@@ -22,7 +22,7 @@ import {
     populateAgentToolbarButton,
     populateApprovalPolicyToolbarButton,
     populateModeToolbarButton,
-} from './qaap-agent-ui';
+} from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveComposerEnterDeliveryOverride } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import { populateModelCapabilityToolbarButton } from './model-capability-popover';
 import {

@@ -10,7 +10,7 @@
 // text) as the FIRST child of the turn's segments body. Extracted from
 // qaap-execution-event-timeline.ts.
 
-import { createAgentIdentityElement, resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { createAgentIdentityElement, resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 

@@ -50,7 +50,7 @@ import {
     QaapAgentConversationSummaryDTO,
 } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { } from '@theia/qaap-shared-core/lib/common/qaap-conversation-clipboard-text';
-import { } from './qaap-agent-ui';
+import { } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import {

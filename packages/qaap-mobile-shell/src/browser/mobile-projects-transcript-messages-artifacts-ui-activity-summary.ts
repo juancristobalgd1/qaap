@@ -16,7 +16,7 @@ import {
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
-import { createAgentSetupElement, destroyAgentSetupElement } from '../common/qaap-agent-setup-phrases';
+import { createAgentSetupElement, destroyAgentSetupElement } from '@theia/qaap-agents-ui/lib/common/qaap-agent-setup-phrases';
 import {
     createThinkingOrbIndicator,
 } from './qaap-thinking-orb-indicator';

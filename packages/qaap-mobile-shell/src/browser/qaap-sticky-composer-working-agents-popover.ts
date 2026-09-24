@@ -23,7 +23,7 @@ import {
     workingDetailTaskLogHasTranscriptSegments,
     WORKING_DETAIL_TASK_LOG_CLASS,
 } from '@theia/qaap-shared-core/lib/browser/qaap-sticky-composer-working-detail-task-log';
-import { resolveAgentDisplayLabel } from './qaap-agent-ui';
+import { resolveAgentDisplayLabel } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 
 export const WORKING_CONTROL_CLASS = 'theia-mobile-sticky-composer-working-control';
 export const WORKING_EXPAND_CLIP_CLASS = 'qaap-working-agents-expand-clip';

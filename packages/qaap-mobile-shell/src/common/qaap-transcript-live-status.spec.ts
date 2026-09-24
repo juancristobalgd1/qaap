@@ -7,7 +7,7 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { createTranscriptLiveStatusElement, ensureTranscriptLiveStatusAtScrollerTail, formatTranscriptLiveStatusMeta, removeNestedTranscriptLiveStatusCopies, resolveTranscriptLiveStatusTokenCount, syncTranscriptLiveStatusElement, TRANSCRIPT_LIVE_STATUS_CLASS, TRANSCRIPT_LIVE_STATUS_LOGO_CLASS } from './qaap-transcript-live-status';
-import { QAAP_BRAND_LOGO_INDICATOR_CLASS } from './qaap-agent-setup-phrases';
+import { QAAP_BRAND_LOGO_INDICATOR_CLASS } from '@theia/qaap-agents-ui/lib/common/qaap-agent-setup-phrases';
 
 describe('qaap-transcript-live-status', () => {
     let disableJSDOM: (() => void) | undefined;

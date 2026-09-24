@@ -13,7 +13,7 @@ import {
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
 } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
-import { createApprovalPolicySheetOptionButton, createModeSheetOptionButton } from './qaap-agent-ui';
+import { createApprovalPolicySheetOptionButton, createModeSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 import {
     filterQaiqModelsWithConfiguredCredentials,

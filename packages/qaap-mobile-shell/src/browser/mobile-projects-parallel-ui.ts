@@ -36,7 +36,7 @@ import {
     listQaiqModelsFromRegisteredLanguageModels,
     mergeQaiqModelOptions,
 } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
-import { createAgentBrandChip, createAgentBrandSplitChip, createAgentRowAvatar, createDiffStatsLine, createPickerSheetOptionButton } from './qaap-agent-ui';
+import { createAgentBrandChip, createAgentBrandSplitChip, createAgentRowAvatar, createDiffStatsLine, createPickerSheetOptionButton } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 export interface MobileProjectsParallelUiDeps {

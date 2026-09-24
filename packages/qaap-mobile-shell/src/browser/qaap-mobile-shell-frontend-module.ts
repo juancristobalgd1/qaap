@@ -20,7 +20,7 @@ import '@theia/qaap-mobile-mechanics/src/browser/style/qaap-mobile-touch-scroll.
 import '../../src/browser/style/qaap-empty-workbench-brand.css';
 import '../../src/browser/style/qaap-ide-preferences.css';
 import '../../src/browser/style/qaap-project-bootstrap.css';
-import '../../src/browser/style/qaap-agent-cli-update-toast.css';
+import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-cli-update-toast.css';
 import '../../src/browser/style/qaap-chat-mic.css';
 import '../../src/browser/style/qaap-composer-prompt-improve.css';
 import '../../src/browser/style/qaap-chat-select-dropdown.css';
@@ -30,7 +30,7 @@ import '../../src/browser/style/qaap-work-hub-sessions-sidebar.css';
 import '../../src/browser/style/qaap-work-hub-pull-requests.css';
 import '../../src/browser/style/qaap-transcript-timeline-premium.css';
 import '../../src/browser/style/qaap-transcript-lobehub.css';
-import '../../src/browser/style/qaap-agent-setup-animations.css';
+import '@theia/qaap-agents-ui/src/browser/style/qaap-agent-setup-animations.css';
 import '../../src/browser/style/qaap-transcript-live-status.css';
 import '@theia/ai-claude-code/src/browser/style/claude-code-tool-renderers.css';
 
@@ -66,7 +66,7 @@ import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layo
 import { QaapKeybindingRegistry } from '@theia/qaap-shared-core/lib/browser/qaap-keybinding-registry';
 import { QaapQuickCommandService } from './qaap-quick-command-service';
 import { QaapBuildFreshnessContribution } from '@theia/qaap-shared-core/lib/browser/qaap-build-freshness-contribution';
-import { QaapAgentCliUpdateContribution } from './qaap-agent-cli-update-contribution';
+import { QaapAgentCliUpdateContribution } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-cli-update-contribution';
 import { MobileOneColumnShellContribution } from './mobile-one-column-shell-contribution';
 import { QaapShellLayoutRestoreContribution } from './qaap-shell-layout-restore-contribution';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
