@@ -144,7 +144,7 @@ export async function fetchGithubRepositories(accessToken: string): Promise<Qaap
         url.searchParams.set('page', String(page));
         url.searchParams.set('sort', 'updated');
         url.searchParams.set('direction', 'desc');
-        const response = await fetch(url.toString(), {
+        const response = await fetchGithubRepositoryRequest(url.toString(), {
             headers: {
                 Accept: 'application/vnd.github+json',
                 Authorization: `Bearer ${accessToken}`,

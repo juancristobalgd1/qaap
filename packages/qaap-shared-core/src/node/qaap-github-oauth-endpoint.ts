@@ -1022,12 +1022,32 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 baseEnv[key] = value;
             }
         }
-        const child = await this.tenantProcess.spawnArgvPreparedAsync('git', args, {
+        // One deadline covers preparing the tenant worker (Docker ensure can hang) and git itself.
+        const deadline = Date.now() + GIT_OPERATION_TIMEOUT_MS;
+        const timeoutError = (): Error => new Error(`Git operation timed out after ${Math.ceil(GIT_OPERATION_TIMEOUT_MS / 1000)} seconds`);
+        const prepared = this.tenantProcess.spawnArgvPreparedAsync('git', args, {
             cwd,
             env: this.tenantProcess.resolveProcessEnv(cwd, baseEnv),
             stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'],
             detached: true,
         });
+        let prepareTimer: ReturnType<typeof setTimeout> | undefined;
+        let prepareTimedOut = false;
+        // A worker that finishes preparing after we gave up must not run git unsupervised.
+        prepared.then(late => {
+            if (prepareTimedOut) {
+                late.kill();
+            }
+        }, () => undefined);
+        const child = await Promise.race([
+            prepared,
+            new Promise<never>((_, reject) => {
+                prepareTimer = setTimeout(() => {
+                    prepareTimedOut = true;
+                    reject(new Error(`${timeoutError().message} while starting the tenant worker`));
+                }, GIT_OPERATION_TIMEOUT_MS);
+            }),
+        ]).finally(() => clearTimeout(prepareTimer));
         return new Promise((resolve, reject) => {
             let stdout = '';
             let stderr = '';
@@ -1070,8 +1090,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }));
             timeout = setTimeout(() => {
                 child.kill();
-                complete(() => reject(new Error(`Git operation timed out after ${Math.ceil(GIT_OPERATION_TIMEOUT_MS / 1000)} seconds`)));
-            }, GIT_OPERATION_TIMEOUT_MS);
+                complete(() => reject(timeoutError()));
+            }, Math.max(0, deadline - Date.now()));
         });
     }
 

@@ -35,9 +35,9 @@ export class QaapProjectSwitcherService {
                 description: nls.localize('qaap/projectSwitcher/addRepositoryDescription', 'Clone an existing GitHub repository'),
                 iconClasses: ['codicon', 'codicon-repo-clone'],
                 alwaysShow: true,
+                // cloneGithubProject() already opens (and reloads into) the cloned workspace.
                 run: async () => {
-                    const updatedProjects = await this.projectsService.cloneGithubProject();
-                    await this.openNewestProject(updatedProjects);
+                    await this.projectsService.cloneGithubProject();
                 },
             },
             {
@@ -45,9 +45,9 @@ export class QaapProjectSwitcherService {
                 description: nls.localize('qaap/projectSwitcher/addNewProjectDescription', 'Create a new private GitHub repository'),
                 iconClasses: ['codicon', 'codicon-new-folder'],
                 alwaysShow: true,
+                // createGithubProject() already opens (and reloads into) the new workspace.
                 run: async () => {
-                    const updatedProjects = await this.projectsService.createGithubProject();
-                    await this.openNewestProject(updatedProjects);
+                    await this.projectsService.createGithubProject();
                 },
             },
         ];
@@ -75,13 +75,6 @@ export class QaapProjectSwitcherService {
             await selected?.run();
         } finally {
             document.body.classList.remove('theia-mobile-mod-project-switcher-quickpick');
-        }
-    }
-
-    protected async openNewestProject(projects: MobileProjectEntry[] | undefined): Promise<void> {
-        const project = projects?.[0];
-        if (project) {
-            await this.projectsService.openInCurrentWindow(project);
         }
     }
 
