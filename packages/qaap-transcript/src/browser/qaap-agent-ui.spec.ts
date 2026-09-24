@@ -5,7 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import { expect } from 'chai';
 import {
@@ -17,8 +19,13 @@ import {
 } from '@theia/qaap-agents-ui/lib/browser/qaap-agent-ui';
 import { resolveAgentApprovalPolicyOption } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { QAIQ_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('qaap-agent-ui', () => {
+
+    useSuiteJSDOM();
 
     it('resolveAgentDisplayLabel prefers brand label then fallback', () => {
         expect(resolveAgentDisplayLabel('codex')).to.equal('Codex');

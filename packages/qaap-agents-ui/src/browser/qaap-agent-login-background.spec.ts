@@ -5,7 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 const browserGlobals = globalThis as unknown as { DragEvent?: unknown };
 if (!browserGlobals.DragEvent) {
@@ -16,6 +18,9 @@ import { expect } from 'chai';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { resolveAgentLoginCwd } from './qaap-agent-login-cwd';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 const project = {
     id: 'github:octocat/Hello-World',
@@ -41,6 +46,9 @@ const summary = {
 } satisfies QaapAgentConversationSummaryDTO;
 
 describe('resolveAgentLoginCwd', () => {
+
+    useSuiteJSDOM();
+
     it('prepares the selected repository before using a container cwd from the summary', async () => {
         const prepared = '/workspace/repos/users/alice/octocat/Hello-World';
         let prepareCalls = 0;

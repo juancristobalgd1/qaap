@@ -8,7 +8,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 
 import {
     clampTranscriptFilesTreeSize,
@@ -26,8 +28,14 @@ import {
     type TranscriptFileTreeEntry,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('qaap-transcript-files-view', () => {
+
+    useSuiteJSDOM();
+
     it('hides Files/Changes labels on narrow or coarse pointers', () => {
         const cssPath = path.join(__dirname, '..', '..', '..', 'qaap-work-hub', 'src', 'browser', 'style', 'mobile-workbench-conversation.css');
         const css = fs.readFileSync(cssPath, 'utf8');

@@ -3,10 +3,15 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import type { ChatModel } from '@theia/ai-chat';
 import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
@@ -15,6 +20,8 @@ import {
     resolveChatModelContextUsageBreakdown,
     resolveVpsContextUsageBreakdown,
 } from './qaap-chat-context-usage-panel';
+
+disableImportJSDOM();
 
 describe('qaap-chat-context-usage-panel', () => {
     it('uses flat transparent rows and a violet Prompt context swatch', () => {

@@ -3,6 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
 import * as markdownit from '@theia/core/shared/markdown-it';
 import { parseHTML } from 'linkedom';
@@ -25,8 +31,13 @@ import {
 } from './mobile-projects-transcript-messages-content-ui';
 import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-worker-client';
 import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+
+disableImportJSDOM();
 
 describe('MobileProjectsTranscriptMessagesContentUi', () => {
+
+    useSuiteJSDOM();
 
     const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
     let previousDocument: Document | undefined;

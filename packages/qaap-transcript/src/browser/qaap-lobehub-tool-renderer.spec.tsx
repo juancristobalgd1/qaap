@@ -4,9 +4,14 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 // jsdom must be enabled before importing React / the renderer modules so that
 // the JSX runtime + the renderer's `useEffect`/`useState` hooks resolve.
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 import { expect } from 'chai';
 import { ContextMenuRenderer, HoverService, OpenerService } from '@theia/core/lib/browser';
@@ -26,6 +31,8 @@ import { flushSync } from '@theia/core/shared/react-dom';
 import * as React from '@theia/core/shared/react';
 import { ResponseNode } from '@theia/ai-chat-ui/lib/browser/chat-tree-view';
 import { QaapLobehubToolRenderer } from './qaap-lobehub-tool-renderer';
+
+disableImportJSDOM();
 
 const mockContextMenuRenderer = {} as ContextMenuRenderer;
 const mockOpenerService = {} as OpenerService;

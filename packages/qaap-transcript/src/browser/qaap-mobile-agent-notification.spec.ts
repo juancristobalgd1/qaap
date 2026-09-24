@@ -9,9 +9,9 @@
 // Use require() for runtime values so enableJSDOM() runs before any DOM-dependent module loads.
 // `import type` is erased by TypeScript (no JS output, no DOM dependency).
 const { enableJSDOM } = require('@theia/core/lib/browser/test/jsdom') as typeof import('@theia/core/lib/browser/test/jsdom');
-// Enable JSDOM at module load so DOM-dependent requires below succeed. The `before()` hook
-// re-enables it for the tests in case a prior test file disabled it in its `after()` hook.
-enableJSDOM();
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
 // Node 22+ ships a global CustomEvent that JSDOM's window.dispatchEvent does not recognize.
 // Align the global with JSDOM's so `new CustomEvent(...)` produces an event JSDOM accepts.
 (globalThis as unknown as { CustomEvent: typeof CustomEvent }).CustomEvent = window.CustomEvent;
@@ -28,6 +28,8 @@ import type { QaapTurnSettleNotifyContribution as QaapTurnSettleNotifyContributi
 import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapConversationChangeEvent } from '@theia/qaap-shared-core/lib/common/qaap-conversation-change';
+
+disableImportJSDOM();
 
 /**
  * Verifies the two halves of the mobile notification routing change:

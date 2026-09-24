@@ -3,6 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+// Modules below may touch the DOM while loading; it is removed again after the imports
+// so no suite depends on another spec file leaving jsdom behind.
+const disableImportJSDOM = enableJSDOM();
+
 // Regression guard: a closing-narrative text segment that the dedup /
 // error-suppression logic deliberately SKIPS (duplicate closing block, or
 // identical to `msg.error`) has no DOM host by design. Before the fix,
@@ -13,7 +19,6 @@
 // instead recognize the intentional skip and keep patching in place.
 
 import { expect } from 'chai';
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import * as markdownit from '@theia/core/shared/markdown-it';
 import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
@@ -23,6 +28,8 @@ import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-t
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { findMobileProcessAccordion } from './qaap-execution-event-timeline';
+
+disableImportJSDOM();
 
 describe('qaap streaming closing-narrative skip does not churn the process accordion', () => {
     let disableJSDOM: (() => void) | undefined;
