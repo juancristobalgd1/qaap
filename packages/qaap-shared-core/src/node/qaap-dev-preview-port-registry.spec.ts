@@ -153,3 +153,29 @@ describe('QaapDevPreviewPortRegistry onDidReleasePort', () => {
     });
 });
 
+describe('QaapDevPreviewPortRegistry sweepExpiredClaims', () => {
+    class AgingRegistry extends QaapDevPreviewPortRegistry {
+        age(port: number, ms: number): void {
+            const entry = this.claims.get(port)!;
+            this.claims.set(port, { ...entry, at: entry.at - ms });
+        }
+    }
+
+    it('reports each TTL expiry once and re-arms when the claim is refreshed', () => {
+        const registry = new AgingRegistry();
+        const fired: number[] = [];
+        registry.onDidReleasePort(port => fired.push(port));
+        registry.claim(5173, 'alice');
+        registry.claim(5174, 'alice');
+        expect(registry.sweepExpiredClaims()).to.deep.equal([]);
+        registry.age(5173, 31 * 60_000);
+        expect(registry.sweepExpiredClaims()).to.deep.equal([5173]);
+        expect(registry.sweepExpiredClaims()).to.deep.equal([], 'reported once');
+        expect(registry.staleOwnerOf(5173)).to.equal('alice', 'the stale claim itself is kept');
+        registry.claim(5173, 'alice');
+        registry.age(5173, 31 * 60_000);
+        expect(registry.sweepExpiredClaims()).to.deep.equal([5173]);
+        expect(fired).to.deep.equal([5173, 5173]);
+    });
+});
+

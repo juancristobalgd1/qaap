@@ -76,6 +76,8 @@ export class QaapDevPreviewPortRegistry {
     protected persistTimer: NodeJS.Timeout | undefined;
     protected persistenceEnabled = false;
     protected readonly onDidReleasePortEmitter = new Emitter<number>();
+    /** Claim timestamp already reported as expired, per port, so each expiry fires once. */
+    protected readonly expiryReportedAt = new Map<number, number>();
 
     /**
      * Fires with a port whose preview claim was released, expired, rebound or handed to a new
@@ -359,6 +361,30 @@ export class QaapDevPreviewPortRegistry {
             return undefined;
         }
         return entry.ownerLogin;
+    }
+
+    /**
+     * Fires {@link onDidReleasePort} once for every claim that expired by TTL since the last sweep.
+     * Expired claims are kept (see {@link ownerOf}); a refreshed claim re-arms its port. Meant for a
+     * periodic timer (the endpoint's reaper), not the request path: it walks all claims.
+     */
+    sweepExpiredClaims(now: number = Date.now()): number[] {
+        const expired: number[] = [];
+        for (const [port, entry] of this.claims) {
+            if (now - entry.at > QaapDevPreviewPortRegistry.CLAIM_TTL_MS && this.expiryReportedAt.get(port) !== entry.at) {
+                this.expiryReportedAt.set(port, entry.at);
+                expired.push(port);
+            }
+        }
+        for (const port of this.expiryReportedAt.keys()) {
+            if (!this.claims.has(port)) {
+                this.expiryReportedAt.delete(port);
+            }
+        }
+        for (const port of expired) {
+            this.onDidReleasePortEmitter.fire(port);
+        }
+        return expired;
     }
 
     /** The login of an EXPIRED claim, or undefined when unclaimed or the claim is still live. */

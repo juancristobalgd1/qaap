@@ -14,6 +14,7 @@ import { holdUpgradeSocket, proxyWebSocketExtracted } from './qaap-dev-preview-e
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import type { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
+import { resolveQaapPreviewIdentity } from '../common/qaap-preview-identity';
 import { buildQaapPreviewBridgeLoader, injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { injectQaapPreviewDocumentScripts } from '../common/qaap-dev-preview';
 
@@ -342,6 +343,43 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             methods.length = 0;
             await withRegistry.probeLocalDevServer(upstreamPort);
             expect(methods).to.deep.equal(['HEAD', 'GET']);
+        });
+
+        it('the reaper clears probe caches for reaped previews and TTL-expired claims', async () => {
+            const invalidated: number[] = [];
+            class ReaperEndpoint extends ProxyTestEndpoint {
+                override invalidateTargetHost(port: number): void {
+                    invalidated.push(port);
+                }
+                start(registry: QaapDevPreviewPortRegistry): void {
+                    (this as unknown as { portRegistry: QaapDevPreviewPortRegistry }).portRegistry = registry;
+                    this.init();
+                }
+            }
+            class AgingRegistry extends QaapDevPreviewPortRegistry {
+                age(port: number, ms: number): void {
+                    const entry = this.claims.get(port)!;
+                    this.claims.set(port, { ...entry, at: entry.at - ms });
+                }
+            }
+            const registry = new AgingRegistry();
+            const reaper = new ReaperEndpoint();
+            reaper.start(registry);
+            const dead = registry.register({
+                ...resolveQaapPreviewIdentity({
+                    userId: 'alice', workspaceId: 'file:///w', projectId: 'file:///w', conversationId: 'c', processId: 'p',
+                }),
+                ownerLogin: 'alice',
+                root: '/w',
+                port: 41001,
+                osProcessId: 2 ** 31 - 2, // no such process: reaped immediately
+            })!;
+            registry.claim(41002, 'bob');
+            registry.age(41002, 31 * 60_000);
+            invalidated.length = 0;
+            await reaper.reapStoppedPreviews();
+            expect(registry.get(dead.previewId)).to.equal(undefined);
+            expect([...invalidated].sort()).to.deep.equal([41001, 41002]);
         });
 
         it('probe does not retry a refused connection', async () => {

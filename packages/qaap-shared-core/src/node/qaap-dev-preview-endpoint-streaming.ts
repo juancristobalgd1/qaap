@@ -127,6 +127,9 @@ export async function reapStoppedPreviewsExtracted(ctx: QaapDevPreviewEndpointCo
         ctx.reaperRunning = true;
         try {
             const now = Date.now();
+            // TTL-expired claims have no explicit release; report them here so per-port probe
+            // caches are dropped on the reaper's cadence instead of scanning per request.
+            ctx.portRegistry.sweepExpiredClaims(now);
             for (const record of ctx.portRegistry.records()) {
                 // A dead OS process is reaped immediately, even inside the start grace and even if
                 // the port answers — a recycled port would otherwise keep a zombie record alive.
@@ -137,6 +140,7 @@ export async function reapStoppedPreviewsExtracted(ctx: QaapDevPreviewEndpointCo
                         || await ctx.probeLocalDevServer(record.port))) {
                     continue;
                 }
+                // releasePreview fires onDidReleasePort, which clears this port's probe caches.
                 ctx.portRegistry.releasePreview(record.previewId, record.ownerLogin);
                 console.info('[qaap-preview] reaped stopped process', {
                     previewId: record.previewId,
