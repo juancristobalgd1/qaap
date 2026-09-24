@@ -25,6 +25,21 @@
       "path": "../ai-mcp"
     },
     {
+      "path": "../ai-anthropic"
+    },
+    {
+      "path": "../ai-google"
+    },
+    {
+      "path": "../ai-ollama"
+    },
+    {
+      "path": "../ai-openai"
+    },
+    {
+      "path": "../ai-vercel-ai"
+    },
+    {
       "path": "../core"
     },
     {
