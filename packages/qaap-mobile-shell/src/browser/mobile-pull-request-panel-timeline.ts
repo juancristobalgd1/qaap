@@ -1,27 +1,17 @@
-// @ts-nocheck
+import type { MobilePullRequestPanelContext } from './mobile-pull-request-panel-context';
 // Extracted from mobile-pull-request-panel.ts
 
+import type { PullRequestDecision, PullRequestReview, StoredPullRequestReview, ToastKind } from './mobile-pull-request-panel';
 import { nls } from '@theia/core/lib/common/nls';
-import { Disposable } from '@theia/core/lib/common/disposable';
 import {
-    fetchQaapGithubPullRequests,
     mergeQaapGithubPullRequest,
-    startGithubOAuth,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type {
     QaapGithubPullRequestFile,
-    QaapGithubPullRequestLine,
     QaapGithubPullRequestSummary,
-    QaapGithubRepositorySummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import {
-    createMobileSheetGrabber,
-    installMobilePullToRefresh,
-    installMobileSheetDragDismiss,
-} from './mobile-sheet-gestures';
-import { MobileSnackbar } from './mobile-snackbar';
 
-export function decideTopExtracted(ctx: any, decision: PullRequestDecision, comment?: string): void {
+export function decideTopExtracted(ctx: MobilePullRequestPanelContext, decision: PullRequestDecision, comment?: string): void {
         const top = ctx.queue[0];
         if (!top || ctx.animating) {
             return;
@@ -46,7 +36,7 @@ export function decideTopExtracted(ctx: any, decision: PullRequestDecision, comm
         }, 220);
 }
 
-export function startMergeConfirmationExtracted(ctx: any): void {
+export function startMergeConfirmationExtracted(ctx: MobilePullRequestPanelContext): void {
         if (ctx.mergeState === 'failed') {
             void ctx.executeMergeAndDeploy();
             return;
@@ -62,7 +52,7 @@ export function startMergeConfirmationExtracted(ctx: any): void {
         ctx.render();
 }
 
-export async function executeMergeAndDeployExtracted(ctx: any): Promise<void> {
+export async function executeMergeAndDeployExtracted(ctx: MobilePullRequestPanelContext): Promise<void> {
         const pr = ctx.activePullRequest;
         if (!pr || ctx.queue.length > 0 || ctx.mergeState === 'merging' || ctx.mergeState === 'deploying') {
             return;
@@ -97,7 +87,7 @@ export async function executeMergeAndDeployExtracted(ctx: any): Promise<void> {
         }
 }
 
-export function undoExtracted(ctx: any): void {
+export function undoExtracted(ctx: MobilePullRequestPanelContext): void {
         const last = ctx.history.pop();
         if (!last || ctx.mergeState === 'merging' || ctx.mergeState === 'deploying') {
             return;
@@ -115,7 +105,7 @@ export function undoExtracted(ctx: any): void {
         ctx.render();
 }
 
-export function resetExtracted(ctx: any): void {
+export function resetExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.clearMergeTimer();
         ctx.hideToast();
         ctx.decisions.clear();
@@ -130,7 +120,7 @@ export function resetExtracted(ctx: any): void {
         ctx.render();
 }
 
-export function showUndoToastExtracted(ctx: any, file: QaapGithubPullRequestFile, review: PullRequestReview): void {
+export function showUndoToastExtracted(ctx: MobilePullRequestPanelContext, file: QaapGithubPullRequestFile, review: PullRequestReview): void {
         ctx.hideToast();
         ctx.toast.replaceChildren();
         ctx.toast.classList.remove('theia-mod-success', 'theia-mod-error');
@@ -145,7 +135,7 @@ export function showUndoToastExtracted(ctx: any, file: QaapGithubPullRequestFile
         ctx.toastTimer = window.setTimeout(() => ctx.hideToast(), 3200);
 }
 
-export function showToastExtracted(ctx: any, message: string, kind: ToastKind = 'default'): void {
+export function showToastExtracted(ctx: MobilePullRequestPanelContext, message: string, kind: ToastKind = 'default'): void {
         ctx.hideToast();
         ctx.toast.replaceChildren(ctx.createTextSpan(message));
         ctx.toast.classList.remove('theia-mod-success', 'theia-mod-error');
@@ -157,7 +147,7 @@ export function showToastExtracted(ctx: any, message: string, kind: ToastKind = 
         ctx.toastTimer = window.setTimeout(() => ctx.hideToast(), kind === 'success' ? 5200 : 3600);
 }
 
-export function hideToastExtracted(ctx: any): void {
+export function hideToastExtracted(ctx: MobilePullRequestPanelContext): void {
         if (ctx.toastTimer !== undefined) {
             window.clearTimeout(ctx.toastTimer);
             ctx.toastTimer = undefined;
@@ -166,7 +156,7 @@ export function hideToastExtracted(ctx: any): void {
         ctx.toast.hidden = true;
 }
 
-export function fireConfettiExtracted(ctx: any): void {
+export function fireConfettiExtracted(ctx: MobilePullRequestPanelContext): void {
         const existing = ctx.root.querySelector('.theia-mobile-pr-confetti');
         existing?.remove();
         const confetti = document.createElement('div');
@@ -185,7 +175,7 @@ export function fireConfettiExtracted(ctx: any): void {
         window.setTimeout(() => confetti.remove(), 1700);
 }
 
-export function reviewLabelExtracted(ctx: any, review: PullRequestReview): string {
+export function reviewLabelExtracted(ctx: MobilePullRequestPanelContext, review: PullRequestReview): string {
         if (review.comment) {
             return review.comment;
         }
@@ -198,7 +188,7 @@ export function reviewLabelExtracted(ctx: any, review: PullRequestReview): strin
         return nls.localize('qaap/mobilePr/changesRequested', 'Changes requested');
 }
 
-export function reviewStatsExtracted(ctx: any): { total: number; reviewed: number; approved: number; rejected: number; commented: number } {
+export function reviewStatsExtracted(ctx: MobilePullRequestPanelContext): { total: number; reviewed: number; approved: number; rejected: number; commented: number } {
         const values = [...ctx.decisions.values()];
         return {
             total: ctx.activePullRequest?.filesPreview.length ?? 0,
@@ -209,7 +199,7 @@ export function reviewStatsExtracted(ctx: any): { total: number; reviewed: numbe
         };
 }
 
-export function saveReviewStateExtracted(ctx: any): void {
+export function saveReviewStateExtracted(ctx: MobilePullRequestPanelContext): void {
         const pr = ctx.activePullRequest;
         if (!pr) {
             return;
@@ -226,7 +216,7 @@ export function saveReviewStateExtracted(ctx: any): void {
         }
 }
 
-export function readStoredReviewExtracted(ctx: any, pr: QaapGithubPullRequestSummary): StoredPullRequestReview | undefined {
+export function readStoredReviewExtracted(ctx: MobilePullRequestPanelContext, pr: QaapGithubPullRequestSummary): StoredPullRequestReview | undefined {
         try {
             const raw = window.localStorage.getItem(ctx.storageKey(pr));
             return raw ? JSON.parse(raw) as StoredPullRequestReview : undefined;
@@ -235,14 +225,14 @@ export function readStoredReviewExtracted(ctx: any, pr: QaapGithubPullRequestSum
         }
 }
 
-export function clearMergeTimerExtracted(ctx: any): void {
+export function clearMergeTimerExtracted(ctx: MobilePullRequestPanelContext): void {
         if (ctx.mergeTimer !== undefined) {
             window.clearTimeout(ctx.mergeTimer);
             ctx.mergeTimer = undefined;
         }
 }
 
-export function delayExtracted(ctx: any, ms: number): Promise<void> {
+export function delayExtracted(ctx: MobilePullRequestPanelContext, ms: number): Promise<void> {
         return new Promise(resolve => {
             ctx.mergeTimer = window.setTimeout(() => {
                 ctx.mergeTimer = undefined;
@@ -251,7 +241,7 @@ export function delayExtracted(ctx: any, ms: number): Promise<void> {
         });
 }
 
-export function applyDragStylesExtracted(ctx: any, host: Element | null, animate = false): void {
+export function applyDragStylesExtracted(ctx: MobilePullRequestPanelContext, host: Element | null, animate = false): void {
         if (!(host instanceof HTMLElement)) {
             return;
         }
@@ -273,7 +263,7 @@ export function applyDragStylesExtracted(ctx: any, host: Element | null, animate
         }
 }
 
-export function createTestsPillExtracted(ctx: any, tests: QaapGithubPullRequestSummary['tests']): HTMLElement {
+export function createTestsPillExtracted(ctx: MobilePullRequestPanelContext, tests: QaapGithubPullRequestSummary['tests']): HTMLElement {
         const span = document.createElement('span');
         span.className = `theia-mod-tests theia-mod-tests-${tests}`;
         const icon = tests === 'failing' ? 'codicon-close' : tests === 'pending' ? 'codicon-clock' : tests === 'unknown' ? 'codicon-question' : 'codicon-check';
@@ -281,20 +271,20 @@ export function createTestsPillExtracted(ctx: any, tests: QaapGithubPullRequestS
         return span;
 }
 
-export function createIconExtracted(ctx: any, icon: string): HTMLElement {
+export function createIconExtracted(ctx: MobilePullRequestPanelContext, icon: string): HTMLElement {
         const span = document.createElement('span');
         span.className = `codicon ${icon}`;
         span.setAttribute('aria-hidden', 'true');
         return span;
 }
 
-export function createTextSpanExtracted(ctx: any, text: string): HTMLElement {
+export function createTextSpanExtracted(ctx: MobilePullRequestPanelContext, text: string): HTMLElement {
         const span = document.createElement('span');
         span.textContent = text;
         return span;
 }
 
-export function createClassedTextSpanExtracted(ctx: any, className: string, text: string): HTMLElement {
+export function createClassedTextSpanExtracted(ctx: MobilePullRequestPanelContext, className: string, text: string): HTMLElement {
         const span = ctx.createTextSpan(text);
         span.className = className;
         return span;

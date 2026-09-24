@@ -1,27 +1,17 @@
-// @ts-nocheck
+import type { MobilePullRequestPanelContext } from './mobile-pull-request-panel-context';
 // Extracted from mobile-pull-request-panel.ts
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     fetchQaapGithubPullRequests,
-    mergeQaapGithubPullRequest,
-    startGithubOAuth,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type {
     QaapGithubPullRequestFile,
-    QaapGithubPullRequestLine,
     QaapGithubPullRequestSummary,
-    QaapGithubRepositorySummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import {
-    createMobileSheetGrabber,
-    installMobilePullToRefresh,
-    installMobileSheetDragDismiss,
-} from './mobile-sheet-gestures';
-import { MobileSnackbar } from './mobile-snackbar';
 
-export function disposeExtracted(ctx: any): void {
+export function disposeExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.loadRequestGeneration++;
         ctx.visible = false;
         ctx.root.classList.remove('theia-mod-visible');
@@ -35,7 +25,7 @@ export function disposeExtracted(ctx: any): void {
         ctx.root.remove();
 }
 
-export function showExtracted(ctx: any): void {
+export function showExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.visible = true;
         ctx.root.hidden = false;
         ctx.root.setAttribute('aria-hidden', 'false');
@@ -47,7 +37,7 @@ export function showExtracted(ctx: any): void {
         }
 }
 
-export function showWithPullRequestExtracted(ctx: any, pullRequest: QaapGithubPullRequestSummary): void {
+export function showWithPullRequestExtracted(ctx: MobilePullRequestPanelContext, pullRequest: QaapGithubPullRequestSummary): void {
         ctx.visible = true;
         ctx.root.hidden = false;
         ctx.root.setAttribute('aria-hidden', 'false');
@@ -67,7 +57,7 @@ export function showWithPullRequestExtracted(ctx: any, pullRequest: QaapGithubPu
         ctx.usePullRequest(existing ?? pullRequest);
 }
 
-export function hideExtracted(ctx: any): void {
+export function hideExtracted(ctx: MobilePullRequestPanelContext): void {
         if (!ctx.visible) {
             return;
         }
@@ -89,7 +79,7 @@ export function hideExtracted(ctx: any): void {
         ctx.delegate.onDismiss();
 }
 
-export async function loadPullRequestsExtracted(ctx: any): Promise<void> {
+export async function loadPullRequestsExtracted(ctx: MobilePullRequestPanelContext): Promise<void> {
         const generation = ++ctx.loadRequestGeneration;
         ctx.loading = true;
         ctx.errorMessage = undefined;
@@ -131,7 +121,7 @@ export async function loadPullRequestsExtracted(ctx: any): Promise<void> {
         ctx.render();
 }
 
-export function clearActivePullRequestExtracted(ctx: any): void {
+export function clearActivePullRequestExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.clearMergeTimer();
         ctx.activePullRequest = undefined;
         ctx.queue = [];
@@ -142,7 +132,7 @@ export function clearActivePullRequestExtracted(ctx: any): void {
         ctx.mergeError = undefined;
 }
 
-export function usePullRequestExtracted(ctx: any, pullRequest: QaapGithubPullRequestSummary): void {
+export function usePullRequestExtracted(ctx: MobilePullRequestPanelContext, pullRequest: QaapGithubPullRequestSummary): void {
         ctx.clearMergeTimer();
         ctx.activePullRequest = pullRequest;
         ctx.confirmingMerge = false;
@@ -152,7 +142,7 @@ export function usePullRequestExtracted(ctx: any, pullRequest: QaapGithubPullReq
         ctx.restoreReviewState();
 }
 
-export function restoreReviewStateExtracted(ctx: any): void {
+export function restoreReviewStateExtracted(ctx: MobilePullRequestPanelContext): void {
         const pullRequest = ctx.activePullRequest;
         if (!pullRequest) {
             return;
@@ -180,7 +170,7 @@ export function restoreReviewStateExtracted(ctx: any): void {
         ctx.queue = pullRequest.filesPreview.filter(file => !ctx.decisions.has(file.f));
 }
 
-export function renderExtracted(ctx: any): void {
+export function renderExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.renderHeader();
         ctx.clearActionChrome();
         if (ctx.loading && !ctx.activePullRequest) {
@@ -223,7 +213,7 @@ export function renderExtracted(ctx: any): void {
         ctx.renderActions(allReviewed, stats);
 }
 
-export function renderHeaderExtracted(ctx: any): void {
+export function renderHeaderExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.header.replaceChildren();
         const pullRequest = ctx.activePullRequest;
         const repoLabel = ctx.repositoryLabel();
@@ -305,7 +295,7 @@ export function renderHeaderExtracted(ctx: any): void {
         }
 }
 
-export function createPullRequestPickerExtracted(ctx: any, pullRequest: QaapGithubPullRequestSummary): HTMLElement {
+export function createPullRequestPickerExtracted(ctx: MobilePullRequestPanelContext, pullRequest: QaapGithubPullRequestSummary): HTMLElement {
         const picker = document.createElement('div');
         picker.className = 'theia-mobile-pr-picker';
         picker.setAttribute('role', 'tablist');
@@ -342,7 +332,7 @@ export function createPullRequestPickerExtracted(ctx: any, pullRequest: QaapGith
         return picker;
 }
 
-export function repositoryLabelExtracted(ctx: any): string {
+export function repositoryLabelExtracted(ctx: MobilePullRequestPanelContext): string {
         const pr = ctx.activePullRequest;
         if (pr) {
             return `${pr.owner}/${pr.repo}`;
@@ -354,7 +344,7 @@ export function repositoryLabelExtracted(ctx: any): string {
         return nls.localize('qaap/mobilePr/noRepo', 'No repository open');
 }
 
-export function renderProgressExtracted(ctx: any, reviewed: number, total: number, approved: number, rejected: number, commented: number): void {
+export function renderProgressExtracted(ctx: MobilePullRequestPanelContext, reviewed: number, total: number, approved: number, rejected: number, commented: number): void {
         ctx.progressLabel.textContent = total > 0 ? `${reviewed} / ${total} reviewed` : '0 reviewed';
         ctx.progressFill.style.width = total > 0 ? `${(reviewed / total) * 100}%` : '0';
         ctx.approveCount.textContent = approved > 0 ? `ok ${approved}` : '';
@@ -362,7 +352,7 @@ export function renderProgressExtracted(ctx: any, reviewed: number, total: numbe
         ctx.noteCount.textContent = commented > 0 ? `note ${commented}` : '';
 }
 
-export function createCardStackExtracted(ctx: any): HTMLElement {
+export function createCardStackExtracted(ctx: MobilePullRequestPanelContext): HTMLElement {
         const host = document.createElement('div');
         host.className = 'theia-mobile-pr-card-host';
         const approve = document.createElement('div');
@@ -388,7 +378,7 @@ export function createCardStackExtracted(ctx: any): HTMLElement {
         return host;
 }
 
-export function createFileCardExtracted(ctx: any, file: QaapGithubPullRequestFile, top: boolean): HTMLElement {
+export function createFileCardExtracted(ctx: MobilePullRequestPanelContext, file: QaapGithubPullRequestFile, top: boolean): HTMLElement {
         const card = document.createElement('article');
         card.className = top ? 'theia-mobile-pr-card theia-mod-top' : 'theia-mobile-pr-card theia-mod-next';
         card.setAttribute('aria-label', `${file.f}, ${file.adds} additions, ${file.dels} deletions`);

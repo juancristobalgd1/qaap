@@ -1,27 +1,16 @@
-// @ts-nocheck
+import type { MobilePullRequestPanelContext } from './mobile-pull-request-panel-context';
 // Extracted from mobile-pull-request-panel.ts
 
+import type { MobilePullRequestPanel } from './mobile-pull-request-panel';
 import { nls } from '@theia/core/lib/common/nls';
-import { Disposable } from '@theia/core/lib/common/disposable';
 import {
-    fetchQaapGithubPullRequests,
-    mergeQaapGithubPullRequest,
     startGithubOAuth,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type {
-    QaapGithubPullRequestFile,
     QaapGithubPullRequestLine,
-    QaapGithubPullRequestSummary,
-    QaapGithubRepositorySummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import {
-    createMobileSheetGrabber,
-    installMobilePullToRefresh,
-    installMobileSheetDragDismiss,
-} from './mobile-sheet-gestures';
-import { MobileSnackbar } from './mobile-snackbar';
 
-export function createDiffLineExtracted(ctx: any, line: QaapGithubPullRequestLine): HTMLElement {
+export function createDiffLineExtracted(ctx: MobilePullRequestPanelContext, line: QaapGithubPullRequestLine): HTMLElement {
         const row = document.createElement('div');
         row.className = `theia-mobile-pr-diff-line theia-mod-${line.t}`;
         const number = document.createElement('span');
@@ -37,7 +26,7 @@ export function createDiffLineExtracted(ctx: any, line: QaapGithubPullRequestLin
         return row;
 }
 
-export function createBusyStateExtracted(ctx: any): HTMLElement {
+export function createBusyStateExtracted(ctx: MobilePullRequestPanelContext): HTMLElement {
         const list = document.createElement('div');
         list.className = 'theia-mobile-pr-skeleton-list';
         list.setAttribute('aria-busy', 'true');
@@ -48,7 +37,7 @@ export function createBusyStateExtracted(ctx: any): HTMLElement {
         return list;
 }
 
-export function createSkeletonCardExtracted(ctx: any): HTMLElement {
+export function createSkeletonCardExtracted(ctx: MobilePullRequestPanelContext): HTMLElement {
         const card = document.createElement('div');
         card.className = 'theia-mobile-pr-skeleton-card q-card';
         const title = document.createElement('div');
@@ -66,7 +55,7 @@ export function createSkeletonCardExtracted(ctx: any): HTMLElement {
         return card;
 }
 
-export function createSignInStateExtracted(ctx: any): HTMLElement {
+export function createSignInStateExtracted(ctx: MobilePullRequestPanelContext): HTMLElement {
         const state = document.createElement('div');
         state.className = 'theia-mobile-pr-empty theia-mod-signin';
         state.append(
@@ -80,7 +69,7 @@ export function createSignInStateExtracted(ctx: any): HTMLElement {
         return state;
 }
 
-export function createErrorStateExtracted(ctx: any): HTMLElement {
+export function createErrorStateExtracted(ctx: MobilePullRequestPanelContext): HTMLElement {
         const state = document.createElement('div');
         state.className = 'theia-mobile-pr-empty theia-mod-error';
         state.append(
@@ -91,7 +80,7 @@ export function createErrorStateExtracted(ctx: any): HTMLElement {
         return state;
 }
 
-export function createEmptyStateExtracted(ctx: any): HTMLElement {
+export function createEmptyStateExtracted(ctx: MobilePullRequestPanelContext): HTMLElement {
         const empty = document.createElement('div');
         empty.className = 'theia-mobile-pr-empty';
         const repoLabel = ctx.repositoryLabel();
@@ -113,7 +102,7 @@ export function createEmptyStateExtracted(ctx: any): HTMLElement {
         return empty;
 }
 
-export function createDoneStateExtracted(ctx: any, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): HTMLElement {
+export function createDoneStateExtracted(ctx: MobilePullRequestPanelContext, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): HTMLElement {
         const done = document.createElement('div');
         done.className = 'theia-mobile-pr-done';
         if (ctx.confirmingMerge) {
@@ -152,7 +141,7 @@ export function createDoneStateExtracted(ctx: any, stats: ReturnType<MobilePullR
         return done;
 }
 
-export function doneTitleExtracted(ctx: any): string {
+export function doneTitleExtracted(ctx: MobilePullRequestPanelContext): string {
         if (ctx.mergeState === 'merged') {
             return nls.localize('qaap/mobilePr/deployedTitle', 'Merged & deployed');
         }
@@ -171,7 +160,7 @@ export function doneTitleExtracted(ctx: any): string {
         return nls.localize('qaap/mobilePr/allReviewed', 'All reviewed');
 }
 
-export function doneSummaryExtracted(ctx: any, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): string {
+export function doneSummaryExtracted(ctx: MobilePullRequestPanelContext, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): string {
         const pr = ctx.activePullRequest;
         if (ctx.mergeState === 'merged') {
             return nls.localize('qaap/mobilePr/deployedSummary', 'PR #{0} landed on {1}.', String(pr?.number ?? ''), pr?.base ?? 'base');
@@ -196,7 +185,7 @@ export function doneSummaryExtracted(ctx: any, stats: ReturnType<MobilePullReque
         return `${stats.approved} approved - ${stats.rejected} changes - ${stats.commented} notes`;
 }
 
-export function renderActionsExtracted(ctx: any, allReviewed: boolean, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
+export function renderActionsExtracted(ctx: MobilePullRequestPanelContext, allReviewed: boolean, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
         if (allReviewed) {
             ctx.renderReviewedActions(stats);
             return;
@@ -224,7 +213,7 @@ export function renderActionsExtracted(ctx: any, allReviewed: boolean, stats: Re
         ctx.setCtaContent(quickRow, buttonRow);
 }
 
-export function renderReviewedActionsExtracted(ctx: any, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
+export function renderReviewedActionsExtracted(ctx: MobilePullRequestPanelContext, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
         const blockers = stats.rejected + stats.commented;
         const buttonRow = document.createElement('div');
         buttonRow.className = 'theia-mobile-pr-button-row';
@@ -252,13 +241,13 @@ export function renderReviewedActionsExtracted(ctx: any, stats: ReturnType<Mobil
         ctx.setCtaContent(buttonRow);
 }
 
-export function resetSheetPresentationExtracted(ctx: any): void {
+export function resetSheetPresentationExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.root.style.transition = '';
         ctx.root.style.transform = '';
         ctx.root.style.opacity = '';
 }
 
-export function renderEmptyActionsExtracted(ctx: any): void {
+export function renderEmptyActionsExtracted(ctx: MobilePullRequestPanelContext): void {
         const buttonRow = document.createElement('div');
         buttonRow.className = 'theia-mobile-pr-button-row';
         const refresh = ctx.createActionButton(
@@ -285,7 +274,7 @@ export function renderEmptyActionsExtracted(ctx: any): void {
         ctx.setCtaContent(buttonRow);
 }
 
-export function renderErrorActionsExtracted(ctx: any): void {
+export function renderErrorActionsExtracted(ctx: MobilePullRequestPanelContext): void {
         const buttonRow = document.createElement('div');
         buttonRow.className = 'theia-mobile-pr-button-row';
         const retry = ctx.createActionButton(
@@ -299,7 +288,7 @@ export function renderErrorActionsExtracted(ctx: any): void {
         ctx.setCtaContent(buttonRow);
 }
 
-export function renderSignInActionsExtracted(ctx: any): void {
+export function renderSignInActionsExtracted(ctx: MobilePullRequestPanelContext): void {
         const buttonRow = document.createElement('div');
         buttonRow.className = 'theia-mobile-pr-button-row';
         const signIn = ctx.createActionButton(
@@ -312,7 +301,7 @@ export function renderSignInActionsExtracted(ctx: any): void {
         ctx.setCtaContent(buttonRow);
 }
 
-export function mergeButtonLabelExtracted(ctx: any, blockers: number): string {
+export function mergeButtonLabelExtracted(ctx: MobilePullRequestPanelContext, blockers: number): string {
         if (ctx.mergeState === 'merged') {
             return nls.localize('qaap/mobilePr/deployed', 'Deployed');
         }
@@ -328,7 +317,7 @@ export function mergeButtonLabelExtracted(ctx: any, blockers: number): string {
         return nls.localize('qaap/mobilePr/merge', 'Merge & deploy');
 }
 
-export function createActionButtonExtracted(ctx: any, kind: 'primary' | 'secondary' | 'ghost',
+export function createActionButtonExtracted(ctx: MobilePullRequestPanelContext, kind: 'primary' | 'secondary' | 'ghost',
         label: string,
         icon: string,
         onClick: () => void): HTMLButtonElement {
@@ -341,7 +330,7 @@ export function createActionButtonExtracted(ctx: any, kind: 'primary' | 'seconda
         return button;
 }
 
-export function createChipButtonExtracted(ctx: any, label: string, icon: string, onClick: () => void): HTMLButtonElement {
+export function createChipButtonExtracted(ctx: MobilePullRequestPanelContext, label: string, icon: string, onClick: () => void): HTMLButtonElement {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'theia-mobile-pr-chip';
@@ -350,14 +339,14 @@ export function createChipButtonExtracted(ctx: any, label: string, icon: string,
         return button;
 }
 
-export function createStatChipExtracted(ctx: any, icon: string, text: string): HTMLElement {
+export function createStatChipExtracted(ctx: MobilePullRequestPanelContext, icon: string, text: string): HTMLElement {
         const span = document.createElement('span');
         span.className = 'theia-mobile-pr-stat-chip';
         span.append(ctx.createIcon(icon), ctx.createTextSpan(text));
         return span;
 }
 
-export function onPointerDownExtracted(ctx: any, event: PointerEvent, card: HTMLElement): void {
+export function onPointerDownExtracted(ctx: MobilePullRequestPanelContext, event: PointerEvent, card: HTMLElement): void {
         if (ctx.animating || !ctx.queue.length) {
             return;
         }
@@ -369,7 +358,7 @@ export function onPointerDownExtracted(ctx: any, event: PointerEvent, card: HTML
         card.setPointerCapture(event.pointerId);
 }
 
-export function onPointerMoveExtracted(ctx: any, event: PointerEvent, card: HTMLElement): void {
+export function onPointerMoveExtracted(ctx: MobilePullRequestPanelContext, event: PointerEvent, card: HTMLElement): void {
         if (ctx.pointerId !== event.pointerId) {
             return;
         }
@@ -391,7 +380,7 @@ export function onPointerMoveExtracted(ctx: any, event: PointerEvent, card: HTML
         ctx.applyDragStyles(card.parentElement);
 }
 
-export function onPointerUpExtracted(ctx: any, event: PointerEvent, card: HTMLElement): void {
+export function onPointerUpExtracted(ctx: MobilePullRequestPanelContext, event: PointerEvent, card: HTMLElement): void {
         if (ctx.pointerId !== event.pointerId) {
             return;
         }
@@ -415,7 +404,7 @@ export function onPointerUpExtracted(ctx: any, event: PointerEvent, card: HTMLEl
         }
 }
 
-export function toggleExpandedExtracted(ctx: any): void {
+export function toggleExpandedExtracted(ctx: MobilePullRequestPanelContext): void {
         ctx.expanded = !ctx.expanded;
         ctx.dragX = 0;
         ctx.render();

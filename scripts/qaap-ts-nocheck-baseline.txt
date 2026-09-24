@@ -1,6 +1,6 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 23 files.
+# 19 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
@@ -10,10 +10,6 @@ packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution-rend
 packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution-timeline.ts
 packages/qaap-mobile-shell/src/browser/mobile-one-column-shell-contribution.ts
-packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-render.ts
-packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-streaming.ts
-packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel-timeline.ts
-packages/qaap-mobile-shell/src/browser/mobile-pull-request-panel.ts
 packages/qaap-mobile-shell/src/browser/mobile-shell-bottom-bar-controller-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-shell-bottom-bar-controller-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-shell-bottom-bar-controller-timeline.ts

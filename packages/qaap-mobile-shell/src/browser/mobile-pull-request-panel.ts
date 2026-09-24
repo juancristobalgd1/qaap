@@ -2,15 +2,9 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
-import {
-    fetchQaapGithubPullRequests,
-    mergeQaapGithubPullRequest,
-    startGithubOAuth,
-} from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type {
     QaapGithubPullRequestFile,
     QaapGithubPullRequestLine,
@@ -27,12 +21,12 @@ import { clearActivePullRequestExtracted, createCardStackExtracted, createFileCa
 import { createActionButtonExtracted, createBusyStateExtracted, createChipButtonExtracted, createDiffLineExtracted, createDoneStateExtracted, createEmptyStateExtracted, createErrorStateExtracted, createSignInStateExtracted, createSkeletonCardExtracted, createStatChipExtracted, doneSummaryExtracted, doneTitleExtracted, mergeButtonLabelExtracted, onPointerDownExtracted, onPointerMoveExtracted, onPointerUpExtracted, renderActionsExtracted, renderEmptyActionsExtracted, renderErrorActionsExtracted, renderReviewedActionsExtracted, renderSignInActionsExtracted, resetSheetPresentationExtracted, toggleExpandedExtracted } from './mobile-pull-request-panel-streaming';
 import { applyDragStylesExtracted, clearMergeTimerExtracted, createClassedTextSpanExtracted, createIconExtracted, createTestsPillExtracted, createTextSpanExtracted, decideTopExtracted, delayExtracted, executeMergeAndDeployExtracted, fireConfettiExtracted, hideToastExtracted, readStoredReviewExtracted, resetExtracted, reviewLabelExtracted, reviewStatsExtracted, saveReviewStateExtracted, showToastExtracted, showUndoToastExtracted, startMergeConfirmationExtracted, undoExtracted } from './mobile-pull-request-panel-timeline';
 
-type PullRequestDecision = 'approved' | 'rejected' | 'commented';
+export type PullRequestDecision = 'approved' | 'rejected' | 'commented';
 type PullRequestMergeState = 'idle' | 'merging' | 'deploying' | 'merged' | 'failed';
 type DragMode = 'horizontal' | 'vertical';
-type ToastKind = 'default' | 'success' | 'error';
+export type ToastKind = 'default' | 'success' | 'error';
 
-interface PullRequestReview {
+export interface PullRequestReview {
     decision: PullRequestDecision;
     comment?: string;
 }
@@ -42,7 +36,7 @@ interface PullRequestHistoryEntry {
     review: PullRequestReview;
 }
 
-interface StoredPullRequestReview {
+export interface StoredPullRequestReview {
     decisions: Array<[string, PullRequestReview]>;
     history: Array<{ path: string; review: PullRequestReview }>;
     mergeState?: PullRequestMergeState;
@@ -56,46 +50,87 @@ const QAAP_MOBILE_PR_STORAGE_PREFIX = 'qaap.mobilePr.review.';
 
 export class MobilePullRequestPanel {
 
-    protected readonly root: HTMLElement;
-    protected readonly header: HTMLElement;
-    protected readonly progressLabel: HTMLElement;
-    protected readonly progressFill: HTMLElement;
-    protected readonly approveCount: HTMLElement;
-    protected readonly rejectCount: HTMLElement;
-    protected readonly noteCount: HTMLElement;
-    protected readonly hintRow: HTMLElement;
-    protected readonly stack: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly root: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly header: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly progressLabel: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly progressFill: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly approveCount: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly rejectCount: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly noteCount: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly hintRow: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly stack: HTMLElement;
     protected readonly ctaRow: HTMLElement;
-    protected readonly toast: HTMLElement;
-    protected pullRequests: QaapGithubPullRequestSummary[] = [];
-    protected activePullRequest: QaapGithubPullRequestSummary | undefined;
-    protected currentRepository: QaapGithubRepositorySummary | undefined;
-    protected queue: QaapGithubPullRequestFile[] = [];
-    protected decisions = new Map<string, PullRequestReview>();
-    protected history: PullRequestHistoryEntry[] = [];
-    protected visible = false;
-    protected loaded = false;
-    protected loading = false;
-    protected signedOut = false;
-    protected errorMessage: string | undefined;
-    protected confirmingMerge = false;
-    protected dragStartX = 0;
-    protected dragStartY = 0;
-    protected dragX = 0;
-    protected pointerId: number | undefined;
-    protected dragMode: DragMode | undefined;
-    protected animating = false;
-    protected expanded = false;
-    protected mergeState: PullRequestMergeState = 'idle';
-    protected mergeTimer: number | undefined;
-    protected toastTimer: number | undefined;
-    protected mergeError: string | undefined;
-    protected dragDismissDispose: Disposable = Disposable.NULL;
-    protected pullToRefreshDispose: Disposable = Disposable.NULL;
-    /** Bumps on hide so in-flight `loadPullRequests` cannot append stale CTA rows after close. */
-    protected loadRequestGeneration = 0;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readonly toast: HTMLElement;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public pullRequests: QaapGithubPullRequestSummary[] = [];
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public activePullRequest: QaapGithubPullRequestSummary | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public currentRepository: QaapGithubRepositorySummary | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public queue: QaapGithubPullRequestFile[] = [];
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public decisions = new Map<string, PullRequestReview>();
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public history: PullRequestHistoryEntry[] = [];
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public visible = false;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public loaded = false;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public loading = false;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public signedOut = false;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public errorMessage: string | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public confirmingMerge = false;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public dragStartX = 0;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public dragStartY = 0;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public dragX = 0;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public pointerId: number | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public dragMode: DragMode | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public animating = false;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public expanded = false;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public mergeState: PullRequestMergeState = 'idle';
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public mergeTimer: number | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public toastTimer: number | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public mergeError: string | undefined;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public dragDismissDispose: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public pullToRefreshDispose: Disposable = Disposable.NULL;
+    /**
+     * Bumps on hide so in-flight `loadPullRequests` cannot append stale CTA rows after close.
+     * @internal Used by the extracted mobile-pull-request-panel-* modules.
+     */
+    public loadRequestGeneration = 0;
 
-    constructor(protected readonly delegate: MobilePullRequestPanelDelegate) {
+    constructor(
+        /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+        public readonly delegate: MobilePullRequestPanelDelegate,
+    ) {
         this.root = document.createElement('div');
         this.root.className = 'theia-mobile-pr';
         this.root.setAttribute('role', 'dialog');
@@ -193,237 +228,297 @@ export class MobilePullRequestPanel {
         hideExtracted(this);
     }
 
-    protected async loadPullRequests(): Promise<void> {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public async loadPullRequests(): Promise<void> {
         return loadPullRequestsExtracted(this);
     }
 
-    protected clearActivePullRequest(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public clearActivePullRequest(): void {
         clearActivePullRequestExtracted(this);
     }
 
-    protected usePullRequest(pullRequest: QaapGithubPullRequestSummary): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public usePullRequest(pullRequest: QaapGithubPullRequestSummary): void {
         usePullRequestExtracted(this, pullRequest);
     }
 
-    protected restoreReviewState(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public restoreReviewState(): void {
         restoreReviewStateExtracted(this);
     }
 
-    /** Single place to reset footer actions (avoids stacked rows after re-open). */
-    protected clearActionChrome(): void {
+    /**
+     * Single place to reset footer actions (avoids stacked rows after re-open).
+     * @internal Used by the extracted mobile-pull-request-panel-* modules.
+     */
+    public clearActionChrome(): void {
         this.root.querySelectorAll('.theia-mobile-pr-button-row, .theia-mobile-pr-quick-row').forEach(el => el.remove());
         this.ctaRow.replaceChildren();
     }
 
-    protected setCtaContent(...nodes: Node[]): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public setCtaContent(...nodes: Node[]): void {
         this.ctaRow.replaceChildren(...nodes);
     }
 
-    protected render(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public render(): void {
         renderExtracted(this);
     }
 
-    protected renderHeader(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public renderHeader(): void {
         renderHeaderExtracted(this);
     }
 
-    protected createPullRequestPicker(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createPullRequestPicker(pullRequest: QaapGithubPullRequestSummary): HTMLElement {
         return createPullRequestPickerExtracted(this, pullRequest);
     }
 
-    protected repositoryLabel(): string {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public repositoryLabel(): string {
         return repositoryLabelExtracted(this);
     }
 
-    protected renderProgress(reviewed: number, total: number, approved: number, rejected: number, commented: number): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public renderProgress(reviewed: number, total: number, approved: number, rejected: number, commented: number): void {
         renderProgressExtracted(this, reviewed, total, approved, rejected, commented);
     }
 
-    protected createCardStack(): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createCardStack(): HTMLElement {
         return createCardStackExtracted(this);
     }
 
-    protected createFileCard(file: QaapGithubPullRequestFile, top: boolean): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createFileCard(file: QaapGithubPullRequestFile, top: boolean): HTMLElement {
         return createFileCardExtracted(this, file, top);
     }
 
-    protected createDiffLine(line: QaapGithubPullRequestLine): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createDiffLine(line: QaapGithubPullRequestLine): HTMLElement {
         return createDiffLineExtracted(this, line);
     }
 
-    protected createBusyState(): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createBusyState(): HTMLElement {
         return createBusyStateExtracted(this);
     }
 
-    protected createSkeletonCard(): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createSkeletonCard(): HTMLElement {
         return createSkeletonCardExtracted(this);
     }
 
-    protected createSignInState(): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createSignInState(): HTMLElement {
         return createSignInStateExtracted(this);
     }
 
-    protected createErrorState(): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createErrorState(): HTMLElement {
         return createErrorStateExtracted(this);
     }
 
-    protected createEmptyState(): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createEmptyState(): HTMLElement {
         return createEmptyStateExtracted(this);
     }
 
-    protected createDoneState(stats: ReturnType<MobilePullRequestPanel['reviewStats']>): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createDoneState(stats: ReturnType<MobilePullRequestPanel['reviewStats']>): HTMLElement {
         return createDoneStateExtracted(this, stats);
     }
 
-    protected doneTitle(): string {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public doneTitle(): string {
         return doneTitleExtracted(this);
     }
 
-    protected doneSummary(stats: ReturnType<MobilePullRequestPanel['reviewStats']>): string {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public doneSummary(stats: ReturnType<MobilePullRequestPanel['reviewStats']>): string {
         return doneSummaryExtracted(this, stats);
     }
 
-    protected renderActions(allReviewed: boolean, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public renderActions(allReviewed: boolean, stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
         renderActionsExtracted(this, allReviewed, stats);
     }
 
-    protected renderReviewedActions(stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public renderReviewedActions(stats: ReturnType<MobilePullRequestPanel['reviewStats']>): void {
         renderReviewedActionsExtracted(this, stats);
     }
 
-    protected resetSheetPresentation(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public resetSheetPresentation(): void {
         resetSheetPresentationExtracted(this);
     }
 
-    protected renderEmptyActions(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public renderEmptyActions(): void {
         renderEmptyActionsExtracted(this);
     }
 
-    protected renderErrorActions(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public renderErrorActions(): void {
         renderErrorActionsExtracted(this);
     }
 
-    protected renderSignInActions(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public renderSignInActions(): void {
         renderSignInActionsExtracted(this);
     }
 
-    protected mergeButtonLabel(blockers: number): string {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public mergeButtonLabel(blockers: number): string {
         return mergeButtonLabelExtracted(this, blockers);
     }
 
-    protected createActionButton(kind: 'primary' | 'secondary' | 'ghost', label: string, icon: string, onClick: () => void): HTMLButtonElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createActionButton(kind: 'primary' | 'secondary' | 'ghost', label: string, icon: string, onClick: () => void): HTMLButtonElement {
         return createActionButtonExtracted(this, kind, label, icon, onClick);
     }
 
-    protected createChipButton(label: string, icon: string, onClick: () => void): HTMLButtonElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createChipButton(label: string, icon: string, onClick: () => void): HTMLButtonElement {
         return createChipButtonExtracted(this, label, icon, onClick);
     }
 
-    protected createStatChip(icon: string, text: string): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createStatChip(icon: string, text: string): HTMLElement {
         return createStatChipExtracted(this, icon, text);
     }
 
-    protected onPointerDown(event: PointerEvent, card: HTMLElement): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public onPointerDown(event: PointerEvent, card: HTMLElement): void {
         onPointerDownExtracted(this, event, card);
     }
 
-    protected onPointerMove(event: PointerEvent, card: HTMLElement): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public onPointerMove(event: PointerEvent, card: HTMLElement): void {
         onPointerMoveExtracted(this, event, card);
     }
 
-    protected onPointerUp(event: PointerEvent, card: HTMLElement): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public onPointerUp(event: PointerEvent, card: HTMLElement): void {
         onPointerUpExtracted(this, event, card);
     }
 
-    protected toggleExpanded(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public toggleExpanded(): void {
         toggleExpandedExtracted(this);
     }
 
-    protected decideTop(decision: PullRequestDecision, comment?: string): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public decideTop(decision: PullRequestDecision, comment?: string): void {
         decideTopExtracted(this, decision, comment);
     }
 
-    protected startMergeConfirmation(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public startMergeConfirmation(): void {
         startMergeConfirmationExtracted(this);
     }
 
-    protected async executeMergeAndDeploy(): Promise<void> {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public async executeMergeAndDeploy(): Promise<void> {
         return executeMergeAndDeployExtracted(this);
     }
 
-    protected undo(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public undo(): void {
         undoExtracted(this);
     }
 
-    protected reset(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public reset(): void {
         resetExtracted(this);
     }
 
-    protected showUndoToast(file: QaapGithubPullRequestFile, review: PullRequestReview): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public showUndoToast(file: QaapGithubPullRequestFile, review: PullRequestReview): void {
         showUndoToastExtracted(this, file, review);
     }
 
-    protected showToast(message: string, kind: ToastKind = 'default'): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public showToast(message: string, kind: ToastKind = 'default'): void {
         showToastExtracted(this, message, kind);
     }
 
-    protected hideToast(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public hideToast(): void {
         hideToastExtracted(this);
     }
 
-    protected fireConfetti(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public fireConfetti(): void {
         fireConfettiExtracted(this);
     }
 
-    protected reviewLabel(review: PullRequestReview): string {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public reviewLabel(review: PullRequestReview): string {
         return reviewLabelExtracted(this, review);
     }
 
-    protected reviewStats(): { total: number; reviewed: number; approved: number; rejected: number; commented: number } {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public reviewStats(): { total: number; reviewed: number; approved: number; rejected: number; commented: number } {
         return reviewStatsExtracted(this);
     }
 
-    protected findFile(path: string): QaapGithubPullRequestFile | undefined {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public findFile(path: string): QaapGithubPullRequestFile | undefined {
         return this.activePullRequest?.filesPreview.find(file => file.f === path);
     }
 
-    protected saveReviewState(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public saveReviewState(): void {
         saveReviewStateExtracted(this);
     }
 
-    protected readStoredReview(pr: QaapGithubPullRequestSummary): StoredPullRequestReview | undefined {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public readStoredReview(pr: QaapGithubPullRequestSummary): StoredPullRequestReview | undefined {
         return readStoredReviewExtracted(this, pr);
     }
 
-    protected storageKey(pr: QaapGithubPullRequestSummary): string {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public storageKey(pr: QaapGithubPullRequestSummary): string {
         return `${QAAP_MOBILE_PR_STORAGE_PREFIX}${pr.owner}/${pr.repo}#${pr.number}`;
     }
 
-    protected clearMergeTimer(): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public clearMergeTimer(): void {
         clearMergeTimerExtracted(this);
     }
 
-    protected delay(ms: number): Promise<void> {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public delay(ms: number): Promise<void> {
         return delayExtracted(this, ms);
     }
 
-    protected applyDragStyles(host: Element | null, animate = false): void {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public applyDragStyles(host: Element | null, animate = false): void {
         applyDragStylesExtracted(this, host, animate);
     }
 
-    protected createTestsPill(tests: QaapGithubPullRequestSummary['tests']): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createTestsPill(tests: QaapGithubPullRequestSummary['tests']): HTMLElement {
         return createTestsPillExtracted(this, tests);
     }
 
-    protected createIcon(icon: string): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createIcon(icon: string): HTMLElement {
         return createIconExtracted(this, icon);
     }
 
-    protected createTextSpan(text: string): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createTextSpan(text: string): HTMLElement {
         return createTextSpanExtracted(this, text);
     }
 
-    protected createClassedTextSpan(className: string, text: string): HTMLElement {
+    /** @internal Used by the extracted mobile-pull-request-panel-* modules. */
+    public createClassedTextSpan(className: string, text: string): HTMLElement {
         return createClassedTextSpanExtracted(this, className, text);
     }
 }
