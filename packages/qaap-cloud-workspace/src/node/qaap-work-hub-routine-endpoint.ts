@@ -12,7 +12,7 @@ import {
     type QaapUpdateWorkHubRoutineBody,
     type QaapWorkHubRoutine,
     type QaapWorkHubRoutineListResponse,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-routine';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-routine';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,

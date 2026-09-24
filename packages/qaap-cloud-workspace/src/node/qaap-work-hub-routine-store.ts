@@ -12,7 +12,7 @@ import { QaapSqliteStore, resolveQaapSqlitePath } from '@theia/qaap-persistence/
 import {
     normalizeRoutineCronExpression,
     normalizeRoutineTimezone,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-cron';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-cron';
 import {
     normalizeRoutineIntervalHours,
     normalizeRoutineRunMode,
@@ -20,7 +20,7 @@ import {
     type QaapUpdateWorkHubRoutineBody,
     type QaapWorkHubRoutine,
     type QaapWorkHubRoutineLastRunState,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-routine';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-routine';
 
 const STORE_PATH = path.join(os.homedir(), '.qaap', 'work-hub-routines.json');
 const SQLITE_PATH = resolveQaapSqlitePath(STORE_PATH);

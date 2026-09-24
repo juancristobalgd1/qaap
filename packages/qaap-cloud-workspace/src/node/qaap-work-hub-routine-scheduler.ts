@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
-import { routineIsDue } from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-routine';
+import { routineIsDue } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-routine';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';
 

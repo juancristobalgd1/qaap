@@ -9,7 +9,7 @@ import { isQaapAgentTaskFinished, type QaapAgentTaskEvent } from '../common/qaap
 import {
     normalizeRoutineRunMode,
     type QaapWorkHubRoutine,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-work-hub-routine';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-routine';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorkHubRoutineStore } from './qaap-work-hub-routine-store';

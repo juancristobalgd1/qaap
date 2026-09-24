@@ -22,3 +22,5 @@ re:^qaap-css-modules\.d\.ts$,work-hub
 # CSS-only specs live with the stylesheet they read.
 re:^qaap-turn-failure-shell-body-css\.spec\.ts$,transcript
 re:^qaap-header-ide-agents-switch-css\.spec\.ts$,work-hub
+# Routine/cron models are shared with the qaap-cloud-workspace backend.
+re:^qaap-work-hub-(routine|cron)(\.spec)?\.ts$,shared-core

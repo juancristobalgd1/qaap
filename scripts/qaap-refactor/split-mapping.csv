@@ -962,8 +962,8 @@ packages/qaap-mobile-shell/src/common/qaap-visual-verification.ts,shared-core
 packages/qaap-mobile-shell/src/common/qaap-work-hub-command-palette.spec.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-command-palette.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-composer-prompt.ts,composer
-packages/qaap-mobile-shell/src/common/qaap-work-hub-cron.spec.ts,work-hub
-packages/qaap-mobile-shell/src/common/qaap-work-hub-cron.ts,work-hub
+packages/qaap-mobile-shell/src/common/qaap-work-hub-cron.spec.ts,shared-core
+packages/qaap-mobile-shell/src/common/qaap-work-hub-cron.ts,shared-core
 packages/qaap-mobile-shell/src/common/qaap-work-hub-dialog-utils.spec.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-dialog-utils.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-home.spec.ts,work-hub
@@ -972,8 +972,8 @@ packages/qaap-mobile-shell/src/common/qaap-work-hub-inbox-fingerprint.spec.ts,wo
 packages/qaap-mobile-shell/src/common/qaap-work-hub-inbox-fingerprint.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-multi-agent.spec.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-perf-probe.ts,shared-core
-packages/qaap-mobile-shell/src/common/qaap-work-hub-routine.spec.ts,work-hub
-packages/qaap-mobile-shell/src/common/qaap-work-hub-routine.ts,work-hub
+packages/qaap-mobile-shell/src/common/qaap-work-hub-routine.spec.ts,shared-core
+packages/qaap-mobile-shell/src/common/qaap-work-hub-routine.ts,shared-core
 packages/qaap-mobile-shell/src/common/qaap-work-hub-sessions-sidebar-fingerprint.spec.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-sessions-sidebar-fingerprint.ts,work-hub
 packages/qaap-mobile-shell/src/common/qaap-work-hub-surfaces.spec.ts,work-hub
