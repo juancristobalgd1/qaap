@@ -43,6 +43,9 @@ import {
 import { getSameOriginPreviewProxyPort, normalizePreviewUrlForSameOrigin } from './qaap-preview-url-utils';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
 import { getQaapPreviewFrameSlot } from './qaap-mini-browser-frame-lifecycle';
+/** How long a hidden preview keeps its page (and app state) before the iframe is unloaded to save memory. */
+export const QAAP_PREVIEW_FRAME_SUSPEND_DELAY_MS = 60_000;
+
 /**
  * Qaap mini-browser preview: element inspector, workbench toolbar, read-only URL editing.
  */
@@ -85,6 +88,9 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
 
     protected previewFrameSuspended = false;
 
+    /** Timer armed by a deferred {@link suspendPreviewFrame}; cleared on resume and dispose. */
+    protected pendingPreviewFrameSuspend: number | undefined;
+
     protected lastForcedNavigation: { readonly url: string; readonly at: number } | undefined;
 
     get previewFrame(): HTMLIFrameElement {
@@ -115,6 +121,7 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
             this.setInput(QAAP_DEFAULT_PREVIEW_INPUT_URL);
         }
         this.ensureFramePicker();
+        this.toDispose.push({ dispose: () => this.cancelPendingPreviewFrameSuspend() });
     }
 
     protected ensureFramePicker(): QaapPreviewFramePicker {
@@ -206,8 +213,33 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         return result;
     }
 
-    /** Unloads the iframe (about:blank) while keeping the URL for {@link resumePreviewFrame}. */
-    suspendPreviewFrame(): void {
+    /**
+     * Unloads the iframe (about:blank) while keeping the URL for {@link resumePreviewFrame}.
+     * Tab switches only arm a timer: the frame is blanked once it stayed hidden for
+     * {@link QAAP_PREVIEW_FRAME_SUSPEND_DELAY_MS}, so a quick round trip keeps the app state
+     * instead of reloading it. `immediate` unloads right away.
+     */
+    suspendPreviewFrame(options?: { readonly immediate?: boolean }): void {
+        if (this.previewFrameSuspended) {
+            return;
+        }
+        if (options?.immediate) {
+            this.cancelPendingPreviewFrameSuspend();
+            this.unloadPreviewFrame();
+            return;
+        }
+        if (this.pendingPreviewFrameSuspend !== undefined || this.isDisposed) {
+            return;
+        }
+        this.pendingPreviewFrameSuspend = window.setTimeout(() => {
+            this.pendingPreviewFrameSuspend = undefined;
+            if (!this.isDisposed) {
+                this.unloadPreviewFrame();
+            }
+        }, QAAP_PREVIEW_FRAME_SUSPEND_DELAY_MS);
+    }
+
+    protected unloadPreviewFrame(): void {
         if (this.previewFrameSuspended) {
             return;
         }
@@ -219,8 +251,16 @@ export class QaapMiniBrowserContent extends MiniBrowserContent {
         this.frame.src = 'about:blank';
     }
 
-    /** Restores a URL previously suspended via {@link suspendPreviewFrame}. */
+    protected cancelPendingPreviewFrameSuspend(): void {
+        if (this.pendingPreviewFrameSuspend !== undefined) {
+            window.clearTimeout(this.pendingPreviewFrameSuspend);
+            this.pendingPreviewFrameSuspend = undefined;
+        }
+    }
+
+    /** Restores a URL previously suspended via {@link suspendPreviewFrame}; a frame that was never blanked is left untouched. */
     resumePreviewFrame(): void {
+        this.cancelPendingPreviewFrameSuspend();
         if (!this.previewFrameSuspended) {
             return;
         }

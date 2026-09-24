@@ -187,6 +187,11 @@ export class MobileProjectsTranscriptSurfacesUi {
     public readonly transcriptPreviewEnsureRequests = new Set<string>();
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewProbeTimer: number | undefined;
+    /** Idle (post-turn) probe ticks for {@link transcriptPreviewProbeScopeKey}; drives the probe backoff. */
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public transcriptPreviewProbeIdleTicks = 0;
+    /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
+    public transcriptPreviewProbeScopeKey: string | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */
     public transcriptPreviewIdentityWatchTimer: number | undefined;
     /** @internal Used by the extracted mobile-projects-transcript-surfaces-ui-* modules. */

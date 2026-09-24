@@ -119,6 +119,8 @@ export type MobileProjectsTranscriptSurfacesUiContextMember =
     | 'transcriptPreviewConversationScopeId'
     | 'transcriptPreviewEnsureRequests'
     | 'transcriptPreviewIdentityWatchTimer'
+    | 'transcriptPreviewProbeIdleTicks'
+    | 'transcriptPreviewProbeScopeKey'
     | 'transcriptPreviewProbeTimer'
     | 'transcriptPreviewProjectId'
     | 'tryMountProjectScopedPreview'

@@ -5,7 +5,9 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-enableJSDOM();
+// Each suite owns its DOM: another spec's `disableJSDOM()` deletes the shared globals, so a
+// load-time-only `enableJSDOM()` left these suites without `document` when run with other files.
+let disableJSDOM = enableJSDOM();
 const browserGlobals = globalThis as unknown as { DragEvent?: unknown };
 if (!browserGlobals.DragEvent) {
     browserGlobals.DragEvent = class DragEvent { };
@@ -22,6 +24,23 @@ import {
 } from './mobile-projects-transcript-surfaces-ui';
 import type { MobileProjectsTranscriptHistoryUi } from '@theia/qaap-transcript/lib/browser/mobile-projects-transcript-history-ui';
 import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snackbar';
+import * as sinon from 'sinon';
+import { fallBackFromSupersededTranscriptPreviewExtracted } from './mobile-projects-transcript-surfaces-ui-timeline';
+import { USER_NAVIGATED_PREVIEW_CLASS } from './mobile-projects-transcript-surfaces-ui-tool-pills';
+import { TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS, TRANSCRIPT_PREVIEW_TAB_PROBE_MS } from './mobile-projects-transcript-surfaces-ui-activity';
+
+disableJSDOM();
+
+function useSuiteJSDOM(): void {
+    before(() => {
+        disableJSDOM = enableJSDOM();
+    });
+    after(() => {
+        disableJSDOM();
+    });
+}
 
 const historyUiStub = {} as unknown as MobileProjectsTranscriptHistoryUi;
 
@@ -125,6 +144,8 @@ function buildSyncHeaderPreviewHost(options: {
 
 describe('MobileProjectsTranscriptSurfacesUi — syncHeaderPreviewRunButton', () => {
 
+    useSuiteJSDOM();
+
     afterEach(() => {
         document.body.replaceChildren();
     });
@@ -219,6 +240,8 @@ describe('MobileProjectsTranscriptSurfacesUi — syncHeaderPreviewRunButton', ()
 
 describe('MobileProjectsTranscriptSurfacesUi — beginTranscriptDevPreviewRequest', () => {
 
+    useSuiteJSDOM();
+
     afterEach(() => {
         document.body.replaceChildren();
     });
@@ -240,6 +263,8 @@ describe('MobileProjectsTranscriptSurfacesUi — beginTranscriptDevPreviewReques
 });
 
 describe('MobileProjectsTranscriptSurfacesUi — monorepo preview picker', () => {
+
+    useSuiteJSDOM();
 
     afterEach(() => {
         document.body.replaceChildren();
@@ -270,5 +295,195 @@ describe('MobileProjectsTranscriptSurfacesUi — monorepo preview picker', () =>
 
         expect(await selectedPromise).to.equal(undefined);
         expect(document.querySelector('.theia-mobile-transcript-app-picker')).to.equal(null);
+    });
+});
+
+const PREVIEW_URL = 'http://localhost/qaap-dev/5173/';
+
+function idleConversation(): QaapAgentConversationDTO {
+    return { ...sampleSummary(), status: 'idle', messages: [] } as unknown as QaapAgentConversationDTO;
+}
+
+/** Preview-tab host after the agent finished: nothing mounted yet, the project knows its preview URL. */
+function buildIdlePreviewHost(activeTab: ExecutionSurfaceTabId = 'preview'): MobileProjectsTranscriptSurfacesHost {
+    const { host } = buildSyncHeaderPreviewHost({ activeTab });
+    const transcriptPreviewHost = document.createElement('div');
+    document.body.append(transcriptPreviewHost);
+    Object.assign(host, {
+        transcriptSheet: true,
+        transcriptPreviewHost,
+        transcriptOpenSummaryId: sampleSummary().id,
+        transcriptLastConv: idleConversation(),
+        projects: [{ ...sampleProject(), previewUrl: PREVIEW_URL }],
+    });
+    return host;
+}
+
+class ProbeTrackingTranscriptSurfacesUi extends MobileProjectsTranscriptSurfacesUi {
+    refreshCalls = 0;
+
+    override async refreshTranscriptPreviewTabProbe(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): Promise<void> {
+        this.refreshCalls += 1;
+        this.scheduleTranscriptPreviewTabProbe(project, summary);
+    }
+}
+
+describe('MobileProjectsTranscriptSurfacesUi — Preview tab probe after the turn', () => {
+
+    useSuiteJSDOM();
+
+    let delays: number[];
+    let pending: (() => void) | undefined;
+    let originalSetTimeout: typeof window.setTimeout;
+
+    beforeEach(() => {
+        delays = [];
+        pending = undefined;
+        originalSetTimeout = window.setTimeout;
+        window.setTimeout = ((handler: () => void, delay?: number) => {
+            delays.push(delay ?? 0);
+            pending = handler;
+            return delays.length;
+        }) as typeof window.setTimeout;
+    });
+
+    afterEach(() => {
+        window.setTimeout = originalSetTimeout;
+        document.body.replaceChildren();
+    });
+
+    function tick(): void {
+        const handler = pending;
+        pending = undefined;
+        handler?.();
+    }
+
+    it('keeps probing an empty visible Preview tab while a dev server is expected', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new MobileProjectsTranscriptSurfacesUi(host, historyUiStub);
+
+        expect(ui.shouldKeepTranscriptPreviewTabProbe(sampleProject(), sampleSummary(), idleConversation())).to.equal(true);
+    });
+
+    it('stops once the Preview tab is hidden, the preview is suppressed, or nothing is expected', () => {
+        const project = sampleProject();
+        const summary = sampleSummary();
+        const hidden = new MobileProjectsTranscriptSurfacesUi(buildIdlePreviewHost('messages'), historyUiStub);
+        expect(hidden.shouldKeepTranscriptPreviewTabProbe(project, summary, idleConversation())).to.equal(false);
+
+        const suppressedHost = buildIdlePreviewHost();
+        suppressedHost.transcriptPreviewSuppressedByUser = true;
+        const suppressed = new MobileProjectsTranscriptSurfacesUi(suppressedHost, historyUiStub);
+        expect(suppressed.shouldKeepTranscriptPreviewTabProbe(project, summary, idleConversation())).to.equal(false);
+
+        const nothingHost = buildIdlePreviewHost();
+        (nothingHost as unknown as { projects: MobileProjectEntry[] }).projects = [project];
+        const nothing = new MobileProjectsTranscriptSurfacesUi(nothingHost, historyUiStub);
+        expect(nothing.shouldKeepTranscriptPreviewTabProbe(project, summary, idleConversation())).to.equal(false);
+    });
+
+    it('backs the idle probe off up to the ceiling and restarts it for another conversation', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new ProbeTrackingTranscriptSurfacesUi(host, historyUiStub);
+        const project = sampleProject();
+        const summary = sampleSummary();
+
+        ui.scheduleTranscriptPreviewTabProbe(project, summary);
+        for (let i = 0; i < 6; i++) {
+            tick();
+        }
+
+        expect(delays[0]).to.equal(TRANSCRIPT_PREVIEW_TAB_PROBE_MS);
+        expect(delays).to.deep.equal([...delays].sort((a, b) => a - b));
+        expect(delays[delays.length - 1]).to.equal(TRANSCRIPT_PREVIEW_TAB_PROBE_MAX_MS);
+
+        const otherSummary = { ...summary, id: 'conv-2' };
+        host.transcriptOpenSummaryId = otherSummary.id;
+        ui.scheduleTranscriptPreviewTabProbe(project, otherSummary);
+        expect(delays[delays.length - 1]).to.equal(TRANSCRIPT_PREVIEW_TAB_PROBE_MS);
+    });
+});
+
+class FallbackTrackingTranscriptSurfacesUi extends MobileProjectsTranscriptSurfacesUi {
+    rediscoveries = 0;
+
+    override disposeTranscriptEmbeddedPreview(): void {
+        this.host.transcriptEmbeddedPreview = undefined;
+    }
+
+    override mountTranscriptEmptyPreview(host: HTMLElement): void {
+        const root = document.createElement('div');
+        root.classList.add('theia-mod-empty-preview');
+        host.append(root);
+        this.host.transcriptEmbeddedPreview = { root } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+    }
+
+    override async discoverAndMountTranscriptPreviewIfReady(): Promise<void> {
+        this.rediscoveries += 1;
+    }
+}
+
+describe('MobileProjectsTranscriptSurfacesUi — superseded preview fallback', () => {
+
+    useSuiteJSDOM();
+
+    let snackbar: sinon.SinonStub;
+
+    beforeEach(() => {
+        snackbar = sinon.stub(MobileSnackbar, 'show');
+    });
+
+    afterEach(() => {
+        snackbar.restore();
+        document.body.replaceChildren();
+    });
+
+    function mountLiveRoot(ui: MobileProjectsTranscriptSurfacesUi, previewHost: HTMLElement, ...classes: string[]): HTMLElement {
+        const root = document.createElement('div');
+        root.classList.add(...classes);
+        previewHost.append(root);
+        ui.host.transcriptEmbeddedPreview = { root } as unknown as MobileProjectsTranscriptSurfacesHost['transcriptEmbeddedPreview'];
+        return root;
+    }
+
+    it('blanks a superseded live page with a notice and rediscovers', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        const previewHost = host.transcriptPreviewHost!;
+        const live = mountLiveRoot(ui, previewHost);
+
+        fallBackFromSupersededTranscriptPreviewExtracted(ui, previewHost, host.projects[0], sampleSummary(), PREVIEW_URL);
+
+        expect(live.isConnected).to.equal(false);
+        expect(host.transcriptEmbeddedPreview?.root.classList.contains('theia-mod-empty-preview')).to.equal(true);
+        expect(host.projects[0].previewUrl).to.equal(undefined);
+        expect(snackbar.calledOnce).to.equal(true);
+        expect(snackbar.firstCall.args[1]).to.deep.equal({ kind: 'warning' });
+        expect(ui.rediscoveries).to.equal(1);
+    });
+
+    it('keeps a URL the user navigated to by hand, without a notice', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        const previewHost = host.transcriptPreviewHost!;
+        const live = mountLiveRoot(ui, previewHost, USER_NAVIGATED_PREVIEW_CLASS);
+
+        fallBackFromSupersededTranscriptPreviewExtracted(ui, previewHost, host.projects[0], sampleSummary(), PREVIEW_URL);
+
+        expect(host.transcriptEmbeddedPreview?.root).to.equal(live);
+        expect(live.isConnected).to.equal(true);
+        expect(snackbar.called).to.equal(false);
+    });
+
+    it('does not announce anything when only the empty state is replaced', () => {
+        const host = buildIdlePreviewHost();
+        const ui = new FallbackTrackingTranscriptSurfacesUi(host, historyUiStub);
+        const previewHost = host.transcriptPreviewHost!;
+        mountLiveRoot(ui, previewHost, 'theia-mod-empty-preview');
+
+        fallBackFromSupersededTranscriptPreviewExtracted(ui, previewHost, host.projects[0], sampleSummary(), PREVIEW_URL);
+
+        expect(snackbar.called).to.equal(false);
+        expect(ui.rediscoveries).to.equal(1);
     });
 });
