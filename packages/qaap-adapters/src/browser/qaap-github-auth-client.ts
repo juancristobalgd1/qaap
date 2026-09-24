@@ -53,6 +53,13 @@ const QAAP_API_REQUEST_TIMEOUT_MS = 15_000;
 const QAAP_BILLING_CHECKOUT_TIMEOUT_MS = 30_000;
 const QAAP_AUTH_REQUEST_TIMEOUT_MS = 6000;
 
+/** Statuses whose `Response` must be constructed without a body. */
+const QAAP_NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * One deadline covers the headers AND the body: the body is buffered before the timer is cleared,
+ * so callers' `response.json()` cannot hang on a connection that stalls mid-body.
+ */
 async function fetchQaapWithTimeout(
     input: RequestInfo | URL,
     init: RequestInit,
@@ -61,14 +68,21 @@ async function fetchQaapWithTimeout(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-        return await fetch(input, { ...init, signal: controller.signal });
+        const response = await fetch(input, { ...init, signal: controller.signal });
+        const body = QAAP_NULL_BODY_STATUSES.has(response.status) ? undefined : await response.arrayBuffer();
+        return new Response(body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+        });
     } finally {
         clearTimeout(timeout);
     }
 }
 
 function isQaapAbortError(err: unknown): boolean {
-    return err instanceof Error && err.name === 'AbortError';
+    // Body-read aborts surface as a DOMException, which is not always `instanceof Error`.
+    return typeof err === 'object' && err !== null && (err as { name?: unknown }).name === 'AbortError';
 }
 
 /** {@link fetchQaapWithTimeout}, mapping an abort to a user-facing timeout error. */

@@ -138,6 +138,33 @@ async function resolveWorkspaceRootExtracted(ctx: MobileProjectsServiceContext, 
         }
 }
 
+/**
+ * Fire `onNoReload` if the page is still alive {@link OPEN_WORKSPACE_RELOAD_WATCHDOG_MS} after the
+ * open. `pagehide` means the reload is committing, so the watchdog is cancelled instead of flashing
+ * an error and the restored panel right before the reload. `beforeunload` only restarts the grace
+ * period: navigation has started but may be slow, or vetoed (dirty-editor prompt), in which case
+ * the error must still appear.
+ */
+export function armWorkspaceReloadWatchdog(onNoReload: () => void, timeoutMs = OPEN_WORKSPACE_RELOAD_WATCHDOG_MS): () => void {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const arm = (): void => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                cancel();
+                onNoReload();
+            }, timeoutMs);
+        };
+        const cancel = (): void => {
+            clearTimeout(timer);
+            window.removeEventListener('beforeunload', arm);
+            window.removeEventListener('pagehide', cancel);
+        };
+        window.addEventListener('beforeunload', arm);
+        window.addEventListener('pagehide', cancel);
+        arm();
+        return cancel;
+}
+
 function failWorkspaceOpenExtracted(ctx: MobileProjectsServiceContext, uri: URI, detail: string, panelDismissed = false): void {
         MobileSnackbar.dismiss();
         clearMobileProjectReadmeOpenRequest();
@@ -177,10 +204,10 @@ export async function openWorkspaceUriExtracted(ctx: MobileProjectsServiceContex
         requestMobileProjectsPanelDismiss();
         markMobileProjectReadmeForOpen();
         ctx.workspaceService.open(uri, { preserveWindow: true });
-        setTimeout(() => failWorkspaceOpenExtracted(ctx, uri, nls.localize(
+        armWorkspaceReloadWatchdog(() => failWorkspaceOpenExtracted(ctx, uri, nls.localize(
             'qaap/mobileProjects/openWorkspaceNoReload',
             'the workspace did not load. Please try again.'
-        ), true), OPEN_WORKSPACE_RELOAD_WATCHDOG_MS);
+        ), true));
         return true;
 }
 

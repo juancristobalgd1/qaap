@@ -66,6 +66,12 @@ const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
 const GITHUB_OAUTH_SCOPE = 'read:user repo';
 const THEIA_EMPTY_WINDOW_HASH = '!empty';
 const GIT_OPERATION_TIMEOUT_MS = 120_000;
+/**
+ * One deadline for preparing a repository workspace (fetch, or clone + empty-repo seed). With the
+ * GitHub lookup before it (30 s) this stays within the tenant proxy budget (180 s) and the browser's
+ * 210 s open/clone/create timeout, so the user gets this server's error instead of a client abort.
+ */
+const WORKSPACE_PREPARE_TIMEOUT_MS = 150_000;
 const GIT_MAX_OUTPUT = 16 * 1024 * 1024;
 
 /** Placeholder user returned by `/auth/session` when `QAAP_SKIP_AUTH` is enabled. */
@@ -101,6 +107,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
 
     /** A stalled network operation must release the clone request and its workspace lock. */
     protected readonly gitOperationTimeoutMs = GIT_OPERATION_TIMEOUT_MS;
+
+    protected readonly workspacePrepareTimeoutMs = WORKSPACE_PREPARE_TIMEOUT_MS;
 
     configure(app: Application): void {
         app.use(json());
@@ -798,6 +806,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         accessToken: string | undefined,
         userLogin: string,
     ): Promise<string> {
+        const deadline = Date.now() + this.workspacePrepareTimeoutMs;
         const target = resolveRepositoryWorkspacePath(this.reposRoot, userLogin, repository.owner, repository.name);
         await fs.mkdir(path.dirname(target), { recursive: true });
         if (await this.isGitRepository(target)) {
@@ -807,7 +816,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             // (from the repo's own .git/config) as ROOT, i.e. a root-RCE. We deliberately do NOT check
             // out in the open flow: the working tree fast-forwards on the tenant's next git operation
             // (agent / terminal), which runs UNDER THE TENANT UID and is therefore safe. See SECURITY.md.
-            await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken, target);
+            await this.runGit(['-C', target, 'fetch', '--all', '--prune'], accessToken, target, deadline);
             return target;
         }
         let cloneTargetCreated = false;
@@ -822,7 +831,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
         await this.assertBillingAllowsNewRepo(userLogin);
         try {
-            await this.runGit(['clone', repository.cloneUrl, path.basename(target)], accessToken, path.dirname(target));
+            await this.runGit(['clone', repository.cloneUrl, path.basename(target)], accessToken, path.dirname(target), deadline);
         } catch (err) {
             if (cloneTargetCreated) {
                 await fs.rm(target, { recursive: true, force: true }).catch(cleanupErr => {
@@ -835,7 +844,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             throw err;
         }
         try {
-            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken, target));
+            // Seeding is best effort: once the shared deadline is spent it fails fast and only warns.
+            await seedEmptyRepository(target, repository.name, args => this.runGit(args, accessToken, target, deadline));
         } catch (err) {
             console.warn('[qaap-oauth] Failed to seed empty repository; workspace will rely on static detection:', err instanceof Error ? err.message : String(err));
         }
@@ -912,7 +922,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         }
     }
 
-    protected runGit(args: string[], accessToken: string | undefined, cwd = this.reposRoot): Promise<void> {
+    /**
+     * @param deadline optional absolute epoch-ms deadline shared by several git calls; each call is
+     * additionally capped at {@link gitOperationTimeoutMs}.
+     */
+    protected runGit(args: string[], accessToken: string | undefined, cwd = this.reposRoot, deadline?: number): Promise<void> {
         const invocation = this.resolveGitInvocation(args, cwd);
         // GitHub clone/fetch is tenant-controlled work. In hosted mode it MUST go through the
         // worker so clean/smudge filters, config helpers and repository hooks cannot execute as the
@@ -928,10 +942,39 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             ]
             : [...hardening, ...invocation.args];
         if (isQaapHostedEnvironment()) {
-            return this.runTenantGit(invocation.cwd, gitArgs, false).then(() => undefined);
+            return this.runTenantGit(invocation.cwd, gitArgs, false, deadline).then(() => undefined);
+        }
+        return this.runLocalGit(invocation.cwd, gitArgs, false, deadline).then(() => undefined);
+    }
+
+    protected runGitOutput(args: string[], cwd = this.reposRoot, deadline?: number): Promise<string> {
+        const invocation = this.resolveGitInvocation(args, cwd);
+        const gitArgs = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...invocation.args];
+        if (isQaapHostedEnvironment()) {
+            return this.runTenantGit(invocation.cwd, gitArgs, true, deadline).then(output => output.trim());
+        }
+        return this.runLocalGit(invocation.cwd, gitArgs, true, deadline).then(output => output.trim());
+    }
+
+    /** Absolute deadline for one git call: the per-operation cap, or the shared deadline if sooner. */
+    protected resolveGitDeadline(deadline: number | undefined): number {
+        const capped = Date.now() + this.gitOperationTimeoutMs;
+        return deadline === undefined ? capped : Math.min(capped, deadline);
+    }
+
+    protected gitTimeoutError(): Error {
+        return new Error(`Git operation timed out after ${Math.ceil(this.gitOperationTimeoutMs / 1000)} seconds`);
+    }
+
+    /** Non-hosted git (local dev): same deadline semantics as the tenant worker path. */
+    protected runLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean, deadline?: number): Promise<string> {
+        const effectiveDeadline = this.resolveGitDeadline(deadline);
+        if (effectiveDeadline <= Date.now()) {
+            return Promise.reject(this.gitTimeoutError());
         }
         return new Promise((resolve, reject) => {
-            const child = spawn('git', gitArgs, { cwd: invocation.cwd, stdio: ['ignore', 'ignore', 'pipe'] });
+            const child = spawn('git', [...gitArgs], { cwd, stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'] });
+            let stdout = '';
             let stderr = '';
             let settled = false;
             let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -945,14 +988,17 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 }
                 callback();
             };
-            child.stderr.on('data', chunk => {
+            child.stdout?.on('data', chunk => {
+                stdout += String(chunk);
+            });
+            child.stderr?.on('data', chunk => {
                 stderr += String(chunk);
             });
             child.on('error', err => complete(() => reject(err)));
             child.on('close', code => {
                 complete(() => {
                     if (code === 0) {
-                        resolve();
+                        resolve(stdout);
                     } else {
                         reject(new Error(stderr.trim() || `git exited with status ${code}`));
                     }
@@ -961,36 +1007,9 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             timeout = setTimeout(() => {
                 complete(() => {
                     child.kill();
-                    reject(new Error(`Git operation timed out after ${Math.ceil(this.gitOperationTimeoutMs / 1000)} seconds`));
+                    reject(this.gitTimeoutError());
                 });
-            }, this.gitOperationTimeoutMs);
-        });
-    }
-
-    protected runGitOutput(args: string[], cwd = this.reposRoot): Promise<string> {
-        const invocation = this.resolveGitInvocation(args, cwd);
-        const gitArgs = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...invocation.args];
-        if (isQaapHostedEnvironment()) {
-            return this.runTenantGit(invocation.cwd, gitArgs, true).then(output => output.trim());
-        }
-        return new Promise((resolve, reject) => {
-            const child = spawn('git', gitArgs, { cwd: invocation.cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-            let stdout = '';
-            let stderr = '';
-            child.stdout.on('data', chunk => {
-                stdout += String(chunk);
-            });
-            child.stderr.on('data', chunk => {
-                stderr += String(chunk);
-            });
-            child.on('error', reject);
-            child.on('close', code => {
-                if (code === 0) {
-                    resolve(stdout.trim());
-                } else {
-                    reject(new Error(stderr.trim() || `git exited with status ${code}`));
-                }
-            });
+            }, effectiveDeadline - Date.now());
         });
     }
 
@@ -1008,7 +1027,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     /** Execute git with a minimal environment and a fail-closed tenant worker in hosted mode. */
-    protected async runTenantGit(cwd: string, args: readonly string[], captureStdout: boolean): Promise<string> {
+    protected async runTenantGit(cwd: string, args: readonly string[], captureStdout: boolean, requestedDeadline?: number): Promise<string> {
         if (!this.tenantProcess) {
             throw new Error('Hosted GitHub repository operations are unavailable: the tenant worker is not bound.');
         }
@@ -1023,8 +1042,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             }
         }
         // One deadline covers preparing the tenant worker (Docker ensure can hang) and git itself.
-        const deadline = Date.now() + GIT_OPERATION_TIMEOUT_MS;
-        const timeoutError = (): Error => new Error(`Git operation timed out after ${Math.ceil(GIT_OPERATION_TIMEOUT_MS / 1000)} seconds`);
+        const deadline = this.resolveGitDeadline(requestedDeadline);
+        const timeoutError = (): Error => this.gitTimeoutError();
+        if (deadline <= Date.now()) {
+            throw timeoutError();
+        }
         const prepared = this.tenantProcess.spawnArgvPreparedAsync('git', args, {
             cwd,
             env: this.tenantProcess.resolveProcessEnv(cwd, baseEnv),
@@ -1045,7 +1067,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 prepareTimer = setTimeout(() => {
                     prepareTimedOut = true;
                     reject(new Error(`${timeoutError().message} while starting the tenant worker`));
-                }, GIT_OPERATION_TIMEOUT_MS);
+                }, deadline - Date.now());
             }),
         ]).finally(() => clearTimeout(prepareTimer));
         return new Promise((resolve, reject) => {

@@ -113,7 +113,7 @@ describe('QaapTenantBackendProxyContribution', () => {
             expect(invalidations).to.deep.equal([['alice', true]]);
         });
 
-        it('bounds a handshake the tenant backend never answers and evicts the target', async () => {
+        it('bounds a handshake a live tenant backend never answers without evicting the target', async () => {
             const sockets: net.Socket[] = [];
             const silent = net.createServer(connection => { sockets.push(connection); });
             await new Promise<void>(resolve => silent.listen(0, '127.0.0.1', resolve));
@@ -124,7 +124,8 @@ describe('QaapTenantBackendProxyContribution', () => {
                 const closed = waitForClose(socket);
                 await proxy.proxyWebSocket(upgradeRequest(), socket, Buffer.alloc(0), 'alice', SESSION, [], {});
                 await closed;
-                expect(invalidations).to.deep.equal([['alice', true]]);
+                // TCP connected, so the backend is alive (just slow): keep the cached target.
+                expect(invalidations).to.deep.equal([]);
             } finally {
                 sockets.forEach(connection => connection.destroy());
                 await new Promise<void>(resolve => silent.close(() => resolve()));
@@ -153,5 +154,50 @@ describe('QaapTenantBackendProxyContribution', () => {
         const proxy = createProxy() as unknown as { remainingTenantProxyBudgetMs(deadline: number): number };
         expect(proxy.remainingTenantProxyBudgetMs(Date.now() - 1_000)).to.equal(5_000);
         expect(proxy.remainingTenantProxyBudgetMs(Date.now() + 60_000)).to.be.within(59_000, 60_000);
+    });
+
+    it('evicts only for unreachable backends, not for a slow live one', () => {
+        const proxy = createProxy() as unknown as {
+            shouldEvictTenantBackendTarget(error: unknown, timedOut: boolean, connected: boolean): boolean;
+        };
+        const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+        const timedOut = new Error('Tenant backend did not respond in time.');
+        expect(proxy.shouldEvictTenantBackendTarget(refused, false, false)).to.equal(true);
+        expect(proxy.shouldEvictTenantBackendTarget(timedOut, true, false)).to.equal(true);
+        expect(proxy.shouldEvictTenantBackendTarget(timedOut, true, true)).to.equal(false);
+        expect(proxy.shouldEvictTenantBackendTarget(new Error('socket hang up'), false, true)).to.equal(false);
+    });
+
+    it('does not evict a live tenant backend when the HTTP response wait times out', async () => {
+        const server = http.createServer(() => { /* never answers */ });
+        await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+        try {
+            const invalidations: unknown[] = [];
+            const proxy = createProxy() as unknown as Record<string, unknown> & {
+                forwardHttp(req: unknown, res: unknown, target: unknown, assertion: string, tenantLogin: string, timeoutMs: number): void;
+            };
+            proxy.docker = { invalidateTenantBackendTarget: (...args: unknown[]) => invalidations.push(args) };
+            const statuses: number[] = [];
+            const done = new Promise<void>(resolve => {
+                const res = {
+                    headersSent: false,
+                    status: (code: number) => {
+                        statuses.push(code);
+                        return { json: () => resolve() };
+                    },
+                    end: () => resolve(),
+                };
+                const req = new PassThrough() as unknown as Record<string, unknown>;
+                Object.assign(req, { method: 'GET', url: '/slow', headers: {} });
+                proxy.forwardHttp(req, res, { ...TARGET, port: (server.address() as net.AddressInfo).port }, 'assertion', 'alice', 100);
+                (req as unknown as PassThrough).end();
+            });
+            await done;
+            expect(statuses).to.deep.equal([504]);
+            expect(invalidations).to.deep.equal([]);
+        } finally {
+            server.closeAllConnections();
+            await new Promise<void>(resolve => server.close(() => resolve()));
+        }
     });
 });

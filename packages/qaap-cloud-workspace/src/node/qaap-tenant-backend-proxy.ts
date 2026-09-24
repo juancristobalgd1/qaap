@@ -189,6 +189,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             // Bound only the handshake: a backend that accepts TCP but never answers the upgrade
             // would otherwise hold the browser socket open forever. The upgraded stream is unbounded.
             let connectTimedOut = false;
+            const isConnected = this.trackUpstreamConnected(upstream);
             const connectTimer = setTimeout(() => {
                 connectTimedOut = true;
                 upstream.destroy(new Error('Tenant backend did not accept the WebSocket in time.'));
@@ -217,7 +218,7 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
             });
             upstream.once('error', error => {
                 clearTimeout(connectTimer);
-                if (connectTimedOut || this.isTenantBackendConnectError(error)) {
+                if (this.shouldEvictTenantBackendTarget(error, connectTimedOut, isConnected())) {
                     // Same as the HTTP path: drop the cached target so the next upgrade re-ensures it.
                     this.docker.invalidateTenantBackendTarget(userLogin, target);
                 }
@@ -272,12 +273,13 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
         // Idle bound while waiting for the tenant backend to answer; a wedged backend otherwise
         // leaves the browser request (e.g. repository open) pending forever.
         let timedOut = false;
+        const isConnected = this.trackUpstreamConnected(upstream);
         upstream.setTimeout(responseTimeoutMs, () => {
             timedOut = true;
             upstream.destroy(new Error('Tenant backend did not respond in time.'));
         });
         upstream.once('error', error => {
-            if (timedOut || this.isTenantBackendConnectError(error)) {
+            if (this.shouldEvictTenantBackendTarget(error, timedOut, isConnected())) {
                 // Drop the cached target so the next request re-ensures (restarts) the backend.
                 this.docker.invalidateTenantBackendTarget(tenantLogin, target);
             }
@@ -359,6 +361,29 @@ export class QaapTenantBackendProxyContribution implements BackendApplicationCon
     protected getTenantWebSocketConnectTimeoutMs(): number {
         const configured = Number.parseInt(process.env.QAAP_TENANT_PROXY_WS_CONNECT_TIMEOUT_MS?.trim() ?? '', 10);
         return Number.isInteger(configured) && configured > 0 ? configured : 15_000;
+    }
+
+    /** Report whether the upstream request ever had a connected socket (fresh or reused keep-alive). */
+    protected trackUpstreamConnected(upstream: http.ClientRequest): () => boolean {
+        let connected = false;
+        upstream.once('socket', socket => {
+            if (!socket.connecting) {
+                connected = true;
+                return;
+            }
+            socket.once('connect', () => {
+                connected = true;
+            });
+        });
+        return () => connected;
+    }
+
+    /**
+     * Evict the cached target only when the backend is unreachable: a connect error, or a timeout
+     * before any TCP connection. A slow request on a live backend (e.g. a long clone) keeps it cached.
+     */
+    protected shouldEvictTenantBackendTarget(error: unknown, timedOut: boolean, connected: boolean): boolean {
+        return this.isTenantBackendConnectError(error) || (timedOut && !connected);
     }
 
     protected isTenantBackendConnectError(error: unknown): boolean {

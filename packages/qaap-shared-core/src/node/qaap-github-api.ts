@@ -72,6 +72,7 @@ interface GithubMergePullResponse {
     sha?: string;
 }
 
+/** Per-request bound for every GitHub REST / OAuth call made by the backend. */
 const GITHUB_REPOSITORY_REQUEST_TIMEOUT_MS = 30_000;
 
 /** Statuses whose `Response` must be constructed without a body. */
@@ -116,7 +117,7 @@ export async function exchangeGithubCode(
         code,
         redirect_uri: config.callbackUrl,
     });
-    const response = await fetch('https://github.com/login/oauth/access_token', {
+    const response = await fetchGithubRepositoryRequest('https://github.com/login/oauth/access_token', {
         method: 'POST',
         headers: {
             Accept: 'application/json',
@@ -132,7 +133,7 @@ export async function exchangeGithubCode(
 }
 
 export async function fetchGithubUser(accessToken: string): Promise<QaapAuthSessionUser> {
-    const response = await fetch('https://api.github.com/user', {
+    const response = await fetchGithubRepositoryRequest('https://api.github.com/user', {
         headers: {
             Accept: 'application/vnd.github+json',
             Authorization: `Bearer ${accessToken}`,
@@ -250,7 +251,7 @@ export async function fetchGithubPullRequests(
         const url = new URL(`https://api.github.com/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/pulls`);
         url.searchParams.set('state', 'open');
         url.searchParams.set('per_page', '3');
-        const response = await fetch(url.toString(), {
+        const response = await fetchGithubRepositoryRequest(url.toString(), {
             headers: githubHeaders(accessToken),
         });
         if (!response.ok) {
@@ -291,7 +292,7 @@ export async function mergeGithubPullRequest(
     accessToken: string,
     input: { owner: string; repo: string; number: number }
 ): Promise<QaapGithubMergePullRequestResponse> {
-    const response = await fetch(
+    const response = await fetchGithubRepositoryRequest(
         `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/pulls/${input.number}/merge`,
         {
             method: 'PUT',
@@ -324,9 +325,15 @@ export async function fetchGithubPullRequestFiles(
 ): Promise<QaapGithubPullRequestFile[]> {
     const url = new URL(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files`);
     url.searchParams.set('per_page', '8');
-    const response = await fetch(url.toString(), {
-        headers: githubHeaders(accessToken),
-    });
+    let response: Response;
+    try {
+        response = await fetchGithubRepositoryRequest(url.toString(), {
+            headers: githubHeaders(accessToken),
+        });
+    } catch {
+        // The files preview is optional; a slow or failed call must not fail the whole PR list.
+        return [];
+    }
     if (!response.ok) {
         return [];
     }

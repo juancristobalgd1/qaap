@@ -365,3 +365,59 @@ describe('QaapGithubOauthEndpoint clone workspace cleanup', () => {
         fs.rmSync(reposRoot, { recursive: true, force: true });
     });
 });
+
+describe('QaapGithubOauthEndpoint git deadlines', () => {
+
+    function createEndpoint(extra: Record<string, unknown> = {}): QaapGithubOauthEndpoint {
+        const endpoint = Object.create(QaapGithubOauthEndpoint.prototype) as QaapGithubOauthEndpoint;
+        Object.assign(endpoint, { gitOperationTimeoutMs: 120_000, workspacePrepareTimeoutMs: 150_000, ...extra });
+        return endpoint;
+    }
+
+    it('shares one deadline between clone and the empty-repository seed', async () => {
+        const reposRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'qaap-clone-deadline-'));
+        const target = path.join(reposRoot, 'users', 'alice', 'octocat', 'empty');
+        const deadlines: Array<number | undefined> = [];
+        const endpoint = createEndpoint({
+            reposRoot,
+            runGit: async (args: string[], _token: string | undefined, _cwd: string, deadline?: number) => {
+                deadlines.push(deadline);
+                if (args[0] === 'clone') {
+                    fs.mkdirSync(path.join(target, '.git'), { recursive: true });
+                }
+            },
+        });
+        const before = Date.now();
+        try {
+            await (endpoint as unknown as {
+                ensureRepositoryWorkspace(repository: { owner: string; name: string; cloneUrl: string }, token: undefined, login: string): Promise<string>;
+            }).ensureRepositoryWorkspace({ owner: 'octocat', name: 'empty', cloneUrl: 'https://github.com/octocat/empty.git' }, undefined, 'alice');
+            // clone + add + commit + push
+            expect(deadlines).to.have.length(4);
+            expect(new Set(deadlines).size).to.equal(1);
+            expect(deadlines[0]).to.be.within(before + 150_000, Date.now() + 150_000);
+        } finally {
+            fs.rmSync(reposRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('fails fast without spawning git once the shared deadline has passed', async () => {
+        const endpoint = createEndpoint() as unknown as {
+            runLocalGit(cwd: string, args: string[], capture: boolean, deadline?: number): Promise<string>;
+        };
+        let error: unknown;
+        try {
+            await endpoint.runLocalGit(os.tmpdir(), ['--version'], true, Date.now() - 1);
+        } catch (err) {
+            error = err;
+        }
+        expect((error as Error).message).to.contain('timed out');
+    });
+
+    it('runs local git with output under the per-operation cap', async () => {
+        const endpoint = createEndpoint() as unknown as {
+            runLocalGit(cwd: string, args: string[], capture: boolean, deadline?: number): Promise<string>;
+        };
+        expect(await endpoint.runLocalGit(os.tmpdir(), ['--version'], true)).to.contain('git version');
+    });
+});

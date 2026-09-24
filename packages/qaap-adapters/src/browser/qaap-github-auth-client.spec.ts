@@ -4,6 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import * as sinon from 'sinon';
 import {
     createQaapGithubRepository,
     deleteQaapGithubRepository,
@@ -70,5 +71,26 @@ describe('qaap-github-auth-client timeouts', () => {
     it('keeps non-abort network errors unchanged', async () => {
         nextFetch = async () => { throw new TypeError('Failed to fetch'); };
         expect((await rejection(fetchQaapGithubPullRequests())).message).to.equal('Failed to fetch');
+    });
+
+    it('bounds the body read, not only the wait for headers', async () => {
+        const clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            nextFetch = async init => {
+                // Headers arrive, then the body stalls until the request is aborted.
+                const body = new ReadableStream<Uint8Array>({
+                    start: controller => {
+                        controller.enqueue(new TextEncoder().encode('{"pullRequests":['));
+                        init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason));
+                    },
+                });
+                return new Response(body, { status: 200 });
+            };
+            const pending = rejection(fetchQaapGithubPullRequests());
+            await clock.tickAsync(60_000);
+            expect((await pending).message).to.contain('took too long');
+        } finally {
+            clock.restore();
+        }
     });
 });
