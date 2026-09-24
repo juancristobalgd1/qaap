@@ -189,7 +189,7 @@ export function resolveReviewerCandidatesExtracted(ctx: QaapAgentTaskRunnerConte
                 'standard',
                 ref => !excluded.has(ref)
                     && ctx.agentHealth?.isCoolingDown(ref) !== true
-                    && ctx.listAgents().some(agent => agent.id === ref && agent.available),
+                    && ctx.listAgents(task.ownerLogin).some(agent => agent.id === ref && agent.available),
                 undefined,
             );
             if (!routed.agentRef) {

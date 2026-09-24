@@ -21,7 +21,7 @@ import {
 } from '../common/qaap-agent-task';
 import { rememberQaapHostedRuntime } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
 import { isQaapProductionRuntime } from './qaap-agent-spawn-identity';
-import { usesSharedAiSettingsFallback } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
+import { mustWithholdOperatorProviderCredentials } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import {
     isUiHiddenVpsAgent,
     resolveQaapBuiltinAgentMentionId,
@@ -521,7 +521,8 @@ export function warmForCwdExtracted(ctx: QaapAgentTaskRunnerContext, cwd: string
 export function listQaiqModelsExtracted(ctx: QaapAgentTaskRunnerContext, ownerLogin?: string): QaapQaiqModelOption[] {
         return listQaiqModelsFromPreferences(
             ctx.preferenceReaderForOwner(ownerLogin),
-            usesSharedAiSettingsFallback(ownerLogin) ? (key: string) => process.env[key] : () => undefined,
+            // Operator env credentials count only where the owner's agents would receive them (see stripSharedProviderEnv).
+            mustWithholdOperatorProviderCredentials(ownerLogin) ? () => undefined : (key: string) => process.env[key],
         );
 }
 
