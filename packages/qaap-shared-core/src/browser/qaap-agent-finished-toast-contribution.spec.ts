@@ -4,6 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import { useSuiteJSDOM } from './test/qaap-jsdom-suite';
+// These modules touch the DOM while loading; give them one only for the import.
+const disableImportJSDOM = enableJSDOM();
 import { Emitter } from '@theia/core/lib/common/event';
 import { MobileProjectsConversations } from './mobile-projects-conversations';
 import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
@@ -11,6 +15,7 @@ import { MobileSnackbar } from '@theia/qaap-mobile-shell/lib/browser/mobile-snac
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapConversationChangeEvent } from '../common/qaap-conversation-change';
 import type { MobileProjectEntry } from './mobile-projects-types';
+disableImportJSDOM();
 
 /**
  * Verifies that the agent-finished toast fires a snackbar with an "Open" action when a
@@ -18,6 +23,8 @@ import type { MobileProjectEntry } from './mobile-projects-types';
  * user is already viewing that conversation.
  */
 describe('QaapAgentFinishedToastContribution', () => {
+    useSuiteJSDOM();
+
     let contribution: QaapAgentFinishedToastContribution;
     let conversations: MobileProjectsConversations;
     let changeEmitter: Emitter<QaapConversationChangeEvent>;
