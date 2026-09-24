@@ -1,6 +1,6 @@
 # Files allowed to keep `// @ts-nocheck`. This list may only shrink.
 # Type a file, remove its `@ts-nocheck`, then delete its line (or run with --write).
-# 97 files.
+# 84 files.
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-render2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-streaming2.ts
 packages/qaap-adapters/src/browser/qaap-preview-annotation-controller-timeline2.ts
@@ -44,19 +44,6 @@ packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui-render
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui-streaming.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui-timeline.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-live-ui.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-activity-chrome.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-activity-content.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-activity-expand.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-activity-summary.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-activity.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-constants.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-diff.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-live-status.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-render.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-streaming.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-thought-brief.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-timeline.ts
-packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-artifacts-ui-tool-pills.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui-activity.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui-render.ts
 packages/qaap-mobile-shell/src/browser/mobile-projects-transcript-messages-render-ui-streaming.ts
