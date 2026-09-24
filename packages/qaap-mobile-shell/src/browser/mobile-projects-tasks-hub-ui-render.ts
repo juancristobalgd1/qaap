@@ -1,4 +1,4 @@
-// @ts-nocheck
+import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 // Extracted from mobile-projects-tasks-hub-ui.ts
 
 import { Disposable } from '@theia/core/lib/common/disposable';
@@ -7,27 +7,17 @@ import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-ses
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
-    isAgentsHubIdleConversationSummary,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
     QAAP_AGENTS_HUB_QUICK_ACTIONS,
     QAAP_AGENTS_HUB_RECENT_LIMIT,
 } from '../common/qaap-agents-hub-landing';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
-import { type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
-import { cancelConversation } from '../common/qaap-agent-conversation-client';
-import { cancelAgentTask, fetchAgentTaskDetail } from '../common/qaap-agent-task-client';
-import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
-import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
 import { MobileSnackbar } from './mobile-snackbar';
 import {
     closeWorkingAgentsPopover,
-    dismissWorkingAgentsExpandForStopAll,
-    filterWorkingTeamMembers,
-    getWorkingAgentsDetailMember,
     getWorkingAgentsDetailMemberId,
     isWorkingAgentsExpandPinnedOpen,
     isWorkingAgentsExpandSessionOpen,
@@ -36,24 +26,16 @@ import {
     noteWorkingPillChromeCount,
     openWorkingAgentsPopover,
     refreshWorkingAgentsDetailActivityFeed,
-    refreshWorkingAgentsDetailCommandLog,
     restoreWorkingAgentsExpandIfNeeded,
     syncWorkingAgentsExpandContent,
 } from './qaap-sticky-composer-working-agents-popover';
-import {
-    resolveWorkingAgentDetailActivityFeedFromConversation,
-} from './qaap-sticky-composer-working-detail-activity';
-import { shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
 import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-pill';
 import {
     resolveLatestTranscriptTodos,
     resolveTodoStepProgress,
 } from '../common/qaap-transcript-todo-step';
-import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
-import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
 
-export function collectAgentsHubRecentItemsExtracted(ctx: any, projects: MobileProjectEntry[],
+export function collectAgentsHubRecentItemsExtracted(ctx: MobileProjectsTasksHubUiContext, projects: MobileProjectEntry[],
         limit = QAAP_AGENTS_HUB_RECENT_LIMIT,
         scopeProject?: MobileProjectEntry,): Array<{ project: MobileProjectEntry; summary: QaapAgentConversationSummaryDTO }> {
         const query = ctx.host.query.trim().toLowerCase();
@@ -79,13 +61,13 @@ export function collectAgentsHubRecentItemsExtracted(ctx: any, projects: MobileP
         return entries.slice(0, Math.max(0, limit)).map(({ project, summary }) => ({ project, summary }));
 }
 
-export function shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted(ctx: any): boolean {
+export function shouldEmbedAgentsHubRecentsInWorkspaceTranscriptExtracted(ctx: MobileProjectsTasksHubUiContext): boolean {
         return QAAP_AGENTS_HUB_LANDING_ENABLED
             && ctx.host.transcriptSheet?.parentElement === document.body
             && !document.body.classList.contains('theia-mobile-mod-landing');
 }
 
-export function createAgentsHubLandingHeroBlockExtracted(ctx: any): HTMLElement {
+export function createAgentsHubLandingHeroBlockExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {
         const hero = document.createElement('section');
         hero.className = 'theia-mobile-agents-hub-landing-hero';
         hero.setAttribute(
@@ -157,7 +139,7 @@ export function createAgentsHubLandingHeroBlockExtracted(ctx: any): HTMLElement 
         return hero;
 }
 
-export function createAgentsHubQuickActionsBlockExtracted(ctx: any): HTMLElement {
+export function createAgentsHubQuickActionsBlockExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {
         const container = document.createElement('div');
         container.className = 'theia-mobile-agent-transcript-empty-actions';
         container.setAttribute('role', 'group');
@@ -245,7 +227,7 @@ function setAgentsHubQuickActionPreviewStarting(btn: HTMLButtonElement): void {
         }
 }
 
-export function applyComposerQuickActionPromptExtracted(ctx: any, prompt: string): void {
+export function applyComposerQuickActionPromptExtracted(ctx: MobileProjectsTasksHubUiContext, prompt: string): void {
         const trimmed = prompt.trim();
         if (!trimmed) {
             return;
@@ -271,7 +253,7 @@ export function applyComposerQuickActionPromptExtracted(ctx: any, prompt: string
         });
 }
 
-export function createAgentsHubRecentsBlockExtracted(ctx: any, project: MobileProjectEntry): HTMLElement {
+export function createAgentsHubRecentsBlockExtracted(ctx: MobileProjectsTasksHubUiContext, project: MobileProjectEntry): HTMLElement {
         const recents = ctx.collectAgentsHubRecentItems(ctx.host.projects, QAAP_AGENTS_HUB_RECENT_LIMIT, project);
         const block = document.createElement('section');
         block.className = 'theia-mobile-agents-hub-landing theia-mod-transcript-recents';
@@ -312,7 +294,7 @@ export function createAgentsHubRecentsBlockExtracted(ctx: any, project: MobilePr
         return block;
 }
 
-export function updateTasksAttentionChromeExtracted(ctx: any): void {
+export function updateTasksAttentionChromeExtracted(ctx: MobileProjectsTasksHubUiContext): void {
         ctx.updateWorkingPillChrome();
         if (!ctx.host.homeMode || !ctx.host.hubQueryUi.isTasksHubView() || ctx.host.tasksHubSurface === 'chat' || ctx.host.shouldUseAgentsHubLanding()) {
             ctx.host.titleAttentionEl.hidden = true;
@@ -335,7 +317,7 @@ export function updateTasksAttentionChromeExtracted(ctx: any): void {
         );
 }
 
-export function updateWorkingPillChromeExtracted(ctx: any): void {
+export function updateWorkingPillChromeExtracted(ctx: MobileProjectsTasksHubUiContext): void {
         const rawCount = ctx.countWorkingAgentsForPill();
         noteWorkingPillChromeCount(rawCount);
         // After Stop All, hide the pill until a new live working agent appears (attention
@@ -418,7 +400,7 @@ export function updateWorkingPillChromeExtracted(ctx: any): void {
         }
 }
 
-export function openWorkingAgentsPopoverFromPillExtracted(ctx: any, anchor: HTMLButtonElement): void {
+export function openWorkingAgentsPopoverFromPillExtracted(ctx: MobileProjectsTasksHubUiContext, anchor: HTMLButtonElement): void {
         const transcriptOverlay = !!anchor.closest('.theia-mobile-agent-transcript-root');
         // When the pill is in the transcript overlay, show only this section's working agents.
         // The home sticky composer pill shows the full hub team.
@@ -439,7 +421,7 @@ export function openWorkingAgentsPopoverFromPillExtracted(ctx: any, anchor: HTML
         });
 }
 
-export function updateStepPillChromeExtracted(ctx: any): void {
+export function updateStepPillChromeExtracted(ctx: MobileProjectsTasksHubUiContext): void {
         const progress = ctx.resolveActiveConversationTodoStepProgress();
         syncStickyComposerStepPillInRoots(
             [ctx.host.stickyComposerHost, ctx.host.transcriptComposerHost],
@@ -447,7 +429,7 @@ export function updateStepPillChromeExtracted(ctx: any): void {
         );
 }
 
-export function resolveActiveConversationTodoStepProgressExtracted(ctx: any): ReturnType<typeof resolveTodoStepProgress> {
+export function resolveActiveConversationTodoStepProgressExtracted(ctx: MobileProjectsTasksHubUiContext): ReturnType<typeof resolveTodoStepProgress> {
         const summary = ctx.host.transcriptComposerSummary ?? ctx.host.transcriptOpenSummary;
         const conversationId = summary?.id?.trim();
         if (!conversationId) {
@@ -478,7 +460,7 @@ export function resolveActiveConversationTodoStepProgressExtracted(ctx: any): Re
         return progress;
 }
 
-export function bindWorkingDetailConversationSubscriptionExtracted(ctx: any, member: WorkHubTeamMember | undefined): void {
+export function bindWorkingDetailConversationSubscriptionExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember | undefined): void {
         const conversationId = member?.conversationId?.trim();
         if (!conversationId || !member) {
             ctx.workingDetailActivityDispose.dispose();

@@ -2,56 +2,28 @@
 // Copyright (C) 2026 Theia contributors and Qaap product fork.
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-// @ts-nocheck
 
 import { Disposable } from '@theia/core/lib/common/disposable';
-import { nls } from '@theia/core/lib/common/nls';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import {
-    isAgentsHubIdleConversationSummary,
-    QAAP_AGENTS_HUB_LANDING_ENABLED,
-    QAAP_AGENTS_HUB_QUICK_ACTIONS,
     QAAP_AGENTS_HUB_RECENT_LIMIT,
 } from '../common/qaap-agents-hub-landing';
-import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 import { type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
-import { cancelConversation } from '../common/qaap-agent-conversation-client';
-import { cancelAgentTask, fetchAgentTaskDetail } from '../common/qaap-agent-task-client';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
 import {
-    closeWorkingAgentsPopover,
-    dismissWorkingAgentsExpandForStopAll,
     filterWorkingTeamMembers,
-    getWorkingAgentsDetailMember,
-    getWorkingAgentsDetailMemberId,
-    isWorkingAgentsExpandPinnedOpen,
-    isWorkingAgentsExpandSessionOpen,
-    isWorkingAgentsPopoverOpen,
-    isWorkingPillSuppressedAfterStopAll,
-    noteWorkingPillChromeCount,
-    openWorkingAgentsPopover,
-    refreshWorkingAgentsDetailActivityFeed,
-    refreshWorkingAgentsDetailCommandLog,
-    restoreWorkingAgentsExpandIfNeeded,
-    syncWorkingAgentsExpandContent,
 } from './qaap-sticky-composer-working-agents-popover';
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
 } from './qaap-sticky-composer-working-detail-activity';
-import { shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
-import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-pill';
 import {
-    resolveLatestTranscriptTodos,
     resolveTodoStepProgress,
 } from '../common/qaap-transcript-todo-step';
-import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
-import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import {
     EMPTY_MOBILE_PROJECT_TASK_HISTORY_FILTERS,
@@ -65,6 +37,10 @@ import { appendTasksHubTeamSectionExtracted, renderTasksHubViewExtracted } from 
 
 /** Panel surface for Tasks hub list rendering and Agents Hub landing recents/quick actions. */
 export interface MobileProjectsTasksHubHost {
+    transcriptPreviewRequestPending?: boolean;
+    transcriptPreviewRequestRunning?: boolean;
+    resolveShellProject?(): MobileProjectEntry | undefined;
+    resolveShellSummary?(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
     homeMode: boolean;
     query: string;
     scroll: HTMLElement;
@@ -158,16 +134,24 @@ export interface MobileProjectsTasksHubHost {
 /** Tasks hub inbox rendering and Agents Hub landing recents / quick-action prompts. */
 export class MobileProjectsTasksHubUi {
 
-    protected workingDetailActivityDispose: Disposable = Disposable.NULL;
-    protected workingDetailActivityConversationId: string | undefined;
-    protected workingDetailTaskLogDispose: Disposable = Disposable.NULL;
-    protected workingDetailTaskLogTaskId: string | undefined;
-    protected workingDetailTaskLogSeedToken = 0;
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public workingDetailActivityDispose: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public workingDetailActivityConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public workingDetailTaskLogDispose: Disposable = Disposable.NULL;
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public workingDetailTaskLogTaskId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public workingDetailTaskLogSeedToken = 0;
     protected taskHistoryFilters: MobileProjectTaskHistoryFilters = {
         ...EMPTY_MOBILE_PROJECT_TASK_HISTORY_FILTERS,
     };
 
-    constructor(protected readonly host: MobileProjectsTasksHubHost) { }
+    constructor(
+        /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+        public readonly host: MobileProjectsTasksHubHost,
+    ) { }
 
     getTaskHistoryFilters(): MobileProjectTaskHistoryFilters {
         return { ...this.taskHistoryFilters };
@@ -238,23 +222,27 @@ export class MobileProjectsTasksHubUi {
     /**
      * Sticky last-known Step progress so SSE/render gaps don't unmount the pill
      * (and its open menu) while the transcript is still painting.
+     * @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules.
      */
-    protected lastStepPillConversationId: string | undefined;
-    protected lastStepPillProgress: ReturnType<typeof resolveTodoStepProgress> | undefined;
+    public lastStepPillConversationId: string | undefined;
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public lastStepPillProgress: ReturnType<typeof resolveTodoStepProgress> | undefined;
 
     updateStepPillChrome(): void {
         updateStepPillChromeExtracted(this);
     }
 
-    protected resolveActiveConversationTodoStepProgress(): ReturnType<typeof resolveTodoStepProgress> {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public resolveActiveConversationTodoStepProgress(): ReturnType<typeof resolveTodoStepProgress> {
         return resolveActiveConversationTodoStepProgressExtracted(this);
     }
 
     /**
      * Subscribe to threadStore / VPS task output for the DETAIL member so prefetch,
      * live deltas, and command log chunks repaint the Cursor-style DETAIL body.
+     * @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules.
      */
-    protected bindWorkingDetailActivitySubscription(member: WorkHubTeamMember | undefined): void {
+    public bindWorkingDetailActivitySubscription(member: WorkHubTeamMember | undefined): void {
         this.bindWorkingDetailConversationSubscription(member);
         this.bindWorkingDetailTaskLogSubscription(member);
     }
@@ -267,25 +255,30 @@ export class MobileProjectsTasksHubUi {
         bindWorkingDetailTaskLogSubscriptionExtracted(this, member);
     }
 
-    protected paintWorkingDetailTaskLog(member: WorkHubTeamMember, taskId: string, options?: { readonly loading?: boolean },): void {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public paintWorkingDetailTaskLog(member: WorkHubTeamMember, taskId: string, options?: { readonly loading?: boolean },): void {
         paintWorkingDetailTaskLogExtracted(this, member, taskId, options);
     }
 
-    protected async seedWorkingDetailTaskLogFromServer(memberId: string, taskId: string): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public async seedWorkingDetailTaskLogFromServer(memberId: string, taskId: string): Promise<void> {
         return seedWorkingDetailTaskLogFromServerExtracted(this, memberId, taskId);
     }
 
-    protected resolveWorkingDetailActivityFeed(member: WorkHubTeamMember): ReturnType<
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public resolveWorkingDetailActivityFeed(member: WorkHubTeamMember): ReturnType<
         typeof resolveWorkingAgentDetailActivityFeedFromConversation
     > {
         return resolveWorkingDetailActivityFeedExtracted(this, member);
     }
 
-    protected resolveWorkingDetailTranscriptExcerpt(member: WorkHubTeamMember): HTMLElement | undefined {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public resolveWorkingDetailTranscriptExcerpt(member: WorkHubTeamMember): HTMLElement | undefined {
         return resolveWorkingDetailTranscriptExcerptExtracted(this, member);
     }
 
-    protected prefetchWorkingDetailDocuments(members: readonly WorkHubTeamMember[]): void {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public prefetchWorkingDetailDocuments(members: readonly WorkHubTeamMember[]): void {
         prefetchWorkingDetailDocumentsExtracted(this, members);
     }
 
@@ -297,16 +290,19 @@ export class MobileProjectsTasksHubUi {
         return stopWorkingAgentExtracted(this, member);
     }
 
-    protected async cancelWorkingConversationLikeComposerStop(conversationId: string): Promise<void> {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public async cancelWorkingConversationLikeComposerStop(conversationId: string): Promise<void> {
         return cancelWorkingConversationLikeComposerStopExtracted(this, conversationId);
     }
 
-    protected resolveProjectForConversationId(conversationId: string): MobileProjectEntry | undefined {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public resolveProjectForConversationId(conversationId: string): MobileProjectEntry | undefined {
         return this.host.projects.find(entry => this.host.conversationIndexUi.conversationsForProject(entry)
             .some(summary => summary.id === conversationId));
     }
 
-    protected resolveOpenComposerConversationId(): string | undefined {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public resolveOpenComposerConversationId(): string | undefined {
         return resolveOpenComposerConversationIdExtracted(this);
     }
 
@@ -333,7 +329,8 @@ export class MobileProjectsTasksHubUi {
         return collectTeamMembersForTranscriptSectionExtracted(this);
     }
 
-    protected isEmptyComposerQuickActionsSurfacePainted(): boolean {
+    /** @internal Used by the extracted mobile-projects-tasks-hub-ui-* modules. */
+    public isEmptyComposerQuickActionsSurfacePainted(): boolean {
         return isEmptyComposerQuickActionsSurfacePaintedExtracted(this);
     }
 

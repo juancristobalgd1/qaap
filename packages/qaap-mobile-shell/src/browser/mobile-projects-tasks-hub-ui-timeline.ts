@@ -1,26 +1,11 @@
-// @ts-nocheck
+import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 // Extracted from mobile-projects-tasks-hub-ui.ts
 
-import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import {
-    isAgentsHubIdleConversationSummary,
-    QAAP_AGENTS_HUB_LANDING_ENABLED,
-    QAAP_AGENTS_HUB_QUICK_ACTIONS,
-    QAAP_AGENTS_HUB_RECENT_LIMIT,
-} from '../common/qaap-agents-hub-landing';
-import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
-import { type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
-import { cancelConversation } from '../common/qaap-agent-conversation-client';
-import { cancelAgentTask, fetchAgentTaskDetail } from '../common/qaap-agent-task-client';
-import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import {
     summarizeTaskStates,
     type MobileProjectsActiveTasks,
-    type MobileProjectTaskView,
 } from './mobile-projects-active-tasks';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import {
@@ -28,38 +13,8 @@ import {
     type MobileProjectTaskHistoryEntry,
     type MobileProjectTaskHistoryFilters,
 } from './mobile-projects-task-history-filters';
-import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
-import {
-    closeWorkingAgentsPopover,
-    dismissWorkingAgentsExpandForStopAll,
-    filterWorkingTeamMembers,
-    getWorkingAgentsDetailMember,
-    getWorkingAgentsDetailMemberId,
-    isWorkingAgentsExpandPinnedOpen,
-    isWorkingAgentsExpandSessionOpen,
-    isWorkingAgentsPopoverOpen,
-    isWorkingPillSuppressedAfterStopAll,
-    noteWorkingPillChromeCount,
-    openWorkingAgentsPopover,
-    refreshWorkingAgentsDetailActivityFeed,
-    refreshWorkingAgentsDetailCommandLog,
-    restoreWorkingAgentsExpandIfNeeded,
-    syncWorkingAgentsExpandContent,
-} from './qaap-sticky-composer-working-agents-popover';
-import {
-    resolveWorkingAgentDetailActivityFeedFromConversation,
-} from './qaap-sticky-composer-working-detail-activity';
-import { shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
-import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-pill';
-import {
-    resolveLatestTranscriptTodos,
-    resolveTodoStepProgress,
-} from '../common/qaap-transcript-todo-step';
-import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
-import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
 
-export function appendTasksHubTeamSectionExtracted(ctx: any, container: HTMLElement): boolean {
+export function appendTasksHubTeamSectionExtracted(ctx: MobileProjectsTasksHubUiContext, container: HTMLElement): boolean {
         const { members, filteredApprovals } = ctx.host.getFilteredTeamHubState();
         const teamHost = document.createElement('div');
         teamHost.className = 'theia-mobile-hub-team-root theia-mod-embedded-in-tasks';
@@ -74,7 +29,7 @@ export function appendTasksHubTeamSectionExtracted(ctx: any, container: HTMLElem
         return rendered;
 }
 
-export function renderTasksHubViewExtracted(ctx: any, projects: MobileProjectEntry[]): void {
+export function renderTasksHubViewExtracted(ctx: MobileProjectsTasksHubUiContext, projects: MobileProjectEntry[]): void {
         if (ctx.host.shouldUseAgentsHubLanding()) {
             void projects;
             ctx.host.renderAgentsHubExecutionShell();
@@ -211,7 +166,7 @@ function createTaskQueueSummary(activeTasks: MobileProjectsActiveTasks): HTMLEle
 }
 
 function createTaskHistoryBlock(
-    ctx: any,
+    ctx: MobileProjectsTasksHubUiContext,
     projects: MobileProjectEntry[],
     activeTasks: MobileProjectsActiveTasks,
 ): HTMLElement | undefined {
@@ -276,7 +231,7 @@ function createTaskHistoryBlock(
 }
 
 function createTaskHistoryFilters(
-    ctx: any,
+    ctx: MobileProjectsTasksHubUiContext,
     projects: MobileProjectEntry[],
     filters: MobileProjectTaskHistoryFilters,
 ): HTMLElement {
@@ -337,7 +292,7 @@ function createTaskHistoryFilters(
 }
 
 function createTaskHistorySelect(
-    ctx: any,
+    ctx: MobileProjectsTasksHubUiContext,
     key: 'projectId' | 'state' | 'date',
     labelText: string,
     value: string,

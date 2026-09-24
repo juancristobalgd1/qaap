@@ -1,56 +1,30 @@
-// @ts-nocheck
+import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 // Extracted from mobile-projects-tasks-hub-ui.ts
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationSummaryDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {
     isAgentsHubIdleConversationSummary,
-    QAAP_AGENTS_HUB_LANDING_ENABLED,
-    QAAP_AGENTS_HUB_QUICK_ACTIONS,
-    QAAP_AGENTS_HUB_RECENT_LIMIT,
 } from '../common/qaap-agents-hub-landing';
-import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
-import { type QaapComposerSurface } from '../common/qaap-composer-surface';
 import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import { cancelConversation } from '../common/qaap-agent-conversation-client';
 import { cancelAgentTask, fetchAgentTaskDetail } from '../common/qaap-agent-task-client';
-import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
-import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
 import {
-    closeWorkingAgentsPopover,
     dismissWorkingAgentsExpandForStopAll,
     filterWorkingTeamMembers,
     getWorkingAgentsDetailMember,
     getWorkingAgentsDetailMemberId,
-    isWorkingAgentsExpandPinnedOpen,
-    isWorkingAgentsExpandSessionOpen,
-    isWorkingAgentsPopoverOpen,
-    isWorkingPillSuppressedAfterStopAll,
-    noteWorkingPillChromeCount,
-    openWorkingAgentsPopover,
-    refreshWorkingAgentsDetailActivityFeed,
     refreshWorkingAgentsDetailCommandLog,
-    restoreWorkingAgentsExpandIfNeeded,
-    syncWorkingAgentsExpandContent,
 } from './qaap-sticky-composer-working-agents-popover';
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
 } from './qaap-sticky-composer-working-detail-activity';
 import { parseWorkingDetailTaskLogSegments, shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
-import { syncStickyComposerStepPillInRoots } from './qaap-sticky-composer-step-pill';
-import {
-    resolveLatestTranscriptTodos,
-    resolveTodoStepProgress,
-} from '../common/qaap-transcript-todo-step';
 import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
 import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
 
-export function bindWorkingDetailTaskLogSubscriptionExtracted(ctx: any, member: WorkHubTeamMember | undefined): void {
+export function bindWorkingDetailTaskLogSubscriptionExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember | undefined): void {
         const taskId = shouldShowWorkingDetailTaskLog(member ?? {})
             ? member?.taskId?.trim()
             : undefined;
@@ -100,7 +74,7 @@ export function bindWorkingDetailTaskLogSubscriptionExtracted(ctx: any, member: 
         void ctx.seedWorkingDetailTaskLogFromServer(memberId, taskId);
 }
 
-export function paintWorkingDetailTaskLogExtracted(ctx: any, member: WorkHubTeamMember,
+export function paintWorkingDetailTaskLogExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember,
         taskId: string,
         options?: { readonly loading?: boolean },): void {
         const live = getWorkingAgentsDetailMember()
@@ -118,7 +92,7 @@ export function paintWorkingDetailTaskLogExtracted(ctx: any, member: WorkHubTeam
         });
 }
 
-export async function seedWorkingDetailTaskLogFromServerExtracted(ctx: any, memberId: string, taskId: string): Promise<void> {
+export async function seedWorkingDetailTaskLogFromServerExtracted(ctx: MobileProjectsTasksHubUiContext, memberId: string, taskId: string): Promise<void> {
         const token = ++ctx.workingDetailTaskLogSeedToken;
         const activeTasks = ctx.host.activeTasks;
         const memberForLoading = ctx.host.collectTeamMembersForHub()
@@ -159,7 +133,7 @@ export async function seedWorkingDetailTaskLogFromServerExtracted(ctx: any, memb
         }
 }
 
-export function resolveWorkingDetailActivityFeedExtracted(ctx: any, member: WorkHubTeamMember): ReturnType<
+export function resolveWorkingDetailActivityFeedExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember): ReturnType<
         typeof resolveWorkingAgentDetailActivityFeedFromConversation
     > {
         const source = resolveWorkingDetailTranscriptSource(ctx, member);
@@ -170,7 +144,7 @@ export function resolveWorkingDetailActivityFeedExtracted(ctx: any, member: Work
 }
 
 /** Same transcript DOM as the main chat, for Working DETAIL (Cursor-style panel). */
-export function resolveWorkingDetailTranscriptExcerptExtracted(ctx: any, member: WorkHubTeamMember): HTMLElement | undefined {
+export function resolveWorkingDetailTranscriptExcerptExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember): HTMLElement | undefined {
         const messagesUi = ctx.host.transcriptMessagesUi;
         if (!messagesUi?.createWorkingDetailTranscriptExcerpt) {
             return undefined;
@@ -191,10 +165,10 @@ export function resolveWorkingDetailTranscriptExcerptExtracted(ctx: any, member:
         });
 }
 
-function resolveWorkingDetailTranscriptSource(ctx: any, member: WorkHubTeamMember): {
+function resolveWorkingDetailTranscriptSource(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember): {
         readonly document: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
         readonly liveSegments: QaapAgentMessageSegmentDTO[] | undefined;
-        readonly taskLogSegments: QaapAgentMessageSegmentDTO[] | undefined;
+        readonly taskLogSegments: readonly QaapAgentMessageSegmentDTO[] | undefined;
     } {
         const conversationId = member.conversationId?.trim();
         if (conversationId) {
@@ -225,7 +199,7 @@ function resolveWorkingDetailTranscriptSource(ctx: any, member: WorkHubTeamMembe
         };
 }
 
-export function prefetchWorkingDetailDocumentsExtracted(ctx: any, members: readonly WorkHubTeamMember[]): void {
+export function prefetchWorkingDetailDocumentsExtracted(ctx: MobileProjectsTasksHubUiContext, members: readonly WorkHubTeamMember[]): void {
         const conversations = ctx.host.conversations;
         if (!conversations) {
             return;
@@ -236,7 +210,7 @@ export function prefetchWorkingDetailDocumentsExtracted(ctx: any, members: reado
         conversations.prefetchDocuments(ids);
 }
 
-export async function stopAllWorkingAgentsExtracted(ctx: any, members: readonly WorkHubTeamMember[]): Promise<boolean> {
+export async function stopAllWorkingAgentsExtracted(ctx: MobileProjectsTasksHubUiContext, members: readonly WorkHubTeamMember[]): Promise<boolean> {
         const errors: string[] = [];
         const cancelledConversationIds = new Set<string>();
         const cancelJobs: Promise<void>[] = [];
@@ -307,7 +281,7 @@ export async function stopAllWorkingAgentsExtracted(ctx: any, members: readonly 
         return true;
 }
 
-export async function stopWorkingAgentExtracted(ctx: any, member: WorkHubTeamMember): Promise<boolean> {
+export async function stopWorkingAgentExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember): Promise<boolean> {
         try {
             if (member.conversationId) {
                 await ctx.cancelWorkingConversationLikeComposerStop(member.conversationId);
@@ -335,7 +309,7 @@ export async function stopWorkingAgentExtracted(ctx: any, member: WorkHubTeamMem
         }
 }
 
-export async function cancelWorkingConversationLikeComposerStopExtracted(ctx: any, conversationId: string): Promise<void> {
+export async function cancelWorkingConversationLikeComposerStopExtracted(ctx: MobileProjectsTasksHubUiContext, conversationId: string): Promise<void> {
         const summary = ctx.host.conversationIndexUi.findSummaryById(conversationId);
         const project = ctx.resolveProjectForConversationId(conversationId);
         if (project && summary) {
@@ -346,7 +320,7 @@ export async function cancelWorkingConversationLikeComposerStopExtracted(ctx: an
         await cancelConversation(conversationId);
 }
 
-export function resolveOpenComposerConversationIdExtracted(ctx: any): string | undefined {
+export function resolveOpenComposerConversationIdExtracted(ctx: MobileProjectsTasksHubUiContext): string | undefined {
         const summary = ctx.host.transcriptComposerSummary ?? ctx.host.transcriptOpenSummary;
         if (!summary || isAgentsHubIdleConversationSummary(summary)) {
             return undefined;
@@ -354,7 +328,7 @@ export function resolveOpenComposerConversationIdExtracted(ctx: any): string | u
         return summary.id;
 }
 
-export function collectTeamMembersForTranscriptSectionExtracted(ctx: any): WorkHubTeamMember[] {
+export function collectTeamMembersForTranscriptSectionExtracted(ctx: MobileProjectsTasksHubUiContext): WorkHubTeamMember[] {
         const summary = ctx.host.transcriptComposerSummary ?? ctx.host.transcriptOpenSummary;
         const conversationId = summary?.id?.trim();
         if (!conversationId) {
@@ -393,7 +367,7 @@ export function collectTeamMembersForTranscriptSectionExtracted(ctx: any): WorkH
         });
 }
 
-export function isEmptyComposerQuickActionsSurfacePaintedExtracted(ctx: any): boolean {
+export function isEmptyComposerQuickActionsSurfacePaintedExtracted(ctx: MobileProjectsTasksHubUiContext): boolean {
         for (const host of [ctx.host.transcriptComposerHost, ctx.host.stickyComposerHost]) {
             if (host?.isConnected && host.classList.contains('theia-mod-show-quick-actions')) {
                 return true;
@@ -406,7 +380,7 @@ export function isEmptyComposerQuickActionsSurfacePaintedExtracted(ctx: any): bo
         return false;
 }
 
-export function shouldSuppressWorkingPillForEmptyComposerExtracted(ctx: any): boolean {
+export function shouldSuppressWorkingPillForEmptyComposerExtracted(ctx: MobileProjectsTasksHubUiContext): boolean {
         if (ctx.isEmptyComposerQuickActionsSurfacePainted()) {
             return true;
         }
@@ -439,7 +413,7 @@ export function shouldSuppressWorkingPillForEmptyComposerExtracted(ctx: any): bo
         return shouldShowTranscriptEmptyQuickActions(conv, undefined);
 }
 
-export function markTasksFirstLoadCompleteExtracted(ctx: any, render: boolean): void {
+export function markTasksFirstLoadCompleteExtracted(ctx: MobileProjectsTasksHubUiContext, render: boolean): void {
         if (ctx.host.tasksFirstLoadFallback !== undefined) {
             window.clearTimeout(ctx.host.tasksFirstLoadFallback);
             ctx.host.tasksFirstLoadFallback = undefined;
@@ -453,7 +427,7 @@ export function markTasksFirstLoadCompleteExtracted(ctx: any, render: boolean): 
         }
 }
 
-export function createTasksLoadingStateExtracted(ctx: any): HTMLElement {
+export function createTasksLoadingStateExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {
         const list = document.createElement('div');
         list.className = 'theia-mobile-tasks-skeleton-list';
         list.setAttribute('aria-busy', 'true');
@@ -464,7 +438,7 @@ export function createTasksLoadingStateExtracted(ctx: any): HTMLElement {
         return list;
 }
 
-export function createTaskSkeletonRowExtracted(ctx: any): HTMLElement {
+export function createTaskSkeletonRowExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {
         const row = document.createElement('div');
         row.className = 'theia-mobile-tasks-skeleton-row q-card';
         const avatar = document.createElement('div');
@@ -480,7 +454,7 @@ export function createTaskSkeletonRowExtracted(ctx: any): HTMLElement {
         return row;
 }
 
-export function createTasksEmptyStateExtracted(ctx: any): HTMLElement {
+export function createTasksEmptyStateExtracted(ctx: MobileProjectsTasksHubUiContext): HTMLElement {
         const empty = document.createElement('div');
         empty.className = 'theia-mobile-projects-empty';
         const icon = document.createElement('span');

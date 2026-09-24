@@ -6,6 +6,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hub-ui-context';
 import { createAgentsHubQuickActionsBlockExtracted } from './mobile-projects-tasks-hub-ui-render';
 
 enableJSDOM();
@@ -26,7 +27,7 @@ describe('mobile-projects-tasks-hub-ui-render', () => {
                 },
             },
             applyComposerQuickActionPrompt: () => undefined,
-        });
+        } as unknown as MobileProjectsTasksHubUiContext);
         const runApp = Array.from(block.querySelectorAll<HTMLButtonElement>('button')).find(button =>
             button.textContent?.trim() === 'Run app');
 
@@ -51,7 +52,7 @@ describe('mobile-projects-tasks-hub-ui-render', () => {
                 transcriptComposerProject: undefined,
             },
             applyComposerQuickActionPrompt: () => undefined,
-        });
+        } as unknown as MobileProjectsTasksHubUiContext);
         const runApp = Array.from(block.querySelectorAll('button')).find(button =>
             button.textContent?.includes('Starting preview…'));
 
