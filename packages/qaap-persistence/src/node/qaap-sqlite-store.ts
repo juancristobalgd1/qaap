@@ -16,6 +16,32 @@ export interface QaapSqliteStoreOptions {
 export type QaapSqliteEntry<T> = readonly [key: string, value: T];
 
 /**
+ * Ordered schema migrations; `PRAGMA user_version` records how many have been applied.
+ * Append new steps, never edit or reorder existing ones. v1 uses `IF NOT EXISTS`, so databases
+ * created before versioning (user_version 0, tables already present) adopt it without data changes.
+ */
+export const QAAP_SQLITE_SCHEMA_MIGRATIONS: ReadonlyArray<(database: DatabaseSync) => void> = [
+    database => database.exec(`
+        CREATE TABLE IF NOT EXISTS qaap_kv (
+            namespace TEXT NOT NULL,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (namespace, key)
+        ) WITHOUT ROWID;
+        CREATE INDEX IF NOT EXISTS qaap_kv_namespace_updated
+            ON qaap_kv (namespace, updated_at DESC);
+        CREATE TABLE IF NOT EXISTS qaap_migration (
+            namespace TEXT PRIMARY KEY,
+            source_path TEXT NOT NULL,
+            migrated_at INTEGER NOT NULL
+        ) WITHOUT ROWID;
+    `),
+];
+
+export const QAAP_SQLITE_SCHEMA_VERSION = QAAP_SQLITE_SCHEMA_MIGRATIONS.length;
+
+/**
  * Small SQLite-backed JSON value store for Node-owned Qaap state.
  *
  * Values remain JSON encoded at the edge so existing store contracts and
@@ -24,11 +50,19 @@ export type QaapSqliteEntry<T> = readonly [key: string, value: T];
  * every update. Each database enables WAL and FULL synchronous mode before it
  * is used; the latter is intentional because these stores include credentials
  * and restart/recovery checkpoints.
+ *
+ * A connection is opened per operation (or per outermost transaction) on purpose: on Windows an
+ * open SQLite file cannot be deleted, and many callers and specs remove their state directories.
+ * The schema is migrated once per instance, so each later open only applies the PRAGMAs.
  */
 export class QaapSqliteStore {
 
     protected readonly databasePath: string;
     protected readonly namespace: string;
+    /** Connection of the outermost running transaction; nested work reuses it. */
+    protected activeDatabase: DatabaseSync | undefined;
+    protected transactionDepth = 0;
+    protected schemaReady = false;
 
     constructor(options: QaapSqliteStoreOptions) {
         this.databasePath = options.databasePath;
@@ -101,9 +135,19 @@ export class QaapSqliteStore {
         });
     }
 
+    /**
+     * Runs `operation` atomically. Nested calls share the outer connection and use a SAVEPOINT, so
+     * an inner failure rolls back only the inner work (a second connection would instead block on
+     * the outer write lock until `busy_timeout`). `operation` must be synchronous.
+     */
     withTransaction<T>(operation: (database: DatabaseSync) => T): T {
         return this.withDatabase(database => {
+            if (this.transactionDepth > 0) {
+                return this.runInSavepoint(database, operation);
+            }
             database.exec('BEGIN IMMEDIATE');
+            this.activeDatabase = database;
+            this.transactionDepth = 1;
             try {
                 const result = operation(database);
                 database.exec('COMMIT');
@@ -115,8 +159,32 @@ export class QaapSqliteStore {
                     // Preserve the original operation error.
                 }
                 throw error;
+            } finally {
+                this.activeDatabase = undefined;
+                this.transactionDepth = 0;
             }
         });
+    }
+
+    protected runInSavepoint<T>(database: DatabaseSync, operation: (database: DatabaseSync) => T): T {
+        const savepoint = `qaap_sp_${this.transactionDepth}`;
+        database.exec(`SAVEPOINT ${savepoint}`);
+        this.transactionDepth++;
+        try {
+            const result = operation(database);
+            database.exec(`RELEASE ${savepoint}`);
+            return result;
+        } catch (error) {
+            try {
+                database.exec(`ROLLBACK TO ${savepoint}`);
+                database.exec(`RELEASE ${savepoint}`);
+            } catch {
+                // Preserve the original operation error.
+            }
+            throw error;
+        } finally {
+            this.transactionDepth--;
+        }
     }
 
     /**
@@ -182,6 +250,9 @@ export class QaapSqliteStore {
     }
 
     protected withDatabase<T>(operation: (database: DatabaseSync) => T): T {
+        if (this.activeDatabase) {
+            return operation(this.activeDatabase);
+        }
         const database = new DatabaseSync(this.databasePath, { timeout: 5_000 });
         try {
             database.exec(`
@@ -189,24 +260,52 @@ export class QaapSqliteStore {
                 PRAGMA synchronous = FULL;
                 PRAGMA foreign_keys = ON;
                 PRAGMA busy_timeout = 5000;
-                CREATE TABLE IF NOT EXISTS qaap_kv (
-                    namespace TEXT NOT NULL,
-                    key TEXT NOT NULL,
-                    value TEXT NOT NULL,
-                    updated_at INTEGER NOT NULL,
-                    PRIMARY KEY (namespace, key)
-                ) WITHOUT ROWID;
-                CREATE INDEX IF NOT EXISTS qaap_kv_namespace_updated
-                    ON qaap_kv (namespace, updated_at DESC);
-                CREATE TABLE IF NOT EXISTS qaap_migration (
-                    namespace TEXT PRIMARY KEY,
-                    source_path TEXT NOT NULL,
-                    migrated_at INTEGER NOT NULL
-                ) WITHOUT ROWID;
             `);
+            if (!this.schemaReady) {
+                this.migrateSchema(database);
+                this.schemaReady = true;
+            }
             return operation(database);
         } finally {
             database.close();
+        }
+    }
+
+    /**
+     * Applies pending QAAP_SQLITE_SCHEMA_MIGRATIONS in one IMMEDIATE transaction (re-reading the
+     * version under the write lock, so concurrent processes cannot apply a step twice). A database
+     * newer than this build is refused instead of being written with an older schema.
+     */
+    protected migrateSchema(database: DatabaseSync): void {
+        const readVersion = (): number =>
+            Number((database.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined)?.user_version ?? 0);
+        const assertSupported = (version: number): void => {
+            if (version > QAAP_SQLITE_SCHEMA_VERSION) {
+                throw new Error(`Qaap SQLite store ${this.databasePath} has schema version ${version}, `
+                    + `newer than this build supports (${QAAP_SQLITE_SCHEMA_VERSION}); refusing to open it. `
+                    + 'Roll forward to a matching Qaap version instead of downgrading the database.');
+            }
+        };
+        assertSupported(readVersion());
+        if (readVersion() === QAAP_SQLITE_SCHEMA_VERSION) {
+            return;
+        }
+        database.exec('BEGIN IMMEDIATE');
+        try {
+            const current = readVersion();
+            assertSupported(current);
+            for (let version = current; version < QAAP_SQLITE_SCHEMA_VERSION; version++) {
+                QAAP_SQLITE_SCHEMA_MIGRATIONS[version](database);
+                database.exec(`PRAGMA user_version = ${version + 1}`);
+            }
+            database.exec('COMMIT');
+        } catch (error) {
+            try {
+                database.exec('ROLLBACK');
+            } catch {
+                // Preserve the original migration error.
+            }
+            throw error;
         }
     }
 }
