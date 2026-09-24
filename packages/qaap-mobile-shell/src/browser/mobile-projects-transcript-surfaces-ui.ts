@@ -12,18 +12,18 @@ import {
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
-import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
-import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
+import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import type { ExecutionSurfaceTabId } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 import {
     normalizeQaapPreviewConversationId,
     type QaapPreviewIdentity,
-} from '../common/qaap-preview-identity';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
 import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import {
     type TranscriptFilesViewMode,
     type TranscriptFilesViewServices,

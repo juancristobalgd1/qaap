@@ -4,14 +4,14 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
+import { THEIA_CODER_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     agentSupportsApprovalPolicy,
     DEFAULT_AGENT_APPROVAL_POLICY_ID,
     reconcileAgentApprovalPolicyId,
     resolveAutoApproveFromApprovalPolicy,
     resolveComposerAutoApprove,
-} from './qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 
 describe('qaap-sticky-composer-approval-policy', () => {
     it('enables the approval picker for VPS agents but not local Coder', () => {

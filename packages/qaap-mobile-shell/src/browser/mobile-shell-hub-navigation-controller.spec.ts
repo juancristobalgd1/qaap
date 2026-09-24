@@ -10,9 +10,9 @@ import type {
     MobileShellHubNavigationController as MobileShellHubNavigationControllerType,
     MobileShellHubNavigationHost,
 } from './mobile-shell-hub-navigation-controller';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 
 describe('mobile-shell-hub-navigation-controller', () => {
 

@@ -16,7 +16,7 @@ import {
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import { QaapWorkHubRoutineRunner } from './qaap-work-hub-routine-runner';

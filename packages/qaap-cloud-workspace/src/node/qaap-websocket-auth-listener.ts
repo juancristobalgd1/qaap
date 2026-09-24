@@ -8,7 +8,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import type { Request } from '@theia/core/shared/express';
 import { MessagingListenerContribution } from '@theia/core/lib/node/messaging/messaging-listeners';
 import { Socket } from 'socket.io';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 
 /** Binds the authenticated GitHub login to each frontend websocket connection. */

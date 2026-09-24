@@ -14,14 +14,14 @@ import type { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-wid
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import type { QaapPreviewInspectorDeps } from '@theia/qaap-adapters/lib/browser/qaap-preview-inline-inspector';
-import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
-import type { WorkHubCatalogAction } from '../common/mobile-work-hub-catalog';
-import type { QaapAttachComposerImageAttachment } from '../common/qaap-preview-feedback-context';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import type { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import type { ExecutionSurfaceTabId } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
+import type { WorkHubCatalogAction } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
+import type { QaapAttachComposerImageAttachment } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import type { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
@@ -29,7 +29,7 @@ import type { StickyComposerContextChipView } from './qaap-sticky-composer-conte
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import type { TranscriptFilesViewServices } from './qaap-transcript-files-view';
 import type { TranscriptTerminalViewServices } from './qaap-transcript-terminal-view';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 
 export interface MobileProjectsPanelDelegate {
     onProjectOpen(project: MobileProjectEntry): void;
@@ -175,11 +175,11 @@ export interface MobileProjectsPanelOptions {
         onSelect(id: string): void | Promise<void>;
     };
     /** Agent-finished toast contribution — the panel registers navigation callbacks on it. */
-    agentFinishedToast?: import('./qaap-agent-finished-toast-contribution').QaapAgentFinishedToastContribution;
+    agentFinishedToast?: import('@theia/qaap-shared-core/lib/browser/qaap-agent-finished-toast-contribution').QaapAgentFinishedToastContribution;
     /** Persistent dev-server orchestration for transcript Preview tab. */
     projectBootstrap?: QaapProjectBootstrapService;
     /** AG-UI frontend tool registry for live transcript tool execution. */
-    agUiFrontendTools?: import('./qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;
+    agUiFrontendTools?: import('@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;
     /** Expands `/skill-name` slash tokens into inline skill instructions before VPS submit. */
     expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
     /** Resolves attached files/images/context chips into the outbound VPS prompt. */

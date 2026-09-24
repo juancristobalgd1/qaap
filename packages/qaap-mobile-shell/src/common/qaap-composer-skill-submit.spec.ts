@@ -5,8 +5,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { expandComposerSkillSlashCommands, type ComposerSkillSubmitDeps } from './qaap-composer-skill-submit';
-import { parseComposerSkillDisplayMarker } from './qaap-composer-skill-display';
+import { expandComposerSkillSlashCommands, type ComposerSkillSubmitDeps } from '@theia/qaap-shared-core/lib/common/qaap-composer-skill-submit';
+import { parseComposerSkillDisplayMarker } from '@theia/qaap-shared-core/lib/common/qaap-composer-skill-display';
 
 describe('qaap-composer-skill-submit', () => {
 

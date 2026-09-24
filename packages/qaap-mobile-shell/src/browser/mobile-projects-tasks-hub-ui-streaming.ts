@@ -3,13 +3,13 @@ import type { MobileProjectsTasksHubUiContext } from './mobile-projects-tasks-hu
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isAgentsHubIdleConversationSummary,
-} from '../common/qaap-agents-hub-landing';
-import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
-import { cancelConversation } from '../common/qaap-agent-conversation-client';
-import { cancelAgentTask, fetchAgentTaskDetail } from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
+import { cancelConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { cancelAgentTask, fetchAgentTaskDetail } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     dismissWorkingAgentsExpandForStopAll,
     filterWorkingTeamMembers,
@@ -20,9 +20,9 @@ import {
 import {
     resolveWorkingAgentDetailActivityFeedFromConversation,
 } from './qaap-sticky-composer-working-detail-activity';
-import { parseWorkingDetailTaskLogSegments, shouldShowWorkingDetailTaskLog } from './qaap-sticky-composer-working-detail-task-log';
-import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
-import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
+import { parseWorkingDetailTaskLogSegments, shouldShowWorkingDetailTaskLog } from '@theia/qaap-shared-core/lib/browser/qaap-sticky-composer-working-detail-task-log';
+import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 
 export function bindWorkingDetailTaskLogSubscriptionExtracted(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember | undefined): void {
         const taskId = shouldShowWorkingDetailTaskLog(member ?? {})
@@ -166,7 +166,7 @@ export function resolveWorkingDetailTranscriptExcerptExtracted(ctx: MobileProjec
 }
 
 function resolveWorkingDetailTranscriptSource(ctx: MobileProjectsTasksHubUiContext, member: WorkHubTeamMember): {
-        readonly document: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+        readonly document: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
         readonly liveSegments: QaapAgentMessageSegmentDTO[] | undefined;
         readonly taskLogSegments: readonly QaapAgentMessageSegmentDTO[] | undefined;
     } {

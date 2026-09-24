@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapQaiqModelOption } from '../common/qaap-agent-task-client';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { nls } from '@theia/core/lib/common/nls';
-import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
-import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
+import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
+import { formatQaiqModelProviderLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 
 export interface QaapAgentPickerSearchEntry {
     readonly id: string;

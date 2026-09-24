@@ -25,8 +25,8 @@ import {
     type QaapBillingApiResponse,
 } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { isWorkHubTheiaDialogOpen } from '../common/qaap-work-hub-dialog-utils';
-import type { QaapAppearanceMode } from '../common/qaap-appearance-mode';
-import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
+import type { QaapAppearanceMode } from '@theia/qaap-shared-core/lib/common/qaap-appearance-mode';
+import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
 import type {
     MobileWorkHubSessionsSidebar,
     MobileWorkHubSettingsSidebarOptions,

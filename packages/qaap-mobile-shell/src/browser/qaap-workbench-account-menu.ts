@@ -4,12 +4,12 @@
 // *****************************************************************************
 
 import { CommandRegistry, nls } from '@theia/core/lib/common';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
-import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '../common/mobile-work-hub-catalog';
+import type { WorkHubCatalogAction, WorkHubCatalogItem, WorkHubCatalogSection } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
-import { QAAP_MESSAGE_CIRCLE_ICON_CLASS } from '../common/qaap-scm-changes-icon';
-import { createSegmentedField, type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
+import { QAAP_MESSAGE_CIRCLE_ICON_CLASS } from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
+import { createSegmentedField, type QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
 
 export const QAAP_AUTH_SIGN_IN_GITHUB_COMMAND = 'qaap.auth.signInGithub';
 export const QAAP_AUTH_SIGN_OUT_COMMAND = 'qaap.auth.signOut';

@@ -6,10 +6,10 @@
 import {
     NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS,
     NATIVE_MODEL_PICKER_AGENT_IDS,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import { listHermesNativeModels } from '@theia/qaap-mobile-shell/lib/common/qaap-hermes-model-catalog';
-import { listOpenClaudeNativeModels } from '@theia/qaap-mobile-shell/lib/common/qaap-openclaude-model-catalog';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { listHermesNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-hermes-model-catalog';
+import { listOpenClaudeNativeModels } from '@theia/qaap-shared-core/lib/common/qaap-openclaude-model-catalog';
 
 /** Keep in sync with {@link SETTINGS_MODEL_CATALOG_AGENT_IDS} in qaap-agent-model-selection. */
 export const SETTINGS_MODEL_CATALOG_AGENT_IDS = new Set(['qaiq']);

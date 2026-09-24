@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     annotateTranscriptActivityNestMetadata,
     resolveTranscriptActivityNestDepth,

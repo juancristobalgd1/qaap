@@ -46,6 +46,9 @@
       "path": "../qaap-persistence"
     },
     {
+      "path": "../qaap-shared-core"
+    },
+    {
       "path": "../terminal"
     },
     {

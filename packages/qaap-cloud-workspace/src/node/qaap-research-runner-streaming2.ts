@@ -5,12 +5,12 @@ import { spawnSync } from 'child_process';
 import {
     DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
     type ResearchGoal,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
 import {
     evaluateVerdict,
     type ResearchExperimentRecord,
     type ResearchMetricValue,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
 import { isQaapAgentTaskFinished, type QaapAgentTask, type QaapAgentTaskEvent } from '../common/qaap-agent-task';
 import { type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';

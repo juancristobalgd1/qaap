@@ -14,7 +14,7 @@ import {
     TRANSCRIPT_TOOL_RESULT_STREAM_CLASS,
     TRANSCRIPT_TOOL_SPECULATIVE_CLASS,
 } from './mobile-projects-transcript-messages-tool-ui';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-projects-transcript-messages-tool-ui-context';
 import {
     createTranscriptToolResultStreamBodyExtracted,

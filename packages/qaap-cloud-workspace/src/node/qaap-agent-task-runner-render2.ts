@@ -26,12 +26,12 @@ import {
     isUiHiddenVpsAgent,
     resolveQaapBuiltinAgentMentionId,
     resolveQaapCodexTemplate,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { OPENCLAUDE_AGENT_ID, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 import { listNativeAgentModels } from './qaap-agent-native-models';
-import { listQaiqModelsFromPreferences } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-model-catalog';
+import { listQaiqModelsFromPreferences } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 
 export function initExtracted(ctx: QaapAgentTaskRunnerContext): void {
         rememberQaapHostedRuntime(isQaapProductionRuntime(process.env));

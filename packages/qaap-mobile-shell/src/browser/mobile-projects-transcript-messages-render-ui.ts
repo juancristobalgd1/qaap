@@ -30,7 +30,7 @@ import {
     ensureTranscriptScrollController,
     type TranscriptScrollController,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-controller';
-import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO, cancelQueuedConversationMessage, dispatchQueuedConversationMessage, conversationToSummary } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO, cancelQueuedConversationMessage, dispatchQueuedConversationMessage, conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';

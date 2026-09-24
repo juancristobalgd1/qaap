@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { spawnSync } from 'child_process';
-import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { NATIVE_MODEL_CATALOG_EXCLUDED_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import {
     agentUsesNativeModelCatalog,
     listStaticNativeAgentModels,

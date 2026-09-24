@@ -9,7 +9,7 @@ import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shel
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { ShellLayoutTransformer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { SidePanel } from '@theia/core/lib/browser/shell/side-panel-handler';
-import { shouldBootstrapMobileAgentsChat, shouldPreferWorkHubAgentsLayout } from './mobile-projects-open';
+import { shouldBootstrapMobileAgentsChat, shouldPreferWorkHubAgentsLayout } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 
 /** Minimum restored side panel width on desktop (mobile sessions often persist ~0). */
 const MIN_DESKTOP_SIDE_PANEL_SIZE = 280;

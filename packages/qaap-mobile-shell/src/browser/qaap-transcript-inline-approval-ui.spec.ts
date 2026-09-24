@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import type { QaapAgentApprovalRequestDTO } from '../common/qaap-agent-approval-client';
+import type { QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import { TRANSCRIPT_APPROVAL_CARD_ALLOW_CLASS } from './qaap-transcript-approval-card-ui';
 import {
     clearTranscriptPendingApprovalBar,

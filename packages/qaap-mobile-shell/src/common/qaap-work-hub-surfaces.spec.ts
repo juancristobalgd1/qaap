@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { normalizeWorkHubViewId } from './qaap-work-hub-surfaces';
+import { normalizeWorkHubViewId } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-surfaces';
 
 describe('qaap-work-hub-surfaces', () => {
     it('maps removed landing hub ids to the unified Agents Work Hub', () => {

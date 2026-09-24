@@ -8,13 +8,13 @@ import {
     readStoredAgentModel,
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
     type ModelCapabilityLevelValue,
 } from '../common/qaap-sticky-composer-model-capability';
@@ -25,8 +25,8 @@ import {
     shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
 } from './qaap-sticky-composer-popover';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtracted } from './mobile-projects-sticky-composer-sheets-ui-activity';
 import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, openStickyComposerModelCapabilityPopoverExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownCapabilityPresentationExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render';
@@ -64,7 +64,7 @@ export interface MobileProjectsStickyComposerSheetsHost {
     preparedCwdByProjectId: Map<string, string>;
     projectsService: MobileProjectsService;
     chatAgentService?: import('@theia/ai-chat/lib/common/chat-agent-service').ChatAgentService;
-    activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
+    activeTasks?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks;
     readPreference?: (key: string) => unknown;
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
     stickyComposerQaiqModels: QaapQaiqModelOption[];
@@ -79,7 +79,7 @@ export interface MobileProjectsStickyComposerSheetsHost {
         draft: string,
         options?: {
             readonly agentId?: string;
-            readonly agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+            readonly agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
         },
     ): Promise<boolean>;
 }

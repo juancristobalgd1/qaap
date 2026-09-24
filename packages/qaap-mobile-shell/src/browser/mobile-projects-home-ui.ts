@@ -16,8 +16,8 @@ import {
     type WorkHubUsageTab,
     type WorkHubUsageTimeRange,
 } from '../common/qaap-work-hub-usage-summary';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import { mobileProjectInitials } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { mobileProjectInitials } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export type WorkHubHomeNavigateTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review';
 

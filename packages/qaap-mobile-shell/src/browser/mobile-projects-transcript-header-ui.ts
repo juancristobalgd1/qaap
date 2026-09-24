@@ -4,10 +4,10 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     type MobileProjectEntry,
-} from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 /** Panel surface for active-chat header chrome refresh. */
 export interface MobileProjectsTranscriptHeaderHost {

@@ -12,7 +12,7 @@ import {
     QAAP_INBOX_STRUCTURE_FP_ATTR,
 } from './mobile-projects-hub-incremental-ui';
 import { buildWorkHubInboxStructureFingerprint, buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import {
     QAAP_TEAM_MEMBER_ID_ATTR,
     QAAP_TEAM_ROW_FP_ATTR,

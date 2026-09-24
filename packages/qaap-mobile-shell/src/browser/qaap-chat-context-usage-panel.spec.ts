@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import type { ChatModel } from '@theia/ai-chat';
-import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     formatContextTokenCount,
     renderContextUsageSheet,

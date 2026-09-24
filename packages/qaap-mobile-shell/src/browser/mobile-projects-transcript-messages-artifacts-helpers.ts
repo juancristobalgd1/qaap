@@ -7,11 +7,11 @@
 // Pure helpers operate only on their parameters; interaction helpers receive dependencies explicitly.
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { shouldShowTranscriptLiveStatus } from '../common/qaap-transcript-turn-status';
+import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { shouldShowTranscriptLiveStatus } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import type { TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigateTarget, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
-import { reportQaapClientError } from '../common/qaap-client-error-report';
+import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
 import { destroyThinkingOrbIndicator, QAAP_THINKING_ORB_INDICATOR_CLASS } from './qaap-thinking-orb-indicator';
 import { isTranscriptAgentThinkingPhase, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';

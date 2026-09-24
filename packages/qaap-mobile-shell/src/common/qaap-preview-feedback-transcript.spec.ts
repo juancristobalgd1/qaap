@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { parsePreviewFeedbackContextBody, splitPreviewFeedbackSource } from './qaap-preview-feedback-transcript';
+import { parsePreviewFeedbackContextBody, splitPreviewFeedbackSource } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-transcript';
 
 /** Mirrors the output of `formatPreviewFeedbackAgentContext` in qaap-adapters. */
 const FULL_BODY = [

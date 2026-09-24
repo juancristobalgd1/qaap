@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { mergeSegmentTraceEvents, resolveAgentMessageSegments, segmentsToTraceEvents } from './qaap-transcript-trace-model';
+import { mergeSegmentTraceEvents, resolveAgentMessageSegments, segmentsToTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 describe('qaap-transcript-trace-model', () => {
     it('segmentsToTraceEvents marks the streaming tail as running', () => {

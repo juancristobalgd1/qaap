@@ -5,11 +5,11 @@
 
 import {
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { type QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
-import { type MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import { type MobileProjectEntry, type MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { appendConversationDiffFootExtracted, appendConversationFootMetricsExtracted, appendTaskFootSeparatorExtracted, computeTaskFootFingerprintExtracted, formatConversationRunDurationExtracted, formatDurationShortExtracted, formatTaskSinceExtracted, hasConversationDiffStatsExtracted, localizeActivityLabelExtracted, patchSidebarCompactTaskRowExtracted, patchWorkHubTaskRowContentExtracted, patchWorkHubTaskRowExtracted, populateWorkHubTaskFootRowExtracted, registerTaskElapsedTickersExtracted, resolveConversationAgentLabelExtracted } from './mobile-projects-project-rows-ui-activity';
 import { createHomeRowAvatarExtracted, createHomeRowStatusExtracted, createRowExtracted, createTaskLeadingGlyphExtracted, createWorkspaceBlockExtracted, createWorkspaceOpenControlExtracted } from './mobile-projects-project-rows-ui-render';
 import { createTaskBlockExtracted, detailComposerSurfaceForProjectExtracted, groupConversationTasksExtracted } from './mobile-projects-project-rows-ui-streaming';
@@ -32,7 +32,7 @@ export interface MobileProjectsProjectRowsHost {
     delegate: { onProjectOpen(project: MobileProjectEntry): void };
 
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     conversationOpenUi: import('./mobile-projects-conversation-open-ui').MobileProjectsConversationOpenUi;
     openProjectDetail(project: MobileProjectEntry): void | Promise<void>;
     toggleRowExpanded(project: MobileProjectEntry): void | Promise<void>;

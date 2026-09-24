@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 describe('resolveTranscriptPreviewOpenUrl', () => {
 

@@ -14,32 +14,32 @@ import {
     agentUsesSettingsModelCatalog,
     readStoredAgentModel,
     resolveExplicitAgentForSubmit,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     QAAP_AI_FEATURES_SETTINGS_QUERY,
     agentNeedsSettingsApiKeyPath,
     localizeAddApiKeyInSettingsCta,
-} from '../common/qaap-agent-auth-login';
-import { hasAnyConfiguredByokCredential } from '../common/qaap-qaiq-byok-provider-registry';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     describeComposerInteractionMode,
     reconcileComposerModeId,
     resolveComposerModeLabel,
     resolveStickyComposerModes,
-} from '../common/qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
     resolveComposerAutoApprove,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     reconcileAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
     composerContextRequests,
     disposeComposerContextEntries,
     revokeComposerContextPreview,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     bindContextUsageIndicator,
     isContextUsageIndicatorEnabled,
@@ -52,20 +52,20 @@ import {
     resolveChatModelContextUsageBreakdown,
     resolveVpsContextUsageBreakdown,
 } from './qaap-chat-context-usage-panel';
-import type { QaapAgentConversationSummaryDTO, QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
-import type { QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
-import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-tool-approval-rules';
-import type { StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
+import type { QaapAgentConversationSummaryDTO, QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import type { QaapAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
+import type { StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { MobileProjectEntry, MobileProjectFilter } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileProjectEntry, MobileProjectFilter } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
 import type { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
     executeStickyComposerSlashAction,
     openComposerMcpConfigurationSheet,
@@ -91,7 +91,7 @@ export interface MobileProjectsStickyComposerRenderHost {
     projects: MobileProjectEntry[];
     filter: MobileProjectFilter;
     homeMode: boolean;
-    hubView: import('./mobile-projects-types').MobileProjectsHubView;
+    hubView: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView;
     agentsHubShellActive: boolean;
     agentsHubInlineActive: boolean;
     agentsHubInlineChatHost: HTMLElement | undefined;
@@ -116,8 +116,8 @@ export interface MobileProjectsStickyComposerRenderHost {
     stickyComposerCapabilityLevel: ModelCapabilityLevelValue | undefined;
     stickyComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     stickyComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
-    stickyComposerBackendAgents: import('../common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
-    transcriptComposerBackendAgents: import('../common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
+    stickyComposerBackendAgents: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
+    transcriptComposerBackendAgents: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapAgentTaskAgentOption[];
     stickyComposerPinnedAgentId: string | undefined;
     preparedCwdByProjectId: Map<string, string>;
     chatService?: ChatService;
@@ -128,7 +128,7 @@ export interface MobileProjectsStickyComposerRenderHost {
     preferenceService?: PreferenceService;
     getComposerVariables?: unknown;
     getComposerSkills?: () => readonly { readonly name: string; readonly description?: string }[];
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO | undefined;
     updateNewFabVisibility(): void;

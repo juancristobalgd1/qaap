@@ -18,18 +18,18 @@ import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/q
 import {
     QAAP_BUILTIN_AGENT_IDS,
     resolveQaapBuiltinAgentMentionId,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
-import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { isQaiqAgent, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
     formatQaiqInteractionFlags,
     type QaapQaiqInteractionFlagOptions,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
-import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
+import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { agentUsesSettingsModelCatalog } from '../common/qaap-agent-native-model-catalog';
 import { listNativeAgentModels } from './qaap-agent-native-models';
-import { vendorHasByokCredential } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+import { vendorHasByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     applyAgentApprovalPolicyToCommand,
     shouldUseQaiqStdioApprovals,

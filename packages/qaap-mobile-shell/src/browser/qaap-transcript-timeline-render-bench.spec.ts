@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import * as markdownit from '@theia/core/shared/markdown-it';
-import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resetTimelineDetailsOpenStateForTesting } from './qaap-execution-event-timeline';
 import {
     enableTranscriptRenderMetrics,

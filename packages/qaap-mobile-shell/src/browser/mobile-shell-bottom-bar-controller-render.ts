@@ -14,7 +14,7 @@ import {
     setMobileLandingHubListChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import {
     MOBILE_BOTTOM_SPLIT_DEFAULT_BOTTOM_RATIO,
     MOBILE_BOTTOM_SPLIT_MAIN_MIN_RATIO,

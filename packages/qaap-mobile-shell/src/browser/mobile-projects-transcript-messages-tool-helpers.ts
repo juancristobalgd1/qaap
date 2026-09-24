@@ -7,7 +7,7 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import { nls } from '@theia/core/lib/common/nls';
-import { getFileIconClass } from '../common/qaap-file-icon-utils';
+import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
 import type { TranscriptActivityTerminalExpandEntry } from '../common/qaap-transcript-activity-expand-core';
 import type { LobeTraceStatus } from './mobile-projects-transcript-lobehub-ui';
 

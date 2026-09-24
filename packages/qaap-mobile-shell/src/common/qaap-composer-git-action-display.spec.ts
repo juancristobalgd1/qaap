@@ -8,7 +8,7 @@ import {
     createComposerGitActionDisplayMarker,
     isComposerGitActionOnlyMessage,
     parseComposerGitActionDisplayMarker,
-} from './qaap-composer-git-action-display';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 
 describe('qaap-composer-git-action-display', () => {
     it('round-trips git action markers', () => {

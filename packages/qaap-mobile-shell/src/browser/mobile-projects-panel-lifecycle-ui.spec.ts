@@ -10,8 +10,8 @@ import {
     MobileProjectsPanelLifecycleUi,
     type MobileProjectsPanelLifecycleHost,
 } from './mobile-projects-panel-lifecycle-ui';
-import type { QaapConversationChangeEvent } from '../common/qaap-conversation-change';
-import type { MobileProjectsHubView } from './mobile-projects-types';
+import type { QaapConversationChangeEvent } from '@theia/qaap-shared-core/lib/common/qaap-conversation-change';
+import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 describe('mobile-projects-panel-lifecycle-ui live refresh', () => {
 

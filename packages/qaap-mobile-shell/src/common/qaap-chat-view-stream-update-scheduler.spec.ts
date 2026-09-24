@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import {
     QaapChatViewStreamUpdateScheduler,
     type QaapChatViewStreamUpdateClocks,
-} from './qaap-chat-view-stream-update-scheduler';
+} from '@theia/qaap-shared-core/lib/common/qaap-chat-view-stream-update-scheduler';
 
 describe('QaapChatViewStreamUpdateScheduler', () => {
 

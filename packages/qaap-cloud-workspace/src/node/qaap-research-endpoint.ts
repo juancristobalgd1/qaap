@@ -12,12 +12,12 @@ import {
     type QaapCreateResearchGoalBody,
     type QaapResearchGoalDetailResponse,
     type QaapResearchGoalListResponse,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-api';
-import type { ResearchGoal } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-api';
+import type { ResearchGoal } from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { QaapResearchRunner } from './qaap-research-runner';
 import { QaapResearchStore } from './qaap-research-store';

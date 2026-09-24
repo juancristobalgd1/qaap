@@ -25,9 +25,9 @@ import {
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { hasDesktopSessionsSidebarCollapsed } from './mobile-work-hub-sessions-sidebar';
-import { QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '../common/qaap-mobile-work-surface-preference';
+import { QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import {
     decideLayoutRecovery,
     QAAP_LAYOUT_RECOVERY_ATTEMPTED_KEY,

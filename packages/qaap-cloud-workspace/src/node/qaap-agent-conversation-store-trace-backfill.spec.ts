@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { materializeAgentMessageForApi } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import { materializeAgentMessageForApi } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
 import { backfillAgentMessageFromStructuredLogExtracted } from './qaap-agent-conversation-store-activity2';
 import { parseStructuredLog } from './qaap-agent-conversation-store-helpers';
 import { resolveStructuredParsedTraceEvents } from './qaap-agent-conversation-store-utils';

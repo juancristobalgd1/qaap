@@ -10,7 +10,7 @@ import {
     countRunningTeamMembers,
     filterTeamMembersForDisplay,
     inferAgentIdFromCommand,
-} from './qaap-work-hub-team';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 
 describe('collectAgentMembers', () => {
     it('uses the explicit agent identity without exposing its internal prompt as a shell command', () => {

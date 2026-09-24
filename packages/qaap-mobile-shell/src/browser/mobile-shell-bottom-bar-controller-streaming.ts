@@ -5,7 +5,7 @@ import { MAXIMIZED_CLASS } from '@theia/core/lib/browser/shell/application-shell
 import { CommonCommands } from '@theia/core/lib/browser/common-commands';
 import { nls } from '@theia/core/lib/common/nls';
 import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import {

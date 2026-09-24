@@ -29,7 +29,7 @@ export interface MobileProjectsPullRequestsSidebarHost {
     pullRequestDetail?: QaapGithubPullRequestSummary;
     quickInputService?: import('@theia/core/lib/common/quick-pick-service').QuickInputService;
 
-    refreshInboxPullRequests(projects?: import('./mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
+    refreshInboxPullRequests(projects?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
     openPullRequestDetail(pullRequest: QaapGithubPullRequestSummary): void;
 }
 

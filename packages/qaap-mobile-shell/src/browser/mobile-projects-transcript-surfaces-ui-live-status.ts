@@ -6,9 +6,9 @@ import { nls } from '@theia/core/lib/common/nls';
 import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import {
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { isTerminalDoesNotExistError } from './qaap-project-bootstrap-dev-errors';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { isTerminalDoesNotExistError } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-dev-errors';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     createTranscriptTerminalStagingHost,
     createTranscriptTerminalSurface,
@@ -20,7 +20,7 @@ import {
     type TranscriptTerminalViewServices,
 } from './qaap-transcript-terminal-view';
 import { registerQaapWorkHubTerminalContext } from '@theia/qaap-adapters/lib/browser/qaap-work-hub-terminal-context';
-import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
+import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
     type TranscriptWorkspaceSurfaceKey,

@@ -8,13 +8,13 @@ import { UnsafeWidgetUtilities } from '@theia/core/lib/browser';
 import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import {
     QaapDiffReviewWidget,
     type QaapDiffReviewRepositoryContext,
 } from './qaap-diff-review-widget';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export interface QaapDiffProjectTab {
     projectId: string;

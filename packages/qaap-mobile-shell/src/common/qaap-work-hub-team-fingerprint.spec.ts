@@ -12,7 +12,7 @@ import {
     QAAP_TEAM_ROW_FP_ATTR,
     QAAP_TEAM_SECTION_FP_ATTR,
 } from './qaap-work-hub-team-fingerprint';
-import type { WorkHubTeamMember } from './qaap-work-hub-team';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import { MobileProjectsTeamHubUi } from '../browser/mobile-projects-team-hub-ui';
 
 describe('qaap-work-hub-team-fingerprint', () => {

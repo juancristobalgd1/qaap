@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QAAP_MESSAGE_CIRCLE_SVG_MARKUP, QAAP_SCM_CHANGES_SVG_MARKUP } from './qaap-scm-changes-icon';
+import { QAAP_MESSAGE_CIRCLE_SVG_MARKUP, QAAP_SCM_CHANGES_SVG_MARKUP } from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
 
 describe('qaap-scm-changes-icon', () => {
 

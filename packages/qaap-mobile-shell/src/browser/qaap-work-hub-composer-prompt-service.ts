@@ -9,13 +9,13 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
-import { createConversation } from '../common/qaap-agent-conversation-client';
+import { createConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     readStoredAgent,
     type QaapCreateAgentTaskQaiqModel,
-} from '../common/qaap-agent-task-client';
-import { resolveStoredAgentModelForSubmit } from '../common/qaap-agent-model-selection';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { resolveStoredAgentModelForSubmit } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import type {
     QaapAttachComposerContextArgs,
     QaapWorkHubPickAgentAndSubmitPromptOptions,

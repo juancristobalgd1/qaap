@@ -10,7 +10,7 @@ import {
     isHostedLocalhostOAuthAgent,
     localizeHostedLocalhostOAuthAgentMessage,
     rememberQaapHostedRuntime,
-} from './qaap-hosted-agent-auth-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 
 describe('qaap-hosted-agent-auth-policy', () => {
     afterEach(() => {

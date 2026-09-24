@@ -18,7 +18,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import { destroyThinkingOrbIndicator } from './qaap-thinking-orb-indicator';
 import { sharedElapsedTicker } from './qaap-shared-elapsed-ticker';
 import { clearLegacyAccordionHeaderProvenance } from './mobile-turn-provenance-badge';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
+import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 /** CSS class on the process accordion that wraps the timeline. */
 export const MOBILE_PROCESS_ACCORDION_CLASS = 'theia-mobile-process-accordion';

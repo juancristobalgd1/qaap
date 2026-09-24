@@ -9,11 +9,11 @@
 // into the event-based timeline tree: narrative events with grouped tool
 // children. Extracted from qaap-execution-event-timeline.ts.
 
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { extractToolArgFilePath, formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { extractToolArgFilePath, formatReadToolDetailFromArgs } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind, extractTranscriptTaskSummary } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptSubagentToolName } from '../common/qaap-transcript-activity-nesting';
-import { isAgentToolResultFailure } from '../common/qaap-transcript-content-display';
+import { isAgentToolResultFailure } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 import {
     isTranscriptWebSearchTool,
     parseTranscriptWebSearchQuery,

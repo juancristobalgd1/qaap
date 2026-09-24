@@ -5,7 +5,7 @@
 
 import { AIVariableResolutionRequest } from '@theia/ai-core';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
-import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
+import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
 
 export function buildTranscriptImagePreviewRequest(wsRelativePath: string): AIVariableResolutionRequest {
     const fileName = wsRelativePath.split('/').pop() ?? wsRelativePath;

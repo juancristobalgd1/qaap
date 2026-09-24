@@ -23,7 +23,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { MOBILE_ONE_COLUMN_LAYOUT_MEDIA_QUERY } from '@theia/core/lib/browser/shell/mobile-layout-state';
 import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
-import { peekPreferDesktopIde, QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '../common/qaap-mobile-work-surface-preference';
+import { peekPreferDesktopIde, QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import {
     hasAnyAgentConversationWork,
     hasBlockingAgentConversationWork,

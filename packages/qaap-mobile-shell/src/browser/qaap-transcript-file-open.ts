@@ -20,7 +20,7 @@ import type { ApplicationShell } from '@theia/core/lib/browser/shell/application
 import type { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import type { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { isTranscriptWorkspaceFilesystemPath } from '../common/qaap-transcript-workspace-cwd';
-import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
+import { resolveWorkspaceHostFsPath } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-shell';
 import {
     type TranscriptFileDecoration,
     type TranscriptFileTreeEntry,

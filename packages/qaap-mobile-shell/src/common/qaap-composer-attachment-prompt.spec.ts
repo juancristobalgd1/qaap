@@ -18,7 +18,7 @@ import {
     extractComposerAttachmentPreviewFeedbackTitles,
     resolveComposerContextAttachments,
     stripComposerAttachmentPreamble,
-} from './qaap-composer-attachment-prompt';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-attachment-prompt';
 import {
     buildEditorContextAttachmentRequest,
     buildEditorSelectionFingerprint,

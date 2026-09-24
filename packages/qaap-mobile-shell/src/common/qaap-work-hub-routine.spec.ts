@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { normalizeRoutineIntervalHours, routineIsDue, type QaapWorkHubRoutine } from './qaap-work-hub-routine';
-import { isConversationAutoApproveEnabled } from './qaap-agent-conversation-client';
+import { isConversationAutoApproveEnabled } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 function sampleRoutine(overrides: Partial<QaapWorkHubRoutine> = {}): QaapWorkHubRoutine {
     return {

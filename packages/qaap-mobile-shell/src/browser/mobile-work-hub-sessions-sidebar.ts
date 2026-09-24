@@ -12,8 +12,8 @@ import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { installMobilePanelResizeDrag } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-panel-resize-drag';
 import { installMobileVerticalTouchScroll } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-vertical-touch-scroll';
 import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
-import { hashString } from '../common/qaap-agent-task-client';
-import { setQaapClientErrorBuild } from '../common/qaap-client-error-report';
+import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { setQaapClientErrorBuild } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { fetchQaapAuthConfig } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 
 export const QAAP_MOBILE_SESSIONS_SIDEBAR_BODY_CLASS = 'theia-mobile-mod-sessions-sidebar-open';

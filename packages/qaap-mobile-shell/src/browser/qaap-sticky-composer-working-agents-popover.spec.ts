@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import {
     WORKING_CONTROL_CLASS,
     WORKING_DETAIL_PANEL_CLASS,

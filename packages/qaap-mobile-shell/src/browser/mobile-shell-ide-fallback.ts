@@ -12,9 +12,9 @@ import {
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobile-layout-state';
 
 export interface MobileShellIdeFallbackHost {

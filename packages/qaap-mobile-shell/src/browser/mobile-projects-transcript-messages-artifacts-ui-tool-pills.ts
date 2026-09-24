@@ -3,7 +3,7 @@ import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobil
 import { transcriptActivityTimelineResync, transcriptLiveStatusTickerBound } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
-import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { hasTranscriptActivityStats, resolveTranscriptActivityStats, resolveTranscriptThinkingContent } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptAgentThinkingPhase, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';

@@ -8,7 +8,7 @@ import { parseHTML } from 'linkedom';
 import {
     buildQaapVisualVerificationMarkdown,
     QAAP_VISUAL_VERIFICATION_MARKER,
-} from '../common/qaap-visual-verification';
+} from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import {
     buildTranscriptCapturePendingChip,
     enhanceTranscriptCaptureDirectives,
@@ -23,12 +23,14 @@ describe('qaap-transcript-capture-pending-ui', () => {
     const { document } = parseHTML('<!DOCTYPE html><html><body></body></html>');
     let previousDocument: Document | undefined;
 
-    before(() => {
+    // Per test, not per suite: the root JSDOM hook re-creates `document` in its beforeEach when an earlier suite
+    // disabled JSDOM, which would silently replace a document installed once in `before`.
+    beforeEach(() => {
         previousDocument = globalThis.document;
         (globalThis as typeof globalThis & { document: Document }).document = document as unknown as Document;
     });
 
-    after(() => {
+    afterEach(() => {
         if (previousDocument) {
             (globalThis as typeof globalThis & { document: Document }).document = previousDocument;
         }

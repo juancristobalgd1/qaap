@@ -10,12 +10,12 @@ import {
     markMobileProjectsHomeVisible,
     markPreferAgentsSurface,
     setMobileLandingHubListChrome,
-} from './mobile-projects-open';
-import type { MobileProjectsHubView } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 
 export interface MobileShellHubNavigationHost {
     isMobileActive(): boolean;

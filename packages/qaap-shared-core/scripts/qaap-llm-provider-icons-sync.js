@@ -24,7 +24,7 @@ function buildIconAssetsSource() {
 
     const lines = Object.entries(urls).map(([key, value]) => `    '${key}': '${value}',`);
     return {
-        source: `// Auto-generated from resources/llm-providers/*.png — re-run: npm run sync:llm-provider-icons --prefix packages/qaap-mobile-shell
+        source: `// Auto-generated from resources/llm-providers/*.png — re-run: npm run sync:llm-provider-icons --prefix packages/qaap-shared-core
 
 export const LLM_PROVIDER_ICON_DATA_URLS: Readonly<Record<string, string>> = {
 ${lines.join('\n')}
@@ -40,7 +40,7 @@ if (checkOnly) {
     const existing = fs.existsSync(outFile) ? fs.readFileSync(outFile, 'utf8') : '';
     if (existing !== source) {
         console.error(`Icon assets out of sync: ${path.relative(process.cwd(), outFile)}`);
-        console.error('Run: npm run sync:llm-provider-icons --prefix packages/qaap-mobile-shell');
+        console.error('Run: npm run sync:llm-provider-icons --prefix packages/qaap-shared-core');
         process.exit(1);
     }
     console.log(`Icon assets in sync (${iconCount} icons)`);

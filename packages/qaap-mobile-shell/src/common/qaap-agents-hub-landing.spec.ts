@@ -13,7 +13,7 @@ import {
     QAAP_AGENTS_HUB_LANDING_ENABLED,
     QAAP_AGENTS_HUB_QUICK_ACTIONS,
     QAAP_AGENTS_HUB_RECENT_LIMIT,
-} from './qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 
 describe('qaap-agents-hub-landing', () => {
     it('keeps the landing feature enabled for mobile Work Hub', () => {

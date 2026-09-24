@@ -4,8 +4,8 @@ import { lazyTranscriptToolPillBodies } from './mobile-projects-transcript-messa
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
 import { extractTranscriptMcpServerLabel, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptToolPillDescriptors, shouldOpenTranscriptToolDetails } from '../common/qaap-agent-transcript-segments';
 import {
     resolveTranscriptActivityTimelineSummaryText,

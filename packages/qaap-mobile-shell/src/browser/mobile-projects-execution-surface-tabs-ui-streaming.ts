@@ -1,24 +1,24 @@
 import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
-import type { ExecutionSurfaceTabId as TranscriptTab } from '../common/qaap-execution-surface-tabs';
+import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     appendExecutionSurfaceTabIcon,
     createExecutionSurfaceIconElement,
     isExecutionSurfaceIconElement,
     QAAP_MESSAGE_CIRCLE_ICON_CLASS,
-} from '../common/qaap-scm-changes-icon';
-import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from './qaap-execution-surface-header-chrome';
-import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
+} from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
+import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from '@theia/qaap-shared-core/lib/browser/qaap-execution-surface-header-chrome';
+import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { resolveInteractiveAgentCliBin } from '../common/qaap-agent-tui-command';
-import { peekPreferDesktopIde } from './mobile-projects-open';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { resolveInteractiveAgentCliBin } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function applyExecutionSurfaceIconSelectDisplayExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, strip: HTMLElement, activeTab: TranscriptTab): void {
     const selectBtn = queryExecutionSurfaceViewSelect(strip);

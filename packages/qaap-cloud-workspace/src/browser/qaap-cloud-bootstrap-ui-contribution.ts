@@ -8,7 +8,7 @@ import { Command, CommandContribution, CommandRegistry } from '@theia/core/lib/c
 import { nls } from '@theia/core/lib/common/nls';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { QaapProjectBootstrapService } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-service';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { ensureQaapCloudWorkspace } from './qaap-cloud-workspace-client';
 import { QaapMobileEnvPanel } from './qaap-mobile-env-panel';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { filterQaiqStreamProcessLogLines } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-stream';
+import { filterQaiqStreamProcessLogLines } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
 
 export function filterAgentProcessLogChunk(chunk: string): string {
     if (!chunk) {

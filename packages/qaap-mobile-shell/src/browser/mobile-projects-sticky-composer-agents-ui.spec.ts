@@ -8,8 +8,8 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 enableJSDOM();
 
 import { expect } from 'chai';
-import { writeStoredAgent } from '../common/qaap-agent-task-client';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { writeStoredAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsStickyComposerAgentsUi, type MobileProjectsStickyComposerAgentsHost } from './mobile-projects-sticky-composer-agents-ui';
 
 describe('MobileProjectsStickyComposerAgentsUi', () => {

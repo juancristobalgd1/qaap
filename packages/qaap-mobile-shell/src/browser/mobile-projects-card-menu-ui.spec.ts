@@ -6,7 +6,7 @@
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
 import type { MobileProjectsCardMenuHost } from './mobile-projects-card-menu-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 enableJSDOM();
 // eslint-disable-next-line @typescript-eslint/no-var-requires

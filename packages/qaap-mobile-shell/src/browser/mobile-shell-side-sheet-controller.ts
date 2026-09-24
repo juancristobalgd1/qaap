@@ -15,7 +15,7 @@ import {
     OPEN_AI_CONFIGURATION_COMMAND,
     WORKBENCH_TOGGLE_TERMINAL,
 } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
-import { setMobileWorkHubSideSheetOpen } from './mobile-projects-open';
+import { setMobileWorkHubSideSheetOpen } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type { MobileShellBottomBarController } from './mobile-shell-bottom-bar-controller';
 
 export interface MobileShellSideSheetHost {

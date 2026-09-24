@@ -7,7 +7,7 @@ import {
     qaapPreviewWidgetKeyFromCoordinates,
     type QaapPreviewWidgetKey,
 } from '@theia/qaap-adapters/lib/browser/qaap-preview-widget-uri';
-import { normalizeQaapPreviewProjectId } from '@theia/qaap-mobile-shell/lib/common/qaap-preview-identity';
+import { normalizeQaapPreviewProjectId } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
 
 /**
  * Resolves the mini-browser widget key for a Work Hub project card.

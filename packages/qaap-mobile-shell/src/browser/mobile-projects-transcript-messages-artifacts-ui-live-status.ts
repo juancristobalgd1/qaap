@@ -4,7 +4,7 @@ import { MOBILE_CLOSING_TEXT_ERROR_PREFIX,TRANSCRIPT_TRACE_STATUS_ATTR,transcrip
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveTranscriptTimelineVisibilityPolicy } from '../common/qaap-transcript-timeline-visibility';
 import {
     markTranscriptTimelineGapExpanded,

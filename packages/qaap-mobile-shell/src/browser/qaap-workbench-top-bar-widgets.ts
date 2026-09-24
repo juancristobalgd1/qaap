@@ -19,17 +19,17 @@ import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-servi
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import { buildQaapAccountMenuEntries, createQaapViewModeSwitch, dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu, type QaapAccountMenuEntry } from './qaap-workbench-account-menu';
-import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
-import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
+import type { QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
+import { QaapMobileProjectsDashboardCommands } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dashboard-commands';
 import {
     peekPreferDesktopIde,
     QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS,
-} from '../common/qaap-mobile-work-surface-preference';
-import { MobileProjectsService } from './mobile-projects-service';
+} from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { type MobileBottomButton, type MobileBottomButtonId } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
-import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 const WORKBENCH_NAV_GO_BACK = 'textEditor.commands.go.back';
 const WORKBENCH_NAV_GO_FORWARD = 'textEditor.commands.go.forward';

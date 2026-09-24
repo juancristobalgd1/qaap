@@ -10,7 +10,7 @@ import {
     MarkdownChatResponseContentImpl,
     ToolCallChatResponseContentImpl,
 } from '@theia/ai-chat/lib/common/chat-model';
-import { MutableStreamChatResponse, syncStreamResponseContents } from './qaap-sync-stream-response-contents';
+import { MutableStreamChatResponse, syncStreamResponseContents } from '@theia/qaap-shared-core/lib/common/qaap-sync-stream-response-contents';
 
 class TestMutableStreamChatResponse implements MutableStreamChatResponse {
     content: ChatResponseContent[] = [];

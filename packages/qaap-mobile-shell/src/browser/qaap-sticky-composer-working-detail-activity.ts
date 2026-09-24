@@ -7,11 +7,11 @@ import { nls } from '@theia/core/lib/common/nls';
 import type {
     QaapAgentConversationDTO,
     QaapAgentMessageSegmentDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     extractToolArgFilePath,
     formatToolActivityLabel,
-} from '../common/qaap-agent-conversation-list-metrics';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import {
     classifyTranscriptToolActivityKind,
     excerptTranscriptThought,
@@ -20,7 +20,7 @@ import {
     resolveTranscriptThinkingContent,
     type QaapTranscriptActivityStats,
 } from '../common/qaap-agent-transcript-segments';
-import { isAgentToolResultFailure } from '../common/qaap-transcript-content-display';
+import { isAgentToolResultFailure } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 import {
     groupTranscriptActivityNavigationItems,
     resolveTranscriptActivityNavigationItems,
@@ -28,8 +28,8 @@ import {
     type TranscriptActivityNavigationItem,
 } from '../common/qaap-transcript-activity-navigation';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
-import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
-import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 
 /** Compact Cursor-style activity model for the Working DETAIL expand panel. */
 export interface WorkingAgentDetailActivityFeed {

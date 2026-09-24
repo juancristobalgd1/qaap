@@ -6,14 +6,14 @@ import { QuickPickItem } from '@theia/core/lib/browser';
 import {
     readStoredAgent,
     SHELL_AGENT_ID,
-} from '../common/qaap-agent-task-client';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { createLucideArrowUpRightIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import { buildQaapAccountMenuEntries, QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 export function createSessionsSidebarProjectGroupExtracted(ctx: MobileProjectsSessionsSidebarUiContext, project: MobileProjectEntry,
     conversations: readonly QaapAgentConversationSummaryDTO[],

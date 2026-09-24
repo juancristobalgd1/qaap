@@ -7,25 +7,25 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { QAAP_AGENT_CONVERSATION_API_PATH, QaapAgentConversation, QaapAgentMessage, QaapCreateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
-import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
 import { areAllSubtasksSettled, buildTeamSynthesisUserMessage, collectSubtasksForLeader, countFailedSubtasks, formatSubtaskMailboxMessage } from '../common/qaap-team-mailbox';
 
 import type { QaapAgentTask, QaapAgentTaskEvent } from '../common/qaap-agent-task';
 
-import { QaapConversationStreamMetricsCollector } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import { QaapConversationStreamMetricsCollector } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 
-import { preferTraceFirstAgentMessageStorage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import { preferTraceFirstAgentMessageStorage } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
 
-import { mergeAccumulatorTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
+import { mergeAccumulatorTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 
-import { mergeSegmentTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model';
+import { mergeSegmentTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
-import { agentMessageHasVisualVerificationMarker, buildQaapVisualFlowMarkdown, buildQaapVisualVerificationFailureMarkdown, type QaapPreviewVisualValidationResult, type QaapVisualFlowStepEvidence } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+import { agentMessageHasVisualVerificationMarker, buildQaapVisualFlowMarkdown, buildQaapVisualVerificationFailureMarkdown, type QaapPreviewVisualValidationResult, type QaapVisualFlowStepEvidence } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
-import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
+import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 
 import { parseStructuredLog as parseStructuredLogHelper } from './qaap-agent-conversation-store-helpers';
 

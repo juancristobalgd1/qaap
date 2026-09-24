@@ -7,10 +7,10 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import type { QaapGitHistoryCommit } from '../common/qaap-git-review';
-import { setMobileActiveTranscriptChrome } from './mobile-projects-open';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapGitHistoryCommit } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { setMobileActiveTranscriptChrome } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
@@ -21,7 +21,7 @@ import { TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/comm
 import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import type { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
-import { disposeComposerContextEntries, type StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
+import { disposeComposerContextEntries, type StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 interface VerifyCheckResult {
@@ -71,9 +71,9 @@ export interface MobileProjectsTranscriptSheetHost {
     transcriptComposerSummary: QaapAgentConversationSummaryDTO | undefined;
     transcriptComposerContext: StickyComposerContextEntry[];
     transcriptComposerPinnedAgentId: string | undefined;
-    transcriptComposerAgentModel: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel | undefined;
+    transcriptComposerAgentModel: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel | undefined;
     transcriptComposerModeId: string | undefined;
-    transcriptComposerApprovalPolicyId: import('../common/qaap-sticky-composer-approval-policy').QaapAgentApprovalPolicyId | undefined;
+    transcriptComposerApprovalPolicyId: import('@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy').QaapAgentApprovalPolicyId | undefined;
     transcriptComposerDraft: string;
     transcriptComposerDraftPersistTimer: number | undefined;
     transcriptComposerPrefsPersistTimer: number | undefined;
@@ -97,7 +97,7 @@ export interface MobileProjectsTranscriptSheetHost {
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     executionSurfaceTabsUi: MobileProjectsExecutionSurfaceTabsUi;
     agentsHubInlineActive: boolean;
-    conversations?: import('./mobile-projects-conversations').MobileProjectsConversations;
+    conversations?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversations').MobileProjectsConversations;
     visible: boolean;
     delegate: {
         onEnterActiveTranscript?(): void;

@@ -7,7 +7,7 @@ import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     estimateConversationTokensFromMessages,
     resolveConversationContextWindowSize,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapAgentMessage } from './qaap-agent-conversation';
 
 /** Start compressing older turns once the estimated prompt exceeds this share of the context window. */

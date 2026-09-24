@@ -8,10 +8,10 @@ import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shel
 import { StatusBarImpl } from '@theia/core/lib/browser/status-bar/status-bar';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { Disposable } from '@theia/core/lib/common/disposable';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import {
     BottomBarSecondaryItem,
     MOBILE_BOTTOM_OPEN_CLASS,

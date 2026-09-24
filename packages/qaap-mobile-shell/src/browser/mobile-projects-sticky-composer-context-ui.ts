@@ -14,18 +14,18 @@ import {
     type StickyComposerTokenOption,
 } from '../common/qaap-sticky-composer-mention';
 import { buildStickyComposerSlashSections, type StickyComposerSlashSection } from '../common/qaap-sticky-composer-slash-menu';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { applyComposerContextEntryPreview, resolveStickyComposerContextEntry, type StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import {
     createComposerContextEntry,
     hasPendingComposerContextEntries,
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
-import { type QaapAgentTaskAgentOption } from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import { type QaapAgentTaskAgentOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 

@@ -8,7 +8,7 @@ import {
     markPreferDesktopIde,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { dismissQaapAccountMenu, QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND } from './qaap-workbench-account-menu';
 import {
     BottomBarSecondaryItem,

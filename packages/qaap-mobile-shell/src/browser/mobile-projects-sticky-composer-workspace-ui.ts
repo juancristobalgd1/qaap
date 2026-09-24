@@ -10,9 +10,9 @@ import {
     isQaapGitReviewNotRepoError,
     readQaapGitReviewErrorBody,
     type QaapGitBranchesResponse,
-} from '../common/qaap-git-review';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { createComposerWorkspaceSheetNavGroup, type ComposerWorkspaceSheetNavKind } from './qaap-sticky-composer-workspace-bar';
 import {
     isWorkHubHeaderProjectPopoverAnchor,
@@ -23,8 +23,8 @@ import {
     shouldUseStickyComposerPopover,
     type StickyComposerPopoverAlign,
 } from './qaap-sticky-composer-popover';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
@@ -48,12 +48,12 @@ transcriptOpenProject: MobileProjectEntry | undefined;
 stickyComposerWorkspaceSheet: HTMLElement | undefined;
 transcriptComposerHost: HTMLElement | undefined;
 transcriptComposerProject: MobileProjectEntry | undefined;
-transcriptComposerSummary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined;
+transcriptComposerSummary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined;
 projectsService: MobileProjectsService;
 delegate: { onProjectsChanged?: () => void };
 transcriptComposerUi: MobileProjectsTranscriptComposerUi;
 transcriptStickyComposerUi: MobileProjectsTranscriptStickyComposerUi;
-conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
 render(): void;
 renderAgentsHubExecutionShell(): void;
 openProject(project: MobileProjectEntry): Promise<void>;

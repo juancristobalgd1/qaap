@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapContextCompactionDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentMessageDTO, QaapContextCompactionDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-transcript-messages-render-ui';
 
 const COMPACTION_SELECTOR = '.theia-mobile-agent-transcript-context-compaction';

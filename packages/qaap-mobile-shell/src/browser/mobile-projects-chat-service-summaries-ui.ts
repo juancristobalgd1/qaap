@@ -5,9 +5,9 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatService, ChatSession, ChatSessionMetadata } from '@theia/ai-chat';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export interface MobileProjectsChatServiceSummariesHost {
     chatServiceSessionSummariesByProjectId: Map<string, QaapAgentConversationSummaryDTO[]>;

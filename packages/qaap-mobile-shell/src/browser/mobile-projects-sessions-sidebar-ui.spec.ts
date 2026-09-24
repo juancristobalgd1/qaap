@@ -11,7 +11,7 @@ import { mergeSessionsSidebarProjectsExtracted } from './mobile-projects-session
 enableJSDOM();
 
 import { MobileProjectsSessionsSidebarUi, type MobileProjectsSessionsSidebarHost } from './mobile-projects-sessions-sidebar-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 
 describe('mobile-projects-sessions-sidebar-ui', () => {

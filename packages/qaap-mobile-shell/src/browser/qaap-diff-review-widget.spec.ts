@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapGitChangedFile } from '../common/qaap-git-review';
+import type { QaapGitChangedFile } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-diff-review-select';
 
 function file(path: string, adds = 1, dels = 0): QaapGitChangedFile {

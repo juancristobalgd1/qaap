@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { readQaapGitReviewErrorBody } from './qaap-git-review';
+import { readQaapGitReviewErrorBody } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 
 describe('qaap-git-review error helpers', () => {
     it('returns trimmed plain text when not JSON', () => {

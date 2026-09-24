@@ -7,15 +7,15 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     collectAgentMembers,
     type WorkHubTeamMember,
-} from '../common/qaap-work-hub-team';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import {
     isConversationAutoApproveEnabled,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { type QaapAgentApprovalRequestDTO } from '../common/qaap-agent-approval-client';
-import { cwdMatchesProject, type MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { type QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import { cwdMatchesProject, type MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 
 /** Panel surface for Team hub member/approval data and navigation. */
@@ -30,7 +30,7 @@ export interface MobileProjectsHubTeamDataHost {
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void>;
     openProjectDetail(project: MobileProjectEntry): Promise<void>;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
 }
 
 /** Collects Team hub members/approvals and handles member row navigation. */

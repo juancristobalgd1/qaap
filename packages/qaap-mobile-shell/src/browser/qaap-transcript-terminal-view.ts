@@ -13,7 +13,7 @@ import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget
 import type { TerminalBlock } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { resolveTranscriptWorkspaceRootUri } from './qaap-transcript-file-open';
-import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
+import { resolveWorkspaceHostFsPath } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-shell';
 import type { TranscriptTerminalSurface } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-surface-types';
 import {
     restoreOrCreateTranscriptTerminal,

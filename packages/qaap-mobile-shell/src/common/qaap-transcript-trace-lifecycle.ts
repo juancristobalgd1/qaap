@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
-import type { QaapConversationCheckpointDTO } from './qaap-agent-conversation-client';
-import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
-import { backfillAgentMessageTraceEvents } from './qaap-transcript-trace-backfill';
+import type { QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapConversationCheckpointDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapTranscriptTraceEventDTO } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { backfillAgentMessageTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
 
 export function appendTraceRunCancelledEvent(
     message: QaapAgentMessageDTO,

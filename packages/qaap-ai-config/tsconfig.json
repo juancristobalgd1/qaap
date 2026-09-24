@@ -28,6 +28,9 @@
       "path": "../ai-ide"
     },
     {
+      "path": "../ai-mcp"
+    },
+    {
       "path": "../ai-mcp-server"
     },
     {
@@ -35,6 +38,9 @@
     },
     {
       "path": "../core"
+    },
+    {
+      "path": "../filesystem"
     },
     {
       "path": "../qaap-adapters"
@@ -50,6 +56,12 @@
     },
     {
       "path": "../qaap-mobile-shell"
+    },
+    {
+      "path": "../qaap-shared-core"
+    },
+    {
+      "path": "../workspace"
     }
   ]
 }

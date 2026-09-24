@@ -10,14 +10,14 @@ import {
     markMobileProjectsPanelDismiss,
     QAAP_AUTH_OPEN_FIRST_REPO_EVENT,
     QAAP_MOBILE_PREFER_AGENTS_SURFACE_KEY,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import {
     MobileShellLandingController,
     type MobileShellLandingHost,
 } from './mobile-shell-landing-controller';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 
 describe('mobile-shell-landing-controller', () => {
 

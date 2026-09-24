@@ -5,7 +5,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
-import { buildAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import { buildAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import {
     clearWorkingPillStopAllSuppression,
@@ -15,9 +15,9 @@ import {
     isWorkingAgentsExpandSessionOpen,
     isWorkingPillSuppressedAfterStopAll,
 } from './qaap-sticky-composer-working-agents-popover';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 
 describe('MobileProjectsTasksHubUi — working pill', () => {
     let disableJSDOM: () => void;

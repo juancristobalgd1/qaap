@@ -6,7 +6,7 @@
 import {
     isFailedRunSummary,
     type QaapAgentConversationSummaryDTO,
-} from './qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 /**
  * Collapse older failed runs that share the same title so the sessions sidebar

@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from './mobile-work-hub-catalog';
+import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import {
     executeStickyComposerSlashAction,
     openComposerMcpConfigurationSheet,

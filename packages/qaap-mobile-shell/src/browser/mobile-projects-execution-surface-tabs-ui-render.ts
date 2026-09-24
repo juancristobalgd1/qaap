@@ -1,24 +1,24 @@
 import type { MobileProjectsExecutionSurfaceTabsUiContext } from './mobile-projects-execution-surface-tabs-ui-context';
 // Extracted from mobile-projects-execution-surface-tabs-ui.ts
 
-import type { ExecutionSurfaceTabId as TranscriptTab } from '../common/qaap-execution-surface-tabs';
+import type { ExecutionSurfaceTabId as TranscriptTab } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import type { MobileProjectsExecutionSurfaceSidebarState } from './mobile-projects-execution-surface-tabs-ui';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     recordExecutionSurfaceTabUse,
-} from '../common/qaap-execution-surface-tabs';
+} from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
 import {
     createExecutionSurfaceIconElement,
     QAAP_MESSAGE_CIRCLE_ICON_CLASS,
     QAAP_SCM_CHANGES_ICON_CLASS,
-} from '../common/qaap-scm-changes-icon';
-import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from './qaap-execution-surface-header-chrome';
+} from '@theia/qaap-shared-core/lib/common/qaap-scm-changes-icon';
+import { applyExecutionSurfaceHeaderChrome, queryExecutionSurfaceViewSelect } from '@theia/qaap-shared-core/lib/browser/qaap-execution-surface-header-chrome';
 import { writePendingTranscriptFilesViewMode } from './qaap-transcript-files-view';
-import { peekPreferDesktopIde } from './mobile-projects-open';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function resolveExecutionSurfaceProjectExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext): MobileProjectEntry | undefined {
     const projectId = ctx.host.projectDetailExpandedId ?? ctx.host.expandedId;

@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { removeProjectConfirmCopy } from './mobile-projects-remove-confirm';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 function sampleProject(overrides: Partial<MobileProjectEntry> = {}): MobileProjectEntry {
     return {

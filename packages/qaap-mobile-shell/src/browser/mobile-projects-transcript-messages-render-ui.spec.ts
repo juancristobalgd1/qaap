@@ -11,9 +11,9 @@ import { expect } from 'chai';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
-} from '../common/qaap-agents-hub-landing';
-import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
-import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     enableTranscriptRenderMetrics,

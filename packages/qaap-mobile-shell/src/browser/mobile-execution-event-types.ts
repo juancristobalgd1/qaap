@@ -9,7 +9,7 @@
 // execution event timeline modules. Extracted from qaap-execution-event-timeline.ts
 // to keep the type contract decoupled from the rendering/patching logic.
 
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 export type MobileEventKind = 'explore' | 'read' | 'write' | 'edit' | 'delete' | 'run' | 'verification' | 'other';
 

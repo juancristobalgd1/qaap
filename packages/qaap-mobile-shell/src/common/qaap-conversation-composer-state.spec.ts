@@ -4,10 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
-import { conversationToSummary } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, formatConversationExecutionSessionMeta, readConversationComposerDraft, writeConversationComposerDraft } from './qaap-conversation-composer-state';
-import { writeStoredAgentModel } from './qaap-agent-task-client';
+import { writeStoredAgentModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 const baseConv = (): QaapAgentConversationDTO => ({
     id: 'conv-1',

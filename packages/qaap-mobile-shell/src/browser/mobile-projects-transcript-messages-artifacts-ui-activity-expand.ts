@@ -2,8 +2,8 @@ import type { TranscriptActivityTimelineOptions } from './mobile-projects-transc
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
-import { type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { formatToolActivityLabel } from '../common/qaap-agent-conversation-list-metrics';
+import { type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { formatToolActivityLabel } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { resolveTranscriptActivityDiffPeek } from '../common/qaap-transcript-activity-diff-peek';
 import { buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
 import {

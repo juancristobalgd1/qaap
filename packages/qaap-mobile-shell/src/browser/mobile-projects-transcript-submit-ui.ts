@@ -13,34 +13,34 @@ import {
     type QaapAgentConversationSummaryDTO,
     type QaapMessageDeliveryMode,
     type QaapPendingUserMessageDTO,
-} from '../common/qaap-agent-conversation-client';
-import { mergePendingUserMessagesWithLocalQueue } from '../common/qaap-pending-user-messages-merge';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { mergePendingUserMessagesWithLocalQueue } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
 import {
     resolveAgentModelForSubmit,
     resolveExplicitAgentForSubmit,
     resolveStoredAgentModelForSubmit,
     type QaapCreateAgentTaskQaiqModel,
-} from '../common/qaap-agent-task-client';
-import { applyBackendInteractionModeToPrompt } from '../common/qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     reconcileAgentApprovalPolicyId,
     type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     reconcileAgentToolApprovalRules,
     type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import { appendOptimisticPendingUserMessage } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
-import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
-import { isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
-import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
+import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
+import { isConversationTurnVisuallySettled } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { messageRequestsDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
     estimateConversationTokensFromMessages,
     resolveConversationContextWindowSize,
-} from '../common/qaap-agent-context-usage';
-import { QaapTurnSettleNotifier } from './qaap-turn-settle-notifier';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
+import { QaapTurnSettleNotifier } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -80,7 +80,7 @@ export interface MobileProjectsTranscriptSubmitHost {
             approvalPolicyId?: string;
             variables?: AIVariableResolutionRequest[];
             agentModel?: QaapCreateAgentTaskQaiqModel;
-            latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
+            latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
         },
     ): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated>;
     resolveActiveTranscriptChatHost(): HTMLElement | undefined;

@@ -6,24 +6,24 @@ import {
     getConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
 import {
     shouldSkipStreamingTranscriptRefetch,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 import {
     conversationShouldWatchDevPreview,
-} from '../common/qaap-transcript-preview-offer';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
     shouldForceTranscriptRenderOnStatusSettle,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
-import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
-import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
+import { warmAgentTurnPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-turn-warm';
+import { resolveTranscriptEffectiveStatus } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     type QaapTranscriptLiveRefreshOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function scheduleTranscriptConversationRefreshExtracted(ctx: MobileProjectsTranscriptLiveUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

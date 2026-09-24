@@ -9,12 +9,12 @@ import {
     clearPreferDesktopIde,
     markPreferDesktopIde,
     peekPreferDesktopIde,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import type {
     MobileShellIdeFallbackController as MobileShellIdeFallbackControllerType,
     MobileShellIdeFallbackHost,
 } from './mobile-shell-ide-fallback';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 
 describe('mobile-shell-ide-fallback', () => {

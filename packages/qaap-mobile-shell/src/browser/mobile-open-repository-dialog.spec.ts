@@ -7,8 +7,8 @@ import { expect } from 'chai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 const STYLE_DIR = path.join(__dirname, '..', '..', 'src', 'browser', 'style');
 const BROWSER_DIR = path.join(__dirname, '..', '..', 'src', 'browser');

@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
-import { formatToolActivityLabel } from './qaap-agent-conversation-list-metrics';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { formatToolActivityLabel } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { classifyTranscriptToolActivityKind } from './qaap-agent-transcript-segments';
 
 export interface TranscriptStreamingActivityView {

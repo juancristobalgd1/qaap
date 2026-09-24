@@ -14,16 +14,16 @@ import {
     writeStoredAgent,
     type QaapAgentTaskAgentOption,
     type QaapAgentTaskCreated,
-} from '../common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage } from '../common/qaap-agent-failure-message';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { createAgentSelectField } from './qaap-agent-ui';
-import { MobileProjectEntry } from './mobile-projects-types';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
+import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 
 export type { QaapAgentTaskCreated as MobileAgentTaskCreated };
-export { scopedAgentStorageKey } from '../common/qaap-agent-task-client';
+export { scopedAgentStorageKey } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 export interface MobileAgentTaskComposerDelegate {
     onSubmitted?(task: QaapAgentTaskCreated): void | Promise<void>;

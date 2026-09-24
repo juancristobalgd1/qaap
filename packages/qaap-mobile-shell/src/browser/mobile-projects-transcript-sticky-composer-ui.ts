@@ -14,43 +14,43 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapMessageDeliveryMode,
-} from '../common/qaap-agent-conversation-client';
-import { type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
     type QaapAgentTaskAgentOption,
-} from '../common/qaap-agent-task-client';
-import { mergePendingUserMessagesWithLocalQueue } from '../common/qaap-pending-user-messages-merge';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { mergePendingUserMessagesWithLocalQueue } from '@theia/qaap-shared-core/lib/common/qaap-pending-user-messages-merge';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import {
     extractConversationComposerPrefs,
 } from '../common/qaap-conversation-composer-state';
 import {
     type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
     TranscriptFollowUpQueue,
     type TranscriptFollowUpEntry,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import {
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { ComposerTranscriptSurfacesApi } from './qaap-composer-host-contracts';
 import type { QaapDiffReviewWidget } from './qaap-diff-review-widget';
-import type { ChatSessionActivityApi } from './mobile-projects-conversation-index-ui';
+import type { ChatSessionActivityApi } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
 import type { MobileProjectsTranscriptVerifyHost } from './mobile-projects-transcript-verify-ui';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import {
     type QaapGitChangedFile,
     type QaapGitCommitWorkflowAction,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import { syncTranscriptQueuedBubbles } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-queued-bubbles';
 import {
@@ -60,7 +60,7 @@ import {
 } from './mobile-projects-transcript-sticky-composer-helpers';
 // Re-export public API functions from the helpers module.
 export { mergeFailedComposerDraft, isIdleComposerFocusStealable } from './mobile-projects-transcript-sticky-composer-helpers';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import {
     type ComposerPreviewRuntime,
 } from './qaap-composer-preview-action';
@@ -98,7 +98,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     transcriptComposerApprovalPolicyId: QaapAgentApprovalPolicyId | undefined;
     transcriptComposerToolApprovalRules: QaapAgentToolApprovalRules | undefined;
     transcriptComposerPinnedAgentId: string | undefined;
-    transcriptComposerAgentModel: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel | undefined;
+    transcriptComposerAgentModel: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel | undefined;
     transcriptComposerPrefsConvId: string | undefined;
     transcriptComposerDraftPersistTimer: number | undefined;
     transcriptComposerPrefsPersistTimer: number | undefined;
@@ -158,7 +158,7 @@ export interface MobileProjectsTranscriptStickyComposerHost {
     stickyComposerSheetsUi: import('./mobile-projects-sticky-composer-sheets-ui').MobileProjectsStickyComposerSheetsUi;
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
     updateWorkingPillChrome(): void;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     chatServiceSummariesUi: ChatSessionActivityApi;
     transcriptMessagesUi: import('./mobile-projects-transcript-messages-ui').MobileProjectsTranscriptMessagesUi;
     handleComposerContextItemRemoved(entry: StickyComposerContextEntry): void;

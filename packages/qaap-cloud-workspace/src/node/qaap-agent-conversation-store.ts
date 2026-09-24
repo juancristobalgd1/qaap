@@ -24,8 +24,8 @@ import {
     QaapRenameAgentConversationRequest,
     QaapUpdateAgentConversationRequest,
 } from '../common/qaap-agent-conversation';
-import { type QaapAgentStreamAccumulator } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import { type QaapCliAgUiStreamEmitter, } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
+import { type QaapAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import { type QaapCliAgUiStreamEmitter, } from '@theia/qaap-shared-core/lib/common/qaap-cli-ag-ui-stream';
 import {
     QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT,
     resolveChatTurnOutcome,
@@ -41,14 +41,14 @@ import { QaapBillingStore } from './qaap-billing-store';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { QaapObservability } from './qaap-observability';
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
-import { QaapConversationStreamMetricsCollector } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
-import { type QaapAgentMessageWireSnapshot, } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
+import { QaapConversationStreamMetricsCollector } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import { type QaapAgentMessageWireSnapshot, } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import {
     type QaapAgUiEvent,
     type QaapAgUiTraceReducerState,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
-import { type QaapPreviewVisualValidationResult } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
-import { type ComposerGitActionDisplayMetadata, } from '@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display';
+} from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
+import { type QaapPreviewVisualValidationResult } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
+import { type ComposerGitActionDisplayMetadata, } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 import { QAAP_MAX_TURN_MINUTES_ENV, resolveQaapMaxTurnMinutes, } from '../common/qaap-agent-turn-watchdog';
 import {
     visualEvidenceDirectory as visualEvidenceDirectoryHelper,

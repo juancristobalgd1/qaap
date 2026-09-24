@@ -3,9 +3,9 @@ import { lazyTranscriptToolPillBodies,transcriptToolGroupItems,transcriptToolGro
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
-import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
+import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
+import { formatReadToolDetailFromArgs } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { excerptTranscriptThought, extractTranscriptMcpServerLabel, hasTranscriptActivityStats, isTranscriptThoughtExcerptTruncated, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats, resolveTranscriptThinkingContent, resolveTranscriptToolPillDescriptors, resolveTranscriptToolRowParts, shouldOpenTranscriptToolDetails, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { isTranscriptAgentThinkingPhase, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';

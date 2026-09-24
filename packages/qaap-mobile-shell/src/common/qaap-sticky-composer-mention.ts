@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import type { AIVariable } from '@theia/ai-core';
-import { appendAgentBrandIcon } from './qaap-agent-branding';
-import { QaapAgentTaskAgentOption, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
+import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
+import { QaapAgentTaskAgentOption, THEIA_CODER_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     filterStickyComposerSlashSections,
     type StickyComposerSlashActionId,

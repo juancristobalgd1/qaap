@@ -3,17 +3,17 @@ import { transcriptToolGroupItems } from './mobile-projects-transcript-messages-
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
 import { isTranscriptComposerVisualIdle } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamHealth, type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     resolveTranscriptEffectiveStatus,
-} from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import type { TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
 import { groupTranscriptActivityNavigationItems, resolveTranscriptLifecycleActivityItems } from '../common/qaap-transcript-activity-navigation';
-import { conversationRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
+import { conversationRequestsDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
     resolveTranscriptBootstrapDiagnosticActivityItems,
     toTranscriptPreviewBootstrapSnapshot,

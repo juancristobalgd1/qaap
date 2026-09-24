@@ -9,7 +9,7 @@ import {
     findQaapCaptureDirectivesInText,
     QAAP_CAPTURE_DIRECTIVE_PATTERN,
     textContainsQaapCaptureDirective,
-} from '../common/qaap-visual-verification';
+} from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
 export const TRANSCRIPT_CAPTURE_PENDING_CHIP_CLASS = 'theia-mobile-agent-transcript-capture-pending';
 export const TRANSCRIPT_CAPTURE_DIRECTIVE_CLASS = 'theia-mobile-agent-transcript-capture-directive';

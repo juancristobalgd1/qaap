@@ -15,11 +15,11 @@ import {
     normalizeResearchGoal,
     type ResearchGoal,
     type ResearchMetricSpec,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
 import {
     QAAP_EXPERIMENT_MARKER,
     type ResearchExperimentRecord,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
 import type { QaapAgentTask, QaapAgentTaskEvent } from '../common/qaap-agent-task';
 
 // ---- test doubles -----------------------------------------------------------

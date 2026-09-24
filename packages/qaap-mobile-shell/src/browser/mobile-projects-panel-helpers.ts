@@ -9,27 +9,27 @@
 import { nls } from '@theia/core/lib/common/nls';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { URI } from '@theia/core/lib/common/uri';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { getConversation } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { getConversation } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
 import type { MobileProjectsHeaderOverflowMenuItem } from './mobile-projects-panel';
 import {
     buildAgentsHubIdleConversationSummary,
     isAgentsHubIdleConversationSummary,
-} from '../common/qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
     buildPreviewFeedbackAttachmentRequest,
     normalizeAttachComposerImages,
     type QaapAttachComposerImageAttachment,
-} from '../common/qaap-preview-feedback-context';
-import { resolvePreviewFeedbackSubmitTarget } from '../common/qaap-preview-feedback-submit-target';
-import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
+import { resolvePreviewFeedbackSubmitTarget } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-submit-target';
+import { resolveWorkspaceHostFsPath } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-shell';
 import { normalizeIsolationPath } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
+import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 export function projectOwnsActiveBootstrap(
     project: MobileProjectEntry,

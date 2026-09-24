@@ -4,11 +4,11 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     readStoredAgentModel,
-} from '../common/qaap-agent-task-client';
-import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { warmAgentTurnPath } from '@theia/qaap-shared-core/lib/common/qaap-agent-turn-warm';
 import {
     resolveChatModelContextUsageBreakdown,
     resolveVpsContextUsageBreakdown,
@@ -18,25 +18,25 @@ import {
     reconcileComposerModeId,
     resolveComposerModeLabel,
     resolveStickyComposerModes,
-} from '../common/qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     reconcileModelCapabilityLevel,
 } from '../common/qaap-sticky-composer-model-capability';
 import {
     agentSupportsApprovalPolicy,
     reconcileAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     reconcileAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import {
     disposeComposerContextEntries,
     hasPendingComposerContextEntries,
     revokeComposerContextPreview,
-} from '../common/qaap-composer-context-entry';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { createStickyComposerImprovePromptHandler } from './qaap-composer-prompt-improve-handler';
 import {
     renderStickyComposerActivityStack,

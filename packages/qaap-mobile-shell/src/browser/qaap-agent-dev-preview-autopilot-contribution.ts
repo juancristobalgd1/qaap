@@ -8,36 +8,36 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import {
     getConversation,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { conversationEverRequestedDevPreview } from '../common/qaap-transcript-preview-offer';
-import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationEverRequestedDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
+import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { buildTranscriptPreviewBootstrapFailureReason, toTranscriptPreviewBootstrapSnapshot } from '../common/qaap-transcript-preview-bootstrap-failure';
-import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
+import { reportPreviewBootstrapFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     finalizeVisualFlowVerification,
     reportPreviewVisualVerificationFailure,
     uploadVisualEvidenceImage,
     type QaapVisualFlowStepReport,
-} from '../common/qaap-agent-conversation-client';
-import { deriveVisualFlowSteps } from '../common/qaap-visual-flow-plan';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { deriveVisualFlowSteps } from '@theia/qaap-shared-core/lib/common/qaap-visual-flow-plan';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { captureSameOriginPreview } from '@theia/qaap-adapters/lib/browser/qaap-preview-overflow-actions';
 import {
     qaapPreviewDocumentIsProxyFailure,
     validateQaapPreviewDocument,
-} from './qaap-preview-visual-validation';
-import { conversationLikelyNeedsVisualVerification, parseQaapCaptureDirective } from '../common/qaap-visual-verification';
+} from '@theia/qaap-shared-core/lib/browser/qaap-preview-visual-validation';
+import { conversationLikelyNeedsVisualVerification, parseQaapCaptureDirective } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     resumeQaapMiniBrowserPreview,
     syncQaapMiniBrowserPreviewSuspension,
 } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
-import { peekPreferDesktopIde } from './mobile-projects-open';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { shouldCaptureSettledVisualTurn } from '../common/qaap-visual-settlement';
+import { shouldCaptureSettledVisualTurn } from '@theia/qaap-shared-core/lib/common/qaap-visual-settlement';
 
 // A cold dev server can spend well over 10s compiling its first page on a loaded VPS, so give
 // the first reload → readyState poll a 30s budget rather than the original 10s.

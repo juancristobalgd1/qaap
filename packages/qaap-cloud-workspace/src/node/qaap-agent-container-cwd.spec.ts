@@ -6,7 +6,7 @@
 import { expect } from 'chai';
 import * as path from 'path';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { rememberQaapHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
+import { rememberQaapHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 
 /**

@@ -2,13 +2,13 @@ import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-proje
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { conversationTurnProgressRatio } from '../common/qaap-agent-conversation-list-metrics';
+import { conversationTurnProgressRatio } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import {
     isConversationAutoApproveEnabled,
     isFailedRunSummary,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { buildWorkHubInboxRowFingerprintFromSummary } from '../common/qaap-work-hub-inbox-fingerprint';
 import {
     QAAP_INBOX_ROW_FP_ATTR,
@@ -16,8 +16,8 @@ import {
 } from './mobile-projects-hub-incremental-ui';
 import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
 import { createAgentIdentityElement } from './qaap-agent-ui';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import { type MobileProjectEntry } from './mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-mechanics/lib/browser/qaap-mobile-swipe-to-delete';
+import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types'; import { attachSwipeToDelete } from '@theia/qaap-mobile-mechanics/lib/browser/qaap-mobile-swipe-to-delete';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
 const TASK_FAILURE_HINT_MAX_LENGTH = 120;

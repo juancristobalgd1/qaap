@@ -25,13 +25,13 @@ import {
     type QaapGitBranchesResponse,
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import {
     QaapTenantProcessExecutor,
     type QaapTenantProcessExecutor as QaapTenantProcessExecutorContract,
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-process';
 import { isQaapHostedEnvironment } from '@theia/qaap-adapters/lib/common/qaap-hosted-runtime';
-import { QaapGithubAuthGuard } from './qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 
 /** Diffs can be large; allow up to 16 MB of git output. */
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;

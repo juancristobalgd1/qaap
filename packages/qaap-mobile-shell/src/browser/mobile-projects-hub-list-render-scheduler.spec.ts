@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+import { QaapChatViewStreamUpdateScheduler } from '@theia/qaap-shared-core/lib/common/qaap-chat-view-stream-update-scheduler';
 
 describe('work-hub list render scheduler integration', () => {
 

@@ -7,23 +7,23 @@ import {
     isSameAgentModel,
     readStoredAgentModel,
     type QaapQaiqModelOption,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     createPickerSheetOptionButton,
 } from './qaap-agent-ui';
-import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
-import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
+import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
+import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import {
     canonicalModelStatsKey,
     formatTurnDuration,
     MODEL_TURN_STATS_SLOW_THRESHOLD_MS,
     resolveModelTurnStats,
-} from '../common/qaap-model-latency-stats';
-import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
-import { formatQaiqModelProviderLabel } from '../common/qaap-qaiq-byok-provider-registry';
+} from '@theia/qaap-shared-core/lib/common/qaap-model-latency-stats';
+import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
+import { formatQaiqModelProviderLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     groupQaiqModelsByProvider,
-} from '../common/qaap-qaiq-model-catalog';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 
 export function createAgentPickerNoResultsHintExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): HTMLElement {
         const hint = document.createElement('p');

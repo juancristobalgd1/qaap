@@ -8,7 +8,7 @@ import {
     isUserRepositoryFilesystemPath,
     isValidHubUserRepositoryProjectCandidate,
     isVpsWorkspaceInfrastructurePath,
-} from './qaap-hub-project-eligibility';
+} from '@theia/qaap-shared-core/lib/common/qaap-hub-project-eligibility';
 
 describe('qaap-hub-project-eligibility', () => {
 

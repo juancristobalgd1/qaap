@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTranscriptTodoTool,
     parseTranscriptTodoChecklist,
     type QaapTranscriptTodoItem,
 } from './qaap-agent-transcript-segments';
-import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
+import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 
 /** 1-based step progress for the sticky composer "Step X/Y" pill. */
 export interface QaapTodoStepProgress {

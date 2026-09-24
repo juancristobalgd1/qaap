@@ -13,14 +13,14 @@ import {
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-streaming-markdown-view';
 import { QaapTranscriptMarkdownWorkerClient } from './qaap-transcript-markdown-worker-client';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
+import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import {
     parseQaapDevPreviewRequestPath,
     parseQaapIdentityPreviewRequestPath,
     type QaapDevPreviewProbeResponse,
-} from '../common/qaap-dev-preview';
-import { collapseExactRepeatedText } from '../common/qaap-qaiq-stream';
+} from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
+import { collapseExactRepeatedText } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
 import { prefersReducedMotion } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 import { nextStreamSmoothRevealLength } from '../common/qaap-transcript-stream-smooth';
 import {
@@ -31,7 +31,7 @@ import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { enhanceTranscriptMarkdownRichContent } from './qaap-transcript-rich-content-ui';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
-import { textContainsQaapCaptureDirective } from '../common/qaap-visual-verification';
+import { textContainsQaapCaptureDirective } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
 /** Monospace plain-text preview while worker markdown is in flight (short streams stay here). */
 export const TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS = 'theia-mod-streaming-plain-text';

@@ -16,7 +16,7 @@ import {
     consumeMobileProjectReadmeOpenRequest,
     peekMobileProjectReadmeOpenRequest,
     shouldSkipMobileProjectsLanding,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 
 const README_CANDIDATE_NAMES = [
     'README.md',

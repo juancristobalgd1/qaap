@@ -8,7 +8,7 @@ import { Application, Request, Response } from '@theia/core/shared/express';
 import { json } from 'body-parser';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
 import { QAAP_USER_SETTINGS_API_PATH } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
     filterAiSettings,
     readUserSettingsFromDisk,

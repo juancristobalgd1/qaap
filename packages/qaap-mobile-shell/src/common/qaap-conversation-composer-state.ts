@@ -10,24 +10,24 @@ import {
     readStoredAgentModel,
     writeStoredAgent,
     type QaapCreateAgentTaskQaiqModel,
-} from './qaap-agent-task-client';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
-import type { QaapUpdateConversationBody } from './qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapUpdateConversationBody } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     DEFAULT_AGENT_APPROVAL_POLICY_ID,
     reconcileAgentApprovalPolicyId,
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
-} from './qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     reconcileAgentToolApprovalRules,
     writeStoredAgentToolApprovalRules,
     type QaapAgentToolApprovalRules,
-} from './qaap-agent-tool-approval-rules';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
     readStoredComposerMode,
     writeStoredComposerMode,
-} from './qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 
 const CONVERSATION_COMPOSER_DRAFT_KEY = 'qaap.conversationComposer.draft';
 

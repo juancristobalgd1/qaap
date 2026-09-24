@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { buildSingleHunkPatch } from './qaap-git-review';
+import { buildSingleHunkPatch } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 
 const DIFF = [
     'diff --git a/file.txt b/file.txt',

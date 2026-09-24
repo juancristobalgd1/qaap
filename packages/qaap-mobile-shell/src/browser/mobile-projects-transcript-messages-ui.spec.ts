@@ -12,7 +12,7 @@ if (!browserGlobals.DragEvent) {
 }
 
 import { expect } from 'chai';
-import type { QaapMessageDeliveryMode, QaapPendingUserMessageDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapMessageDeliveryMode, QaapPendingUserMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
 
 describe('MobileProjectsTranscriptMessagesUi queued-message delegation', () => {

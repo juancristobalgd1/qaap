@@ -15,12 +15,12 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
     buildPendingComposerContextArg,
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import { isImageAttachmentFileName } from '../common/qaap-sticky-composer-attachment-utils';
 import {
     normalizeAttachComposerImages,
     type QaapAttachComposerImageAttachment,
-} from '../common/qaap-preview-feedback-context';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import {
     createImageContextFromDeviceFile,
 } from '../common/qaap-mobile-composer-device-attach';

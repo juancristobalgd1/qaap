@@ -11,7 +11,7 @@ import {
 import {
     totalTokensFromContextUsage,
     type QaapAgentContextUsage,
-} from './qaap-agent-context-usage';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import { QAAP_BRAND_LOGO_INDICATOR_CLASS, syncShimmerTextElement } from './qaap-agent-setup-phrases';
 
 /** Live turn row: always the last child of the transcript scroller while the turn is in flight. */

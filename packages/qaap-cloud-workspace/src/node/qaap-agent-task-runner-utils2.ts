@@ -16,8 +16,8 @@ import {
     resolveUserSettingsFilePath,
     usesSharedAiSettingsFallback,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { listQaapAiSettingsPrefKeys } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
-import type { QaapPreferenceReader } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+import { listQaapAiSettingsPrefKeys } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
+import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { resolveQaapAgentVerificationScripts } from './qaap-agent-verification';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import type { AgentCandidate } from './qaap-agent-task-runner-types';

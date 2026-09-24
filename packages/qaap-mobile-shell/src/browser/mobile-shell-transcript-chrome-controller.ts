@@ -8,10 +8,10 @@ import {
     markPreferAgentsSurface,
     setMobileActiveTranscriptChrome,
     setMobileLandingHubListChrome,
-} from './mobile-projects-open';
-import type { MobileProjectsHubView } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 
 export interface MobileShellTranscriptChromeHost {
     getProjectsPanel(): MobileProjectsPanel | undefined;

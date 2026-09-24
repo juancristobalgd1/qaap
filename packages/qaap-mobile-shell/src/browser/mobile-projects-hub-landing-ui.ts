@@ -4,11 +4,11 @@
 // *****************************************************************************
 
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { QaapDiffProjectTab } from './mobile-projects-diff-hub-ui';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 
 /** Panel surface for Work Hub landing tab switches. */
@@ -40,14 +40,14 @@ export interface MobileProjectsHubLandingHost {
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     isProjectDiffView(): boolean;
     show(options?: { preferredHubView?: MobileProjectsHubView }): Promise<void>;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     refreshHomeHubData(force?: boolean): void;
     scheduleChatHubListRefreshAfterSummaries(): void;
     refreshTasksHubApprovals(forceRender?: boolean): void;
     render(): void;
     syncLandingHubListChrome(): void;
     subscribeToInboxStream(): void;
-    refreshInboxPullRequests(projects?: import('./mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
+    refreshInboxPullRequests(projects?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
     refreshDiffHubView(): Promise<void>;
     detachDiffReviewWidget(): void;
 }

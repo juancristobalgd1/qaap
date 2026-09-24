@@ -7,7 +7,7 @@ import { nls } from '@theia/core';
 import * as React from '@theia/core/shared/react';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { AIAgentConfigurationWidget } from '@theia/ai-ide/lib/browser/ai-configuration/agent-configuration-widget';
-import { isQaapHiddenAiConfigurationAgent } from '@theia/qaap-mobile-shell/lib/common/qaap-ai-features-visibility';
+import { isQaapHiddenAiConfigurationAgent } from '@theia/qaap-shared-core/lib/common/qaap-ai-features-visibility';
 
 /**
  * AI Configuration → Agents: omit Theia chat agents that Qaap replaced with Work Hub VPS agents.

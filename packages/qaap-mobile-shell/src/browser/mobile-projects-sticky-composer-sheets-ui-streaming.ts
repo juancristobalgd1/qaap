@@ -3,31 +3,31 @@ import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-proje
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatMode } from '@theia/ai-chat';
-import { agentUsesSettingsModelCatalog, fetchAgentModelsForAgent, type QaapQaiqModelOption } from '../common/qaap-agent-task-client';
+import { agentUsesSettingsModelCatalog, fetchAgentModelsForAgent, type QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     writeStoredComposerMode,
-} from '../common/qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     QAAP_AGENT_APPROVAL_POLICIES,
     reconcileAgentApprovalPolicyId,
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import { createApprovalPolicySheetOptionButton, createModeSheetOptionButton } from './qaap-agent-ui';
-import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
+import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 import {
     filterQaiqModelsWithConfiguredCredentials,
     listQaiqModelsFromPreferences,
     listQaiqModelsFromRegisteredLanguageModels,
     mergeQaiqModelOptions,
-} from '../common/qaap-qaiq-model-catalog';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import {
     markStickyComposerPopoverAnchor,
     mountStickyComposerBottomSheet,
     mountStickyComposerSheetPopover,
     scheduleStickyComposerPopoverPosition,
 } from './qaap-sticky-composer-popover';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function openComposerModeSheetExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, options: {
     readonly modes: readonly ChatMode[];

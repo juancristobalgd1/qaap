@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { findProjectMatchingWorkspaceCwd } from './qaap-composer-workspace-project';
+import { findProjectMatchingWorkspaceCwd } from '@theia/qaap-shared-core/lib/common/qaap-composer-workspace-project';
 
 describe('qaap-composer-workspace-project', () => {
 

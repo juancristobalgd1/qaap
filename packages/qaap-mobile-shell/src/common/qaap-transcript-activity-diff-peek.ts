@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { extractInlineDiffPreview, type QaapTranscriptInlineDiffLine } from './qaap-agent-transcript-segments';
-import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 
 export interface TranscriptActivityDiffPeek {

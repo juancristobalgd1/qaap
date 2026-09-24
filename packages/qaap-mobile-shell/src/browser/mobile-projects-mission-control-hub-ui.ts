@@ -10,7 +10,7 @@ import {
     type MissionControlSurfaceFilter,
 } from './mobile-work-mission-control';
 import { collectMissionControlItems } from './qaap-work-mission-control-collector';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export interface MobileProjectsMissionControlHubHost {
     projects: MobileProjectEntry[];
@@ -25,8 +25,8 @@ export interface MobileProjectsMissionControlHubHost {
     renderList(): void;
     formatHomeRelativeTime(updatedAt: number): string;
     resolveHomeAgentLabel(agentId: string): string;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
 }
 

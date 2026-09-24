@@ -14,18 +14,18 @@ import {
     type QaapAgentMessageSegmentDTO,
     type QaapMessageDeliveryMode,
     type QaapPendingUserMessageDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { MobileProjectsTranscriptMessagesArtifactsUi, type TranscriptActivityTimelineOptions } from './mobile-projects-transcript-messages-artifacts-ui';
 import { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-transcript-messages-render-ui';
 import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
-import { resolveAgentMessageSegments } from '../common/qaap-transcript-trace-model';
+import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { WORKING_DETAIL_TRANSCRIPT_CLASS } from './qaap-sticky-composer-working-detail-transcript';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
@@ -61,7 +61,7 @@ export interface MobileProjectsTranscriptMessagesHost {
     conversations?: MobileProjectsConversations;
     projectsService: MobileProjectsService;
     projects: MobileProjectEntry[];
-    projectBootstrap?: import('./qaap-project-bootstrap-service').QaapProjectBootstrapService;
+    projectBootstrap?: import('@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service').QaapProjectBootstrapService;
     resolveAttachmentPreview?: (
         item: import('@theia/ai-core').AIVariableResolutionRequest,
     ) => Promise<string | undefined>;

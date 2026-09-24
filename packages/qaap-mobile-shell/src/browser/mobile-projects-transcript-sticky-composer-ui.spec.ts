@@ -6,10 +6,10 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
-import { QaapConversationMessageError } from '../common/qaap-agent-conversation-client';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-landing';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { QaapConversationMessageError } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 

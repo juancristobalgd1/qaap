@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { normalizePublicOrigin } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
+import { normalizePublicOrigin } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 
 /** Stable public preview path (port hidden behind token). */
 export const QAAP_DEV_PREVIEW_PUBLIC_PREFIX = '/qaap-dev/public';

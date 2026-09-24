@@ -8,25 +8,25 @@ import { AIVariableResolutionRequest, GenericCapabilitySelections } from '@theia
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import {
     MobileProjectEntry,
-} from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     isAgentsHubIdleConversationSummary,
-} from '../common/qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
     QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { formatConversationForClipboard } from '../common/qaap-conversation-clipboard-text';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { formatConversationForClipboard } from '@theia/qaap-shared-core/lib/common/qaap-conversation-clipboard-text';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import {
     createComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     buildPreviewFeedbackAttachmentRequest,
     findPreviewFeedbackEntryIndex,
     normalizeAttachComposerImages,
     type QaapAttachComposerImageAttachment,
-} from '../common/qaap-preview-feedback-context';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
 import { createAnnotationComposerSessionControls } from './qaap-preview-annotation-composer-session';
@@ -258,12 +258,12 @@ export async function submitBackgroundAgentTaskExtracted(ctx: MobileProjectsPane
         modeId?: string;
         autoApprove?: boolean;
         approvalPolicyId?: string;
-        toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+        toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
         capabilityOverrides?: Record<string, boolean>;
         genericCapabilitySelections?: GenericCapabilitySelections;
         variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
         worktree?: boolean;
-        agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+        agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
     } = {},): Promise<QaapAgentConversationSummaryDTO | undefined> {
     return ctx.backgroundTaskUi.submitBackgroundAgentTask(project, draft, options);
 }

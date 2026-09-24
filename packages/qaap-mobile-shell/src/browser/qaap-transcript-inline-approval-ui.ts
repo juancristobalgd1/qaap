@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentApprovalRequestDTO } from '../common/qaap-agent-approval-client';
+import type { QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import {
     buildTranscriptApprovalCard,
     TRANSCRIPT_APPROVAL_CARD_CLASS,

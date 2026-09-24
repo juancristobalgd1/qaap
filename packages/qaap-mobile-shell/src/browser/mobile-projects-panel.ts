@@ -22,34 +22,34 @@ import {
     MobileProjectEntry,
     MobileProjectFilter,
     MobileProjectsHubView,
-} from './mobile-projects-types';
-import { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
 import { MobileProjectsTeamHubUi, type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
-import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import type { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
 import {
     type WorkHubTeamMember,
-} from '../common/qaap-work-hub-team';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import { MobileProjectsHomeUi, type WorkHubHomeNavigateTarget, type WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
-import { MobileProjectsService } from './mobile-projects-service';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { confirmRemoveProjectDialog } from './mobile-projects-remove-confirm';
 import {
     isAgentsHubExecutionSurfacePainted,
-} from '../common/qaap-agents-hub-landing';
-import { } from '../common/qaap-preview-identity';
-import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
+import { QaapChatViewStreamUpdateScheduler } from '@theia/qaap-shared-core/lib/common/qaap-chat-view-stream-update-scheduler';
 import { } from './qaap-work-hub-perf-probe';
-import type { } from '../common/qaap-work-hub-perf-probe';
-import { QaapBoundedLruMap } from './qaap-bounded-lru-map';
+import type { } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-perf-probe';
+import { QaapBoundedLruMap } from '@theia/qaap-shared-core/lib/browser/qaap-bounded-lru-map';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { } from '../common/qaap-conversation-clipboard-text';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { } from '@theia/qaap-shared-core/lib/common/qaap-conversation-clipboard-text';
 import { } from './qaap-agent-ui';
 import { } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
@@ -58,21 +58,21 @@ import {
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
     type QaapAgentTaskListSnapshot,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     type QaapAttachComposerImageAttachment,
-} from '../common/qaap-preview-feedback-context';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import { URI } from '@theia/core/lib/common/uri';
-import { type QaapSegmentedFieldController } from './qaap-mobile-form-ui';
+import { type QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
 import { buildQaapAccountMenuEntries, toggleQaapAccountMenu } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import type { AnnotationComposerSessionControls } from '@theia/qaap-adapters/lib/browser/qaap-preview-annotation-popover';
@@ -116,7 +116,7 @@ import {
 import {
     MobileProjectsConversationIndexUi,
     type MobileProjectsConversationIndexHost,
-} from './mobile-projects-conversation-index-ui';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui';
 import {
     MobileProjectsConversationOpenUi,
     type MobileProjectsConversationOpenHost,
@@ -151,7 +151,7 @@ import {
 import {
     MobileProjectsHubQueryUi,
     type MobileProjectsHubQueryHost,
-} from './mobile-projects-hub-query-ui';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui';
 import {
     MobileProjectsHubRenderUi,
     type MobileProjectsHubRenderHost,
@@ -251,14 +251,14 @@ import {
 import {
     QAAP_WORK_HUB_GETTING_STARTED,
     type WorkHubCatalogAction,
-} from '../common/mobile-work-hub-catalog';
+} from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import {
     type MobileWorkHubInboxItem,
 } from './mobile-work-hub-inbox';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-contribution';
-import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
+import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
 import {
     type TranscriptWorkspaceSurfaceKey,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
@@ -310,7 +310,7 @@ import {
     onBootstrapPreviewOpenedHandler,
     onAuthSessionChangedHandler,
 } from './mobile-projects-panel-init';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     /** Max conversation rows per repo card before "More" expands the list. */
@@ -1591,7 +1591,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
-    public async submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: { openConversation?: boolean; forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; worktree?: boolean; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<QaapAgentConversationSummaryDTO | undefined> {
+    public async submitBackgroundAgentTask(project: MobileProjectEntry, draft: string, options: { openConversation?: boolean; forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; worktree?: boolean; agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<QaapAgentConversationSummaryDTO | undefined> {
         return submitBackgroundAgentTaskExtracted(this, project, draft, options);
     }
 
@@ -1632,7 +1632,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         removeExternalPreviewFeedbackChipExtracted(this, dedupeKey);
     }
 
-    async submitExternalComposerPrompt(draft: string, options: { readonly agentId?: string; readonly agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<boolean> {
+    async submitExternalComposerPrompt(draft: string, options: { readonly agentId?: string; readonly agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; } = {},): Promise<boolean> {
         return submitExternalComposerPromptExtracted(this, draft, options);
     }
 
@@ -1649,11 +1649,11 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return resolveExternalComposerProjectExtracted(this);
     }
 
-    protected async createProjectChatSession(project: MobileProjectEntry, cwd: string, draft: string, options: { forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks']; },): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
+    protected async createProjectChatSession(project: MobileProjectEntry, cwd: string, draft: string, options: { forceVps?: boolean; selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>; agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks']; },): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
         return createProjectChatSessionExtracted(this, project, cwd, draft, options);
     }
 
-    seedTranscriptOptimisticSubmit(summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO, outbound: string, agentId?: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],): void {
+    seedTranscriptOptimisticSubmit(summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO, outbound: string, agentId?: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],): void {
         seedTranscriptOptimisticSubmitExtracted(this, summary, outbound, agentId, imagePreviews);
     }
 
@@ -1713,7 +1713,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
-    public async submitTranscriptViaBackendConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, content: string, options: { selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: AIVariableResolutionRequest[]; widget?: AIChatInputWidget; agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[]; parallel?: boolean; deliveryMode?: import('../common/qaap-agent-conversation-client').QaapMessageDeliveryMode; } = {},): Promise<boolean> {
+    public async submitTranscriptViaBackendConversation(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO, content: string, options: { selectedAgentId?: string; modeId?: string; autoApprove?: boolean; approvalPolicyId?: string; toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules; capabilityOverrides?: Record<string, boolean>; genericCapabilitySelections?: GenericCapabilitySelections; variables?: AIVariableResolutionRequest[]; widget?: AIChatInputWidget; agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel; imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[]; parallel?: boolean; deliveryMode?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapMessageDeliveryMode; } = {},): Promise<boolean> {
         return submitTranscriptViaBackendConversationExtracted(this, project, summary, content, options);
     }
 
@@ -2002,7 +2002,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         return this.tasksHubUi.createAgentsHubQuickActionsBlock();
     }
 
-    renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
+    renderIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, selectedAgentId: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
         renderIdleSubmitOptimisticExtracted(this, chatHost, summary, draft, selectedAgentId, imagePreviews, contentOverride);
     }
 
@@ -2065,7 +2065,7 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
     }
 
     /** @internal Used by the extracted mobile-projects-panel-* modules. */
-    public renderAgentsHubIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, agentId: string, imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
+    public renderAgentsHubIdleSubmitOptimistic(chatHost: HTMLElement, summary: QaapAgentConversationSummaryDTO, draft: string, agentId: string, imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[], contentOverride?: string,): void {
         renderAgentsHubIdleSubmitOptimisticExtracted(this, chatHost, summary, draft, agentId, imagePreviews, contentOverride);
     }
 

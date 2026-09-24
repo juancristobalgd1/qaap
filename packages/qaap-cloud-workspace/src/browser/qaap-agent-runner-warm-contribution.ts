@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { warmAgentRunner } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { warmAgentRunner } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 
 /**

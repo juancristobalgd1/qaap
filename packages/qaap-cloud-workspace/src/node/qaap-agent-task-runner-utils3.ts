@@ -15,8 +15,8 @@ import {
 import {
     QAAP_BUILTIN_AGENT_DEFINITIONS,
     isUiHiddenVpsAgent,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentTask, QaapAgentDescriptor, QaapAgentConnectionState, QaapAgentTaskReview, QaapAgentTaskVerification, QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import { resolveTaskAgentModel } from '../common/qaap-agent-task';
 import {

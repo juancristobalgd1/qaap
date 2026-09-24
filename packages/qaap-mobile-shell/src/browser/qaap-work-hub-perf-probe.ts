@@ -12,13 +12,13 @@ import {
     appendLongTranscriptProbeDelta,
     buildLongTranscriptProbeConversation,
     type TranscriptPerfProbeOptions,
-} from './qaap-work-hub-perf-probe-host';
+} from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-perf-probe-host';
 import {
     isQaapWorkHubPerfProbeEnabled,
     type QaapWorkHubPerfProbeApi,
     type QaapWorkHubPerfProbeMetrics,
-} from '../common/qaap-work-hub-perf-probe';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-perf-probe';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 
 const PERF_PROBE_CONVERSATION_ID = '__qaap_work_hub_perf_probe__';
@@ -33,7 +33,7 @@ export interface QaapWorkHubPerfProbeHost {
     setTranscriptChatHost(value: HTMLElement | undefined): void;
     getTranscriptOpenSummaryId(): string | undefined;
     setTranscriptOpenSummaryId(value: string | undefined): void;
-    renderTranscriptForProbe(conversation: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO, host: HTMLElement): void;
+    renderTranscriptForProbe(conversation: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO, host: HTMLElement): void;
     openWorkHubSessionsSidebar(): void;
     navigateToHomeHubForProbe(): void;
     expandMissionControlForProbe(): void;
@@ -43,7 +43,7 @@ export interface QaapWorkHubPerfProbeHost {
     hasProjectsForProbe(): boolean;
     hasWorkspaceForProbe(): boolean;
     getWorkspaceCwdForProbe(): string | undefined;
-    getProbeDiagnostics(): import('../common/qaap-work-hub-perf-probe').WorkHubPerfProbeDiagnostics;
+    getProbeDiagnostics(): import('@theia/qaap-shared-core/lib/common/qaap-work-hub-perf-probe').WorkHubPerfProbeDiagnostics;
 }
 
 const installedProbeHosts = new WeakMap<Window, QaapWorkHubPerfProbeHost>();
@@ -61,7 +61,7 @@ export function installQaapWorkHubPerfProbe(host: QaapWorkHubPerfProbeHost): voi
         hubScrollReplaceChildren: 0,
         sidebarListReplaceChildren: 0,
     };
-    let transcriptProbeConversation: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+    let transcriptProbeConversation: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
     let transcriptProbeTick = 0;
     enableTranscriptRenderMetrics(true);
 

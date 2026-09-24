@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { createComposerContextEntry } from './qaap-composer-context-entry';
+import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     buildEditorContextAttachmentRequest,
     buildEditorSelectionFingerprint,
@@ -19,7 +19,7 @@ import {
     shouldOfferEditorContextAttach,
     type EditorSelectionSnapshot,
 } from './qaap-composer-editor-context-bridge-core';
-import { applyResolvedAttachmentsToPrompt } from './qaap-composer-attachment-prompt';
+import { applyResolvedAttachmentsToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-composer-attachment-prompt';
 
 describe('qaap-composer-editor-context-bridge-core', () => {
 

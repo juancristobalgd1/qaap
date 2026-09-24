@@ -2,5 +2,5 @@
 Dockerfile text eol=lf
 docker-compose.yml text eol=lf
 dev-packages/*/bin/*.js text eol=lf
-packages/qaap-mobile-shell/src/common/qaap-*-icon-assets.ts text eol=lf
+packages/qaap-*/src/common/qaap-*-icon-assets.ts text eol=lf
 dev-packages/cli/patches/*.patch whitespace=-blank-at-eol,-space-before-tab

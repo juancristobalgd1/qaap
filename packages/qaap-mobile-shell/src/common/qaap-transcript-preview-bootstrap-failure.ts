@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapBootstrapPhase } from '../browser/qaap-project-bootstrap-types';
+import type { QaapBootstrapPhase } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 import {
     formatBootstrapScaffoldDetectedNotice,
     formatMissingBootstrapProjectHint,
-} from './qaap-project-bootstrap-scaffold-plan';
+} from '@theia/qaap-shared-core/lib/common/qaap-project-bootstrap-scaffold-plan';
 
 /** Minimal bootstrap snapshot for preview failure diagnostics (avoids browser service import). */
 export interface TranscriptPreviewBootstrapSnapshot {

@@ -3,14 +3,14 @@ import { TRANSCRIPT_TOOL_RESULT_STREAM_CLASS, TRANSCRIPT_TOOL_SPECULATIVE_CLASS 
 // Extracted from mobile-projects-transcript-messages-tool-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
+import { formatReadToolDetailFromArgs } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist } from '../common/qaap-agent-transcript-segments';
 import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import {
     registerDeferredTranscriptToolBody,
     type TranscriptDeferredToolBodyHydrate,
 } from './qaap-transcript-row-defer';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapTranscriptTodoItem } from '../common/qaap-agent-transcript-segments';
 import type { TranscriptToolErrorDisplay } from '../common/qaap-transcript-tool-error-display';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';

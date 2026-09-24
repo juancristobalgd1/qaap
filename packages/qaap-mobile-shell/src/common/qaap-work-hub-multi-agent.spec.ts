@@ -8,8 +8,8 @@ import {
     buildTeamTree,
     collectAgentMembers,
     countRunningTeamMembers,
-} from './qaap-work-hub-team';
-import { QaapChatViewStreamUpdateScheduler } from './qaap-chat-view-stream-update-scheduler';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
+import { QaapChatViewStreamUpdateScheduler } from '@theia/qaap-shared-core/lib/common/qaap-chat-view-stream-update-scheduler';
 
 describe('qaap-work-hub-multi-agent scenarios', () => {
   it('same project: one leader conversation hides duplicate leader task and nests subtasks', () => {

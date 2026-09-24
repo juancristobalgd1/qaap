@@ -6,7 +6,7 @@
 import { injectable } from '@theia/core/shared/inversify';
 import { Command } from '@theia/core/lib/common/command';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
-import { peekPreferDesktopIde } from '../common/qaap-mobile-work-surface-preference';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 import { isWorkHubCommandPaletteCommand } from '../common/qaap-work-hub-command-palette';
 
 /**

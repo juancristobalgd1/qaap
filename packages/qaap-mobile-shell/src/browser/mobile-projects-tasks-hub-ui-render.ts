@@ -5,15 +5,15 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_AGENTS_HUB_LANDING_ENABLED,
     QAAP_AGENTS_HUB_QUICK_ACTIONS,
     QAAP_AGENTS_HUB_RECENT_LIMIT,
-} from '../common/qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
-import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { syncStickyComposerWorkingPillInRoots } from './qaap-sticky-composer-working-pill';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {

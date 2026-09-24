@@ -15,8 +15,8 @@ import { matchesMobileNarrowViewport } from '@theia/core/lib/browser/shell/mobil
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { QAAP_DESKTOP_SESSIONS_SIDEBAR_MEDIA_QUERY } from './mobile-work-hub-sessions-sidebar';
 import { createQaapViewModeSwitch } from './qaap-workbench-account-menu';
-import type { QaapSegmentedFieldController } from './qaap-mobile-form-ui';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import type { QaapSegmentedFieldController } from '@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 /** Panel surface for DOM shell construction and sheet gestures. */
 export interface MobileProjectsPanelChromeHost {
     homeMode: boolean;
@@ -70,10 +70,10 @@ export interface MobileProjectsPanelChromeHost {
     onHeaderViewModeChange(id: MobileViewToggleId): void;
     updateAccountAvatar(): void;
     hide(): void;
-    refreshInboxPullRequests(projects?: import('./mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
+    refreshInboxPullRequests(projects?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
     refreshProjects(): Promise<void>;
     delegate: { onDismiss(): void };
-    hubView: import('./mobile-projects-types').MobileProjectsHubView;
+    hubView: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView;
 }
 
 /**

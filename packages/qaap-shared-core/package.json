@@ -1,0 +1,67 @@
+{
+  "name": "@theia/qaap-shared-core",
+  "version": "1.73.0",
+  "description": "Qaap — shared product core: agent/conversation DTOs and clients, project services, GitHub and dev-preview backends (product layer)",
+  "dependencies": {
+    "@lumino/algorithm": "^2.0.4",
+    "@theia/ai-chat": "1.73.0",
+    "@theia/ai-chat-ui": "1.73.0",
+    "@theia/ai-claude-code": "1.73.0",
+    "@theia/ai-copilot": "1.73.0",
+    "@theia/ai-core": "1.73.0",
+    "@theia/core": "1.73.0",
+    "@theia/filesystem": "1.73.0",
+    "@theia/memory-inspector": "1.73.0",
+    "@theia/mini-browser": "1.73.0",
+    "@theia/navigator": "1.73.0",
+    "@theia/outline-view": "1.73.0",
+    "@theia/preferences": "1.73.0",
+    "@theia/qaap-adapters": "1.73.0",
+    "@theia/qaap-ai-openrouter": "1.73.0",
+    "@theia/qaap-mobile-mechanics": "1.73.0",
+    "@theia/qaap-persistence": "1.73.0",
+    "@theia/qaap-transcript-overlay": "1.73.0",
+    "@theia/scm": "1.73.0",
+    "@theia/terminal": "1.73.0",
+    "@theia/vsx-registry": "1.73.0",
+    "@theia/workspace": "1.73.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "theiaExtensions": [
+    {
+      "backend": "lib/node/qaap-shared-core-backend-module"
+    }
+  ],
+  "keywords": [
+    "theia-extension"
+  ],
+  "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juancristobalgd1/theia.git"
+  },
+  "files": [
+    "lib",
+    "resources",
+    "src"
+  ],
+  "scripts": {
+    "build": "theiaext build",
+    "clean": "theiaext clean",
+    "precompile": "node scripts/qaap-llm-provider-icons-sync.js",
+    "compile": "theiaext compile",
+    "sync:llm-provider-icons": "node scripts/qaap-llm-provider-icons-sync.js",
+    "check:llm-provider-icons": "node scripts/qaap-llm-provider-icons-sync.js --check",
+    "lint": "theiaext lint",
+    "test": "nyc mocha --config ../../configs/mocharc.yml --require ./test-support/ensure-jsdom.js \"./lib/**/*.*spec.js\"",
+    "watch": "theiaext watch"
+  },
+  "devDependencies": {
+    "@theia/ext-scripts": "1.73.0"
+  },
+  "nyc": {
+    "extends": "../../configs/nyc.json"
+  }
+}

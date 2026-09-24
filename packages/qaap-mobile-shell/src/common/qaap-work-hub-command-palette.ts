@@ -7,7 +7,7 @@ import type { Command } from '@theia/core/lib/common/command';
 import {
     QAAP_WORK_HUB_AI_FEATURES_COMMAND,
     QAAP_WORK_HUB_COLOR_THEME_COMMAND,
-} from './mobile-work-hub-catalog';
+} from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 
 /** Opens the Work Hub Settings sheet (preferences embedded overlay). */
 export const QAAP_WORK_HUB_OPEN_SETTINGS_COMMAND = 'qaap.workHub.openSettings';

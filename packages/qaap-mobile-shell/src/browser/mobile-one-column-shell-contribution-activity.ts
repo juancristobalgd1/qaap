@@ -9,7 +9,7 @@ import {
     setMobileActiveTranscriptChrome,
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubHideBottomChrome,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { MiniBrowserOpenHandler } from '@theia/mini-browser/lib/browser/mini-browser-open-handler';
 import { GETTING_STARTED_WIDGET_COMMAND } from './mobile-one-column-shell-contribution';
 

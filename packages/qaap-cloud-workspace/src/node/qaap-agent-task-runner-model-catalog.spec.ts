@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import type { QaapAgentTaskRunnerContext } from './qaap-agent-task-runner-context';
-import { NATIVE_MODEL_PICKER_AGENT_IDS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+import { NATIVE_MODEL_PICKER_AGENT_IDS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { bindingFromQaiqModelSelection } from '../common/qaap-qaiq-model-binding';
 import { formatModelFlagsForAgent } from '../common/qaap-agent-model-flags';
 import { applyTemplate } from './qaap-agent-task-runner-utils';

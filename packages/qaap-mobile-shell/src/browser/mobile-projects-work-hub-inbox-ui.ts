@@ -6,8 +6,8 @@
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { resolveQaapGitPrVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { resolveQaapGitPrVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import {
     buildReviewHubPullRequestItems,
     buildWorkHubInboxItems,
@@ -15,11 +15,11 @@ import {
     pullRequestMatchesQuery,
     type MobileWorkHubInboxItem,
 } from './mobile-work-hub-inbox';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
-import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
+import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
 import { attachTaskTitleMarquee, createTaskTitleText } from './mobile-projects-task-title-marquee';
 
 /** Panel surface for Work Hub inbox grouping and Review / Chat hub list rendering. */
@@ -71,8 +71,8 @@ export interface MobileProjectsWorkHubInboxHost {
             ): HTMLElement;
         };
     };
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     hubIncrementalUi: import('./mobile-projects-hub-incremental-ui').MobileProjectsHubIncrementalUi;
 }

@@ -8,7 +8,7 @@
  * Keep the HTTP path in sync with `@theia/qaap-cloud-workspace` agent-task endpoint.
  */
 
-import { QAAP_AGENT_TASK_API_PATH } from './qaap-agent-task-client';
+import { QAAP_AGENT_TASK_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 /** GET list / POST update under the agent-tasks API. */
 export const QAAP_AGENT_CLI_UPDATES_PATH = `${QAAP_AGENT_TASK_API_PATH}/cli-updates`;

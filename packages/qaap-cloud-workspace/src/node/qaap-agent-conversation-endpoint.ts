@@ -28,9 +28,9 @@ import {
     QAAP_AGENT_CONVERSATION_WS_PATH,
     parseQaapAgentConversationWsClientMessage,
 } from '../common/qaap-agent-conversation-ws';
-import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
-import type { QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import type { QaapAgUiEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
+import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapAgentToolApprovalRules } from '../common/qaap-agent-conversation';
 import { resolveEffectiveToolApprovalRules } from '../common/qaap-agent-approval-flags';
 import { QaapAgentConversationStore, QaapMaxConcurrentRunsError } from './qaap-agent-conversation-store';
@@ -40,12 +40,12 @@ import { QaapConversationWorktreeService } from './qaap-conversation-worktree';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import type { QaapAgentConversation, QaapAgentConversationCwdGroup, QaapAgentConversationEvent } from '../common/qaap-agent-conversation';
 import {
     normalizeQaapVisualPreviewUrl,
     type QaapPreviewVisualValidationResult,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+} from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
 const SSE_HEARTBEAT_MS = 25_000;
 const VISUAL_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
@@ -923,8 +923,8 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
         res.status(201).json(conv);
     }
 
-    protected sanitizeGitActionMetadata(body: unknown): import('@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display').ComposerGitActionDisplayMetadata | undefined {
-        const value = (body ?? {}) as Partial<import('@theia/qaap-mobile-shell/lib/common/qaap-composer-git-action-display').ComposerGitActionDisplayMetadata>;
+    protected sanitizeGitActionMetadata(body: unknown): import('@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display').ComposerGitActionDisplayMetadata | undefined {
+        const value = (body ?? {}) as Partial<import('@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display').ComposerGitActionDisplayMetadata>;
         const action = typeof value.action === 'string' ? value.action.trim() : '';
         const label = typeof value.label === 'string' ? value.label.trim().slice(0, 120) : '';
         if (!action || !label) {
@@ -941,7 +941,7 @@ export class QaapAgentConversationEndpoint implements BackendApplicationContribu
             return undefined;
         }
         return {
-            action: action as import('@theia/qaap-mobile-shell/lib/common/qaap-git-review').QaapGitCommitWorkflowAction,
+            action: action as import('@theia/qaap-shared-core/lib/common/qaap-git-review').QaapGitCommitWorkflowAction,
             label,
             status: value.status === 'failed'
                 ? 'failed'

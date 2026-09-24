@@ -13,7 +13,7 @@ import {
     isPlaceholderAgentContent,
     syncSettledTraceEventsOnMessage,
 } from './qaap-transcript-trace-lifecycle';
-import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 const agentMessage = (partial: Partial<QaapAgentMessageDTO> = {}): QaapAgentMessageDTO => ({
     id: 'agent-1',

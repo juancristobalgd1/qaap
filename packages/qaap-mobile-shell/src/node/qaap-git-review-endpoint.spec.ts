@@ -8,7 +8,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile } from '../common/qaap-git-review';
+import { isBinaryGitPatch, parseUnifiedDiff, type QaapGitChangedFile } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
 
 /** Create the symlink fixture when the host permits it; Windows may require Developer Mode. */

@@ -21,12 +21,12 @@ import {
     type QaapGitHunkLine,
     type QaapGitIdentity,
     type QaapGitPrReadiness,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { leadingTruncatePath, splitRepoRelativePath } from './qaap-diff-review-path';
 import { isCurrentAgentDiffRequest } from './qaap-diff-review-request-state';
 import { reconcileExpandedReviewFiles, selectFileAfterRefresh } from './qaap-diff-review-select';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
-import { QaapAsyncConcurrencyLimiter } from './qaap-async-concurrency-limiter';
+import { QaapAsyncConcurrencyLimiter } from '@theia/qaap-shared-core/lib/browser/qaap-async-concurrency-limiter';
 import {
     evaluateVerifyCommitReadiness,
     localizeVerifyCommitReadiness,

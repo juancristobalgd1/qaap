@@ -8,7 +8,7 @@ import { ChatAgentService } from '@theia/ai-chat/lib/common/chat-agent-service';
 import { ChatMode } from '@theia/ai-chat';
 import type {
     QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTheiaCoderAgent,
     agentUsesSettingsModelCatalog,
@@ -23,27 +23,27 @@ import {
     type QaapAgentTaskAgentOption,
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     reconcileComposerModeId,
     resolveStickyComposerModes,
     writeStoredComposerMode,
-} from '../common/qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     reconcileAgentApprovalPolicyId,
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     reconcileAgentToolApprovalRules,
     writeStoredAgentToolApprovalRules,
     type QaapAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '../common/qaap-agent-auth-login';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsStickyComposerSheetsUi } from './mobile-projects-sticky-composer-sheets-ui';
 

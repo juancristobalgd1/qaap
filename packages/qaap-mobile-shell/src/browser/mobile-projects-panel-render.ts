@@ -6,22 +6,22 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     MobileProjectEntry,
     MobileProjectsHubView,
-} from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
-import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
+import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
 import {
     type WorkHubTeamMember,
-} from '../common/qaap-work-hub-team';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import {
     buildProbeStreamingSummaries,
     ensureProbeWorkspaceProject,
     QAAP_PROBE_WORKSPACE_PROJECT_ID,
-} from './qaap-work-hub-perf-probe-host';
+} from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-perf-probe-host';
 import { installQaapWorkHubPerfProbe } from './qaap-work-hub-perf-probe';
-import type { WorkHubPerfProbeDiagnostics } from '../common/qaap-work-hub-perf-probe';
+import type { WorkHubPerfProbeDiagnostics } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-perf-probe';
 import {
     QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,

@@ -5,8 +5,8 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 /** Panel surface for repository filter tabs and search chrome. */
 export interface MobileProjectsRepoFiltersHost {
@@ -21,7 +21,7 @@ export interface MobileProjectsRepoFiltersHost {
     projectsService: MobileProjectsService;
 
     isProjectDetailView(): boolean;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     renderList(): void;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;

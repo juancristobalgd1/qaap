@@ -7,11 +7,11 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     type ExecutionSurfaceTabId,
-} from '../common/qaap-execution-surface-tabs';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -109,7 +109,7 @@ export interface MobileProjectsExecutionSurfaceTabsHost {
     resolveAgentsHubShellProject(): MobileProjectEntry | undefined;
     resolveAgentsHubShellSummary(project: MobileProjectEntry): QaapAgentConversationSummaryDTO;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     isProjectDetailView(): boolean;
     openDesktopIdeFromAgentsHub(): Promise<void>;
     projects: MobileProjectEntry[];

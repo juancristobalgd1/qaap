@@ -15,8 +15,8 @@ import {
     populateModeToolbarButton,
     resolveAgentDisplayLabel,
 } from './qaap-agent-ui';
-import { resolveAgentApprovalPolicyOption } from '../common/qaap-sticky-composer-approval-policy';
-import { QAIQ_AGENT_ID } from '../common/qaap-agent-task-client';
+import { resolveAgentApprovalPolicyOption } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import { QAIQ_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 describe('qaap-agent-ui', () => {
 

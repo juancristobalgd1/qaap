@@ -2,13 +2,13 @@ import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobil
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { extractTranscriptDiffCard } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isAwaitingFirstTranscriptAgentOutput, resolveLastUserPromptChars, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldShowTranscriptStreamingActivity, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     resolveTranscriptEffectiveStatus,
-} from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-transcript-streaming-activity';
 import {
     resolveTranscriptActivityTimelineSummaryText,

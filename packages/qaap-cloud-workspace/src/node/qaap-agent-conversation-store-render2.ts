@@ -12,15 +12,15 @@ import { isQaapWorkspaceContainerPath, QAAP_CONTAINER_CWD_ERROR } from '@theia/q
 
 import { QAAP_DEFAULT_DELIVERY_MODE, QaapAgentConversation, QaapAgentConversationStatus, QaapAgentConversationSummary, QaapAgentMessage, QaapCreateAgentConversationRequest, QaapLinkConversationsByBranchRequest, QaapMessageDeliveryMode, QaapPendingUserMessage, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { agentSupportsModelPicker, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { agentSupportsModelPicker, QAIQ_AGENT_ID, SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
-import { DEFAULT_QAAP_CONTEXT_WINDOW } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+import { DEFAULT_QAAP_CONTEXT_WINDOW } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
-import { localizeAgentFailureMessage, localizeMissingCodingAgentMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { localizeAgentFailureMessage, localizeMissingCodingAgentMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
-import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
+import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 
-import { qaiqModelSupportsToolCalls } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-tool-support';
+import { qaiqModelSupportsToolCalls } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-support';
 
 import { patchConversationAutoApprove } from '../common/qaap-agent-conversation-auto-approve';
 
@@ -30,8 +30,8 @@ import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-a
 
 import { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
 
-import { backfillConversationTraceEvents, materializeConversationForApiWithChanges } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
-import type { QaapAgentConversationDTO } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-client';
+import { backfillConversationTraceEvents, materializeConversationForApiWithChanges } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 import { finalizeUnfinishedAgentToolSegments } from '../common/qaap-agent-transcript-segment-finalize';
 

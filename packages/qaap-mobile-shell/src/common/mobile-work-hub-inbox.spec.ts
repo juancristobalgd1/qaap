@@ -13,9 +13,9 @@ import {
     githubRepoKeysForProjects,
     pullRequestBelongsToProject,
 } from '../browser/mobile-work-hub-inbox';
-import type { MobileProjectEntry } from '../browser/mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 function project(overrides: Partial<MobileProjectEntry> = {}): MobileProjectEntry {
     return {

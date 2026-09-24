@@ -7,8 +7,8 @@ import {
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
     type QaapAgentMessageSegmentDTO,
-} from '../common/qaap-agent-conversation-client';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { resolveTranscriptToolRowParts, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
 import { type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
@@ -21,13 +21,13 @@ import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-project
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     type TranscriptActivityExpandContent,
     type TranscriptActivityExpandDeps,
 } from '../common/qaap-transcript-activity-expand-core';
 import { type ToolUmbrella } from '../common/qaap-tool-umbrella';
-import { getFileIconClass } from '../common/qaap-file-icon-utils';
+import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
 import { type TranscriptActivityTimelineItem } from './mobile-projects-transcript-timeline-utils';
 import {
     destroyThinkingOrbHosts as destroyThinkingOrbHostsHelper,

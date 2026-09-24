@@ -1,15 +1,15 @@
 import type { MobileClosingNarrativeAction } from './mobile-projects-transcript-messages-artifacts-ui';
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
-import { resolveAgentMessageTiming } from '../common/qaap-transcript-turn-status';
+import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { MOBILE_CLOSING_TEXT_ERROR_PREFIX } from './mobile-projects-transcript-messages-artifacts-ui-constants';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
-import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, resolveRunUserMessageId } from '../common/qaap-agent-conversation-client';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, cancelConversationRun, resolveRunUserMessageId } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     extractLastFailedToolFromMessage,
     resolveAgentTurnFailureTechnicalContent,
-} from '../common/qaap-agent-failure-message';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {

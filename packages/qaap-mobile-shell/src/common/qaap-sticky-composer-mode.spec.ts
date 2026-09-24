@@ -11,7 +11,7 @@ import {
     QAAP_BACKEND_INTERACTION_MODES,
     reconcileComposerModeId,
     resolveStickyComposerModes,
-} from './qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 
 describe('qaap-sticky-composer-mode', () => {
 

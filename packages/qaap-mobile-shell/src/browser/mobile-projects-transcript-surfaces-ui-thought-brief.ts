@@ -5,24 +5,24 @@ import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effec
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     conversationShouldWatchDevPreview,
     findTranscriptPreviewUrlFromConversation,
     previewPageTitleMatchesProjectName,
-} from '../common/qaap-transcript-preview-offer';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import {
     findQaapIdentityPreviewUrl,
     isLocalQaapPreviewOrigin,
     parseQaapDevPreviewRequestPath,
     parseQaapIdentityPreviewRequestPath,
     resolveDevPreviewPublicOrigin,
-} from '../common/qaap-dev-preview';
+} from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import {
     claimedPreviewCoordinatesMatchProject,
-} from '../common/qaap-preview-identity';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     markTranscriptTerminalRestorable,
 } from './qaap-transcript-terminal-view';

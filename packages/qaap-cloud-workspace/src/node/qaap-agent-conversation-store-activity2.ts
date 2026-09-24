@@ -3,13 +3,13 @@ import type { QaapAgentConversationStoreContext } from './qaap-agent-conversatio
 
 import { QaapAgentConversation, QaapAgentMessage, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { usesAgUiCliTranscriptStream, usesStructuredAgentTranscript } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 import { isHostedCodexUsage } from '../common/qaap-billing-plans';
 
-import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+import { localizeAgentFailureMessage, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
-import { resolveAgentLogDisplayText } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
+import { resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 
 import { resolveChatTurnOutcome } from '../common/qaap-chat-turn-workflow';
 
@@ -17,13 +17,13 @@ import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 
-import { buildAgentMessageFromAgUiStructuredLog } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
+import { buildAgentMessageFromAgUiStructuredLog } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 
 import { agentTurnHasRetryableToolSupportFailure } from '../common/qaap-agent-model-fallback';
 
 import { agentMessageHasStructuredTrace, isPlaceholderAgentContent, syncSettledTraceEventsOnMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
 
-import { materializeAgentMessageForApi } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
+import { materializeAgentMessageForApi } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
 
 import { resolveStructuredParsedTraceEvents as resolveStructuredParsedTraceEventsHelper } from './qaap-agent-conversation-store-utils';
 

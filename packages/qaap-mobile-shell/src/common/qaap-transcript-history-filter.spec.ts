@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapGitHistoryCommit } from './qaap-git-review';
+import type { QaapGitHistoryCommit } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import {
     collectHistoryAuthors,
     collectHistoryBranches,

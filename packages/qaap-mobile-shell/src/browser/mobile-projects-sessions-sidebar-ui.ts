@@ -4,16 +4,16 @@
 // *****************************************************************************
 
 import { Disposable } from '@theia/core/lib/common/disposable';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import { QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { beginSessionsSidebarConversationActivationExtracted, bindSessionsSidebarInteractionGuardExtracted, buildSessionsSidebarStructureFingerprintExtracted, buildSidebarRowFingerprintExtracted, collectParentIdsExtracted, collectSessionsSidebarConversationEntriesExtracted, ensureWorkHubSessionsSidebarExtracted, mergeSessionsSidebarProjectsExtracted, openWorkHubSessionsSidebarExtracted, prepareSessionsSidebarDataExtracted, refreshWorkHubSessionsSidebarListExtracted, rememberSessionsSidebarListFingerprintExtracted, resolveWorkHubSessionsSidebarProjectExtracted, seedSessionsSidebarProjectsForPaintExtracted, shouldDeferSessionsSidebarListRefreshExtracted, shouldSkipSessionsSidebarListRenderExtracted, stampSessionsSidebarRowFingerprintsExtracted, toggleWorkHubSessionsSidebarExtracted, tryPatchSessionsSidebarListExtracted } from './mobile-projects-sessions-sidebar-ui-render';
 import { appendSessionsSidebarConversationItemsExtracted, bindSessionsSidebarThreadStoreSubscriptionsExtracted, collectSessionsSidebarPinnedGroupsExtracted, compareSessionsSidebarProjectOrderExtracted, createSessionsSidebarClearFailedModeFooterExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarShowLessControlExtracted, createSessionsSidebarShowMoreControlExtracted, ensureSessionsSidebarActiveProjectExpandedExtracted, getSessionsSidebarConversationDisplayLimitExtracted, prefetchVisibleSidebarDocumentsExtracted, renderWorkHubSessionsSidebarListExtracted, resolveSessionsSidebarCollapsedLimitExtracted, resolveSessionsSidebarVisibleConversationsExtracted, seedSessionsSidebarAccordionDefaultsExtracted, syncSessionsSidebarAnimatedListHeightsExtracted, toggleSessionsSidebarAddProjectPopoverExtracted, toggleSessionsSidebarProjectSortPopoverExtracted } from './mobile-projects-sessions-sidebar-ui-streaming';
 import { createSessionsSidebarIdeOpenControlExtracted, createSessionsSidebarNewAgentControlExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, onSessionsSidebarAccountClickExtracted, onSessionsSidebarViewModeChangeExtracted, onWorkHubSessionsSidebarNewChatExtracted, openEmptyMobileChatSheetExtracted, openSessionsSidebarSearchExtracted } from './mobile-projects-sessions-sidebar-ui-timeline';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 export const MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE = QAAP_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE;
 /** Pause live sidebar sync while the user taps a row (prevents click loss). */
@@ -31,9 +31,9 @@ export interface MobileProjectsSessionsSidebarHost {
     projects: MobileProjectEntry[];
     query: string;
     transcriptOpenSummaryId: string | undefined;
-    activeTasks?: import('./mobile-projects-active-tasks').MobileProjectsActiveTasks;
-    conversations?: import('./mobile-projects-conversations').MobileProjectsConversations;
-    projectsService: import('./mobile-projects-service').MobileProjectsService;
+    activeTasks?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks;
+    conversations?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversations').MobileProjectsConversations;
+    projectsService: import('@theia/qaap-shared-core/lib/browser/mobile-projects-service').MobileProjectsService;
     commands: import('@theia/core/lib/common/command').CommandRegistry;
     quickInputService?: import('@theia/core/lib/browser').QuickInputService;
     delegate: {
@@ -48,7 +48,7 @@ export interface MobileProjectsSessionsSidebarHost {
                 project: MobileProjectEntry,
                 runId: string,
                 summaries: QaapAgentConversationSummaryDTO[],
-                activeInfo: ReturnType<import('./mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
+                activeInfo: ReturnType<import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
                 parentIds: ReadonlySet<string>,
                 options?: {
                     compact?: boolean;
@@ -58,17 +58,17 @@ export interface MobileProjectsSessionsSidebarHost {
             ): HTMLElement;
         };
     };
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     compareChatInboxProjectOrder(a: MobileProjectEntry, b: MobileProjectEntry): number;
     createTaskItem(
         project: MobileProjectEntry,
-        task: import('./mobile-projects-active-tasks').MobileProjectTaskView,
-        activeInfo: ReturnType<import('./mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
-        summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined,
+        task: import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectTaskView,
+        activeInfo: ReturnType<import('@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks').MobileProjectsActiveTasks['getForCwd']>,
+        summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO | undefined,
         parentIds: ReadonlySet<string>,
         options?: {
             onActivate?: () => void;
@@ -107,8 +107,8 @@ export interface MobileProjectsSessionsSidebarHost {
     renderSubtitle(): void;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     closeCurrentWorkspace(): Promise<void>;
-    openConversationSummary(project: MobileProjectEntry, summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
-    runCatalogAction(action: import('../common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
+    openConversationSummary(project: MobileProjectEntry, summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO): Promise<void>;
+    runCatalogAction(action: import('@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog').WorkHubCatalogAction): Promise<void>;
     onNewClick(): Promise<void>;
     onStartNewProject(): Promise<void>;
 }

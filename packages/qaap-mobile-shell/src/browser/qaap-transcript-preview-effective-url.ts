@@ -4,9 +4,9 @@
 // *****************************************************************************
 
 import { resolveEffectivePreviewUrl } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { staticEntryPathFromDevCommand } from '../common/qaap-project-bootstrap-static';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { staticEntryPathFromDevCommand } from '@theia/qaap-shared-core/lib/common/qaap-project-bootstrap-static';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 
 /**
  * URL the transcript iframe should load. Identity claims are root-only; nested static demos

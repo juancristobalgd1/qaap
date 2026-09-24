@@ -6,14 +6,14 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
-} from '../common/qaap-agent-conversation-client';
-import { applyAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { applyAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import {
     advanceTranscriptSemanticProgressClock,
     resolveTranscriptStreamingAgentSegments,
     seedTranscriptSemanticProgressClock,
 } from '../common/qaap-transcript-semantic-progress';
-import type { ConversationLiveMessageEvent } from './mobile-projects-conversations';
+import type { ConversationLiveMessageEvent } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import {
     applyConversationMessageDelta,
     canApplySseMessageDelta,
@@ -27,7 +27,7 @@ import {
     recordTranscriptRenderMetric,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { isTranscriptScrollNearBottom } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-user-scroll-pin';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
 
 export function touchTranscriptSemanticProgressFromConversationExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO): void {

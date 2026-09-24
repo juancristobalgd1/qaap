@@ -7,7 +7,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
 import { MobileProjectsHubHeaderUi, type MobileProjectsHubHeaderHost } from './mobile-projects-hub-header-ui';
 import { mountHeaderProjectButtonContents } from './mobile-projects-panel-chrome-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 describe('MobileProjectsHubHeaderUi', () => {
 

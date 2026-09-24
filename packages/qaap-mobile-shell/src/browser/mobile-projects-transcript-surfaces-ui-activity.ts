@@ -6,15 +6,15 @@ import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/brows
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     conversationShouldWatchDevPreview,
     resolveReadyTranscriptPreviewUrlFromProbe,
-} from '../common/qaap-transcript-preview-offer';
-import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
+import { probeQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function stopTranscriptPreviewTabProbeExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): void {
     if (ctx.transcriptPreviewProbeTimer !== undefined) {

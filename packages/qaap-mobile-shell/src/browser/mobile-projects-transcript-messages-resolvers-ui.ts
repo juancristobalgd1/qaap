@@ -9,11 +9,11 @@ import {
     extractToolArgFilePath,
     formatToolActivityLabel,
     parseDiffStatsFromText,
-} from '../common/qaap-agent-conversation-list-metrics';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { resolveTranscriptActivityNavigationItems, type TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment, extractTranscriptDiffCard } from '../common/qaap-agent-transcript-segments';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { isAgentToolResultFailure } from '../common/qaap-transcript-content-display';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { isAgentToolResultFailure } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import { isTranscriptWebSearchTool } from '../common/qaap-transcript-web-search-core';

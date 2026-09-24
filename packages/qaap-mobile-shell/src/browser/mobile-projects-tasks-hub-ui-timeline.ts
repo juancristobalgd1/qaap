@@ -6,8 +6,8 @@ import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import {
     summarizeTaskStates,
     type MobileProjectsActiveTasks,
-} from './mobile-projects-active-tasks';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     filterTaskHistoryEntries,
     type MobileProjectTaskHistoryEntry,

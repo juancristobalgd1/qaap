@@ -1,18 +1,18 @@
 import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-projects-sticky-composer-sheets-ui-context';
 // Extracted from mobile-projects-sticky-composer-sheets-ui.ts
 
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
+import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { nls } from '@theia/core/lib/common/nls';
 import {
     writeStoredAgent,
     writeStoredAgentModel,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     reconcileComposerModeId,
     resolveStickyComposerModes,
     writeStoredComposerMode,
-} from '../common/qaap-sticky-composer-mode';
-import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '../common/qaap-agent-auth-login';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
+import { QAAP_AI_FEATURES_SETTINGS_QUERY } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
     reconcileModelCapabilityLevel,
     writeStoredModelCapabilityLevel,
@@ -34,7 +34,7 @@ import {
     shouldUseStickyComposerDesktopPopover,
     shouldUseStickyComposerPopover,
 } from './qaap-sticky-composer-popover';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function shouldElevateComposerSheetsExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext): boolean {
         return ctx.host.agentsHubShellActive === true

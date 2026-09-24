@@ -5,13 +5,13 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
-import { MobileProjectEntry } from './mobile-projects-types';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
+import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import {
     applyConversationWorktree,
     getConversation,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     chooseParallelVariant,
     createParallelRun,
@@ -20,22 +20,22 @@ import {
     type QaapParallelChooseAction,
     type QaapParallelRunVariantDTO,
     type QaapParallelRunVariantStatsDTO,
-} from '../common/qaap-parallel-run-client';
-import { filterUiSelectableVpsAgents, fetchAgentModelsForAgent, toQaapCreateAgentTaskQaiqModel, type QaapAgentTaskAgentOption, type QaapCreateAgentTaskQaiqModel, type QaapQaiqModelOption } from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-parallel-run-client';
+import { filterUiSelectableVpsAgents, fetchAgentModelsForAgent, toQaapCreateAgentTaskQaiqModel, type QaapAgentTaskAgentOption, type QaapCreateAgentTaskQaiqModel, type QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     agentSupportsModelPicker,
     agentUsesSettingsModelCatalog,
     isSameAgentModel,
     readStoredAgentModel,
     writeStoredAgentModel,
-} from '../common/qaap-agent-model-selection';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     filterQaiqModelsWithConfiguredCredentials,
     formatQaiqModelSelectionLabel,
     listQaiqModelsFromPreferences,
     listQaiqModelsFromRegisteredLanguageModels,
     mergeQaiqModelOptions,
-} from '../common/qaap-qaiq-model-catalog';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import { createAgentBrandChip, createAgentBrandSplitChip, createAgentRowAvatar, createDiffStatsLine, createPickerSheetOptionButton } from './qaap-agent-ui';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 

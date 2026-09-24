@@ -5,7 +5,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
-import { QaapTurnSettleNotifier } from './qaap-turn-settle-notifier';
+import { QaapTurnSettleNotifier } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
 
 class MockNotification {
 

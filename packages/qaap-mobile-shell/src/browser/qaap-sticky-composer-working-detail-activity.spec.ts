@@ -5,8 +5,8 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import type { QaapAgentConversationDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import {
     buildWorkingAgentDetailActivityFeed,
     renderWorkingAgentDetailActivityFeed,

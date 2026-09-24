@@ -10,7 +10,7 @@
  */
 
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveTranscriptStreamHealth } from './qaap-transcript-stream-health';
 import {
     isConversationTurnVisuallySettled,
@@ -18,7 +18,7 @@ import {
     isTranscriptAgentTailStreaming,
     isTranscriptSummaryAgentWorking,
     resolveTranscriptEffectiveStatus,
-} from './qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 
 const visuallyCompleteStreamingTurn = (): QaapAgentConversationDTO => ({
     id: 'mockup-turn',

@@ -8,7 +8,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { safeUserIdSegment } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { DefaultWorkspaceServer } from '@theia/workspace/lib/node/default-workspace-server';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { filterHostedWorkspaceUris, isForbiddenHostedWorkspaceUri } from '../common/qaap-workspace-isolation';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 

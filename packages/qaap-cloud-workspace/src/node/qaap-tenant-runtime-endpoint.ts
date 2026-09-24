@@ -12,7 +12,7 @@ import {
     type QaapTenantActivityReason,
     type QaapTenantRuntimeStatus,
 } from '../common/qaap-cloud-api-types';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QaapDockerOrchestrator } from './qaap-docker-orchestrator';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 import { QaapTenantContainerReaper } from './qaap-tenant-container-reaper';

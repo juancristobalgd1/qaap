@@ -4,10 +4,10 @@
 // *****************************************************************************
 
 import { deflateRawSync, inflateRawSync } from 'zlib';
-import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-client';
-import type { QaapAgentMessageWireDelta } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
-import type { QaapAgentWireCompressionEncoding } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-wire-encoding';
-import { QAAP_AGENT_WIRE_COMPRESS_THRESHOLD } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-wire-encoding';
+import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
+import type { QaapAgentWireCompressionEncoding } from '@theia/qaap-shared-core/lib/common/qaap-agent-wire-encoding';
+import { QAAP_AGENT_WIRE_COMPRESS_THRESHOLD } from '@theia/qaap-shared-core/lib/common/qaap-agent-wire-encoding';
 
 interface CompressedWireText {
     readonly value: string;

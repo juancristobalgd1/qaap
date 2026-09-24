@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { buildMobileExecutionEvents, createMobileClosingErrorCardElement, createMobileDiffSummaryElement, resolveMobileDiffFileLanguageBadge, createMobileExecutionEventTimeline, createMobileLineDiffSummaryElement, findMobileProcessAccordion, formatMobileEventSummary, hasMobileExecutionEventTimeline, hasMobileProcessAccordion, MOBILE_CLOSING_ERROR_CARD_CLASS, MOBILE_EXECUTION_TIMELINE_CLASS, MOBILE_PROCESS_ACCORDION_CLASS, MOBILE_PROCESS_ACCORDION_RUN_STOP_CLASS, refreshMobileExecutionEventTimeline, resolveMobileActivityVerb, syncMobileProcessAccordionState, wrapMobileProcessAccordion } from './qaap-execution-event-timeline';
 
 describe('qaap-execution-event-timeline', () => {

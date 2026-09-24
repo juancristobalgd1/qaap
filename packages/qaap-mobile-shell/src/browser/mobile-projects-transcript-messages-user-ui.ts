@@ -5,11 +5,11 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
-import { conversationToSummary, rewindConversationToMessage, type QaapAgentConversationDTO, type QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
-import { resolveTranscriptUserMessageView, type TranscriptUserContextChip } from '../common/qaap-agent-message-content';
-import { splitPreviewFeedbackSource, type PreviewFeedbackAnnotationDetail } from '../common/qaap-preview-feedback-transcript';
-import { isComposerGitActionOnlyMessage } from '../common/qaap-composer-git-action-display';
-import { isSvgImagePreviewFileName, type QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
+import { conversationToSummary, rewindConversationToMessage, type QaapAgentConversationDTO, type QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { resolveTranscriptUserMessageView, type TranscriptUserContextChip } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
+import { splitPreviewFeedbackSource, type PreviewFeedbackAnnotationDetail } from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-transcript';
+import { isComposerGitActionOnlyMessage } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
+import { isSvgImagePreviewFileName, type QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
 import { resolveTranscriptImagePreviewSrc } from './qaap-transcript-user-attachment-preview-ui';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';

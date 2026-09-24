@@ -8,18 +8,18 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     buildAgentsHubIdleConversationSummary,
     isAgentsHubIdleConversationSummary,
     QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
-} from '../common/qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { appendOptimisticPendingUserMessage } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
@@ -29,14 +29,14 @@ import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-trans
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTasksHubUi } from './mobile-projects-tasks-hub-ui';
-import { disposeComposerContextEntries, type StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
+import { disposeComposerContextEntries, type StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 
 /** Panel surface for the Agents Hub inline execution shell (tasks landing). */
 export interface MobileProjectsAgentsHubInlineHost {
     homeMode: boolean;
-    hubView: import('./mobile-projects-types').MobileProjectsHubView;
+    hubView: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView;
     visible: boolean;
     scroll: HTMLElement;
     root: HTMLElement;
@@ -76,9 +76,9 @@ export interface MobileProjectsAgentsHubInlineHost {
     transcriptComposerMountKey: string | undefined;
     transcriptComposerContext: StickyComposerContextEntry[];
     transcriptComposerPinnedAgentId: string | undefined;
-    transcriptComposerAgentModel: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel | undefined;
+    transcriptComposerAgentModel: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel | undefined;
     transcriptComposerModeId: string | undefined;
-    transcriptComposerApprovalPolicyId: import('../common/qaap-sticky-composer-approval-policy').QaapAgentApprovalPolicyId | undefined;
+    transcriptComposerApprovalPolicyId: import('@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy').QaapAgentApprovalPolicyId | undefined;
     transcriptComposerPrefsConvId: string | undefined;
     transcriptComposerDraft: string;
     transcriptComposerDraftPersistTimer: number | undefined;
@@ -112,8 +112,8 @@ export interface MobileProjectsAgentsHubInlineHost {
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     updateTasksAttentionChrome(): void;
     conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
-    conversations?: import('./mobile-projects-conversations').MobileProjectsConversations;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversations?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversations').MobileProjectsConversations;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     onNewClick(): Promise<void>;
     onStartNewProject(): Promise<void>;
     onOpenLocalWorkspaceFolder(): Promise<void>;

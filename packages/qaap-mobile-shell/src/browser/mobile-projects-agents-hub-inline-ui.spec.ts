@@ -6,9 +6,9 @@
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Disposable } from '@theia/core/lib/common/disposable';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { ExecutionSurfaceTabId } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     MobileProjectsAgentsHubInlineUi,
     type MobileProjectsAgentsHubInlineHost,
@@ -567,7 +567,7 @@ describe('mobile-projects-agents-hub-inline-ui', () => {
     });
 
     it('reopens an inline transcript from the conversation cache instead of preview text', async () => {
-        let rendered: QaapAgentConversationSummaryDTO | import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+        let rendered: QaapAgentConversationSummaryDTO | import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
         const project = {
             id: 'proj-1',
             name: 'demo',

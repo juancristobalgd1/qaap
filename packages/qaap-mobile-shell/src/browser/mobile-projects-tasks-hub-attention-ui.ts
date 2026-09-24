@@ -7,8 +7,8 @@ import {
     countRunningTeamMembers,
     filterTeamMembersForDisplay,
     type WorkHubTeamMember,
-} from '../common/qaap-work-hub-team';
-import { fetchAgentApprovals, type QaapAgentApprovalRequestDTO } from '../common/qaap-agent-approval-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
+import { fetchAgentApprovals, type QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 
 /** Panel surface for Tasks hub approval polling and attention badges. */
@@ -25,7 +25,7 @@ export interface MobileProjectsTasksHubAttentionHost {
     renderList(): void;
     updateTasksAttentionChrome(): void;
     renderSubtitle(): void;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi
 }
 
 export class MobileProjectsTasksHubAttentionUi {

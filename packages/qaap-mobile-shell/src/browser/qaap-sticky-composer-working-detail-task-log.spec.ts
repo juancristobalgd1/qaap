@@ -15,7 +15,7 @@ import {
     updateWorkingDetailTaskLog,
     workingDetailTaskLogHasTranscriptSegments,
     WORKING_DETAIL_TASK_LOG_MAX_BYTES,
-} from './qaap-sticky-composer-working-detail-task-log';
+} from '@theia/qaap-shared-core/lib/browser/qaap-sticky-composer-working-detail-task-log';
 
 describe('qaap-sticky-composer-working-detail-task-log', () => {
     let disableJSDOM: () => void;

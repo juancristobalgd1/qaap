@@ -7,7 +7,7 @@ import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap
 
 import { QaapAgentConversation, QaapAgentConversationEvent, QaapAgentMessage, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+import { DEFAULT_QAAP_CONTEXT_WINDOW, totalTokensFromContextUsage } from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
 import { autoContinueAllowedForInteraction } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-turn-completion';
 
@@ -17,14 +17,14 @@ import { isTeamSynthesisUserMessage } from '../common/qaap-team-mailbox';
 
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 
-import { countCompressedWireFields, logQaapStreamMetrics } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import { countCompressedWireFields, logQaapStreamMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 
-import { buildAgentMessageFromQaapAgUiReducer, reduceQaapAgUiTranscriptEvent, type QaapAgUiEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
+import { buildAgentMessageFromQaapAgUiReducer, reduceQaapAgUiTranscriptEvent, type QaapAgUiEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 
-import { backfillConversationTraceEvents } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-backfill';
-import type { QaapAgentConversationDTO } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-client';
+import { backfillConversationTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
-import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
 import { resolveRunAgentMessageId as resolveRunAgentMessageIdHelper, sweepZombieStreamingTurns as sweepZombieStreamingTurnsHelper, forceStopZombieTurn as forceStopZombieTurnHelper, fireAgentMessageWireUpdate as fireAgentMessageWireUpdateHelper } from './qaap-agent-conversation-store-helpers';
 

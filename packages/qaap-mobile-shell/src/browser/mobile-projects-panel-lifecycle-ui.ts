@@ -6,21 +6,21 @@
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { ChatService } from '@theia/ai-chat';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
-import { isPreviewOnlyConversationChange } from '../common/qaap-conversation-change';
+import { isPreviewOnlyConversationChange } from '@theia/qaap-shared-core/lib/common/qaap-conversation-change';
 import { renderQaapAccountAvatarVisual } from './qaap-account-avatar-visual';
 import {
     hasMobileProjectsLeftLanding,
     setMobileLandingHubListChrome,
     setMobileWorkHubComposerHeaderChrome,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { isWorkingAgentsExpandPinnedOpen } from './qaap-sticky-composer-working-agents-popover';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
@@ -82,7 +82,7 @@ export interface MobileProjectsPanelLifecycleHost {
     disposeTranscriptTerminalSlides(): void;
     detachDiffReviewWidget(): void;
     ensureOverlayUi(): { team: { renderTeamSection(host: HTMLElement, conv: QaapAgentConversationDTO): void }; parallel: { applyParallelRunStats(runId: string, variants: unknown): void } };
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     refreshDiffHubView(): Promise<void>;
     refreshTasksHubApprovals(forceRender?: boolean): void;
     refreshInboxPullRequests(projects?: MobileProjectEntry[], force?: boolean): Promise<void>;

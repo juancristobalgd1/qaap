@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { parseQaapIdentityPreviewRequestPath, type QaapDevPreviewProbeResponse } from '../common/qaap-dev-preview';
-import type { QaapBootstrapPhase } from './qaap-project-bootstrap-types';
-import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
+import { parseQaapIdentityPreviewRequestPath, type QaapDevPreviewProbeResponse } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
+import type { QaapBootstrapPhase } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
+import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 
 export interface ComposerPreviewRuntime {
     readonly projectId: string;

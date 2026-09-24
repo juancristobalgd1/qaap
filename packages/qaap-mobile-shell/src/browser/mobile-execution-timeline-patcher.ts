@@ -12,8 +12,8 @@
 
 import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
-import { getFileIconClass } from '../common/qaap-file-icon-utils';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTranscriptWebSearchTool,
     resolveTranscriptWebSearchPayload,

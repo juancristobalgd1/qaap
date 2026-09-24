@@ -4,10 +4,10 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { reorderAgentTask, resumeAgentTask, retryAgentTask, type QaapAgentTaskDetailDTO } from '../common/qaap-agent-task-client';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { reorderAgentTask, resumeAgentTask, retryAgentTask, type QaapAgentTaskDetailDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 /** Panel surface for VPS background-task cancel and log viewer. */

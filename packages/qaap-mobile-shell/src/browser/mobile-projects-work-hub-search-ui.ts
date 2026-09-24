@@ -6,11 +6,11 @@
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import type { QuickPick, QuickPickItem, QuickPickSeparator } from '@theia/core/lib/common/quick-pick-service';
 import type { QuickInputService } from '@theia/core/lib/browser';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { QAAP_WORK_HUB_WORKFLOWS, type WorkHubCatalogAction } from '../common/mobile-work-hub-catalog';
+import { QAAP_WORK_HUB_WORKFLOWS, type WorkHubCatalogAction } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export type WorkHubSearchTarget =
     | { readonly kind: 'project'; readonly projectId: string }
@@ -37,8 +37,8 @@ export interface MobileProjectsWorkHubSearchHost {
 
     repoFiltersUi: import('./mobile-projects-repo-filters-ui').MobileProjectsRepoFiltersUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     isProjectDetailView(): boolean;
     detailComposerSurfaceForProject(project: MobileProjectEntry): import('../common/qaap-composer-surface').QaapComposerSurface;
     openProjectDetail(project: MobileProjectEntry): void | Promise<void>;

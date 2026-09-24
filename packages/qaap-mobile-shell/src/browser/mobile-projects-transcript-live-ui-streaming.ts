@@ -5,9 +5,9 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
-} from '../common/qaap-agent-conversation-client';
-import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
-import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
+import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import { excerptTranscriptThought } from '../common/qaap-agent-transcript-segments';
 import {
     conversationAwaitingDevPreview,
@@ -16,25 +16,25 @@ import {
     conversationShouldKickoffDevPreviewBootstrap,
     conversationShouldWatchDevPreview,
     messageRequestsDevPreview,
-} from '../common/qaap-transcript-preview-offer';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
     buildTranscriptPreviewBootstrapFailureReason,
     shouldReportTranscriptPreviewBootstrapFailure,
     toTranscriptPreviewBootstrapSnapshot,
 } from '../common/qaap-transcript-preview-bootstrap-failure';
-import { reportPreviewBootstrapFailure } from '../common/qaap-agent-conversation-client';
-import { agentMessageHasVisualVerificationMarker } from '../common/qaap-visual-verification';
+import { reportPreviewBootstrapFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { agentMessageHasVisualVerificationMarker } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import {
     mergeConversationTranscriptFingerprint,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork } from '../common/qaap-transcript-idle-scheduler';
-import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
+import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_COMPOSER_ACTIVITY_DEBOUNCE_MS } from './mobile-projects-transcript-live-ui';
 
 export function applyTranscriptSseRenderExtracted(ctx: MobileProjectsTranscriptLiveUiContext, next: QaapAgentConversationDTO,

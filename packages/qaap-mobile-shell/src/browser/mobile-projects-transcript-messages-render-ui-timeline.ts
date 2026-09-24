@@ -6,7 +6,7 @@ import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDeci
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
-} from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     appendBeforeTranscriptLiveStatus,
 } from '../common/qaap-transcript-live-status';
@@ -24,7 +24,7 @@ import { attachTranscriptActivityTimelineStickySummary } from '@theia/qaap-trans
 import {
     attachTranscriptRowDeferObserver,
 } from './qaap-transcript-row-defer';
-import { type QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { PATCH_NONE_REASON_METRIC } from './mobile-projects-transcript-messages-render-ui';
 import { AGENT_REPLACE_REASON_METRIC } from './mobile-projects-transcript-messages-render-ui';
 

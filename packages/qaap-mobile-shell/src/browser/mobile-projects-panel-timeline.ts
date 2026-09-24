@@ -7,30 +7,30 @@ import { ChatSession } from '@theia/ai-chat';
 import { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import {
     MobileProjectEntry,
-} from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     isAgentsHubIdleConversationSummary,
-} from '../common/qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import {
     QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_AI_FEATURES_SETTINGS_QUERY,
     localizeAgentSettingsApiKeyLoginMessage,
-} from '../common/qaap-agent-auth-login';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 import {
     isAgentHiddenOnHostedRuntime,
     localizeHostedLocalhostOAuthAgentMessage,
-} from '../common/qaap-hosted-agent-auth-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { openAgentLoginDialogInBackground } from './qaap-agent-login-background';
 import { isConversationError } from './mobile-projects-transcript-messages-artifacts-helpers';
 import {
     revokeComposerContextPreview,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     findPreviewFeedbackEntryIndex,
-} from '../common/qaap-preview-feedback-context';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import {
     type MobileWorkHubInboxItem,
 } from './mobile-work-hub-inbox';
@@ -56,7 +56,7 @@ export function removeExternalPreviewFeedbackChipExtracted(ctx: MobileProjectsPa
 export async function submitExternalComposerPromptExtracted(ctx: MobileProjectsPanelContext, draft: string,
     options: {
         readonly agentId?: string;
-        readonly agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+        readonly agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
     } = {},): Promise<boolean> {
     const text = draft.trim();
     if (!text) {
@@ -132,20 +132,20 @@ export async function createProjectChatSessionExtracted(ctx: MobileProjectsPanel
         modeId?: string;
         autoApprove?: boolean;
         approvalPolicyId?: string;
-        toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+        toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
         capabilityOverrides?: Record<string, boolean>;
         genericCapabilitySelections?: GenericCapabilitySelections;
         variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
-        agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
-        latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
+        agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+        latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
     },): Promise<import('./qaap-transcript-host-contracts').QaapProjectChatSessionCreated> {
     return ctx.backgroundTaskUi.createProjectChatSession(project, cwd, draft, options);
 }
 
-export function seedTranscriptOptimisticSubmitExtracted(ctx: MobileProjectsPanelContext, summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,
+export function seedTranscriptOptimisticSubmitExtracted(ctx: MobileProjectsPanelContext, summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,
     outbound: string,
     agentId?: string,
-    imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],): void {
+    imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],): void {
     ctx.agentsHubInlineUi.seedTranscriptOptimisticSubmit(summary, outbound, agentId, imagePreviews);
 }
 
@@ -170,13 +170,13 @@ export async function submitTranscriptViaBackendConversationExtracted(ctx: Mobil
         modeId?: string;
         autoApprove?: boolean;
         approvalPolicyId?: string;
-        toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+        toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
         capabilityOverrides?: Record<string, boolean>;
         genericCapabilitySelections?: GenericCapabilitySelections;
         variables?: AIVariableResolutionRequest[];
         widget?: AIChatInputWidget;
-        agentModel?: import('../common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
-        imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
+        agentModel?: import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapCreateAgentTaskQaiqModel;
+        imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[];
         /** Run beside the open turn instead of taking the conversation over. */
         parallel?: boolean;
     } = {},): Promise<boolean> {
@@ -434,7 +434,7 @@ export function renderIdleSubmitOptimisticExtracted(ctx: MobileProjectsPanelCont
     summary: QaapAgentConversationSummaryDTO,
     draft: string,
     selectedAgentId: string,
-    imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
+    imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
     contentOverride?: string,): void {
     ctx.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, selectedAgentId, imagePreviews, contentOverride);
 }

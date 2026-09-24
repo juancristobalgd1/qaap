@@ -11,8 +11,8 @@ import {
     materializeAgentMessageForApi,
     preferTraceFirstAgentMessageStorage,
     settleTraceEvents,
-} from './qaap-transcript-trace-backfill';
-import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-backfill';
+import type { QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 describe('qaap-transcript-trace-backfill', () => {
     it('derives settled traceEvents from legacy segments', () => {

@@ -9,7 +9,7 @@ import type {
     MobileShellTranscriptChromeController as MobileShellTranscriptChromeControllerType,
     MobileShellTranscriptChromeHost,
 } from './mobile-shell-transcript-chrome-controller';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileProjectsPanel } from './mobile-projects-panel';
 
 describe('mobile-shell-transcript-chrome-controller', () => {

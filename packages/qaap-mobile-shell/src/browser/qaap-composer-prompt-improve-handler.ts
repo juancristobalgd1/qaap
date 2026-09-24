@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentModelSelection } from '../common/qaap-agent-model-selection';
+import type { QaapAgentModelSelection } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import { isComposerPromptImproveCancelled } from '../common/qaap-composer-prompt-improve';
 import { animateComposerPromptReplace, finalizeComposerPromptReplace } from './qaap-composer-prompt-reveal';
 import type { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';

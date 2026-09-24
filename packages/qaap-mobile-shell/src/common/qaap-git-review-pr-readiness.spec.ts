@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { computePrReadiness } from './qaap-git-review';
+import { computePrReadiness } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 
 describe('computePrReadiness', () => {
     it('offers a PR on a feature branch ahead of default', () => {

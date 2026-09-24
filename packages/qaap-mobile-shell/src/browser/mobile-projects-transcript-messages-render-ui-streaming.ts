@@ -9,7 +9,7 @@ import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-
 import {
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
-} from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     appendBeforeTranscriptLiveStatus,
     detachTranscriptLiveStatusFromScroller,
@@ -19,7 +19,7 @@ import { attachTranscriptScrollToBottomButton } from '@theia/qaap-transcript-ove
 import {
     restoreTranscriptReadPosition,
 } from './qaap-transcript-read-position';
-import { type QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 export function createTranscriptEmptyWelcomeExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext): HTMLElement {
         const welcome = document.createElement('section');

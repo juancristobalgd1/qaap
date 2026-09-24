@@ -9,8 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { Emitter } from '@theia/core/lib/common/event';
 import { QaapResearchStore } from './qaap-research-store';
-import type { ResearchGoal, ResearchMetricSpec } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
-import type { ResearchExperimentRecord } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
+import type { ResearchGoal, ResearchMetricSpec } from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
+import type { ResearchExperimentRecord } from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
 
 /** Bypasses the constructor/@postConstruct (which would initialize the goal SQLite store) —
  *  same trick `qaap-agent-task-runner.verification.spec.ts` uses for the sibling task runner. */

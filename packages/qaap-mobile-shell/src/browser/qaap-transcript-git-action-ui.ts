@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
+import type { ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 
 export function createTranscriptGitActionCard(metadata: ComposerGitActionDisplayMetadata): HTMLElement {
     const card = document.createElement('div');

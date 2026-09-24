@@ -8,16 +8,16 @@ import {
     type ResearchGoal,
     type ResearchGoalStatus,
     type TerminationReason,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
 import {
     configFingerprint,
     parseExperimentProposal,
     resolveTerminationReason,
     type ResearchExperimentRecord,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
-import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-mobile-shell/lib/common/qaap-research-agent-log';
-import { buildResearchRoundPrompt } from '@theia/qaap-mobile-shell/lib/common/qaap-research-prompt';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
+import { realChangeFingerprint, type RealFileChange } from '@theia/qaap-shared-core/lib/common/qaap-research-realchange';
+import { extractAgentTextFromLog, extractAgentTurnError } from '@theia/qaap-shared-core/lib/common/qaap-research-agent-log';
+import { buildResearchRoundPrompt } from '@theia/qaap-shared-core/lib/common/qaap-research-prompt';
 import { parseAgentBlockedSignal } from '../common/qaap-agent-default-workflow';
 import { LEDGER_PATHSPEC_EXCLUDE, LEDGER_RELATIVE_PATH, PREFLIGHT_PROMPT, PREFLIGHT_TIMEOUT_MS, REMINDER_MISSING_BLOCK, REMINDER_NOOP_ROUND } from './qaap-research-runner';
 import { toAgentTaskModel,reminderRepeatedFingerprint } from './qaap-research-runner';

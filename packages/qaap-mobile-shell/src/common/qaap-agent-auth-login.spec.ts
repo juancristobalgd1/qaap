@@ -14,10 +14,10 @@ import {
     localizeAgentAuthFailureMessage,
     localizeAgentSettingsApiKeyLoginMessage,
     resolveAgentLoginCliCommand,
-} from './qaap-agent-auth-login';
-import { detectAgentFailureKind, resolveAgentTurnFailureMessage } from './qaap-agent-failure-message';
-import { resolveAgentLogDisplayText } from './qaap-cli-transcript-stream';
-import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { detectAgentFailureKind, resolveAgentTurnFailureMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import { rememberQaapHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 
 describe('qaap-agent-auth-login', () => {
     afterEach(() => {

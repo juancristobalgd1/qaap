@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { isQaapStreamMetricsEnabled } from './qaap-agent-stream-metrics';
+import { isQaapStreamMetricsEnabled } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 
 export type QaapChatUiPerfSurface = 'chat-view' | 'transcript';
 

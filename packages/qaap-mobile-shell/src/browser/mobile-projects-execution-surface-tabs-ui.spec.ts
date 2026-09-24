@@ -10,8 +10,8 @@ import {
     MobileProjectsExecutionSurfaceTabsUi,
     type MobileProjectsExecutionSurfaceTabsHost,
 } from './mobile-projects-execution-surface-tabs-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import { clearPreferDesktopIde, markPreferDesktopIde } from './mobile-projects-open';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { clearPreferDesktopIde, markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 
 describe('mobile-projects-execution-surface-tabs-ui', () => {
 

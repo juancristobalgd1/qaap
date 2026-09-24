@@ -23,7 +23,7 @@ import {
     getConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     extractBackendAgentMention,
     isTheiaCoderAgent,
@@ -35,10 +35,10 @@ import {
     stripNonCoderAgentMention,
     THEIA_CODER_AGENT_ID,
     writeStoredAgent,
-} from '../common/qaap-agent-task-client';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 interface RestorableTheiaChatData {
     readonly title?: string;

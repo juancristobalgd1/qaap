@@ -10,13 +10,13 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { QAAP_AGENT_CONVERSATION_API_PATH, QaapAgentConversation, QaapAgentMessage, QaapUpdateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { agentSupportsModelPicker } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 import { collectSubtasksForLeader } from '../common/qaap-team-mailbox';
 
 import { appendTracePreviewFailureEvent } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-lifecycle';
 
-import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER, agentMessageHasVisualVerificationMarker, buildQaapVisualVerificationMarkdown, buildQaapVisualVideoMarkdown, type QaapPreviewVisualValidationResult } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+import { QAAP_VISUAL_REPAIR_REQUIRED_MARKER, agentMessageHasVisualVerificationMarker, buildQaapVisualVerificationMarkdown, buildQaapVisualVideoMarkdown, type QaapPreviewVisualValidationResult } from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 
 import { resolveVisualEvidenceTarget as resolveVisualEvidenceTargetHelper, resolveVisualRepairSourceUserMessage as resolveVisualRepairSourceUserMessageHelper } from './qaap-agent-conversation-store-visual';
 

@@ -3,8 +3,8 @@ import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-proje
 
 import { nls } from '@theia/core/lib/common/nls';
 import { readStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import { type MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT } from './mobile-projects-project-rows-ui';
 
 export function createTaskBlockExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry,

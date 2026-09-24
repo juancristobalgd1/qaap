@@ -6,7 +6,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import type { BackendApplicationContribution } from '@theia/core/lib/node';
 import type { Application, Request, Response, NextFunction } from '@theia/core/shared/express';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';
 
 /** Keeps the tenant alive while authenticated API/SSE requests or WebSocket handshakes are active. */

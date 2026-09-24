@@ -8,8 +8,8 @@ import {
     collectTrustedBootstrapPreviewPorts,
     ensureTranscriptDevPreview,
     extractDevPreviewPortFromUrl,
-} from './qaap-transcript-preview-bootstrap';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+} from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 
 describe('qaap-transcript-preview-bootstrap', () => {
     it('extractDevPreviewPortFromUrl reads qaap-dev proxy paths', () => {

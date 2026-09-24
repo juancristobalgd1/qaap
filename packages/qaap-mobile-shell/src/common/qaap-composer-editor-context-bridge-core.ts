@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { AIVariable, AIVariableResolutionRequest, ResolvedAIContextVariable } from '@theia/ai-core';
-import type { StickyComposerContextEntry } from './qaap-composer-context-entry';
+import type { StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 
 /** Keep in sync with `@theia/ai-editor` `EDITOR_CONTEXT_VARIABLE.name`. */
 export const QAAP_EDITOR_CONTEXT_VARIABLE_NAME = 'editorContext';

@@ -8,7 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
 import { activateAgentPickerEntry, buildAgentPickerSearchResults, createAgentPickerInlineModelButton, modelMatchesAgentPickerQuery, type QaapAgentPickerSearchEntry } from './qaap-agent-picker-search';
 import { createAgentSheetOptionButton } from './qaap-agent-ui';
-import type { QaapQaiqModelOption } from '../common/qaap-agent-task-client';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 const entries: readonly QaapAgentPickerSearchEntry[] = [
     {

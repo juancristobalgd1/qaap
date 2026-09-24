@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QAAP_BUILTIN_AGENT_DEFINITIONS, resolveQaapCodexTemplate } from './qaap-builtin-agents';
+import { QAAP_BUILTIN_AGENT_DEFINITIONS, resolveQaapCodexTemplate } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 
 describe('qaap-builtin-agents', () => {
 

@@ -15,24 +15,24 @@ import {
     agentMessageHasVisualVerificationMarker,
     parseQaapCaptureDirective,
     type QaapPreviewVisualValidationResult,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
-import { buildQaapIdentityPreviewUrl } from '@theia/qaap-mobile-shell/lib/common/qaap-dev-preview';
+} from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
+import { buildQaapIdentityPreviewUrl } from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
 import {
     isQaapProcessPreviewIdentity,
     resolveQaapPreviewIdentity,
     type QaapProcessPreviewIdentity,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-identity';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
 import {
     QaapDevPreviewPortRegistry,
     type QaapDevPreviewRecord,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-dev-preview-port-registry';
-import { deriveVisualFlowSteps } from '@theia/qaap-mobile-shell/lib/common/qaap-visual-flow-plan';
+} from '@theia/qaap-shared-core/lib/node/qaap-dev-preview-port-registry';
+import { deriveVisualFlowSteps } from '@theia/qaap-shared-core/lib/common/qaap-visual-flow-plan';
 import {
     QAAP_PREVIEW_CONFIG_PATH,
     QaapPreviewLaunchPlan,
     materializeQaapPreviewLaunchPlan,
     parseQaapPreviewLaunchConfigJson,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-preview-launch-plan';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-launch-plan';
 import { conversationNeedsVisualVerificationEvidence, type QaapAgentConversation } from '../common/qaap-agent-conversation';
 import { QaapAgentConversationStore } from './qaap-agent-conversation-store';
 import { QaapPreviewSupervisor } from './qaap-preview-supervisor';

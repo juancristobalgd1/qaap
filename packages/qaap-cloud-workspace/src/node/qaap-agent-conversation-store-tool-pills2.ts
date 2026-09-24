@@ -1,14 +1,14 @@
 // Extracted from qaap-agent-conversation-store.ts
 import type { QaapAgentConversationStoreContext } from './qaap-agent-conversation-store-context';
 
-import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-mobile-shell/lib/common/qaap-hosted-agent-auth-policy';
+import { assertAgentAllowedOnHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 
 import { QaapAgentConversation, QaapAgentConversationStatus, QaapAgentMessage, QaapConversationCheckpoint, QaapCreateAgentConversationRequest, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { agentSupportsModelPicker, resolveQaapAgentMentionToken } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { agentSupportsModelPicker, resolveQaapAgentMentionToken } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
-import { isConversationTurnVisuallySettled } from '@theia/qaap-mobile-shell/lib/common/qaap-transcript-turn-status';
-import type { QaapAgentConversationDTO } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-client';
+import { isConversationTurnVisuallySettled } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 import type { QaapAgentTask, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
 

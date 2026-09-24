@@ -5,16 +5,16 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_AGENTS_HUB_RECENT_LIMIT,
-} from '../common/qaap-agents-hub-landing';
+} from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { type WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import { type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import { type WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import { type MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     filterWorkingTeamMembers,
 } from './qaap-sticky-composer-working-agents-popover';
@@ -24,7 +24,7 @@ import {
 import {
     resolveTodoStepProgress,
 } from '../common/qaap-transcript-todo-step';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import {
     EMPTY_MOBILE_PROJECT_TASK_HISTORY_FILTERS,
     type MobileProjectTaskHistoryDate,
@@ -59,7 +59,7 @@ export interface MobileProjectsTasksHubHost {
     transcriptOpenProject?: MobileProjectEntry;
     transcriptOpenSummary?: QaapAgentConversationSummaryDTO;
     /** Live transcript document — used as Step-pill fallback while threadStore catches up. */
-    transcriptLastConv?: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO;
+    transcriptLastConv?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO;
     transcriptComposerSendRefresh?: (() => void) | undefined;
     stickyComposerDraft: string;
     stickyComposerHost: HTMLElement | undefined;
@@ -123,8 +123,8 @@ export interface MobileProjectsTasksHubHost {
             ): boolean;
         };
     };
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     hubIncrementalUi: import('./mobile-projects-hub-incremental-ui').MobileProjectsHubIncrementalUi;
     onNewClick(): Promise<void>;

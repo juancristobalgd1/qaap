@@ -3,17 +3,17 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import {
     buildWorkHubInboxRowFingerprintFromSummary,
     buildWorkHubInboxStructureFingerprint,
     type WorkHubInboxProjectGroupFingerprintInput,
 } from '../common/qaap-work-hub-inbox-fingerprint';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
-import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { MobileWorkHubInboxItem } from './mobile-work-hub-inbox';
 import type { WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export const QAAP_INBOX_STRUCTURE_FP_ATTR = 'data-qaap-inbox-structure-fp';
 export const QAAP_INBOX_ROW_ID_ATTR = 'data-qaap-inbox-row-id';
@@ -24,7 +24,7 @@ export interface MobileProjectsHubIncrementalHost {
     scroll: HTMLElement;
     transcriptOpenSummaryId: string | undefined;
     justAddedTaskId: string | undefined;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     createInboxProjectGroup(project: MobileProjectEntry, items: MobileWorkHubInboxItem[]): HTMLElement;
 }
@@ -43,7 +43,7 @@ export interface MobileProjectsHubIncrementalPatchHost extends MobileProjectsHub
     ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }>;
     collectChatHubGroups(
         projects: MobileProjectEntry[],
-    ): Array<{ project: MobileProjectEntry; summaries: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO[] }>;
+    ): Array<{ project: MobileProjectEntry; summaries: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO[] }>;
     collectReviewGroups(
         projects: MobileProjectEntry[],
     ): Array<{ project: MobileProjectEntry; items: MobileWorkHubInboxItem[] }>;
@@ -247,7 +247,7 @@ export class MobileProjectsHubIncrementalUi {
      * to the current chrome-only behaviour.
      */
     patchConversationRowInPlace(
-        summary: import('../common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,
+        summary: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationSummaryDTO,
     ): boolean {
         const row = this.host.scroll.querySelector<HTMLElement>(
             `.theia-mobile-projects-task-row[${QAAP_INBOX_ROW_ID_ATTR}="${cssEscape(summary.id)}"]`,

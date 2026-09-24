@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentMessageDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptActivityStats } from './qaap-agent-transcript-segments';
-import { extractDevPreviewUrlFromAgentText, messageRequestsDevPreview } from './qaap-transcript-preview-offer';
+import { extractDevPreviewUrlFromAgentText, messageRequestsDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
     agentWebGenerationPassesQualityGate,
     buildWebGenerationAutoContinuePrompt,
     messageExplicitlyRequestsWebPage,
 } from './qaap-agent-web-generation-quality-gate';
-import { resolveAgentMessageSegments } from './qaap-transcript-trace-model';
-import { normalizeInteractionModeId } from './qaap-qaiq-interaction-flags';
+import { resolveAgentMessageSegments } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { normalizeInteractionModeId } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 
 // Each heuristic matches English and Spanish forms — Qaap's user base writes prompts (and the
 // agent, mirroring the user's language, writes outcomes) in both. English words keep the strict

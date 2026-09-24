@@ -7,8 +7,8 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { QuickInputService, QuickPickItem, QuickPickSeparator } from '@theia/core';
 import { nls } from '@theia/core/lib/common/nls';
-import { MobileProjectEntry } from './mobile-projects-types';
-import { MobileProjectsService } from './mobile-projects-service';
+import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 
 interface QaapProjectSwitcherPick extends QuickPickItem {
     run: () => Promise<void>;

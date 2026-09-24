@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from './mobile-work-hub-catalog';
+import { QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import type { StickyComposerSlashActionId } from './qaap-sticky-composer-slash-menu';
 
 export interface StickyComposerSlashActionHandlers {

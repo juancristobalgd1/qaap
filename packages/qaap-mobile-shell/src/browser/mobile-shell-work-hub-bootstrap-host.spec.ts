@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { initWorkHubBootstrapControllerExtracted } from './mobile-one-column-shell-contribution-render';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import type { MobileOneColumnShellContributionContext } from './mobile-one-column-shell-contribution-context';
 
 describe('mobile-shell-work-hub-bootstrap host wiring', () => {

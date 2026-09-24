@@ -14,7 +14,7 @@ import {
     looksLikeTranscriptMarkdown,
     stripAnsiEscapes,
     stripToolResultLineNumberPrefixes,
-} from './qaap-transcript-content-display';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 
 describe('qaap-transcript-content-display', () => {
 

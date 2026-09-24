@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     conversationAwaitingDevPreview,
     conversationEverRequestedDevPreview,
@@ -18,7 +18,7 @@ import {
     messageRequestsDevPreview,
     previewPageTitleMatchesProjectName,
     transcriptPreviewProbePorts,
-} from './qaap-transcript-preview-offer';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 
 describe('qaap-transcript-preview-offer', () => {
 

@@ -97,7 +97,7 @@ export interface QaapAgentIsolationDecision {
 
 /**
  * Whether this is a hosted/production runtime. Mirrors `QaapGithubAuthGuard.isProductionRuntime`
- * (`packages/qaap-mobile-shell/src/node/qaap-github-auth-guard.ts`) deliberately: a run is production
+ * (`packages/qaap-shared-core/src/node/qaap-github-auth-guard.ts`) deliberately: a run is production
  * when `NODE_ENV=production` or `QAAP_CLOUD_MODE` is set to anything other than `local`. Keep in sync.
  */
 export function isQaapProductionRuntime(env: NodeJS.ProcessEnv): boolean {

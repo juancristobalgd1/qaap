@@ -8,16 +8,16 @@ import {
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
     type QaapMessageDeliveryMode,
-} from '../common/qaap-agent-conversation-client';
-import { createComposerGitActionDisplayMarker } from '../common/qaap-composer-git-action-display';
-import { isTranscriptAgentExecutionBusy } from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { createComposerGitActionDisplayMarker } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
+import { isTranscriptAgentExecutionBusy } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     type TranscriptFollowUpEntry,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     type QaapGitCommitWorkflowAction,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { renderStickyComposerActivityStack, buildStickyComposerActivityStackFingerprint, buildStickyComposerChangesPillFingerprint, patchStickyComposerActivityStack, patchStickyComposerChangesPillHost, renderStickyComposerChangesPill, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     ensureQueueControlInPillRow,

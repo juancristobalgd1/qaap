@@ -3,7 +3,7 @@ import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-pro
 
 import { nls } from '@theia/core/lib/common/nls';
 import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type {
     TranscriptActivityReadExpandEntry,
     TranscriptActivityTerminalExpandEntry,

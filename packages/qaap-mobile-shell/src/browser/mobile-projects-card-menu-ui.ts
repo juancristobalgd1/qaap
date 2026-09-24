@@ -6,12 +6,12 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { ChatService } from '@theia/ai-chat';
-import { type QaapAgentConversationSummaryDTO, isFailedRunSummary } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { type QaapAgentConversationSummaryDTO, isFailedRunSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 
 export interface MobileProjectsCardMenuItemOptions {
@@ -66,7 +66,7 @@ export interface MobileProjectsCardMenuHost {
             openParallelRunsSheet(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
         };
     };
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi
 }
 
 /** Floating card menus for project rows and conversation task rows. */

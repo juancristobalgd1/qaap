@@ -10,7 +10,7 @@ import {
     type QaapGithubInboxEvent,
     type QaapGithubPullRequestSummary,
 } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+import { QaapChatViewStreamUpdateScheduler } from '@theia/qaap-shared-core/lib/common/qaap-chat-view-stream-update-scheduler';
 
 const INBOX_STREAM_URL = `${QAAP_GITHUB_API_PATH}/inbox/stream`;
 const RECONNECT_DELAY_MS = 5_000;

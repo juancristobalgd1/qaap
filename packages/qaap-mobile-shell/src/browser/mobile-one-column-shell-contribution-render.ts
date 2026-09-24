@@ -14,8 +14,8 @@ import {
     QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT,
     setMobileWorkHubComposerHeaderChrome,
     recomputeMobileWorkHubHideIdeSidePanels,
-} from './mobile-projects-open';
-import { resolveInitialLandingBodyClass } from './mobile-shell-landing-state';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import { resolveInitialLandingBodyClass } from '@theia/qaap-shared-core/lib/browser/mobile-shell-landing-state';
 import { MobileShellLandingController } from './mobile-shell-landing-controller';
 import {
     MobileShellBottomBarController,

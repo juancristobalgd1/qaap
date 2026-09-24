@@ -8,13 +8,13 @@ import {
     getLatestTokenUsage,
 } from '@theia/ai-chat-ui/lib/browser/chat-token-usage-indicator-util';
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     estimateConversationContextBreakdown,
     resolveVpsContextUsageFromSummary,
     totalTokensFromContextUsage,
     type QaapAgentContextUsage,
-} from '../common/qaap-agent-context-usage';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 
 import { wireStickyComposerPopoverDismiss } from './qaap-sticky-composer-popover';
 

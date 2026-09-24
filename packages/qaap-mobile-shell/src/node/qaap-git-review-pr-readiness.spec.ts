@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { QaapGitReviewEndpoint } from './qaap-git-review-endpoint';
-import type { QaapGitPrReadiness } from '../common/qaap-git-review';
+import type { QaapGitPrReadiness } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 
 class TestGitReviewEndpoint extends QaapGitReviewEndpoint {
     prReadiness(root: string): Promise<QaapGitPrReadiness | undefined> {

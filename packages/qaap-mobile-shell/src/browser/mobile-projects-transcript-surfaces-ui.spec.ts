@@ -13,15 +13,15 @@ if (!browserGlobals.DragEvent) {
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { ExecutionSurfaceTabId } from '../common/qaap-execution-surface-tabs';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { ExecutionSurfaceTabId } from '@theia/qaap-shared-core/lib/common/qaap-execution-surface-tabs';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     MobileProjectsTranscriptSurfacesUi,
     type MobileProjectsTranscriptSurfacesHost,
 } from './mobile-projects-transcript-surfaces-ui';
 import type { MobileProjectsTranscriptHistoryUi } from './mobile-projects-transcript-history-ui';
-import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
+import type { QaapMonorepoAppCandidate } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 
 const historyUiStub = {} as unknown as MobileProjectsTranscriptHistoryUi;
 

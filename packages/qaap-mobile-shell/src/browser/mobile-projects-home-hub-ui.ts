@@ -16,17 +16,17 @@ import {
     type WorkHubHomeSnapshot,
 } from '../common/qaap-work-hub-home';
 import { buildWorkHubHomeUsageSummary } from '../common/qaap-work-hub-usage-summary';
-import { isLocalChatSummary } from '../common/qaap-work-hub-surfaces';
+import { isLocalChatSummary } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-surfaces';
 import { readQaapAuthUser } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { MobileProjectsHomeUi, WorkHubHomeNavigateTarget, WorkHubHomeQuickActionId } from './mobile-projects-home-ui';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import type { WorkHubApprovalItem } from './mobile-projects-team-hub-ui';
 import type { MobileProjectsMissionControlHubUi } from './mobile-projects-mission-control-hub-ui';
 
@@ -54,12 +54,12 @@ export interface MobileProjectsHomeHubHost {
     renderList(): void;
     renderSubtitle(): void;
     ensureOverlayUi(): { home: MobileProjectsHomeUi };
-    navigateHubTab(view: import('./mobile-projects-types').MobileProjectsHubView): void;
+    navigateHubTab(view: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView): void;
     openProjectDetail(project: MobileProjectEntry): void | Promise<void>;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
-    selectHubLandingView(view: import('./mobile-projects-types').MobileProjectsHubView, preferredDiffProjectId?: string, options?: { force?: boolean }): void;
+    selectHubLandingView(view: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView, preferredDiffProjectId?: string, options?: { force?: boolean }): void;
     preferComposerSurface(surface: import('../common/qaap-composer-surface').QaapComposerSurface, projectCwd?: string): void;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     missionControlHubUi: MobileProjectsMissionControlHubUi;
     missionControlExpanded: boolean;
     agentsHubSelectedProjectId: string | undefined;

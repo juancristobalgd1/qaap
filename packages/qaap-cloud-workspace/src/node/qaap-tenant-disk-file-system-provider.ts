@@ -16,8 +16,8 @@ import {
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
-import { isRealPathUnder } from '@theia/qaap-mobile-shell/lib/node/qaap-realpath-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { isRealPathUnder } from '@theia/qaap-shared-core/lib/node/qaap-realpath-guard';
 import {
     createFileSystemProviderError,
     FileDeleteOptions,

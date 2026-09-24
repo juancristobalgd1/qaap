@@ -14,7 +14,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser';
 import {
     createComposerContextEntry,
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     buildEditorContextAttachmentRequest,
     buildEditorSelectionFingerprint,
@@ -26,7 +26,7 @@ import {
     shouldOfferEditorContextAttach,
     type EditorSelectionSnapshot,
 } from '../common/qaap-composer-editor-context-bridge-core';
-import { peekPreferDesktopIde } from './mobile-projects-open';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 
 export type ComposerEditorContextTarget = 'transcript' | 'sticky';
 

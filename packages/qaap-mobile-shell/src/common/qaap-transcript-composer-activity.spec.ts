@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 /** Minimal stand-in for the segment scan used by MobileProjectsTranscriptMessagesUi. */
 function resolveComposerConversationSegments(

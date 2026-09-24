@@ -8,7 +8,7 @@ import { expect } from 'chai';
 import { buildWorkHubHomeUsageSummary } from '../common/qaap-work-hub-usage-summary';
 import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
 import { MobileProjectsHomeUi, type MobileProjectsHomeUiDeps } from './mobile-projects-home-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 describe('MobileProjectsHomeUi', () => {
     let disableJSDOM: () => void;

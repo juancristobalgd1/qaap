@@ -9,15 +9,15 @@ enableJSDOM();
 
 import { expect } from 'chai';
 import { Event as TheiaEvent } from '@theia/core/lib/common/event';
-import type { QaapAgentApprovalRequestDTO } from '../common/qaap-agent-approval-client';
-import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     enableTranscriptRenderMetrics,
     getTranscriptRenderMetricsSnapshot,
     resetTranscriptRenderMetrics,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
-import { QaapThreadStore } from '../common/qaap-thread-store';
+import { QaapThreadStore } from '@theia/qaap-shared-core/lib/common/qaap-thread-store';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { MobileProjectsTranscriptLiveUi, type MobileProjectsTranscriptLiveHost } from './mobile-projects-transcript-live-ui';
@@ -375,7 +375,7 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         const composerHost = document.createElement('div');
         document.body.append(chatHost, composerHost);
         const host = createHost(chatHost, composerHost);
-        const project = { id: 'vitesse-lite', name: 'vitesse-lite', status: 'working' } as import('./mobile-projects-types').MobileProjectEntry;
+        const project = { id: 'vitesse-lite', name: 'vitesse-lite', status: 'working' } as import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry;
         const summary = {
             id: 'conv-preview',
             cwd: '/tmp/vitesse-lite',
@@ -428,7 +428,7 @@ describe('MobileProjectsTranscriptLiveUi', () => {
         const composerHost = document.createElement('div');
         document.body.append(chatHost, composerHost);
         const host = createHost(chatHost, composerHost);
-        host.transcriptOpenProject = { id: 'json-server', name: 'json-server', status: 'working' } as import('./mobile-projects-types').MobileProjectEntry;
+        host.transcriptOpenProject = { id: 'json-server', name: 'json-server', status: 'working' } as import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry;
         host.transcriptOpenSummary = {
             id: 'conv-silent',
             cwd: '/tmp/json-server',

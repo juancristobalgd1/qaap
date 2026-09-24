@@ -8,12 +8,12 @@ import {
     filterCatalogSections,
     QAAP_WORK_HUB_WORKFLOWS,
     countCatalogItems,
-} from '../common/mobile-work-hub-catalog';
+} from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import { githubRepoKeysForProjects } from './mobile-work-hub-inbox';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type { WorkHubHomeSnapshot } from '../common/qaap-work-hub-home';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 
 /** Panel surface for hub subtitle and meta chips. */
@@ -42,7 +42,7 @@ export interface MobileProjectsSubtitleHost {
     resolveHomePinnedProject(): MobileProjectEntry | undefined;
     countTasksAttention(): { needsYou: number; running: number };
     isProjectDetailView(): boolean;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
 }
 

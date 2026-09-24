@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { QAAP_AGENT_TASK_API_PATH } from './qaap-agent-task-client';
-import type { QaapAgentModelSelection } from './qaap-agent-model-selection';
-import { parseAgentLogForTranscript, resolveAgentLogDisplayText } from './qaap-cli-transcript-stream';
+import { QAAP_AGENT_TASK_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { QaapAgentModelSelection } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import { parseAgentLogForTranscript, resolveAgentLogDisplayText } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 
 /** Logical agent id recorded against the language-model session. */
 export const COMPOSER_PROMPT_IMPROVER_AGENT_ID = 'qaap-composer-prompt-improver';

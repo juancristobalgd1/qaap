@@ -34,5 +34,12 @@ exports.mochaHooks = {
         if (pairedView && global.window !== pairedView) {
             global.window = pairedView;
         }
+        // Same for the storage globals (JSDOM mirrors them onto `global` at boot): suites that install a Map-backed
+        // `global.sessionStorage` without restoring it would otherwise leak their mock into every later suite.
+        for (const key of ['sessionStorage', 'localStorage']) {
+            if (pairedView && global[key] !== pairedView[key]) {
+                global[key] = pairedView[key];
+            }
+        }
     },
 };

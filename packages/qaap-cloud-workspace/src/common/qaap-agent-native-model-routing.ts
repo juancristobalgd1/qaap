@@ -33,7 +33,7 @@
  * operator states an ordering via {@link QAAP_AGENT_TASK_MODELS_ENV}.
  */
 
-import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { QaapAgentTaskKind, type QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import { agentUsesNativeModelCatalog } from './qaap-agent-native-model-catalog';
 

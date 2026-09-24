@@ -24,8 +24,8 @@ import type {
     QaapConversationCheckpoint,
     QaapCreateAgentConversationRequest,
 } from '../common/qaap-agent-conversation';
-import type { QaapAgentStreamAccumulator } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-transcript-stream';
-import type { QaapCliAgUiStreamEmitter } from '@theia/qaap-mobile-shell/lib/common/qaap-cli-ag-ui-stream';
+import type { QaapAgentStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import type { QaapCliAgUiStreamEmitter } from '@theia/qaap-shared-core/lib/common/qaap-cli-ag-ui-stream';
 import type { QaapWorkflowNodeOutcome } from '../common/qaap-workflow-ir';
 import type { QaapPersistedWorkflowRun, QaapWorkflowRunStore } from './qaap-workflow-run-store';
 import type { QaapAgentTask, QaapAgentTaskEvent, QaapCreateAgentTaskRequest } from '../common/qaap-agent-task';
@@ -34,12 +34,12 @@ import type { QaapBillingStore } from './qaap-billing-store';
 import type { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import type { QaapObservability } from './qaap-observability';
 import type { QaapAgentConversationSseBatcher } from '../common/qaap-agent-conversation-sse-batcher';
-import type { QaapConversationStreamMetricsCollector } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
-import type { QaapAgentMessageWireSnapshot } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
+import type { QaapConversationStreamMetricsCollector } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import type { QaapAgentMessageWireSnapshot } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import type {
     QaapAgUiEvent,
     QaapAgUiTraceReducerState,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-ag-ui-transcript-adapter';
+} from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-transcript-adapter';
 import type { QaapConversationTaskRef } from './qaap-agent-conversation-store-constants';
 
 /**

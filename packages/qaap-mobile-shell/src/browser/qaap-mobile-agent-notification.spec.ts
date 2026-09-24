@@ -19,15 +19,15 @@ enableJSDOM();
 const { Emitter } = require('@theia/core/lib/common/event') as typeof import('@theia/core/lib/common/event');
 const { expect } = require('chai') as typeof import('chai');
 const { QaapTurnSettleNotifyContribution } = require('./qaap-turn-settle-notify-contribution') as typeof import('./qaap-turn-settle-notify-contribution');
-const { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } = require('./qaap-turn-settle-notifier') as typeof import('./qaap-turn-settle-notifier');
+const { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } = require('@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier') as typeof import('@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier');
 const { AGENT_NOTIFICATION_KIND_COMPLETED } = require('@theia/ai-core/lib/common/notification-types') as typeof import('@theia/ai-core/lib/common/notification-types');
-const { QaapMobileAgentNotificationService } = require('./qaap-mobile-agent-notification-service') as typeof import('./qaap-mobile-agent-notification-service');
+const { QaapMobileAgentNotificationService } = require('@theia/qaap-shared-core/lib/browser/qaap-mobile-agent-notification-service') as typeof import('@theia/qaap-shared-core/lib/browser/qaap-mobile-agent-notification-service');
 
 import type { Emitter as EmitterType } from '@theia/core/lib/common/event';
 import type { QaapTurnSettleNotifyContribution as QaapTurnSettleNotifyContributionType } from './qaap-turn-settle-notify-contribution';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { QaapConversationChangeEvent } from '../common/qaap-conversation-change';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapConversationChangeEvent } from '@theia/qaap-shared-core/lib/common/qaap-conversation-change';
 
 /**
  * Verifies the two halves of the mobile notification routing change:

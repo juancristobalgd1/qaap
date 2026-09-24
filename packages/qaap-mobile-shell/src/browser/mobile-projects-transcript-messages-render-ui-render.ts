@@ -3,16 +3,16 @@ import type { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
-import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream';
-import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
-import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
+import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
+import { parseAgentLogForTranscript } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
+import { dedupeAgentMessageTextSegments } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-stream';
+import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
 import { fingerprintTranscriptMessage, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
-} from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     transcriptHasActiveSelection,
     transcriptHasInteractiveFocus,
@@ -23,7 +23,7 @@ import {
 import {
     shouldDeferTranscriptRowHeavyContent,
 } from './qaap-transcript-row-defer';
-import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO } from '../common/qaap-agent-conversation-client';
+import { normalizeAgentConversationFailures, type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 export function resolveTranscriptMessageHostExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, host: HTMLElement): HTMLElement {
     if (!host.classList.contains('theia-mobile-agent-transcript-real-chat')) {

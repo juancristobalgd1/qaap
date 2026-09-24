@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentConversationDTO, QaapConversationCheckpointDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO, QaapConversationCheckpointDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 /** Latest git snapshot that can roll the workspace back (newest checkpoint with a commit). */
 export function resolveLatestRestorableCheckpoint(

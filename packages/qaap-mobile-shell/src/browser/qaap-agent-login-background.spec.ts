@@ -13,8 +13,8 @@ if (!browserGlobals.DragEvent) {
 }
 
 import { expect } from 'chai';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { resolveAgentLoginCwd } from './qaap-agent-login-cwd';
 
 const project = {

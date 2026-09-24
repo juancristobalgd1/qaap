@@ -7,7 +7,7 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import { Application, Request, Response } from '@theia/core/shared/express';
 import { json, raw } from 'body-parser';
 import { BackendApplicationContribution } from '@theia/core/lib/node';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
     QAAP_BILLING_API_PATH,
     QAAP_BILLING_CHECKOUT_API_PATH,

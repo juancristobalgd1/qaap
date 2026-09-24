@@ -6,14 +6,14 @@ import {
     extractAgentAuthLoginChallenge,
     localizeAddApiKeyInSettingsCta,
     type QaapAgentAuthLoginChallenge,
-} from '../common/qaap-agent-auth-login';
-import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage, summarizeCollapsedAgentFailure } from '../common/qaap-agent-failure-message';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { detectAgentFailureKind, formatStoredAgentFailureMessage, localizeGenericAgentFailureMessage, resolveAgentTurnFailureMessage, summarizeCollapsedAgentFailure } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import { shouldOpenTranscriptToolDetails as shouldOpenTranscriptToolDetailsSegment } from '../common/qaap-agent-transcript-segments';
-import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '../common/qaap-transcript-content-display';
+import { isTranscriptErrorOutput, isTranscriptTerminalOutputText } from '@theia/qaap-shared-core/lib/common/qaap-transcript-content-display';
 import {
     registerDeferredTranscriptMarkdown,
 } from './qaap-transcript-row-defer';
-import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     isTranscriptWebSearchTool,
     resolveTranscriptWebSearchPayload,

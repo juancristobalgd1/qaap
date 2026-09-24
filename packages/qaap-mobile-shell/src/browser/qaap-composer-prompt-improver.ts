@@ -12,7 +12,7 @@ import {
     getTextOfResponse,
     type LanguageModel,
 } from '@theia/ai-core/lib/common';
-import type { QaapAgentModelSelection } from '../common/qaap-agent-model-selection';
+import type { QaapAgentModelSelection } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
 import {
     COMPOSER_PROMPT_IMPROVER_AGENT_ID,
     COMPOSER_PROMPT_IMPROVER_FALLBACK_ALIASES,

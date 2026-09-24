@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { hashString } from './qaap-agent-task-client';
+import { hashString } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 export const CAPABILITY_LEVELS = [
     { value: 0, id: 'light', label: nls.localize('qaap/mobileProjects/capabilityLight', 'Light') },

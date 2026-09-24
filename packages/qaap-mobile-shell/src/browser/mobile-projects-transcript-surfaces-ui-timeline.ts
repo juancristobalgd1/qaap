@@ -8,17 +8,17 @@ import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effec
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     conversationShouldWatchDevPreview,
-} from '../common/qaap-transcript-preview-offer';
-import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
-import { pickScopedPreviewClaim } from './qaap-preview-claim-scope';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
+import { fetchQaapCurrentDevPreview, probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { pickScopedPreviewClaim } from '@theia/qaap-shared-core/lib/browser/qaap-preview-claim-scope';
 import {
     parseQaapIdentityPreviewRequestPath,
-} from '../common/qaap-dev-preview';
-import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
-import type { MobileProjectEntry } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/common/qaap-dev-preview';
+import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { TRANSCRIPT_PREVIEW_IDENTITY_WATCH_MS } from './mobile-projects-transcript-surfaces-ui';
 
 export async function tryMountVerifiedTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, host: HTMLElement,

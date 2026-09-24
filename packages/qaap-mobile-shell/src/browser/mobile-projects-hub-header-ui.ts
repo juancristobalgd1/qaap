@@ -8,10 +8,10 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 import { scrollElementTo } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
@@ -55,7 +55,7 @@ export interface MobileProjectsHubHeaderHost {
         conversationsForProject(project: MobileProjectEntry): QaapAgentConversationSummaryDTO[];
     };
     composerHeaderUi: import('./mobile-projects-composer-header-ui').MobileProjectsComposerHeaderUi;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     transcriptSheetUi: MobileProjectsTranscriptSheetUi;

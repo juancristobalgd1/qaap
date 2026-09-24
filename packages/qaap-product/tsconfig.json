@@ -46,6 +46,9 @@
       "path": "../qaap-product-theme"
     },
     {
+      "path": "../qaap-shared-core"
+    },
+    {
       "path": "../qaap-shell"
     },
     {

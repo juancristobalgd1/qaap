@@ -10,7 +10,7 @@ import URI from '@theia/core/lib/common/uri';
 import { BinaryBuffer } from '@theia/core/lib/common/buffer';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
 import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
-import type { StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
+import type { StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 
 /** In-memory FileService/WorkspaceService doubles good enough for the upload + FILE_VARIABLE path. */

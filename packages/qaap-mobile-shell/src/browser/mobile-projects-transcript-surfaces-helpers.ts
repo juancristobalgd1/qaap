@@ -7,8 +7,8 @@
 // These functions operate only on their parameters and do not access instance state.
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { TranscriptTerminalPersistedWorkspace, TranscriptTerminalSurface } from './qaap-transcript-terminal-view';
 import {
     normalizeTranscriptWorkspaceKey,

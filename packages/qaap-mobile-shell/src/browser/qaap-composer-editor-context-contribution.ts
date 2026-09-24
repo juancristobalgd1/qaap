@@ -8,8 +8,8 @@ import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/brow
 import { CommandContribution, CommandRegistry, MenuContribution, MenuModelRegistry, nls } from '@theia/core';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { EditorContextMenu } from '@theia/editor/lib/browser';
-import { QAAP_MOBILE_TOGGLE_PROJECTS_DASHBOARD } from './mobile-projects-dashboard-commands';
-import { peekPreferDesktopIde } from './mobile-projects-open';
+import { QAAP_MOBILE_TOGGLE_PROJECTS_DASHBOARD } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dashboard-commands';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 
 export const QAAP_COMPOSER_ADD_EDITOR_SELECTION_COMMAND = 'qaap.composer.addEditorSelection';

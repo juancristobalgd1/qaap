@@ -13,15 +13,15 @@ import * as React from '@theia/core/shared/react';
 import {
     QAAP_HARNESS_DEFINITIONS,
     type QaapHarnessDefinition,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
-import { resolveAgentBrand } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-branding';
+} from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
+import { resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import { requestAgentCliUpdate } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-cli-update';
 import {
     isQaapHarnessEnabled,
     QAAP_DISABLED_HARNESSES_PREF,
     readDisabledHarnessIds,
     withQaapHarnessEnabled,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
 
 interface HarnessAgentResponse {
     readonly agents?: readonly { readonly id?: string; readonly available?: boolean }[];

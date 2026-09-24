@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentFailureKind } from '../common/qaap-agent-failure-message';
-import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentFailureKind } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     buildMissionControlRowFingerprint,
     buildMissionControlStructureFingerprint,

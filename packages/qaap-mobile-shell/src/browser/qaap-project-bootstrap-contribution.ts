@@ -9,20 +9,20 @@ import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { matchesMobileOneColumnLayout } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { shouldPreferWorkHubAgentsLayout } from './mobile-projects-open';
+import { shouldPreferWorkHubAgentsLayout } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { MobileHaptics } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-haptics';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { parsePreviewIdentityPath } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { probeQaapIdentityPreview } from './qaap-dev-preview-client';
-import { formatQaapBootstrapDiagnostic } from './qaap-bootstrap-display';
+import { probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
+import { formatQaapBootstrapDiagnostic } from '@theia/qaap-shared-core/lib/browser/qaap-bootstrap-display';
 import {
     QaapBootstrapStateChange,
     QaapProjectBootstrapService,
-} from './qaap-project-bootstrap-service';
+} from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import type {
     QaapMonorepoFlavor,
     QaapProjectDescriptor,
-} from './qaap-project-bootstrap-types';
+} from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 
 /** Localized labels for framework chips on the banner. */
 function frameworkLabel(kind: QaapProjectDescriptor['kind']): string {

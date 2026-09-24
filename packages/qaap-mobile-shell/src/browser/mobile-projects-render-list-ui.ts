@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 /** Panel surface for hub list rendering and repo row expansion. */
 export interface MobileProjectsRenderListHost {
@@ -28,7 +28,7 @@ export interface MobileProjectsRenderListHost {
     shouldPreserveAgentsHubToolSurface(): boolean;
     shouldPreserveAgentsHubExecutionShell(): boolean;
     renderDiffHubView(): void;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     renderHomeHubView(): void;
     renderChatHubView(projects: MobileProjectEntry[]): void;
     renderTasksHubView(projects: MobileProjectEntry[]): void;

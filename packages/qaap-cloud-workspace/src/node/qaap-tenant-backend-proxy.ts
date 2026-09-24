@@ -14,7 +14,7 @@ import {
     createQaapTenantBackendAssertion,
     QAAP_TENANT_BACKEND_ASSERTION_HEADER,
 } from '@theia/qaap-adapters/lib/common/qaap-tenant-backend-auth';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import { QAAP_TENANT_RUNTIME_API_PATH } from '../common/qaap-cloud-api-types';
 import { QaapDockerOrchestrator, type QaapTenantBackendTarget } from './qaap-docker-orchestrator';
 import { QaapTenantActivityTracker } from './qaap-tenant-activity-tracker';

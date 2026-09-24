@@ -2,14 +2,14 @@ import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobil
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { isAwaitingFirstTranscriptAgentOutput, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldTranscriptStreamLabelShimmer } from '../common/qaap-transcript-stream-status';
 import { type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import { resolveTranscriptStreamingAgentSegments } from '../common/qaap-transcript-semantic-progress';
 import {
     resolveTranscriptEffectiveStatus,
-} from '../common/qaap-transcript-turn-status';
-import { resolveQaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
+import { resolveQaapTranscriptTrace } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
 import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { syncAgentSetupElement } from '../common/qaap-agent-setup-phrases';

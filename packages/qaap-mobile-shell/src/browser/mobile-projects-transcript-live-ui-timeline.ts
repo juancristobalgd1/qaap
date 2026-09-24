@@ -5,12 +5,12 @@ import { Event as TheiaEvent } from '@theia/core/lib/common/event';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentMessageSegmentDTO,
-} from '../common/qaap-agent-conversation-client';
-import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { conversationUsesInteractiveApprovals } from '@theia/qaap-shared-core/lib/common/qaap-agent-interactive-approvals';
 import {
     fetchAgentApprovals,
     type QaapAgentApprovalRequestDTO,
-} from '../common/qaap-agent-approval-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import { findTranscriptToolApproval, isPendingTranscriptToolSegment, resolveTranscriptInlineApproval } from '../common/qaap-transcript-approval-inline';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import {
@@ -23,9 +23,9 @@ import { respondToTranscriptApproval } from './qaap-transcript-approval-respond'
 import {
     conversationShouldWatchDevPreview,
     resolveReadyTranscriptPreviewUrlFromProbe,
-} from '../common/qaap-transcript-preview-offer';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
-import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
+import { probeQaapDevPreviewPort } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import {
     TRANSCRIPT_TOOL_USE_ID_ATTR,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';

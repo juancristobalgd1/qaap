@@ -8,7 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import type {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import type {
     MobileProjectsConversationActionsHost,
     MobileProjectsConversationActionsUi,

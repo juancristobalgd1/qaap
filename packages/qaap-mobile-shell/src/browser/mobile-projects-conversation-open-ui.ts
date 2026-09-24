@@ -3,15 +3,15 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
-import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
-import type { MobileProjectTaskView } from './mobile-projects-active-tasks';
+import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
-import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 export interface MobileProjectsConversationOpenHost {
     conversations: MobileProjectsConversations | undefined;
@@ -37,7 +37,7 @@ export interface MobileProjectsConversationOpenHost {
     transcriptLiveUi: MobileProjectsTranscriptLiveUi;
     syncDesktopWorkHubLayout?(): void;
     hide(): void;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     shouldUseAgentsHubLanding(): boolean;
     isProjectDetailView(): boolean;

@@ -13,7 +13,7 @@ import {
     layoutHeaderProjectClusterContents,
     type MobileProjectsPanelChromeHost,
 } from './mobile-projects-panel-chrome-ui';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 describe('MobileProjectsPanelChromeUi header IDE/Agents switch', () => {
 

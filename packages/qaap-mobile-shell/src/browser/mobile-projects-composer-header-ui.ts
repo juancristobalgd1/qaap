@@ -1,18 +1,18 @@
 
 import { writeStoredComposerSurface, type QaapComposerSurface } from '../common/qaap-composer-surface';
-import { QAAP_PRIMARY_AGENT_ID, writeStoredAgent } from '../common/qaap-agent-task-client';
-import type { MobileProjectEntry, MobileProjectFilter } from './mobile-projects-types';
+import { QAAP_PRIMARY_AGENT_ID, writeStoredAgent } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { MobileProjectEntry, MobileProjectFilter } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { MobileBottomButtonId } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-shell-bottom-bar-widget';
-import type { MobileViewToggleId } from '../common/qaap-mobile-work-surface-preference';
+import type { MobileViewToggleId } from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 export interface MobileProjectsComposerHeaderHost {
     visible: boolean;
-    hubView: import('./mobile-projects-types').MobileProjectsHubView;
+    hubView: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView;
     root: HTMLElement;
     stickyComposerHost: HTMLElement;
     headerSurfacePickerHost: HTMLElement;
     accountBtn: HTMLButtonElement;
-    headerSurfacePicker: import('./qaap-mobile-form-ui').QaapSegmentedFieldController<MobileBottomButtonId> | undefined;
+    headerSurfacePicker: import('@theia/qaap-shared-core/lib/browser/qaap-mobile-form-ui').QaapSegmentedFieldController<MobileBottomButtonId> | undefined;
     stickyComposerSurface: QaapComposerSurface;
     tasksHubSurface: QaapComposerSurface;
     stickyComposerFabLiftPx: number;
@@ -22,9 +22,9 @@ export interface MobileProjectsComposerHeaderHost {
 
     isProjectDetailView(): boolean;
     syncAgentsHubAccountChrome(): void;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     projectNavigationUi: import('./qaap-composer-host-contracts').ComposerProjectNavigationApi;
-    projectsService: import('./mobile-projects-service').MobileProjectsService;
+    projectsService: import('@theia/qaap-shared-core/lib/browser/mobile-projects-service').MobileProjectsService;
     stickyComposerPinnedAgentId: string | undefined;
     stickyComposerRenderUi: import('./mobile-projects-sticky-composer-render-ui').MobileProjectsStickyComposerRenderUi;
     commands: import('@theia/core/lib/common/command').CommandRegistry;

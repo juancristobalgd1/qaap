@@ -13,18 +13,18 @@ import { isImageAttachmentFileName } from '../common/qaap-sticky-composer-attach
 import {
     isPendingComposerContextArg,
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     isPreviewFeedbackRequest,
     parsePreviewFeedbackArg,
     QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME,
-} from '../common/qaap-preview-feedback-context';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 import {
     isQuotedTextRequest,
     QAAP_QUOTED_TEXT_VARIABLE_NAME,
     truncateQuotedTextForSubtitle,
 } from '../common/qaap-quoted-text-context';
-import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
+import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 
 export type StickyComposerAttachmentKind = 'image' | 'file' | 'context';

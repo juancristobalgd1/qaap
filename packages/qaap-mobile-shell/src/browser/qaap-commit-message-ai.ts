@@ -15,7 +15,7 @@ import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
     type QaapGitCommitContextResponse,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 
 /** Model aliases tried in order; the first one with a ready model wins. */
 const COMMIT_MESSAGE_MODEL_ALIASES = ['default/summarize', 'default/universal', 'default/code'] as const;

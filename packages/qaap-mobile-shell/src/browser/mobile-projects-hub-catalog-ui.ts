@@ -13,10 +13,10 @@ import {
     type WorkHubCatalogAction,
     type WorkHubCatalogItem,
     type WorkHubCatalogSection,
-} from '../common/mobile-work-hub-catalog';
+} from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import { bindCatalogCardTapFeedback } from './qaap-catalog-card-tap-feedback';
 import { MobileOnboardingTutorialContribution } from './mobile-onboarding-tutorial-contribution';
-import type { MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 /** Panel surface for the Workflows (catalog) hub tab. */
 export interface MobileProjectsHubCatalogHost {

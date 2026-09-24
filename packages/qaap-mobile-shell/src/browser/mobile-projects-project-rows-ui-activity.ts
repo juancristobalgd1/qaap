@@ -4,14 +4,14 @@ import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-proje
 import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
-import { SHELL_AGENT_ID } from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
+import { SHELL_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { formatConversationExecutionSessionMeta } from '../common/qaap-conversation-composer-state';
 import { createAgentIdentityElement, createAgentTaskBadge, createAgentTaskVerificationBadge } from './qaap-agent-ui';
 import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
-import type { MobileProjectTaskView } from './mobile-projects-active-tasks';
-import { type MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import { type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { setTaskTitleText } from './mobile-projects-task-title-marquee';
 
 export function patchSidebarCompactTaskRowExtracted(ctx: MobileProjectsProjectRowsUiContext, row: HTMLElement,

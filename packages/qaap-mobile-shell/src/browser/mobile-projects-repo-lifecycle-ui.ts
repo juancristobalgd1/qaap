@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT } from './mobile-projects-open';
+import { QAAP_MOBILE_LANDING_HUB_LIST_CHANGED_EVENT } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 
 export interface MobileProjectsRepoLifecycleHost {

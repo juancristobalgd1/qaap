@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentAuthLoginChallenge } from '../common/qaap-agent-auth-login';
+import type { QaapAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
 
 export interface QaapAgentLoginDialogController {
     readonly root: HTMLElement;

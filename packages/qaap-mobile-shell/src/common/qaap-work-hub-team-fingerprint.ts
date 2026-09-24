@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { WorkHubTeamMember } from './qaap-work-hub-team';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 
 export const QAAP_TEAM_SECTION_FP_ATTR = 'data-qaap-team-section-fp';
 export const QAAP_TEAM_MEMBER_ID_ATTR = 'data-qaap-team-member-id';

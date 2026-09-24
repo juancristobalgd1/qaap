@@ -10,7 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { QaapAgentConversation, QaapAgentMessage, QaapConversationCheckpoint, toConversationSummary } from '../common/qaap-agent-conversation';
 
-import { agentSupportsModelPicker } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { agentSupportsModelPicker } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 import { QAAP_CHAT_TURN_NODE, QAAP_CHAT_TURN_TRIED_MODELS_ARTIFACT, QAAP_CHAT_TURN_WORKFLOW_ID, buildChatTurnWorkflow, resolveChatTurnOutcome, resolveChatTurnRunBudget } from '../common/qaap-chat-turn-workflow';
 

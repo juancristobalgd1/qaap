@@ -11,7 +11,7 @@ import {
     readQaapGitReviewErrorBody,
     type QaapGitHistoryCommit,
     type QaapGitHistoryResponse,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import {
     collectHistoryAuthors,
     collectHistoryBranches,

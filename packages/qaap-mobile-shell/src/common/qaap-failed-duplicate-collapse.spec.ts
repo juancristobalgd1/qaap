@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { collapseOlderFailedDuplicateTitles } from './qaap-failed-duplicate-collapse';
 
 const summary = (

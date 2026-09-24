@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 function isUsableAgentLoginCwd(cwd: string | undefined): cwd is string {
     return !!cwd?.trim() && !isQaapWorkspaceContainerPath(cwd);

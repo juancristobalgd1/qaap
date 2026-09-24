@@ -2,7 +2,7 @@ import type { MobileProjectsTranscriptMessagesRenderUiContext } from './mobile-p
 import type { TranscriptAgentFailureDialogOptions } from './mobile-projects-transcript-messages-render-ui';
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
-import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
+import { normalizeAgentMessageContentForDisplay } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
@@ -10,16 +10,16 @@ import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
-} from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     appendBeforeTranscriptLiveStatus,
 } from '../common/qaap-transcript-live-status';
 import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
-import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     extractLastFailedToolFromMessage,
     resolveAgentTurnFailureTechnicalContent,
-} from '../common/qaap-agent-failure-message';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
 export function tryPatchStreamingAgentTextContentExtracted(ctx: MobileProjectsTranscriptMessagesRenderUiContext, existingRow: HTMLElement,
         prevMsg: QaapAgentMessageDTO | undefined,

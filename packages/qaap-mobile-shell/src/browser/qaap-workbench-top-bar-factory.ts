@@ -13,9 +13,9 @@ import { WorkbenchTopBarFactory } from '@theia/core/lib/browser/menu/workbench-t
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { MobileProjectsService } from './mobile-projects-service';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
-import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import {
     QaapWorkbenchHistoryNavWidget,
     QaapWorkbenchMenuButtonWidget,

@@ -21,7 +21,7 @@ export interface MobileProjectsPullRequestDetailHost {
     scroll: HTMLElement;
 
     closePullRequestDetail(): void;
-    refreshInboxPullRequests(projects?: import('./mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
+    refreshInboxPullRequests(projects?: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectEntry[], force?: boolean): Promise<void>;
 }
 
 export type MobileProjectsPullRequestDetailTab = 'summary' | 'code';

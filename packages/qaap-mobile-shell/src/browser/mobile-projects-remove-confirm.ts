@@ -5,7 +5,7 @@
 
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { nls } from '@theia/core/lib/common/nls';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function removeProjectConfirmCopy(project: MobileProjectEntry): { readonly title: string; readonly msg: string } {
     if (project.github) {

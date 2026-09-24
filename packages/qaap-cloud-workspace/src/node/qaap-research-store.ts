@@ -13,9 +13,9 @@ import {
     normalizeResearchGoal,
     type ResearchGoal,
     type ResearchMetricSpec,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
-import type { ResearchExperimentRecord } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import type { QaapCreateResearchGoalBody } from '@theia/qaap-mobile-shell/lib/common/qaap-research-api';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
+import type { ResearchExperimentRecord } from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
+import type { QaapCreateResearchGoalBody } from '@theia/qaap-shared-core/lib/common/qaap-research-api';
 
 const GOALS_STORE_DIR = path.join(os.homedir(), '.qaap');
 const GOALS_STORE_PATH = path.join(GOALS_STORE_DIR, 'research-goals.json');

@@ -17,7 +17,7 @@ import {
     resolveUserReposRoot,
     safeUserIdSegment,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
-import { isRealPathUnder } from '@theia/qaap-mobile-shell/lib/node/qaap-realpath-guard';
+import { isRealPathUnder } from '@theia/qaap-shared-core/lib/node/qaap-realpath-guard';
 import { QaapTenantSpawnService } from '@theia/qaap-cloud-workspace/lib/node/qaap-tenant-spawn-service';
 import { QaapWebsocketAuthRegistry } from '@theia/qaap-cloud-workspace/lib/node/qaap-websocket-auth-registry';
 import {

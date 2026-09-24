@@ -4,10 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { isAgentTaskFinished } from '../common/qaap-agent-task-client';
+import { isAgentTaskFinished } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     MobileProjectsTranscriptVerifyUi,
     type MobileProjectsTranscriptVerifyHost,

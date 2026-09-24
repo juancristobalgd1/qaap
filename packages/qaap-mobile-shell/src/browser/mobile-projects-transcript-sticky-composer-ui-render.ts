@@ -3,33 +3,33 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
-import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
+import { resolveWorkspaceHostFsPath } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-shell';
 import { ChatModel } from '@theia/ai-chat';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
-import { resolveTranscriptEffectiveStatus, shouldShowTranscriptEmptyQuickActions } from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import { resolveTranscriptEffectiveStatus, shouldShowTranscriptEmptyQuickActions } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     MAX_TRANSCRIPT_FOLLOW_UP_QUEUE,
     type TranscriptFollowUpEntry,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { selectComposerPillChanges } from './qaap-sticky-composer-activity-stack';
 import {
     isIdleComposerFocusStealable,
     hasComposerAgentActivity as hasComposerAgentActivityHelper,
     resolveChangedFilesStats as resolveChangedFilesStatsHelper,
 } from './mobile-projects-transcript-sticky-composer-helpers';
-import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from './qaap-dev-preview-client';
+import { probeQaapDevPreviewPort, probeQaapIdentityPreview } from '@theia/qaap-shared-core/lib/browser/qaap-dev-preview-client';
 import { extractTranscriptPreviewId } from './mobile-projects-transcript-messages-content-ui';
-import { extractDevPreviewPortFromUrl } from './qaap-transcript-preview-bootstrap';
+import { extractDevPreviewPortFromUrl } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import {
     openCurrentComposerPreview,
     resolveComposerPreviewCandidate,

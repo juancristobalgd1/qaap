@@ -9,10 +9,10 @@ import { inject, injectable } from '@theia/core/shared/inversify';
 import {
     isFailedRunSummary,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { canonicalModelStatsKey, recordModelTurnDuration } from '../common/qaap-model-latency-stats';
-import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { QaapTurnSettleNotifier, QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { canonicalModelStatsKey, recordModelTurnDuration } from '@theia/qaap-shared-core/lib/common/qaap-model-latency-stats';
+import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import { QaapTurnSettleNotifier, QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from '@theia/qaap-shared-core/lib/browser/qaap-turn-settle-notifier';
 
 /**
  * Watches conversation summaries — the same live feed the Work Hub cards subscribe to — for a

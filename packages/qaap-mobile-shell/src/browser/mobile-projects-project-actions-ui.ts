@@ -7,11 +7,11 @@ import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import { ChatService } from '@theia/ai-chat';
-import { deleteConversation, isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { deleteAgentTasksForCwd } from '../common/qaap-agent-task-client';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { deleteConversation, isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { deleteAgentTasksForCwd } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { confirmRemoveProjectDialog } from './mobile-projects-remove-confirm';
 
 /** Resolve which failed summaries to delete (all, or an explicit id subset). */
@@ -40,7 +40,7 @@ export interface MobileProjectsProjectActionsHost {
     render(): void;
     renderList(): void;
     chatServiceSummariesUi: import('./mobile-projects-chat-service-summaries-ui').MobileProjectsChatServiceSummariesUi;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     cardMenuUi: import('./mobile-projects-card-menu-ui').MobileProjectsCardMenuUi;
     /** Frees the embedded preview iframe, terminals, and backend dev-server claim owned by a section. */
     releasePreviewForConversation?(

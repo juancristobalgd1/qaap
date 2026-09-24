@@ -15,8 +15,8 @@ import { attachStickyComposerSyntaxHighlight } from '../common/qaap-sticky-compo
 import {
     resolveAgentApprovalPolicyOption,
     type QaapAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
-import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import { formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
 import type { ModelCapabilityLevelValue } from '../common/qaap-sticky-composer-model-capability';
 import {
     populateAgentToolbarButton,
@@ -32,9 +32,9 @@ import {
 import {
     createContextUsageIndicatorBadge,
 } from './qaap-chat-context-usage-indicator';
-import type { StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
+import type { StickyComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import type { AIVariableResolutionRequest } from '@theia/ai-core';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { bindStickyComposerControlClick } from '../common/qaap-sticky-composer-control-click';
 import {
     handleStickyComposerPromptHistoryKeydown,

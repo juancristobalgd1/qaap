@@ -5,11 +5,11 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { approveAgentRequest, rejectAgentRequest } from '../common/qaap-agent-approval-client';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { WorkHubTeamMember } from '../common/qaap-work-hub-team';
-import type { MobileProjectsActiveTasks, MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { approveAgentRequest, rejectAgentRequest } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
+import type { MobileProjectsActiveTasks, MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsHomeUi } from './mobile-projects-home-ui';
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
@@ -29,7 +29,7 @@ export interface MobileProjectsOverlayFactoryHost {
     projects: MobileProjectEntry[];
     activeTasks: MobileProjectsActiveTasks | undefined;
     transcriptComposerProject: MobileProjectEntry | undefined;
-    transcriptLastConv: import('../common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
+    transcriptLastConv: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapAgentConversationDTO | undefined;
     transcriptChatHost: HTMLElement | undefined;
     messageService: MessageService | undefined;
 
@@ -43,11 +43,11 @@ export interface MobileProjectsOverlayFactoryHost {
         parentIds?: ReadonlySet<string>,
         options?: { skipMenu?: boolean },
     ): HTMLElement;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     projectNavigationUi: import('./mobile-projects-project-navigation-ui').MobileProjectsProjectNavigationUi;
     showTaskLog(project: MobileProjectEntry, taskId: string): Promise<void>;
     onTeamMemberClick(member: WorkHubTeamMember): void;
-    selectHubLandingView(view: import('./mobile-projects-types').MobileProjectsHubView): void;
+    selectHubLandingView(view: import('@theia/qaap-shared-core/lib/browser/mobile-projects-types').MobileProjectsHubView): void;
     toggleConversationAutoApproveById(conversationId: string): Promise<void>;
     renderList(): void;
     buildHomeWorkspaceActivity(project: MobileProjectEntry): string;
@@ -61,7 +61,7 @@ export interface MobileProjectsOverlayFactoryHost {
     projectRowsUi: import('./mobile-projects-project-rows-ui').MobileProjectsProjectRowsUi;
     readPreference?: (key: string) => unknown;
     getRegisteredLanguageModels?: () => Promise<ReadonlyArray<{ readonly id: string; readonly name?: string }>>;
-    stickyComposerQaiqModels?: readonly import('../common/qaap-agent-task-client').QaapQaiqModelOption[];
+    stickyComposerQaiqModels?: readonly import('@theia/qaap-shared-core/lib/common/qaap-agent-task-client').QaapQaiqModelOption[];
 }
 
 /** Lazily constructs parallel/team/home overlay UI bundles wired to the panel host. */

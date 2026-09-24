@@ -11,7 +11,7 @@ import {
     matchesMobileOneColumnLayout,
     matchesMobileNarrowViewport,
 } from '@theia/core/lib/browser/shell/mobile-layout-state';
-import { MobileProjectEntry } from './mobile-projects-types';
+import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import { planDesktopIdeWorkspaceOpen } from '../common/qaap-desktop-ide-workspace-plan';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
@@ -25,8 +25,8 @@ import {
     setMobileWorkHubComposerHeaderChrome,
     setMobileWorkHubSideSheetOpen,
     syncMobileWorkHubHideIdeSidePanelsFromComposerHeader,
-} from './mobile-projects-open';
-import { QaapMobileProjectsDashboardCommands } from './mobile-projects-dashboard-commands';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import { QaapMobileProjectsDashboardCommands } from '@theia/qaap-shared-core/lib/browser/mobile-projects-dashboard-commands';
 import { QaapWorkbenchHistoryNavWidget, QaapWorkbenchRightControlsWidget } from './qaap-workbench-top-bar-widgets';
 import {
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
@@ -35,7 +35,7 @@ import {
 import {
     QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND,
     QAAP_WORK_HUB_AI_FEATURES_COMMAND,
-} from '../common/mobile-work-hub-catalog';
+} from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 import {
     QAAP_WORK_HUB_NEW_AGENT_COMMAND,
     QAAP_WORK_HUB_OPEN_BILLING_COMMAND,
@@ -440,7 +440,7 @@ export async function mountSideSheetWidgetExtracted(ctx: MobileOneColumnShellCon
  */
 export async function openConversationInWorkHubExtracted(ctx: MobileOneColumnShellContributionContext, conversationId: string, cwd?: string): Promise<void> {
     try {
-        const { getConversation, conversationToSummary } = await import('../common/qaap-agent-conversation-client');
+        const { getConversation, conversationToSummary } = await import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client');
         const dto = await getConversation(conversationId);
         const summary = conversationToSummary(dto);
         const normalize = (value: string | undefined): string => (value ?? '').replace(/\/+$/, '');

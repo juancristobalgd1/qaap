@@ -7,7 +7,7 @@ import {
     localizeHostedComposerNoAgentsFilteredMessage,
     localizeHostedComposerNoAgentsMessage,
     readQaapHostedRuntime,
-} from '../common/qaap-hosted-agent-auth-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
 import {
     agentSupportsModelPicker,
     ensureStoredAgentModel,
@@ -16,24 +16,24 @@ import {
     readStoredAgentModel,
     type QaapAgentTaskAgentOption,
     type QaapQaiqModelOption,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     createAgentBrandChip,
     createAgentSheetOptionButton,
     createUnavailableAgentSheetOption,
 } from './qaap-agent-ui';
-import { hasAnyConfiguredByokCredential } from '../common/qaap-qaiq-byok-provider-registry';
+import { hasAnyConfiguredByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     formatQaiqModelSelectionLabel,
-} from '../common/qaap-qaiq-model-catalog';
-import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
+import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     isStickyComposerAnnotationPopoverAnchor,
     mountStickyComposerBottomSheet,
     mountStickyComposerSheetPopover,
     type StickyComposerPopoverAlign,
 } from './qaap-sticky-composer-popover';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     activateAgentPickerEntry,
     buildAgentPickerSearchResults,

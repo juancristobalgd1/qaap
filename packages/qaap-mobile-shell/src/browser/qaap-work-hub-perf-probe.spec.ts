@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '../common/qaap-work-hub-perf-probe';
+import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-perf-probe';
 import { installQaapWorkHubPerfProbe, type QaapWorkHubPerfProbeHost } from './qaap-work-hub-perf-probe';
 
 describe('qaap-work-hub-perf-probe', () => {

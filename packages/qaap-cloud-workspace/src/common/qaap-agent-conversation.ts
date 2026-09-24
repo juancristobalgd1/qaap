@@ -3,21 +3,21 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { buildConversationListMetrics } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-conversation-list-metrics';
-import { resolveMessagePreviewText } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-content';
+import { buildConversationListMetrics } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
+import { resolveMessagePreviewText } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-content';
 import {
     agentMessageHasVisualVerificationMarker,
     conversationLikelyNeedsVisualVerification,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-visual-verification';
+} from '@theia/qaap-shared-core/lib/common/qaap-visual-verification';
 import {
     DEFAULT_QAAP_CONTEXT_WINDOW,
     estimateConversationContextBreakdown,
     type QaapAgentContextUsage,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-agent-context-usage';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
 import type { QaapLinkedPullRequest } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import type { QaapAgentMessageWireDelta } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-message-wire-delta';
+import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
+import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
 import type { QaapParallelRunVariantStats } from './qaap-parallel-run';
 
 /** HTTP base path for the persistent agent-conversation endpoints. */
@@ -99,7 +99,7 @@ export interface QaapAgentMessage {
     /** Correlates this persisted user row with the client-only optimistic row it confirms. */
     readonly clientMessageId?: string;
     /** Structured execution trace for AG-UI style providers. */
-    readonly traceEvents?: import('@theia/qaap-mobile-shell/lib/common/qaap-transcript-trace-model').QaapTranscriptTraceEventDTO[];
+    readonly traceEvents?: import('@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model').QaapTranscriptTraceEventDTO[];
     /** Present for agent turns driven by QAIQ stream-json. */
     readonly segments?: QaapAgentMessageSegment[];
     /** Epoch milliseconds. */

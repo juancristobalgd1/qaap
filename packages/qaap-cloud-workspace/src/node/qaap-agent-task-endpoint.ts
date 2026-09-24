@@ -27,8 +27,8 @@ import { listNativeAgentModels } from './qaap-agent-native-models';
 import {
     QaapGithubAuthGuard,
     type QaapGithubAuthContext,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
-import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
+import { resolveQaapBuiltinAgentMentionId } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import type { QaapAgentTask, QaapAgentTaskCwdGroup } from '../common/qaap-agent-task';
 import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 

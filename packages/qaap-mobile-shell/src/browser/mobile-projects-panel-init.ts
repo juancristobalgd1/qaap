@@ -2,7 +2,7 @@ import type { MobileProjectsPanelContext } from './mobile-projects-panel-context
 // Constructor initialization and arrow-function fields extracted from mobile-projects-panel.ts
 
 import type { MobileProjectsPanelOptions } from './mobile-projects-panel-types';
-import { peekPreferDesktopIde } from './mobile-projects-open';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 
 /**
  * Copies options fields onto the panel instance. Extracted from the constructor

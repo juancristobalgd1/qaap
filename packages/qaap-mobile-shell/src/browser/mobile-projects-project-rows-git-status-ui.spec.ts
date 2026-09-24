@@ -5,13 +5,13 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { expect } from 'chai';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectTaskView } from './mobile-projects-active-tasks';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import {
     MobileProjectsProjectRowsUi,
     type MobileProjectsProjectRowsHost,
 } from './mobile-projects-project-rows-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 describe('MobileProjectsProjectRowsUi Git/PR status', () => {
     let disableJSDOM: (() => void) | undefined;

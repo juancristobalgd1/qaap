@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import type { QaapAgentConversationDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentConversationDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     resolveAgentMessageTiming,
     isAgentMessageVisuallySettled,
@@ -15,7 +15,7 @@ import {
     resolveTranscriptEffectiveStatus,
     shouldShowTranscriptEmptyQuickActions,
     shouldShowTranscriptLiveStatus,
-} from './qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 
 const conv = (partial: Partial<QaapAgentConversationDTO> = {}): QaapAgentConversationDTO => ({
     id: 'c1',

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { MobileProjectTaskView } from './mobile-projects-active-tasks';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectTaskView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export type MobileProjectTaskHistoryState =
     | 'all'

@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import type { QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
-import { isVpsTaskSummary } from './qaap-work-hub-surfaces';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { isVpsTaskSummary } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-surfaces';
 
 /** Normalizes VPS/Linux and Windows paths for cache keys and cwd comparison. */
 export function normalizeTranscriptWorkspacePath(path: string): string {

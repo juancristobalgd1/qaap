@@ -1,14 +1,14 @@
 import type { MobileProjectsTranscriptMessagesArtifactsUiContext } from './mobile-projects-transcript-messages-artifacts-ui-context';
-import { resolveAgentMessageTiming } from '../common/qaap-transcript-turn-status';
+import { resolveAgentMessageTiming } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 // Extracted from mobile-projects-transcript-messages-artifacts-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageSegmentDTO, conversationToSummary } from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, type QaapAgentMessageSegmentDTO, conversationToSummary } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { hasTranscriptActivityStats, resolveTranscriptActivityStats, resolveTranscriptThinkingContent } from '../common/qaap-agent-transcript-segments';
 import { resolveLastUserPromptChars, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import type { TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
 import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {
     buildMobileExecutionEvents,

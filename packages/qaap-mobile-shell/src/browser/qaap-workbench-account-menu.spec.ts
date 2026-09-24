@@ -14,7 +14,7 @@ import {
     QAAP_WORK_HUB_OVERVIEW_COMMAND,
     QAAP_MOBILE_OPEN_DESKTOP_IDE_COMMAND,
 } from './qaap-workbench-account-menu';
-import { QAAP_WORK_HUB_GETTING_STARTED } from '../common/mobile-work-hub-catalog';
+import { QAAP_WORK_HUB_GETTING_STARTED } from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 
 describe('buildQaapAccountMenuEntries', () => {
     describe('signed-in menu', () => {

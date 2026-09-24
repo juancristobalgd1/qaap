@@ -8,10 +8,10 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 enableJSDOM();
 
 import { expect } from 'chai';
-import { QAAP_GIT_REVIEW_API_PATH } from '../common/qaap-git-review';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { QAAP_GIT_REVIEW_API_PATH } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { MobileProjectsStickyComposerWorkspaceUi, type MobileProjectsStickyComposerWorkspaceHost } from './mobile-projects-sticky-composer-workspace-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { COMPOSER_BRANCH_SHEET_ROW_SELECTOR } from './qaap-composer-branch-sheet-row';
 
 describe('MobileProjectsStickyComposerWorkspaceUi', () => {

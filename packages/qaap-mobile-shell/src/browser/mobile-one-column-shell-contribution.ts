@@ -44,15 +44,15 @@ import { QaapComposerEditorContextService } from './qaap-composer-editor-context
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapWorkHubDiffDelegate, QaapWorkHubDiffService } from './qaap-work-hub-diff-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
-import { MobileProjectsConversations } from './mobile-projects-conversations';
+import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
+import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import { MobileProjectsService } from './mobile-projects-service';
+import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import { MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
-import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
+import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
@@ -65,7 +65,7 @@ import { FrontendApplicationStateService } from '@theia/core/lib/browser/fronten
 import { MarkdownPreviewHandler } from '@theia/preview/lib/browser/markdown/markdown-preview-handler';
 import { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { MobileProjectsReadmeContribution } from './mobile-projects-readme-contribution';
-import { MobileProjectEntry, type MobileProjectsHubView } from './mobile-projects-types';
+import { MobileProjectEntry, type MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import { QaapPreviewSurfaceRegistry } from '@theia/qaap-adapters/lib/browser/qaap-preview-surface-registry';
 import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/browser/element-inspector-service';
@@ -76,13 +76,13 @@ import { MCPFrontendService } from '@theia/ai-mcp/lib/common/mcp-server-manager'
 import {
     markPreferAgentsSurface,
     peekPreferDesktopIde,
-} from './mobile-projects-open';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 import { QaapMiniBrowserOpenHandler } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-open-handler';
 import { syncQaapMiniBrowserPreviewSuspension } from '@theia/qaap-adapters/lib/browser/qaap-mini-browser-preview-frame';
-import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
-import { QaapAgentFinishedToastContribution } from './qaap-agent-finished-toast-contribution';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import { QaapAgentFinishedToastContribution } from '@theia/qaap-shared-core/lib/browser/qaap-agent-finished-toast-contribution';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
-import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
+import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 import { MobileShellLandingController, type MobileShellLandingHost } from './mobile-shell-landing-controller';
 import {
     MobileShellBottomBarController,
@@ -116,7 +116,7 @@ import {
     MobileShellTranscriptChromeController,
     type MobileShellTranscriptChromeHost,
 } from './mobile-shell-transcript-chrome-controller';
-import { MobileShellSessionState } from './mobile-shell-session-state';
+import { MobileShellSessionState } from '@theia/qaap-shared-core/lib/browser/mobile-shell-session-state';
 import {
     BottomBarSecondaryItem,
     isMiniBrowserPreviewWidgetId,

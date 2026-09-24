@@ -8,7 +8,7 @@ import { PreferenceDataProperty } from '@theia/core/lib/common/preferences';
 import { nls } from '@theia/core/lib/common/nls';
 import { PreferenceSchemaService } from '@theia/core/lib/common/preferences/preference-schema';
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { shouldHideQaapAiFeaturesPreference } from '@theia/qaap-mobile-shell/lib/common/qaap-ai-features-visibility';
+import { shouldHideQaapAiFeaturesPreference } from '@theia/qaap-shared-core/lib/common/qaap-ai-features-visibility';
 
 const HOST_MACHINE_FROM = 'on the machine running Theia.';
 const HOST_MACHINE_TO = 'on the machine running this application.';

@@ -9,7 +9,7 @@
 // the execution event timeline. Extracted from qaap-execution-event-timeline.ts.
 
 import { nls } from '@theia/core/lib/common/nls';
-import { getFileIconClass } from '../common/qaap-file-icon-utils';
+import { getFileIconClass } from '@theia/qaap-shared-core/lib/common/qaap-file-icon-utils';
 
 export interface MobileDiffFileEntry {
     name: string;

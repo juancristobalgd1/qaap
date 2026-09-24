@@ -7,7 +7,7 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     buildTeamTree,
     type WorkHubTeamMember,
-} from '../common/qaap-work-hub-team';
+} from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import {
     buildWorkHubTeamRowFingerprint,
     buildWorkHubTeamSectionFingerprint,

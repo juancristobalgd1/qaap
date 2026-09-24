@@ -3,12 +3,12 @@ import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-s
 
 import type { SessionsSidebarConversationEntry } from './mobile-projects-sessions-sidebar-ui';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
 import { buildWorkHubSessionsSidebarRowFingerprint, buildWorkHubSessionsSidebarVisibleStructureFingerprint, QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
-import { expandConversationSlots, partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
-import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
+import { expandConversationSlots, partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
+import { resolveQaapAgentTaskVisualStatus } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-visual-status';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
 
 export function openWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSessionsSidebarUiContext): void {

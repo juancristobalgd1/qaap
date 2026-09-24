@@ -5,11 +5,11 @@ import { nls } from '@theia/core/lib/common/nls';
 import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
 import {
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { reconcileAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { reconcileAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export async function requestTranscriptPreviewExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,

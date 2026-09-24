@@ -8,7 +8,7 @@ import express = require('@theia/core/shared/express');
 import { FileUri } from '@theia/core/lib/node';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { NodeFileUploadService } from '@theia/filesystem/lib/node/upload/node-file-upload-service';
-import { QaapGithubAuthGuard } from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+import { QaapGithubAuthGuard } from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 
 /**
  * Confines HTTP file uploads to the authenticated user's workspace tree.

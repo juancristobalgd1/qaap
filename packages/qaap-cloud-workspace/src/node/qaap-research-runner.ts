@@ -10,14 +10,14 @@ import {
     type ResearchGoal,
     type ResearchMetricSpec,
     type TerminationReason,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task';
 import {
     parseMetricFromStdout,
     resolveTerminationReason,
     type ResearchExperimentRecord,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import { type RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
+} from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
+import { type RealFileChange } from '@theia/qaap-shared-core/lib/common/qaap-research-realchange';
 import { type QaapAgentTask } from '../common/qaap-agent-task';
 import { QaapAgentTaskRunner, type QaapGenericCommandResult } from './qaap-agent-task-runner';
 import { QaapResearchStore } from './qaap-research-store';

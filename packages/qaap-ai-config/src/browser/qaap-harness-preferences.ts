@@ -9,7 +9,7 @@ import { injectable } from '@theia/core/shared/inversify';
 import {
     QAAP_DEFAULT_DISABLED_HARNESS_IDS,
     QAAP_DISABLED_HARNESSES_PREF,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
 
 export const qaapHarnessPreferenceSchema: PreferenceSchema = {
     properties: {

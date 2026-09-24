@@ -4,10 +4,10 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import { extractAgentAuthLoginChallenge } from '../common/qaap-agent-auth-login';
-import { resolveInteractiveAgentLoginCommand } from '../common/qaap-agent-tui-command';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { extractAgentAuthLoginChallenge } from '@theia/qaap-shared-core/lib/common/qaap-agent-auth-login';
+import { resolveInteractiveAgentLoginCommand } from '@theia/qaap-shared-core/lib/common/qaap-agent-tui-command';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { createTranscriptTerminalStagingHost, createTranscriptTerminalSurface } from './qaap-transcript-terminal-view';
 import { createQaapAgentLoginDialog, type QaapAgentLoginDialogController } from './qaap-agent-login-dialog';

@@ -11,7 +11,7 @@ import { QAAP_CONTAINER_CWD_ERROR } from '@theia/qaap-adapters/lib/common/qaap-w
 import {
     QaapGithubAuthContext,
     QaapGithubAuthGuard,
-} from '@theia/qaap-mobile-shell/lib/node/qaap-github-auth-guard';
+} from '@theia/qaap-shared-core/lib/node/qaap-github-auth-guard';
 import {
     QAAP_JOB_API_PATH,
     QaapCreateJobGraphRequest,

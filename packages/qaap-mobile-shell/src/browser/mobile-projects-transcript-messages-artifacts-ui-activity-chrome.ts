@@ -5,7 +5,7 @@ import { TRANSCRIPT_CHECKPOINT_RESTORE_ATTR } from './mobile-projects-transcript
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser';
-import { conversationToSummary, restoreConversationCheckpoint } from '../common/qaap-agent-conversation-client';
+import { conversationToSummary, restoreConversationCheckpoint } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { resolveTranscriptTraceDisplayPhase } from '../common/qaap-transcript-stream-status';
 import { isTranscriptActivityLiveState, shouldApplyTranscriptActivitySettleMotion, type TranscriptActivityStepState } from '../common/qaap-transcript-activity-step-state';
 import { transcriptActivitySubagentCardClassName } from '../common/qaap-transcript-activity-subagent-card';

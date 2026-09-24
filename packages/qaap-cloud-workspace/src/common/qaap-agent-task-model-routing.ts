@@ -3,15 +3,15 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { agentUsesSettingsModelCatalog } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-model-selection';
-import type { QaapQaiqModelOption } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { agentUsesSettingsModelCatalog } from '@theia/qaap-shared-core/lib/common/qaap-agent-model-selection';
+import type { QaapQaiqModelOption } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import type { QaapAgentTaskKind, QaapCreateAgentTaskQaiqModel } from './qaap-agent-task';
 import { resolveRequestAgentModel } from './qaap-agent-task';
 import {
     resolveNativeAgentModelForTaskKind,
     type QaapNativeModelRoutingTable,
 } from './qaap-agent-native-model-routing';
-import { vendorHasByokCredential } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+import { vendorHasByokCredential } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import {
     parseTheiaLanguageModelId,
     resolveQaapQaiqModelBinding,

@@ -15,7 +15,7 @@ import {
     isPendingComposerContextArg,
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
-} from './qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 
 const FILE_VARIABLE_STUB = {
     id: 'file-provider',

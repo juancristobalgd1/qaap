@@ -4,22 +4,22 @@ import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-p
 import { nls } from '@theia/core/lib/common/nls';
 import { evaluateVerifyCommitReadiness, invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
 import { confirmVerifyCommitReadiness } from './qaap-verify-commit-confirm';
-import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap';
+import { ensureTranscriptDevPreview } from '@theia/qaap-shared-core/lib/browser/qaap-transcript-preview-bootstrap';
 import { ConfirmDialog } from '@theia/core/lib/browser';
 import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { type ComposerGitActionDisplayMetadata } from '@theia/qaap-shared-core/lib/common/qaap-composer-git-action-display';
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
-import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import { createComposerContextEntry } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import {
     QAAP_GIT_REVIEW_API_PATH,
     type QaapGitChangedFile,
     type QaapGitCommitWorkflowAction,
-} from '../common/qaap-git-review';
+} from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 import { buildStickyComposerChangesPillFingerprint, type StickyComposerActivityStackOptions } from './qaap-sticky-composer-activity-stack';
 import {
     resolveComposerPreviewCandidate,

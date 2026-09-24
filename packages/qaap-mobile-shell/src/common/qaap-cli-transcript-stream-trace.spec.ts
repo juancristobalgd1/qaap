@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
-import { mergeAccumulatorTraceEvents } from './qaap-cli-transcript-stream';
+import { QaapCodexStreamAccumulator } from '@theia/qaap-shared-core/lib/common/qaap-codex-stream';
+import { mergeAccumulatorTraceEvents } from '@theia/qaap-shared-core/lib/common/qaap-cli-transcript-stream';
 
 describe('qaap-cli-transcript-stream trace', () => {
     it('mergeAccumulatorTraceEvents preserves checkpoint lifecycle rows', () => {

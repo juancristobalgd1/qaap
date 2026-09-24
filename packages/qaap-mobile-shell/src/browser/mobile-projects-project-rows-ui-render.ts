@@ -2,7 +2,7 @@ import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-proje
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { mobileProjectInitials, type MobileProjectEntry } from './mobile-projects-types';
+import { mobileProjectInitials, type MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export function createTaskLeadingGlyphExtracted(ctx: MobileProjectsProjectRowsUiContext, codiconClass: string): HTMLElement {
         const glyph = document.createElement('span');

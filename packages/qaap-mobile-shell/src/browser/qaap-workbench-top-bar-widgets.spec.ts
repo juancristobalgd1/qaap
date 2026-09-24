@@ -8,7 +8,7 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import {
     clearPreferDesktopIde,
     markPreferDesktopIde,
-} from '../common/qaap-mobile-work-surface-preference';
+} from '@theia/qaap-shared-core/lib/common/qaap-mobile-work-surface-preference';
 
 describe('qaap-workbench-top-bar-widgets', () => {
 

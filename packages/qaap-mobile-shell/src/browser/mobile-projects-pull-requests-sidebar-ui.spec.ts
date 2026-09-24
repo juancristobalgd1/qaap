@@ -7,7 +7,7 @@ import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import { Emitter } from '@theia/core/lib/common/event';
 import type { QuickInputButton, QuickInputService, QuickPick, QuickPickItem } from '@theia/core/lib/common/quick-pick-service';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     MobileProjectsPullRequestsSidebarUi,
     type MobileProjectsPullRequestsSidebarHost,

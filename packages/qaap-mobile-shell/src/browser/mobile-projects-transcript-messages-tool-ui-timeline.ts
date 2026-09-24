@@ -2,7 +2,7 @@ import type { MobileProjectsTranscriptMessagesToolUiContext } from './mobile-pro
 // Extracted from mobile-projects-transcript-messages-tool-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     createLobeToolTitle,
     createLobeTraceStatusIndicator,
@@ -14,7 +14,7 @@ import {
     resolveLobeTraceStatus as resolveLobeTraceStatusHelper,
 } from './mobile-projects-transcript-messages-tool-helpers';
 import { syncTranscriptToolExecutionTime, TRANSCRIPT_TOOL_RESULT_STREAM_CLASS } from './mobile-projects-transcript-messages-tool-ui';
-import { peekPreferDesktopIde } from './mobile-projects-open';
+import { peekPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
 
 export function patchTranscriptToolResultStreamBodyExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, pillBody: HTMLElement,
         segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,): boolean {

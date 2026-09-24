@@ -11,7 +11,7 @@ import type {
     MobileProjectsPanelFactoryDelegate,
     MobileProjectsPanelFactoryDeps,
 } from './mobile-projects-panel-factory';
-import type { MobileProjectsService } from './mobile-projects-service';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 
 describe('mobile-projects-panel-factory', () => {
 

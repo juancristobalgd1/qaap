@@ -27,9 +27,9 @@ import {
     type QaapCreateAgentTaskRequest,
     type QaapAgentWarmResult,
 } from '../common/qaap-agent-task';
-import type { QaapTurnLatencyMark } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-stream-metrics';
-import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
-import type { QaapPreferenceReader } from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+import type { QaapTurnLatencyMark } from '@theia/qaap-shared-core/lib/common/qaap-agent-stream-metrics';
+import { type QaapQaiqInteractionFlagOptions } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
+import type { QaapPreferenceReader } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 import { QaapTenantSpawnService } from './qaap-tenant-spawn-service';
 import { type QaapAgentReadOnlyEnforcement, } from '../common/qaap-agent-readonly-workspace';
 import { type QaapQaiqPendingControlRequest } from '../common/qaap-qaiq-stdio-approvals';
@@ -84,8 +84,8 @@ import {
     isQaapHarnessEnabled,
     QAAP_DISABLED_HARNESSES_PREF,
     readDisabledHarnessIds,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-harness-preferences';
-import { localizeMissingQaiqMessage } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-failure-message';
+} from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
+import { localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 import {
     resolveQaapReposRoot,
     resolveUserReposRoot,

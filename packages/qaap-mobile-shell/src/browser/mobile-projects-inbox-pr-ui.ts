@@ -12,7 +12,7 @@ import {
 import { clearQaapAuthSession, readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { githubRepoKeysForProjects, pullRequestKey } from './mobile-work-hub-inbox';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 export const MOBILE_PROJECTS_INBOX_PR_FETCH_TIMEOUT_MS = 20_000;
 
@@ -30,7 +30,7 @@ export interface MobileProjectsInboxPrHost {
     inboxPullRequestsAbort: AbortController | undefined;
     inboxStream: MobileWorkHubInboxStream | undefined;
 
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     renderList(): void;
     sessionsSidebar?: import('./mobile-work-hub-sessions-sidebar').MobileWorkHubSessionsSidebar;
     refreshPullRequestsSidebar?(): void;

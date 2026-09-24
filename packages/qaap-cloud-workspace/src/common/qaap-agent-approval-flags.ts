@@ -3,12 +3,12 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentApprovalPolicyId } from '@theia/qaap-mobile-shell/lib/common/qaap-sticky-composer-approval-policy';
+import type { QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     formatQaiqInteractionFlags,
     qaiqCommandUsesInteractionFlags,
     type QaapQaiqInteractionFlagOptions,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-interaction-flags';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-interaction-flags';
 import {
     applyAutoApproveToCommand,
     commandHasAutoApproveFlags,

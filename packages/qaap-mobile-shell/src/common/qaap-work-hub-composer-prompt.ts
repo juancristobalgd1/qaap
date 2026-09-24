@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapCreateAgentTaskQaiqModel } from './qaap-agent-task-client';
+import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 export {
     QAAP_WORK_HUB_ATTACH_COMPOSER_CONTEXT_COMMAND,
     type QaapAttachComposerContextArgs,
-} from './qaap-preview-feedback-context';
+} from '@theia/qaap-shared-core/lib/common/qaap-preview-feedback-context';
 
 /** Submit a prompt to the sticky-composer / Work Hub agent (not Theia Chat @coder). */
 export const QAAP_WORK_HUB_SUBMIT_COMPOSER_PROMPT_COMMAND = 'qaap.workHub.submitComposerPrompt';

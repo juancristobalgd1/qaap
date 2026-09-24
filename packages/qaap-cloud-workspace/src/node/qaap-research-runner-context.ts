@@ -11,9 +11,9 @@
 //
 // `import type` throughout to avoid a runtime import cycle with the extracted modules.
 
-import type { ResearchGoal, TerminationReason } from '@theia/qaap-mobile-shell/lib/common/qaap-research-goal';
-import type { ResearchExperimentRecord } from '@theia/qaap-mobile-shell/lib/common/qaap-research-ledger';
-import type { RealFileChange } from '@theia/qaap-mobile-shell/lib/common/qaap-research-realchange';
+import type { ResearchGoal, TerminationReason } from '@theia/qaap-shared-core/lib/common/qaap-research-goal';
+import type { ResearchExperimentRecord } from '@theia/qaap-shared-core/lib/common/qaap-research-ledger';
+import type { RealFileChange } from '@theia/qaap-shared-core/lib/common/qaap-research-realchange';
 import type { QaapAgentTask } from '../common/qaap-agent-task';
 import type { QaapAgentTaskRunner } from './qaap-agent-task-runner';
 import type { QaapGenericCommandResult } from './qaap-agent-task-runner-constants';

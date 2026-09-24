@@ -7,20 +7,20 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     type QaapAgentConversationSummaryDTO,
     postConversationMessage,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     createAgentTask,
     fetchAgentTaskDetail,
     isAgentTaskFinished,
     resolveStoredAgentModelForSubmit,
     type QaapAgentTaskDetailDTO,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     evaluateVerifyCommitReadiness,
     type EvaluateVerifyCommitReadinessInput,
 } from '../common/qaap-verify-commit-readiness';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { TranscriptExecutionSurfaceTabsApi } from './qaap-transcript-host-contracts';
 
 interface VerifyCheck {

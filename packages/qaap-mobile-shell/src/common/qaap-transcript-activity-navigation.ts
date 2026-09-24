@@ -4,9 +4,9 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
-import type { QaapTranscriptTraceEventDTO } from './qaap-transcript-trace-model';
-import { estimateToolArgFileDiffStats, parseDiffStatsFromText } from './qaap-agent-conversation-list-metrics';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapTranscriptTraceEventDTO } from '@theia/qaap-shared-core/lib/common/qaap-transcript-trace-model';
+import { estimateToolArgFileDiffStats, parseDiffStatsFromText } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-list-metrics';
 import { excerptTranscriptReadResultPreview, extractTranscriptDiffCard, type QaapTranscriptToolActivityKind } from './qaap-agent-transcript-segments';
 import {
     formatTranscriptCursorTraceRowText,

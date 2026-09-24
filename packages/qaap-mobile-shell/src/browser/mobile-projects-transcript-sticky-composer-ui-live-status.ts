@@ -5,11 +5,11 @@ import { nls } from '@theia/core/lib/common/nls';
 import {
     isMaxConcurrentRunsError,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     QAAP_PRIMARY_AGENT_ID,
     resolveExplicitAgentForSubmit,
-} from '../common/qaap-agent-task-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import {
     clearConversationComposerDraft,
     writeConversationComposerDraft,
@@ -17,7 +17,7 @@ import {
 import {
     reconcileAgentApprovalPolicyId,
     resolveComposerAutoApprove,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     type TranscriptFollowUpEntry,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
@@ -25,15 +25,15 @@ import {
     resolveBusyFollowUpDeliveryMode,
     shouldBypassLocalFollowUpQueue,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';
 import {
     composerContextRequests,
     disposeComposerContextEntries,
-} from '../common/qaap-composer-context-entry';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
 import {
     mergeFailedComposerDraft,
 } from './mobile-projects-transcript-sticky-composer-helpers';

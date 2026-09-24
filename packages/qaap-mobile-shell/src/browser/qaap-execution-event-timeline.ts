@@ -23,7 +23,7 @@
 // Only Terminal/Error/Diff get cards — everything else is text.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 // ─── State (extracted to mobile-execution-timeline-state.ts) ─────────────────
 export {

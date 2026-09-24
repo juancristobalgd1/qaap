@@ -10,7 +10,7 @@ import { ImageContextVariable, IMAGE_CONTEXT_VARIABLE } from '@theia/ai-chat/lib
 import {
     buildPendingComposerContextArg,
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     applyComposerContextEntryPreview,
     collectComposerImagePreviews,

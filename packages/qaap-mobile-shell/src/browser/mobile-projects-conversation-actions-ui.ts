@@ -18,15 +18,15 @@ import {
     retryConversation,
     updateConversation,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import { reportQaapClientError } from '../common/qaap-client-error-report';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
-import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 /** Panel surface for task card menu actions (rename, fork, pause, cancel, delete, …). */
 export interface MobileProjectsConversationActionsHost {

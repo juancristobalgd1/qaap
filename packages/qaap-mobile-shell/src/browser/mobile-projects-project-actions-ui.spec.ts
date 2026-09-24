@@ -7,8 +7,8 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 import URI from '@theia/core/lib/common/uri';
 import { expect } from 'chai';
 import type { MobileProjectsProjectActionsHost } from './mobile-projects-project-actions-ui';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsServiceContext } from './mobile-projects-service-context';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsServiceContext } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service-context';
 
 // Use the shared jsdom environment instead of a private linkedom DOM. Assigning
 // linkedom's DOM classes (Element/HTMLElement/Event/MouseEvent/...) onto the global
@@ -153,7 +153,7 @@ describe('MobileProjectsProjectActionsUi', () => {
 
 describe('MobileProjectsService.canRemove', () => {
     it('allows removing a GitHub clone that is not the active workspace', () => {
-        const { MobileProjectsService } = require('./mobile-projects-service') as typeof import('./mobile-projects-service');
+        const { MobileProjectsService } = require('@theia/qaap-shared-core/lib/browser/mobile-projects-service') as typeof import('@theia/qaap-shared-core/lib/browser/mobile-projects-service');
         const service = Object.create(MobileProjectsService.prototype) as InstanceType<typeof MobileProjectsService>;
         const github = {
             ...project('github:acme/app'),
@@ -167,7 +167,7 @@ describe('MobileProjectsService.canRemove', () => {
 
 describe('MobileProjectsService.removeProject', () => {
     it('removes a custom project and its matching recent workspace', async () => {
-        const { removeProjectExtracted } = require('./mobile-projects-service-streaming') as typeof import('./mobile-projects-service-streaming');
+        const { removeProjectExtracted } = require('@theia/qaap-shared-core/lib/browser/mobile-projects-service-streaming') as typeof import('@theia/qaap-shared-core/lib/browser/mobile-projects-service-streaming');
         const removedProject = {
             ...project('custom:file:///workspace/laaaaa'),
             uri: new URI('file:///workspace/laaaaa'),

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapGitHistoryCommit } from './qaap-git-review';
+import type { QaapGitHistoryCommit } from '@theia/qaap-shared-core/lib/common/qaap-git-review';
 
 export function collectHistoryAuthors(commits: readonly QaapGitHistoryCommit[]): string[] {
     return uniqueSorted(commits.map(commit => commit.authorName.trim()).filter(name => name.length > 0));

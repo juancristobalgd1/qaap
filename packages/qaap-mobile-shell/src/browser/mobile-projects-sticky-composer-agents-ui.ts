@@ -25,12 +25,12 @@ import {
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
-} from '../common/qaap-agent-task-client';
-import { QAAP_DISABLED_HARNESSES_PREF, readDisabledHarnessIds } from '../common/qaap-harness-preferences';
-import { localizeHostedInstallCodingAgentLabel, readQaapHostedRuntime } from '../common/qaap-hosted-agent-auth-policy';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { QAAP_DISABLED_HARNESSES_PREF, readDisabledHarnessIds } from '@theia/qaap-shared-core/lib/common/qaap-harness-preferences';
+import { localizeHostedInstallCodingAgentLabel, readQaapHostedRuntime } from '@theia/qaap-shared-core/lib/common/qaap-hosted-agent-auth-policy';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
 import type { ComposerAgentPickerChrome } from './mobile-projects-sticky-composer-sheets-ui';
 import { renderAgentPickerLoadError, renderAgentPickerSkeleton } from './qaap-agent-picker-loading';
 

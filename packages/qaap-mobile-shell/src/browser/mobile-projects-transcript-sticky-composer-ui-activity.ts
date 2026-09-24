@@ -10,12 +10,12 @@ import {
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
     type QaapMessageDeliveryMode,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 import {
     QAAP_COMPOSER_DEFAULT_AGENT_ID,
-} from '../common/qaap-agent-task-client';
-import { isTranscriptSummaryAgentWorking } from '../common/qaap-transcript-turn-status';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { isTranscriptSummaryAgentWorking } from '@theia/qaap-shared-core/lib/common/qaap-transcript-turn-status';
 import {
     applyConversationComposerPrefs,
     applyProjectComposerDefaults,
@@ -28,19 +28,19 @@ import {
 import {
     reconcileComposerModeId,
     resolveStickyComposerModes,
-} from '../common/qaap-sticky-composer-mode';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 import {
     reconcileAgentApprovalPolicyId,
-} from '../common/qaap-sticky-composer-approval-policy';
+} from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
 import {
     reconcileAgentToolApprovalRules,
-} from '../common/qaap-agent-tool-approval-rules';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
 import {
     type TranscriptFollowUpEntry,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
-import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
+import { isAgentsHubIdleConversationSummary } from '@theia/qaap-shared-core/lib/common/qaap-agents-hub-landing';
 import { readProjectComposerDraft } from '../common/qaap-project-composer-draft';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
 export async function startPeerRunOrQueueExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,

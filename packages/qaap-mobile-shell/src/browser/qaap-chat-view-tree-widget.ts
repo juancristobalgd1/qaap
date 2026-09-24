@@ -11,7 +11,7 @@ import { CompositeTreeNode } from '@theia/core/lib/browser';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { injectable } from '@theia/core/shared/inversify';
 import { QaapChatUiPerfCollector } from '../common/qaap-chat-ui-perf';
-import { QaapChatViewStreamUpdateScheduler } from '../common/qaap-chat-view-stream-update-scheduler';
+import { QaapChatViewStreamUpdateScheduler } from '@theia/qaap-shared-core/lib/common/qaap-chat-view-stream-update-scheduler';
 import {
     needsCoalescedTreePaintWithoutRecreate,
     shouldSkipChatModelTreeRecreate,

@@ -10,16 +10,16 @@ import {
     type QaapAgentConversationSummaryDTO,
     type QaapAgentMessageDTO,
     type QaapAgentMessageSegmentDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     type QaapAgentApprovalRequestDTO,
-} from '../common/qaap-agent-approval-client';
-import type { ConversationLiveMessageEvent } from './mobile-projects-conversations';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import type { ConversationLiveMessageEvent } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import { findTranscriptToolApproval } from '../common/qaap-transcript-approval-inline';
 import {
     removeTranscriptPendingApprovalHosts,
 } from './qaap-transcript-inline-approval-ui';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import {
     buildConversationTranscriptFingerprint,
 } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
@@ -28,9 +28,9 @@ import {
     QaapTranscriptLiveController,
     type QaapTranscriptLiveRefreshOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { TranscriptExecutionSurfaceTabsApi, TranscriptStickyComposerApi } from './qaap-transcript-host-contracts';
@@ -67,7 +67,7 @@ export interface MobileProjectsTranscriptLiveHost {
     transcriptPreviewRequestRunning: boolean;
     transcriptPreviewSuppressedByUser: boolean;
     transcriptApprovalRefreshTimer: number | undefined;
-    cachedAgentApprovals: import('../common/qaap-agent-approval-client').QaapAgentApprovalRequestDTO[];
+    cachedAgentApprovals: import('@theia/qaap-shared-core/lib/common/qaap-agent-approval-client').QaapAgentApprovalRequestDTO[];
     projectsService: MobileProjectsService;
     conversations: MobileProjectsConversations | undefined;
     transcriptMessagesUi: MobileProjectsTranscriptMessagesUi;
@@ -87,7 +87,7 @@ export interface MobileProjectsTranscriptLiveHost {
     beginTranscriptDevPreviewRequest(project: MobileProjectEntry, summary: QaapAgentConversationSummaryDTO): void;
     stageTranscriptPreviewReadyUrl(readyUrl: string): void;
     projectBootstrap?: QaapProjectBootstrapService;
-    agUiFrontendTools?: import('./qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;
+    agUiFrontendTools?: import('@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service').QaapAgUiFrontendToolService;
     handleTranscriptStatusForAutoVerify(
         project: MobileProjectEntry,
         summary: QaapAgentConversationSummaryDTO,
@@ -95,7 +95,7 @@ export interface MobileProjectsTranscriptLiveHost {
     ): void;
     isPendingNewChatSummary(summary: QaapAgentConversationSummaryDTO): boolean;
     ensureTranscriptConversationRefresh(): void;
-    conversationIndexUi: import('./mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
+    conversationIndexUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-index-ui').MobileProjectsConversationIndexUi;
     getChatServiceConversation(summary: QaapAgentConversationSummaryDTO): Promise<QaapAgentConversationDTO | undefined>;
 }
 

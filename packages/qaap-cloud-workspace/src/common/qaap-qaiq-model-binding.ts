@@ -12,7 +12,7 @@ import {
     QAAP_QAIQ_BYOK_PROVIDERS,
     resolveVendorForModelId,
     type QaapPreferenceReader,
-} from '@theia/qaap-mobile-shell/lib/common/qaap-qaiq-byok-provider-registry';
+} from '@theia/qaap-shared-core/lib/common/qaap-qaiq-byok-provider-registry';
 
 export type QaapQaiqProviderId = 'openai' | 'gemini' | 'ollama' | 'anthropic' | 'mistral';
 

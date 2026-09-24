@@ -5,20 +5,20 @@ import { ChatSession } from '@theia/ai-chat';
 import { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
 import {
     MobileProjectEntry,
-} from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileProjectsParallelUi } from './mobile-projects-parallel-ui';
 import { MobileProjectsTeamUi } from './mobile-projects-team-ui';
 import { MobileProjectsTeamHubUi } from './mobile-projects-team-hub-ui';
 import { MobileProjectsHomeUi } from './mobile-projects-home-ui';
-import { normalizeQaapPreviewConversationId } from '../common/qaap-preview-identity';
+import { normalizeQaapPreviewConversationId } from '@theia/qaap-shared-core/lib/common/qaap-preview-identity';
 import {
     QaapAgentConversationDTO,
     QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
-} from '../common/qaap-composer-context-entry';
+} from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     type QaapTranscriptLiveRefreshOptions,
 } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
@@ -27,7 +27,7 @@ export function renderAgentsHubIdleSubmitOptimisticExtracted(ctx: MobileProjects
     summary: QaapAgentConversationSummaryDTO,
     draft: string,
     agentId: string,
-    imagePreviews?: readonly import('../common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
+    imagePreviews?: readonly import('@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview').QaapTranscriptUserImagePreview[],
     contentOverride?: string,): void {
     ctx.agentsHubInlineUi.renderAgentsHubIdleSubmitOptimistic(chatHost, summary, draft, agentId, imagePreviews, contentOverride);
 }

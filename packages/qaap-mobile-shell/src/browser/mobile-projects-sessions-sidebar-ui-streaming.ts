@@ -3,17 +3,17 @@ import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-s
 
 import { nls } from '@theia/core/lib/common/nls';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import { isFailedRunSummary, type QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import { collapseOlderFailedDuplicateTitles } from '../common/qaap-failed-duplicate-collapse';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import type { MobileProjectEntry } from './mobile-projects-types';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import {
     resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
 import { MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE, SESSIONS_SIDEBAR_PROJECT_SORT_MODES } from './mobile-projects-sessions-sidebar-ui';
-import { partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
+import { partitionAgentConversations } from '@theia/qaap-shared-core/lib/common/qaap-isolated-fork-grouping';
 
 export function createSessionsSidebarSignInHintExtracted(options?: { readonly compact?: boolean }): HTMLElement {
         const hint = document.createElement('div');

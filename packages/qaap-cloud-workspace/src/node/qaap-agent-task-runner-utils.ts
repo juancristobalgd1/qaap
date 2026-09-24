@@ -10,7 +10,7 @@ import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { OPENCLAUDE_AGENT_ID } from '@theia/qaap-mobile-shell/lib/common/qaap-agent-task-client';
+import { OPENCLAUDE_AGENT_ID } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 import { QAIQ_AGENT_ID } from './qaap-agent-task-runner';
 import { truncateProjectInfo } from '../common/qaap-agent-task-context';
 import {

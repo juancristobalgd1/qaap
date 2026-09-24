@@ -13,7 +13,7 @@ import {
     type ChatSession,
 } from '@theia/ai-chat/lib/common';
 import { ChangeSetElement } from '@theia/ai-chat/lib/common/change-set';
-import { MobileProjectsService } from '@theia/qaap-mobile-shell/lib/browser/mobile-projects-service';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import {
     QAAP_CAPTURE_MISSION_SNAPSHOT_COMMAND_ID,
 } from './qaap-mission-undo-contribution';

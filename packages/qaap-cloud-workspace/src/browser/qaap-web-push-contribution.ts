@@ -5,8 +5,8 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser';
-import { QaapProjectBootstrapService } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-service';
-import { qaapBootstrapFailureKind } from '@theia/qaap-mobile-shell/lib/browser/qaap-project-bootstrap-types';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
+import { qaapBootstrapFailureKind } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-types';
 
 /** Must match mobile-shell push contribution event names. */
 const QAAP_BOOTSTRAP_FAILED_EVENT = 'qaap-bootstrap-failed';

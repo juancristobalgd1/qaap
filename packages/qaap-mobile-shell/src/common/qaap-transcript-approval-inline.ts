@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentApprovalRequestDTO } from './qaap-agent-approval-client';
-import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
+import type { QaapAgentApprovalRequestDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
+import type { QaapAgentMessageSegmentDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 
 /** Pending approval for the open QAIQ transcript (newest first). */
 export function resolveTranscriptInlineApproval(

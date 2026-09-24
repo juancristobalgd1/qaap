@@ -5,16 +5,16 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '../common/qaap-work-hub-perf-probe';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
+import { QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-perf-probe';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 import {
     appendLongTranscriptProbeDelta,
     buildProbeStreamingSummaries,
     buildLongTranscriptProbeConversation,
     ensureProbeWorkspaceProject,
     QAAP_PROBE_WORKSPACE_PROJECT_ID,
-} from './qaap-work-hub-perf-probe-host';
+} from '@theia/qaap-shared-core/lib/browser/qaap-work-hub-perf-probe-host';
 
 describe('qaap-work-hub-perf-probe-host', () => {
 

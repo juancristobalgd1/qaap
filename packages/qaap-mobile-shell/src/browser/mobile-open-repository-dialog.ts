@@ -7,8 +7,8 @@ import { nls } from '@theia/core/lib/common/nls';
 import { parseQaapGithubRepositoryInput } from '@theia/qaap-adapters/lib/common/qaap-github-repository-input';
 import { syncQaapAuthSessionFromServer } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
-import { MobileProjectEntry } from './mobile-projects-types';
-import { MobileProjectsService } from './mobile-projects-service';
+import { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
 
 export interface MobileOpenRepositoryDialogDelegate {
     /** Refresh the projects panel after a successful open / create. */

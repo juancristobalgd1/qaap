@@ -5,13 +5,13 @@
 
 import { WorkspaceCommands } from '@theia/workspace/lib/browser/workspace-commands';
 import { CommandRegistry } from '@theia/core/lib/common/command';
-import { disposeComposerContextEntries } from '../common/qaap-composer-context-entry';
+import { disposeComposerContextEntries } from '@theia/qaap-shared-core/lib/common/qaap-composer-context-entry';
 import {
     markMobileProjectReadmeForOpen,
     markMobileProjectsPanelDismiss,
-} from './mobile-projects-open';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
+} from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectEntry, MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 
 export interface MobileProjectsProjectNavigationHost {
@@ -19,7 +19,7 @@ export interface MobileProjectsProjectNavigationHost {
     expandedId: string | undefined;
     soloExpanded: boolean;
     suppressCurrentAutoExpand: boolean;
-    stickyComposerContext: import('../common/qaap-composer-context-entry').StickyComposerContextEntry[];
+    stickyComposerContext: import('@theia/qaap-shared-core/lib/common/qaap-composer-context-entry').StickyComposerContextEntry[];
     stickyComposerPinnedAgentId: string | undefined;
     stickyComposerModeId: string | undefined;
     stickyComposerDraft: string;
@@ -58,7 +58,7 @@ export interface MobileProjectsProjectNavigationHost {
     render(): void;
     syncLandingHubListChrome(): void;
     renderList(): void;
-    hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
+    hubQueryUi: import('@theia/qaap-shared-core/lib/browser/mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
     disposeTranscriptTerminalSlides(workspaceKey?: import('@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache').TranscriptWorkspaceSurfaceKey): void;
     refreshProjects(): Promise<void>;
     hide(): void;

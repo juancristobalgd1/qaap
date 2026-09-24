@@ -38,27 +38,27 @@ import { ElementInspectorService } from '@theia/qaap-element-inspector/lib/brows
 import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import { ScmService } from '@theia/scm/lib/browser/scm-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
-import { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import { MobileProjectsConversations } from './mobile-projects-conversations';
-import { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
+import { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import { MobileProjectsConversationFlags } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversation-flags';
 import { MobileProjectsHeaderOverflowMenuItem, MobileProjectsPanel } from './mobile-projects-panel';
 import { MobileProjectsPanelFactory } from './mobile-projects-panel-factory';
-import { MobileProjectsService } from './mobile-projects-service';
-import { markPreferDesktopIde } from './mobile-projects-open';
-import type { MobileProjectsHubView } from './mobile-projects-types';
+import { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import { markPreferDesktopIde } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 import { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import { MobileProjectChatViewWidgetFactory } from './mobile-project-ai-chat-input-widget';
 import { MobileWorkHubBillingSheet } from './mobile-work-hub-billing-sheet';
 import { MobileWorkHubPreferencesSheet } from './mobile-work-hub-preferences-sheet';
-import { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
-import { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
+import { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import { QaapCommitMessageAi } from './qaap-commit-message-ai';
 import { QaapComposerEditorContextService } from './qaap-composer-editor-context-service';
 import { QaapComposerPromptImprover } from './qaap-composer-prompt-improver';
-import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 import { QaapWorkHubComposerPromptService } from './qaap-work-hub-composer-prompt-service';
 import { QaapWorkHubProjectSkillRoots } from './qaap-work-hub-project-skill-roots';
-import { QaapAppearanceModeService } from './qaap-appearance-mode-service';
+import { QaapAppearanceModeService } from '@theia/qaap-shared-core/lib/browser/qaap-appearance-mode-service';
 
 /**
  * Product replacement for Theia's AI Chat panel body.

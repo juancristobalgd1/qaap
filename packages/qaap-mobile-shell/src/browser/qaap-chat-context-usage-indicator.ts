@@ -15,8 +15,8 @@ import {
 import {
     resolveVpsContextUsageFromSummary,
     type QaapAgentContextUsage,
-} from '../common/qaap-agent-context-usage';
-import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-context-usage';
+import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     CHAT_VIEW_TOKEN_USAGE_ENABLED,
     CHAT_VIEW_TOKEN_USAGE_WARNING_THRESHOLD_PERCENTAGE,

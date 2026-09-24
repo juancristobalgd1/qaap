@@ -14,9 +14,9 @@ import {
     getConversation,
     type QaapAgentConversationDTO,
     type QaapAgentConversationSummaryDTO,
-} from '../common/qaap-agent-conversation-client';
-import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
-import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapTranscriptUserImagePreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-user-image-preview';
+import { messageRequestsDevPreview } from '@theia/qaap-shared-core/lib/common/qaap-transcript-preview-offer';
 import {
     fetchAgentTaskListAll,
     mergeAgentTaskAgentOptions,
@@ -29,19 +29,19 @@ import {
     SHELL_AGENT_ID,
     type QaapAgentTaskListSnapshot,
     type QaapCreateAgentTaskQaiqModel,
-} from '../common/qaap-agent-task-client';
-import { localizeMissingCodingAgentMessage, localizeMissingQaiqMessage } from '../common/qaap-agent-failure-message';
-import { shouldRouteSubmitToTheiaCoder } from '../common/qaap-agent-submit-routing';
-import { reportQaapClientError } from '../common/qaap-client-error-report';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
+import { localizeMissingCodingAgentMessage, localizeMissingQaiqMessage } from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
+import { shouldRouteSubmitToTheiaCoder } from '@theia/qaap-shared-core/lib/common/qaap-agent-submit-routing';
+import { reportQaapClientError } from '@theia/qaap-shared-core/lib/common/qaap-client-error-report';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { applyBackendInteractionModeToPrompt } from '../common/qaap-sticky-composer-mode';
-import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '../common/qaap-sticky-composer-approval-policy';
-import { reconcileAgentToolApprovalRules } from '../common/qaap-agent-tool-approval-rules';
-import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsConversations } from './mobile-projects-conversations';
-import type { MobileProjectsActiveTasks } from './mobile-projects-active-tasks';
-import type { QaapBackgroundContextProvider } from './qaap-background-context-provider';
+import { applyBackendInteractionModeToPrompt } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
+import { reconcileAgentApprovalPolicyId, type QaapAgentApprovalPolicyId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import { reconcileAgentToolApprovalRules } from '@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules';
+import type { MobileProjectEntry } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { MobileProjectsConversations } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { MobileProjectsActiveTasks } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import type { QaapBackgroundContextProvider } from '@theia/qaap-shared-core/lib/browser/qaap-background-context-provider';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 
@@ -57,7 +57,7 @@ export interface MobileProjectsBackgroundTaskHost {
     activeTasks?: MobileProjectsActiveTasks;
     sessionsSidebar?: MobileWorkHubSessionsSidebar;
     delegate: { onProjectsChanged?: () => void };
-    projectBootstrap?: import('./qaap-project-bootstrap-service').QaapProjectBootstrapService;
+    projectBootstrap?: import('@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service').QaapProjectBootstrapService;
     transcriptSheetUi: import('./mobile-projects-transcript-sheet-ui').MobileProjectsTranscriptSheetUi;
     transcriptLiveUi: import('./mobile-projects-transcript-live-ui').MobileProjectsTranscriptLiveUi;
     expandComposerDraftForSubmit?: (draft: string) => Promise<string>;
@@ -206,7 +206,7 @@ export class MobileProjectsBackgroundTaskUi {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
-            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+            toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
@@ -237,7 +237,7 @@ export class MobileProjectsBackgroundTaskUi {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
-            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+            toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
@@ -298,13 +298,13 @@ export class MobileProjectsBackgroundTaskUi {
             modeId?: string;
             autoApprove?: boolean;
             approvalPolicyId?: string;
-            toolApprovalRules?: import('../common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
+            toolApprovalRules?: import('@theia/qaap-shared-core/lib/common/qaap-agent-tool-approval-rules').QaapAgentToolApprovalRules;
             capabilityOverrides?: Record<string, boolean>;
             genericCapabilitySelections?: GenericCapabilitySelections;
             variables?: ReturnType<AIChatInputWidget['getAllVariablesForRequest']>;
             worktree?: boolean;
             agentModel?: QaapCreateAgentTaskQaiqModel;
-            latencyMarks?: import('../common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
+            latencyMarks?: import('@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client').QaapPostConversationMessageOptions['latencyMarks'];
         },
     ): Promise<QaapProjectChatSessionCreated> {
         const useWorktree = this.resolveWorktreeForSession(cwd, options.worktree);

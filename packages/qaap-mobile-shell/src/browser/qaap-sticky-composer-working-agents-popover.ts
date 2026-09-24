@@ -8,7 +8,7 @@ import {
     createWorkHubWorkingChildIcon,
     createWorkHubWorkingParentIcon,
 } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import { buildTeamTree, type WorkHubTeamMember } from '../common/qaap-work-hub-team';
+import { buildTeamTree, type WorkHubTeamMember } from '@theia/qaap-shared-core/lib/common/qaap-work-hub-team';
 import {
     renderWorkingAgentDetailActivityFeed,
     resolveWorkingMemberCommand,
@@ -22,7 +22,7 @@ import {
     updateWorkingDetailTaskLog,
     workingDetailTaskLogHasTranscriptSegments,
     WORKING_DETAIL_TASK_LOG_CLASS,
-} from './qaap-sticky-composer-working-detail-task-log';
+} from '@theia/qaap-shared-core/lib/browser/qaap-sticky-composer-working-detail-task-log';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 
 export const WORKING_CONTROL_CLASS = 'theia-mobile-sticky-composer-working-control';

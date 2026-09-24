@@ -21,7 +21,7 @@ import {
     resolveQaiqEnvFallbackModel,
     resolveQaiqProviderFlagsFromEnv,
 } from './qaap-agent-task-runner-utils';
-import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-mobile-shell/lib/common/qaap-builtin-agents';
+import { QAAP_BUILTIN_AGENT_DEFINITIONS } from '@theia/qaap-shared-core/lib/common/qaap-builtin-agents';
 import { buildAgentCommandExtracted } from './qaap-agent-task-runner-streaming2';
 import { captureWorktreeFingerprint, captureWorktreeStatus } from './qaap-agent-task-runner-utils2';
 

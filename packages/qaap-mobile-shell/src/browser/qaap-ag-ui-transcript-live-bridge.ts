@@ -3,16 +3,16 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentMessageDTO } from '../common/qaap-agent-conversation-client';
-import { postAgUiTranscriptEvent } from '../common/qaap-agent-conversation-client';
-import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
+import type { QaapAgentMessageDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import { postAgUiTranscriptEvent } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
+import type { QaapAgentMessageWireDelta } from '@theia/qaap-shared-core/lib/common/qaap-agent-message-wire-delta';
 import {
     collectQaapFrontendToolNames,
     findPendingQaapFrontendToolCalls,
-} from '../common/qaap-ag-ui-frontend-tool-pending';
-import { buildQaapAgUiToolCallResultEvent } from '../common/qaap-ag-ui-tool-registry';
-import type { ConversationLiveMessageEvent } from './mobile-projects-conversations';
-import type { QaapAgUiFrontendToolService } from './qaap-ag-ui-frontend-tool-service';
+} from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-frontend-tool-pending';
+import { buildQaapAgUiToolCallResultEvent } from '@theia/qaap-shared-core/lib/common/qaap-ag-ui-tool-registry';
+import type { ConversationLiveMessageEvent } from '@theia/qaap-shared-core/lib/browser/mobile-projects-conversations';
+import type { QaapAgUiFrontendToolService } from '@theia/qaap-shared-core/lib/browser/qaap-ag-ui-frontend-tool-service';
 
 /** Executes Qaap frontend AG-UI tools when the live transcript receives pending tool_call rows. */
 export class QaapAgUiTranscriptLiveBridge {

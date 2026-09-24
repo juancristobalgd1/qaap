@@ -17,7 +17,7 @@ import {
     resolveUserReposRoot,
 } from '@theia/qaap-adapters/lib/common/qaap-user-isolation';
 import { isQaapHostedRuntime } from './qaap-docker-control-plane';
-import { isRealPathUnder } from '@theia/qaap-mobile-shell/lib/node/qaap-realpath-guard';
+import { isRealPathUnder } from '@theia/qaap-shared-core/lib/node/qaap-realpath-guard';
 import { QaapWebsocketAuthRegistry } from './qaap-websocket-auth-registry';
 import { createQaapTenantKeyStoreRpcTarget } from './qaap-key-store-tenant-scope';
 

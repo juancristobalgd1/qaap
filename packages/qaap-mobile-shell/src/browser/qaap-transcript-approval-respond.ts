@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { approveAgentRequest, rejectAgentRequest } from '../common/qaap-agent-approval-client';
+import { approveAgentRequest, rejectAgentRequest } from '@theia/qaap-shared-core/lib/common/qaap-agent-approval-client';
 import { MobileSnackbar } from '@theia/qaap-mobile-mechanics/lib/browser/mobile-snackbar';
 import { setTranscriptApprovalCardBusy, TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 

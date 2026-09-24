@@ -5,7 +5,7 @@
 
 import URI from '@theia/core/lib/common/uri';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
-import { isUserRepositoryFilesystemPath } from '@theia/qaap-mobile-shell/lib/common/qaap-hub-project-eligibility';
+import { isUserRepositoryFilesystemPath } from '@theia/qaap-shared-core/lib/common/qaap-hub-project-eligibility';
 
 /** True when `uri` must never be opened as a Theia workspace root on hosted deployments. */
 export function isForbiddenHostedWorkspaceUri(uri: URI | undefined): boolean {

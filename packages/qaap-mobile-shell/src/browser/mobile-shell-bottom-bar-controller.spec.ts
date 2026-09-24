@@ -12,8 +12,8 @@ import type {
     MobileShellBottomBarController as MobileShellBottomBarControllerType,
     MobileShellBottomBarHost,
 } from './mobile-shell-bottom-bar-controller';
-import type { MobileProjectsService } from './mobile-projects-service';
-import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
+import type { MobileProjectsService } from '@theia/qaap-shared-core/lib/browser/mobile-projects-service';
+import type { QaapProjectBootstrapService } from '@theia/qaap-shared-core/lib/browser/qaap-project-bootstrap-service';
 
 const MOBILE_BOTTOM_OPEN_CLASS = 'theia-mod-mobile-bottom-open';
 const MOBILE_BOTTOM_SPLIT_DEFAULT_BOTTOM_RATIO = 0.38;

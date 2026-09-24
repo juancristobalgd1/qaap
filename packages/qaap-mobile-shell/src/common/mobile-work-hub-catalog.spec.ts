@@ -9,7 +9,7 @@ import {
     filterCatalogSections,
     QAAP_WORK_HUB_GETTING_STARTED,
     QAAP_WORK_HUB_WORKFLOWS,
-} from './mobile-work-hub-catalog';
+} from '@theia/qaap-shared-core/lib/common/mobile-work-hub-catalog';
 
 describe('mobile-work-hub-catalog', () => {
 

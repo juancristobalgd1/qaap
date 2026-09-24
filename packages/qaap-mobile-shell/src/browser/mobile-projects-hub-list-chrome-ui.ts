@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { setMobileLandingHubListChrome } from './mobile-projects-open';
-import type { MobileProjectsHubView } from './mobile-projects-types';
+import { setMobileLandingHubListChrome } from '@theia/qaap-shared-core/lib/browser/mobile-projects-open';
+import type { MobileProjectsHubView } from '@theia/qaap-shared-core/lib/browser/mobile-projects-types';
 
 /** Panel surface for FAB visibility and landing hub list chrome. */
 export interface MobileProjectsHubListChromeHost {

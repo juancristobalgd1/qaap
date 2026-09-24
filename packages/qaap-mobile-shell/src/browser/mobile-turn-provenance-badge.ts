@@ -11,8 +11,8 @@
 // qaap-execution-event-timeline.ts.
 
 import { createAgentIdentityElement, resolveAgentDisplayLabel } from './qaap-agent-ui';
-import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
-import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
+import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
+import type { QaapCreateAgentTaskQaiqModel } from '@theia/qaap-shared-core/lib/common/qaap-agent-task-client';
 
 /**
  * Legacy class formerly used when provenance lived inside the accordion

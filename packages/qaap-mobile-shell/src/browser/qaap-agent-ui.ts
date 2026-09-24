@@ -4,12 +4,12 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { appendAgentBrandIcon, createAgentBrandIcon, resolveAgentBrand } from '../common/qaap-agent-branding';
-import type { MobileProjectTaskVerification } from './mobile-projects-active-tasks';
-import { appendLlmProviderIcon } from '../common/qaap-llm-provider-branding';
-import { formatQaiqModelIdShortLabel } from '../common/qaap-qaiq-model-catalog';
-import type { QaapAgentApprovalPolicyOption } from '../common/qaap-sticky-composer-approval-policy';
-import type { QaapComposerInteractionModeId } from '../common/qaap-sticky-composer-mode';
+import { appendAgentBrandIcon, createAgentBrandIcon, resolveAgentBrand } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
+import type { MobileProjectTaskVerification } from '@theia/qaap-shared-core/lib/browser/mobile-projects-active-tasks';
+import { appendLlmProviderIcon } from '@theia/qaap-shared-core/lib/common/qaap-llm-provider-branding';
+import { formatQaiqModelIdShortLabel } from '@theia/qaap-shared-core/lib/common/qaap-qaiq-model-catalog';
+import type { QaapAgentApprovalPolicyOption } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-approval-policy';
+import type { QaapComposerInteractionModeId } from '@theia/qaap-shared-core/lib/common/qaap-sticky-composer-mode';
 
 export type QaapAgentUiSize = 'sm' | 'md';
 

@@ -9,7 +9,7 @@
  */
 
 import { nls } from '@theia/core/lib/common/nls';
-import { appendAgentBrandIcon } from '../common/qaap-agent-branding';
+import { appendAgentBrandIcon } from '@theia/qaap-shared-core/lib/common/qaap-agent-branding';
 import type { QaapAgentCliUpdateInfo } from '../common/qaap-agent-cli-update';
 
 export interface QaapAgentCliUpdateToastHandlers {

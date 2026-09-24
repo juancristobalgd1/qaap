@@ -3,13 +3,13 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
+import type { QaapAgentConversationSummaryDTO } from '@theia/qaap-shared-core/lib/common/qaap-agent-conversation-client';
 import {
     detectAgentFailureKind,
     formatStoredAgentFailureMessage,
     localizeAgentFailureMessage,
     type QaapAgentFailureKind,
-} from '../common/qaap-agent-failure-message';
+} from '@theia/qaap-shared-core/lib/common/qaap-agent-failure-message';
 
 export interface MissionControlFailureResolution {
     readonly kind?: QaapAgentFailureKind;
