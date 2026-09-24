@@ -49,7 +49,7 @@ services:
       QAAP_GITHUB_CLIENT_ID: ${QAAP_GITHUB_CLIENT_ID:-}
       QAAP_GITHUB_CLIENT_SECRET: ${QAAP_GITHUB_CLIENT_SECRET:-}
       # Public IDE URL (must be https://… when Caddy terminates TLS).
-      # Example: https://178.105.136.93.sslip.io
+      # Example: https://161.97.69.219.sslip.io
       QAAP_OAUTH_PUBLIC_URL: ${QAAP_OAUTH_PUBLIC_URL:-}
       QAAP_SKIP_AUTH: ${QAAP_SKIP_AUTH:-false}
       # Production denies admission until actual invited GitHub logins are configured.

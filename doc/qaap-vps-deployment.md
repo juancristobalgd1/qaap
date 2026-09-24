@@ -39,8 +39,8 @@ Edit `.env`:
 | Variable | Example | Purpose |
 |----------|---------|---------|
 | `THEIA_PORT` | `4873` | Internal Theia port; keep it on VPS loopback behind Caddy |
-| `QAAP_PUBLIC_HOST` | `178.105.136.93.sslip.io` | Public hostname served by Caddy |
-| `QAAP_OAUTH_PUBLIC_URL` | `https://178.105.136.93.sslip.io` | Public HTTPS origin (OAuth + dev preview) |
+| `QAAP_PUBLIC_HOST` | `161.97.69.219.sslip.io` | Public hostname served by Caddy |
+| `QAAP_OAUTH_PUBLIC_URL` | `https://161.97.69.219.sslip.io` | Public HTTPS origin (OAuth + dev preview) |
 | `QAAP_GITHUB_CLIENT_ID` / `SECRET` | from GitHub OAuth app | Login (or `QAAP_SKIP_AUTH=true` for private labs) |
 | `OPENROUTER_API_KEY` | `sk-or-…` | Powers `@qaiq` when no model is set in Settings |
 | `QAAP_DEFAULT_AGENT` | `qaiq` | Default agent (already the image default) |
@@ -117,12 +117,12 @@ Follow the printed steps:
 
 | Secret | Example |
 |--------|---------|
-| `QAAP_VPS_HOST` | `178.105.136.93` |
+| `QAAP_VPS_HOST` | `161.97.69.219` |
 | `QAAP_VPS_USER` | `root` |
 | `QAAP_VPS_SSH_KEY` | contents of `~/.ssh/qaap-vps-deploy` (private key) |
 | `QAAP_VPS_SSH_PORT` | `22` (optional) |
 | `QAAP_VPS_REPO_DIR` | `/opt/qaap` (optional) |
-| `QAAP_VPS_PUBLIC_URL` | `https://178.105.136.93.sslip.io` (health check / monitor — Caddy HTTPS, not `:4873`) |
+| `QAAP_VPS_PUBLIC_URL` | `https://161.97.69.219.sslip.io` (health check / monitor — Caddy HTTPS, not `:4873`) |
 
 3. **Cursor Cloud Agent** (optional) — same `QAAP_VPS_HOST` + `QAAP_VPS_SSH_KEY` as agent secrets so chat can run `./scripts/qaap-vps-remote-update.sh`.
 
@@ -148,7 +148,7 @@ application and source tree. GitHub links the package to this repository through
 Remote update from your machine:
 
 ```bash
-export QAAP_VPS_HOST=178.105.136.93
+export QAAP_VPS_HOST=161.97.69.219
 export QAAP_VPS_SSH_KEY_FILE=~/.ssh/qaap-vps-deploy
 ./scripts/qaap-vps-remote-update.sh
 ```
@@ -178,7 +178,7 @@ if (-not (Test-Path "$env:USERPROFILE\.ssh\id_ed25519")) {
   ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\id_ed25519" -N ""
 }
 Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub"
-ssh -i "$env:USERPROFILE\.ssh\id_ed25519" root@178.105.136.93
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" root@161.97.69.219
 ```
 
 Offsite backup (`/opt/qaap/.env.backup`) still has to run **on the VPS** after that
@@ -319,8 +319,8 @@ Without a custom domain, use [sslip.io](https://sslip.io) for the VPS IP:
 
 ```bash
 # /opt/qaap/.env
-QAAP_PUBLIC_HOST=178.105.136.93.sslip.io
-QAAP_OAUTH_PUBLIC_URL=https://178.105.136.93.sslip.io
+QAAP_PUBLIC_HOST=161.97.69.219.sslip.io
+QAAP_OAUTH_PUBLIC_URL=https://161.97.69.219.sslip.io
 ```
 
 Then:
@@ -339,7 +339,7 @@ Caddy obtains a Let’s Encrypt certificate for the sslip.io hostname automatica
 If you later buy a real domain, point DNS at the VPS and change `QAAP_PUBLIC_HOST`.
 
 Set the GitHub Actions secret `QAAP_VPS_PUBLIC_URL` to that same HTTPS origin
-(`https://178.105.136.93.sslip.io`). Do **not** use `:4873` — that port is loopback-only
+(`https://161.97.69.219.sslip.io`). Do **not** use `:4873` — that port is loopback-only
 behind Caddy, so deploy health checks and the VPS monitor will fail. Workflows rewrite a
 stale `:4873` secret as a safety net (`scripts/qaap-vps-normalize-public-url.sh`), but the
 secret itself should still be rotated.
@@ -476,7 +476,7 @@ Work Hub → Billing upgrades Pro / Team via Stripe Checkout. The backend needs 
 
 | Variable | Where to get it |
 |----------|-----------------|
-| `QAAP_PUBLIC_URL` | Same HTTPS origin as the IDE, e.g. `https://178.105.136.93.sslip.io` |
+| `QAAP_PUBLIC_URL` | Same HTTPS origin as the IDE, e.g. `https://161.97.69.219.sslip.io` |
 | `STRIPE_SECRET_KEY` | Stripe Dashboard → Developers → API keys (`sk_live_…` or `sk_test_…`) |
 | `STRIPE_PRICE_PRO_MONTHLY` | Price id for Pro (€29 / month recurring) |
 | `STRIPE_PRICE_TEAM_MONTHLY` | Price id for Team (€79 / month recurring) |

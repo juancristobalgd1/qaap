@@ -14,7 +14,7 @@ import {
 
 const PROBE_TIMEOUT_MS = 2500;
 
-/** Origin of the Qaap IDE (e.g. `http://178.105.136.93:3000` on a Hetzner VPS). */
+/** Origin of the Qaap IDE (e.g. `http://161.97.69.219:3000` on a VPS). */
 export function getQaapPublicOrigin(): string {
     if (typeof window === 'undefined' || !window.location?.origin) {
         return '';

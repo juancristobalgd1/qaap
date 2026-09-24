@@ -2,7 +2,7 @@
 # Trigger a VPS update over SSH from your laptop or a Cursor Cloud Agent.
 #
 # Required env:
-#   QAAP_VPS_HOST          e.g. 178.105.136.93
+#   QAAP_VPS_HOST          e.g. 161.97.69.219
 #   QAAP_VPS_SSH_KEY       private key PEM (or set QAAP_VPS_SSH_KEY_FILE)
 #
 # Optional:
@@ -12,7 +12,7 @@
 #   QAAP_VPS_BRANCH        default: master
 #
 # Usage:
-#   export QAAP_VPS_HOST=178.105.136.93
+#   export QAAP_VPS_HOST=161.97.69.219
 #   export QAAP_VPS_SSH_KEY="$(cat ~/.ssh/qaap-vps-deploy)"
 #   ./scripts/qaap-vps-remote-update.sh
 #   ./scripts/qaap-vps-remote-update.sh --no-cache

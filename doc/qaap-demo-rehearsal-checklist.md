@@ -1,11 +1,11 @@
 # Checklist ensayo demo (evento ~48 h)
 
 Objetivo: ganar head-to-head vs Devin / Codex / Claude Code Desktop.
-VPS: `https://178.105.136.93.sslip.io`
+VPS: `https://161.97.69.219.sslip.io`
 
 ## Antes de ensayar (VPS)
 
-- [ ] `curl -fsS https://178.105.136.93.sslip.io/qaap/api/auth/config` → `build` = tip de `master`
+- [ ] `curl -fsS https://161.97.69.219.sslip.io/qaap/api/auth/config` → `build` = tip de `master`
 - [ ] Chrome o Edge (no Firefox/Safari para mic)
 - [ ] Incógnito: login **GitHub** frío funciona en la red del venue (no hay botón GitLab)
 - [ ] Capacidad evento (SSH VPS, en `/opt/qaap/.env`):
