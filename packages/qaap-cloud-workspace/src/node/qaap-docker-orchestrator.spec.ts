@@ -40,6 +40,7 @@ interface QaapDockerOrchestratorTestAccess {
     getTenantCpuLimit(): number;
     getTenantPidsLimit(): number;
     normalizeHostPath(hostPath: string): string;
+    runsCurrentTenantImage(docker: Dockerode, inspect: Dockerode.ContainerInspectInfo): Promise<boolean>;
 }
 
 function access(instance: QaapDockerOrchestrator): QaapDockerOrchestratorTestAccess {
@@ -636,6 +637,23 @@ describe('QaapDockerOrchestrator', () => {
             const orchestrator = access(new QaapDockerOrchestrator());
 
             expect(() => orchestrator.getTenantNetworkMode('alice')).to.throw(/Unsafe or unsupported tenant network mode/);
+        });
+    });
+    describe('runsCurrentTenantImage', () => {
+        const dockerWithImage = (id: string | Error): Dockerode => ({
+            getImage: () => ({ inspect: async () => { if (id instanceof Error) { throw id; } return { Id: id }; } }),
+        }) as unknown as Dockerode;
+        const container = (image: string): Dockerode.ContainerInspectInfo => ({ Image: image }) as Dockerode.ContainerInspectInfo;
+
+        it('flags a container whose image id differs from the one the tag points at (same local tag after a rebuild)', async () => {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            expect(await orchestrator.runsCurrentTenantImage(dockerWithImage('sha256:new'), container('sha256:old'))).to.equal(false);
+            expect(await orchestrator.runsCurrentTenantImage(dockerWithImage('sha256:new'), container('sha256:new'))).to.equal(true);
+        });
+
+        it('keeps the container when the image cannot be inspected', async () => {
+            const orchestrator = access(new QaapDockerOrchestrator());
+            expect(await orchestrator.runsCurrentTenantImage(dockerWithImage(new Error('no such image')), container('sha256:old'))).to.equal(true);
         });
     });
 });

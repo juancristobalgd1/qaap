@@ -142,8 +142,20 @@ preload_tenant_image() {
         return 1
     fi
 
-    if docker exec "$container_id" docker image inspect "$tenant_image" >/dev/null 2>&1; then
+    local host_image_id tenant_image_id
+    host_image_id="$(docker image inspect "$tenant_image" --format '{{.Id}}' 2>/dev/null || true)"
+    tenant_image_id="$(docker exec "$container_id" docker image inspect "$tenant_image" --format '{{.Id}}' 2>/dev/null || true)"
+    if [[ -n "$tenant_image_id" && ( -z "$host_image_id" || "$tenant_image_id" == "$host_image_id" ) ]]; then
         echo "[qaap-vps-update] tenant image already present in rootless Docker: $tenant_image"
+        return 0
+    fi
+
+    # A locally built serving image (e.g. qaap-theia:local) keeps its tag across deploys, so the tag
+    # alone says nothing about freshness: copy the host build into the rootless daemon whenever the
+    # ids differ. Existing tenant containers notice the new id and are recreated on their next use.
+    if [[ -n "$host_image_id" ]]; then
+        echo "[qaap-vps-update] loading host build of $tenant_image into rootless Docker (${tenant_image_id:-absent} -> $host_image_id)"
+        docker save "$tenant_image" | docker exec -i "$container_id" docker load
         return 0
     fi
 

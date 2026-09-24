@@ -668,7 +668,7 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (!this.tenantContainerMatches(inspect, mounts, networkMode)) {
+            if (!this.tenantContainerMatches(inspect, mounts, networkMode) || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantContainerFor(inspect, ownerLogin)) {
                     throw new Error(`Tenant container ${name} has an unexpected mount or security configuration; refusing to reuse it.`);
                 }
@@ -794,7 +794,8 @@ export class QaapDockerOrchestrator {
         try {
             container = docker.getContainer(name);
             inspect = await container.inspect();
-            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)) {
+            if (!this.tenantBackendContainerMatches(inspect, ownerLogin, mounts, tenantDataRoot, theiaHome, networkMode, publishHostIp)
+                || !(await this.runsCurrentTenantImage(docker, inspect))) {
                 if (!this.isManagedTenantBackendFor(inspect, ownerLogin)) {
                     throw new Error(`Tenant backend ${name} has an unexpected security or mount configuration; refusing to reuse it.`);
                 }
@@ -1368,6 +1369,21 @@ export class QaapDockerOrchestrator {
         const raw = process.env.QAAP_TENANT_PIDS_LIMIT?.trim();
         const num = raw ? Number.parseInt(raw, 10) : Number.NaN;
         return Number.isInteger(num) && num > 0 ? num : 256;
+    }
+
+    /**
+     * The `Config.Image` comparison in the match checks only sees the tag. A locally built serving image
+     * (`qaap-theia:local`) keeps its tag across deploys, so also require the container to run the image the
+     * tag currently points at; otherwise a deploy never reaches existing tenant containers.
+     */
+    protected async runsCurrentTenantImage(docker: Dockerode, inspect: Dockerode.ContainerInspectInfo): Promise<boolean> {
+        try {
+            const current = await docker.getImage(this.getTenantImage()).inspect();
+            return !current.Id || inspect.Image === current.Id;
+        } catch {
+            // Unknown or missing image: keep the existing container rather than fail the request.
+            return true;
+        }
     }
 
     protected getTenantImage(): string {
