@@ -14,7 +14,7 @@ import { holdUpgradeSocket, proxyWebSocketExtracted } from './qaap-dev-preview-e
 import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-context';
 import type { QaapGithubAuthGuard } from './qaap-github-auth-guard';
 import type { QaapDevPreviewPortRegistry } from './qaap-dev-preview-port-registry';
-import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
+import { buildQaapPreviewBridgeLoader, injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import { injectQaapPreviewDocumentScripts } from '../common/qaap-dev-preview';
 
 /** The chained multi-pass rewrite this module replaced; kept as the equivalence oracle. */
@@ -208,7 +208,7 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             };
         };
 
-        it('renders small HTML exactly like the buffered pipeline (Vite and Next)', async () => {
+        it('renders small HTML with all preview scripts in one insertion (Vite and Next)', async () => {
             const prefix = `/qaap-dev/${upstreamPort}`;
             const documents = [
                 '<!doctype html><html><head><script type="module" src="/@vite/client"></script></head><body><div id="app"></div></body></html>',
@@ -218,8 +218,13 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
                 const isNext = html.includes('_next/static');
                 const placement = isNext ? 'body-end' : 'head';
                 const rewritten = isNext ? html : endpoint.rewriteDevPreviewBody(html, upstreamPort, prefix);
-                const expected = injectQaapPreviewDocumentScripts(
-                    injectQaapPreviewBridgeLoader(rewritten, 'http://ide.test', placement), prefix, placement, !isNext);
+                // Next (body-end) is byte-identical to the former two-pass bridge + scripts output;
+                // head placement now puts the bridge after the other scripts right after <head>.
+                const expected = injectQaapPreviewDocumentScripts(rewritten, prefix, placement, !isNext, buildQaapPreviewBridgeLoader('http://ide.test'));
+                if (isNext) {
+                    expect(expected).to.equal(injectQaapPreviewDocumentScripts(
+                        injectQaapPreviewBridgeLoader(rewritten, 'http://ide.test', placement), prefix, placement, false));
+                }
                 for (const chunked of [false, true]) {
                     serveHtml(html, chunked);
                     expect((await request('GET', '/')).body).to.equal(expected);
@@ -228,7 +233,7 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
         });
 
         it('streams huge HTML after patching the head look-ahead', async () => {
-            const tail = '<p>tail é</p>'.repeat(10);
+            const tail = '<p>tail é</p><img src="/tail.png">'.repeat(10);
             const html = '<html><head><title>big</title></head><body><img src="/logo.png">'
                 + '<p>x</p>'.repeat(Math.ceil(MAX_REWRITE_BODY_BYTES / 8)) + tail + '</body></html>';
             serveHtml(html, true);
@@ -237,7 +242,9 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
             expect(head).to.contain('data-qaap-preview-bridge-loader');
             expect(head).to.contain('data-qaap-preview-history-base');
             expect(body).to.contain(`<img src="/qaap-dev/${upstreamPort}/logo.png">`);
-            expect(body.endsWith(`${tail}</body></html>`)).to.equal(true);
+            // The tail beyond the look-ahead is still rewritten, with chunk-boundary-safe streaming.
+            expect(body.endsWith(`${tail.split('src="/tail.png"').join(`src="/qaap-dev/${upstreamPort}/tail.png"`)}</body></html>`)).to.equal(true);
+            expect(body.length - html.length).to.be.greaterThan(0);
         });
 
         it('appends Next body-end scripts after a huge streamed document', async () => {
@@ -263,6 +270,49 @@ describe('QaapDevPreviewEndpoint proxy transport', () => {
                 res.end();
             };
             expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(false);
+        });
+
+        it('probe uses HEAD and falls back to GET only when HEAD is unsupported or unanswered', async function (): Promise<void> {
+            this.timeout(10_000);
+            const methods: string[] = [];
+            upstreamHandler = (req, res) => {
+                methods.push(req.method ?? '');
+                res.writeHead(404);
+                res.end();
+            };
+            expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(true);
+            expect(methods).to.deep.equal(['HEAD']);
+
+            methods.length = 0;
+            upstreamHandler = (req, res) => {
+                methods.push(req.method ?? '');
+                res.writeHead(req.method === 'HEAD' ? 405 : 503, req.method === 'HEAD' ? {} : { 'x-qaap-preview-waiting': '1' });
+                res.end();
+            };
+            expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(false);
+            expect(methods).to.deep.equal(['HEAD', 'GET']);
+
+            methods.length = 0;
+            upstreamHandler = (req, res) => {
+                methods.push(req.method ?? '');
+                if (req.method === 'GET') {
+                    res.writeHead(200);
+                    res.end();
+                }
+                // HEAD hangs: the probe times out and retries with GET.
+            };
+            expect(await endpoint.probeLocalDevServer(upstreamPort)).to.equal(true);
+            expect(methods).to.deep.equal(['HEAD', 'GET']);
+        });
+
+        it('probe does not retry a refused connection', async () => {
+            const closed = http.createServer();
+            await new Promise<void>(resolve => closed.listen(0, '127.0.0.1', resolve));
+            const port = (closed.address() as AddressInfo).port;
+            await new Promise<void>(resolve => closed.close(() => resolve()));
+            const startedAt = Date.now();
+            expect(await endpoint.probeLocalDevServer(port)).to.equal(false);
+            expect(Date.now() - startedAt).to.be.lessThan(1000);
         });
 
         it('strips a spoofed waiting marker from upstream and sets it on its own 503', async () => {
