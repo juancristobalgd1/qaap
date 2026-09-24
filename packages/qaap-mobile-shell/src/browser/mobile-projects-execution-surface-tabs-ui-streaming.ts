@@ -163,7 +163,8 @@ export function createTerminalAgentTuiSelectExtracted(ctx: MobileProjectsExecuti
                     if (agent.available === false) {
                         return;
                     }
-                    ctx.host.stickyComposerPinnedAgentId = agent.id;
+                    // Pin the terminal's own mode; the composer's agent selection stays untouched.
+                    ctx.host.transcriptTerminalPinnedMode = agent.id;
                     ctx.syncTerminalAgentTuiTrigger(trigger, agent.id);
                     ctx.closeExecutionTabOverflowMenu();
                     void ctx.host.transcriptSurfacesUi.launchAgentTuiInTranscriptTerminal(

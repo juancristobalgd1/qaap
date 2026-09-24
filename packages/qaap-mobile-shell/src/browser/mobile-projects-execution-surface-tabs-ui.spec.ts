@@ -985,6 +985,38 @@ describe('mobile-projects-execution-surface-tabs-ui', () => {
         expect(tuiHost.querySelector('.theia-mobile-transcript-terminal-agent-tui')?.getAttribute('data-tab')).to.equal(null);
     });
 
+    it('pins the launched agent on the terminal menu without changing the composer agent', async () => {
+        const launched: string[] = [];
+        const host = createHost({
+            transcriptOpenProject: { id: 'demo', name: 'demo', cwd: '/tmp/demo' } as unknown as MobileProjectsExecutionSurfaceTabsHost['transcriptOpenProject'],
+            stickyComposerAgentsUi: {
+                ensureStickyComposerAgentsLoaded: async () => [{ id: 'qaiq', label: 'QAIQ', available: true }],
+                resolveStickyComposerPinnedAgentId: () => 'codex',
+            } as unknown as MobileProjectsExecutionSurfaceTabsHost['stickyComposerAgentsUi'],
+            stickyComposerPinnedAgentId: 'codex',
+        });
+        (host.transcriptSurfacesUi as unknown as { launchAgentTuiInTranscriptTerminal: (p: unknown, s: unknown, id: string) => Promise<void> })
+            .launchAgentTuiInTranscriptTerminal = async (_project, _summary, id) => { launched.push(id); };
+        const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
+        const tuiHost = ui.createTerminalAgentTuiSelect();
+        document.body.append(tuiHost);
+        try {
+            tuiHost.querySelector<HTMLButtonElement>('.theia-mobile-transcript-terminal-agent-tui')!.click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            const item = host.root.querySelector<HTMLButtonElement>('.theia-mobile-transcript-tab-icon-select-option[data-agent-id="qaiq"]');
+            expect(item).to.exist;
+            item!.click();
+
+            expect(launched).to.deep.equal(['qaiq']);
+            expect(host.transcriptTerminalPinnedMode).to.equal('qaiq');
+            expect(host.stickyComposerPinnedAgentId).to.equal('codex');
+            expect(ui.resolveTerminalAgentTuiActiveAgentId()).to.equal('qaiq');
+        } finally {
+            ui.closeExecutionTabOverflowMenu();
+            tuiHost.remove();
+        }
+    });
+
     it('keeps view-switcher chrome on the Terminal picker, not the agent TUI trigger', () => {
         const host = createHost();
         const ui = new MobileProjectsExecutionSurfaceTabsUi(host);
