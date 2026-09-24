@@ -14,6 +14,25 @@ import {
 
 const PROBE_TIMEOUT_MS = 2500;
 
+/** Per-request timeout, combined with the caller's optional cancellation signal. */
+function probeSignal(signal?: AbortSignal): AbortSignal {
+    const timeout = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+    if (!signal) {
+        return timeout;
+    }
+    if (typeof AbortSignal.any === 'function') {
+        return AbortSignal.any([signal, timeout]);
+    }
+    const controller = new AbortController();
+    const abort = (): void => controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    timeout.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) {
+        abort();
+    }
+    return controller.signal;
+}
+
 /** Origin of the Qaap IDE (e.g. `http://161.97.69.219:3000` on a VPS). */
 export function getQaapPublicOrigin(): string {
     if (typeof window === 'undefined' || !window.location?.origin) {
@@ -37,6 +56,8 @@ export function toDevPreviewUrl(port: number, origin: string = getQaapPublicOrig
 export interface WaitForDevPreviewOptions {
     readonly maxAttempts?: number;
     readonly intervalMs?: number;
+    /** Stops polling and aborts the in-flight probe. */
+    readonly signal?: AbortSignal;
 }
 
 /** Polls the backend probe until the dev server responds or attempts are exhausted. */
@@ -46,19 +67,31 @@ export async function waitForQaapDevPreviewPort(
 ): Promise<QaapDevPreviewProbeResponse | undefined> {
     const maxAttempts = options.maxAttempts ?? 30;
     const intervalMs = options.intervalMs ?? 500;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const probe = await probeQaapDevPreviewPort(port);
+    const signal = options.signal;
+    for (let attempt = 0; attempt < maxAttempts && !signal?.aborted; attempt++) {
+        const probe = await probeQaapDevPreviewPort(port, signal);
         if (probe.ready) {
             return probe;
         }
-        if (attempt < maxAttempts - 1) {
-            await new Promise(resolve => setTimeout(resolve, intervalMs));
+        if (attempt < maxAttempts - 1 && !signal?.aborted) {
+            await new Promise<void>(resolve => {
+                const onAbort = (): void => {
+                    clearTimeout(timer);
+                    resolve();
+                };
+                const timer = setTimeout(() => {
+                    signal?.removeEventListener('abort', onAbort);
+                    resolve();
+                }, intervalMs);
+                signal?.addEventListener('abort', onAbort, { once: true });
+            });
         }
     }
     return undefined;
 }
 
-export async function probeQaapDevPreviewPort(port: number): Promise<QaapDevPreviewProbeResponse> {
+/** `signal` aborts the in-flight probe; an aborted probe resolves to the not-ready fallback. */
+export async function probeQaapDevPreviewPort(port: number, signal?: AbortSignal): Promise<QaapDevPreviewProbeResponse> {
     const origin = getQaapPublicOrigin();
     const fallback: QaapDevPreviewProbeResponse = {
         ready: false,
@@ -70,7 +103,7 @@ export async function probeQaapDevPreviewPort(port: number): Promise<QaapDevPrev
     try {
         const response = await fetch(`${origin}${QAAP_DEV_PREVIEW_PROBE_PATH}/${port}`, {
             cache: 'no-store',
-            signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+            signal: probeSignal(signal),
         });
         if (!response.ok) {
             return fallback;
@@ -98,6 +131,7 @@ export async function probeQaapDevPreviewPort(port: number): Promise<QaapDevPrev
 export async function fetchQaapCurrentDevPreview(
     projectCandidates: Array<string | undefined>,
     conversationId?: string,
+    signal?: AbortSignal,
 ): Promise<QaapDevPreviewProbeResponse | undefined> {
     const origin = getQaapPublicOrigin();
     const candidates = projectCandidates.filter((value): value is string => !!value?.trim());
@@ -113,7 +147,7 @@ export async function fetchQaapCurrentDevPreview(
         const query = `${projectQuery}${conversationQuery}`;
         const response = await fetch(`${origin}${QAAP_DEV_PREVIEW_CURRENT_PATH}?${query}`, {
             cache: 'no-store',
-            signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+            signal: probeSignal(signal),
         });
         if (!response.ok) {
             return undefined;
@@ -139,7 +173,7 @@ export async function fetchQaapCurrentDevPreview(
 }
 
 /** Resolves an owner-authorized execution preview without exposing its reserved port. */
-export async function probeQaapIdentityPreview(previewId: string): Promise<QaapDevPreviewProbeResponse> {
+export async function probeQaapIdentityPreview(previewId: string, signal?: AbortSignal): Promise<QaapDevPreviewProbeResponse> {
     const origin = getQaapPublicOrigin();
     const fallback: QaapDevPreviewProbeResponse = {
         ready: false,
@@ -152,7 +186,7 @@ export async function probeQaapIdentityPreview(previewId: string): Promise<QaapD
     try {
         const response = await fetch(`${origin}${QAAP_IDENTITY_PREVIEW_PROBE_PATH}/${encodeURIComponent(previewId)}`, {
             cache: 'no-store',
-            signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+            signal: probeSignal(signal),
         });
         if (!response.ok) {
             return fallback;

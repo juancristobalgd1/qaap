@@ -57,6 +57,7 @@ interface GithubPullResponse {
     state: 'open' | 'closed';
     draft?: boolean;
     merged_at?: string | null;
+    merge_commit_sha?: string | null;
 }
 
 interface GithubPullFileResponse {
@@ -334,13 +335,22 @@ async function fetchRepositoryPullRequests(
     }));
 }
 
+/** Budget for re-reading a pull request after an ambiguous merge outcome. */
+const GITHUB_MERGE_RECHECK_TIMEOUT_MS = 15_000;
+
+/**
+ * Merge a pull request. A timeout, network error or GitHub 5xx leaves the outcome unknown (GitHub
+ * may have merged it anyway), so the pull request is re-read once: already merged reports success,
+ * which makes a retried merge idempotent; otherwise the error says whether it is still open.
+ */
 export async function mergeGithubPullRequest(
     accessToken: string,
     input: { owner: string; repo: string; number: number }
 ): Promise<QaapGithubMergePullRequestResponse> {
-    const response = await fetchGithubRepositoryRequest(
-        `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/pulls/${input.number}/merge`,
-        {
+    const pullUrl = `https://api.github.com/repos/${encodeURIComponent(input.owner)}/${encodeURIComponent(input.repo)}/pulls/${input.number}`;
+    let response: Response;
+    try {
+        response = await fetchGithubRepositoryRequest(`${pullUrl}/merge`, {
             method: 'PUT',
             headers: {
                 ...githubHeaders(accessToken),
@@ -350,9 +360,14 @@ export async function mergeGithubPullRequest(
                 merge_method: 'merge',
                 commit_title: `Merge pull request #${input.number}`,
             }),
-        }
-    );
+        });
+    } catch (err) {
+        return confirmGithubPullRequestMerged(accessToken, pullUrl, input.number, err instanceof Error ? err.message : String(err));
+    }
     const body = await response.json().catch(() => ({})) as GithubMergePullResponse;
+    if (response.status >= 500) {
+        return confirmGithubPullRequestMerged(accessToken, pullUrl, input.number, body.message || `GitHub merge API failed (${response.status})`);
+    }
     if (!response.ok) {
         throw new Error(body.message || `GitHub merge API failed (${response.status})`);
     }
@@ -361,6 +376,28 @@ export async function mergeGithubPullRequest(
         message: body.message || 'Pull request merged.',
         sha: body.sha,
     };
+}
+
+async function confirmGithubPullRequestMerged(
+    accessToken: string,
+    pullUrl: string,
+    number: number,
+    failure: string,
+): Promise<QaapGithubMergePullRequestResponse> {
+    let pull: GithubPullResponse | undefined;
+    try {
+        const response = await fetchGithubRepositoryRequest(pullUrl, { headers: githubHeaders(accessToken) }, GITHUB_MERGE_RECHECK_TIMEOUT_MS);
+        pull = response.ok ? await response.json() as GithubPullResponse : undefined;
+    } catch {
+        pull = undefined;
+    }
+    if (pull?.merged_at) {
+        return { merged: true, message: 'Pull request merged.', sha: pull.merge_commit_sha ?? undefined };
+    }
+    if (pull) {
+        throw new Error(`Pull request #${number} was not merged (${failure}). It is still ${pull.state}; try again.`);
+    }
+    throw new Error(`Could not confirm whether pull request #${number} was merged (${failure}). Check it on GitHub before retrying.`);
 }
 
 export async function fetchGithubPullRequestFiles(

@@ -8,7 +8,7 @@ import * as http from 'http';
 import type { AddressInfo } from 'net';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
 import type { QaapGithubOAuthConfig } from './qaap-github-oauth-config';
-import { exchangeGithubCode, fetchGithubPullRequests, fetchGithubRepositoryRequest, resolveGithubApiTimeoutMs } from './qaap-github-api';
+import { exchangeGithubCode, fetchGithubPullRequests, mergeGithubPullRequest, fetchGithubRepositoryRequest, resolveGithubApiTimeoutMs } from './qaap-github-api';
 
 describe('fetchGithubRepositoryRequest', () => {
     let server: http.Server;
@@ -156,6 +156,56 @@ describe('GitHub API wrappers with a stubbed fetch', () => {
             error = err;
         }
         expect((error as Error).message).to.equal('The code passed is incorrect or expired.');
+    });
+
+    const MERGE_INPUT = { owner: 'octocat', repo: 'hello', number: 7 };
+
+    async function mergeRejection(): Promise<Error> {
+        try {
+            await mergeGithubPullRequest('token', MERGE_INPUT);
+        } catch (err) {
+            return err as Error;
+        }
+        throw new Error('expected a rejection');
+    }
+
+    it('reports success when the merge call failed but the pull request is merged', async () => {
+        const calls: string[] = [];
+        handler = async (url, init) => {
+            calls.push(`${init?.method ?? 'GET'} ${url}`);
+            if (url.endsWith('/merge')) {
+                throw new TypeError('fetch failed');
+            }
+            return json({ ...pull(7), state: 'closed', merged_at: '2026-01-01T00:00:00Z', merge_commit_sha: 'abc123' });
+        };
+        const result = await mergeGithubPullRequest('token', MERGE_INPUT);
+        expect(result).to.deep.equal({ merged: true, message: 'Pull request merged.', sha: 'abc123' });
+        expect(calls).to.deep.equal([
+            'PUT https://api.github.com/repos/octocat/hello/pulls/7/merge',
+            'GET https://api.github.com/repos/octocat/hello/pulls/7',
+        ]);
+    });
+
+    it('re-checks after a GitHub 5xx and says the pull request is still open', async () => {
+        handler = async url => url.endsWith('/merge')
+            ? json({ message: 'Server Error' }, 502)
+            : json(pull(7));
+        expect((await mergeRejection()).message).to.equal('Pull request #7 was not merged (Server Error). It is still open; try again.');
+    });
+
+    it('says the outcome is unknown when the re-check fails too', async () => {
+        handler = async () => { throw new TypeError('fetch failed'); };
+        expect((await mergeRejection()).message).to.contain('Could not confirm whether pull request #7 was merged');
+    });
+
+    it('does not re-check a definitive GitHub refusal', async () => {
+        const calls: string[] = [];
+        handler = async url => {
+            calls.push(url);
+            return json({ message: 'Pull Request is not mergeable' }, 405);
+        };
+        expect((await mergeRejection()).message).to.equal('Pull Request is not mergeable');
+        expect(calls).to.have.length(1);
     });
 
     it('reads the per-request timeout from QAAP_GITHUB_API_TIMEOUT_MS', () => {

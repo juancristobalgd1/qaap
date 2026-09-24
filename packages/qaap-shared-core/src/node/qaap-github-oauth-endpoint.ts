@@ -8,7 +8,7 @@ import { Application, Request, Response } from '@theia/core/shared/express';
 import { json } from 'body-parser';
 import { BackendApplicationContribution, FileUri } from '@theia/core/lib/node';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
-import { spawn } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { existsSync, readdirSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -531,6 +531,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleOpenGithubRepository(req: Request, res: Response): Promise<void> {
+        // Registered first so a client that leaves during the GitHub lookup cancels git before it starts.
+        const signal = this.abortOnResponseClose(res);
         const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
@@ -559,7 +561,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 res.status(403).json({ error: 'Forbidden' });
                 return;
             }
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, this.abortOnResponseClose(res));
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, signal);
             this.rememberGithubCloneSession(auth.userLogin, repository);
             res.json({
                 repository,
@@ -633,6 +635,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleCreateGithubRepository(req: Request, res: Response): Promise<void> {
+        // Registered first so a client that leaves during the GitHub lookup cancels git before it starts.
+        const signal = this.abortOnResponseClose(res);
         const auth = this.auth.authenticate(req);
         if (auth.kind === 'unauthorized') {
             res.status(401).json({ error: 'Not signed in' });
@@ -656,7 +660,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 private: body.private ?? true,
                 description: typeof body.description === 'string' ? body.description.trim() : undefined,
             });
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, this.abortOnResponseClose(res));
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, stored.accessToken, auth.userLogin, signal);
             this.rememberGithubCloneSession(auth.userLogin, repository);
             res.json({
                 repository,
@@ -672,6 +676,8 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
     }
 
     protected async handleCloneGithubRepository(req: Request, res: Response): Promise<void> {
+        // Registered first so a client that leaves during the GitHub lookup cancels git before it starts.
+        const signal = this.abortOnResponseClose(res);
         const auth = this.auth.authenticate(req);
         const body = (req.body ?? {}) as Partial<QaapGithubOpenRepositoryRequest>;
         const parsed = this.parseGithubRepositoryInput(typeof body.repository === 'string' ? body.repository : '');
@@ -701,7 +707,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
                 }
                 userLogin = QAAP_ANONYMOUS_USER_LOGIN;
             }
-            const workspacePath = await this.ensureRepositoryWorkspace(repository, accessToken, userLogin, this.abortOnResponseClose(res));
+            const workspacePath = await this.ensureRepositoryWorkspace(repository, accessToken, userLogin, signal);
             this.rememberGithubCloneSession(userLogin, repository);
             res.json({
                 repository,
@@ -993,6 +999,11 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
         return new Error(`Git operation timed out after ${Math.ceil(this.gitOperationTimeoutMs / 1000)} seconds`);
     }
 
+    /** Spawn the non-hosted git child; a seam so tests can substitute a long-running process. */
+    protected spawnLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean): ChildProcess {
+        return spawn('git', [...gitArgs], { cwd, stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'] });
+    }
+
     /** Non-hosted git (local dev): same deadline semantics as the tenant worker path. */
     protected runLocalGit(cwd: string, gitArgs: readonly string[], captureStdout: boolean, options: QaapGitRunOptions = {}): Promise<string> {
         const { signal } = options;
@@ -1004,7 +1015,7 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             return Promise.reject(this.gitTimeoutError());
         }
         return new Promise((resolve, reject) => {
-            const child = spawn('git', [...gitArgs], { cwd, stdio: ['ignore', captureStdout ? 'pipe' : 'ignore', 'pipe'] });
+            const child = this.spawnLocalGit(cwd, gitArgs, captureStdout);
             let stdout = '';
             let stderr = '';
             let settled = false;

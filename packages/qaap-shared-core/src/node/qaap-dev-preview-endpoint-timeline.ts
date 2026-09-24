@@ -8,14 +8,16 @@ import { normalizeQaapPreviewBaseDomain } from './qaap-production-auth-readiness
 import { resolveQaapPublicOrigin } from './qaap-github-oauth-config';
 import type { QaapDevPreviewRecord } from './qaap-dev-preview-port-registry';
 import { buildQaapPreviewUpstreamHeaders, sanitizeQaapPreviewResponseHeaders } from './qaap-dev-preview-forward-headers';
-import { injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
+import { buildQaapPreviewBridgeLoader, injectQaapPreviewBridgeLoader } from '@theia/qaap-adapters/lib/common/qaap-preview-bridge-protocol';
 import {
     QAAP_DEV_PREVIEW_PREFIX,
     QAAP_DEV_PREVIEW_WAITING_HEADER,
     QAAP_IDENTITY_PREVIEW_PREFIX,
     buildDevPreviewWaitingHtml,
     buildQaapIdentityPreviewUrl,
+    buildQaapPreviewTrailingScripts,
     injectQaapPreviewDocumentScripts,
+    isQaapDevPreviewServedResponse,
     isAllowedDevPreviewPort,
 } from '../common/qaap-dev-preview';
 import { QAAP_PREVIEW_ACCESS_QUERY } from './qaap-dev-preview-endpoint';
@@ -88,16 +90,28 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                 const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
                 chunks.push(buffer);
                 bufferedBytes += buffer.length;
-                if (isHtml || bufferedBytes <= MAX_REWRITE_BODY_BYTES) {
+                if (bufferedBytes <= MAX_REWRITE_BODY_BYTES) {
                     return;
                 }
-                // A chunked body without a declared length outgrew the cap: flush what was
-                // buffered unrewritten and stream the rest.
+                // The body outgrew the cap: stop buffering and stream the rest.
                 proxyRes.off('data', onData);
                 proxyRes.off('end', onEnd);
-                outgoing.write(Buffer.concat(chunks));
+                const buffered = Buffer.concat(chunks);
                 chunks.length = 0;
-                proxyRes.pipe(outgoing);
+                if (!isHtml) {
+                    outgoing.write(buffered);
+                    proxyRes.pipe(outgoing);
+                    return;
+                }
+                // HTML still needs its bridge scripts: process the look-ahead up to its last `>`
+                // (ASCII, so never inside a UTF-8 sequence, and no rewrite rule can end on it),
+                // send the remainder verbatim, then stream on and append any trailer at the end.
+                const cut = buffered.lastIndexOf(0x3e) + 1;
+                const { html, trailer } = renderPreviewHtml(ctx, incoming, buffered.subarray(0, cut).toString('utf8'), targetPort, publicPrefix, true);
+                outgoing.write(html);
+                outgoing.write(buffered.subarray(cut));
+                proxyRes.on('end', () => outgoing.end(trailer));
+                proxyRes.pipe(outgoing, { end: false });
             };
             const onEnd = (): void => {
                 const body = Buffer.concat(chunks).toString('utf8');
@@ -105,24 +119,7 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
                     outgoing.end(ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix));
                     return;
                 }
-                // Next hydrates the server-rendered <html>/<head> tree. Injecting Qaap scripts
-                // into <head> makes React mistake them for app-owned metadata (e.g. JSON-LD) and
-                // abort hydration. Put its classic bridge scripts at the end of <body>; the
-                // browser executes them during parsing, before deferred Next bundles hydrate.
-                const isNextDocument = /__next_f|\/_next\/static\//.test(body);
-                const placement = isNextDocument ? 'body-end' : 'head';
-                // Rewriting Next's server-rendered href/src values changes React-owned props and
-                // triggers hydration errors. Its root-relative requests are routed by the
-                // referer-scoped fallback middleware; rewrite only actual Next runtime chunks.
-                const rewritten = isNextDocument
-                    ? rewriteNextPreviewDocument(body, publicPrefix)
-                    : ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix);
-                const bridged = injectQaapPreviewBridgeLoader(
-                    rewritten,
-                    ctx.resolvePublicOrigin(incoming),
-                    placement,
-                );
-                outgoing.end(injectQaapPreviewDocumentScripts(bridged, publicPrefix, placement, !isNextDocument));
+                outgoing.end(renderPreviewHtml(ctx, incoming, body, targetPort, publicPrefix, false).html);
             };
             proxyRes.on('data', onData);
             proxyRes.on('end', onEnd);
@@ -147,6 +144,40 @@ export async function forwardHttpExtracted(ctx: QaapDevPreviewEndpointContext, i
 }
 
 const DEV_PREVIEW_HEADERS_TIMEOUT_MS = 60_000;
+
+/**
+ * Rewrites a proxied HTML document and injects the bridge scripts. `truncated` means `html` is
+ * only the bounded look-ahead of a larger streamed document: head placement still patches it,
+ * while Next's body-end scripts are returned as a `trailer` for the end of the stream.
+ */
+function renderPreviewHtml(
+    ctx: QaapDevPreviewEndpointContext,
+    incoming: Request,
+    body: string,
+    targetPort: number,
+    publicPrefix: string,
+    truncated: boolean,
+): { html: string; trailer: string } {
+    // Next hydrates the server-rendered <html>/<head> tree. Injecting Qaap scripts into <head>
+    // makes React mistake them for app-owned metadata (e.g. JSON-LD) and abort hydration. Put its
+    // classic bridge scripts at the end of <body>; the browser executes them during parsing,
+    // before deferred Next bundles hydrate.
+    const isNextDocument = /__next_f|\/_next\/static\//.test(body);
+    const placement = isNextDocument ? 'body-end' : 'head';
+    // Rewriting Next's server-rendered href/src values changes React-owned props and triggers
+    // hydration errors. Its root-relative requests are routed by the referer-scoped fallback
+    // middleware; rewrite only actual Next runtime chunks.
+    const rewritten = isNextDocument
+        ? rewriteNextPreviewDocument(body, publicPrefix)
+        : ctx.rewriteDevPreviewBody(body, targetPort, publicPrefix);
+    const parentOrigin = ctx.resolvePublicOrigin(incoming);
+    if (truncated && isNextDocument) {
+        const bridge = rewritten.includes('data-qaap-preview-bridge-loader') ? '' : buildQaapPreviewBridgeLoader(parentOrigin);
+        return { html: rewritten, trailer: bridge + buildQaapPreviewTrailingScripts(rewritten, publicPrefix) };
+    }
+    const bridged = injectQaapPreviewBridgeLoader(rewritten, parentOrigin, placement);
+    return { html: injectQaapPreviewDocumentScripts(bridged, publicPrefix, placement, !isNextDocument), trailer: '' };
+}
 
 /** Non-HTML text bodies above this size stream through without URL rewriting. */
 export const MAX_REWRITE_BODY_BYTES = 5 * 1024 * 1024;
@@ -338,7 +369,8 @@ export async function probeLocalDevServerExtracted(ctx: QaapDevPreviewEndpointCo
                 timeout: PROBE_TIMEOUT_MS,
             }, res => {
                 res.resume();
-                resolve((res.statusCode ?? 0) > 0);
+                // Same rule as the holding page: the app's own answers (even 503) are served.
+                resolve(isQaapDevPreviewServedResponse(res.statusCode ?? 0, ctx.firstHeaderValue(res.headers[QAAP_DEV_PREVIEW_WAITING_HEADER])));
             });
             req.on('timeout', () => {
                 req.destroy();

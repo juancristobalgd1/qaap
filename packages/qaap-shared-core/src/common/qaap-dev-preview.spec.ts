@@ -12,6 +12,7 @@ import {
     injectQaapPreviewDiagnostics,
     injectQaapPreviewHistoryBase,
     injectQaapPreviewDocumentScripts,
+    isQaapDevPreviewServedResponse,
     QAAP_DEV_PREVIEW_WAITING_HEADER,
     parseQaapDevPreviewRequestPath,
     parseQaapDevPreviewPort,
@@ -191,6 +192,14 @@ describe('qaap-dev-preview', () => {
     it('buildDevPreviewWaitingHtml only keeps polling on the proxy-marked 503', () => {
         const html = buildDevPreviewWaitingHtml(3001);
         expect(html).to.contain(`var marker = '${QAAP_DEV_PREVIEW_WAITING_HEADER}';`);
-        expect(html).to.contain('r.status !== 503 || !r.headers.get(marker)');
+        expect(html).to.contain('if (served(r.status, r.headers.get(marker)))');
+        const source = /var served = ([\s\S]*?\});\n/.exec(html)![1];
+        // eslint-disable-next-line no-new-func
+        const served = new Function(`return (${source});`)() as (status: number, marker: string | null) => boolean;
+        for (const [status, marker] of [[200, null], [503, null], [404, null], [503, '1'], [0, null]] as const) {
+            expect(served(status, marker), `${status}/${marker}`).to.equal(isQaapDevPreviewServedResponse(status, marker));
+        }
+        expect(isQaapDevPreviewServedResponse(503, null)).to.equal(true);
+        expect(isQaapDevPreviewServedResponse(503, '1')).to.equal(false);
     });
 });
