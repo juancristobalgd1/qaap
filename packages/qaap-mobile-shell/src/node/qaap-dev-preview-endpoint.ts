@@ -14,7 +14,7 @@ import type { QaapDevPreviewEndpointContext } from './qaap-dev-preview-endpoint-
 import { QAAP_DEV_PREVIEW_PREFIX } from '../common/qaap-dev-preview';
 import { QAAP_PREVIEW_ACCESS_COOKIE_NAME } from './qaap-dev-preview-forward-headers';
 import { QaapDevPreviewTargetHostResolver } from './qaap-dev-preview-target-host';
-import { configureExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, supersedeProjectPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
+import { configureExtracted, handleClaimExtracted, handleProcessClaimExtracted, requireHttpAuthExtracted, supersedeConversationPreviewsExtracted, terminatePreviewProcessExtracted } from './qaap-dev-preview-endpoint-render';
 import { handleCurrentProjectPreviewExtracted, handleIdentityProbeExtracted, handleIdentityProxyExtracted, handleProbeExtracted, handleProxyExtracted, handleReleaseExtracted, handleWebSocketUpgradeExtracted, isPreviewProcessDeadExtracted, mayProxyPortExtracted, nextAllocationCandidateExtracted, onStartExtracted, previewForRequestExtracted, proxyWebSocketExtracted, reapStoppedPreviewsExtracted } from './qaap-dev-preview-endpoint-streaming';
 import { authorizePreviewHostRequestExtracted, buildIdentityPreviewUrlExtracted, firstHeaderValueExtracted, forwardHttpExtracted, hasPreviewCapabilityExtracted, matchesPreviewTokenExtracted, previewBaseDomainExtracted, previewIdFromHostExtracted, probeLocalDevServerExtracted, resolvePublicOriginExtracted, rewriteDevPreviewBodyExtracted, rewriteDevPreviewLocationExtracted, rewritePreviewCspExtracted, rewriteViteHmrClientExtracted, shouldRewriteProxyBodyExtracted } from './qaap-dev-preview-endpoint-timeline';
 
@@ -39,7 +39,6 @@ export function parseClaimOsProcessId(raw: unknown): number | undefined {
 
 @injectable()
 export class QaapDevPreviewEndpoint implements BackendApplicationContribution, QaapDevPreviewEndpointContext {
-
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     @inject(QaapGithubAuthGuard)
     public readonly auth: QaapGithubAuthGuard;
@@ -73,10 +72,6 @@ export class QaapDevPreviewEndpoint implements BackendApplicationContribution, Q
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */
     public supersedeConversationPreviews(scope: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string; readonly conversationId: string; }, owner: string): void {
         supersedeConversationPreviewsExtracted(this, scope, owner);
-    }
-
-    protected supersedeProjectPreviews(project: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string }, owner: string): void {
-        supersedeProjectPreviewsExtracted(this, project, owner);
     }
 
     /** @internal Used by the extracted qaap-dev-preview-endpoint-* modules. */

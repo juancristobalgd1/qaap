@@ -1,9 +1,4 @@
-// *****************************************************************************
-// Copyright (C) 2026 Theia contributors and Qaap product fork.
-// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
-// *****************************************************************************
 
-import { formatTranscriptStreamElapsed } from './qaap-transcript-stream-status';
 
 /**
  * Pure (common) data model for the auto-researcher v1: an agent that proposes an experiment,
@@ -147,59 +142,6 @@ function requireCommand(value: string | undefined, label: string): string {
         throw new Error(`${label} exceeds the maximum length of ${MAX_RESEARCH_COMMAND_CHARS} characters.`);
     }
     return trimmed;
-}
-
-/**
- * Fills in defaults and validates a research goal. Exactly one metric ends up `primary: true`:
- * if the caller marked none, the first metric becomes primary; if the caller marked more than
- * one, this throws rather than silently guessing which one the agent's termination logic should
- * follow.
- */
-export function researchGoalCwdBasename(cwd: string): string {
-    const parts = cwd.split(/[/\\]/).filter(Boolean);
-    return parts[parts.length - 1] ?? cwd;
-}
-
-export function resolveResearchGoalStartedAt(goal: ResearchGoal): number | undefined {
-    if (goal.startedAt !== undefined) {
-        return goal.startedAt;
-    }
-    if (goal.status === 'running') {
-        return goal.createdAt;
-    }
-    return undefined;
-}
-
-export function resolveResearchGoalActiveElapsedMs(goal: ResearchGoal, nowMs = Date.now()): number | undefined {
-    const startedAt = resolveResearchGoalStartedAt(goal);
-    if (startedAt === undefined) {
-        return undefined;
-    }
-    const endMs = goal.status === 'running' ? nowMs : goal.finishedAt;
-    if (endMs === undefined) {
-        return undefined;
-    }
-    return Math.max(0, endMs - startedAt);
-}
-
-export function formatResearchGoalActiveDuration(goal: ResearchGoal, nowMs = Date.now()): string | undefined {
-    const elapsedMs = resolveResearchGoalActiveElapsedMs(goal, nowMs);
-    if (elapsedMs === undefined) {
-        return undefined;
-    }
-    return formatTranscriptStreamElapsed(elapsedMs);
-}
-
-export function filterResearchGoalsByQuery(goals: readonly ResearchGoal[], query: string): ResearchGoal[] {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-        return [...goals];
-    }
-    return goals.filter(goal =>
-        goal.description.toLowerCase().includes(normalized)
-        || goal.cwd.toLowerCase().includes(normalized)
-        || researchGoalCwdBasename(goal.cwd).toLowerCase().includes(normalized),
-    );
 }
 
 export function normalizeResearchGoal(input: Partial<ResearchGoal>): ResearchGoal {

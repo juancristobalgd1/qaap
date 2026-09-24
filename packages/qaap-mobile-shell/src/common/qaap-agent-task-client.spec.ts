@@ -4,44 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    buildCreateAgentTaskBody,
-    extractBackendAgentMention,
-    hashString,
-    isOpencodeAgent,
-    isQaiqAgent,
-    usesStructuredAgentTranscript,
-    isStickyComposerAgentSelected,
-    isTheiaCoderMention,
-    stripNonCoderAgentMention,
-    normalizeBackendAgentId,
-    migrateLegacyBackendAgentId,
-    migrateStoredComposerAgentId,
-    QAIQ_AGENT_ID,
-    readStoredQaiqModel,
-    filterQaapComposerAgents,
-    mergeAgentTaskAgentOptions,
-    mergeComposerAgentPickerOptions,
-    listQaapComposerPickerAgents,
-    filterUiSelectableVpsAgents,
-    migrateQaapProductAgentId,
-    QAAP_PRIMARY_AGENT_ID,
-    hasSelectableCodingAgent,
-    reconcileSelectedAgent,
-    reconcileStickyComposerAgent,
-    resolveAgentOptionId,
-    resolveBackendAgentForTurn,
-    resolveExplicitAgentForSubmit,
-    resolveQaapAgentMentionToken,
-    resolveStoredAgentModelForSubmit,
-    normalizeOpenCodeModelOptions,
-    writeStoredAgentModel,
-    SHELL_AGENT_ID,
-    shellAgentFallback,
-    THEIA_CODER_AGENT_ID,
-    toQaapCreateAgentTaskQaiqModel,
-    writeStoredQaiqModel,
-} from './qaap-agent-task-client';
+import { buildCreateAgentTaskBody, extractBackendAgentMention, hashString, isOpencodeAgent, isQaiqAgent, usesStructuredAgentTranscript, isStickyComposerAgentSelected, isTheiaCoderMention, stripNonCoderAgentMention, normalizeBackendAgentId, migrateLegacyBackendAgentId, migrateStoredComposerAgentId, QAIQ_AGENT_ID, mergeAgentTaskAgentOptions, mergeComposerAgentPickerOptions, listQaapComposerPickerAgents, migrateQaapProductAgentId, QAAP_PRIMARY_AGENT_ID, reconcileSelectedAgent, reconcileStickyComposerAgent, resolveAgentOptionId, resolveBackendAgentForTurn, resolveExplicitAgentForSubmit, resolveQaapAgentMentionToken, normalizeOpenCodeModelOptions, SHELL_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 import { rememberQaapHostedRuntime } from './qaap-hosted-agent-auth-policy';
 
 describe('qaap-agent-task-client', () => {
@@ -118,18 +81,6 @@ describe('qaap-agent-task-client', () => {
         expect(merged.map(agent => agent.id)).to.deep.equal(['codex', 'qaiq']);
     });
 
-    it('filterQaapComposerAgents exposes selectable VPS agents', () => {
-        const agents = [
-            { id: 'qaiq', label: 'QAIQ', available: true },
-            { id: 'codex', label: 'Codex', available: true },
-            shellAgentFallback(),
-        ];
-        const ids = filterQaapComposerAgents(agents).map(agent => agent.id);
-        expect(ids).to.include('qaiq');
-        expect(ids).to.include('codex');
-        expect(ids).to.not.include('shell');
-    });
-
     it('mergeComposerAgentPickerOptions lists QAIQ first when installed', () => {
         const agents = [
             { id: 'codex', label: 'Codex', available: true },
@@ -200,84 +151,9 @@ describe('qaap-agent-task-client', () => {
         expect(storage.get(`qaap.agentTasks.selectedAgent.${hashString('/repo')}`)).to.equal('qaiq');
     });
 
-    it('reconcileSelectedAgent preserves a stored openclaude pick', () => {
-        const agents = [
-            { id: 'qaiq', label: 'QAIQ', available: true },
-            { id: 'openclaude', label: 'OpenClaude', available: true },
-            shellAgentFallback(),
-        ];
-        expect(reconcileSelectedAgent('openclaude', agents, 'qaiq', undefined)).to.equal('openclaude');
-    });
-
-    it('filterUiSelectableVpsAgents hides shell but keeps Cursor Agent', () => {
-        const agents = [
-            { id: 'codex', label: 'Codex', available: true },
-            { id: 'cursor', label: 'Cursor Agent', available: true },
-            shellAgentFallback(),
-        ];
-        expect(filterUiSelectableVpsAgents(agents).map(agent => agent.id)).to.deep.equal(['codex', 'cursor']);
-    });
-
-    it('filterUiSelectableVpsAgents hides Cursor Agent on a hosted runtime', () => {
-        rememberQaapHostedRuntime(true);
-        const agents = [
-            { id: 'codex', label: 'Codex', available: true },
-            { id: 'cursor', label: 'Cursor Agent', available: true },
-            shellAgentFallback(),
-        ];
-        expect(filterUiSelectableVpsAgents(agents).map(agent => agent.id)).to.deep.equal(['codex']);
-        expect(hasSelectableCodingAgent(agents)).to.equal(true);
-        expect(reconcileSelectedAgent('cursor', agents, 'cursor', undefined)).to.equal('codex');
-    });
-
-    it('reconcileSelectedAgent honors a stored Cursor Agent pick', () => {
-        const storage = new Map<string, string>();
-        (global as unknown as { window: Window }).window = {
-            localStorage: {
-                getItem: (key: string) => storage.get(key) ?? null,
-                setItem: (key: string, value: string) => { storage.set(key, value); },
-                removeItem: (key: string) => { storage.delete(key); },
-                clear: () => { storage.clear(); },
-                key: () => null,
-                length: 0,
-            },
-        } as unknown as Window;
-        storage.set(`qaap.agentTasks.selectedAgent.${hashString('/repo')}`, 'cursor');
-        const agents = [
-            { id: 'codex', label: 'Codex', available: true },
-            { id: 'cursor', label: 'Cursor Agent', available: true },
-            shellAgentFallback(),
-        ];
-        expect(reconcileSelectedAgent(undefined, agents, 'cursor', '/repo')).to.equal('cursor');
-    });
-
     it('resolveExplicitAgentForSubmit prefers @mention over pinned chat agent', () => {
         expect(resolveExplicitAgentForSubmit('hola @codex', { pinnedChatAgentId: 'qaiq' })).to.equal('codex');
         expect(resolveExplicitAgentForSubmit('arregla tests', { pinnedChatAgentId: 'qaiq' })).to.equal('qaiq');
-    });
-
-    it('resolveBackendAgentForTurn honors explicit qaiq when not listed on the server', () => {
-        const agents = [shellAgentFallback()];
-        expect(resolveBackendAgentForTurn('sin mención', agents, {
-            explicitAgentId: 'qaiq',
-        })).to.equal('qaiq');
-    });
-
-    it('reconcileSelectedAgent does not invent Shell when only Shell is listed', () => {
-        expect(reconcileSelectedAgent(undefined, [shellAgentFallback()], 'shell', undefined)).to.equal(undefined);
-        expect(hasSelectableCodingAgent([shellAgentFallback()])).to.equal(false);
-        expect(hasSelectableCodingAgent([{ id: 'cursor', label: 'Cursor Agent', available: true }])).to.equal(true);
-    });
-
-    it('resolveBackendAgentForTurn does not invent Shell without an explicit @shell or picker', () => {
-        const agents = [shellAgentFallback()];
-        expect(resolveBackendAgentForTurn('fix the tests', agents, {
-            defaultAgentId: 'shell',
-        })).to.equal(undefined);
-        expect(resolveBackendAgentForTurn('@shell echo hi', agents, {})).to.equal(SHELL_AGENT_ID);
-        expect(resolveBackendAgentForTurn('echo hi', agents, {
-            explicitAgentId: SHELL_AGENT_ID,
-        })).to.equal(SHELL_AGENT_ID);
     });
 
     it('reconcileStickyComposerAgent defaults to QAIQ but honors an explicit VPS pick', () => {
@@ -304,45 +180,6 @@ describe('qaap-agent-task-client', () => {
             .to.deep.equal({ command: 'ls -la', cwd: '/home' });
         expect(buildCreateAgentTaskBody('fix tests', 'codex', '/home'))
             .to.deep.equal({ prompt: 'fix tests', agent: 'codex', cwd: '/home' });
-    });
-
-    describe('QAIQ model storage', () => {
-        const storage = new Map<string, string>();
-
-        beforeEach(() => {
-            storage.clear();
-            (global as unknown as { window: Window }).window = {
-                localStorage: {
-                    getItem: (key: string) => storage.get(key) ?? null,
-                    setItem: (key: string, value: string) => { storage.set(key, value); },
-                    removeItem: (key: string) => { storage.delete(key); },
-                    clear: () => { storage.clear(); },
-                    key: () => null,
-                    length: 0,
-                },
-            } as unknown as Window;
-        });
-
-        it('buildCreateAgentTaskBody attaches stored model per agent', () => {
-            const cwd = '/tmp/qaap-qaiq-model-test';
-            const model = toQaapCreateAgentTaskQaiqModel({
-                provider: 'openai',
-                vendor: 'openrouter',
-                modelId: 'nvidia/nemotron-3-super-120b-a12b:free',
-            });
-            writeStoredQaiqModel(cwd, model);
-            expect(buildCreateAgentTaskBody('fix tests', QAIQ_AGENT_ID, cwd)).to.deep.equal({
-                prompt: 'fix tests',
-                agent: QAIQ_AGENT_ID,
-                cwd,
-                agentModel: model,
-                qaiqModel: model,
-            });
-            expect(resolveStoredAgentModelForSubmit('codex', cwd)).to.be.undefined;
-            writeStoredAgentModel(cwd, 'grok', model);
-            expect(resolveStoredAgentModelForSubmit('grok', cwd)).to.deep.equal(model);
-            expect(readStoredQaiqModel(cwd)).to.deep.equal(model);
-        });
     });
 
     it('isQaiqAgent recognizes the QAIQ-family protocol agents', () => {

@@ -15,15 +15,14 @@ import {
     enableTranscriptRenderMetrics,
     getTranscriptRenderMetricsSnapshot,
     resetTranscriptRenderMetrics,
-} from '../common/qaap-transcript-render-metrics';
-import { TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
+import { TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { QaapThreadStore } from '../common/qaap-thread-store';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { MobileProjectsTranscriptLiveUi, type MobileProjectsTranscriptLiveHost } from './mobile-projects-transcript-live-ui';
 
 describe('MobileProjectsTranscriptLiveUi', () => {
-
     beforeEach(() => {
         if (typeof HTMLElement === 'undefined') {
             enableJSDOM();

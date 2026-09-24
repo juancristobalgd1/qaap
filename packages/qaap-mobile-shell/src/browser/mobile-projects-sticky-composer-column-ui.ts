@@ -23,7 +23,7 @@ import {
     populateApprovalPolicyToolbarButton,
     populateModeToolbarButton,
 } from './qaap-agent-ui';
-import { resolveComposerEnterDeliveryOverride } from './qaap-delivery-mode-strip';
+import { resolveComposerEnterDeliveryOverride } from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import { populateModelCapabilityToolbarButton } from './model-capability-popover';
 import {
     renderStickyComposerContextStrip,
@@ -1031,4 +1031,3 @@ function createStickyComposerImproveIcon(): HTMLElement {
     return host;
 }
 
-export type StickyComposerColumnOptions = Parameters<MobileProjectsStickyComposerColumnUi['buildStickyComposerColumn']>[0];

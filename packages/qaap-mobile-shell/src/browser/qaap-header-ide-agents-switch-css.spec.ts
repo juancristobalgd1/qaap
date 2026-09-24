@@ -8,7 +8,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 describe('header IDE/Agents switch CSS', () => {
-
     const projectsCss = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-projects.css'),
         'utf8',
@@ -27,10 +26,6 @@ describe('header IDE/Agents switch CSS', () => {
     );
     const conversationCss = fs.readFileSync(
         path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench-conversation.css'),
-        'utf8',
-    );
-    const legacyWorkbenchCss = fs.readFileSync(
-        path.join(__dirname, '..', '..', 'src', 'browser', 'style', 'mobile-workbench.css'),
         'utf8',
     );
 
@@ -76,11 +71,9 @@ describe('header IDE/Agents switch CSS', () => {
     });
 
     it('keeps the execution cluster from creating page-level horizontal overflow', () => {
-        for (const css of [workHubCss, legacyWorkbenchCss]) {
-            expect(css).to.match(
-                /\.theia-mobile-projects\.theia-mod-agents-hub-shell-active\s+\.theia-mobile-projects-header-execution-cluster,[\s\S]*?\.qaap-work-hub-chat-view-widget\s+\.theia-mobile-projects-header-execution-cluster\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?flex-shrink:\s*0;[\s\S]*?justify-content:\s*flex-end;/,
-            );
-        }
+        expect(workHubCss).to.match(
+            /\.theia-mobile-projects\.theia-mod-agents-hub-shell-active\s+\.theia-mobile-projects-header-execution-cluster,[\s\S]*?\.qaap-work-hub-chat-view-widget\s+\.theia-mobile-projects-header-execution-cluster\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?flex-shrink:\s*0;[\s\S]*?justify-content:\s*flex-end;/,
+        );
     });
 
     it('removes Chat chrome while the Work Hub Settings surface is active', () => {

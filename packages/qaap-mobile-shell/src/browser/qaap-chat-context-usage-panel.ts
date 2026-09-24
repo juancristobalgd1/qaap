@@ -16,10 +16,7 @@ import {
     type QaapAgentContextUsage,
 } from '../common/qaap-agent-context-usage';
 
-import {
-    scheduleStickyComposerPopoverPosition,
-    wireStickyComposerPopoverDismiss,
-} from './qaap-sticky-composer-popover';
+import { wireStickyComposerPopoverDismiss } from './qaap-sticky-composer-popover';
 
 export interface ContextUsageBreakdownCategory {
     readonly id: string;
@@ -350,10 +347,6 @@ function createContextUsagePanel(
 
     panel.append(header, body);
     return panel;
-}
-
-export function positionContextUsagePopover(popover: HTMLElement, anchor: HTMLElement): void {
-    scheduleStickyComposerPopoverPosition(popover, anchor, 'end');
 }
 
 export function wireContextUsagePopoverDismiss(

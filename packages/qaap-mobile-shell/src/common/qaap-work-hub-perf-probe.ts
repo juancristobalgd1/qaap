@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import type { QaapTranscriptRenderMetricsSnapshot } from './qaap-transcript-render-metrics';
+import type { QaapTranscriptRenderMetricsSnapshot } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 
 export const QAAP_WORK_HUB_PERF_PROBE_SESSION_KEY = 'qaapWorkHubPerfProbe';
 

@@ -19,12 +19,6 @@ export function isVpsTaskSummary(
     return !isLocalChatSummary(summary);
 }
 
-export function filterLocalChatSummaries<T extends QaapAgentConversationSummaryDTO>(
-    summaries: readonly T[],
-): T[] {
-    return summaries.filter(isLocalChatSummary);
-}
-
 export function filterVpsTaskSummaries<T extends QaapAgentConversationSummaryDTO>(
     summaries: readonly T[],
 ): T[] {

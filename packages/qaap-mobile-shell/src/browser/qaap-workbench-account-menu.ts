@@ -81,28 +81,6 @@ export const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.a
 
 export type MobileViewToggleId = 'editor' | 'agent';
 
-export function buildMobileViewToggleEntries(activeId: MobileViewToggleId): QaapAccountMenuEntry[] {
-    return [
-        {
-            kind: 'action',
-            label: nls.localize('qaap/mobileBottomBar/editor', 'Editor'),
-            commandId: QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
-            iconClass: 'codicon-code',
-            args: ['editor'],
-            activeMark: activeId === 'editor',
-        },
-        {
-            kind: 'action',
-            label: nls.localize('theia/core/mobileBottomBar/agent', 'Agent'),
-            commandId: QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE,
-            iconClass: 'codicon-comment-discussion',
-            args: ['agent'],
-            activeMark: activeId === 'agent',
-        },
-        { kind: 'separator' },
-    ];
-}
-
 export interface QaapAccountMenuEntriesOptions {
     /**
      * Work Hub surface marker: omit Settings / Extensions / Keybindings from the avatar menu.
@@ -200,26 +178,6 @@ export function buildQaapAccountMenuEntries(
         ...(billing ? [billing] : []),
         ...ideWorkbenchLinks,
         { kind: 'separator' },
-        {
-            kind: 'action',
-            label: nls.localize('qaap/accountMenu/signOut', 'Sign Out'),
-            commandId: QAAP_AUTH_SIGN_OUT_COMMAND,
-        },
-    ];
-}
-
-/** Minimal account menu for Work Hub / mobile projects (auth only). */
-export function buildQaapAccountMenuSignOutOnly(signedIn: boolean): QaapAccountMenuEntry[] {
-    if (!signedIn) {
-        return [
-            {
-                kind: 'action',
-                label: nls.localize('qaap/accountMenu/signInGithub', 'Sign in with GitHub'),
-                commandId: QAAP_AUTH_SIGN_IN_GITHUB_COMMAND,
-            },
-        ];
-    }
-    return [
         {
             kind: 'action',
             label: nls.localize('qaap/accountMenu/signOut', 'Sign Out'),

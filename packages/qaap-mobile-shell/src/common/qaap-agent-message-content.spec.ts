@@ -4,13 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    normalizeAgentMessageContentForDisplay,
-    resolveMessagePreviewText,
-    resolveOptimisticPendingUserDisplayText,
-    resolveTranscriptUserMessageView,
-    stripQaapControlMarkersForDisplay,
-} from './qaap-agent-message-content';
+import { normalizeAgentMessageContentForDisplay, resolveMessagePreviewText, resolveTranscriptUserMessageView, stripQaapControlMarkersForDisplay } from './qaap-agent-message-content';
 import { applyResolvedAttachmentsToPrompt } from './qaap-composer-attachment-prompt';
 import { createComposerSkillDisplayMarker } from './qaap-composer-skill-display';
 import { createComposerGitActionDisplayMarker } from './qaap-composer-git-action-display';
@@ -112,37 +106,6 @@ describe('resolveMessagePreviewText', () => {
     it('does not throw when content is undefined', () => {
         expect(resolveMessagePreviewText({
             segments: [{ type: 'thinking', content: 'plan' }],
-        })).to.equal('');
-    });
-});
-
-describe('resolveOptimisticPendingUserDisplayText', () => {
-    const imageResolved: ResolvedAIContextVariable = {
-        ...ImageContextVariable.createRequest({
-            wsRelativePath: 'assets/logo.png',
-            name: 'logo.png',
-            data: 'aGVsbG8=',
-            mimeType: 'image/png',
-        }),
-        value: 'assets/logo.png',
-        contextValue: 'assets/logo.png',
-    };
-
-    it('shows only the typed draft when attachment preamble is present', () => {
-        const content = applyResolvedAttachmentsToPrompt('Describe this screenshot', [imageResolved]);
-        expect(resolveOptimisticPendingUserDisplayText({
-            id: 'pending-user-1',
-            optimisticImagePreviews: [{ src: 'data:image/png;base64,eA==', fileName: 'logo.png' }],
-            content,
-        })).to.equal('Describe this screenshot');
-    });
-
-    it('returns empty text for image-only optimistic submits', () => {
-        const content = applyResolvedAttachmentsToPrompt('', [imageResolved]);
-        expect(resolveOptimisticPendingUserDisplayText({
-            id: 'pending-user-1',
-            optimisticImagePreviews: [{ src: 'data:image/png;base64,eA==', fileName: 'logo.png' }],
-            content,
         })).to.equal('');
     });
 });

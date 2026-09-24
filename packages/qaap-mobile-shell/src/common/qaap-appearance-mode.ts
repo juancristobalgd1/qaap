@@ -50,13 +50,6 @@ export function readQaapAppearanceMode(
     }
 }
 
-/** Stored mode, or `system` as the UI default before the user picks. */
-export function readQaapAppearanceModeOrDefault(
-    storage: Pick<Storage, 'getItem'> | undefined = defaultStorage(),
-): QaapAppearanceMode {
-    return readQaapAppearanceMode(storage) ?? 'system';
-}
-
 export function writeQaapAppearanceMode(
     mode: QaapAppearanceMode,
     storage: Pick<Storage, 'setItem'> | undefined = defaultStorage(),

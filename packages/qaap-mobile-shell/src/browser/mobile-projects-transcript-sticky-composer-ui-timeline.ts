@@ -13,7 +13,7 @@ import { createComposerGitActionDisplayMarker } from '../common/qaap-composer-gi
 import { isTranscriptAgentExecutionBusy } from '../common/qaap-transcript-turn-status';
 import {
     type TranscriptFollowUpEntry,
-} from '../common/qaap-transcript-follow-up-queue';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import {
     type QaapGitCommitWorkflowAction,
@@ -152,16 +152,6 @@ export async function recordComposerGitActionInTranscriptExtracted(ctx: MobilePr
             ctx.applyGitActionTranscriptConversation(summary, next);
         }
     }
-}
-
-export function buildTranscriptComposerActivityStackExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
-    summary: QaapAgentConversationSummaryDTO,): HTMLElement | undefined {
-    return renderStickyComposerActivityStack(ctx.buildTranscriptComposerActivityOptions(project, summary));
-}
-
-export function buildTranscriptComposerChangesPillExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
-    summary: QaapAgentConversationSummaryDTO,): HTMLElement | undefined {
-    return renderStickyComposerChangesPill(ctx.buildTranscriptComposerActivityOptions(project, summary));
 }
 
 export function buildComposerActivityFingerprintExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, summary: QaapAgentConversationSummaryDTO,

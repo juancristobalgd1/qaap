@@ -3,12 +3,7 @@ import type { MobileProjectsStickyComposerSheetsUiContext } from './mobile-proje
 
 import { nls } from '@theia/core/lib/common/nls';
 import { ChatMode } from '@theia/ai-chat';
-import {
-    agentUsesSettingsModelCatalog,
-    fetchAgentModelsForAgent,
-    isStickyComposerAgentSelected,
-    type QaapQaiqModelOption,
-} from '../common/qaap-agent-task-client';
+import { agentUsesSettingsModelCatalog, fetchAgentModelsForAgent, type QaapQaiqModelOption } from '../common/qaap-agent-task-client';
 import {
     writeStoredComposerMode,
 } from '../common/qaap-sticky-composer-mode';
@@ -18,11 +13,7 @@ import {
     writeStoredAgentApprovalPolicy,
     type QaapAgentApprovalPolicyId,
 } from '../common/qaap-sticky-composer-approval-policy';
-import {
-    createAgentSheetOptionButton,
-    createApprovalPolicySheetOptionButton,
-    createModeSheetOptionButton,
-} from './qaap-agent-ui';
+import { createApprovalPolicySheetOptionButton, createModeSheetOptionButton } from './qaap-agent-ui';
 import { qaiqModelSupportsToolCalls } from '../common/qaap-agent-tool-support';
 import {
     filterQaiqModelsWithConfiguredCredentials,
@@ -282,19 +273,6 @@ export function createModeSheetOptionExtracted(ctx: MobileProjectsStickyComposer
         onSelect: () => {
             onSelect(modeId);
         },
-    });
-}
-
-export function createAgentSheetOptionExtracted(ctx: MobileProjectsStickyComposerSheetsUiContext, label: string,
-    agentId: string,
-    cwd: string | undefined,
-    selectedAgentId: string | undefined,
-    onSelect: (agentId: string) => void,): HTMLElement {
-    return createAgentSheetOptionButton({
-        agentId,
-        label,
-        selected: isStickyComposerAgentSelected(agentId, selectedAgentId, cwd),
-        onSelect: () => onSelect(agentId),
     });
 }
 

@@ -71,7 +71,6 @@ export interface MobileProjectsCardMenuHost {
 
 /** Floating card menus for project rows and conversation task rows. */
 export class MobileProjectsCardMenuUi {
-
     protected openMenu: HTMLElement | undefined;
     protected openMenuAnchor: HTMLElement | undefined;
     protected openMenuCard: HTMLElement | undefined;
@@ -173,113 +172,6 @@ export class MobileProjectsCardMenuUi {
                 onSelect: () => { void this.host.onClearFailedTasks(project); },
             });
         }
-
-        return menu;
-    }
-
-    buildCardMenu(
-        project: MobileProjectEntry,
-        activeInfo: ReturnType<MobileProjectsActiveTasks['getForCwd']>,
-    ): HTMLElement {
-        const canRunTask = !!this.host.projectsService.getProjectCwd(project) || !!project.github;
-
-        const menu = document.createElement('div');
-        menu.className = 'theia-mobile-projects-card-menu';
-        menu.setAttribute('role', 'menu');
-        menu.hidden = true;
-
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/runTask', 'Run background task'),
-            disabled: !canRunTask,
-            onSelect: () => { void this.host.openAgentComposer(project); },
-        });
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/viewActiveLog', 'View active log'),
-            disabled: !activeInfo?.taskId,
-            onSelect: () => {
-                if (activeInfo?.taskId) {
-                    void this.host.showTaskLog(project, activeInfo.taskId);
-                }
-            },
-        });
-
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/cancelActiveTask', 'Cancel active task'),
-            danger: true,
-            disabled: !activeInfo?.taskId,
-            onSelect: () => {
-                if (activeInfo?.taskId) {
-                    void this.host.cancelActiveTask(activeInfo.taskId);
-                }
-            },
-        });
-
-        const retryableTask = this.host.activeTasks?.findTasksForProject(project)
-            .find(task => task.state === 'failed' || task.state === 'interrupted');
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/retryFailedTask', 'Retry failed task'),
-            iconClass: 'codicon-debug-restart',
-            disabled: !retryableTask,
-            title: retryableTask
-                ? nls.localize('qaap/mobileProjects/retryFailedTaskTitle', 'Start a new run with the same agent and command.')
-                : nls.localize('qaap/mobileProjects/retryFailedTaskUnavailable', 'No failed or interrupted standalone task to retry.'),
-            onSelect: () => {
-                if (retryableTask) {
-                    void this.host.retryActiveTask(retryableTask.id);
-                }
-            },
-        });
-
-        if (project.previewUrl || project.isCurrent) {
-            this.appendCardMenuItem(menu, {
-                label: nls.localize('qaap/mobileProjects/openPreview', 'Open preview'),
-                disabled: !this.host.delegate.onResumePreview,
-                onSelect: () => {
-                    this.closeCardMenu();
-                    void this.host.delegate.onResumePreview?.(project);
-                },
-            });
-        }
-
-        const taskSeparator = document.createElement('div');
-        taskSeparator.className = 'theia-mobile-projects-card-menu-separator';
-        taskSeparator.setAttribute('role', 'separator');
-        menu.append(taskSeparator);
-
-        this.appendCardMenuItem(menu, {
-            label: project.pinned
-                ? nls.localize('qaap/mobileProjects/unpin', 'Unpin')
-                : nls.localize('qaap/mobileProjects/pin', 'Pin'),
-            onSelect: () => { void this.host.onTogglePin(project); },
-        });
-
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/rename', 'Rename'),
-            onSelect: () => { void this.host.onRenameProject(project); },
-        });
-
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/duplicate', 'Duplicate'),
-            onSelect: () => { void this.host.onDuplicateProject(project); },
-        });
-
-        const separator = document.createElement('div');
-        separator.className = 'theia-mobile-projects-card-menu-separator';
-        separator.setAttribute('role', 'separator');
-        menu.append(separator);
-
-        const canRemove = this.host.projectsService.canRemove(project);
-        this.appendCardMenuItem(menu, {
-            label: nls.localize('qaap/mobileProjects/remove', 'Remove'),
-            danger: true,
-            disabled: !canRemove,
-            title: !canRemove
-                ? nls.localize('qaap/mobileProjects/removeCurrentDisabled', 'Cannot remove the active workspace')
-                : project.github
-                    ? nls.localize('qaap/mobileProjects/removeGithubHint', 'Remove this app from the VPS. The GitHub repository is not deleted.')
-                    : undefined,
-            onSelect: () => { void this.host.onRemoveProject(project); },
-        });
 
         return menu;
     }

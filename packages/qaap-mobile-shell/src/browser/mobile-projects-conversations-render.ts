@@ -153,32 +153,6 @@ export async function refreshTheiaChatSessionsForProjectsExtracted(ctx: MobilePr
         ctx.theiaSessionFiles.clear();
 }
 
-export function resolveWorkspaceMetadataCwdExtracted(ctx: MobileProjectsConversationsContext, project: { readonly name: string; readonly uri?: URI; readonly github?: { readonly owner: string; readonly name: string } },
-        workspaceIndex: Record<string, string>,): string | undefined {
-        const fromUri = project.uri?.scheme === 'file' ? normalizeCwd(uriToFsPath(project.uri)) : undefined;
-        if (fromUri && workspaceIndex[fromUri]) {
-            return fromUri;
-        }
-        const candidates = Object.keys(workspaceIndex).map(normalizeCwd);
-        const byExactName = candidates.find(cwd => cwdBaseName(cwd) === project.name.toLowerCase());
-        if (byExactName) {
-            return byExactName;
-        }
-        if (project.github) {
-            const repoPath = `${project.github.owner}/${project.github.name}`.toLowerCase();
-            const byGithubPath = candidates.find(cwd => {
-                const normalized = cwd.toLowerCase();
-                return normalized.endsWith(`/${repoPath}`)
-                    || normalized.endsWith(`/repos/${repoPath}`)
-                    || cwdBaseName(normalized) === project.github!.name.toLowerCase();
-            });
-            if (byGithubPath) {
-                return byGithubPath;
-            }
-        }
-        return fromUri;
-}
-
 export async function getTheiaConversationExtracted(ctx: MobileProjectsConversationsContext, id: string): Promise<QaapAgentConversationDTO | undefined> {
         const file = ctx.theiaSessionFiles.get(id);
         if (!file) {
@@ -451,18 +425,6 @@ export function dispatchSseEventExtracted(ctx: MobileProjectsConversationsContex
         } catch {
             /* drop malformed payload */
         }
-}
-
-function cwdBaseName(cwd: string): string {
-    return normalizeCwd(cwd).split('/').pop()?.toLowerCase() ?? '';
-}
-
-function uriToFsPath(uri: URI): string {
-    const raw = uri.path.toString();
-    if (/^\/[A-Za-z]:/.test(raw)) {
-        return raw.slice(1);
-    }
-    return raw;
 }
 
 interface TheiaSerializedChatData {

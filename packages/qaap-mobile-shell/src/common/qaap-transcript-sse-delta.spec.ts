@@ -11,7 +11,7 @@ import {
     agentMessageDeltaChanged,
     canApplySseMessageDelta,
     shouldSkipStreamingTranscriptRefetch,
-} from './qaap-transcript-sse-delta';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 
 const baseConv = (): QaapAgentConversationDTO => ({
     id: 'conv-1',

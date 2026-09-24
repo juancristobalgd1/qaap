@@ -27,7 +27,6 @@ import {
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
 import { QAAP_DISABLED_HARNESSES_PREF, readDisabledHarnessIds } from '../common/qaap-harness-preferences';
-import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
 import { localizeHostedInstallCodingAgentLabel, readQaapHostedRuntime } from '../common/qaap-hosted-agent-auth-policy';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -213,14 +212,6 @@ export class MobileProjectsStickyComposerAgentsUi {
         return undefined;
     }
 
-    resolveStickyComposerModelLabel(
-        agentId: string,
-        project?: MobileProjectEntry,
-        composerCwd?: string,
-    ): string | undefined {
-        const model = this.resolveStickyComposerAgentModel(agentId, project, composerCwd);
-        return model ? formatQaiqModelSelectionLabel(model) : undefined;
-    }
     reconcileStickyComposerPinnedAgent(
         current: string | undefined,
         agents: readonly QaapAgentTaskAgentOption[],

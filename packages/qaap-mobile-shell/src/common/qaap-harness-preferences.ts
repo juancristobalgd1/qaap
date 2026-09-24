@@ -6,16 +6,6 @@
 /** User preference containing the Work Hub harness ids that are disabled. */
 export const QAAP_DISABLED_HARNESSES_PREF = 'ai-features.harness.disabledAgents';
 
-/** Harnesses enabled for a fresh Qaap profile. Other runtimes remain opt-in. */
-export const QAAP_DEFAULT_ENABLED_HARNESS_IDS = new Set([
-    'qaiq',
-    'codex',
-    'claude',
-    'opencode',
-    'openclaude',
-    'antigravity',
-]);
-
 export const QAAP_DEFAULT_DISABLED_HARNESS_IDS: readonly string[] = [
     'copilot',
     'cursor',

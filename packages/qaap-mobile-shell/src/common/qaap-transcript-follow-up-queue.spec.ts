@@ -4,10 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { MAX_TRANSCRIPT_FOLLOW_UP_QUEUE, TranscriptFollowUpQueue } from './qaap-transcript-follow-up-queue';
+import { MAX_TRANSCRIPT_FOLLOW_UP_QUEUE, TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 
 describe('qaap-transcript-follow-up-queue', () => {
-
     it('enqueue and shift preserve FIFO order', () => {
         const queue = new TranscriptFollowUpQueue();
         expect(queue.enqueue('c1', { draft: 'first' })).to.equal(true);

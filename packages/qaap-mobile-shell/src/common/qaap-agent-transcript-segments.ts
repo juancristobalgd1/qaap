@@ -162,51 +162,6 @@ export function isTranscriptThoughtExcerptTruncated(text: string | undefined, ma
     return (text ?? '').replace(/\s+/g, ' ').trim().length > maxLength;
 }
 
-/**
- * Whether the premium activity timeline would render for these segments.
- * Mirrors {@link resolveTranscriptActivityItems} empty-check without building labels.
- */
-export function hasTranscriptActivityTimeline(segments: readonly QaapTranscriptActivitySegment[]): boolean {
-    for (const segment of segments) {
-        if (segment.type === 'thinking' && segment.content?.trim()) {
-            return true;
-        }
-        if (segment.type === 'tool') {
-            return true;
-        }
-    }
-    if (segments.some(segment => segment.type === 'text' && segment.content?.trim())) {
-        return true;
-    }
-    return false;
-}
-
-/**
- * When the activity timeline is shown, finished successful tool calls are already listed there.
- * Keep inline detail only for live tools (still running) or failed results worth inspecting.
- */
-export function shouldRenderTranscriptToolSegmentInline(options: {
-    readonly activityTimelineShown: boolean;
-    readonly finished: boolean;
-    readonly resultFailed: boolean;
-    readonly toolKind?: QaapTranscriptToolActivityKind;
-    readonly hasToolOutput?: boolean;
-}): boolean {
-    if (!options.activityTimelineShown) {
-        return true;
-    }
-    if (!options.finished) {
-        return true;
-    }
-    if (options.resultFailed) {
-        return true;
-    }
-    if (options.toolKind === 'terminal' && options.hasToolOutput) {
-        return true;
-    }
-    return false;
-}
-
 /** Expand tool/shell panels while running or when a failed result needs attention. */
 export function shouldOpenTranscriptToolDetails(options: {
     readonly finished: boolean;

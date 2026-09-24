@@ -35,7 +35,7 @@ import {
 import { appendTranscriptShellSummaryTailExtracted, copyTranscriptShellTextExtracted, createTranscriptActivityReadExpandCardExtracted, createTranscriptActivityReadExpandPanelExtracted, createTranscriptActivityTerminalExpandCardExtracted, createTranscriptActivityTerminalExpandPanelExtracted, createTranscriptShellDetailsExtracted, flashTranscriptShellCopyTooltipExtracted, resolveTranscriptActivityTerminalDefaultOpenIndexExtracted } from './mobile-projects-transcript-messages-tool-ui-activity';
 import { createTranscriptAgentAuthLoginCardExtracted, createTranscriptAgentFailureDialogExtracted, createTranscriptClampedPreExtracted, createTranscriptSegmentDetailsExtracted, createTranscriptTextTerminalWindowExtracted, renderTranscriptRichContentExtracted } from './mobile-projects-transcript-messages-tool-ui-render';
 import { createTranscriptActivityErrorPanelExtracted, createTranscriptActivityTodoExpandPanelExtracted, createTranscriptClampedBlockExtracted, createTranscriptReadLineExtracted, createTranscriptTodoChecklistExtracted, createTranscriptTodoChecklistFromItemsExtracted, createTranscriptToolPillTerminalBodyExtracted, createTranscriptToolResultBodyExtracted, createTranscriptToolResultStreamBodyExtracted, createTranscriptToolSpeculativePlaceholderExtracted, createTranscriptToolWindowExtracted, ensureTranscriptToolSpeculativePlaceholderExtracted } from './mobile-projects-transcript-messages-tool-ui-streaming';
-import { appendTranscriptCardCopyTailExtracted, appendTranscriptToolPillSummaryTailExtracted, attachTranscriptFileOpenActionExtracted, attachTranscriptReviewFileOpenActionExtracted, canPatchTranscriptToolResultStreamExtracted, collectTranscriptShellBodyCopyTextExtracted, createTranscriptMcpBadgeExtracted, createTranscriptShellWindowHeadExtracted, createTranscriptToolHeadExtracted, createTranscriptToolPillSummaryExtracted, createTranscriptTraceStatusIndicatorExtracted, handleTranscriptFileOpenExtracted, handleTranscriptReviewFileOpenExtracted, patchTranscriptToolResultStreamBodyExtracted, resolveLobeToolTitleOptionsExtracted, resolveLobeTraceStatusExtracted, syncTranscriptToolPillSummaryExtracted } from './mobile-projects-transcript-messages-tool-ui-timeline';
+import { appendTranscriptToolPillSummaryTailExtracted, attachTranscriptFileOpenActionExtracted, attachTranscriptReviewFileOpenActionExtracted, canPatchTranscriptToolResultStreamExtracted, collectTranscriptShellBodyCopyTextExtracted, createTranscriptMcpBadgeExtracted, createTranscriptShellWindowHeadExtracted, createTranscriptToolHeadExtracted, createTranscriptToolPillSummaryExtracted, createTranscriptTraceStatusIndicatorExtracted, handleTranscriptFileOpenExtracted, handleTranscriptReviewFileOpenExtracted, patchTranscriptToolResultStreamBodyExtracted, resolveLobeToolTitleOptionsExtracted, resolveLobeTraceStatusExtracted, syncTranscriptToolPillSummaryExtracted } from './mobile-projects-transcript-messages-tool-ui-timeline';
 import { createTranscriptActivityEditExpandPanelExtracted, createTranscriptActivityEditExpandRowExtracted, createTranscriptActivityRunningBadgeExtracted, createTranscriptActivitySearchMatchesPanelExtracted } from './mobile-projects-transcript-messages-tool-ui-tool-pills';
 
 /** Sticky expand headers kick in once a grouped panel is long enough to scroll. */
@@ -266,10 +266,6 @@ export class MobileProjectsTranscriptMessagesToolUi {
 
     appendTranscriptToolPillSummaryTail(summary: HTMLElement, options: { finished: boolean; failed: boolean; copyFrom?: () => string },): void {
         appendTranscriptToolPillSummaryTailExtracted(this, summary, options);
-    }
-
-    appendTranscriptCardCopyTail(summary: HTMLElement, copyFrom: () => string): void {
-        appendTranscriptCardCopyTailExtracted(this, summary, copyFrom);
     }
 
     createTranscriptShellWindowHead(options: { title: string; finished: boolean; failed: boolean; exitCode?: number; copyFrom?: () => string; startedAt?: number; }): HTMLElement {

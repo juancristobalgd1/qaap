@@ -4,16 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    buildStickyComposerSlashSections,
-    filterStickyComposerSlashSections,
-    removeActiveSlashToken,
-    resolveStickyComposerSlashEntryIcon,
-    SLASH_MENU_SECTION_VISIBLE_LIMIT,
-} from './qaap-sticky-composer-slash-menu';
+import { buildStickyComposerSlashSections, filterStickyComposerSlashSections, removeActiveSlashToken, SLASH_MENU_SECTION_VISIBLE_LIMIT } from './qaap-sticky-composer-slash-menu';
 
 describe('qaap-sticky-composer-slash-menu', () => {
-
     it('buildStickyComposerSlashSections groups actions, skills, and tools', () => {
         const sections = buildStickyComposerSlashSections({
             skills: [{ name: 'react-doctor', description: 'Scan React' }],
@@ -55,17 +48,4 @@ describe('qaap-sticky-composer-slash-menu', () => {
         expect(SLASH_MENU_SECTION_VISIBLE_LIMIT).to.equal(3);
     });
 
-    it('resolveStickyComposerSlashEntryIcon maps entry kinds to codicons', () => {
-        const sections = buildStickyComposerSlashSections({
-            skills: [{ name: 'loop' }],
-            canFork: true,
-            canManagePlugins: true,
-        });
-        const skill = sections[1].entries[0];
-        const fork = sections[0].entries[0];
-        const addPlugin = sections[2].entries[0];
-        expect(resolveStickyComposerSlashEntryIcon(skill)).to.equal('codicon codicon-book');
-        expect(resolveStickyComposerSlashEntryIcon(fork)).to.equal('codicon codicon-repo-forked');
-        expect(resolveStickyComposerSlashEntryIcon(addPlugin)).to.equal('codicon codicon-plug');
-    });
 });

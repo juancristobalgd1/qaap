@@ -458,16 +458,6 @@ export interface QaapCreateConversationBody {
     readonly worktree?: boolean;
 }
 
-export async function listConversationsForCwd(cwd: string): Promise<QaapAgentConversationSummaryDTO[]> {
-    const url = `${QAAP_AGENT_CONVERSATION_API_PATH}?cwd=${encodeURIComponent(cwd)}`;
-    const response = await fetch(url, { credentials: 'include' });
-    if (!response.ok) {
-        throw new Error(response.statusText);
-    }
-    const body = await response.json() as { conversations?: QaapAgentConversationSummaryDTO[] };
-    return body.conversations ?? [];
-}
-
 export async function listAllConversationGroups(): Promise<QaapAgentConversationGroupDTO[]> {
     const response = await fetch(`${QAAP_AGENT_CONVERSATION_API_PATH}/all`, { credentials: 'include' });
     if (!response.ok) {
@@ -851,38 +841,6 @@ export async function reportPreviewBootstrapFailure(
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ reason: trimmed }),
-        },
-    );
-    if (response.status === 404) {
-        return undefined;
-    }
-    if (!response.ok) {
-        throw new Error((await response.text()) || response.statusText);
-    }
-    return await response.json() as QaapAgentConversationDTO;
-}
-
-/** Upload a PNG captured from the same-origin preview and attach it to the latest agent response. */
-export async function reportPreviewVisualVerification(
-    conversationId: string,
-    png: Blob,
-    result: QaapPreviewVisualValidationResult,
-    targetAgentMessageId?: string,
-    previewUrl?: string,
-): Promise<QaapAgentConversationDTO | undefined> {
-    const normalizedPreviewUrl = normalizeQaapVisualPreviewUrl(previewUrl);
-    const response = await fetch(
-        `${QAAP_AGENT_CONVERSATION_API_PATH}/${encodeURIComponent(conversationId)}/visual-verifications`,
-        {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'image/png',
-                'X-Qaap-Visual-Result': encodeURIComponent(JSON.stringify(result)),
-                ...(targetAgentMessageId ? { 'X-Qaap-Visual-Target': targetAgentMessageId } : {}),
-                ...(normalizedPreviewUrl ? { 'X-Qaap-Visual-Preview': normalizedPreviewUrl } : {}),
-            },
-            body: png,
         },
     );
     if (response.status === 404) {

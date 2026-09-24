@@ -2,7 +2,7 @@ import type { MobileProjectsTranscriptMessagesRenderUiContext } from './mobile-p
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { isStreamingTranscriptTailUnchanged, resolveStreamingTranscriptPatchDecision, resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
@@ -10,17 +10,17 @@ import {
 import {
     appendBeforeTranscriptLiveStatus,
 } from '../common/qaap-transcript-live-status';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
-import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
+import { attachTranscriptScrollToBottomButton } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-to-bottom';
 import {
     attachTranscriptScrollIntentObserver,
-} from './qaap-transcript-scroll-intent';
-import { attachTranscriptUserScrollPin } from './qaap-transcript-user-scroll-pin';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-intent';
+import { attachTranscriptUserScrollPin } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-user-scroll-pin';
 import { attachTranscriptInlineSearch } from './qaap-transcript-inline-search';
 import {
     attachTranscriptReadPositionPersistence,
 } from './qaap-transcript-read-position';
-import { attachTranscriptActivityTimelineStickySummary } from './qaap-transcript-activity-timeline-sticky-summary';
+import { attachTranscriptActivityTimelineStickySummary } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-activity-timeline-sticky-summary';
 import {
     attachTranscriptRowDeferObserver,
 } from './qaap-transcript-row-defer';

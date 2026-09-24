@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { QaapCodexStreamAccumulator, parseCodexLog } from './qaap-codex-stream';
+import { QaapCodexStreamAccumulator } from './qaap-codex-stream';
 
 describe('QaapCodexStreamAccumulator', () => {
     it('parses codex exec --json agent_message and command_execution items', () => {
@@ -42,11 +42,6 @@ describe('QaapCodexStreamAccumulator', () => {
                 result: 'ready on :5173',
             },
         ]);
-    });
-
-    it('parseCodexLog returns segments for JSON logs', () => {
-        const parsed = parseCodexLog('{"type":"item.completed","item":{"id":"a1","type":"assistant_message","text":"Hi"}}\n');
-        expect(parsed.segments).to.deep.equal([{ type: 'text', content: 'Hi' }]);
     });
 
     it('captures real turn usage and separates cached input', () => {

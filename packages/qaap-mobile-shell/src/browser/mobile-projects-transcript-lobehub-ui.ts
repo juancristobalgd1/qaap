@@ -28,10 +28,6 @@ function truncateLobeParamValue(value: string): string {
         : `${value.slice(0, LOBE_MAX_PARAM_VALUE_LENGTH)}...`;
 }
 
-export function parseLobeToolTitleParams(raw: string | undefined): LobeToolTitleParam[] {
-    return parseLobeToolTitleParamSummary(raw).params;
-}
-
 export function parseLobeToolTitleParamSummary(raw: string | undefined): {
     readonly params: LobeToolTitleParam[];
     readonly remainingParamsCount: number;

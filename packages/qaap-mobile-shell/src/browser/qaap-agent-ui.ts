@@ -26,14 +26,6 @@ export interface QaapAgentChipOptions {
     readonly onClick?: () => void;
 }
 
-export interface QaapAgentPickerController {
-    readonly root: HTMLElement;
-    readonly hiddenInput: HTMLInputElement;
-    getSelectedId(): string;
-    setSelectedId(agentId: string): void;
-    setAgents(agents: readonly QaapAgentOption[]): void;
-}
-
 export interface QaapAgentSelectFieldController {
     readonly root: HTMLElement;
     readonly select: HTMLSelectElement;
@@ -210,35 +202,6 @@ export function createAgentSheetOptionButton(options: {
     return btn;
 }
 
-/** Agent row with an optional compact trailing action (connect, configure, or BYOK). */
-export function createAgentSheetOptionRow(options: {
-    readonly primary: HTMLButtonElement;
-    readonly actionLabel?: string;
-    readonly actionTitle?: string;
-    readonly onAction?: () => void;
-}): HTMLElement {
-    if (!options.actionLabel || !options.onAction) {
-        return options.primary;
-    }
-    const row = document.createElement('div');
-    row.className = 'theia-qaap-agent-sheet-row';
-    row.append(options.primary);
-
-    const action = document.createElement('button');
-    action.type = 'button';
-    action.className = 'theia-qaap-agent-sheet-inline-action';
-    action.textContent = options.actionLabel;
-    action.title = options.actionTitle ?? options.actionLabel;
-    action.setAttribute('aria-label', action.title);
-    action.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        options.onAction!();
-    });
-    row.append(action);
-    return row;
-}
-
 /** Dimmed picker row for a known harness that is not connected or detected on the workspace. */
 export function createUnavailableAgentSheetOption(options: {
     readonly agentId: string;
@@ -324,37 +287,6 @@ export function createApprovalPolicySheetOptionButton(options: {
     btn.append(content);
     btn.addEventListener('click', options.onSelect);
     return btn;
-}
-
-/** Toggle row for granular tool scopes under the approve-for-me preset. */
-export function createToolApprovalRuleToggle(options: {
-    readonly label: string;
-    readonly description: string;
-    readonly checked: boolean;
-    readonly disabled?: boolean;
-    readonly onChange: (checked: boolean) => void;
-}): HTMLLabelElement {
-    const row = document.createElement('label');
-    row.className = 'theia-mobile-sticky-composer-sheet-option theia-qaap-tool-approval-rule';
-    if (options.disabled) {
-        row.classList.add('theia-mod-disabled');
-    }
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = options.checked;
-    input.disabled = options.disabled === true;
-    input.addEventListener('change', () => options.onChange(input.checked));
-    const text = document.createElement('span');
-    text.className = 'theia-qaap-tool-approval-rule-text';
-    const labelEl = document.createElement('span');
-    labelEl.className = 'theia-qaap-tool-approval-rule-label';
-    labelEl.textContent = options.label;
-    const descriptionEl = document.createElement('span');
-    descriptionEl.className = 'theia-qaap-tool-approval-rule-description';
-    descriptionEl.textContent = options.description;
-    text.append(labelEl, descriptionEl);
-    row.append(input, text);
-    return row;
 }
 
 /** Sticky composer approval trigger — icon + label + chevron. */
@@ -767,81 +699,6 @@ export function createAgentRowAvatar(options: {
     return wrap;
 }
 
-/** Visual chip grid picker for forms (routines, parallel runs). */
-export function createAgentPickerField(options: {
-    readonly label?: string;
-    readonly agents: readonly QaapAgentOption[];
-    readonly selectedId: string | undefined;
-    readonly onChange?: (agentId: string) => void;
-}): QaapAgentPickerController {
-    const root = document.createElement('div');
-    root.className = 'theia-qaap-agent-picker-field';
-
-    if (options.label) {
-        const labelEl = document.createElement('div');
-        labelEl.className = 'theia-qaap-agent-picker-label';
-        labelEl.textContent = options.label;
-        root.append(labelEl);
-    }
-
-    const chipsHost = document.createElement('div');
-    chipsHost.className = 'theia-qaap-agent-picker-chips';
-
-    const hiddenInput = document.createElement('input');
-    hiddenInput.type = 'hidden';
-    hiddenInput.name = 'qaap-agent-id';
-
-    let agents = [...options.agents];
-    let selectedId = options.selectedId ?? agents[0]?.id ?? '';
-    hiddenInput.value = selectedId;
-
-    const renderChips = (): void => {
-        chipsHost.replaceChildren();
-        if (agents.length === 0) {
-            const empty = document.createElement('p');
-            empty.className = 'theia-qaap-agent-picker-empty';
-            empty.textContent = '—';
-            chipsHost.append(empty);
-            return;
-        }
-        for (const agent of agents) {
-            chipsHost.append(createAgentBrandChip({
-                agentId: agent.id,
-                label: agent.label,
-                selected: agent.id === selectedId,
-                onClick: () => {
-                    selectedId = agent.id;
-                    hiddenInput.value = selectedId;
-                    renderChips();
-                    options.onChange?.(selectedId);
-                },
-            }));
-        }
-    };
-
-    renderChips();
-    root.append(chipsHost, hiddenInput);
-
-    return {
-        root,
-        hiddenInput,
-        getSelectedId: () => selectedId,
-        setSelectedId: agentId => {
-            selectedId = agentId;
-            hiddenInput.value = agentId;
-            renderChips();
-        },
-        setAgents: nextAgents => {
-            agents = [...nextAgents];
-            if (!agents.some(a => a.id === selectedId)) {
-                selectedId = agents[0]?.id ?? '';
-                hiddenInput.value = selectedId;
-            }
-            renderChips();
-        },
-    };
-}
-
 /** Compact select + leading icon (mini composer). */
 export function createAgentSelectField(options: {
     readonly className?: string;
@@ -956,53 +813,3 @@ export function createDiffStatsLine(options: {
     return line;
 }
 
-/** Parallel run variant card. */
-export function createParallelVariantCard(options: {
-    readonly agentId: string;
-    readonly title: string;
-    readonly meta?: HTMLElement | string;
-    readonly state: 'running' | 'failed' | 'idle';
-    readonly selected?: boolean;
-    readonly chooseLabel?: string;
-    readonly chooseDisabled?: boolean;
-    readonly onChoose?: () => void;
-}): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'theia-qaap-parallel-variant-card';
-    if (options.selected) {
-        row.classList.add('theia-mod-selected');
-    }
-    row.append(createAgentRowAvatar({
-        agentId: options.agentId,
-        state: options.state === 'idle' ? 'idle' : options.state === 'failed' ? 'failed' : 'running',
-    }));
-    const body = document.createElement('div');
-    body.className = 'theia-qaap-parallel-variant-body';
-    const title = document.createElement('div');
-    title.className = 'theia-qaap-parallel-variant-title';
-    title.textContent = options.title;
-    const meta = document.createElement('div');
-    meta.className = 'theia-qaap-parallel-variant-meta';
-    if (typeof options.meta === 'string') {
-        meta.textContent = options.meta;
-    } else if (options.meta) {
-        meta.append(options.meta);
-    } else {
-        meta.textContent = '—';
-    }
-    body.append(title, meta);
-    row.append(body);
-    if (options.onChoose) {
-        const choose = document.createElement('button');
-        choose.type = 'button';
-        choose.className = 'theia-qaap-parallel-variant-choose';
-        choose.textContent = options.chooseLabel ?? 'Choose';
-        choose.disabled = options.chooseDisabled ?? false;
-        choose.addEventListener('click', ev => {
-            ev.stopPropagation();
-            options.onChoose?.();
-        });
-        row.append(choose);
-    }
-    return row;
-}

@@ -22,6 +22,3 @@ export async function ensureTranscriptSurfaceCss(): Promise<void> {
     await import('../../src/browser/style/qaap-transcript-markdown.css');
 }
 
-export const resetTranscriptSurfaceCssForTests = (): void => {
-    transcriptSurfaceCssLoaded = false;
-};

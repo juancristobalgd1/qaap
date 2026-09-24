@@ -57,7 +57,6 @@ export interface MobileProjectsParallelUiDeps {
 
 /** Parallel-run sheets, variant groups in Chats, and live diff stats via conversation SSE. */
 export class MobileProjectsParallelUi {
-
     protected sheetRoot: HTMLElement | undefined;
     protected busy = false;
     protected readonly selectedAgents = new Set<string>();
@@ -288,19 +287,6 @@ export class MobileProjectsParallelUi {
                 choose.disabled = variant.state === 'running';
             }
         }
-    }
-
-    protected formatVariantMeta(variant: QaapParallelRunVariantDTO): string {
-        const parts: string[] = [];
-        if (variant.fileCount > 0 || variant.adds > 0 || variant.dels > 0) {
-            parts.push(`+${variant.adds} −${variant.dels} · ${variant.fileCount} files`);
-        }
-        if (variant.state === 'running') {
-            parts.push(nls.localize('qaap/mobileProjects/variantRunning', 'Running'));
-        } else if (variant.state === 'failed') {
-            parts.push(nls.localize('qaap/mobileProjects/variantFailed', 'Failed'));
-        }
-        return parts.join(' · ') || '—';
     }
 
     protected summaryVariantState(summary: QaapAgentConversationSummaryDTO): string {
@@ -996,12 +982,4 @@ export class MobileProjectsParallelUi {
         }
     }
 
-    /** Shared overlay root for parallel-run sheets. */
-    getOverlaySheet(): HTMLElement | undefined {
-        return this.sheetRoot;
-    }
-
-    setOverlaySheet(root: HTMLElement | undefined): void {
-        this.sheetRoot = root;
-    }
 }

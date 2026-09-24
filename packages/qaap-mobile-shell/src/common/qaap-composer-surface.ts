@@ -31,8 +31,3 @@ export function writeStoredComposerSurface(cwd: string | undefined, surface: Qaa
     }
 }
 
-export function composerSurfaceHint(surface: QaapComposerSurface): { readonly key: string; readonly defaultLabel: string } {
-    return surface === 'chat'
-        ? { key: 'qaap/composerSurface/chatHint', defaultLabel: 'Local Coder chat — saved on this device' }
-        : { key: 'qaap/composerSurface/taskHint', defaultLabel: 'Runs on the VPS — keeps going when you close the app' };
-}

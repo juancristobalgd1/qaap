@@ -5,7 +5,7 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
-import { scrollElementTo } from '../common/qaap-prefers-reduced-motion';
+import { scrollElementTo } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 import { dismissQaapAccountMenu } from './qaap-workbench-account-menu';
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
@@ -428,17 +428,6 @@ export class MobileProjectsHubHeaderUi {
             return this.host.transcriptOpenSummary.title?.trim() ?? '';
         }
         return '';
-    }
-
-    /**
-     * Short section label next to the project switcher: conversation title when a session is open,
-     * otherwise the active project name.
-     */
-    resolveHeaderProjectSectionTitle(project: MobileProjectEntry | undefined): string {
-        if (this.headerProjectShowsConversationTitle()) {
-            return this.host.transcriptOpenSummary?.title?.trim() ?? '';
-        }
-        return project?.name?.trim() ?? '';
     }
 
     /** Folder glyph stands for the project; `|` splits it from the open conversation title. */

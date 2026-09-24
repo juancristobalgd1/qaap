@@ -278,33 +278,6 @@ export function vendorHasByokCredential(
     return !!descriptor && providerHasByokCredentialOrEnv(readPref, descriptor, readEnv);
 }
 
-export function providerHasConfiguredModelList(
-    readPref: QaapPreferenceReader,
-    descriptor: QaapQaiqByokProviderDescriptor,
-): boolean {
-    for (const pref of descriptor.modelListPrefs) {
-        if (readStringList(readPref, pref).length > 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-export function listExplicitByokModelIds(
-    readPref: QaapPreferenceReader,
-    descriptor: QaapQaiqByokProviderDescriptor,
-): string[] {
-    const models: string[] = [];
-    for (const pref of descriptor.modelListPrefs) {
-        models.push(...readStringList(readPref, pref));
-    }
-    let unique = [...new Set(models)];
-    if (descriptor.vendor === 'openrouter') {
-        unique = filterOpenRouterModelSlugs(unique);
-    }
-    return unique;
-}
-
 export function listByokModelIds(
     readPref: QaapPreferenceReader,
     descriptor: QaapQaiqByokProviderDescriptor,

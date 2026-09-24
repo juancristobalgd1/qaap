@@ -10,7 +10,7 @@ import { excerptTranscriptThought, extractTranscriptMcpServerLabel, hasTranscrip
 import { isTranscriptAgentThinkingPhase, resolveLastUserPromptChars, resolveTranscriptTurnElapsedMs, resolveTranscriptTurnStartMs, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import { isPendingTranscriptToolSegment } from '../common/qaap-transcript-approval-inline';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
-import { TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     coalesceToolSegments,
     bundleToolSegmentsByUmbrella,

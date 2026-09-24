@@ -5,9 +5,9 @@
 
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { resolveScrollBehavior } from '../common/qaap-prefers-reduced-motion';
-import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
-import { markTranscriptUserScrollIntent } from './qaap-transcript-scroll-intent';
+import { resolveScrollBehavior } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
+import { ensureTranscriptScrollController } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-controller';
+import { markTranscriptUserScrollIntent } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-intent';
 
 const SEARCH_HOST_CLASS = 'theia-mobile-agent-transcript-search';
 const SEARCH_MATCH_CLASS = 'theia-mod-search-match';

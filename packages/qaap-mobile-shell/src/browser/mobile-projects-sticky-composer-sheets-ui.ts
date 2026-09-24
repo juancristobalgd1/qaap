@@ -30,7 +30,7 @@ import type { MobileProjectsService } from './mobile-projects-service';
 import type { QaapComposerSurface } from '../common/qaap-composer-surface';
 import { appendAgentModelPickerListExtracted, createAgentPickerNoResultsHintExtracted } from './mobile-projects-sticky-composer-sheets-ui-activity';
 import { assignAgentPickerPopoverExtracted, closeStickyComposerSheetsExtracted, mountModeSheetPresentationExtracted, openExternalAgentPickerForSubmitExtracted, openStickyComposerAgentSheetExtracted, openStickyComposerContextUsageSheetExtracted, openStickyComposerModelCapabilityPopoverExtracted, shouldElevateComposerSheetsExtracted, syncAgentPickerPopoverPositionExtracted, teardownAgentPickerPopoverExtracted, teardownCapabilityPresentationExtracted, teardownContextUsagePresentationExtracted, teardownModeSheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-render';
-import { createAgentSheetOptionExtracted, createModeSheetOptionExtracted, mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openComposerModeSheetExtracted, openStickyComposerApprovalPolicySheetExtracted, openStickyComposerModeSheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming';
+import { createModeSheetOptionExtracted, mountApprovalPolicySheetPresentationExtracted, openApprovalPolicySheetExtracted, openComposerModeSheetExtracted, openStickyComposerApprovalPolicySheetExtracted, openStickyComposerModeSheetExtracted, resolveModelsForAgentPickerExtracted, resolveModelsForAgentPickerSafeExtracted, syncApprovalPolicyPopoverPositionExtracted, teardownApprovalPolicySheetPopoverExtracted } from './mobile-projects-sticky-composer-sheets-ui-streaming';
 import { createComposerAgentPickerChromeExtracted, renderComposerAgentPickerExtracted } from './mobile-projects-sticky-composer-sheets-ui-timeline';
 
 export type ComposerAgentPickerView = 'agents' | 'models';
@@ -224,9 +224,6 @@ export class MobileProjectsStickyComposerSheetsUi {
     }
     createModeSheetOption(label: string, modeId: string, selectedModeId: string | undefined, onSelect: (modeId: string) => void,): HTMLElement {
         return createModeSheetOptionExtracted(this, label, modeId, selectedModeId, onSelect);
-    }
-    createAgentSheetOption(label: string, agentId: string, cwd: string | undefined, selectedAgentId: string | undefined, onSelect: (agentId: string) => void,): HTMLElement {
-        return createAgentSheetOptionExtracted(this, label, agentId, cwd, selectedAgentId, onSelect);
     }
     async resolveModelsForAgentPicker(agentId: string): Promise<QaapQaiqModelOption[]> {
         return resolveModelsForAgentPickerExtracted(this, agentId);

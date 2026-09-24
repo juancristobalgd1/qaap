@@ -13,10 +13,9 @@ import {
     enableTranscriptRenderMetrics,
     getTranscriptRenderMetricsSnapshot,
     resetTranscriptRenderMetrics,
-} from '../common/qaap-transcript-render-metrics';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 
 describe('qaap-transcript-markdown-worker-client', () => {
-
     class TestWorker {
         static latest: TestWorker | undefined;
 
@@ -42,7 +41,6 @@ describe('qaap-transcript-markdown-worker-client', () => {
     }
 
     describe('shouldApplyTranscriptMarkdownWorkerResult', () => {
-
         it('accepts a result when the host generation still matches', () => {
             expect(shouldApplyTranscriptMarkdownWorkerResult(3, 3)).to.equal(true);
         });

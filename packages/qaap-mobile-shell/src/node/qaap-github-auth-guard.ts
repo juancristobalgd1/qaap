@@ -64,7 +64,6 @@ export type QaapSecurityEventAction =
 /** Shared GitHub session resolution and multi-tenant ownership checks for Qaap HTTP endpoints. */
 @injectable()
 export class QaapGithubAuthGuard {
-
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
 
@@ -287,20 +286,6 @@ export class QaapGithubAuthGuard {
             return false;
         }
         return true;
-    }
-
-    /**
-     * True when `targetPath` is a container level of the authenticated user's
-     * workspace tree (the per-user root or an owner directory) rather than an
-     * actual repository. Agent work must target a repository: a container cwd
-     * would feed every repo at once to the agent. Always false in skip-auth
-     * (local dev) deployments, where paths are unmanaged.
-     */
-    isWorkspaceContainerPath(ctx: QaapGithubAuthContext, targetPath: string): boolean {
-        if (ctx.kind !== 'authenticated') {
-            return false;
-        }
-        return isUserWorkspaceContainerPath(targetPath, this.reposRoot, ctx.userLogin);
     }
 
     /**

@@ -15,7 +15,7 @@ import {
     type QaapMessageDeliveryMode,
     type QaapPendingUserMessageDTO,
 } from '../common/qaap-agent-conversation-client';
-import { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
+import { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsService } from './mobile-projects-service';
@@ -31,7 +31,7 @@ import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcr
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 /** Panel surface consumed by transcript message rendering (keeps deps narrow vs. the full panel). */
 export interface MobileProjectsTranscriptMessagesHost {
@@ -95,7 +95,6 @@ export interface MobileProjectsTranscriptMessagesHost {
 
 /** Transcript message list rendering: rows, streaming patches, and rich segment UI. */
 export class MobileProjectsTranscriptMessagesUi {
-
     protected readonly contentUi: MobileProjectsTranscriptMessagesContentUi;
     protected readonly resolversUi: MobileProjectsTranscriptMessagesResolversUi;
     protected readonly toolUi: MobileProjectsTranscriptMessagesToolUi;

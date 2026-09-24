@@ -72,7 +72,6 @@ describe('Qaap beta admission', () => {
         store.restoreSession('old-cookie', session('mallory'));
         expect(store.getSession('old-cookie')).to.equal(undefined);
         expect(store.listSessions()).to.deep.equal([]);
-        expect(store.getAnySession()).to.equal(undefined);
         const id = store.createSession(session('alice'));
         expect(store.getSession(id)?.user.login).to.equal('alice');
     });

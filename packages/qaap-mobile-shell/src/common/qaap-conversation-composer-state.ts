@@ -226,37 +226,6 @@ export function applyProjectComposerDefaults(
     };
 }
 
-export function mergeComposerPrefsOntoSummary(
-    summary: QaapAgentConversationSummaryDTO,
-    patch: QaapUpdateConversationBody,
-): QaapAgentConversationSummaryDTO {
-    return {
-        ...summary,
-        ...(patch.agent !== undefined ? { agentId: patch.agent } : {}),
-        ...(patch.agentModel !== undefined ? { agentModel: patch.agentModel } : {}),
-        ...(patch.interactionModeId !== undefined ? { interactionModeId: patch.interactionModeId } : {}),
-        ...(patch.approvalPolicyId !== undefined ? { approvalPolicyId: patch.approvalPolicyId } : {}),
-        ...(patch.autoApprove !== undefined ? { autoApprove: patch.autoApprove } : {}),
-        ...(patch.toolApprovalRules !== undefined ? { toolApprovalRules: patch.toolApprovalRules } : {}),
-    };
-}
-
-export function formatConversationComposerSessionMeta(
-    summary: Pick<QaapAgentConversationSummaryDTO, 'agentId' | 'agentModel' | 'qaiqModel'>,
-    resolveAgentLabel: (agentId: string) => string,
-): string | undefined {
-    const agentId = migrateLegacyBackendAgentId(summary.agentId) ?? summary.agentId;
-    if (!agentId) {
-        return undefined;
-    }
-    const agentLabel = resolveAgentLabel(agentId);
-    const model = summary.agentModel ?? summary.qaiqModel;
-    if (model?.modelId && agentSupportsModelPicker(agentId)) {
-        return `${agentLabel} · ${model.modelId}`;
-    }
-    return agentLabel;
-}
-
 /**
  * Formats the identity of the run represented by a conversation row. The composer selection is
  * intentionally excluded: it describes the next follow-up, while the row describes the last run

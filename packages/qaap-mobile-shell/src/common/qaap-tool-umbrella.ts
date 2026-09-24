@@ -146,12 +146,6 @@ function pickSearchQuery(program: string, args: string[]): string | null {
 
 /* --- Tool detail classification (adapted to qaap segment types) ------------- */
 
-export interface ToolSegmentDetail {
-    readonly segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>;
-    readonly kind: ToolDetailKind;
-    readonly umbrella: ToolUmbrella;
-}
-
 /** Classifies a tool segment into a fine-grained detail kind. */
 export function classifyToolSegmentDetail(
     segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>,

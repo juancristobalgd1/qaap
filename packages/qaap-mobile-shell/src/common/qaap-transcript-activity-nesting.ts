@@ -6,9 +6,6 @@
 import type { QaapAgentMessageSegmentDTO } from './qaap-agent-conversation-client';
 import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 
-/** Tool names that spawn nested child-agent traces (Cursor Agent / Task). */
-export const TRANSCRIPT_SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
-
 export function isTranscriptSubagentToolName(toolName: string): boolean {
     const key = toolName.trim().toLowerCase();
     return key === 'agent' || key === 'task';
@@ -44,17 +41,6 @@ export function resolveTranscriptActivityNestDepth(
         cursor = parentByToolUseId.get(cursor);
     }
     return depth;
-}
-
-export function resolveTranscriptActivityToolUseId(
-    segments: readonly QaapAgentMessageSegmentDTO[],
-    segmentIndex: number | undefined,
-): string | undefined {
-    if (segmentIndex === undefined) {
-        return undefined;
-    }
-    const segment = segments[segmentIndex];
-    return segment?.type === 'tool' ? segment.toolUseId : undefined;
 }
 
 export function transcriptActivityHasNestedChildren(

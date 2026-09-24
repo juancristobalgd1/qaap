@@ -4,20 +4,10 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    resolveAgentSubmitSurface,
-    shouldRouteSubmitToTheiaCoder,
-    shouldRouteSubmitToVpsBackground,
-} from './qaap-agent-submit-routing';
+import { resolveAgentSubmitSurface, shouldRouteSubmitToTheiaCoder } from './qaap-agent-submit-routing';
 import { QAIQ_AGENT_ID, THEIA_CODER_AGENT_ID } from './qaap-agent-task-client';
 
 describe('qaap-agent-submit-routing', () => {
-
-    it('defaults Work Hub submits to VPS background', () => {
-        expect(resolveAgentSubmitSurface({ draft: 'fix the tests' })).to.equal('vps-background');
-        expect(shouldRouteSubmitToVpsBackground({ draft: 'fix the tests' })).to.equal(true);
-    });
-
     it('routes @qaiq and other VPS mentions to background', () => {
         expect(resolveAgentSubmitSurface({ draft: `@${QAIQ_AGENT_ID} refactor auth` }))
             .to.equal('vps-background');

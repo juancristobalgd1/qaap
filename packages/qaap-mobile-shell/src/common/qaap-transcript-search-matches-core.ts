@@ -87,6 +87,3 @@ export function parseTranscriptSearchMatches(raw: string | undefined): Transcrip
     return matches.length > 0 ? matches : undefined;
 }
 
-export function looksLikeTranscriptSearchMatchResult(raw: string | undefined): boolean {
-    return !!parseTranscriptSearchMatches(raw)?.length;
-}

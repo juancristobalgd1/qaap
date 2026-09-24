@@ -13,7 +13,7 @@ import type { TranscriptTerminalPersistedWorkspace, TranscriptTerminalSurface } 
 import {
     normalizeTranscriptWorkspaceKey,
     type TranscriptWorkspaceSurfaceKey,
-} from './qaap-transcript-workspace-surfaces-cache';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 
 // ─── Path comparison ─────────────────────────────────────────────────────────
 

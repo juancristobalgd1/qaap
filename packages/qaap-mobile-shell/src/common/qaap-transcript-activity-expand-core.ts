@@ -233,63 +233,6 @@ export function resolveTranscriptActivityExpandContent(
     return fallback && !/^ok$/i.test(fallback) ? { kind: 'text', text: fallback } : undefined;
 }
 
-/** @deprecated Use {@link resolveTranscriptActivityExpandContent} */
-export function resolveTranscriptActivityExpandBody(
-    item: TranscriptActivityNavigationItem,
-    segments: readonly QaapAgentMessageSegmentDTO[] | undefined,
-    deps: TranscriptActivityExpandDeps,
-): string | undefined {
-    const content = resolveTranscriptActivityExpandContent(item, segments, deps);
-    if (!content) {
-        return undefined;
-    }
-    if (content.kind === 'text') {
-        return content.text;
-    }
-    if (content.kind === 'search-matches') {
-        return content.matches.map(match => `${match.file}:${match.line}: ${match.snippet}`).join('\n');
-    }
-    if (content.kind === 'web-search') {
-        const header = content.payload.query
-            ? `Searched "${content.payload.query}"`
-            : 'Searched the web';
-        if (!content.payload.sites.length) {
-            return header;
-        }
-        return [
-            header,
-            ...content.payload.sites.map(site => `${site.title}: ${site.href ?? site.url}`),
-        ].join('\n');
-    }
-    if (content.kind === 'read') {
-        return content.entry.text;
-    }
-    if (content.kind === 'read-group') {
-        return content.entries.map(entry => entry.text).join('\n\n');
-    }
-    if (content.kind === 'edit') {
-        return content.entry.path;
-    }
-    if (content.kind === 'edit-group') {
-        return content.entries.map(entry => entry.path).join('\n');
-    }
-    if (content.kind === 'terminal') {
-        return [content.entry.command, content.entry.output].filter(Boolean).join('\n\n');
-    }
-    if (content.kind === 'todo') {
-        return content.items.map(item => item.label).join('\n');
-    }
-    if (content.kind === 'question_flow') {
-        return content.payload.questions.map(question => question.question).join('\n');
-    }
-    if (content.kind === 'terminal-group') {
-        return content.entries
-            .map((entry: TranscriptActivityTerminalExpandEntry) => [entry.command, entry.output].filter(Boolean).join('\n'))
-            .join('\n\n');
-    }
-    return undefined;
-}
-
 export function shouldShowTranscriptActivityExpandContent(
     item: TranscriptActivityNavigationItem,
     content: TranscriptActivityExpandContent | undefined,
@@ -355,25 +298,3 @@ export function shouldShowTranscriptActivityExpandContent(
     return text.includes('\n') || text.length > 96;
 }
 
-export function shouldShowTranscriptActivityExpand(
-    item: TranscriptActivityNavigationItem,
-    expandBody: string | undefined,
-): boolean {
-    if (!expandBody?.trim() || item.thinkingContent || item.navigate === 'thought' || item.errorSummary) {
-        return false;
-    }
-    if (item.grouped && item.segmentIndices && item.segmentIndices.length >= 2) {
-        return true;
-    }
-    const collapsedPreview = item.resultPreview?.trim();
-    if (collapsedPreview && expandBody === collapsedPreview) {
-        return false;
-    }
-    if (collapsedPreview && !expandBody.includes('\n') && expandBody.length <= collapsedPreview.length + 4) {
-        return false;
-    }
-    if (item.toolKind === 'terminal' && expandBody.trim().length > 0) {
-        return true;
-    }
-    return expandBody.includes('\n') || expandBody.length > 96;
-}

@@ -3,12 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import {
-    cronSlotIsDue,
-    formatCronScheduleLabel,
-    normalizeRoutineCronExpression,
-    normalizeRoutineTimezone,
-} from './qaap-work-hub-cron';
+import { cronSlotIsDue, normalizeRoutineCronExpression, normalizeRoutineTimezone } from './qaap-work-hub-cron';
 
 /** HTTP base path for Work Hub routines (implemented in `@theia/qaap-cloud-workspace`). */
 export const QAAP_WORK_HUB_ROUTINE_API_PATH = '/qaap/api/work-hub-routines';
@@ -105,31 +100,6 @@ export function normalizeRoutineRunMode(value: QaapWorkHubRoutineRunMode | undef
     return value === 'continue' ? 'continue' : 'fresh';
 }
 
-export function routineScheduleLabel(routine: QaapWorkHubRoutine): string {
-    if (routine.trigger === 'manual') {
-        return 'Manual';
-    }
-    if (routine.trigger === 'cron') {
-        return formatCronScheduleLabel(
-            normalizeRoutineCronExpression(routine.cronExpression),
-            normalizeRoutineTimezone(routine.timezone),
-            routine.oneShot,
-        );
-    }
-    const hours = routine.intervalHours;
-    if (hours === 1) {
-        return 'Every hour';
-    }
-    if (hours === 24) {
-        return 'Daily';
-    }
-    if (hours % 24 === 0) {
-        const days = hours / 24;
-        return days === 1 ? 'Daily' : `Every ${days} days`;
-    }
-    return `Every ${hours} h`;
-}
-
 export function routineIsDue(routine: QaapWorkHubRoutine, now = Date.now()): boolean {
     if (!routine.enabled) {
         return false;
@@ -153,16 +123,3 @@ export function routineIsDue(routine: QaapWorkHubRoutine, now = Date.now()): boo
     return false;
 }
 
-export function filterRoutinesByQuery(routines: readonly QaapWorkHubRoutine[], query: string): QaapWorkHubRoutine[] {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) {
-        return [...routines];
-    }
-    return routines.filter(routine =>
-        routine.title.toLowerCase().includes(normalized)
-        || routine.prompt.toLowerCase().includes(normalized)
-        || routine.cwd.toLowerCase().includes(normalized)
-        || routineScheduleLabel(routine).toLowerCase().includes(normalized)
-        || (routine.cronExpression?.toLowerCase().includes(normalized) ?? false),
-    );
-}

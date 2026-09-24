@@ -17,16 +17,16 @@ import type { ConversationLiveMessageEvent } from './mobile-projects-conversatio
 import {
     applyConversationMessageDelta,
     canApplySseMessageDelta,
-} from '../common/qaap-transcript-sse-delta';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 import {
     mergeConversationTranscriptFingerprint,
-} from '../common/qaap-transcript-incremental-update';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { resolveTranscriptStreamingCoalesceDelayMs } from '../common/qaap-transcript-streaming-coalesce';
 import {
     recordTranscriptRenderMetric,
-} from '../common/qaap-transcript-render-metrics';
-import { isTranscriptScrollNearBottom } from '../common/qaap-transcript-user-scroll-pin';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
+import { isTranscriptScrollNearBottom } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-user-scroll-pin';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { TRANSCRIPT_SSE_COALESCE_RAF } from './mobile-projects-transcript-live-ui';
 

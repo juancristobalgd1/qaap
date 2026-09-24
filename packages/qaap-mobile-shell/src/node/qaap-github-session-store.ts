@@ -52,7 +52,6 @@ export function resolveQaapAuthStorePath(): string {
  */
 @injectable()
 export class QaapGithubSessionStore {
-
     protected readonly betaAccess = new QaapBetaAccessPolicy();
 
     protected readonly sessions = new Map<string, QaapGithubStoredSession>();
@@ -91,11 +90,6 @@ export class QaapGithubSessionStore {
     /** All persisted sessions — for server-side repository access resolution only. */
     listSessions(): QaapGithubStoredSession[] {
         return [...this.sessions.values()].filter(session => this.betaAccess.allows(session.user.login));
-    }
-
-    /** @deprecated Never use for request handling — leaks cross-tenant tokens. */
-    getAnySession(): QaapGithubStoredSession | undefined {
-        return this.listSessions()[0];
     }
 
     deleteSession(sessionId: string | undefined): void {

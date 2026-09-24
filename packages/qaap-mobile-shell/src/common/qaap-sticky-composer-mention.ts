@@ -27,9 +27,6 @@ import { bindStickyComposerControlClick } from './qaap-sticky-composer-control-c
 
 export type StickyComposerTriggerChar = '@' | '#' | '/';
 
-/** @deprecated Use {@link StickyComposerTokenOption}. */
-export type StickyComposerMentionOption = StickyComposerTokenOption;
-
 export interface StickyComposerTokenOption {
     readonly id: string;
     readonly label: string;
@@ -146,9 +143,6 @@ export function filterTokenOptions(
     });
 }
 
-/** @deprecated Use {@link filterTokenOptions}. */
-export const filterMentionOptions = filterTokenOptions;
-
 export function applyStickyComposerToken(
     value: string,
     caret: number,
@@ -166,13 +160,6 @@ export function applyStickyComposerToken(
     return { value: next, caret: safeCaret + option.insertBody.length + 1 };
 }
 
-/** @deprecated Use {@link applyStickyComposerToken}. */
-export const applyStickyComposerMention = applyStickyComposerToken;
-
-/** @deprecated Use {@link findActiveComposerToken} or {@link findActiveTokenQuery}. */
-export const findActiveMentionQuery = (value: string, caret: number): ReturnType<typeof findActiveTokenQuery> =>
-    findActiveTokenQuery(value, caret, '@');
-
 export interface StickyComposerTokenUi {
     readonly mentionBtn: HTMLButtonElement;
     readonly variableBtn?: HTMLButtonElement;
@@ -181,9 +168,6 @@ export interface StickyComposerTokenUi {
     hide(): void;
     dispose(): void;
 }
-
-/** @deprecated Use {@link StickyComposerTokenUi}. */
-export type StickyComposerMentionUi = StickyComposerTokenUi;
 
 export type StickyComposerTextField = HTMLInputElement | HTMLTextAreaElement;
 

@@ -1,7 +1,4 @@
 import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-projects-transcript-surfaces-ui-context';
-// Extracted from mobile-projects-transcript-surfaces-ui.ts
-
-import { nls } from '@theia/core/lib/common/nls';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
@@ -31,7 +28,7 @@ import {
 } from './qaap-transcript-terminal-view';
 import {
     type TranscriptWorkspaceSurfaceKey,
-} from './qaap-transcript-workspace-surfaces-cache';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 
 export function disposeTranscriptTerminalSlidesExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, workspaceKey?: TranscriptWorkspaceSurfaceKey): void {
         if (workspaceKey) {
@@ -61,50 +58,6 @@ export function prepareTranscriptTerminalsForPageUnloadExtracted(ctx: MobileProj
             }
             void ctx.persistTranscriptTerminalWorkspace(workspaceKey);
         }
-}
-
-export function createTranscriptPreviewLoadingExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, _conv: QaapAgentConversationDTO | undefined): HTMLElement {
-        const wrap = document.createElement('div');
-        wrap.className = 'theia-mobile-transcript-preview-loading';
-        wrap.setAttribute('role', 'status');
-        wrap.setAttribute('aria-live', 'polite');
-
-        const line = document.createElement('div');
-        line.className = 'theia-mobile-agent-stream-line theia-mod-thinking';
-        const dot = document.createElement('span');
-        dot.className = 'theia-mobile-agent-stream-dot';
-        dot.setAttribute('aria-hidden', 'true');
-        const label = document.createElement('span');
-        label.className = 'theia-mobile-agent-stream-label';
-        label.textContent = nls.localize('qaap/mobileProjects/previewLoading', 'Loading…');
-        line.append(dot, label);
-        wrap.append(line);
-
-        // Live dev-server output stream: show the last few lines of the dev server log so the
-        // user sees compile/install progress instead of a static spinner (cold starts on the
-        // VPS can take 10-30s; this feedback prevents the "is it stuck?" feeling).
-        const bootstrap = ctx.host.projectBootstrap;
-        if (bootstrap) {
-            const log = document.createElement('pre');
-            log.className = 'theia-mobile-transcript-preview-devlog';
-            log.setAttribute('aria-hidden', 'true');
-            const renderTail = (): void => {
-                const tail = bootstrap.devOutput?.trim();
-                log.textContent = tail ? tail.split('\n').slice(-6).join('\n') : '';
-            };
-            renderTail();
-            const listener = bootstrap.onDevOutput(() => renderTail());
-            wrap.append(log);
-            // Auto-clean when the loading element is removed from the DOM (preview ready).
-            const observer = new MutationObserver(() => {
-                if (!wrap.isConnected) {
-                    listener.dispose();
-                    observer.disconnect();
-                }
-            });
-            observer.observe(document.body, { childList: true, subtree: true });
-        }
-        return wrap;
 }
 
 export async function syncTranscriptPreviewFromConversationExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,

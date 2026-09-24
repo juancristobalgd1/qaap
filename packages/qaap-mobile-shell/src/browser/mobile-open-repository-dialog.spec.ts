@@ -14,7 +14,6 @@ const STYLE_DIR = path.join(__dirname, '..', '..', 'src', 'browser', 'style');
 const BROWSER_DIR = path.join(__dirname, '..', '..', 'src', 'browser');
 
 describe('mobile-open-repository-dialog styles', () => {
-
     it('is imported from the boot-critical frontend module', () => {
         const src = fs.readFileSync(
             path.join(BROWSER_DIR, 'qaap-mobile-shell-frontend-module.ts'),
@@ -35,16 +34,9 @@ describe('mobile-open-repository-dialog styles', () => {
         expect(css).to.include('appearance: none');
         expect(css).to.include('display: none !important');
     });
-
-    it('does not leave drawer styles stranded in the unloaded PR-review partial', () => {
-        const css = fs.readFileSync(path.join(STYLE_DIR, 'mobile-workbench-pr-review.css'), 'utf8');
-        expect(css).to.not.include('.theia-mobile-open-repo {');
-        expect(css).to.not.include('.theia-mobile-open-repo-tab {');
-    });
 });
 
 describe('MobileOpenRepositoryDialog clone flow', () => {
-
     it('opens the returned workspace and notifies the host after cloning', async () => {
         const nextProjects: MobileProjectEntry[] = [];
         let clonedRepository: string | undefined;

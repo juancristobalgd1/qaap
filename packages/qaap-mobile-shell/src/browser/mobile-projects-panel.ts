@@ -85,8 +85,8 @@ import type { QaapGithubPullRequestSummary } from '@theia/qaap-adapters/lib/comm
 import { MobileProjectsExecutionSurfaceTabsUi, type MobileProjectsExecutionSurfaceTabsHost } from './mobile-projects-execution-surface-tabs-ui';
 import { type MobileProjectsTranscriptOverlayHost } from './mobile-projects-transcript-overlay-host';
 import { TranscriptOverlayController } from './mobile-projects-transcript-overlay-controller';
-import { bindTranscriptOverlayStateAccessors } from './mobile-projects-transcript-overlay-state';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import { bindTranscriptOverlayStateAccessors } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-overlay-state';
+import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import type { MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { MobileProjectsTasksHubUi, type MobileProjectsTasksHubHost } from './mobile-projects-tasks-hub-ui';
 import { MobileProjectsWorkHubInboxUi, type MobileProjectsWorkHubInboxHost } from './mobile-projects-work-hub-inbox-ui';
@@ -238,7 +238,7 @@ import {
 } from './mobile-projects-sticky-composer-render-ui';
 import {
     type QaapTranscriptLiveRefreshOptions,
-} from './qaap-transcript-live-controller';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
 import {
     MobileProjectsSessionsSidebarUi,
     type MobileProjectsSessionsSidebarHost,
@@ -265,7 +265,7 @@ import { QAAP_BOOTSTRAP_PREVIEW_OPENED_EVENT } from './qaap-mobile-app-tester-co
 import { QAAP_NAVIGATE_TO_CONVERSATION_EVENT } from './qaap-turn-settle-notifier';
 import {
     type TranscriptWorkspaceSurfaceKey,
-} from './qaap-transcript-workspace-surfaces-cache';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import {
     createHeaderIdeViewIcon as createHeaderIdeViewIconHelper,
     createHeaderIdeViewChevron as createHeaderIdeViewChevronHelper,
@@ -279,7 +279,7 @@ import {
     resolveActiveConversationForCopy as resolveActiveConversationForCopyHelper,
 } from './mobile-projects-panel-helpers';
 import { activateAgentsHubProjectExtracted, appendSessionsSidebarConversationItemsExtracted, bindAgentFinishedToastCallbacksExtracted, collectSessionsSidebarPinnedGroupsExtracted, createSessionsSidebarPinnedProjectGroupExtracted, createSessionsSidebarPinnedSectionExtracted, createSessionsSidebarProjectGroupExtracted, createSessionsSidebarProjectRowHeadExtracted, createSessionsSidebarShowMoreControlExtracted, disposeExtracted, ensureAgentsHubExecutionShellRenderedExtracted, getFilteredTeamHubStateExtracted, getSessionsSidebarConversationDisplayLimitExtracted, hideExtracted, installAgentsHubEmptySurfaceGuardExtracted, maybeInstallWorkHubPerfProbeExtracted, onHeaderProjectClickExtracted, onNavigateToConversationHandler, openDesktopIdeFromAgentsHubExtracted, resolveSessionsSidebarVisibleConversationsExtracted, selectHubLandingViewExtracted, syncCurrentProjectsScrollHostExtracted, syncHeaderIdeViewPickerExtracted, syncWorkHubProjectSkillRootsExtracted, touchProjectActivityByConversationIdExtracted, tryPatchHubListBeforeRebuildExtracted } from './mobile-projects-panel-render';
-import { activateMessagesSurfaceForExternalSubmitExtracted, attachExternalComposerContextExtracted, attachExternalFeedbackImageEntriesExtracted, closeHeaderIdeViewPickerMenuExtracted, closeHeaderOverflowMenuExtracted, copyActiveConversationToClipboardExtracted, ensureExternalSubmitConversationRenderedExtracted, ensureHeaderIdeViewPickerMenuExtracted, ensureHeaderOverflowMenuExtracted, isHeaderOverflowMenuItemEnabledExtracted, isHeaderOverflowMenuItemVisibleExtracted, onHeaderIdeViewPickerClickExtracted, onHeaderOverflowMenuClickExtracted, openConversationSummaryExtracted, openHeaderIdeViewPickerMenuExtracted, openHeaderOverflowMenuExtracted, renderHeaderOverflowMenuItemsExtracted, resolveAnnotationComposerSessionExtracted, resolveExternalComposerUploadDirExtracted, sendExternalComposerContextExtracted, shouldEmbedSessionsSidebarInPanelExtracted, submitBackgroundAgentTaskExtracted } from './mobile-projects-panel-streaming';
+import { activateMessagesSurfaceForExternalSubmitExtracted, attachExternalComposerContextExtracted, attachExternalFeedbackImageEntriesExtracted, closeHeaderIdeViewPickerMenuExtracted, closeHeaderOverflowMenuExtracted, copyActiveConversationToClipboardExtracted, ensureExternalSubmitConversationRenderedExtracted, ensureHeaderIdeViewPickerMenuExtracted, ensureHeaderOverflowMenuExtracted, isHeaderOverflowMenuItemEnabledExtracted, isHeaderOverflowMenuItemVisibleExtracted, onHeaderOverflowMenuClickExtracted, openConversationSummaryExtracted, openHeaderIdeViewPickerMenuExtracted, openHeaderOverflowMenuExtracted, renderHeaderOverflowMenuItemsExtracted, resolveAnnotationComposerSessionExtracted, resolveExternalComposerUploadDirExtracted, sendExternalComposerContextExtracted, shouldEmbedSessionsSidebarInPanelExtracted, submitBackgroundAgentTaskExtracted } from './mobile-projects-panel-streaming';
 import { cancelOpenTranscriptStreamExtracted, collectAgentsHubRecentItemsExtracted, collectChatHubGroupsExtracted, collectReviewGroupsExtracted, collectTasksInboxGroupsExtracted, createInboxProjectGroupExtracted, createProjectChatSessionExtracted, forkTheiaConversationExtracted, getOrRestoreProjectChatSessionExtracted, mountTranscriptChatInputExtracted, notifyAgentUsesSettingsApiKeyExtracted, onArchiveConversationExtracted, onCancelConversationExtracted, onDeleteConversationExtracted, onForkConversationExtracted, onRenameConversationExtracted, onRetryConversationExtracted, onSetConversationAutoApproveExtracted, onSetConversationPausedExtracted, onSetConversationPriorityExtracted, openAgentSignInTerminalExtracted, openExternalParallelRunsSheetExtracted, openInlineTranscriptExtracted, patchWorkHubConversationRowInPlaceExtracted, pickAgentAndSubmitExternalPromptExtracted, refreshHubChromeExtracted, refreshInboxPullRequestsExtracted, removeExternalPreviewFeedbackChipExtracted, renderIdleSubmitOptimisticExtracted, resolveExternalComposerProjectExtracted, retryOpenFailedConversationTaskExtracted, retryOpenTranscriptConversationExtracted, retryOpenTranscriptStreamExtracted, seedTranscriptOptimisticSubmitExtracted, selectBackendConversationAgentExtracted, shouldUseTheiaCoderExtracted, submitExternalComposerPromptExtracted, submitTranscriptViaBackendConversationExtracted } from './mobile-projects-panel-timeline';
 import { attachTranscriptChatViewWidgetExtracted, beginTranscriptDevPreviewRequestExtracted, createComposerEditorContextPanelDelegateExtracted, ensureOverlayUiExtracted, handleTranscriptStatusForAutoVerifyExtracted, openAgentsHubInlineTranscriptExtracted, refreshOpenTranscriptConversationExtracted, refreshTranscriptChecksViewsExtracted, releasePreviewForConversationExtracted, renderAgentsHubIdleSubmitOptimisticExtracted, renderChecksSectionExtracted, resolveActiveComposerContextTargetExtracted, stageTranscriptPreviewReadyUrlExtracted, syncTranscriptPreviewFromConversationExtracted } from './mobile-projects-panel-activity';
 
@@ -316,7 +316,6 @@ import {
 } from './mobile-projects-panel-init';
 
 export class MobileProjectsPanel implements WorkHubTranscriptBridge {
-
     /** Max conversation rows per repo card before "More" expands the list. */
     protected static readonly CONVERSATIONS_COLLAPSED_LIMIT = MOBILE_PROJECTS_CONVERSATIONS_COLLAPSED_LIMIT;
 
@@ -1112,10 +1111,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
         this.hubListRenderScheduler.schedule();
     }
 
-    protected flushScheduledRenderList(): void {
-        this.hubListRenderScheduler.flushNow();
-    }
-
     protected maybeInstallWorkHubPerfProbe(): void {
         maybeInstallWorkHubPerfProbeExtracted(this);
     }
@@ -1453,10 +1448,6 @@ export class MobileProjectsPanel implements WorkHubTranscriptBridge {
 
     protected createHeaderIdeViewChevron(): HTMLElement {
         return createHeaderIdeViewChevronHelper();
-    }
-
-    protected onHeaderIdeViewPickerClick(event: MouseEvent): void {
-        onHeaderIdeViewPickerClickExtracted(this, event);
     }
 
     /** @internal Used by the extracted mobile-projects-panel-* modules. */

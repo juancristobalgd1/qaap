@@ -10,7 +10,7 @@ import {
     type TranscriptMarkdownWorkerStreamResponse,
 } from './qaap-transcript-markdown-worker-protocol';
 import type { StreamingMarkdownHtmlPatch } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-streaming-markdown-view';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 
 export type TranscriptMarkdownApplyFn = (host: HTMLElement, html: string, cleanLength: number) => void;
 export type TranscriptMarkdownSyncParseFn = (host: HTMLElement, content: string) => void;

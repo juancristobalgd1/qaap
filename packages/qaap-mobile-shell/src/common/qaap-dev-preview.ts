@@ -86,15 +86,6 @@ export function isLocalQaapPreviewOrigin(publicOrigin: string): boolean {
     }
 }
 
-export function buildDirectDevPreviewUrl(publicOrigin: string, port: number): string {
-    const url = new URL(normalizePublicOrigin(publicOrigin));
-    url.port = String(port);
-    url.pathname = '/';
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-}
-
 /**
  * Builds the preview URL served by {@link QAAP_DEV_PREVIEW_PREFIX} on the Qaap backend.
  * Works for localhost, VPS IP (`http://178.x.x.x:3000`), and future custom domains.

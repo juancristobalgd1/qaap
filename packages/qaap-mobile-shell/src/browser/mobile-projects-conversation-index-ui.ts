@@ -16,11 +16,6 @@ import type { MobileProjectsConversations } from './mobile-projects-conversation
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsConversationFlags } from './mobile-projects-conversation-flags';
-import {
-    partitionAgentConversations,
-    type IsolatedForkGroupingFields,
-    type PartitionedAgentConversations,
-} from '../common/qaap-isolated-fork-grouping';
 
 /** Panel surface for per-project conversation queries and task counters. */
 export interface MobileProjectsConversationIndexHost {
@@ -37,7 +32,6 @@ export interface MobileProjectsConversationIndexHost {
 
 /** Conversation list queries, ordering, flags, and legacy task-view projection. */
 export class MobileProjectsConversationIndexUi {
-
     constructor(protected readonly host: MobileProjectsConversationIndexHost) { }
 
     /** Latest summary row for a conversation id (VPS or Theia-backed). */
@@ -129,12 +123,6 @@ export class MobileProjectsConversationIndexUi {
         // Hide archived conversations from the main list. They remain in the thread store
         // and can be restored via the kebab menu's "Unarchive" action.
         return merged.filter(summary => !summary.archived);
-    }
-
-    partitionConversations<T extends IsolatedForkGroupingFields>(
-        items: readonly T[],
-    ): PartitionedAgentConversations<T> {
-        return partitionAgentConversations(items);
     }
 
     mergeConversationSummaries(
@@ -246,14 +234,6 @@ export class MobileProjectsConversationIndexUi {
             createdAt: conversation.createdAt,
             finishedAt: conversation.status !== 'streaming' ? conversation.updatedAt : undefined,
         };
-    }
-
-    tasksForProject(project: MobileProjectEntry): MobileProjectTaskView[] {
-        const conversations = this.conversationsForProject(project);
-        if (conversations.length === 0) {
-            return this.fallbackTasksFromProject(project);
-        }
-        return conversations.map(c => this.summaryToTaskView(c));
     }
 
     conversationTaskState(conversation: QaapAgentConversationSummaryDTO): string {

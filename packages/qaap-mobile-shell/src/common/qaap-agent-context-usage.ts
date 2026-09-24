@@ -54,28 +54,6 @@ export function totalTokensFromContextUsage(usage: QaapAgentContextUsage | undef
         + (usage.reasoningTokens ?? 0);
 }
 
-export function mergeQaapAgentContextUsage(
-    prior: QaapAgentContextUsage | undefined,
-    delta: QaapAgentContextUsage | undefined,
-): QaapAgentContextUsage | undefined {
-    if (!delta) {
-        return prior;
-    }
-    if (!prior) {
-        return { ...delta };
-    }
-    const cacheCreationInputTokens = (prior.cacheCreationInputTokens ?? 0) + (delta.cacheCreationInputTokens ?? 0);
-    const cacheReadInputTokens = (prior.cacheReadInputTokens ?? 0) + (delta.cacheReadInputTokens ?? 0);
-    const reasoningTokens = (prior.reasoningTokens ?? 0) + (delta.reasoningTokens ?? 0);
-    return {
-        inputTokens: prior.inputTokens + delta.inputTokens,
-        outputTokens: prior.outputTokens + delta.outputTokens,
-        ...(cacheCreationInputTokens > 0 ? { cacheCreationInputTokens } : {}),
-        ...(cacheReadInputTokens > 0 ? { cacheReadInputTokens } : {}),
-        ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
-    };
-}
-
 export function estimateTokensFromText(text: string | undefined): number {
     return Math.max(0, Math.ceil((text?.length ?? 0) / 4));
 }

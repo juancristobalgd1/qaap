@@ -18,12 +18,12 @@ import { isTranscriptAgentThinkingPhase, resolveTranscriptTraceDisplayPhase, res
 import { normalizeMobileClosingNarrativeText, type TranscriptActivityTimelineItem } from './mobile-projects-transcript-timeline-utils';
 import { hasMobileExecutionEventTimeline } from './qaap-execution-event-timeline';
 import { buildTranscriptExecutionTimelineItems } from './mobile-projects-transcript-timeline-utils';
-import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_ACTIVITY_ACTIVE_ATTR, TRANSCRIPT_ACTIVITY_ROW_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { excerptTranscriptThought, resolveTranscriptThinkingContent } from '../common/qaap-agent-transcript-segments';
 import { formatTranscriptActivityStepDuration, isTranscriptActivityLiveState } from '../common/qaap-transcript-activity-step-state';
 import { formatTranscriptActivityStepDurationSuffix, formatTranscriptActivityStepMeta } from '../common/qaap-transcript-activity-timing';
 import { shouldShowTranscriptActivityExpandContent, type TranscriptActivityExpandContent } from '../common/qaap-transcript-activity-expand-core';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { TRANSCRIPT_TIMELINE_GAP_POSITION_ATTR } from '../common/qaap-transcript-timeline-gap-expand';
 import { fingerprintTranscriptActivityHistoryGapSlot, TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR } from '../common/qaap-transcript-timeline-sync-fingerprint';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';

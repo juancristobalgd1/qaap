@@ -24,7 +24,7 @@ import { resolveInteractiveAgentCliBin, resolveInteractiveAgentLoginCommand } fr
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import {
     type TranscriptWorkspaceSurfaceKey,
-} from './qaap-transcript-workspace-surfaces-cache';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import {
     toPersistedTerminalWorkspace as toPersistedTerminalWorkspaceHelper,
 } from './mobile-projects-transcript-surfaces-helpers';

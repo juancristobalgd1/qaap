@@ -4,16 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    buildWorkHubHomeGreeting,
-    buildWorkHubHomeRecentItems,
-    buildWorkHubHomeSubtitle,
-    formatWorkHubRelativeTime,
-    selectWorkHubHomePinnedProjectIds,
-} from './qaap-work-hub-home';
+import { buildWorkHubHomeGreeting, buildWorkHubHomeRecentItems, formatWorkHubRelativeTime, selectWorkHubHomePinnedProjectIds } from './qaap-work-hub-home';
 
 describe('qaap-work-hub-home', () => {
-
     it('buildWorkHubHomeRecentItems keeps newest items first', () => {
         const items = buildWorkHubHomeRecentItems([
             {
@@ -52,34 +45,6 @@ describe('qaap-work-hub-home', () => {
             { id: 'b', pinned: true, isCurrent: false, lastActiveAt: '2026-05-29T10:00:00.000Z' },
         ], 2);
         expect(ids).to.deep.equal(['b', 'a']);
-    });
-
-    it('buildWorkHubHomeSubtitle prioritizes attention over running work', () => {
-        expect(buildWorkHubHomeSubtitle({
-            projectCount: 2,
-            runningTasks: 3,
-            needsYou: 2,
-            openPullRequests: 1,
-            localChatCount: 0,
-        })).to.equal('2 items need your attention');
-    });
-
-    it('buildWorkHubHomeSubtitle frames running work and PR review', () => {
-        expect(buildWorkHubHomeSubtitle({
-            projectCount: 2,
-            runningTasks: 1,
-            needsYou: 0,
-            openPullRequests: 0,
-            localChatCount: 0,
-        })).to.equal('1 agent moving work toward PR');
-
-        expect(buildWorkHubHomeSubtitle({
-            projectCount: 2,
-            runningTasks: 0,
-            needsYou: 0,
-            openPullRequests: 2,
-            localChatCount: 0,
-        })).to.equal('2 pull requests ready to review');
     });
 
     it('buildWorkHubHomeGreeting uses time of day and user name', () => {

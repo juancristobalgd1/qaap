@@ -5,12 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import {
-    appendStickyComposerWorkspaceContextField,
-    createComposerWorkspaceSheetNavGroup,
-    createStickyComposerWorkspacePill,
-    renderStickyComposerWorkspaceBar,
-} from '../browser/qaap-sticky-composer-workspace-bar';
+import { createComposerWorkspaceSheetNavGroup } from '../browser/qaap-sticky-composer-workspace-bar';
 
 describe('qaap-sticky-composer-workspace-bar', () => {
     // renderStickyComposerWorkspaceBar / pills are retained for sheet helpers; the sticky composer no longer mounts a bottom workspace bar.
@@ -24,63 +19,6 @@ describe('qaap-sticky-composer-workspace-bar', () => {
     after(() => {
         disableJSDOM?.();
         disableJSDOM = undefined;
-    });
-
-    it('separates branch and destination with a divider in the workspace context bar', () => {
-        const bar = renderStickyComposerWorkspaceBar({
-            view: { projectName: 'Demo', branchName: 'main' },
-            includeProject: false,
-            onOpenProject: () => undefined,
-            onOpenBranch: () => undefined,
-        });
-        appendStickyComposerWorkspaceContextField(
-            bar,
-            createStickyComposerWorkspacePill({
-                iconClass: 'codicon-repo',
-                label: 'Current workspace',
-                ariaLabel: 'Run in: Current workspace',
-                fieldKind: 'destination',
-                onClick: () => undefined,
-            }),
-            'destination',
-        );
-        expect(bar.querySelectorAll('.theia-mobile-projects-sticky-composer-context-divider').length).to.equal(1);
-        expect(bar.querySelector('.theia-mod-branch')).to.not.equal(null);
-        expect(bar.querySelector('.theia-mod-destination')).to.not.equal(null);
-    });
-
-    it('omits the divider when appendStickyComposerWorkspaceContextField divider is false', () => {
-        const bar = renderStickyComposerWorkspaceBar({
-            view: { projectName: 'Demo', branchName: 'main' },
-            includeProject: false,
-            onOpenProject: () => undefined,
-            onOpenBranch: () => undefined,
-        });
-        appendStickyComposerWorkspaceContextField(
-            bar,
-            createStickyComposerWorkspacePill({
-                iconClass: 'codicon-repo',
-                label: 'Current workspace',
-                ariaLabel: 'Run in: Current workspace',
-                fieldKind: 'destination',
-                onClick: () => undefined,
-            }),
-            'destination',
-            { divider: false },
-        );
-        expect(bar.querySelectorAll('.theia-mobile-projects-sticky-composer-context-divider').length).to.equal(0);
-    });
-
-    it('renders branch without destination when only the branch field is needed', () => {
-        const bar = renderStickyComposerWorkspaceBar({
-            view: { projectName: 'Demo', branchName: 'fix/critical-bugs' },
-            includeProject: false,
-            onOpenProject: () => undefined,
-            onOpenBranch: () => undefined,
-        });
-        bar.classList.add('theia-mod-branch-only');
-        expect(bar.querySelector('.theia-mod-branch')).to.not.equal(null);
-        expect(bar.querySelector('.theia-mod-destination')).to.equal(null);
     });
 
     it('renders an accessible workspace sheet nav group with aria-pressed selection', () => {

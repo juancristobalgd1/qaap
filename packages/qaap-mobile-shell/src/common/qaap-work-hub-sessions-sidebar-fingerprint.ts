@@ -16,21 +16,6 @@ export interface WorkHubSessionsSidebarConversationFingerprint {
     readonly turnProgressTotal?: number;
 }
 
-export interface WorkHubSessionsSidebarProjectFingerprint {
-    readonly id: string;
-    readonly isCurrent: boolean;
-}
-
-export interface WorkHubSessionsSidebarFingerprintInput {
-    readonly query: string;
-    readonly transcriptOpenSummaryId: string | undefined;
-    readonly expandedProjectIds: ReadonlySet<string>;
-    readonly visibleConversationCountByProjectId: ReadonlyMap<string, number>;
-    readonly projects: ReadonlyArray<WorkHubSessionsSidebarProjectFingerprint>;
-    readonly conversationsForProject: (projectId: string) => ReadonlyArray<WorkHubSessionsSidebarConversationFingerprint>;
-    readonly pinnedConversationIds: ReadonlySet<string>;
-}
-
 export const QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR = 'data-qaap-sessions-sidebar-structure-fp';
 export const QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR = 'data-qaap-sessions-sidebar-row-fp';
 
@@ -114,34 +99,3 @@ export function buildWorkHubSessionsSidebarVisibleStructureFingerprint(
     return parts.join('|');
 }
 
-/**
- * Compact fingerprint for the sessions sidebar list. Skips full DOM rebuild when SSE ticks
- * change only live title/progress on streaming rows.
- */
-export function buildWorkHubSessionsSidebarFingerprint(input: WorkHubSessionsSidebarFingerprintInput): string {
-    return buildWorkHubSessionsSidebarStructureFingerprint(input);
-}
-
-/** Layout fingerprint — project groups, visible conversation slots, accordion/pagination chrome. */
-export function buildWorkHubSessionsSidebarStructureFingerprint(input: WorkHubSessionsSidebarFingerprintInput): string {
-    const parts: string[] = [
-        `q:${input.query}`,
-        `o:${input.transcriptOpenSummaryId ?? ''}`,
-        `e:${[...input.expandedProjectIds].sort().join(',')}`,
-    ];
-    const visibleCounts = [...input.visibleConversationCountByProjectId.entries()]
-        .sort(([left], [right]) => left.localeCompare(right));
-    for (const [projectId, count] of visibleCounts) {
-        parts.push(`v:${projectId}=${count}`);
-    }
-    const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
-    for (const project of projects) {
-        parts.push(`p:${project.id}:${project.isCurrent ? 1 : 0}`);
-        const conversations = input.conversationsForProject(project.id);
-        for (const conversation of conversations) {
-            const pinned = input.pinnedConversationIds.has(conversation.id);
-            parts.push(`c:${buildWorkHubSessionsSidebarStructureSlot(conversation, pinned)}`);
-        }
-    }
-    return parts.join('|');
-}

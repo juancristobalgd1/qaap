@@ -8,11 +8,7 @@ import {
     createWorkHubWorkingChildIcon,
     createWorkHubWorkingParentIcon,
 } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
-import {
-    buildTeamTree,
-    countRunningTeamMembers,
-    type WorkHubTeamMember,
-} from '../common/qaap-work-hub-team';
+import { buildTeamTree, type WorkHubTeamMember } from '../common/qaap-work-hub-team';
 import {
     renderWorkingAgentDetailActivityFeed,
     resolveWorkingMemberCommand,
@@ -441,16 +437,6 @@ export function flattenWorkingAgentsTree(members: readonly WorkHubTeamMember[]):
     return entries;
 }
 
-/** Direct working children of a member (for the detail subagents section). */
-export function getWorkingAgentChildren(
-    members: readonly WorkHubTeamMember[],
-    parentId: string,
-): WorkHubTeamMember[] {
-    const working = filterWorkingTeamMembers(members);
-    const tree = buildTeamTree(working);
-    return [...(tree.childrenByParent.get(parentId) ?? [])];
-}
-
 /** Wrap the Working pill in a shared-surface shell used for in-place expand. */
 export function ensureWorkingControlShell(pill: HTMLElement): HTMLElement {
     if (pill.parentElement?.classList.contains(WORKING_CONTROL_CLASS)) {
@@ -736,16 +722,6 @@ export function renderWorkingAgentsDetailPanel(options: {
 
     panel.append(header, body);
     return panel;
-}
-
-export function resolveWorkingAgentKindLabel(member: WorkHubTeamMember): string {
-    if (member.kind === 'subtask') {
-        return nls.localize('qaap/workHubChrome/workingKindSubagent', 'Subagent');
-    }
-    if (member.kind === 'leader-task') {
-        return nls.localize('qaap/workHubChrome/workingKindTask', 'Task');
-    }
-    return nls.localize('qaap/workHubChrome/workingKindAgent', 'Agent');
 }
 
 function renderWorkingAgentsPopoverRow(
@@ -1680,6 +1656,3 @@ export function syncWorkingAgentsExpandContent(members: readonly WorkHubTeamMemb
     showWorkingAgentsListView();
 }
 
-export function countWorkingAgentsInPopover(members: readonly WorkHubTeamMember[]): number {
-    return countRunningTeamMembers(filterWorkingTeamMembers(members));
-}

@@ -10,17 +10,11 @@ import { mergeSessionsSidebarProjectsExtracted } from './mobile-projects-session
 
 enableJSDOM();
 
-import {
-    MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT,
-    MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
-    MobileProjectsSessionsSidebarUi,
-    type MobileProjectsSessionsSidebarHost,
-} from './mobile-projects-sessions-sidebar-ui';
+import { MobileProjectsSessionsSidebarUi, type MobileProjectsSessionsSidebarHost } from './mobile-projects-sessions-sidebar-ui';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 
 describe('mobile-projects-sessions-sidebar-ui', () => {
-
     it('shows authenticated history before the workspace catalog has loaded', () => {
         const ctx = { host: {
             conversations: { threadStore: { listAllSummaries: () => [{ cwd: '/repo/app' }, { cwd: '/repo/app' }] } },
@@ -58,34 +52,6 @@ describe('mobile-projects-sessions-sidebar-ui', () => {
             return 1;
         }) as typeof window.requestAnimationFrame;
         window.cancelAnimationFrame = (() => undefined) as typeof window.cancelAnimationFrame;
-    });
-
-    it('show more forces a sidebar refresh after increasing the visible conversation limit', () => {
-        const project = { id: 'proj-1', name: 'Mockup', status: 'working' } as MobileProjectEntry;
-        let refreshOptions: { force?: boolean } | undefined;
-        const visibleCounts = new Map<string, number>();
-        const host = {
-            sessionsSidebarVisibleConversationCountByProjectId: visibleCounts,
-            hubQueryUi: {
-                projectsForCurrentHubList: () => [{ id: 'a' }, { id: 'b' }],
-            },
-            conversationIndexUi: {
-                conversationsForProject: () => [],
-            },
-            sessionsSidebar: {
-                refreshList: (options?: { force?: boolean }) => { refreshOptions = options; },
-            },
-        } as unknown as MobileProjectsSessionsSidebarHost;
-        const ui = new MobileProjectsSessionsSidebarUi(host);
-        const button = ui.createSessionsSidebarShowMoreControl(project, 20, 25);
-
-        button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-
-        expect(visibleCounts.get(project.id)).to.equal(
-            MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_COLLAPSED_LIMIT
-            + MOBILE_PROJECTS_SESSIONS_SIDEBAR_CONVERSATIONS_PAGE_SIZE,
-        );
-        expect(refreshOptions).to.deep.equal({ force: true });
     });
 
     it('prepareSessionsSidebarData merges the composer current workspace when loadProjects is empty', async () => {

@@ -6,17 +6,7 @@
 import { expect } from 'chai';
 import type { QaapAgentConversationDTO, QaapAgentConversationSummaryDTO } from './qaap-agent-conversation-client';
 import { conversationToSummary } from './qaap-agent-conversation-client';
-import {
-    applyConversationComposerPrefs,
-    applyProjectComposerDefaults,
-    buildRuntimeComposerPersistPatch,
-    extractConversationComposerPrefs,
-    extractConversationComposerPrefsFromSummary,
-    formatConversationComposerSessionMeta,
-    formatConversationExecutionSessionMeta,
-    readConversationComposerDraft,
-    writeConversationComposerDraft,
-} from './qaap-conversation-composer-state';
+import { applyConversationComposerPrefs, applyProjectComposerDefaults, buildRuntimeComposerPersistPatch, extractConversationComposerPrefs, extractConversationComposerPrefsFromSummary, formatConversationExecutionSessionMeta, readConversationComposerDraft, writeConversationComposerDraft } from './qaap-conversation-composer-state';
 import { writeStoredAgentModel } from './qaap-agent-task-client';
 
 const baseConv = (): QaapAgentConversationDTO => ({
@@ -72,14 +62,6 @@ describe('qaap-conversation-composer-state', () => {
         expect(summary.agentModel?.modelId).to.equal('claude-sonnet-4');
         expect(summary.interactionModeId).to.equal('plan');
         expect(summary.approvalPolicyId).to.equal('approve-for-me');
-    });
-
-    it('formatConversationComposerSessionMeta renders agent and model', () => {
-        const meta = formatConversationComposerSessionMeta({
-            agentId: 'opencode',
-            agentModel: { provider: 'anthropic', vendor: 'anthropic', modelId: 'claude-sonnet-4' },
-        }, id => id === 'opencode' ? 'OpenCode' : id);
-        expect(meta).to.equal('OpenCode · claude-sonnet-4');
     });
 
     it('formatConversationExecutionSessionMeta prefers the last executed turn', () => {

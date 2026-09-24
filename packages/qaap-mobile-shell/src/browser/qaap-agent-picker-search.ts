@@ -42,16 +42,6 @@ export function modelMatchesAgentPickerQuery(model: QaapQaiqModelOption, query: 
         .some(value => normalizeAgentPickerSearchText(value).includes(normalizedQuery));
 }
 
-export function agentMatchesAgentPickerQuery(entry: QaapAgentPickerSearchEntry, query: string): boolean {
-    const normalizedQuery = normalizeAgentPickerSearchText(query);
-    if (!normalizedQuery) {
-        return true;
-    }
-    return normalizeAgentPickerSearchText(entry.label).includes(normalizedQuery)
-        || normalizeAgentPickerSearchText(entry.id).includes(normalizedQuery)
-        || entry.models.some(model => modelMatchesAgentPickerQuery(model, normalizedQuery));
-}
-
 function agentNameMatchesQuery(entry: QaapAgentPickerSearchEntry, query: string): boolean {
     return normalizeAgentPickerSearchText(entry.label).includes(query)
         || normalizeAgentPickerSearchText(entry.id).includes(query);
@@ -185,31 +175,5 @@ export async function activateAgentPickerEntry(options: {
     // shown there instead of treating the tap as a final agent selection (which closes the sheet).
     options.onShowModels();
     return 'models';
-}
-
-export function handleAgentPickerSearchKeydown(
-    event: KeyboardEvent,
-    input: HTMLInputElement,
-    onQueryCleared: () => void,
-    onClose: () => void,
-    onlyResult?: HTMLElement,
-): boolean {
-    if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        if (input.value) {
-            input.value = '';
-            onQueryCleared();
-        } else {
-            onClose();
-        }
-        return true;
-    }
-    if (event.key === 'Enter' && onlyResult) {
-        event.preventDefault();
-        onlyResult.click();
-        return true;
-    }
-    return false;
 }
 

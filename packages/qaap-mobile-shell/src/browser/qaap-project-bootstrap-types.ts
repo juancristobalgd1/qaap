@@ -115,10 +115,6 @@ export interface QaapProjectDescriptor {
     readonly scaffoldRelativePath?: string;
 }
 
-export function isMonorepoDescriptor(descriptor: QaapProjectDescriptor): boolean {
-    return descriptor.apps.length > 0;
-}
-
 /** True when a managed preview stop closed the dev terminal on purpose. */
 export function isQaapUserCancelledPreviewError(error?: string): boolean {
     if (!error) {

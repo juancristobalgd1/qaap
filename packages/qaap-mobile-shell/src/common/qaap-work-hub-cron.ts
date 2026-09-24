@@ -61,27 +61,6 @@ export function lastCronFireAt(expression: string, timezone: string, at: Date): 
     }
 }
 
-/** Next cron fire strictly after {@link from}. */
-export function nextCronFireAt(expression: string, timezone: string, from: Date): Date | undefined {
-    try {
-        const interval = CronExpressionParser.parse(expression, {
-            currentDate: from,
-            tz: normalizeRoutineTimezone(timezone),
-        });
-        return interval.next().toDate();
-    } catch {
-        return undefined;
-    }
-}
-
-export function formatCronScheduleLabel(expression: string, timezone: string, oneShot?: boolean): string {
-    const tz = normalizeRoutineTimezone(timezone);
-    const preset = QAAP_ROUTINE_CRON_PRESETS.find(p => p.expression === expression);
-    const base = preset?.label ?? `Cron \`${expression}\``;
-    const suffix = oneShot ? ' · once' : '';
-    return tz === DEFAULT_TIMEZONE ? `${base}${suffix}` : `${base} (${tz})${suffix}`;
-}
-
 export function cronSlotIsDue(
     expression: string,
     timezone: string,

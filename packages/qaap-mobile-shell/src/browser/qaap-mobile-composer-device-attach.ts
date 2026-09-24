@@ -240,20 +240,6 @@ export async function createFileContextFromDeviceFiles(
     return requests;
 }
 
-function createPendingImageEntry(file: File): StickyComposerContextEntry {
-    const id = generateUuid();
-    return {
-        id,
-        pending: true,
-        displayName: file.name || nls.localize('qaap/mobileProjects/stickyComposerAttachmentImage', 'Image'),
-        localPreviewSrc: URL.createObjectURL(file),
-        request: {
-            variable: IMAGE_CONTEXT_VARIABLE,
-            arg: buildPendingComposerContextArg(id),
-        },
-    };
-}
-
 function createPendingFileEntry(file: File): StickyComposerContextEntry {
     const id = generateUuid();
     const isImage = isImageAttachmentFileName(file.name);
@@ -267,19 +253,6 @@ function createPendingFileEntry(file: File): StickyComposerContextEntry {
             arg: buildPendingComposerContextArg(id),
         },
     };
-}
-
-export function attachDeviceImagesOptimistic(
-    files: readonly File[],
-    handlers: MobileComposerAttachHandlers,
-): void {
-    for (const file of files) {
-        const entry = createPendingImageEntry(file);
-        handlers.appendOptimistic(entry);
-        void createImageContextFromDeviceFile(file)
-            .then(request => handlers.finalizeOptimistic(entry.id, request))
-            .catch(error => handlers.removeOptimistic(entry.id, error));
-    }
 }
 
 export function attachDeviceFilesOptimistic(

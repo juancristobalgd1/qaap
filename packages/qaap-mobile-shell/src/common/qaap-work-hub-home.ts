@@ -130,28 +130,6 @@ export function formatWorkHubRelativeTime(
     return labels.daysAgo(String(days));
 }
 
-export function buildWorkHubHomeSubtitle(stats: WorkHubHomeStats): string {
-    if (stats.needsYou > 0) {
-        return stats.needsYou === 1
-            ? '1 item needs your attention'
-            : `${stats.needsYou} items need your attention`;
-    }
-    if (stats.runningTasks > 0) {
-        return stats.runningTasks === 1
-            ? '1 agent moving work toward PR'
-            : `${stats.runningTasks} agents moving work toward PR`;
-    }
-    if (stats.openPullRequests > 0) {
-        return stats.openPullRequests === 1
-            ? '1 pull request ready to review'
-            : `${stats.openPullRequests} pull requests ready to review`;
-    }
-    if (stats.projectCount === 0) {
-        return 'Add a GitHub repository to start agent work';
-    }
-    return 'Ready to capture the next task';
-}
-
 function sortProjectsByRecency<T extends WorkHubHomeProjectRef>(projects: readonly T[]): T[] {
     return [...projects].sort((a, b) => projectRecency(b) - projectRecency(a));
 }

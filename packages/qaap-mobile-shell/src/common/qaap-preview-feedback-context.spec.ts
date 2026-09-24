@@ -4,16 +4,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import { createComposerContextEntry } from './qaap-composer-context-entry';
-import {
-    buildAttachComposerImageRequests,
-    buildPreviewFeedbackAttachmentRequest,
-    findPreviewFeedbackEntryIndex,
-    isPreviewFeedbackRequest,
-    isQaapAttachComposerContextArgs,
-    resolvePreviewFeedbackVariable,
-} from './qaap-preview-feedback-context';
+import { buildPreviewFeedbackAttachmentRequest, findPreviewFeedbackEntryIndex, isPreviewFeedbackRequest, isQaapAttachComposerContextArgs, resolvePreviewFeedbackVariable } from './qaap-preview-feedback-context';
 
 describe('qaap-preview-feedback-context', () => {
     it('builds and resolves preview feedback requests', () => {
@@ -58,20 +50,6 @@ describe('qaap-preview-feedback-context', () => {
             dedupeKey: 'key-1',
             images: [{ name: 'x', mimeType: '', data: '' }],
         })).to.equal(false);
-    });
-
-    it('buildAttachComposerImageRequests maps screenshots to imageContext variables', () => {
-        const requests = buildAttachComposerImageRequests([{
-            name: 'preview-screenshot.png',
-            mimeType: 'image/png',
-            data: 'ZmFrZQ==',
-        }]);
-        expect(requests).to.have.length(1);
-        expect(ImageContextVariable.isImageContextRequest(requests[0]!)).to.equal(true);
-        const parsed = ImageContextVariable.parseRequest(requests[0]!);
-        expect(parsed?.name).to.equal('preview-screenshot.png');
-        expect(parsed?.mimeType).to.equal('image/png');
-        expect(parsed?.data).to.equal('ZmFrZQ==');
     });
 
     it('finds entries by dedupe key for replace', () => {

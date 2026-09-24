@@ -18,11 +18,7 @@ import type {
 import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-session';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapGithubRepositorySummary } from '@theia/qaap-adapters/lib/common/qaap-github-api-types';
-import {
-    MobileProjectEntry,
-    MobileProjectFilter,
-    mobileProjectColorForName,
-} from './mobile-projects-types';
+import { MobileProjectEntry, mobileProjectColorForName } from './mobile-projects-types';
 import { findProjectMatchingWorkspaceCwd } from '../common/qaap-composer-workspace-project';
 import {
     mergeSessionMaps,
@@ -385,15 +381,5 @@ export function latestTimestampExtracted(ctx: MobileProjectsServiceContext, a?: 
             return a;
         }
         return Number.isFinite(timeB) ? b : undefined;
-}
-
-export function filterProjectsExtracted(ctx: MobileProjectsServiceContext, projects: MobileProjectEntry[], filter: MobileProjectFilter): MobileProjectEntry[] {
-        if (filter === 'active') {
-            return projects.filter(p => p.status === 'working' || p.status === 'review');
-        }
-        if (filter === 'pinned') {
-            return projects.filter(p => p.pinned);
-        }
-        return projects;
 }
 

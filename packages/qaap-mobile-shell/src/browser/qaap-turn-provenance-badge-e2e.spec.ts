@@ -33,7 +33,7 @@ import {
     computeAgentMessageWireDelta,
     toAgentMessageWireSnapshot,
 } from '../common/qaap-agent-message-wire-delta';
-import { TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { formatQaiqModelIdShortLabel, formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
 import { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
@@ -42,16 +42,15 @@ import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-t
 import { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-transcript-messages-render-ui';
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
-import { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
+import { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import {
     MOBILE_PROCESS_ACCORDION_PROVENANCE_CLASS,
     MOBILE_TURN_PROVENANCE_STANDALONE_CLASS,
 } from './qaap-execution-event-timeline';
 
 describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
-
     beforeEach(() => {
         if (typeof HTMLElement === 'undefined') {
             enableJSDOM();
@@ -284,7 +283,6 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
     // appeared for the most common kind of turn.
 
     describe('no-tool turns (standalone badge)', () => {
-
         it('renders exactly one standalone badge for a turn with no tool segments, and no accordion', () => {
             const { renderUi } = createRenderUi();
             const chatHost = document.createElement('div');
@@ -405,7 +403,6 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
     // "QAIQ · OpenRouter · openrouter/free" no longer exists as a string to truncate.
 
     describe('agent-identity visual pattern (avatar + provider sub-icon + short model label)', () => {
-
         const openRouterFreeModel: QaapCreateAgentTaskQaiqModel = {
             provider: 'openai',
             vendor: 'openrouter',
@@ -503,7 +500,6 @@ describe('turn-provenance badge (end-to-end: seal -> wire -> render)', () => {
     // (an error with nothing else). Neither host had the badge before this fix.
 
     describe('rows with no segments at all (shell raw-stdout, pure-failure turns)', () => {
-
         function conversationWithRawStdoutTurn(
             userMessage: QaapAgentMessageDTO,
             agentContent: string,

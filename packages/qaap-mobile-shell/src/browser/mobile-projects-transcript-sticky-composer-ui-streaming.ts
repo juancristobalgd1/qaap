@@ -13,9 +13,6 @@ import {
 import { type ComposerGitActionDisplayMetadata } from '../common/qaap-composer-git-action-display';
 import { formatCommitFeedback } from '../common/qaap-commit-feedback';
 import { createComposerContextEntry } from '../common/qaap-composer-context-entry';
-import {
-    agentSupportsApprovalPolicy,
-} from '../common/qaap-sticky-composer-approval-policy';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileSnackbar } from './mobile-snackbar';
 import {
@@ -359,34 +356,6 @@ export async function launchComposerDevPreviewExtracted(ctx: MobileProjectsTrans
     }
     void ctx.host.projectsService.recordProjectPreviewUrl(readyProject, readyUrl);
     ctx.host.executionSurfaceTabsUi.selectTranscriptTab('preview', readyProject, summary);
-}
-
-export async function submitRunGeneratedAppFollowUpExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,
-    summary: QaapAgentConversationSummaryDTO,): Promise<void> {
-    const chatHost = ctx.host.resolveActiveTranscriptChatHost() ?? ctx.host.transcriptChatHost;
-    if (!chatHost) {
-        ctx.host.transcriptComposerDraft = nls.localize(
-            'qaap/mobileProjects/runGeneratedAppPrompt',
-            'Run the generated app now. Install dependencies if needed, start the dev server, fix any startup errors, and open or report the preview URL.',
-        );
-        ctx.remountTranscriptStickyComposer();
-        return;
-    }
-    const pinnedId = ctx.host.transcriptComposerUi.resolveTranscriptComposerPinnedAgentId(project, summary);
-    await ctx.submitTranscriptComposerDraft(
-        nls.localize(
-            'qaap/mobileProjects/runGeneratedAppPrompt',
-            'Run the generated app now. Install dependencies if needed, start the dev server, fix any startup errors, and open or report the preview URL.',
-        ),
-        project,
-        summary,
-        chatHost,
-        {
-            resolvedPinnedId: pinnedId,
-            showApprovalPolicy: agentSupportsApprovalPolicy(pinnedId),
-            isLegacyTheiaChat: summary.source === 'theia-chat',
-        },
-    );
 }
 
 export async function runComposerCommitActionExtracted(ctx: MobileProjectsTranscriptStickyComposerUiContext, project: MobileProjectEntry,

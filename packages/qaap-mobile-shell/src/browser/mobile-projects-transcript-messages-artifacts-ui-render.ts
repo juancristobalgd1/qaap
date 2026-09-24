@@ -11,7 +11,7 @@ import {
     resolveAgentTurnFailureTechnicalContent,
 } from '../common/qaap-agent-failure-message';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
-import { TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     destroyThinkingOrbIndicator,
     QAAP_THINKING_ORB_INDICATOR_CLASS,

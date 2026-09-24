@@ -25,8 +25,8 @@ import {
 } from '../common/qaap-conversation-change';
 import { QaapThreadStore } from '../common/qaap-thread-store';
 import type { QaapThreadStoreUpsertResult } from '../common/qaap-thread-store';
-import { applyConversationGroupsExtracted, cacheDocumentExtracted, cancelConversationLiveExtracted, dispatchSseEventExtracted, emitConversationChangeExtracted, findConversationsForProjectExtracted, findSummaryByIdExtracted, findTheiaSerializedConversationBySessionIdExtracted, getConversationsForCwdExtracted, getSubmitLatencyMarksExtracted, getTheiaConversationExtracted, installVisibilityReconnectExtracted, mergeCwdConversationListsExtracted, openSseStreamExtracted, openWebSocketExtracted, perfProbeSeedSummariesExtracted, perfProbeTickStreamingSummariesExtracted, prefetchDocumentExtracted, prefetchDocumentsExtracted, primeFromAllExtracted, recordSnapshotExtracted, recordSubmitLatencyMarkExtracted, refreshTheiaChatSessionsForProjectsExtracted, removeSnapshotExtracted, resolveWorkspaceMetadataCwdExtracted, schedulePrimeFromAllExtracted, startExtracted } from './mobile-projects-conversations-render';
-import { clearReconnectTimersExtracted, closeSseExtracted, closeWebSocketExtracted, dispatchLiveMessageDeltaExtracted, dispatchLiveMessageExtracted, dispatchServerPayloadExtracted, findTheiaSummaryExtracted, getAllConversationBucketsExtracted, markStreamingTransportsExtracted, readJsonExtracted, recordClientStreamMetricsExtracted, refreshSummaryFromLiveDeltaExtracted, refreshSummaryFromLiveMessageExtracted, resolvePreviewDeltaExtracted, scheduleSseReconnectExtracted, scheduleWebSocketReconnectExtracted } from './mobile-projects-conversations-streaming';
+import { applyConversationGroupsExtracted, cacheDocumentExtracted, cancelConversationLiveExtracted, dispatchSseEventExtracted, emitConversationChangeExtracted, findConversationsForProjectExtracted, findSummaryByIdExtracted, findTheiaSerializedConversationBySessionIdExtracted, getConversationsForCwdExtracted, getSubmitLatencyMarksExtracted, getTheiaConversationExtracted, installVisibilityReconnectExtracted, mergeCwdConversationListsExtracted, openSseStreamExtracted, openWebSocketExtracted, perfProbeSeedSummariesExtracted, perfProbeTickStreamingSummariesExtracted, prefetchDocumentExtracted, prefetchDocumentsExtracted, primeFromAllExtracted, recordSnapshotExtracted, recordSubmitLatencyMarkExtracted, refreshTheiaChatSessionsForProjectsExtracted, removeSnapshotExtracted, schedulePrimeFromAllExtracted, startExtracted } from './mobile-projects-conversations-render';
+import { clearReconnectTimersExtracted, closeSseExtracted, closeWebSocketExtracted, dispatchLiveMessageDeltaExtracted, dispatchLiveMessageExtracted, dispatchServerPayloadExtracted, findTheiaSummaryExtracted, markStreamingTransportsExtracted, readJsonExtracted, recordClientStreamMetricsExtracted, refreshSummaryFromLiveDeltaExtracted, refreshSummaryFromLiveMessageExtracted, resolvePreviewDeltaExtracted, scheduleSseReconnectExtracted, scheduleWebSocketReconnectExtracted } from './mobile-projects-conversations-streaming';
 
 export const STREAM_URL = `${QAAP_AGENT_CONVERSATION_API_PATH}/stream`;
 /** Minimum gap between full `/all` primes; live WS/SSE events reconcile state in between. */
@@ -101,7 +101,6 @@ export type ConversationServerEvent =
  */
 @injectable()
 export class MobileProjectsConversations {
-
     snapshotState: 'loading' | 'ready' | 'error' = 'loading';
 
     /** Canonical per-thread summaries + lazy documents (AG-UI MessagesSnapshot path). */
@@ -278,10 +277,6 @@ export class MobileProjectsConversations {
         return refreshTheiaChatSessionsForProjectsExtracted(this, _projects);
     }
 
-    protected resolveWorkspaceMetadataCwd(project: { readonly name: string; readonly uri?: URI; readonly github?: { readonly owner: string; readonly name: string } }, workspaceIndex: Record<string, string>,): string | undefined {
-        return resolveWorkspaceMetadataCwdExtracted(this, project, workspaceIndex);
-    }
-
     async getTheiaConversation(id: string): Promise<QaapAgentConversationDTO | undefined> {
         return getTheiaConversationExtracted(this, id);
     }
@@ -343,11 +338,6 @@ export class MobileProjectsConversations {
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */
     public emitConversationChange(event: QaapConversationChangeEvent): void {
         emitConversationChangeExtracted(this, event);
-    }
-
-    /** Latest typed change paired with the preceding `onDidChange` tick. */
-    peekLastConversationChange(): QaapConversationChangeEvent | undefined {
-        return this.lastConversationChange;
     }
 
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */
@@ -441,10 +431,6 @@ export class MobileProjectsConversations {
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */
     public markStreamingTransports(transport: 'ws' | 'sse'): void {
         markStreamingTransportsExtracted(this, transport);
-    }
-
-    protected getAllConversationBuckets(): Array<[string, QaapAgentConversationSummaryDTO[]]> {
-        return getAllConversationBucketsExtracted(this);
     }
 
     /** @internal Used by the extracted mobile-projects-conversations-* modules. */

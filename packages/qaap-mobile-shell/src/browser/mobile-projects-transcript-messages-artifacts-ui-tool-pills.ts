@@ -22,8 +22,8 @@ import {
     fingerprintTranscriptTimelineSync,
     TRANSCRIPT_TIMELINE_SYNC_FP_ATTR,
 } from '../common/qaap-transcript-timeline-sync-fingerprint';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
-import { TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '../common/qaap-transcript-incremental-update';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
+import { TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { bindTranscriptActivityListKeyboard } from '../common/qaap-transcript-activity-keyboard';
 import {
     TRANSCRIPT_TIMELINE_VIRTUALIZE_THRESHOLD,

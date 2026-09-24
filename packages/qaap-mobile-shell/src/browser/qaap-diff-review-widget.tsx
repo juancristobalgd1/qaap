@@ -38,7 +38,7 @@ import {
     highlightTranscriptCodeInto,
     resolveTranscriptCodeLanguage,
     type TranscriptCodeLanguage,
-} from './qaap-transcript-code-view';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 
 /** Git extension commands used by the bulk review actions. */
 const GIT_STAGE_ALL = 'git.stageAll';
@@ -89,7 +89,6 @@ export interface QaapDiffReviewRepositoryContext {
  */
 @injectable()
 export class QaapDiffReviewWidget extends ReactWidget {
-
     static readonly ID = 'qaap-diff-review';
     static readonly LABEL = nls.localize('qaap/diff/reviewLabel', 'Working changes');
 
@@ -142,7 +141,6 @@ export class QaapDiffReviewWidget extends ReactWidget {
     protected transcriptEmbed = false;
     /** Changes tab: checks + composer live in the panel below the diff widget. */
     protected transcriptExternalChrome = false;
-    protected reviewComposerDraft = '';
     protected runningFileAction = false;
     protected branchName: string | undefined;
     protected prReadiness: QaapGitPrReadiness | undefined;
@@ -1464,22 +1462,6 @@ export class QaapDiffReviewWidget extends ReactWidget {
             }
         }
         this.update();
-    };
-
-    protected readonly onReviewComposerDraftChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
-        this.reviewComposerDraft = event.target.value;
-        this.update();
-    };
-
-    protected readonly onReviewComposerSubmit = (event: React.FormEvent): void => {
-        event.preventDefault();
-        const message = this.reviewComposerDraft.trim();
-        if (!message || !this.onTranscriptAgentFeedback) {
-            return;
-        }
-        this.reviewComposerDraft = '';
-        this.update();
-        void Promise.resolve(this.onTranscriptAgentFeedback(message));
     };
 
     protected async acceptFile(path: string): Promise<void> {

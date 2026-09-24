@@ -16,7 +16,6 @@ import {
 import type { QaapAgentMessageWireDelta } from '../common/qaap-agent-message-wire-delta';
 import { resolveMessagePreviewText } from '../common/qaap-agent-message-content';
 import { normalizeCwd } from './mobile-projects-active-tasks';
-import { sortConversations } from './mobile-projects-conversations';
 import { SSE_RECONNECT_DELAY_MS, WS_RECONNECT_MAX_MS } from './mobile-projects-conversations';
 import type { ConversationMessageDeltaEvent, ConversationMessageEvent, ConversationServerEvent } from './mobile-projects-conversations';
 import type { BinaryBuffer } from '@theia/core/lib/common/buffer';
@@ -279,19 +278,6 @@ export function markStreamingTransportsExtracted(ctx: MobileProjectsConversation
         for (const conversation of ctx.threadStore.listStreamingSummaries()) {
             ctx.streamMetrics.setTransport(conversation.id, transport);
         }
-}
-
-export function getAllConversationBucketsExtracted(ctx: MobileProjectsConversationsContext): Array<[string, QaapAgentConversationSummaryDTO[]]> {
-        const buckets = new Map<string, QaapAgentConversationSummaryDTO[]>();
-        for (const [cwd, list] of ctx.theiaByCwd) {
-            buckets.set(cwd, [...list]);
-        }
-        for (const summary of ctx.threadStore.listAllSummaries()) {
-            const cwd = normalizeCwd(summary.cwd);
-            const merged = [...(buckets.get(cwd) ?? []), summary];
-            buckets.set(cwd, sortConversations(merged));
-        }
-        return [...buckets];
 }
 
 export function findTheiaSummaryExtracted(ctx: MobileProjectsConversationsContext, id: string): QaapAgentConversationSummaryDTO | undefined {

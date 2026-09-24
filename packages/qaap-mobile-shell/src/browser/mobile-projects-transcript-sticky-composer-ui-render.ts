@@ -14,7 +14,7 @@ import { resolveTranscriptEffectiveStatus, shouldShowTranscriptEmptyQuickActions
 import {
     MAX_TRANSCRIPT_FOLLOW_UP_QUEUE,
     type TranscriptFollowUpEntry,
-} from '../common/qaap-transcript-follow-up-queue';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileSnackbar } from './mobile-snackbar';
 import {

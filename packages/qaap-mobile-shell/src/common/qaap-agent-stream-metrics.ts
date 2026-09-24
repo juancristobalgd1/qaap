@@ -76,7 +76,6 @@ export function isQaapStreamMetricsEnabled(): boolean {
 
 /** Per-conversation counters for one streaming turn (server or browser). */
 export class QaapConversationStreamMetricsCollector {
-
     protected readonly active = new Map<string, ActiveTurnMetrics>();
 
     constructor(protected readonly side: QaapStreamMetricsSide) { }
@@ -136,14 +135,6 @@ export class QaapConversationStreamMetricsCollector {
         if (turn.latencyMarks[mark] === undefined) {
             turn.latencyMarks[mark] = at;
         }
-    }
-
-    peekLatencyMarks(conversationId: string | undefined): Partial<Record<QaapTurnLatencyMark, number>> | undefined {
-        if (!isQaapStreamMetricsEnabled() || !conversationId) {
-            return undefined;
-        }
-        const turn = this.active.get(conversationId);
-        return turn ? { ...turn.latencyMarks } : undefined;
     }
 
     finishTurn(conversationId: string): QaapConversationStreamMetricsSnapshot | undefined {

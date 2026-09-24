@@ -13,11 +13,7 @@ import {
 } from '../common/qaap-git-review';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import {
-    createComposerWorkspaceSheetNavGroup,
-    type ComposerWorkspaceSheetNavKind,
-    type StickyComposerWorkspaceBarView,
-} from './qaap-sticky-composer-workspace-bar';
+import { createComposerWorkspaceSheetNavGroup, type ComposerWorkspaceSheetNavKind } from './qaap-sticky-composer-workspace-bar';
 import {
     isWorkHubHeaderProjectPopoverAnchor,
     markStickyComposerPopoverAnchor,
@@ -283,12 +279,6 @@ export class MobileProjectsStickyComposerWorkspaceUi {
             /* optional */
         }
         return this.resolveComposerWorkspaceBranch(project);
-    }
-    resolveComposerWorkspaceBarView(project: MobileProjectEntry): StickyComposerWorkspaceBarView {
-        return {
-            projectName: project.name,
-            branchName: this.resolveComposerWorkspaceBranch(project),
-        };
     }
     remountComposerWithWorkspaceBar(project: MobileProjectEntry): void {
         if (this.host.transcriptComposerHost?.isConnected && this.host.transcriptComposerProject && this.host.transcriptComposerSummary) {

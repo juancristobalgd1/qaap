@@ -10,8 +10,8 @@
 // detail patching, open-state capture/restore across rebuilds, and full
 // refresh fallback. Extracted from qaap-execution-event-timeline.ts.
 
-import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { canPatchToolSegmentGrowth, TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import type { QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {

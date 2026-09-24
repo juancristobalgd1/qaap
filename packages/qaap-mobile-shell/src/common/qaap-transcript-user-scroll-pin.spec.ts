@@ -11,10 +11,9 @@ import {
     resolveTranscriptPinnedUserIndex,
     shouldPinTranscriptUserIndex,
     transcriptUserMessageScrollTop,
-} from './qaap-transcript-user-scroll-pin';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-user-scroll-pin';
 
 describe('qaap-transcript-user-scroll-pin', () => {
-
     it('returns undefined at scroll top before any pin', () => {
         expect(resolveTranscriptPinnedUserIndex([4], 0, undefined)).to.equal(undefined);
     });

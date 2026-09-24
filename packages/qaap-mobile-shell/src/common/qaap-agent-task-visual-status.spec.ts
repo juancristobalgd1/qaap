@@ -4,11 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    listQaapAgentTaskVisualStatusLegendEntries,
-    resolveQaapAgentTaskVisualStatus,
-    resolveQaapGitPrVisualStatus,
-} from './qaap-agent-task-visual-status';
+import { resolveQaapAgentTaskVisualStatus, resolveQaapGitPrVisualStatus } from './qaap-agent-task-visual-status';
 
 describe('resolveQaapAgentTaskVisualStatus', () => {
     it('keeps failures above every other signal', () => {
@@ -135,26 +131,6 @@ describe('resolveQaapAgentTaskVisualStatus', () => {
             true,
         );
         expect(status.id).to.equal('needs-you');
-    });
-});
-
-describe('listQaapAgentTaskVisualStatusLegendEntries', () => {
-    it('returns the core sidebar statuses without the full PR matrix', () => {
-        const entries = listQaapAgentTaskVisualStatusLegendEntries();
-        expect(entries.map(entry => entry.id)).to.deep.equal([
-            'idle',
-            'queued',
-            'running',
-            'needs-you',
-            'blocked',
-            'failed',
-            'interrupted',
-            'background',
-            'verified',
-            'warnings',
-            'pr-ready',
-        ]);
-        expect(entries.every(entry => entry.labelKey.startsWith('qaap/mobileProjects/'))).to.equal(true);
     });
 });
 

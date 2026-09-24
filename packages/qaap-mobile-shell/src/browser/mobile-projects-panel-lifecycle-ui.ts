@@ -24,7 +24,7 @@ import type { MobileProjectEntry, MobileProjectFilter, MobileProjectsHubView } f
 import type { MobileOpenRepositoryDialog } from './mobile-open-repository-dialog';
 import type { MobileWorkHubInboxStream } from './mobile-work-hub-inbox-stream';
 import type { MobileWorkHubSessionsSidebar } from './mobile-work-hub-sessions-sidebar';
-import type { TranscriptWorkspaceSurfacesCache } from './qaap-transcript-workspace-surfaces-cache';
+import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptSheetUi } from './mobile-projects-transcript-sheet-ui';

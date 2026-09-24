@@ -5,7 +5,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import type { TranscriptFollowUpEntry } from '../common/qaap-transcript-follow-up-queue';
+import type { TranscriptFollowUpEntry } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import type { QaapGitCommitWorkflowAction } from '../common/qaap-git-review';
 import { createStickyComposerSendIcon } from './mobile-projects-sticky-composer-send-icon';
 import { ensureQueueControlInPillRow } from './qaap-sticky-composer-queue-position';

@@ -10,7 +10,6 @@ import type { QaapGithubInboxEvent, QaapGithubPullRequestSummary } from '@theia/
 /** In-memory fan-out for GitHub → Work Hub inbox live updates (SSE). */
 @injectable()
 export class QaapGithubInboxHub {
-
     protected readonly onDidChangeEmitter = new Emitter<QaapGithubInboxEvent>();
     readonly onDidChange: Event<QaapGithubInboxEvent> = this.onDidChangeEmitter.event;
 
@@ -35,7 +34,4 @@ export class QaapGithubInboxHub {
         });
     }
 
-    publishRefresh(): void {
-        this.onDidChangeEmitter.fire({ type: 'inbox_refresh' });
-    }
 }

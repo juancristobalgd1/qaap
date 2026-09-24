@@ -89,26 +89,6 @@ export function createTranscriptLiveStatusElement(
     return root;
 }
 
-/**
- * Ensure the legacy stream-footer host exists as a sibling of the message scroller
- * (kept empty/hidden; live-status lives in the scroller tail).
- */
-export function ensureTranscriptStreamFooterHost(chatHost: HTMLElement): HTMLElement {
-    let host = chatHost.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_STREAM_FOOTER_HOST_CLASS}`);
-    if (host) {
-        const scroller = chatHost.querySelector(':scope > .theia-mobile-agent-transcript');
-        if (scroller && host.previousElementSibling !== scroller) {
-            chatHost.append(host);
-        }
-        return host;
-    }
-    host = document.createElement('div');
-    host.className = TRANSCRIPT_STREAM_FOOTER_HOST_CLASS;
-    host.hidden = true;
-    chatHost.append(host);
-    return host;
-}
-
 export function resolveTranscriptChatHostFromNode(node: ParentNode | null | undefined): HTMLElement | undefined {
     if (!(node instanceof Element)) {
         return undefined;
@@ -139,11 +119,6 @@ export function removeNestedTranscriptLiveStatusCopies(chatHost: HTMLElement): v
             element.remove();
         }
     }
-}
-
-/** @deprecated Use {@link removeNestedTranscriptLiveStatusCopies}. */
-export function removeInlineTranscriptLiveStatusFromScroller(chatHost: HTMLElement): void {
-    removeNestedTranscriptLiveStatusCopies(chatHost);
 }
 
 /**
@@ -197,14 +172,6 @@ export function ensureTranscriptLiveStatusAtScrollerTail(
     return scroller;
 }
 
-/** @deprecated Alias — live-status mounts at the scroller tail. */
-export function ensureTranscriptLiveStatusPinned(
-    chatHost: HTMLElement,
-    element: HTMLElement,
-): HTMLElement | undefined {
-    return ensureTranscriptLiveStatusAtScrollerTail(chatHost, element);
-}
-
 /** Hide and empty the legacy pinned footer host (live-status no longer mounts there). */
 export function clearLegacyTranscriptStreamFooterHost(chatHost: HTMLElement): void {
     const footerHost = chatHost.querySelector<HTMLElement>(`:scope > .${TRANSCRIPT_STREAM_FOOTER_HOST_CLASS}`);
@@ -235,12 +202,6 @@ export function formatTranscriptLiveStatusActivity(snapshot: TranscriptLiveStatu
         return label;
     }
     return `${label}…`;
-}
-
-export function formatTranscriptLiveStatusText(snapshot: TranscriptLiveStatusSnapshot): string {
-    const activity = formatTranscriptLiveStatusActivity(snapshot);
-    const meta = formatTranscriptLiveStatusMeta(snapshot);
-    return meta ? `${activity} · ${meta}` : activity;
 }
 
 export function syncTranscriptLiveStatusElement(

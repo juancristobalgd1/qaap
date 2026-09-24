@@ -208,29 +208,6 @@ const STATUS_BY_ID: Record<QaapAgentTaskVisualStatusId, QaapAgentTaskVisualStatu
     },
 };
 
-/** Core sidebar glyphs shown in the sessions status legend (not the full PR matrix). */
-const LEGEND_STATUS_IDS: readonly QaapAgentTaskVisualStatusId[] = [
-    'idle',
-    'queued',
-    'running',
-    'needs-you',
-    'blocked',
-    'failed',
-    'interrupted',
-    'background',
-    'verified',
-    'warnings',
-    'pr-ready',
-];
-
-export function listQaapAgentTaskVisualStatusLegendEntries(): readonly QaapAgentTaskVisualStatus[] {
-    return LEGEND_STATUS_IDS.map(id => STATUS_BY_ID[id]);
-}
-
-export function getQaapAgentTaskVisualStatusById(id: QaapAgentTaskVisualStatusId): QaapAgentTaskVisualStatus {
-    return STATUS_BY_ID[id];
-}
-
 export interface QaapGitPrStatusInput {
     readonly linkedPullRequest?: QaapAgentConversationSummaryDTO['linkedPullRequest'];
     readonly hasGitOperation?: boolean;

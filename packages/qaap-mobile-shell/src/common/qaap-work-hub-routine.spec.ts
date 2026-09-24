@@ -4,13 +4,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    filterRoutinesByQuery,
-    normalizeRoutineIntervalHours,
-    routineIsDue,
-    routineScheduleLabel,
-    type QaapWorkHubRoutine,
-} from './qaap-work-hub-routine';
+import { normalizeRoutineIntervalHours, routineIsDue, type QaapWorkHubRoutine } from './qaap-work-hub-routine';
 import { isConversationAutoApproveEnabled } from './qaap-agent-conversation-client';
 
 function sampleRoutine(overrides: Partial<QaapWorkHubRoutine> = {}): QaapWorkHubRoutine {
@@ -29,16 +23,10 @@ function sampleRoutine(overrides: Partial<QaapWorkHubRoutine> = {}): QaapWorkHub
 }
 
 describe('qaap-work-hub-routine', () => {
-
     it('normalizeRoutineIntervalHours clamps to 1..168', () => {
         expect(normalizeRoutineIntervalHours(undefined)).to.equal(24);
         expect(normalizeRoutineIntervalHours(0)).to.equal(1);
         expect(normalizeRoutineIntervalHours(999)).to.equal(168);
-    });
-
-    it('routineScheduleLabel formats daily and manual', () => {
-        expect(routineScheduleLabel(sampleRoutine({ trigger: 'manual' }))).to.equal('Manual');
-        expect(routineScheduleLabel(sampleRoutine({ intervalHours: 24 }))).to.equal('Daily');
     });
 
     it('routineIsDue respects enabled, trigger, and last run', () => {
@@ -60,23 +48,6 @@ describe('qaap-work-hub-routine', () => {
         });
         expect(routineIsDue(routine, slot + 60_000)).to.equal(true);
         expect(routineIsDue({ ...routine, lastRunAt: slot }, slot + 60_000)).to.equal(false);
-    });
-
-    it('routineScheduleLabel formats cron schedules', () => {
-        expect(routineScheduleLabel(sampleRoutine({
-            trigger: 'cron',
-            cronExpression: '0 8 * * 1-5',
-            timezone: 'Europe/Madrid',
-        }))).to.equal('Weekdays at 8:00 (Europe/Madrid)');
-    });
-
-    it('filterRoutinesByQuery matches title and cwd', () => {
-        const routines = [
-            sampleRoutine({ id: 'a', title: 'Drift check' }),
-            sampleRoutine({ id: 'b', title: 'CI fix', cwd: '/tmp/other' }),
-        ];
-        expect(filterRoutinesByQuery(routines, 'drift')).to.have.lengthOf(1);
-        expect(filterRoutinesByQuery(routines, '/tmp/other')).to.have.lengthOf(1);
     });
 
     it('isConversationAutoApproveEnabled defaults to true unless explicitly false', () => {

@@ -6,15 +6,7 @@
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 import { expect } from 'chai';
-import {
-    activateAgentPickerEntry,
-    agentMatchesAgentPickerQuery,
-    buildAgentPickerSearchResults,
-    createAgentPickerInlineModelButton,
-    handleAgentPickerSearchKeydown,
-    modelMatchesAgentPickerQuery,
-    type QaapAgentPickerSearchEntry,
-} from './qaap-agent-picker-search';
+import { activateAgentPickerEntry, buildAgentPickerSearchResults, createAgentPickerInlineModelButton, modelMatchesAgentPickerQuery, type QaapAgentPickerSearchEntry } from './qaap-agent-picker-search';
 import { createAgentSheetOptionButton } from './qaap-agent-ui';
 import type { QaapQaiqModelOption } from '../common/qaap-agent-task-client';
 
@@ -42,27 +34,6 @@ const entries: readonly QaapAgentPickerSearchEntry[] = [
 ];
 
 describe('qaap-agent-picker-search', () => {
-    it('filters case- and accent-insensitively by agent', () => {
-        expect(entries.filter(entry => agentMatchesAgentPickerQuery(entry, 'cÓDeX')).map(entry => entry.id))
-            .to.deep.equal(['codex']);
-    });
-
-    it('filters by model label and id', () => {
-        expect(entries.filter(entry => agentMatchesAgentPickerQuery(entry, 'sonnet')).map(entry => entry.id))
-            .to.deep.equal(['qaiq']);
-        expect(entries.filter(entry => agentMatchesAgentPickerQuery(entry, 'GPT-5.4')).map(entry => entry.id))
-            .to.deep.equal(['codex']);
-    });
-
-    it('filters by provider', () => {
-        expect(entries.filter(entry => agentMatchesAgentPickerQuery(entry, 'anthropic')).map(entry => entry.id))
-            .to.deep.equal(['qaiq']);
-    });
-
-    it('returns no results for an unmatched query', () => {
-        expect(entries.filter(entry => agentMatchesAgentPickerQuery(entry, 'not-a-real-agent'))).to.be.empty;
-    });
-
     it('filters models with the same normalized matching', () => {
         expect(entries[0].models.filter(model => modelMatchesAgentPickerQuery(model, 'sónnet'))).to.have.length(1);
     });
@@ -223,38 +194,6 @@ describe('qaap-agent-picker-search', () => {
             button.click();
             expect(selectedAgent).to.equal('qaiq');
             expect(selectedModel).to.equal('claude-sonnet-4');
-        });
-
-        it('clears the query on the first Escape and closes on the second', () => {
-            const input = document.createElement('input');
-            input.value = 'codex';
-            let clearCount = 0;
-            let closeCount = 0;
-            input.addEventListener('keydown', event => {
-                handleAgentPickerSearchKeydown(event, input, () => clearCount++, () => closeCount++);
-            });
-
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-            expect(input.value).to.equal('');
-            expect(clearCount).to.equal(1);
-            expect(closeCount).to.equal(0);
-
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-            expect(clearCount).to.equal(1);
-            expect(closeCount).to.equal(1);
-        });
-
-        it('activates the only safe result with Enter', () => {
-            const input = document.createElement('input');
-            const result = document.createElement('button');
-            let selected = false;
-            result.addEventListener('click', () => selected = true);
-            input.addEventListener('keydown', event => {
-                handleAgentPickerSearchKeydown(event, input, () => undefined, () => undefined, result);
-            });
-
-            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-            expect(selected).to.equal(true);
         });
 
         it('activates selected and unselected agent rows alike', () => {

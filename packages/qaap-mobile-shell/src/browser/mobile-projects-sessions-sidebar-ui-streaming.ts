@@ -9,7 +9,6 @@ import { readQaapSignedIn } from '@theia/qaap-adapters/lib/browser/qaap-auth-ses
 import { startGithubOAuth } from '@theia/qaap-adapters/lib/browser/qaap-github-auth-client';
 import { createLucideSortIcon } from '@theia/qaap-adapters/lib/browser/qaap-lucide-icons';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import { listQaapAgentTaskVisualStatusLegendEntries } from '../common/qaap-agent-task-visual-status';
 import {
     resolveSessionsSidebarInitialConversationLimit,
 } from '../common/qaap-sessions-sidebar-conversation-limit';
@@ -417,36 +416,6 @@ export function appendSessionsSidebarConversationItemsExtracted(ctx: MobileProje
         } else if (showLess) {
             listHost.append(ctx.createSessionsSidebarShowLessControl(project));
         }
-}
-
-export function createSessionsSidebarClearFailedControlExtracted(
-    ctx: MobileProjectsSessionsSidebarUiContext,
-    project: MobileProjectEntry,
-    failedCount: number,
-): HTMLButtonElement {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'theia-mobile-work-hub-sessions-sidebar-clear-failed';
-    btn.textContent = failedCount === 1
-        ? nls.localize('qaap/mobileProjects/clearFailedTasksOne', 'Clear failed run')
-        : nls.localize('qaap/mobileProjects/clearFailedTasksMany', 'Clear failed runs ({0})', String(failedCount));
-    btn.title = nls.localize(
-        'qaap/sessionsSidebar/clearFailedHint',
-        'Select failed runs to delete for this project',
-    );
-    const icon = document.createElement('span');
-    icon.className = 'codicon codicon-clear-all';
-    icon.setAttribute('aria-hidden', 'true');
-    btn.prepend(icon);
-    btn.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const failedIds = ctx.host.conversationIndexUi.vpsTasksForProject(project)
-            .filter((summary: QaapAgentConversationSummaryDTO) => isFailedRunSummary(summary))
-            .map((summary: QaapAgentConversationSummaryDTO) => summary.id);
-        ctx.enterClearFailedMode(project, failedIds);
-    });
-    return btn;
 }
 
 export function createSessionsSidebarClearFailedModeFooterExtracted(
@@ -867,66 +836,3 @@ export function toggleSessionsSidebarAddProjectPopoverExtracted(ctx: MobileProje
         };
 }
 
-function createSessionsSidebarStatusLegendGlyph(status: ReturnType<typeof listQaapAgentTaskVisualStatusLegendEntries>[number]): HTMLElement {
-        const glyph = document.createElement('span');
-        glyph.className = `theia-mobile-work-hub-sessions-sidebar-status-legend-glyph theia-mobile-projects-task-dot ${status.className}`;
-        glyph.setAttribute('aria-hidden', 'true');
-        if (status.id === 'running') {
-            glyph.classList.add('theia-mod-legend-running');
-            const spin = document.createElement('span');
-            spin.className = 'codicon codicon-loading codicon-modifier-spin theia-mobile-projects-task-leading-glyph';
-            glyph.append(spin);
-            return glyph;
-        }
-        if (status.id === 'idle') {
-            glyph.style.background = status.color;
-            return glyph;
-        }
-        if (status.iconClass) {
-            const icon = document.createElement('span');
-            icon.className = `theia-mobile-projects-task-leading-glyph codicon ${status.iconClass}`;
-            glyph.append(icon);
-        }
-        return glyph;
-}
-
-export function toggleSessionsSidebarStatusLegendPopoverExtracted(ctx: MobileProjectsSessionsSidebarUiContext, anchor: HTMLButtonElement): void {
-        if (ctx.sessionsSidebarStatusLegendPopover) {
-            ctx.closeSessionsSidebarHeadPopovers();
-            return;
-        }
-        ctx.closeSessionsSidebarHeadPopovers();
-        const popover = document.createElement('div');
-        popover.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover theia-mod-status-legend';
-        popover.setAttribute('role', 'dialog');
-        popover.setAttribute('aria-label', nls.localize('qaap/sessionsSidebar/statusLegend/title', 'Status icon meanings'));
-        const list = document.createElement('div');
-        list.className = 'theia-mobile-work-hub-sessions-sidebar-status-legend-list';
-        list.setAttribute('role', 'list');
-        for (const status of listQaapAgentTaskVisualStatusLegendEntries()) {
-            const row = document.createElement('div');
-            row.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item theia-mod-legend-row';
-            row.setAttribute('role', 'listitem');
-            const label = document.createElement('span');
-            label.className = 'theia-mobile-work-hub-sessions-sidebar-head-popover-item-label';
-            label.textContent = nls.localize(status.labelKey, status.label);
-            row.append(createSessionsSidebarStatusLegendGlyph(status), label);
-            list.append(row);
-        }
-        popover.append(list);
-        document.body.append(popover);
-        ctx.sessionsSidebarStatusLegendPopover = popover;
-        anchor.setAttribute('aria-expanded', 'true');
-        window.requestAnimationFrame(() => positionSessionsSidebarHeadPopover(popover, anchor));
-        const dismissCleanup = dismissSessionsSidebarHeadPopoverOnOutside(popover, anchor, () => {
-            ctx.closeSessionsSidebarHeadPopovers();
-        });
-        const originalClose = ctx.closeSessionsSidebarHeadPopovers.bind(ctx);
-        ctx.closeSessionsSidebarHeadPopovers = (): void => {
-            dismissCleanup();
-            popover.remove();
-            ctx.sessionsSidebarStatusLegendPopover = undefined;
-            anchor.setAttribute('aria-expanded', 'false');
-            ctx.closeSessionsSidebarHeadPopovers = originalClose;
-        };
-}

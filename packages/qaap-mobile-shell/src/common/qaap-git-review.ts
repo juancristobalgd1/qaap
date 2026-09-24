@@ -122,18 +122,6 @@ export interface QaapGitBranchesResponse {
     branches: string[];
 }
 
-export interface QaapGitCheckoutRequest {
-    /** Absolute filesystem path of the repository root. */
-    root: string;
-    branch: string;
-}
-
-export interface QaapGitDeleteBranchRequest {
-    /** Absolute filesystem path of the repository root. */
-    root: string;
-    branch: string;
-}
-
 export type QaapGitHunkLineType = 'ctx' | 'add' | 'del';
 
 export interface QaapGitHunkLine {
@@ -164,13 +152,6 @@ export function isBinaryGitPatch(patch: string): boolean {
     return /^Binary files .+ differ$/m.test(patch) || /^GIT binary patch$/m.test(patch);
 }
 
-export interface QaapGitFileActionRequest {
-    /** Absolute filesystem path of the repository root. */
-    root: string;
-    /** Repository-relative POSIX path. */
-    file: string;
-}
-
 /** Context for AI commit-message generation: changed files plus a truncated combined diff. */
 export interface QaapGitCommitContextResponse {
     root: string;
@@ -187,16 +168,6 @@ export type QaapGitCommitWorkflowAction =
     | 'commit-push'
     | 'commit'
     | 'commit-create-pr';
-
-export interface QaapGitCommitWorkflowRequest {
-    /** Absolute filesystem path of the repository root. */
-    root: string;
-    action: QaapGitCommitWorkflowAction;
-    /** Required for create-branch-* actions. */
-    branchName?: string;
-    /** Commit message (required for commit actions). */
-    message: string;
-}
 
 /** Parse the body of a `git diff` unified patch into structured hunks. */
 export function parseUnifiedDiff(patch: string): QaapGitHunk[] {
@@ -228,12 +199,6 @@ export function parseUnifiedDiff(patch: string): QaapGitHunk[] {
     }
     return hunks;
 }
-
-/** Exact message from {@link resolveRepositoryRoot} when `root` is missing/invalid. */
-export const QAAP_GIT_REVIEW_MISSING_ROOT_ERROR = 'Missing or invalid "root" query parameter.';
-
-/** Exact message when `root` exists but is not a git work tree. */
-export const QAAP_GIT_REVIEW_NOT_REPO_ERROR = 'The given root is not a git repository.';
 
 /**
  * Pull `{ error }` out of a git-review HTTP body, or return trimmed plain text.

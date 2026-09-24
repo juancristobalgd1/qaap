@@ -984,13 +984,6 @@ export function syncProjectDetailTabStripExtracted(ctx: MobileProjectsExecutionS
     ctx.syncExecutionSurfaceChrome(project);
 }
 
-export function syncTranscriptTabStripExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry): void {
-    if (!ctx.host.transcriptTabStrip) {
-        return;
-    }
-    ctx.refreshExecutionSurfaceTabStripState(ctx.host.transcriptTabStrip, ctx.executionSurfaceTabForProject(project));
-}
-
 export function rebuildExecutionSurfaceTabStripsExtracted(ctx: MobileProjectsExecutionSurfaceTabsUiContext, project: MobileProjectEntry, activeTab: TranscriptTab): void {
     ctx.closeExecutionTabOverflowMenu();
     const summary = ctx.host.transcriptOpenSummary ?? ctx.host.resolveAgentsHubShellSummary(project);

@@ -15,12 +15,12 @@ import {
     QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID,
     QAAP_AGENTS_HUB_LANDING_ENABLED,
 } from '../common/qaap-agents-hub-landing';
-import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
+import { appendOptimisticPendingUserMessage } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 import { isQaapWorkspaceContainerPath } from '@theia/qaap-adapters/lib/common/qaap-workspace-container-path';
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
-import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
+import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -121,7 +121,6 @@ export interface MobileProjectsAgentsHubInlineHost {
 
 /** Agents Hub inline transcript shell: open/close session, execution surfaces, idle chat. */
 export class MobileProjectsAgentsHubInlineUi {
-
     constructor(protected readonly host: MobileProjectsAgentsHubInlineHost) { }
 
     protected agentsHubExecutionHeaderProjectId: string | undefined;

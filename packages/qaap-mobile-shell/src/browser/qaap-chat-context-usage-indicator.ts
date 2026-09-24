@@ -22,7 +22,7 @@ import {
     CHAT_VIEW_TOKEN_USAGE_WARNING_THRESHOLD_PERCENTAGE,
     CHAT_VIEW_TOKEN_USAGE_WARNING_THRESHOLD_PERCENTAGE_DEFAULT,
 } from '@theia/ai-chat-ui/lib/browser/chat-view-preferences';
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
 
 export interface ContextUsageIndicatorOptions {
@@ -216,36 +216,3 @@ export function bindContextUsageIndicator(
     });
 }
 
-export function bindContextUsageIndicatorToChatModel(
-    badge: HTMLElement,
-    resolveModel: () => ChatModel | undefined,
-    options: ContextUsageIndicatorOptions,
-): Disposable {
-    const modelDisposables = new DisposableCollection();
-    let subscribedModelId: string | undefined;
-    return bindContextUsageIndicator(
-        badge,
-        () => resolveContextUsageIndicatorState(resolveModel(), options),
-        onRefresh => {
-            const refresh = (): void => {
-                const model = resolveModel();
-                if (model?.id === subscribedModelId) {
-                    onRefresh();
-                    return;
-                }
-                subscribedModelId = model?.id;
-                modelDisposables.dispose();
-                if (model) {
-                    modelDisposables.push(model.onDidChange(() => {
-                        onRefresh();
-                    }));
-                }
-                onRefresh();
-            };
-            refresh();
-            return Disposable.create(() => {
-                modelDisposables.dispose();
-            });
-        },
-    );
-}

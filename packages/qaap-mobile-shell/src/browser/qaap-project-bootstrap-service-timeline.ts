@@ -284,21 +284,6 @@ export async function healPreviewClaimToListeningPortExtracted(ctx: QaapProjectB
         return undefined;
 }
 
-export async function openForwardedPortExtracted(ctx: QaapProjectBootstrapServiceContext, port: QaapForwardedPort): Promise<void> {
-        if (port.primary) {
-            // Primary ports go through the shared preview widget so users can swap between dev URLs
-            // without spawning new tabs by accident.
-            await ctx.openPrimaryPreviewWhenReady(port.port, port.url);
-            return;
-        }
-        try {
-            await ctx.miniBrowser.open(new URI(port.url));
-            ctx.markPortOpened(port.port, true);
-        } catch (e) {
-            console.error('[qaap-project-bootstrap] failed to open forwarded port', e);
-        }
-}
-
 export function markPortOpenedExtracted(ctx: QaapProjectBootstrapServiceContext, port: number, open: boolean): void {
         let changed = false;
         ctx._forwardedPorts = ctx._forwardedPorts.map(p => {

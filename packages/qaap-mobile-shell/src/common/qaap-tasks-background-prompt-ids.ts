@@ -16,5 +16,3 @@
  */
 export const QAAP_TASKS_BACKGROUND_CONTEXT_PROMPT_ID = 'qaap-tasks-background-context';
 
-/** Workspace prompt fragment id for the per-project info artifact (`.prompts/project-info.prompttemplate`). */
-export const QAAP_PROJECT_INFO_PROMPT_ID = 'project-info';

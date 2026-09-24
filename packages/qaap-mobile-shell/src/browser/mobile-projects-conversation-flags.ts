@@ -14,11 +14,6 @@ export interface ConversationFlags {
     readonly paused?: boolean;
 }
 
-export interface ConversationReadSnapshot {
-    /** Greatest `updatedAt` value seen by the user on this conversation. */
-    readonly lastSeenAt: number;
-}
-
 /**
  * Browser-local store for per-chat priority/pause overrides keyed by conversation id. Used for
  * Theia-chat sessions whose canonical state lives in the workspace metadata directory and doesn't
@@ -27,7 +22,6 @@ export interface ConversationReadSnapshot {
  */
 @injectable()
 export class MobileProjectsConversationFlags {
-
     protected readonly cache = new Map<string, ConversationFlags>();
     protected readonly readCache = new Map<string, number>();
     protected loaded = false;

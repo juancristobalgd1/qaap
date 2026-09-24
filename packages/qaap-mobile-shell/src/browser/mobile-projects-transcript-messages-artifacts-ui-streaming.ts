@@ -7,7 +7,7 @@ import { type QaapAgentConversationDTO, type QaapAgentConversationSummaryDTO, ty
 import { hasTranscriptActivityStats, resolveTranscriptActivityStats, resolveTranscriptThinkingContent } from '../common/qaap-agent-transcript-segments';
 import { resolveLastUserPromptChars, shouldShowTranscriptThoughtBrief } from '../common/qaap-transcript-stream-status';
 import type { TranscriptActivityNavigationItem } from '../common/qaap-transcript-activity-navigation';
-import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR, TRANSCRIPT_THOUGHT_BRIEF_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileSnackbar } from './mobile-snackbar';
 import {

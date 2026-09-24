@@ -212,17 +212,6 @@ function resolveTranscriptUserDisplay(text: string): Pick<TranscriptUserMessageV
     };
 }
 
-/**
- * Pending-user rows may carry the resolved attachment preamble in {@link content}; show only the
- * typed draft when optimistic image previews are painted separately.
- * @deprecated Prefer {@link resolveTranscriptUserMessageView}.
- */
-export function resolveOptimisticPendingUserDisplayText(
-    message: MessagePreviewLike & { readonly id?: string; readonly optimisticImagePreviews?: readonly QaapTranscriptUserImagePreview[] } | undefined,
-): string {
-    return resolveTranscriptUserMessageView(message).displayText;
-}
-
 /** Plain preview text for list rows — never throws when {@link content} is missing. */
 export function resolveMessagePreviewText(message: MessagePreviewLike | undefined): string {
     if (!message) {

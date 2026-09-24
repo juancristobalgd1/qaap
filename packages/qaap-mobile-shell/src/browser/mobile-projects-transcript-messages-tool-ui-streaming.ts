@@ -5,7 +5,7 @@ import { TRANSCRIPT_TOOL_RESULT_STREAM_CLASS, TRANSCRIPT_TOOL_SPECULATIVE_CLASS 
 import { nls } from '@theia/core/lib/common/nls';
 import { formatReadToolDetailFromArgs } from '../common/qaap-agent-conversation-list-metrics';
 import { isTranscriptTodoTool, parseTranscriptTodoChecklist } from '../common/qaap-agent-transcript-segments';
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
+import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import {
     registerDeferredTranscriptToolBody,
     type TranscriptDeferredToolBodyHydrate,

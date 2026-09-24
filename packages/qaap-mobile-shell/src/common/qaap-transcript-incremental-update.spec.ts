@@ -23,7 +23,7 @@ import {
     resolveStreamingTranscriptPatchKind,
     shouldForceTranscriptRenderOnStatusSettle,
     transcriptFingerprintChanged,
-} from './qaap-transcript-incremental-update';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 
 function conv(partial: Partial<QaapAgentConversationDTO> & Pick<QaapAgentConversationDTO, 'messages'>): QaapAgentConversationDTO {
     return {
@@ -39,7 +39,6 @@ function conv(partial: Partial<QaapAgentConversationDTO> & Pick<QaapAgentConvers
 }
 
 describe('qaap-transcript-incremental-update', () => {
-
     it('buildConversationTranscriptFingerprint tolerates missing segment text fields', () => {
         const snapshot = conv({
             messages: [{

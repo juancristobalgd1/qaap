@@ -467,32 +467,6 @@ export async function openConversationInWorkHubExtracted(ctx: MobileOneColumnShe
     }
 }
 
-export async function openProjectScopedDiffViewExtracted(ctx: MobileOneColumnShellContributionContext, projectId?: string): Promise<void> {
-    ctx.hidePullRequestPanel();
-    await ctx.dismissSheetsAsync();
-    if (ctx.shell.isExpanded('bottom')) {
-        await ctx.shell.collapsePanel('bottom');
-    }
-    if (ctx.projectsPanel?.isHomeMode()) {
-        ctx.projectsPanel.hide();
-        ctx.projectsPanel.dispose();
-        ctx.projectsPanel.node.parentElement?.removeChild(ctx.projectsPanel.node);
-        ctx.setTrackedProjectsPanel(undefined);
-    }
-    ctx.ensureProjectsPanel(false);
-    const panel = ctx.projectsPanel;
-    if (!panel) {
-        return;
-    }
-    document.body.classList.remove('theia-mobile-mod-landing');
-    await panel.show();
-    const resolvedProjectId = projectId ?? (await ctx.projectsService.loadProjects())
-        .find(project => project.isCurrent)?.id;
-    await panel.openProjectDiffView(resolvedProjectId);
-    ctx.refreshBottomBar();
-    ctx.refreshWorkbenchTopBar();
-}
-
 export function refreshWorkbenchTopBarExtracted(ctx: MobileOneColumnShellContributionContext): void {
     for (const widget of toArray(ctx.shell.topPanel.widgets)) {
         if (widget instanceof QaapWorkbenchHistoryNavWidget) {

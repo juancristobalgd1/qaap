@@ -28,7 +28,7 @@ import {
 } from './qaap-transcript-files-view';
 import {
     type TranscriptWorkspaceSurfaceKey,
-} from './qaap-transcript-workspace-surfaces-cache';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import { createTranscriptReviewChrome } from './qaap-transcript-review-chrome';
 import {
     resolveProjectScopedWorkspaceKey as resolveProjectScopedWorkspaceKeyHelper,

@@ -4,16 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { formatTranscriptCursorTraceRowText } from './qaap-transcript-cursor-trace-label';
-import type { TranscriptActivityNavigationItem } from './qaap-transcript-activity-navigation';
 import { formatTranscriptActivityStepDuration } from './qaap-transcript-activity-step-state';
-
-export function formatTranscriptActivityTimelineItemLabel(item: TranscriptActivityNavigationItem): string {
-    if (item.verb && item.detail) {
-        return formatTranscriptCursorTraceRowText(item.verb, item.detail);
-    }
-    return item.label;
-}
 
 /**
  * Sticky / collapsed process-accordion header.

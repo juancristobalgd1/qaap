@@ -16,11 +16,6 @@ export function resolveTranscriptInlineApproval(
         .sort((a, b) => b.createdAt - a.createdAt)[0];
 }
 
-/** Stable id shared with the VPS approval store (`conversationId:tool:toolUseId`). */
-export function buildTranscriptToolApprovalId(conversationId: string, toolUseId: string): string {
-    return `${conversationId}:tool:${toolUseId}`;
-}
-
 /** The actual pending approval for one tool call, if the backend reported one. */
 export function findTranscriptToolApproval(
     approvals: readonly QaapAgentApprovalRequestDTO[],

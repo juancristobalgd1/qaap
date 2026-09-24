@@ -26,7 +26,7 @@ import {
     type TranscriptFileTreeEntry,
     type TranscriptFilesViewServices,
 } from './qaap-transcript-files-view';
-import { createTranscriptPreviewMonacoEditor } from './qaap-transcript-monaco-editor';
+import { createTranscriptPreviewMonacoEditor } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-monaco-editor';
 
 // Keep this stable Theia widget id local: importing scm-contribution solely for the constant
 // eagerly pulls Monaco's ESM editor bundle into lightweight transcript and Node test paths.

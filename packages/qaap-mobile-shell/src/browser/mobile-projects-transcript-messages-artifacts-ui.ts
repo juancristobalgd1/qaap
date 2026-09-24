@@ -9,11 +9,7 @@ import {
     type QaapAgentMessageSegmentDTO,
 } from '../common/qaap-agent-conversation-client';
 import type { QaapCreateAgentTaskQaiqModel } from '../common/qaap-agent-task-client';
-import {
-    extractTranscriptDiffCard,
-    resolveTranscriptToolRowParts,
-    type QaapTranscriptActivityStats,
-} from '../common/qaap-agent-transcript-segments';
+import { resolveTranscriptToolRowParts, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
 import { resolveTranscriptTurnStartMs } from '../common/qaap-transcript-stream-status';
 import { type TranscriptStreamTimeoutCause } from '../common/qaap-transcript-stream-health';
 import type { TranscriptActivityNavigationItem, TranscriptActivityNavigationOptions } from '../common/qaap-transcript-activity-navigation';
@@ -21,7 +17,6 @@ import { type TranscriptActivityStepState } from '../common/qaap-transcript-acti
 import { TranscriptActivityTimingStore } from '../common/qaap-transcript-activity-timing';
 import { resolveTranscriptTimelineItemTier } from '../common/qaap-transcript-timeline-tier';
 import { resolveTranscriptTimelineVisibilityPolicy } from '../common/qaap-transcript-timeline-visibility';
-import { buildTranscriptDiffCardFromExtracted } from './qaap-transcript-rich-content-ui';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
@@ -58,11 +53,11 @@ import { createTranscriptStreamTimeoutBannerExtracted, ensureTranscriptLiveStatu
 import { ensurePinnedTranscriptLiveStatusExtracted, patchStreamingThoughtBriefExtracted, refreshTranscriptThoughtBriefTitleExtracted, syncTranscriptActivityTimelineElementExtracted, syncTranscriptThoughtBriefElementExtracted } from './mobile-projects-transcript-messages-artifacts-ui-tool-pills';
 import { appendStreamingAgentTextSegmentExtracted, appendStreamingAgentToolSegmentExtracted, bindTranscriptActivityTimelineGapHandlersExtracted, bindTranscriptActivityTimelineStickyBarExtracted, bindTranscriptActivityTimelineToggleExtracted, clearPinnedTranscriptStreamFooterExtracted, ensureAndSyncTranscriptLiveStatusFooterExtracted, ensureLobeTranscriptWorkflowClassesExtracted, handleTranscriptActivityTimelineGapClickExtracted, handleTranscriptActivityTimelineGapKeydownExtracted, syncTranscriptActivityHistoryGapExtracted, syncTranscriptActivityTimelineSummaryElementExtracted, syncTranscriptSummaryIconsExtracted, syncTranscriptTraceStatusExtracted } from './mobile-projects-transcript-messages-artifacts-ui-live-status';
 import { createTranscriptThoughtBriefBlockExtracted, createTranscriptThoughtBriefIconExtracted, createTranscriptToolPillsStripExtracted, formatTranscriptToolGroupLabelExtracted, patchTranscriptToolPillExtracted, refreshTranscriptToolGroupSummaryExtracted, resolveToolRowPartsExtracted, syncTranscriptThoughtBriefIconExtracted, wrapTranscriptToolGroupExtracted } from './mobile-projects-transcript-messages-artifacts-ui-thought-brief';
-import { attachLazyTranscriptToolPillHydrationExtracted, buildTranscriptToolPillBodyExtracted, createTranscriptActivityTimelineExtracted, createTranscriptToolApprovalActionsExtracted, createTranscriptToolPillExtracted, formatTranscriptActivityMetaExtracted, resolveTranscriptActivityTimelineSummaryExtracted, resolveTranscriptTurnDurationMsExtracted, shouldLazyHydrateTranscriptToolPillBodyExtracted } from './mobile-projects-transcript-messages-artifacts-ui-diff';
+import { attachLazyTranscriptToolPillHydrationExtracted, buildTranscriptToolPillBodyExtracted, createTranscriptActivityTimelineExtracted, createTranscriptToolApprovalActionsExtracted, createTranscriptToolPillExtracted, resolveTranscriptActivityTimelineSummaryExtracted, resolveTranscriptTurnDurationMsExtracted, shouldLazyHydrateTranscriptToolPillBodyExtracted } from './mobile-projects-transcript-messages-artifacts-ui-diff';
 import { applyTranscriptActivityItemChromeExtracted, applyTranscriptActivityItemClassNameExtracted, applyTranscriptActivityStepShimmerExtracted, guardTranscriptActivityExpandCloseExtracted, restoreTranscriptCheckpointExtracted, syncTranscriptActivityItemElementExtracted, syncTranscriptCheckpointRestoreActionExtracted, syncTranscriptExecutionNarrativeItemElementExtracted } from './mobile-projects-transcript-messages-artifacts-ui-activity-chrome';
 import { appendTranscriptActivityEditDiffTailExtracted, enrichTranscriptActivityEditExpandEntryExtracted, enrichTranscriptActivityExpandContentExtracted, enrichTranscriptActivityReadExpandEntryExtracted, ensureTranscriptActivityVerbDetailSpacingExtracted, renderTranscriptActivityExpandBodyExtracted, resolveTranscriptActivityExpandContentExtracted, resolveTranscriptActivityExpandDepsExtracted, shouldShowTranscriptActivityItemExpandExtracted, syncTranscriptActivityDiffPeekExtracted, syncTranscriptActivityExpandCopyExtracted, syncTranscriptActivityStepCopyCursorTraceExtracted, unwrapTranscriptActivityExpandCopyExtracted } from './mobile-projects-transcript-messages-artifacts-ui-activity-expand';
-import { createTranscriptActivityFileChipExtracted, createTranscriptActivityIconExtracted, createTranscriptActivityLabelExtracted, createTranscriptChangedFilesCardExtracted, createTranscriptDiffSummaryCardExtracted, createTranscriptPremiumHeadExtracted, populateTranscriptActivityStepCopyExtracted, shouldRenderTranscriptActivityDetailAsPillExtracted, syncTranscriptActivityErrorCopyExtracted, syncTranscriptActivityRunningBadgeExtracted, syncTranscriptActivityThinkingCopyExtracted } from './mobile-projects-transcript-messages-artifacts-ui-activity-content';
-import { appendTranscriptChangedFileDiffStatsExtracted, createTranscriptChangedFileMiniDiffPreviewExtracted, createTranscriptChangedFileRowExtracted, createTranscriptChangedFilesReviewButtonExtracted, createTranscriptStreamMetaExtracted, createTranscriptStreamingActivityRowExtracted, createTranscriptTechnicalDetailsCardExtracted, createTranscriptVerificationCardExtracted, resolveTranscriptStreamDurationLabelExtracted, resolveTranscriptStreamingActivityExtracted } from './mobile-projects-transcript-messages-artifacts-ui-activity-summary';
+import { createTranscriptActivityFileChipExtracted, createTranscriptActivityIconExtracted, createTranscriptActivityLabelExtracted, createTranscriptPremiumHeadExtracted, populateTranscriptActivityStepCopyExtracted, shouldRenderTranscriptActivityDetailAsPillExtracted, syncTranscriptActivityErrorCopyExtracted, syncTranscriptActivityRunningBadgeExtracted, syncTranscriptActivityThinkingCopyExtracted } from './mobile-projects-transcript-messages-artifacts-ui-activity-content';
+import { appendTranscriptChangedFileDiffStatsExtracted, createTranscriptChangedFileMiniDiffPreviewExtracted, createTranscriptChangedFileRowExtracted, createTranscriptChangedFilesReviewButtonExtracted, createTranscriptStreamMetaExtracted, createTranscriptStreamingActivityRowExtracted, createTranscriptTechnicalDetailsCardExtracted, resolveTranscriptStreamDurationLabelExtracted, resolveTranscriptStreamingActivityExtracted } from './mobile-projects-transcript-messages-artifacts-ui-activity-summary';
 
 /** Leading "Error: " marker prepended by {@link traceEventsToSegments} when it
  *  converts an `error` trace event into a plain text segment. Stripped before
@@ -805,35 +800,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptToolApprovalActionsExtracted(this, conversationId, segment);
     }
 
-    /** Claude-Code-style diff card for the latest edit: "Edited <file> +N −N" header + numbered lines. */
-    createTranscriptInlineDiffStrip(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
-        const editSegment = [...segments].reverse().find(segment =>
-            segment.type === 'tool'
-            && this.resolversUi.resolveTranscriptToolKind(segment.name) === 'editing'
-            && !!segment.result?.trim(),
-        );
-        if (!editSegment || editSegment.type !== 'tool') {
-            return undefined;
-        }
-        const card = extractTranscriptDiffCard(this.resolversUi.formatTranscriptToolResult(editSegment.result!));
-        if (!card) {
-            return undefined;
-        }
-        const path = this.resolversUi.extractTranscriptToolFullPath(editSegment.args);
-        const fileName = path?.split('/').pop();
-
-        const rawDiff = this.resolversUi.formatTranscriptToolResult(editSegment.result!);
-        return buildTranscriptDiffCardFromExtracted(card, {
-            fileName,
-            path: path ? this.resolversUi.compactTranscriptPath(path) : undefined,
-            rawDiff,
-        });
-    }
-
-    formatTranscriptActivityMeta(stats: QaapTranscriptActivityStats): string {
-        return formatTranscriptActivityMetaExtracted(this, stats);
-    }
-
     /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
     public resolveTranscriptActivityTimelineSummary(segments: readonly QaapAgentMessageSegmentDTO[],
         hiddenCount = 0,
@@ -1070,14 +1036,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
         return createTranscriptPremiumHeadExtracted(this, iconClass, label, options);
     }
 
-    createTranscriptDiffSummaryCard(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
-        return createTranscriptDiffSummaryCardExtracted(this, segments);
-    }
-
-    createTranscriptChangedFilesCard(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
-        return createTranscriptChangedFilesCardExtracted(this, segments);
-    }
-
     /** @internal Used by the extracted mobile-projects-transcript-messages-artifacts-ui-* modules. */
     public createTranscriptChangedFileMiniDiffPreview(segments: readonly QaapAgentMessageSegmentDTO[],
         file: { readonly path: string },): HTMLElement | undefined {
@@ -1104,10 +1062,6 @@ export class MobileProjectsTranscriptMessagesArtifactsUi {
 
     transcriptFileIconClass(path: string): string {
         return getFileIconClass(path);
-    }
-
-    createTranscriptVerificationCard(segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
-        return createTranscriptVerificationCardExtracted(this, segments);
     }
 
     createTranscriptTechnicalDetailsCard(segments: QaapAgentMessageSegmentDTO[],

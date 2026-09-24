@@ -13,7 +13,6 @@ export const CAPABILITY_LEVELS = [
     { value: 3, id: 'max', label: nls.localize('qaap/mobileProjects/capabilityMax', 'Max') },
 ] as const;
 
-export type ModelCapabilityLevelId = typeof CAPABILITY_LEVELS[number]['id'];
 export type ModelCapabilityLevelValue = typeof CAPABILITY_LEVELS[number]['value'];
 
 const CAPABILITY_LEVEL_BY_ID = new Map<string, ModelCapabilityLevelValue>(

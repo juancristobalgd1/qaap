@@ -22,17 +22,17 @@ import {
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     buildConversationTranscriptFingerprint,
-} from '../common/qaap-transcript-incremental-update';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { type TranscriptIdleWorkHandle } from '../common/qaap-transcript-idle-scheduler';
 import {
     QaapTranscriptLiveController,
     type QaapTranscriptLiveRefreshOptions,
-} from './qaap-transcript-live-controller';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectsConversations } from './mobile-projects-conversations';
 import type { MobileProjectsTranscriptMessagesUi } from './mobile-projects-transcript-messages-ui';
-import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
+import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
@@ -40,7 +40,7 @@ import { QaapAgUiTranscriptLiveBridge } from './qaap-ag-ui-transcript-live-bridg
 import { applyCachedTranscriptOnOpenExtracted, doRefreshOpenTranscriptConversationExtracted, isTrustedOpenTranscriptCache, reconcileConversationListSummaryExtracted, refreshOpenTranscriptConversationExtracted, renderOpenTranscriptPlaceholderExtracted, resolveOpenTranscriptConversationExtracted, scheduleTranscriptConversationRefreshExtracted } from './mobile-projects-transcript-live-ui-activity';
 import { applyOptimisticConversationCancelExtracted, applyOptimisticFailedTaskRetryExtracted, applyOptimisticStreamTimeoutRetryExtracted, bindOpenTranscriptThreadStoreExtracted, clearTranscriptSemanticProgressClockExtracted, ensureVisibilityResumeListenerExtracted, flushPendingSseRenderExtracted, handleTranscriptSseMessageExtracted, isActiveTranscriptNearBottomExtracted, pauseTranscriptBackgroundRendersExtracted, readOpenTranscriptRollbackSnapshotExtracted, resolveLiveSseMessageExtracted, restoreOpenTranscriptSnapshotExtracted, resyncOpenTranscriptStreamAfterTimeoutExtracted, schedulePendingSseRenderExtracted, scheduleSseDeltaResyncExtracted, seedTranscriptSemanticProgressClockExtracted, touchTranscriptSemanticProgressFromConversationExtracted } from './mobile-projects-transcript-live-ui-render';
 import { applyTranscriptSseRenderExtracted, ensureBootstrapPreviewListenerExtracted, ensureTranscriptDevPreviewWatchExtracted, finalizeTranscriptDevPreviewAfterSettleExtracted, kickoffTranscriptDevPreviewBootstrapExtracted, maybeActivateTranscriptDevPreviewExtracted, maybeReportTranscriptPreviewBootstrapFailureExtracted, maybeSyncTranscriptVisuallySettledChromeExtracted, onTranscriptUserMessageSubmittedExtracted, openReadyTranscriptPreviewUrlExtracted, resolveTranscriptRefreshContextExtracted, scheduleTranscriptComposerActivityRefreshExtracted, stopTranscriptComposerActivityRefreshExtracted, syncTranscriptConversationSettledChromeExtracted } from './mobile-projects-transcript-live-ui-streaming';
-import { buildTranscriptApprovalSyncKeyExtracted, ensureTranscriptConversationRefreshExtracted, ensureTranscriptLiveControllerExtracted, findTranscriptToolSegmentExtracted, getPendingTranscriptToolApprovalExtracted, hasInlineToolApprovalCardExtracted, reconcileTranscriptInlineToolApprovalCardsExtracted, refreshTranscriptApprovalsExtracted, refreshTranscriptPreviewOfferExtracted, resolveReadyTranscriptPreviewUrlExtracted, resolveTranscriptPreviewPollIntervalMsExtracted, scheduleTranscriptApprovalRefreshExtracted, scheduleTranscriptPreviewOfferRefreshExtracted, scheduleTranscriptVisualVerificationPollExtracted, stopTranscriptApprovalRefreshExtracted, stopTranscriptLiveWatchExtracted, stopTranscriptPreviewOfferRefreshExtracted, stopTranscriptVisualVerificationPollExtracted, syncTranscriptPendingApprovalExtracted } from './mobile-projects-transcript-live-ui-timeline';
+import { buildTranscriptApprovalSyncKeyExtracted, ensureTranscriptConversationRefreshExtracted, ensureTranscriptLiveControllerExtracted, findTranscriptToolSegmentExtracted, getPendingTranscriptToolApprovalExtracted, reconcileTranscriptInlineToolApprovalCardsExtracted, refreshTranscriptApprovalsExtracted, refreshTranscriptPreviewOfferExtracted, resolveReadyTranscriptPreviewUrlExtracted, resolveTranscriptPreviewPollIntervalMsExtracted, scheduleTranscriptApprovalRefreshExtracted, scheduleTranscriptPreviewOfferRefreshExtracted, scheduleTranscriptVisualVerificationPollExtracted, stopTranscriptApprovalRefreshExtracted, stopTranscriptLiveWatchExtracted, stopTranscriptPreviewOfferRefreshExtracted, stopTranscriptVisualVerificationPollExtracted, syncTranscriptPendingApprovalExtracted } from './mobile-projects-transcript-live-ui-timeline';
 
 /** Panel surface for SSE live watch, debounced refetch, and inline approval refresh. */
 export interface MobileProjectsTranscriptLiveHost {
@@ -116,7 +116,6 @@ export const TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS = 180_000;
 
 /** SSE-first live transcript watch, debounced refetch, and inline approval bar. */
 export class MobileProjectsTranscriptLiveUi {
-
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public transcriptLiveController: QaapTranscriptLiveController | undefined;
     /**
@@ -275,11 +274,6 @@ export class MobileProjectsTranscriptLiveUi {
         bindOpenTranscriptThreadStoreExtracted(this, conversationId);
     }
 
-    protected unbindOpenTranscriptThreadStore(): void {
-        this.threadStoreSummaryDispose.dispose();
-        this.threadStoreSummaryDispose = Disposable.NULL;
-    }
-
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public readCachedTranscriptConversation(conversationId: string): QaapAgentConversationDTO | undefined {
         return this.host.conversations?.threadStore.getDocument(conversationId)
@@ -417,10 +411,6 @@ export class MobileProjectsTranscriptLiveUi {
         reconcileTranscriptInlineToolApprovalCardsExtracted(this, chatHost, conv);
     }
 
-    protected hasInlineToolApprovalCard(chatHost: HTMLElement | undefined, toolUseId: string): boolean {
-        return hasInlineToolApprovalCardExtracted(this, chatHost, toolUseId);
-    }
-
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public findTranscriptToolSegment(conv: QaapAgentConversationDTO, toolUseId: string,): Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }> | undefined {
         return findTranscriptToolSegmentExtracted(this, conv, toolUseId);
@@ -446,10 +436,6 @@ export class MobileProjectsTranscriptLiveUi {
     /** @internal Used by the extracted mobile-projects-transcript-live-ui-* modules. */
     public async resolveReadyTranscriptPreviewUrl(conv: QaapAgentConversationDTO): Promise<string | undefined> {
         return resolveReadyTranscriptPreviewUrlExtracted(this, conv);
-    }
-
-    renderTranscriptInlinePreviewOffer(_host: HTMLElement, _previewUrl: string): void {
-        /* Preview opens in the Preview tab via refreshTranscriptPreviewOffer. */
     }
 
     ensureTranscriptConversationRefresh(): void {

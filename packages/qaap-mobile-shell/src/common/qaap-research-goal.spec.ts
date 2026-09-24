@@ -4,19 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT,
-    DEFAULT_RESEARCH_RUN_TIMEOUT_MS,
-    DEFAULT_RESEARCH_STAGNATION_ROUNDS,
-    filterResearchGoalsByQuery,
-    formatResearchGoalActiveDuration,
-    normalizeResearchGoal,
-    researchGoalCwdBasename,
-    resolveResearchGoalActiveElapsedMs,
-} from './qaap-research-goal';
+import { DEFAULT_RESEARCH_INFRA_FAILURE_LIMIT, DEFAULT_RESEARCH_RUN_TIMEOUT_MS, DEFAULT_RESEARCH_STAGNATION_ROUNDS, normalizeResearchGoal } from './qaap-research-goal';
 
 describe('qaap-research-goal', () => {
-
     const baseMetric = { name: 'loss', direction: 'min' as const, metricCommand: 'echo 0.5' };
 
     it('requires an id, cwd, description and at least one metric', () => {
@@ -86,23 +76,6 @@ describe('qaap-research-goal', () => {
             status: 'completed', createdAt: 1000,
         });
         expect(goal.startedAt).to.equal(undefined);
-    });
-
-    it('resolveResearchGoalActiveElapsedMs uses startedAt and finishedAt for stopped goals', () => {
-        const goal = normalizeResearchGoal({
-            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
-            startedAt: 1000, finishedAt: 175_000, status: 'completed', createdAt: 500,
-        });
-        expect(resolveResearchGoalActiveElapsedMs(goal)).to.equal(174_000);
-        expect(formatResearchGoalActiveDuration(goal)).to.equal('2m 54s');
-    });
-
-    it('resolveResearchGoalActiveElapsedMs falls back to createdAt for legacy running goals', () => {
-        const goal = normalizeResearchGoal({
-            id: 'g1', cwd: '/tmp', description: 'd', metrics: [baseMetric],
-            createdAt: 1000,
-        });
-        expect(resolveResearchGoalActiveElapsedMs(goal, 175_000)).to.equal(174_000);
     });
 
     it('preserves caller-supplied overrides instead of defaults', () => {
@@ -181,18 +154,4 @@ describe('qaap-research-goal', () => {
         expect(goal.runCommand).to.not.equal(goal.metrics[0].metricCommand);
     });
 
-    it('researchGoalCwdBasename returns the last path segment', () => {
-        expect(researchGoalCwdBasename('/tmp/my-repo')).to.equal('my-repo');
-        expect(researchGoalCwdBasename('C:\\work\\qaap')).to.equal('qaap');
-        expect(researchGoalCwdBasename('single')).to.equal('single');
-    });
-
-    it('filterResearchGoalsByQuery matches description and cwd', () => {
-        const goals = [
-            normalizeResearchGoal({ id: 'g1', cwd: '/tmp/alpha', description: 'Tune learning rate', metrics: [baseMetric] }),
-            normalizeResearchGoal({ id: 'g2', cwd: '/tmp/beta', description: 'Reduce drift', metrics: [baseMetric] }),
-        ];
-        expect(filterResearchGoalsByQuery(goals, 'drift')).to.have.lengthOf(1);
-        expect(filterResearchGoalsByQuery(goals, 'beta')).to.have.lengthOf(1);
-    });
 });

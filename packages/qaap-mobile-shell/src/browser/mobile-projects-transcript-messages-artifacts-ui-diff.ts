@@ -6,7 +6,7 @@ import { lazyTranscriptToolPillBodies } from './mobile-projects-transcript-messa
 import { nls } from '@theia/core/lib/common/nls';
 import { type QaapAgentConversationDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
-import { extractTranscriptMcpServerLabel, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptToolPillDescriptors, shouldOpenTranscriptToolDetails, type QaapTranscriptActivityStats } from '../common/qaap-agent-transcript-segments';
+import { extractTranscriptMcpServerLabel, isTranscriptTodoTool, parseTranscriptTodoChecklist, resolveTranscriptToolPillDescriptors, shouldOpenTranscriptToolDetails } from '../common/qaap-agent-transcript-segments';
 import {
     resolveTranscriptActivityTimelineSummaryText,
 } from '../common/qaap-transcript-activity-timeline-summary';
@@ -15,7 +15,7 @@ import { buildTranscriptApprovalCard } from './qaap-transcript-approval-card-ui'
 import { respondToTranscriptApproval } from './qaap-transcript-approval-respond';
 import { buildTranscriptToolUiPayloadElement } from './qaap-transcript-rich-content-ui';
 import { resolveTranscriptToolUiPayloadFromSegment } from '../common/qaap-transcript-tool-ui-payloads';
-import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_MESSAGE_ID_ATTR, TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { bindTranscriptActivityListKeyboard } from '../common/qaap-transcript-activity-keyboard';
 import {
     isTranscriptExecutionTimelineNarrative,
@@ -210,36 +210,6 @@ export function createTranscriptToolApprovalActionsExtracted(ctx: MobileProjects
             void respondToTranscriptApproval(pending.id, 'reject', { fromEvent: event, callbacks: { onSettled } });
         },
     });
-}
-
-export function formatTranscriptActivityMetaExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, stats: QaapTranscriptActivityStats): string {
-    const parts: string[] = [];
-    if (stats.fileReads > 0) {
-        parts.push(stats.fileReads === 1
-            ? nls.localize('qaap/mobileProjects/transcriptMetaOneFile', '1 file')
-            : nls.localize('qaap/mobileProjects/transcriptMetaFiles', '{0} files', String(stats.fileReads)));
-    }
-    if (stats.searches > 0) {
-        parts.push(stats.searches === 1
-            ? nls.localize('qaap/mobileProjects/transcriptMetaOneSearch', '1 search')
-            : nls.localize('qaap/mobileProjects/transcriptMetaSearches', '{0} searches', String(stats.searches)));
-    }
-    if (stats.shells > 0) {
-        parts.push(stats.shells === 1
-            ? nls.localize('qaap/mobileProjects/transcriptMetaRanOneCommand', 'ran 1 command')
-            : nls.localize('qaap/mobileProjects/transcriptMetaRanCommands', 'ran {0} commands', String(stats.shells)));
-    }
-    if (stats.edits > 0) {
-        parts.push(stats.edits === 1
-            ? nls.localize('qaap/mobileProjects/transcriptMetaOneEdit', '1 edit')
-            : nls.localize('qaap/mobileProjects/transcriptMetaEdits', '{0} edits', String(stats.edits)));
-    }
-    if (stats.otherTools > 0) {
-        parts.push(stats.otherTools === 1
-            ? nls.localize('qaap/mobileProjects/transcriptMetaOneTool', '1 tool')
-            : nls.localize('qaap/mobileProjects/transcriptMetaTools', '{0} tools', String(stats.otherTools)));
-    }
-    return nls.localize('qaap/mobileProjects/transcriptThoughtMeta', 'Explored {0}', parts.join(', '));
 }
 
 export function resolveTranscriptActivityTimelineSummaryExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segments: readonly QaapAgentMessageSegmentDTO[],

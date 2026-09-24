@@ -15,15 +15,7 @@ import {
     parseQaapDevPreviewPort,
     parseQaapIdentityPreviewRequestPath,
 } from '../common/qaap-dev-preview';
-import {
-    QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
-    isQaapPreviewIdentity,
-    isQaapProcessPreviewClaimIdentity,
-    isQaapProcessPreviewIdentity,
-    normalizeQaapPreviewConversationId,
-    resolveQaapPreviewIdentity,
-    type QaapPreviewIdentity,
-} from '../common/qaap-preview-identity';
+import { isQaapPreviewIdentity, isQaapProcessPreviewClaimIdentity, isQaapProcessPreviewIdentity, normalizeQaapPreviewConversationId, resolveQaapPreviewIdentity, type QaapPreviewIdentity } from '../common/qaap-preview-identity';
 import { terminateListenersOnPort } from './qaap-dev-preview-port-listener';
 import { PREVIEW_RESERVATION_START_GRACE_MS, parseClaimOsProcessId } from './qaap-dev-preview-endpoint';
 import { PREVIEW_PORT_ALLOCATION_ATTEMPTS } from './qaap-dev-preview-endpoint';
@@ -445,14 +437,6 @@ export function supersedeConversationPreviewsExtracted(ctx: QaapDevPreviewEndpoi
             port: record.port,
         });
     }
-}
-
-export function supersedeProjectPreviewsExtracted(ctx: QaapDevPreviewEndpointContext, project: { readonly previewId: string; readonly workspaceId: string; readonly projectId: string },
-    owner: string): void {
-    ctx.supersedeConversationPreviews({
-        ...project,
-        conversationId: QAAP_DEFAULT_PREVIEW_CONVERSATION_ID,
-    }, owner);
 }
 
 export function terminatePreviewProcessExtracted(ctx: QaapDevPreviewEndpointContext, record: { readonly osProcessId?: number; readonly port?: number }): void {

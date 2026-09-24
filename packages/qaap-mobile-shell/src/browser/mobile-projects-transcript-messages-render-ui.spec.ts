@@ -14,12 +14,12 @@ import {
 } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationDTO } from '../common/qaap-agent-conversation-client';
 import type { QaapAgentMessageDTO, QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
-import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     enableTranscriptRenderMetrics,
     getTranscriptRenderMetricsSnapshot,
     resetTranscriptRenderMetrics,
-} from '../common/qaap-transcript-render-metrics';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { seedTranscriptSemanticProgressClock } from '../common/qaap-transcript-semantic-progress';
 import { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
@@ -27,13 +27,12 @@ import { MobileProjectsTranscriptMessagesRenderUi } from './mobile-projects-tran
 import { MobileProjectsTranscriptMessagesResolversUi } from './mobile-projects-transcript-messages-resolvers-ui';
 import { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
-import { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
-import { ensureTranscriptScrollController } from './qaap-transcript-scroll-controller';
+import { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
+import { ensureTranscriptScrollController } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-controller';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 describe('MobileProjectsTranscriptMessagesRenderUi', () => {
-
     beforeEach(() => {
         if (typeof HTMLElement === 'undefined') {
             enableJSDOM();

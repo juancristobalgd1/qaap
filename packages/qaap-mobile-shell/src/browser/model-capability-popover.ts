@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { prefersReducedMotion } from '../common/qaap-prefers-reduced-motion';
+import { prefersReducedMotion } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 import {
     resolveCapabilityLevelLabel,
     type ModelCapabilityLevelValue,

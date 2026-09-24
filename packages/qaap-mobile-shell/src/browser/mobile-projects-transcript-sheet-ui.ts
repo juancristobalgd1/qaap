@@ -11,18 +11,18 @@ import {
 import type { QaapGitHistoryCommit } from '../common/qaap-git-review';
 import { setMobileActiveTranscriptChrome } from './mobile-projects-open';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { MobileProjectsTranscriptUi } from './mobile-projects-transcript-ui';
+import type { MobileProjectsTranscriptUi } from '@theia/qaap-transcript-overlay/lib/browser/mobile-projects-transcript-ui';
 import type { MobileProjectsTranscriptComposerUi } from './mobile-projects-transcript-composer-ui';
 import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects-transcript-sticky-composer-ui';
 import type { MobileProjectsTranscriptLiveUi } from './mobile-projects-transcript-live-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsExecutionSurfaceTabsUi } from './mobile-projects-execution-surface-tabs-ui';
-import { TranscriptFollowUpQueue } from '../common/qaap-transcript-follow-up-queue';
+import { TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import { ensureTranscriptSurfaceCss } from './ensure-transcript-surface-css';
 import type { AIChatInputWidget } from '@theia/ai-chat-ui/lib/browser/chat-input-widget';
 import type { MobileProjectChatViewWidget } from './mobile-project-ai-chat-input-widget';
 import { disposeComposerContextEntries, type StickyComposerContextEntry } from '../common/qaap-composer-context-entry';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 interface VerifyCheckResult {
     readonly check: { readonly label: string; readonly command: string };
@@ -113,7 +113,6 @@ export interface MobileProjectsTranscriptSheetHost {
 
 /** Full-screen transcript sheet overlay: open, dismiss bindings, and teardown. */
 export class MobileProjectsTranscriptSheetUi {
-
     constructor(
         protected readonly host: MobileProjectsTranscriptSheetHost,
         protected readonly workHub: WorkHubTranscriptBridge,

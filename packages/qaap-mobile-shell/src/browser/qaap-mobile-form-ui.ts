@@ -109,26 +109,3 @@ export function createSegmentedField<T extends string>(options: {
     };
 }
 
-export function createFormFieldLabel(text: string, options?: { readonly id?: string }): HTMLElement {
-    const label = document.createElement('label');
-    label.className = 'theia-qaap-form-field-label';
-    label.textContent = text;
-    if (options?.id) {
-        label.id = options.id;
-    }
-    return label;
-}
-
-/** Associates a visual field label with its control for assistive tech. */
-export function wireFormFieldLabel(label: HTMLElement, control: HTMLElement): void {
-    if (!label.id) {
-        label.id = `qaap-form-label-${Math.random().toString(36).slice(2, 10)}`;
-    }
-    if (!control.id) {
-        control.id = `${label.id}-control`;
-    }
-    if (label instanceof HTMLLabelElement) {
-        label.htmlFor = control.id;
-    }
-    control.setAttribute('aria-labelledby', label.id);
-}

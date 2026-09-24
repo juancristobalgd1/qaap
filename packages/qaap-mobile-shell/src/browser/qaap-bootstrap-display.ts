@@ -4,7 +4,7 @@
 // *****************************************************************************
 
 import type { QaapBootstrapStateChange } from './qaap-project-bootstrap-service';
-import type { QaapProjectDescriptor, QaapProjectKind } from './qaap-project-bootstrap-types';
+import type { QaapProjectKind } from './qaap-project-bootstrap-types';
 
 /** Short framework label for chips and variables (e.g. "Vite"). */
 export function qaapFrameworkLabel(kind: QaapProjectKind | undefined): string {
@@ -181,9 +181,3 @@ export function formatQaapBootstrapDiagnostic(
     return lines.join('\n');
 }
 
-export function resolveActiveFrameworkKind(
-    state: QaapBootstrapStateChange,
-    descriptor: QaapProjectDescriptor
-): QaapProjectKind {
-    return state.selectedApp?.kind ?? descriptor.kind;
-}

@@ -21,7 +21,6 @@ import { ensureWorkHubSessionsSidebarExtracted } from './mobile-projects-session
 import type { MobileProjectsSessionsSidebarUiContext } from './mobile-projects-sessions-sidebar-ui-context';
 
 describe('mobile-work-hub-sessions-sidebar', () => {
-
     let disableJSDOM: (() => void) | undefined;
     let jsdomWindow: Window | undefined;
     const storage = new Map<string, string>();
@@ -116,46 +115,6 @@ describe('mobile-work-hub-sessions-sidebar', () => {
         document.body.append(sidebar.node);
         expect(sidebar.node.querySelector('.theia-qaap-appearance-mode-switch')).to.equal(null);
         expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-foot .theia-workbench-account-btn')).to.not.equal(null);
-    });
-
-    it('renders Settings inside the shared Work Hub sidebar shell', () => {
-        const currentWindow = (global as { window?: Window }).window;
-        (global as { window?: Window }).window = {
-            ...currentWindow,
-            setTimeout: (callback: (...args: unknown[]) => void, delayMs?: number) =>
-                setTimeout(callback, delayMs ?? 0) as unknown as number,
-            clearTimeout: (id: number) => clearTimeout(id),
-        } as unknown as Window;
-        const selected: string[] = [];
-        const options: MobileWorkHubSettingsSidebarOptions = {
-            sections: [
-                { id: 'general', label: 'General', icon: 'settings-gear' },
-                { id: 'models', label: 'BYOK', icon: 'symbol-method' },
-            ],
-            activeSectionId: () => 'general',
-            searchValue: () => '',
-            onBack: () => undefined,
-            onClose: () => undefined,
-            onSectionSelected: sectionId => { selected.push(sectionId); },
-            onSearch: () => undefined,
-        };
-        const sidebar = new MobileWorkHubSessionsSidebar({
-            renderSessionList: () => undefined,
-            onNewChat: () => undefined,
-            onClose: () => undefined,
-        });
-        document.body.append(sidebar.node);
-
-        sidebar.showSettings(options);
-
-        expect(sidebar.isSettingsModeActive()).to.equal(true);
-        expect(sidebar.node.classList.contains('theia-mod-settings')).to.equal(true);
-        expect(sidebar.node.querySelector('.theia-mobile-work-hub-sessions-sidebar-settings')).to.not.equal(null);
-        expect(sidebar.node.querySelectorAll('.theia-mobile-work-hub-sessions-sidebar-settings .theia-mobile-work-hub-settings-nav-item')).to.have.length(2);
-        (sidebar.node.querySelector('[data-qaap-settings-section="models"]') as HTMLButtonElement).click();
-        expect(selected).to.deep.equal(['models']);
-
-        sidebar.hide();
     });
 
     it('restores the normal sidebar controls when Settings is hidden', () => {

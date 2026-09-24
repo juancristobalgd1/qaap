@@ -156,21 +156,6 @@ export async function openInCurrentWindowAsyncExtracted(ctx: MobileProjectsServi
         }
 }
 
-export function openInNewWindowExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry): void {
-        if (project.github) {
-            void ctx.openGithubProject(project, true);
-            return;
-        }
-        if (!project.uri) {
-            return;
-        }
-        ctx.touchProjectActivity(project);
-        markMobileProjectReadmeForOpen();
-        const url = new URL(window.location.href);
-        url.hash = encodeURI(ctx.workspacePathFromUri(project.uri));
-        ctx.windowService.openNewWindow(url.toString());
-}
-
 export async function openGithubProjectExtracted(ctx: MobileProjectsServiceContext, project: MobileProjectEntry, newWindow = false): Promise<void> {
         if (!project.github) {
             return;

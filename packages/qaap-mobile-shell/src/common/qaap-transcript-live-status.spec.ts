@@ -6,20 +6,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import {
-    clearLegacyTranscriptStreamFooterHost,
-    createTranscriptLiveStatusElement,
-    ensureTranscriptLiveStatusAtScrollerTail,
-    ensureTranscriptStreamFooterHost,
-    formatTranscriptLiveStatusMeta,
-    formatTranscriptLiveStatusText,
-    removeNestedTranscriptLiveStatusCopies,
-    resolveTranscriptLiveStatusTokenCount,
-    syncTranscriptLiveStatusElement,
-    TRANSCRIPT_LIVE_STATUS_CLASS,
-    TRANSCRIPT_LIVE_STATUS_LOGO_CLASS,
-    TRANSCRIPT_STREAM_FOOTER_HOST_CLASS,
-} from './qaap-transcript-live-status';
+import { createTranscriptLiveStatusElement, ensureTranscriptLiveStatusAtScrollerTail, formatTranscriptLiveStatusMeta, removeNestedTranscriptLiveStatusCopies, resolveTranscriptLiveStatusTokenCount, syncTranscriptLiveStatusElement, TRANSCRIPT_LIVE_STATUS_CLASS, TRANSCRIPT_LIVE_STATUS_LOGO_CLASS } from './qaap-transcript-live-status';
 import { QAAP_BRAND_LOGO_INDICATOR_CLASS } from './qaap-agent-setup-phrases';
 
 describe('qaap-transcript-live-status', () => {
@@ -32,14 +19,6 @@ describe('qaap-transcript-live-status', () => {
     after(() => {
         disableJSDOM?.();
         disableJSDOM = undefined;
-    });
-
-    it('formats Claude-style live status text', () => {
-        expect(formatTranscriptLiveStatusText({
-            elapsedMs: 13_000,
-            streamChars: 256,
-            activityTitle: 'Planning next moves',
-        })).to.equal('Planning next moves… · 13s · ~64 tokens');
     });
 
     it('puts token count beside elapsed time, preferring provider usage', () => {
@@ -128,23 +107,6 @@ describe('qaap-transcript-live-status', () => {
 
         expect(scroller.querySelectorAll(`:scope > .${TRANSCRIPT_LIVE_STATUS_CLASS}`)).to.have.length(1);
         expect(scroller.lastElementChild).to.equal(canonical);
-    });
-
-    it('ensureTranscriptStreamFooterHost stays a sibling under the chat host', () => {
-        const chatHost = document.createElement('div');
-        chatHost.className = 'theia-mobile-agent-transcript-real-chat';
-        const list = document.createElement('div');
-        list.className = 'theia-mobile-agent-transcript';
-        chatHost.append(list);
-        const footer = ensureTranscriptStreamFooterHost(chatHost);
-        expect(footer.classList.contains(TRANSCRIPT_STREAM_FOOTER_HOST_CLASS)).to.equal(true);
-        expect(footer.previousElementSibling).to.equal(list);
-        expect(ensureTranscriptStreamFooterHost(chatHost)).to.equal(footer);
-        footer.hidden = false;
-        footer.append(createTranscriptLiveStatusElement());
-        clearLegacyTranscriptStreamFooterHost(chatHost);
-        expect(footer.hidden).to.equal(true);
-        expect(footer.querySelector(`.${TRANSCRIPT_LIVE_STATUS_CLASS}`)).to.equal(null);
     });
 
     it('accepts a custom working indicator factory', () => {

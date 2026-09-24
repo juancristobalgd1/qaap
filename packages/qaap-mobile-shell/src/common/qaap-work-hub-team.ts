@@ -222,10 +222,6 @@ export function countRunningTeamMembers(members: readonly WorkHubTeamMember[]): 
     return members.filter(member => member.state === 'running' || member.state === 'streaming').length;
 }
 
-export function countQueuedTeamMembers(members: readonly WorkHubTeamMember[]): number {
-    return members.filter(member => member.state === 'queued').length;
-}
-
 function attachChildCounts(members: WorkHubTeamMember[]): WorkHubTeamMember[] {
     const childCounts = new Map<string, number>();
     for (const member of members) {

@@ -14,11 +14,6 @@ export function resolveMcpPluginIconAssetKey(slug: string): string {
     return MCP_PLUGIN_ICON_SLUG_TO_ASSET_KEY[slug] ?? slug;
 }
 
-export function hasMcpPluginIcon(slug: string): boolean {
-    const assetKey = resolveMcpPluginIconAssetKey(slug);
-    return !!MCP_PLUGIN_ICON_SVGS[assetKey];
-}
-
 /** Renders the bundled brand SVG or a letter monogram fallback. */
 export function createMcpPluginIconElement(
     slug: string,

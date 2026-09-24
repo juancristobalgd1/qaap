@@ -5,7 +5,7 @@
 
 import { expect } from 'chai';
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-import { TranscriptFollowUpQueue } from '../common/qaap-transcript-follow-up-queue';
+import { TranscriptFollowUpQueue } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import { QaapConversationMessageError } from '../common/qaap-agent-conversation-client';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { QAAP_AGENTS_HUB_IDLE_CONVERSATION_ID } from '../common/qaap-agents-hub-landing';
@@ -14,7 +14,6 @@ import type { MobileProjectsTranscriptStickyComposerUi } from './mobile-projects
 import type { MobileProjectsTranscriptStickyComposerUiContext } from './mobile-projects-transcript-sticky-composer-ui-context';
 
 describe('mobile-projects-transcript-sticky-composer-ui queue send now', () => {
-
     // The composer module pulls @lumino/widgets, which reads `document` at load time — it can
     // only be required once JSDOM is up, so it is loaded here instead of at module scope.
     let composerModule: typeof import('./mobile-projects-transcript-sticky-composer-ui');

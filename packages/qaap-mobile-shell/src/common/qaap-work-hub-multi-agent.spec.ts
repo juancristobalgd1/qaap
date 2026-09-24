@@ -9,11 +9,9 @@ import {
     collectAgentMembers,
     countRunningTeamMembers,
 } from './qaap-work-hub-team';
-import { buildWorkHubSessionsSidebarFingerprint } from './qaap-work-hub-sessions-sidebar-fingerprint';
 import { QaapChatViewStreamUpdateScheduler } from './qaap-chat-view-stream-update-scheduler';
 
 describe('qaap-work-hub-multi-agent scenarios', () => {
-
   it('same project: one leader conversation hides duplicate leader task and nests subtasks', () => {
         const members = collectAgentMembers({
             conversations: [{
@@ -141,81 +139,6 @@ describe('qaap-work-hub-multi-agent scenarios', () => {
         expect(byProject.get('qaap-product')).to.equal('conv-product');
         expect(members.some(m => m.kind === 'leader-task' && m.id === 'solo-core')).to.be.true;
         expect(countRunningTeamMembers(members)).to.equal(4);
-    });
-
-    it('sessions sidebar fingerprint stays stable when only the open transcript streams', () => {
-        const projects = [
-            { id: 'p-shell', isCurrent: true },
-            { id: 'p-cloud', isCurrent: false },
-            { id: 'p-product', isCurrent: false },
-        ];
-        const conversationsByProject: Record<string, Array<{
-            id: string;
-            status: string;
-            title: string;
-            updatedAt: number;
-            messageCount: number;
-        }>> = {
-            'p-shell': [
-                { id: 'conv-open', status: 'streaming', title: 'Open transcript', updatedAt: 100, messageCount: 3 },
-                { id: 'conv-bg-1', status: 'streaming', title: 'Background A', updatedAt: 90, messageCount: 2 },
-                { id: 'conv-bg-2', status: 'streaming', title: 'Background B', updatedAt: 80, messageCount: 1 },
-            ],
-            'p-cloud': [
-                { id: 'conv-cloud', status: 'streaming', title: 'Cloud worker', updatedAt: 70, messageCount: 4 },
-            ],
-            'p-product': [
-                { id: 'conv-product', status: 'idle', title: 'Idle', updatedAt: 60, messageCount: 0 },
-            ],
-        };
-
-        const input = {
-            query: '',
-            transcriptOpenSummaryId: 'conv-open',
-            expandedProjectIds: new Set<string>(),
-            visibleConversationCountByProjectId: new Map<string, number>(),
-            projects,
-            conversationsForProject: (projectId: string) => conversationsByProject[projectId] ?? [],
-            pinnedConversationIds: new Set<string>(),
-        };
-
-        const before = buildWorkHubSessionsSidebarFingerprint(input);
-        const afterStreamingTick = buildWorkHubSessionsSidebarFingerprint({
-            ...input,
-            conversationsForProject: projectId => (conversationsByProject[projectId] ?? []).map(conversation => (
-                conversation.id === 'conv-open'
-                    ? { ...conversation, messageCount: conversation.messageCount + 1, updatedAt: conversation.updatedAt + 1 }
-                    : conversation
-            )),
-        });
-        expect(afterStreamingTick).to.equal(before);
-
-        const sidebarWhileTranscriptOpen = buildWorkHubSessionsSidebarFingerprint({
-            ...input,
-            conversationsForProject: projectId => (conversationsByProject[projectId] ?? []).map(conversation => (
-                conversation.id === 'conv-open'
-                    ? { ...conversation, messageCount: conversation.messageCount + 50, updatedAt: conversation.updatedAt + 50 }
-                    : conversation
-            )),
-        });
-        const unrelatedProjectsUnchanged = ['p-cloud', 'p-product'].every(projectId => {
-            const left = (input.conversationsForProject(projectId)).map(c => `${c.id}:${c.messageCount}`);
-            const right = buildWorkHubSessionsSidebarFingerprint({
-                ...input,
-                conversationsForProject: pid => pid === projectId
-                    ? input.conversationsForProject(pid)
-                    : (conversationsByProject[pid] ?? []).map(conversation => (
-                        conversation.id === 'conv-open'
-                            ? { ...conversation, messageCount: conversation.messageCount + 50 }
-                            : conversation
-                    )),
-            });
-            void right;
-            const updated = (conversationsByProject[projectId] ?? []).map(c => `${c.id}:${c.messageCount}`);
-            return left.join('|') === updated.join('|');
-        });
-        expect(unrelatedProjectsUnchanged).to.be.true;
-        expect(sidebarWhileTranscriptOpen).to.equal(before);
     });
 
     it('coalesces hub list rebuilds when many agents tick on multiple projects in one frame', () => {

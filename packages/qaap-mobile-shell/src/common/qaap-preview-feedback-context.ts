@@ -4,7 +4,6 @@
 // *****************************************************************************
 
 import type { AIVariableResolutionRequest, ResolvedAIContextVariable } from '@theia/ai-core';
-import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-variable';
 import type { StickyComposerContextEntry } from './qaap-composer-context-entry';
 
 export const QAAP_PREVIEW_FEEDBACK_VARIABLE_NAME = 'previewFeedback';
@@ -137,16 +136,6 @@ export function normalizeAttachComposerImages(
         return [];
     }
     return images.filter(isQaapAttachComposerImageAttachment);
-}
-
-export function buildAttachComposerImageRequests(
-    images: readonly QaapAttachComposerImageAttachment[] | undefined,
-): AIVariableResolutionRequest[] {
-    return normalizeAttachComposerImages(images).map(image => ImageContextVariable.createRequest({
-        data: image.data,
-        mimeType: image.mimeType.trim() || 'image/png',
-        name: image.name.trim() || 'preview-screenshot.png',
-    }));
 }
 
 export function isQaapAttachComposerContextArgs(value: unknown): value is QaapAttachComposerContextArgs {

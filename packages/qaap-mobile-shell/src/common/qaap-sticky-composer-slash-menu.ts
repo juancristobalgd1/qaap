@@ -136,10 +136,6 @@ function slashEntryIconClass(entry: StickyComposerSlashEntry): string {
     return 'codicon codicon-tools';
 }
 
-export function resolveStickyComposerSlashEntryIcon(entry: StickyComposerSlashEntry): string {
-    return slashEntryIconClass(entry);
-}
-
 export interface RenderStickyComposerSlashMenuOptions {
     readonly list: HTMLElement;
     readonly sections: readonly StickyComposerSlashSection[];

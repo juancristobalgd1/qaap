@@ -14,10 +14,9 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileProjectsTranscriptSheetUi, type MobileProjectsTranscriptSheetHost } from './mobile-projects-transcript-sheet-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 
 describe('MobileProjectsTranscriptSheetUi', () => {
-
     beforeEach(() => {
         if (typeof HTMLElement === 'undefined') {
             enableJSDOM();

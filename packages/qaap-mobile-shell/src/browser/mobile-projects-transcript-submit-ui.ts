@@ -30,7 +30,7 @@ import {
     reconcileAgentToolApprovalRules,
     type QaapAgentToolApprovalRules,
 } from '../common/qaap-agent-tool-approval-rules';
-import { appendOptimisticPendingUserMessage } from '../common/qaap-transcript-sse-delta';
+import { appendOptimisticPendingUserMessage } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 import type { QaapTranscriptUserImagePreview } from '../common/qaap-transcript-user-image-preview';
 import { isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';
 import { messageRequestsDevPreview } from '../common/qaap-transcript-preview-offer';
@@ -65,7 +65,7 @@ export interface MobileProjectsTranscriptSubmitHost {
     transcriptHeaderUi: MobileProjectsTranscriptHeaderUi;
     /** Optional: merge local composer queue into optimistic pending footer rows. */
     transcriptFollowUpQueue?: {
-        peek(conversationId: string): readonly import('../common/qaap-transcript-follow-up-queue').TranscriptFollowUpEntry[];
+        peek(conversationId: string): readonly import('@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue').TranscriptFollowUpEntry[];
     };
 
     isPendingNewChatSummary(summary: QaapAgentConversationSummaryDTO): boolean;
@@ -100,7 +100,6 @@ export interface MobileProjectsTranscriptSubmitHost {
 
 /** Backend conversation submit with optimistic transcript rows and rollback on failure. */
 export class MobileProjectsTranscriptSubmitUi {
-
     protected readonly submitInFlightByConversationId = new Set<string>();
     /** A user submitting a task is the natural consent moment for the notification permission prompt. */
     protected readonly turnSettleNotifier = new QaapTurnSettleNotifier();

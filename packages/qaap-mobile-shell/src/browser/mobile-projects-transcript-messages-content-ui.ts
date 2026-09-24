@@ -21,7 +21,7 @@ import {
     type QaapDevPreviewProbeResponse,
 } from '../common/qaap-dev-preview';
 import { collapseExactRepeatedText } from '../common/qaap-qaiq-stream';
-import { prefersReducedMotion } from '../common/qaap-prefers-reduced-motion';
+import { prefersReducedMotion } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 import { nextStreamSmoothRevealLength } from '../common/qaap-transcript-stream-smooth';
 import {
     registerDeferredTranscriptMarkdown,
@@ -170,7 +170,6 @@ interface TranscriptStreamSmoothEntry {
 }
 
 export class MobileProjectsTranscriptMessagesContentUi {
-
     constructor(protected readonly host: MobileProjectsTranscriptMessagesHost) { }
 
     protected previewPublicOrigin(): string {
@@ -546,20 +545,6 @@ export class MobileProjectsTranscriptMessagesContentUi {
         this.attachTranscriptMarkdownLinkHandler(host);
     }
 
-    protected renderTranscriptStreamingPlainTextFallback(host: HTMLElement, linkedContent: string): void {
-        host.classList.remove(
-            'theia-mod-markdown',
-            TRANSCRIPT_STREAMING_INCREMENTAL_MARKDOWN_CLASS,
-            TRANSCRIPT_STREAMING_HYBRID_CLASS,
-        );
-        host.classList.add(TRANSCRIPT_STREAMING_PLAIN_TEXT_CLASS);
-        host.replaceChildren();
-        host.textContent = linkedContent;
-        transcriptStreamSourceCache.set(host, linkedContent);
-        delete host.dataset[STREAM_STABLE_LENGTH_DATA];
-        delete host.dataset[STREAM_TOTAL_LENGTH_DATA];
-    }
-
     /** Upgrade every streaming host under `root` to full rendered markdown (turn settled). */
     settleTranscriptStreamingContent(root: ParentNode): void {
         // Claude-Code-style: collapse tool groups once every pill inside finished successfully.
@@ -580,11 +565,6 @@ export class MobileProjectsTranscriptMessagesContentUi {
             const content = pendingFullText ?? transcriptStreamSourceCache.get(host) ?? host.textContent ?? '';
             this.renderTranscriptMarkdown(host, content);
         }
-    }
-
-    /** @deprecated Use {@link settleTranscriptStreamingContent}. */
-    settleTranscriptStreamingPlainText(root: ParentNode): void {
-        this.settleTranscriptStreamingContent(root);
     }
 
     protected attachTranscriptMarkdownLinkHandler(host: HTMLElement): void {

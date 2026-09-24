@@ -3,7 +3,7 @@ import type { MobileProjectsTranscriptMessagesRenderUiContext } from './mobile-p
 
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { nls } from '@theia/core/lib/common/nls';
-import { buildConversationTranscriptFingerprint, isStreamingTranscriptTailUnchanged, TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { buildConversationTranscriptFingerprint, isStreamingTranscriptTailUnchanged, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { TRANSCRIPT_PENDING_APPROVAL_HOST_CLASS } from './qaap-transcript-inline-approval-ui';
 import { TRANSCRIPT_APPROVAL_CARD_CLASS } from './qaap-transcript-approval-card-ui';
 import {
@@ -14,8 +14,8 @@ import {
     appendBeforeTranscriptLiveStatus,
     detachTranscriptLiveStatusFromScroller,
 } from '../common/qaap-transcript-live-status';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
-import { attachTranscriptScrollToBottomButton } from './qaap-transcript-scroll-to-bottom';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
+import { attachTranscriptScrollToBottomButton } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-to-bottom';
 import {
     restoreTranscriptReadPosition,
 } from './qaap-transcript-read-position';

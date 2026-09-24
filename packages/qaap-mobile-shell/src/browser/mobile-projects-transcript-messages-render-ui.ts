@@ -4,8 +4,8 @@
 // *****************************************************************************
 
 import { nls } from '@theia/core/lib/common/nls';
-import { resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, type QaapTranscriptStreamingPatchNoneReason } from '../common/qaap-transcript-incremental-update';
-import { type QaapTranscriptRenderMetricKind } from '../common/qaap-transcript-render-metrics';
+import { resolveStreamingTranscriptPatchKind, TRANSCRIPT_ACTIVITY_ROW_ATTR, type QaapTranscriptStreamingPatchNoneReason } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
+import { type QaapTranscriptRenderMetricKind } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 
 /** Telemetry: attribute every patch-miss to the guard that rejected it. */
 export const PATCH_NONE_REASON_METRIC: Record<QaapTranscriptStreamingPatchNoneReason, QaapTranscriptRenderMetricKind> = {
@@ -29,14 +29,14 @@ export const AGENT_REPLACE_REASON_METRIC: Record<TranscriptAgentPatchRejectReaso
 import {
     ensureTranscriptScrollController,
     type TranscriptScrollController,
-} from './qaap-transcript-scroll-controller';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-controller';
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO, type QaapPendingUserMessageDTO, cancelQueuedConversationMessage, dispatchQueuedConversationMessage, conversationToSummary } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectsTranscriptMessagesArtifactsUi } from './mobile-projects-transcript-messages-artifacts-ui';
 import type { MobileProjectsTranscriptMessagesContentUi } from './mobile-projects-transcript-messages-content-ui';
 import type { MobileProjectsTranscriptMessagesHost } from './mobile-projects-transcript-messages-ui';
 import type { MobileProjectsTranscriptMessagesToolUi } from './mobile-projects-transcript-messages-tool-ui';
 import type { MobileProjectsTranscriptMessagesUserUi } from './mobile-projects-transcript-messages-user-ui';
-import type { WorkHubTranscriptBridge } from './work-hub-transcript-bridge';
+import type { WorkHubTranscriptBridge } from '@theia/qaap-transcript-overlay/lib/browser/work-hub-transcript-bridge';
 import { buildTranscriptAgentFailureDialogOptionsExtracted, clearTranscriptEmptyQuickActionsExtracted, createTranscriptAgentFailureRowExtracted, createTranscriptMessageRowExtracted, ensureLiveStatusBeforeRemovingActivityRowExtracted, syncTranscriptActivityRowExtracted, tryPatchStreamingAgentTextContentExtracted } from './mobile-projects-transcript-messages-render-ui-activity';
 import { applyTranscriptScrollAfterMutationExtracted, buildTranscriptVirtualFooterExtracted, createTranscriptContextCompactionRowExtracted, createTranscriptMessageRowAtIndexExtracted, findAppendedUserMessageIndexExtracted, findLastUserMessageIndexExtracted, normalizeConversationFailuresCachedExtracted, positionTranscriptVirtualListAtUserTurnExtracted, resolveTranscriptAgentSegmentsExtracted, resolveTranscriptMessageHostExtracted, restoreTranscriptOpeningPositionVirtualExtracted, restoreTranscriptScrollAnchorExtracted, scheduleTranscriptScrollAfterMutationExtracted, scrollTranscriptTurnStartIntoReadingPositionExtracted, scrollTranscriptVirtualListToIndexExtracted, setTranscriptAgentSegmentsCacheEntryExtracted, shouldFollowTranscriptTailExtracted, syncTranscriptAgentSegmentsCacheExtracted, transcriptAgentSegmentsCacheKeyExtracted, transcriptContextCompactionBoundaryIndexExtracted, transcriptRowRenderKeyExtracted, transcriptSegmentsSignatureExtracted, transcriptTextSignatureExtracted, withDerivedTranscriptSegmentsExtracted } from './mobile-projects-transcript-messages-render-ui-render';
 import { createTranscriptEmptyWelcomeExtracted, prepareTranscriptReadingAnchorWindowExtracted, renderTranscriptMessagesExtracted, renderTranscriptMessagesVirtualExtracted, restoreTranscriptOpeningPositionExtracted, scrollTranscriptToLastUserTurnExtracted } from './mobile-projects-transcript-messages-render-ui-streaming';

@@ -10,16 +10,8 @@ export const QAAP_WORK_HUB_COLOR_THEME_COMMAND = 'workbench.action.selectTheme';
 export const QAAP_WORK_HUB_AI_FEATURES_COMMAND = 'ai-chat-ui.show-settings';
 /** Legacy command id kept as a compatibility redirect to AI Features. */
 export const QAAP_WORK_HUB_AI_CONFIGURATION_COMMAND = 'aiConfiguration:open';
-/** Harness tab used to enable or disable the CLI integrations shown by the composer. */
-export const QAAP_WORK_HUB_AI_CONFIGURATION_AGENTS_TAB = 'qaap-harness-configuration-widget';
 /** MCP servers tab — used by composer slash Tools (add-plugin / remove-plugin). */
 export const QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB = 'ai-mcp-configuration-container-widget';
-/** Skills tab — directories used by the Work Hub composer slash menu. */
-export const QAAP_WORK_HUB_AI_CONFIGURATION_SKILLS_TAB = 'ai-skills-configuration-widget';
-/** Model aliases tab — aliases consumed by QAIQ routing (`default/code`, etc.). */
-export const QAAP_WORK_HUB_AI_CONFIGURATION_MODEL_ALIASES_TAB = 'ai-model-aliases-configuration-widget';
-/** Default Work Hub entry: MCP is the primary day-to-day surface (VPS agents live in the composer). */
-export const QAAP_WORK_HUB_AI_CONFIGURATION_DEFAULT_TAB = QAAP_WORK_HUB_AI_CONFIGURATION_MCP_TAB;
 
 export type WorkHubCatalogHubTarget = 'home' | 'repos' | 'chat' | 'tasks' | 'review';
 

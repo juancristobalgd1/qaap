@@ -41,7 +41,6 @@ export interface QaapComposerEditorContextPanelDelegate {
 
 @injectable()
 export class QaapComposerEditorContextService implements Disposable {
-
     @inject(MonacoEditorProvider)
     protected readonly monacoEditorProvider: MonacoEditorProvider;
 
@@ -105,17 +104,6 @@ export class QaapComposerEditorContextService implements Disposable {
 
     hasActiveEditor(): boolean {
         return !!this.resolveActiveMonacoEditor();
-    }
-
-    hasActiveEditorSelection(): boolean {
-        return !!this.readActiveEditorSnapshot()?.hasSelection;
-    }
-
-    resolveActiveEditorContextRequest(): AIVariableResolutionRequest | undefined {
-        if (!this.hasActiveEditor()) {
-            return undefined;
-        }
-        return buildEditorContextAttachmentRequest(this.resolveEditorContextVariable());
     }
 
     pinEditorSelection(options?: { readonly focusComposer?: boolean }): boolean {

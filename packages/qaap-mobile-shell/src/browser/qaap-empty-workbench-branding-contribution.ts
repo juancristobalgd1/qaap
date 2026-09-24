@@ -38,7 +38,6 @@ const MAIN_PANEL_ID = 'theia-main-content-panel';
  */
 @injectable()
 export class QaapEmptyWorkbenchBrandingContribution implements FrontendApplicationContribution {
-
     @inject(ApplicationShell)
     protected readonly shell: ApplicationShell;
 
@@ -322,5 +321,3 @@ export class QaapEmptyWorkbenchBrandingContribution implements FrontendApplicati
     }
 }
 
-/** @deprecated Use {@link QaapEmptyWorkbenchBrandingContribution}. */
-export const MobileEmptyWorkbenchBrandingContribution = QaapEmptyWorkbenchBrandingContribution;

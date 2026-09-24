@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import {
     preferQaapConversationSummary,
     type QaapAgentConversationDTO,
@@ -18,7 +18,7 @@ import {
     type QaapConversationSummaryField,
 } from './qaap-conversation-change';
 import type { QaapAgUiTraceReducerState } from './qaap-ag-ui-transcript-adapter';
-import { applyConversationMessageDelta } from './qaap-transcript-sse-delta';
+import { applyConversationMessageDelta } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 
 function normalizeCwd(cwd: string): string {
     let normalized = cwd.replace(/\\/g, '/');
@@ -54,7 +54,6 @@ interface QaapThreadSubscriber<T> {
  * Summaries are always resident; full documents and live reducers are lazy/ephemeral.
  */
 export class QaapThreadStore {
-
     protected readonly summariesById = new Map<string, QaapAgentConversationSummaryDTO>();
     protected readonly idsByCwd = new Map<string, string[]>();
     protected readonly documents = new Map<string, QaapAgentConversationDTO>();
@@ -253,10 +252,6 @@ export class QaapThreadStore {
         return this.documents.get(id);
     }
 
-    deleteDocument(id: string): void {
-        this.documents.delete(id);
-    }
-
     /**
      * AG-UI MessagesSnapshot-style catch-up: apply wire deltas onto a cached document
      * without an HTTP round-trip after transport reconnect.
@@ -295,14 +290,6 @@ export class QaapThreadStore {
         this.documents.set(conversationId, next);
         this.notifyThread(conversationId);
         return next;
-    }
-
-    setLiveReducer(conversationId: string, reducer: QaapAgUiTraceReducerState | undefined): void {
-        if (!reducer) {
-            this.liveReducers.delete(conversationId);
-            return;
-        }
-        this.liveReducers.set(conversationId, reducer);
     }
 
     getLiveReducer(conversationId: string): QaapAgUiTraceReducerState | undefined {
@@ -386,9 +373,3 @@ export function sortConversationSummaries(
     });
 }
 
-/** Batch dispose helper for thread-scoped subscriptions. */
-export function bindQaapThreadStoreSubscriptions(
-    ...disposables: Disposable[]
-): Disposable {
-    return new DisposableCollection(...disposables);
-}

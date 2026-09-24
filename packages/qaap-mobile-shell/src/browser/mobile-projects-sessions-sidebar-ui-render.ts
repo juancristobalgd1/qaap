@@ -6,13 +6,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import type { MobileProjectEntry } from './mobile-projects-types';
 import { MobileWorkHubSessionsSidebar, isDesktopSessionsSidebarLayout } from './mobile-work-hub-sessions-sidebar';
-import {
-    buildWorkHubSessionsSidebarRowFingerprint,
-    buildWorkHubSessionsSidebarVisibleStructureFingerprint,
-    QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR,
-    QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR,
-    type WorkHubSessionsSidebarFingerprintInput,
-} from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
+import { buildWorkHubSessionsSidebarRowFingerprint, buildWorkHubSessionsSidebarVisibleStructureFingerprint, QAAP_SESSIONS_SIDEBAR_ROW_FP_ATTR, QAAP_SESSIONS_SIDEBAR_STRUCTURE_FP_ATTR } from '../common/qaap-work-hub-sessions-sidebar-fingerprint';
 import { expandConversationSlots, partitionAgentConversations } from '../common/qaap-isolated-fork-grouping';
 import { resolveQaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import { SESSIONS_SIDEBAR_INTERACTION_GUARD_MS, SESSIONS_SIDEBAR_STREAM_REFRESH_MS } from './mobile-projects-sessions-sidebar-ui';
@@ -149,35 +143,6 @@ export function ensureWorkHubSessionsSidebarExtracted(ctx: MobileProjectsSession
     }
     ctx.host.sessionsSidebar.syncEmbeddedState?.(!useBodyGrid && embeddedContainer !== undefined);
     return ctx.host.sessionsSidebar;
-}
-
-export function buildSessionsSidebarFingerprintInputExtracted(ctx: MobileProjectsSessionsSidebarUiContext): WorkHubSessionsSidebarFingerprintInput {
-    const pinnedConversationIds = new Set<string>();
-    for (const project of ctx.host.projects) {
-        for (const summary of ctx.host.conversationIndexUi.conversationsForProject(project)) {
-            if (ctx.isSessionsSidebarPinnedConversation(summary)) {
-                pinnedConversationIds.add(summary.id);
-            }
-        }
-    }
-    return {
-        query: ctx.host.query,
-        transcriptOpenSummaryId: ctx.host.transcriptOpenSummaryId,
-        expandedProjectIds: ctx.host.sessionsSidebarExpandedProjectIds,
-        visibleConversationCountByProjectId: ctx.host.sessionsSidebarVisibleConversationCountByProjectId,
-        projects: ctx.host.projects.map(project => ({
-            id: project.id,
-            isCurrent: project.isCurrent,
-        })),
-        conversationsForProject: projectId => {
-            const project = ctx.host.projects.find(entry => entry.id === projectId);
-            if (!project) {
-                return [];
-            }
-            return ctx.host.conversationIndexUi.conversationsForProject(project);
-        },
-        pinnedConversationIds,
-    };
 }
 
 export function shouldSkipSessionsSidebarListRenderExtracted(ctx: MobileProjectsSessionsSidebarUiContext): boolean {

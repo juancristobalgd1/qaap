@@ -87,26 +87,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         });
     }
 
-    resolveTranscriptVerificationChecks(
-        segments: QaapAgentMessageSegmentDTO[],
-    ): Array<{ readonly command: string; readonly state: 'passed' | 'failed' | 'running' }> {
-        const checks: Array<{ readonly command: string; readonly state: 'passed' | 'failed' | 'running' }> = [];
-        for (const segment of segments) {
-            if (segment.type !== 'tool' || !this.isTranscriptShellTool(segment.name)) {
-                continue;
-            }
-            const command = this.extractTranscriptToolCommand(segment.args);
-            if (!command || !this.isTranscriptVerificationCommand(command)) {
-                continue;
-            }
-            checks.push({
-                command: this.compactTranscriptCommand(command),
-                state: !segment.finished ? 'running' : this.transcriptToolResultFailed(segment.result, segment.name) ? 'failed' : 'passed',
-            });
-        }
-        return checks;
-    }
-
     resolveTranscriptDiffStats(
         segments: QaapAgentMessageSegmentDTO[],
     ): { readonly added: number; readonly removed: number } | undefined {
@@ -228,11 +208,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
         return name.includes('bash') || name.includes('shell') || name.includes('terminal') || name.includes('run_');
     }
 
-    isTranscriptReadLikeTool(toolName: string): boolean {
-        const name = toolName.toLowerCase();
-        return name.includes('read') || name.includes('grep') || name.includes('glob') || name.includes('search') || name.includes('list');
-    }
-
     isTranscriptVerificationCommand(command: string): boolean {
         return /\b(test|spec|check|lint|compile|build|typecheck|tsc|vitest|jest|mocha|playwright|pytest|cargo test|go test)\b/i.test(command);
     }
@@ -332,14 +307,6 @@ export class MobileProjectsTranscriptMessagesResolversUi {
             return 'reading';
         }
         return 'tool';
-    }
-
-    resolveTranscriptToolDetail(segment: Extract<QaapAgentMessageSegmentDTO, { type: 'tool' }>): string {
-        const name = (segment.name ?? 'tool').replace(/_/g, ' ');
-        const shortArgs = this.extractTranscriptToolShortArg(segment.args);
-        return shortArgs
-            ? nls.localize('qaap/mobileProjects/transcriptActivityToolDetailWithArgs', '{0}: {1}', name, shortArgs)
-            : nls.localize('qaap/mobileProjects/transcriptActivityToolDetail', 'Calling {0}', name);
     }
 
     extractTranscriptToolShortArg(argsJson: string): string | undefined {

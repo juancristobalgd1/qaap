@@ -5,31 +5,7 @@
 
 export type ExecutionSurfaceTabId = 'messages' | 'review' | 'preview' | 'files' | 'terminal';
 
-export const EXECUTION_SURFACE_TAB_IDS: readonly ExecutionSurfaceTabId[] = [
-    'messages',
-    'review',
-    'preview',
-    'files',
-    'terminal',
-];
-
-/** Chat is always pinned as the first visible header slot. */
-export const PINNED_EXECUTION_SURFACE_TAB: ExecutionSurfaceTabId = 'messages';
-
-/** Header shows Chat plus the overflow picker; all other tabs live in the menu. */
-export const HEADER_PINNED_EXECUTION_SURFACE_TABS: readonly ExecutionSurfaceTabId[] = [
-    PINNED_EXECUTION_SURFACE_TAB,
-];
-
-/** Rotating header slot count (excluding Chat and the overflow control). */
-export const ROTATING_EXECUTION_SURFACE_TAB_COUNT = 1;
-
 export const EXECUTION_SURFACE_TAB_USAGE_STORAGE_KEY = 'qaap.executionSurfaceTabUsage';
-
-export interface ExecutionSurfaceTabLayout {
-    readonly visible: ExecutionSurfaceTabId[];
-    readonly overflow: ExecutionSurfaceTabId[];
-}
 
 export function readExecutionSurfaceTabUsage(): Partial<Record<ExecutionSurfaceTabId, number>> {
     try {
@@ -70,33 +46,3 @@ export function recordExecutionSurfaceTabUse(tab: ExecutionSurfaceTabId): Partia
     return usage;
 }
 
-export function rankExecutionSurfaceTabs(
-    usage: Readonly<Partial<Record<ExecutionSurfaceTabId, number>>>,
-    activeTab?: ExecutionSurfaceTabId,
-): ExecutionSurfaceTabLayout {
-    const score = (tab: ExecutionSurfaceTabId): number => usage[tab] ?? 0;
-    const rotatable = EXECUTION_SURFACE_TAB_IDS.filter(tab => tab !== PINNED_EXECUTION_SURFACE_TAB);
-    const sortedRotatable = [...rotatable].sort((left, right) => {
-        const diff = score(right) - score(left);
-        if (diff !== 0) {
-            return diff;
-        }
-        return EXECUTION_SURFACE_TAB_IDS.indexOf(left) - EXECUTION_SURFACE_TAB_IDS.indexOf(right);
-    });
-
-    let secondSlot = sortedRotatable[0] ?? 'review';
-    if (activeTab && activeTab !== PINNED_EXECUTION_SURFACE_TAB) {
-        secondSlot = activeTab;
-    }
-
-    const visible: ExecutionSurfaceTabId[] = [PINNED_EXECUTION_SURFACE_TAB, secondSlot];
-    const overflow = EXECUTION_SURFACE_TAB_IDS.filter(tab => !visible.includes(tab));
-    return { visible, overflow };
-}
-
-export function layoutExecutionSurfaceTabs(
-    activeTab?: ExecutionSurfaceTabId,
-    usage: Readonly<Partial<Record<ExecutionSurfaceTabId, number>>> = readExecutionSurfaceTabUsage(),
-): ExecutionSurfaceTabLayout {
-    return rankExecutionSurfaceTabs(usage, activeTab);
-}

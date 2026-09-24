@@ -19,9 +19,6 @@ export const QAAP_THINKING_ORB_INDICATOR_CLASS = 'qaap-thinking-orb-indicator';
 /** Compact inline preset from `thinking-orbs` (header / stream row). */
 export const QAAP_THINKING_ORB_COMPACT_SIZE: OrbSize = 20;
 
-/** Chat-avatar preset — reserved for larger surfaces. */
-export const QAAP_THINKING_ORB_AVATAR_SIZE: OrbSize = 64;
-
 export interface ThinkingOrbIndicatorOptions extends ResolveThinkingOrbPhaseOptions {
     /** Explicit orb state; wins over phase derivation when set. */
     readonly state?: QaapThinkingOrbState | OrbState;

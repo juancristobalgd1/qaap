@@ -34,7 +34,7 @@ import {
     QAAP_MOBILE_DESKTOP_IDE_BODY_CLASS,
 } from '../common/qaap-mobile-work-surface-preference';
 import { MobileProjectsService } from './mobile-projects-service';
-import { EXPLORER_VIEW_CONTAINER_ID, type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
+import { type MobileBottomButton, type MobileBottomButtonId } from './mobile-shell-bottom-bar-widget';
 import { QaapProjectSwitcherService } from './qaap-project-switcher-service';
 import { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 
@@ -46,7 +46,6 @@ const WORKBENCH_CHAT_VIEW_WIDGET_ID = 'chat-view-widget';
 const QAAP_MOBILE_IDE_HEADER_VIEW_OPTIONS = 'qaap.mobile.ideHeaderView.options';
 const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVE = 'qaap.mobile.ideHeaderView.active';
 const QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE = 'qaap.mobile.ideHeaderView.activate';
-const QAAP_IDE_AVATAR_VIEW_COMMAND_PREFIX = 'qaap.ide.avatarView.';
 
 /** The legacy mobile view picker belongs to Work Hub's one-column surface, never to the classic IDE. */
 export function shouldShowMobileIdeHeaderViews(): boolean {
@@ -521,41 +520,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         return buildQaapAccountMenuEntries(signedIn);
     }
 
-    protected buildIdeHeaderViewMenuEntries(): QaapAccountMenuEntry[] {
-        const options = this.mobileViewPickerOptions.length
-            ? this.mobileViewPickerOptions
-            : this.getFallbackMobileViewPickerOptions();
-        return options.map(option => ({
-            kind: 'action',
-            label: option.id === 'explore' ? nls.localize('qaap/accountMenu/explorer', 'Explorer') : option.label,
-            commandId: `${QAAP_IDE_AVATAR_VIEW_COMMAND_PREFIX}${option.id}`,
-            iconClass: option.icon,
-            activeMark: option.id === this.mobileViewPickerActiveId,
-            run: () => this.activateIdeAvatarView(option.id),
-        }));
-    }
-
-    protected activateIdeAvatarView(id: MobileBottomButtonId): void {
-        switch (id) {
-            case 'agent':
-                this.onAiChatClick();
-                return;
-            case 'preview':
-                void this.activatePreviewFromAvatar();
-                return;
-            case 'terminal':
-                void this.activateTerminalFromAvatar();
-                return;
-            case 'explore':
-                this.activateExplorerFromAvatar();
-                return;
-            default:
-                if (this.commands.getCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE) && this.commands.isEnabled(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE)) {
-                    void this.commands.executeCommand(QAAP_MOBILE_IDE_HEADER_VIEW_ACTIVATE, id).catch(() => undefined);
-                }
-        }
-    }
-
     protected async activatePreviewFromAvatar(): Promise<void> {
         const preview = await this.miniBrowserOpenHandler.openEmptyPreviewTab();
         if (preview) {
@@ -599,14 +563,6 @@ export class QaapWorkbenchRightControlsWidget extends Widget {
         if (!this.shell.isExpanded('bottom')) {
             this.shell.expandPanel('bottom');
         }
-    }
-
-    protected activateExplorerFromAvatar(): void {
-        void this.shell.activateWidget(EXPLORER_VIEW_CONTAINER_ID).then(widget => {
-            if (widget && !this.shell.isExpanded('left')) {
-                this.shell.expandPanel('left');
-            }
-        }).catch(() => undefined);
     }
 
     protected override onAfterAttach(msg: Message): void {

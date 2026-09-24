@@ -86,7 +86,6 @@ export interface MobileWorkHubSettingsSidebarOptions {
  * delegate via {@link MobileProjectsPanel.createTaskItem} so behaviour matches Tasks inbox.
  */
 export class MobileWorkHubSessionsSidebar {
-
     protected visible = false;
     protected sidebarMode: 'sessions' | 'pullRequests' | 'settings' = 'sessions';
     protected scrollTouchDispose: Disposable = Disposable.NULL;
@@ -303,10 +302,6 @@ export class MobileWorkHubSessionsSidebar {
 
     isPullRequestsModeActive(): boolean {
         return this.sidebarMode === 'pullRequests';
-    }
-
-    isSettingsModeActive(): boolean {
-        return this.sidebarMode === 'settings';
     }
 
     showPullRequests(): void {

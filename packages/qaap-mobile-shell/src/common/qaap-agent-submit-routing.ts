@@ -38,10 +38,6 @@ export function resolveAgentSubmitSurface(input: QaapAgentSubmitRoutingInput): Q
     return 'vps-background';
 }
 
-export function shouldRouteSubmitToVpsBackground(input: QaapAgentSubmitRoutingInput): boolean {
-    return resolveAgentSubmitSurface(input) === 'vps-background';
-}
-
 export function shouldRouteSubmitToTheiaCoder(input: QaapAgentSubmitRoutingInput): boolean {
     return resolveAgentSubmitSurface(input) === 'theia-coder';
 }

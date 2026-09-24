@@ -51,7 +51,7 @@ import {
 import { buildShellInvocationExtracted, disposeRestoredPreviewTerminalsExtracted, failDevRunExtracted, openPreviewExtracted, openPreviewWidgetExtracted, previewWidgetKeyExtracted, reconcileRestoredPreviewTerminalsExtracted, refreshDescriptorAfterInstallExtracted, spawnCommandExtracted, spawnCommandWithRetryExtracted, syncMiniBrowserPreviewSuspensionAfterOpenExtracted, toUserFacingDevErrorExtracted, watchAttachedDevTerminalExtracted } from './qaap-project-bootstrap-service-activity';
 import { adoptSupersedingPreviewClaimExtracted, bindPreviewConversationExtracted, buildDevSpawnPlanExtracted, claimPreviewExecutionExtracted, describeRunnableAppExtracted, ensurePreviewProcessIdForConversationExtracted, getBootstrapFailureDetailExtracted, getMissingDescriptorHintExtracted, initExtracted, reconcileSupersededPreviewClaimExtracted, refreshFromProjectRootExtracted, rememberActivePreviewClaimExtracted, reserveActivePreviewExtracted, resolveDevPlanExtracted, resolveInstallPlanExtracted, selectMonorepoAppExtracted, stopManagedDevServerForAppSwitchExtracted, switchMonorepoAppExtracted } from './qaap-project-bootstrap-service-render';
 import { cancelActivePreviewLaunchExtracted, focusPreviewExtracted, openExistingPreviewExtracted, refreshFromCurrentWorkspaceExtracted, refreshFromRootExtracted, resetExtracted, runDevServerExtracted, runInstallExtracted, scheduleRefreshFromCurrentWorkspaceExtracted, skipExtracted, startDevServerExtracted } from './qaap-project-bootstrap-service-streaming';
-import { adoptExistingPreviewIdentityExtracted, attachTerminalOsProcessIdExtracted, claimDevPreviewPortExtracted, collectProbePortsExtracted, extractPortExtracted, healPreviewClaimToListeningPortExtracted, markPortOpenedExtracted, mayAutoOpenPreviewNowExtracted, monitorPreviewProcessLifetimeExtracted, openForwardedPortExtracted, openPrimaryPreviewWhenReadyExtracted, probeBelongsToActiveProjectExtracted, recordForwardedPortExtracted, resolvePrimaryPreviewTargetExtracted, scanDevOutputExtracted, scanForDevUrlExtracted, scheduleDevPreviewFallbackExtracted, tryAttachToExistingServerExtracted } from './qaap-project-bootstrap-service-timeline';
+import { adoptExistingPreviewIdentityExtracted, attachTerminalOsProcessIdExtracted, claimDevPreviewPortExtracted, collectProbePortsExtracted, extractPortExtracted, healPreviewClaimToListeningPortExtracted, markPortOpenedExtracted, mayAutoOpenPreviewNowExtracted, monitorPreviewProcessLifetimeExtracted, openPrimaryPreviewWhenReadyExtracted, probeBelongsToActiveProjectExtracted, recordForwardedPortExtracted, resolvePrimaryPreviewTargetExtracted, scanDevOutputExtracted, scanForDevUrlExtracted, scheduleDevPreviewFallbackExtracted, tryAttachToExistingServerExtracted } from './qaap-project-bootstrap-service-timeline';
 import { beginDevRunExtracted, buildStateChangeExtracted, cancelDevPreviewFallbacksExtracted, cancelDevPreviewHealthMonitorExtracted, cancelDevPreviewWarmupExtracted, cleanupDevTerminalExtracted, clearForwardedPortsExtracted, persistPhaseExtracted, readAllPersistedExtracted, registerDevTerminalForConversationExtracted, releaseActivePreviewExtracted, releaseDevTerminalForConversationExtracted, releasePreviewForConversationExtracted, resetBootstrapSessionForWorkspaceExtracted, scheduleDevPreviewWarmupExtracted, setPhaseExtracted, startDevPreviewHealthMonitorExtracted, syncHubSessionExtracted, waitForExitExtracted, warmupDevPreviewExtracted } from './qaap-project-bootstrap-service-tool-pills';
 
 /** Storage key used to remember per-workspace user intent (skip / installed). */
@@ -160,7 +160,6 @@ export interface PersistedEntry {
  */
 @injectable()
 export class QaapProjectBootstrapService {
-
     @inject(WorkspaceService)
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public readonly workspaceService: WorkspaceService;
@@ -201,8 +200,6 @@ export class QaapProjectBootstrapService {
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public readonly forwardedPortsEmitter = new Emitter<QaapForwardedPort[]>();
-    /** Fires whenever the list of detected ports changes (added / removed / opened in preview). */
-    readonly onForwardedPortsChanged: Event<QaapForwardedPort[]> = this.forwardedPortsEmitter.event;
 
     protected readonly devOutputEmitter = new Emitter<string>();
     /** Fires whenever new dev-server output is appended (for live streaming in the Preview tab). */
@@ -383,7 +380,6 @@ export class QaapProjectBootstrapService {
     get previewUrl(): string | undefined { return this._previewUrl; }
     get selectedApp(): QaapMonorepoAppCandidate | undefined { return this._selectedApp; }
     get lastPort(): number | undefined { return this._lastPort; }
-    get previewProcessId(): string | undefined { return this.activePreviewRunId; }
     get previewId(): string | undefined { return this.activePreviewClaim?.previewId; }
     /** Stable identity URL of the live claim — the authoritative navigation target for the primary preview. */
     get previewClaimUrl(): string | undefined { return this.activePreviewClaim?.previewUrl; }
@@ -609,10 +605,6 @@ export class QaapProjectBootstrapService {
         return healPreviewClaimToListeningPortExtracted(this, deadPort);
     }
 
-    async openForwardedPort(port: QaapForwardedPort): Promise<void> {
-        return openForwardedPortExtracted(this, port);
-    }
-
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public markPortOpened(port: number, open: boolean): void {
         markPortOpenedExtracted(this, port, open);
@@ -774,25 +766,6 @@ export class QaapProjectBootstrapService {
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */
     public releaseDevTerminalForConversation(conversationId: string): void {
         releaseDevTerminalForConversationExtracted(this, conversationId);
-    }
-
-    /**
-     * Returns the dev terminal for a specific conversation, or undefined when no dev server
-     * is running for that section. Enables multi-preview: each section can have its own
-     * independent dev terminal without displacing another section's terminal.
-     */
-    getDevTerminalForConversation(conversationId: string): TerminalWidget | undefined {
-        const entry = this.devTerminalByConversationId.get(conversationId);
-        return entry?.terminal && !entry.terminal.isDisposed ? entry.terminal : undefined;
-    }
-
-    /** Returns the conversation IDs that currently have an active dev terminal. */
-    get activeDevTerminalConversationIds(): readonly string[] {
-        return Array.from(this.devTerminalByConversationId.keys())
-            .filter(id => {
-                const entry = this.devTerminalByConversationId.get(id);
-                return entry?.terminal && !entry.terminal.isDisposed;
-            });
     }
 
     /** @internal Used by the extracted qaap-project-bootstrap-service-* modules. */

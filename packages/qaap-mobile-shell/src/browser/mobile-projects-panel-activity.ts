@@ -21,7 +21,7 @@ import {
 } from '../common/qaap-composer-context-entry';
 import {
     type QaapTranscriptLiveRefreshOptions,
-} from './qaap-transcript-live-controller';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
 
 export function renderAgentsHubIdleSubmitOptimisticExtracted(ctx: MobileProjectsPanelContext, chatHost: HTMLElement,
     summary: QaapAgentConversationSummaryDTO,

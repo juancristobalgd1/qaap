@@ -10,18 +10,18 @@ import {
 import { conversationUsesInteractiveApprovals } from '../common/qaap-agent-interactive-approvals';
 import {
     shouldSkipStreamingTranscriptRefetch,
-} from '../common/qaap-transcript-sse-delta';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-sse-delta';
 import {
     conversationShouldWatchDevPreview,
 } from '../common/qaap-transcript-preview-offer';
 import {
     shouldForceTranscriptRenderOnStatusSettle,
-} from '../common/qaap-transcript-incremental-update';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { warmAgentTurnPath } from '../common/qaap-agent-turn-warm';
 import { resolveTranscriptEffectiveStatus } from '../common/qaap-transcript-turn-status';
 import {
     type QaapTranscriptLiveRefreshOptions,
-} from './qaap-transcript-live-controller';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
 import { MobileSnackbar } from './mobile-snackbar';
 import type { MobileProjectEntry } from './mobile-projects-types';
 

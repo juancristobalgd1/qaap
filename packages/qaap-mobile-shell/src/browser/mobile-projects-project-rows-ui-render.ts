@@ -2,7 +2,6 @@ import type { MobileProjectsProjectRowsUiContext } from './mobile-projects-proje
 // Extracted from mobile-projects-project-rows-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { type QaapAgentTaskVisualStatus } from '../common/qaap-agent-task-visual-status';
 import { mobileProjectInitials, type MobileProjectEntry } from './mobile-projects-types';
 
 export function createTaskLeadingGlyphExtracted(ctx: MobileProjectsProjectRowsUiContext, codiconClass: string): HTMLElement {
@@ -10,15 +9,6 @@ export function createTaskLeadingGlyphExtracted(ctx: MobileProjectsProjectRowsUi
         glyph.className = `theia-mobile-projects-task-leading-glyph codicon ${codiconClass}`;
         glyph.setAttribute('aria-hidden', 'true');
         return glyph;
-}
-
-export function createSidebarStatusChipExtracted(ctx: MobileProjectsProjectRowsUiContext, visualStatus: QaapAgentTaskVisualStatus): HTMLElement {
-        const chip = document.createElement('span');
-        chip.className = `theia-mobile-projects-task-status-chip theia-mod-${visualStatus.id}`;
-        chip.textContent = nls.localize(visualStatus.labelKey, visualStatus.label);
-        chip.setAttribute('aria-label', chip.textContent);
-        chip.title = chip.textContent;
-        return chip;
 }
 
 export function createRowExtracted(ctx: MobileProjectsProjectRowsUiContext, project: MobileProjectEntry): HTMLElement {

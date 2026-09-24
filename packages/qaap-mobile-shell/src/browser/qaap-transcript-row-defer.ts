@@ -33,14 +33,6 @@ export interface TranscriptDeferredToolBodyHydrate {
 const deferredMarkdown = new WeakMap<HTMLElement, TranscriptDeferredMarkdownHydrate>();
 const deferredToolBodies = new WeakMap<HTMLElement, TranscriptDeferredToolBodyHydrate>();
 
-export function markTranscriptRowDeferred(row: HTMLElement): void {
-    row.setAttribute(TRANSCRIPT_ROW_DEFER_ATTR, '1');
-}
-
-export function isTranscriptRowDeferred(row: HTMLElement): boolean {
-    return row.hasAttribute(TRANSCRIPT_ROW_DEFER_ATTR);
-}
-
 export function registerDeferredTranscriptMarkdown(hydrate: TranscriptDeferredMarkdownHydrate): void {
     hydrate.host.setAttribute(TRANSCRIPT_DEFER_PENDING_ATTR, 'markdown');
     deferredMarkdown.set(hydrate.host, hydrate);

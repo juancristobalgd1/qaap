@@ -124,10 +124,6 @@ export function materializeAgentMessageForApi(message: QaapAgentMessageDTO): Qaa
     return next;
 }
 
-export function materializeConversationForApi(conversation: QaapAgentConversationDTO): QaapAgentConversationDTO {
-    return materializeConversationForApiWithChanges(conversation).conversation;
-}
-
 export function materializeConversationForApiWithChanges(
     conversation: QaapAgentConversationDTO,
 ): BackfillConversationTraceResult {

@@ -13,7 +13,7 @@ import { resolveTranscriptStreamingActivityFromSegments } from '../common/qaap-t
 import {
     resolveTranscriptActivityTimelineSummaryText,
 } from '../common/qaap-transcript-activity-timeline-summary';
-import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_ROW_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { sharedSecondTicker } from './qaap-shared-elapsed-ticker';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { createAgentSetupElement, destroyAgentSetupElement } from '../common/qaap-agent-setup-phrases';
@@ -144,39 +144,6 @@ export function createTranscriptChangedFileRowExtracted(ctx: MobileProjectsTrans
         row.append(icon, info, tail);
         ctx.toolUi.attachTranscriptReviewFileOpenAction(row, file.path);
         return row;
-}
-
-export function createTranscriptVerificationCardExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segments: QaapAgentMessageSegmentDTO[]): HTMLElement | undefined {
-        const checks = ctx.resolversUi.resolveTranscriptVerificationChecks(segments);
-        if (checks.length === 0) {
-            return undefined;
-        }
-        const card = document.createElement('section');
-        card.className = 'theia-mobile-agent-premium-card theia-mobile-agent-verification';
-        card.append(ctx.createTranscriptPremiumHead(
-            'codicon-check-all',
-            nls.localize('qaap/mobileProjects/transcriptVerification', 'Verification'),
-        ));
-        const list = document.createElement('div');
-        list.className = 'theia-mobile-agent-verification-list';
-        for (const check of checks.slice(-4)) {
-            const row = document.createElement('div');
-            row.className = `theia-mobile-agent-verification-row theia-mod-${check.state}`;
-            const state = document.createElement('span');
-            state.className = 'theia-mobile-agent-verification-state';
-            state.textContent = check.state === 'passed'
-                ? nls.localize('qaap/mobileProjects/transcriptVerificationPassed', 'OK')
-                : check.state === 'failed'
-                    ? nls.localize('qaap/mobileProjects/transcriptVerificationFailed', 'Fail')
-                    : nls.localize('qaap/mobileProjects/transcriptVerificationRunning', 'Run');
-            const command = document.createElement('span');
-            command.className = 'theia-mobile-agent-verification-command';
-            command.textContent = check.command;
-            row.append(state, command);
-            list.append(row);
-        }
-        card.append(list);
-        return card;
 }
 
 export function createTranscriptTechnicalDetailsCardExtracted(ctx: MobileProjectsTranscriptMessagesArtifactsUiContext, segments: QaapAgentMessageSegmentDTO[],

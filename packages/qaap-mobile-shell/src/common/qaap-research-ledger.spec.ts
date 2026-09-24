@@ -5,17 +5,7 @@
 
 import { expect } from 'chai';
 import { normalizeResearchGoal, type ResearchGoal, type ResearchMetricSpec } from './qaap-research-goal';
-import {
-    bestPrimaryValue,
-    configFingerprint,
-    evaluateVerdict,
-    parseExperimentProposal,
-    parseMetricFromStdout,
-    renderLedgerForPrompt,
-    resolveTerminationReason,
-    summarizeResearchGoalLedger,
-    type ResearchExperimentRecord,
-} from './qaap-research-ledger';
+import { bestPrimaryValue, configFingerprint, evaluateVerdict, parseExperimentProposal, parseMetricFromStdout, renderLedgerForPrompt, resolveTerminationReason, type ResearchExperimentRecord } from './qaap-research-ledger';
 
 function record(overrides: Partial<ResearchExperimentRecord> & { round: number }): ResearchExperimentRecord {
     return {
@@ -33,7 +23,6 @@ function record(overrides: Partial<ResearchExperimentRecord> & { round: number }
 }
 
 describe('qaap-research-ledger', () => {
-
     describe('parseExperimentProposal', () => {
         it('parses a well-formed [QAAP experiment] block', () => {
             const stdout = [
@@ -326,21 +315,6 @@ describe('qaap-research-ledger', () => {
         it('reports cancelled immediately when the goal status is cancelled, regardless of records', () => {
             const cancelledGoal: ResearchGoal = { ...goal, status: 'cancelled' };
             expect(resolveTerminationReason(cancelledGoal, [], 0)).to.equal('cancelled');
-        });
-    });
-
-    describe('summarizeResearchGoalLedger', () => {
-        it('ignores preflight and counts experiment rounds with the last hypothesis', () => {
-            const records = [
-                record({ round: 0, preflight: true, hypothesis: '(preflight)' }),
-                record({ round: 1, hypothesis: 'Try LR 0.01' }),
-                record({ round: 2, hypothesis: 'Try LR 0.005', verdict: 'improved' }),
-            ];
-            expect(summarizeResearchGoalLedger(records)).to.deep.equal({
-                experimentRoundCount: 2,
-                lastHypothesis: 'Try LR 0.005',
-                lastVerdict: 'improved',
-            });
         });
     });
 

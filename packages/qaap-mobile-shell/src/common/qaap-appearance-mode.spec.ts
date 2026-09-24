@@ -4,20 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    QAAP_APPEARANCE_MODE_KEY,
-    QAAP_APPEARANCE_PREFERRED_DARK_THEME_KEY,
-    QAAP_APPEARANCE_PREFERRED_LIGHT_THEME_KEY,
-    readQaapAppearanceMode,
-    readQaapAppearanceModeOrDefault,
-    readQaapAppearanceThemePair,
-    resolveQaapAppearanceThemeId,
-    writeQaapAppearanceMode,
-    writeQaapAppearancePreferredTheme,
-} from './qaap-appearance-mode';
+import { QAAP_APPEARANCE_PREFERRED_DARK_THEME_KEY, QAAP_APPEARANCE_PREFERRED_LIGHT_THEME_KEY, readQaapAppearanceMode, readQaapAppearanceThemePair, resolveQaapAppearanceThemeId, writeQaapAppearanceMode, writeQaapAppearancePreferredTheme } from './qaap-appearance-mode';
 
 describe('qaap-appearance-mode', () => {
-
     function createStorage(): Pick<Storage, 'getItem' | 'setItem'> & { map: Map<string, string> } {
         const map = new Map<string, string>();
         return {
@@ -26,14 +15,6 @@ describe('qaap-appearance-mode', () => {
             setItem: (key: string, value: string) => { map.set(key, value); },
         };
     }
-
-    it('returns undefined when storage is empty or invalid', () => {
-        const storage = createStorage();
-        expect(readQaapAppearanceMode(storage)).to.equal(undefined);
-        storage.map.set(QAAP_APPEARANCE_MODE_KEY, 'nope');
-        expect(readQaapAppearanceMode(storage)).to.equal(undefined);
-        expect(readQaapAppearanceModeOrDefault(storage)).to.equal('system');
-    });
 
     it('round-trips light / dark / system', () => {
         const storage = createStorage();

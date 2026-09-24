@@ -283,12 +283,6 @@ export function resolveAgentLoginCliCommand(agentId: string | undefined): string
     }
 }
 
-/** True when text looks like a CLI session-login failure (vs generic API-key). */
-export function isAgentSessionAuthFailure(log: string | undefined): boolean {
-    return detectAgentAuthFailureMode(log) === 'session'
-        || !!extractAgentAuthLoginChallenge(log)?.url;
-}
-
 /**
  * True when the agent authenticates through a real CLI OAuth / device-code login
  * (a terminal sign-in flow), as opposed to a BYOK / Settings API-key agent.

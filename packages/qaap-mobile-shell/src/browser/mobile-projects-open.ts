@@ -39,9 +39,6 @@ export const QAAP_MOBILE_PROJECTS_DISMISS_PANEL_KEY = 'qaap.mobileProjects.dismi
 /** User is currently on the mobile Projects home. Reload should restore Projects, not workspace. */
 export const QAAP_MOBILE_PROJECTS_HOME_VISIBLE_KEY = 'qaap.mobileProjects.homeVisible';
 
-/** @deprecated Landing state is in-memory only; reloads should return mobile users to Projects. */
-export const QAAP_MOBILE_PROJECTS_LEFT_LANDING_KEY = 'qaap.mobileProjects.leftLanding';
-
 /** Dispatched synchronously so the sheet can close before `workspaceService.open` reloads the page. */
 export const QAAP_MOBILE_PROJECTS_DISMISS_PANEL_EVENT = 'qaap-mobile-projects-dismiss-panel';
 

@@ -5,7 +5,7 @@
 
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
-import { Emitter, Event } from '@theia/core/lib/common/event';
+import { Emitter } from '@theia/core/lib/common/event';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { ThemeService } from '@theia/core/lib/browser/theming';
 import { getThemeMode, type Theme } from '@theia/core/lib/common/theme';
@@ -33,7 +33,6 @@ import {
  */
 @injectable()
 export class QaapAppearanceModeService implements FrontendApplicationContribution {
-
     @inject(ThemeService)
     protected readonly themeService: ThemeService;
 
@@ -48,8 +47,6 @@ export class QaapAppearanceModeService implements FrontendApplicationContributio
     protected readonly toDispose = new DisposableCollection();
     protected mediaListener = Disposable.NULL;
     protected started = false;
-
-    readonly onDidChangeMode: Event<QaapAppearanceMode> = this.onDidChangeModeEmitter.event;
 
     onStart(): void {
         if (this.started) {

@@ -13,8 +13,8 @@
 import { nls } from '@theia/core/lib/common/nls';
 import { stripAnsiEscapes } from '../common/qaap-transcript-content-display';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
-import { TRANSCRIPT_TOOL_USE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
-import { createTranscriptCodeView, patchTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from './qaap-transcript-code-view';
+import { TRANSCRIPT_TOOL_USE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
+import { createTranscriptCodeView, patchTranscriptCodeView, resolveTranscriptCodeLanguage, type TranscriptCodeLanguage } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import {
     isTranscriptWebSearchTool,
     resolveTranscriptWebSearchPayload,

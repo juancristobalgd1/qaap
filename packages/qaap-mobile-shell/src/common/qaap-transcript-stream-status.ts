@@ -217,15 +217,6 @@ export function shouldExpandTranscriptInlineTimeline(
     return phase === 'acting';
 }
 
-/** Short duration label for thought headers — Cursor uses seconds for brief thinks. */
-export function formatTranscriptThoughtDuration(elapsedMs: number): string {
-    const totalSeconds = Math.max(1, Math.round(elapsedMs / 1000));
-    if (totalSeconds < 60) {
-        return `${totalSeconds}s`;
-    }
-    return formatTranscriptStreamElapsed(elapsedMs);
-}
-
 /** Cursor switches from "Planning next moves" to this after ~20s without visible progress. */
 export const TRANSCRIPT_STREAM_STALL_MS = 20_000;
 

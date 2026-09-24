@@ -8,11 +8,11 @@ import URI from '@theia/core/lib/common/uri';
 import {
     createTranscriptCodeView,
     resolveTranscriptCodeLanguage,
-} from './qaap-transcript-code-view';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import {
     type TranscriptPreviewMonacoEditor,
     type TranscriptPreviewMonacoEditorOptions,
-} from './qaap-transcript-monaco-editor';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-monaco-editor';
 import { installMobilePanelResizeDrag } from './mobile-panel-resize-drag';
 import { getFileIconClass } from '../common/qaap-file-icon-utils';
 import { QAAP_SCM_CHANGES_SVG_MARKUP } from '../common/qaap-scm-changes-icon';
@@ -324,9 +324,9 @@ export function findTranscriptReadmeEntry(
         ?? files.find(entry => entry.name.toLowerCase().startsWith('readme'));
 }
 
-import type { TranscriptFilesMount, TranscriptFilesViewMode } from './qaap-transcript-surface-types';
+import type { TranscriptFilesMount, TranscriptFilesViewMode } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-surface-types';
 
-export type { TranscriptFilesMount, TranscriptFilesViewMode } from './qaap-transcript-surface-types';
+export type { TranscriptFilesMount, TranscriptFilesViewMode } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-surface-types';
 
 export function mountTranscriptFilesView(
     host: HTMLElement,

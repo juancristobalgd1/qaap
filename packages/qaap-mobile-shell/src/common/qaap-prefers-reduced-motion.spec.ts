@@ -4,10 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { resolveScrollBehavior, scrollElementToEndAfterLayout } from './qaap-prefers-reduced-motion';
+import { resolveScrollBehavior, scrollElementToEndAfterLayout } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 
 describe('qaap-prefers-reduced-motion', () => {
-
     it('resolveScrollBehavior uses auto when reduced motion is preferred', () => {
         expect(resolveScrollBehavior('smooth', true)).to.equal('auto');
     });

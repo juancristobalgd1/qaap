@@ -16,19 +16,13 @@ import {
 import { buildStickyComposerSlashSections, type StickyComposerSlashSection } from '../common/qaap-sticky-composer-slash-menu';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import type { QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
-import {
-    applyComposerContextEntryPreview,
-    resolveStickyComposerContextChip,
-    resolveStickyComposerContextEntry,
-    type StickyComposerContextChipView,
-} from './qaap-sticky-composer-context-ui';
+import { applyComposerContextEntryPreview, resolveStickyComposerContextEntry, type StickyComposerContextChipView } from './qaap-sticky-composer-context-ui';
 import {
     createComposerContextEntry,
     hasPendingComposerContextEntries,
     revokeComposerContextPreview,
     type StickyComposerContextEntry,
 } from '../common/qaap-composer-context-entry';
-import { createQuotedTextRequest } from '../common/qaap-quoted-text-context';
 import { type QaapAgentTaskAgentOption } from '../common/qaap-agent-task-client';
 import type { MobileComposerAttachHandlers } from './qaap-mobile-composer-device-attach';
 import type { MobileProjectEntry } from './mobile-projects-types';
@@ -96,20 +90,6 @@ export class MobileProjectsStickyComposerContextUi {
         this.host.stickyComposerRenderUi.renderStickyComposer();
     }
 
-    /**
-     * Add dragged/pasted plain text as a quoted-text context chip. The text is
-     * stored as a resolved context variable so the agent sees it as context
-     * (not as part of the prompt draft).
-     */
-    dropQuotedText(text: string): void {
-        const request = createQuotedTextRequest(text);
-        const entry = createComposerContextEntry(request);
-        // Store the full text on the entry so the agent receives the untruncated
-        // version when the context is resolved at submit time.
-        entry.displayName = nls.localize('qaap/mobileProjects/quotedText', 'Quoted text');
-        this.host.stickyComposerContext.push(entry);
-        this.host.stickyComposerRenderUi.renderStickyComposer();
-    }
     createStickyComposerAttachHandlers(uploadTargetDir?: URI): MobileComposerAttachHandlers {
         return {
             uploadTargetDir,
@@ -248,9 +228,6 @@ export class MobileProjectsStickyComposerContextUi {
         // The host provider only sees `entry.request`, so a pending attachment's local blob preview,
         // pending flag and device file name are lost. Merge them back so the miniature renders.
         return applyComposerContextEntryPreview(fromProvider, entry);
-    }
-    formatComposerContextChip(item: AIVariableResolutionRequest): StickyComposerContextChipView {
-        return this.host.formatContextChip?.(item) ?? resolveStickyComposerContextChip(item);
     }
     resolveComposerMentionOptions(
         backendAgents: readonly QaapAgentTaskAgentOption[],

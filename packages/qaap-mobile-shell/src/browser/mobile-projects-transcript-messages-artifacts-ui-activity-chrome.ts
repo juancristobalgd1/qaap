@@ -19,8 +19,8 @@ import {
     TRANSCRIPT_ACTIVITY_ITEM_CONTENT_FP_ATTR,
     TRANSCRIPT_ACTIVITY_ITEM_FP_ATTR,
 } from '../common/qaap-transcript-timeline-sync-fingerprint';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
-import { TRANSCRIPT_ACTIVITY_ACTIVE_ATTR } from '../common/qaap-transcript-incremental-update';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
+import { TRANSCRIPT_ACTIVITY_ACTIVE_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     transcriptActivityNestDepthClassName,
 } from '../common/qaap-transcript-activity-nesting';

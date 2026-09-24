@@ -77,7 +77,6 @@ const SKIP_AUTH_DEV_USER = {
 
 @injectable()
 export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
-
     @inject(QaapGithubSessionStore)
     protected readonly sessions: QaapGithubSessionStore;
 
@@ -893,10 +892,6 @@ export class QaapGithubOauthEndpoint implements BackendApplicationContribution {
             message: err.message,
         });
         return true;
-    }
-
-    protected safePathSegment(value: string): string {
-        return value.replace(/[^A-Za-z0-9_.-]/g, '_');
     }
 
     protected async isGitRepository(target: string): Promise<boolean> {

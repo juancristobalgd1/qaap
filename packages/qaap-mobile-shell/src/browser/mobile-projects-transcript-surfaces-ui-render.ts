@@ -3,16 +3,10 @@ import type { MobileProjectsTranscriptSurfacesUiContext } from './mobile-project
 // Extracted from mobile-projects-transcript-surfaces-ui.ts
 
 import { nls } from '@theia/core/lib/common/nls';
-import { invalidateVerifyWorkspaceSnapshots } from '../common/qaap-verify-commit-readiness';
-import { FileUri } from '@theia/core/lib/common/file-uri';
 import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
 import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/browser/qaap-preview-url-utils';
 import { resolveTranscriptPreviewOpenUrl } from './qaap-transcript-preview-effective-url';
-import {
-    type QaapAgentConversationDTO,
-    type QaapAgentConversationSummaryDTO,
-    type QaapAgentMessageSegmentDTO,
-} from '../common/qaap-agent-conversation-client';
+import { type QaapAgentConversationSummaryDTO } from '../common/qaap-agent-conversation-client';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import type { QaapMonorepoAppCandidate } from './qaap-project-bootstrap-types';
 import {
@@ -226,69 +220,6 @@ export function mountProjectDetailSurfaceTabExtracted(ctx: MobileProjectsTranscr
     }
 }
 
-export async function mountProjectDetailReviewWidgetExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry): Promise<void> {
-    const host = ctx.host.projectDetailSurfaceTargets?.reviewHost;
-    if (!host || !ctx.host.createDiffReviewWidget) {
-        return;
-    }
-    const cwd = ctx.host.projectsService.getProjectCwd(project) ?? ctx.host.preparedCwdByProjectId.get(project.id);
-    if (!cwd) {
-        host.replaceChildren();
-        const note = document.createElement('div');
-        note.className = 'theia-mobile-transcript-review-note';
-        note.textContent = nls.localize(
-            'qaap/mobileProjects/reviewUnavailable',
-            'Review is unavailable for this conversation (no workspace path).',
-        );
-        host.append(note);
-        return;
-    }
-    host.replaceChildren();
-    const diffHost = document.createElement('div');
-    diffHost.className = 'theia-mobile-transcript-review-diff-host';
-    host.append(diffHost);
-    // Review can be scoped to an agent worktree, not the hub card's clone. Keep the URI and
-    // filesystem root aligned so opening a changed/untracked file cannot jump to another repo.
-    const rootUri = FileUri.create(cwd).toString();
-    if (!ctx.host.diffReviewWidget) {
-        ctx.host.diffReviewWidget = await ctx.host.createDiffReviewWidget();
-    }
-    if (!host.isConnected) {
-        return;
-    }
-    ctx.host.diffReviewWidget.enableTranscriptEmbed({ externalChrome: true });
-    ctx.host.diffReviewWidget.node.classList.add('theia-mobile-transcript-diff-embed');
-    ctx.host.diffReviewWidget.setTranscriptAgentFeedbackHandler(async () => { /* project-level — use composer below */ });
-    ctx.host.diffReviewWidget.setTranscriptCloseHandler(() => {
-        const summary = ctx.host.transcriptOpenSummary;
-        if (summary) {
-            ctx.host.selectTranscriptTab('messages', project, summary);
-            return;
-        }
-        ctx.host.executionSurfaceTabsUi.setExecutionSurfaceTab(project, 'messages');
-        ctx.host.executionSurfaceTabsUi.showOnlyExecutionSurfaceTab('messages');
-        ctx.host.executionSurfaceTabsUi.syncExecutionSurfaceChrome(project);
-        ctx.host.root.classList.toggle('theia-mod-project-surface-chat', true);
-        ctx.host.root.classList.toggle('theia-mod-project-surface-tools', false);
-    });
-    ctx.host.attachDiffReviewWidget(diffHost);
-    ctx.host.diffReviewWidget.setRepositoryContext({
-        rootUri,
-        rootFsPath: cwd,
-        isActiveWorkspace: project.isCurrent,
-    });
-    ctx.host.diffReviewWidget.setCommitReadinessProvider(
-        () => ({
-            checksLoading: ctx.host.verifyChecksLoading,
-            running: ctx.host.verifyRunning,
-            results: ctx.host.verifyResults ?? [],
-        }),
-        () => {
-            invalidateVerifyWorkspaceSnapshots(ctx.host.verifyResults ?? []);
-        },
-    );
-}
-
 export function executionSurfaceHostExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, transcriptHost: HTMLElement | undefined,
     projectDetailHost: HTMLElement | undefined,): HTMLElement | undefined {
     if ((ctx.host.transcriptSheet || ctx.host.agentsHubShellActive) && transcriptHost) {
@@ -316,23 +247,6 @@ export function executionTerminalHostExtracted(ctx: MobileProjectsTranscriptSurf
         ctx.host.transcriptTerminalHost,
         ctx.host.projectDetailSurfaceTargets?.terminalHost,
     );
-}
-
-export function latestAgentSegmentsExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, conv: QaapAgentConversationDTO | undefined): QaapAgentMessageSegmentDTO[] | undefined {
-    if (!conv) {
-        return undefined;
-    }
-    for (let i = conv.messages.length - 1; i >= 0; i--) {
-        const msg = conv.messages[i];
-        if (msg.role !== 'agent') {
-            continue;
-        }
-        const segments = ctx.host.transcriptMessagesUi.resolveTranscriptAgentSegments(conv, msg);
-        if (segments && segments.length > 0) {
-            return segments;
-        }
-    }
-    return undefined;
 }
 
 export function transcriptConversationMetaExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry,

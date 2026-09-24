@@ -14,7 +14,7 @@ import type { TerminalBlock } from '@theia/terminal/lib/browser/base/terminal-wi
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { resolveTranscriptWorkspaceRootUri } from './qaap-transcript-file-open';
 import { resolveWorkspaceHostFsPath } from './qaap-project-bootstrap-shell';
-import type { TranscriptTerminalSurface } from './qaap-transcript-surface-types';
+import type { TranscriptTerminalSurface } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-surface-types';
 import {
     restoreOrCreateTranscriptTerminal,
     sanitizeTranscriptTerminalPersistedWorkspace,
@@ -31,7 +31,7 @@ export interface TranscriptTerminalViewServices {
     localize(key: string, defaultValue: string, ...args: string[]): string;
 }
 
-export type { TranscriptTerminalSurface } from './qaap-transcript-surface-types';
+export type { TranscriptTerminalSurface } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-surface-types';
 export {
     restoreOrCreateTranscriptTerminal,
     sanitizeTranscriptTerminalPersistedWorkspace,
@@ -207,54 +207,6 @@ export async function createTranscriptTerminalSurface(
         transcriptTerminalStagingHosts.set(surface, mountTarget);
     }
     return surface;
-}
-
-/** Mounts a cached terminal surface into the transcript tab host. */
-export function attachTranscriptTerminalSurface(
-    host: HTMLElement,
-    surface: TranscriptTerminalSurface,
-): Disposable {
-    if (!host.isConnected) {
-        throw new Error('Host is not attached.');
-    }
-    host.replaceChildren();
-    host.classList.add('theia-mobile-transcript-terminal');
-    host.append(surface.mountHost);
-    scheduleTranscriptTerminalResize(surface.terminal);
-
-    const resizeObserver = typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => {
-            if (surface.terminal.isAttached && !host.hidden) {
-                MessageLoop.sendMessage(surface.terminal, LuminoWidget.ResizeMessage.UnknownSize);
-                surface.terminal.update();
-            }
-        })
-        : undefined;
-    resizeObserver?.observe(surface.mountHost);
-
-    return Disposable.create(() => {
-        resizeObserver?.disconnect();
-        detachTranscriptTerminalSurface(host, surface);
-    });
-}
-
-/** Detaches the surface from the sheet without killing the PTY (for reuse / cache). */
-export function detachTranscriptTerminalSurface(host: HTMLElement, surface: TranscriptTerminalSurface): void {
-    const stagingHost = transcriptTerminalStagingHosts.get(surface);
-    if (stagingHost?.isConnected) {
-        stagingHost.append(surface.mountHost);
-        return;
-    }
-    if (surface.mountHost.parentElement === host) {
-        if (surface.terminal.isAttached && surface.terminal.node.isConnected) {
-            try {
-                LuminoWidget.detach(surface.terminal);
-            } catch {
-                // The terminal can already be detached by a concurrent surface teardown.
-            }
-        }
-        surface.mountHost.remove();
-    }
 }
 
 /** Keeps a cached terminal node connected while its visible slide is rebuilt. */

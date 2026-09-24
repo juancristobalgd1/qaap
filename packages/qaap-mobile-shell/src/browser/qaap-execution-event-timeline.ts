@@ -110,26 +110,6 @@ export {
     hasMobileProcessAccordion,
     findMobileProcessAccordion
 } from './mobile-process-accordion';
-import {
-    wrapMobileProcessAccordion
-} from './mobile-process-accordion';
-import type { MobileProcessAccordionOptions } from './mobile-process-accordion';
-
-/**
- * Creates the process accordion `<details>` element that wraps the execution
- * event timeline. The timeline is rendered inside as a child.
- *
- * Bridge function: stays in this module to avoid a circular dependency
- * (the accordion module would otherwise need to import the timeline builder
- * from here). Delegates to {@link wrapMobileProcessAccordion}.
- */
-export function createMobileProcessAccordion(
-    segments: readonly QaapAgentMessageSegmentDTO[],
-    options: MobileProcessAccordionOptions,
-): HTMLElement {
-    const timeline = createMobileExecutionEventTimeline(segments);
-    return wrapMobileProcessAccordion(timeline, options);
-}
 
 // ─── Turn Provenance Badge (extracted to mobile-turn-provenance-badge.ts) ────
 export {

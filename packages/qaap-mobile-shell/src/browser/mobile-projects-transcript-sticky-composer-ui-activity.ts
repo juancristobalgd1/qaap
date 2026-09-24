@@ -37,7 +37,7 @@ import {
 } from '../common/qaap-agent-tool-approval-rules';
 import {
     type TranscriptFollowUpEntry,
-} from '../common/qaap-transcript-follow-up-queue';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import { readProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import type { MobileProjectEntry } from './mobile-projects-types';

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { prefersReducedMotion } from '../common/qaap-prefers-reduced-motion';
+import { prefersReducedMotion } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 
 /** Matches animate-ui / lucide-motion Send fly-off class on the icon host. */
 export const STICKY_COMPOSER_SEND_FLY_CLASS = 'theia-mod-send-fly';

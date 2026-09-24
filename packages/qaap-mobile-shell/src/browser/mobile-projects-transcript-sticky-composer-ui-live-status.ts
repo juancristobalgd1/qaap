@@ -20,11 +20,11 @@ import {
 } from '../common/qaap-sticky-composer-approval-policy';
 import {
     type TranscriptFollowUpEntry,
-} from '../common/qaap-transcript-follow-up-queue';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-follow-up-queue';
 import {
     resolveBusyFollowUpDeliveryMode,
     shouldBypassLocalFollowUpQueue,
-} from './qaap-delivery-mode-strip';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-composer-delivery-mode';
 import { isAgentsHubIdleConversationSummary } from '../common/qaap-agents-hub-landing';
 import { writeProjectComposerDraft } from '../common/qaap-project-composer-draft';
 import { collectComposerImagePreviews } from './qaap-sticky-composer-context-ui';

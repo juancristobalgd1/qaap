@@ -12,11 +12,11 @@ import {
     type ExecutionSurfaceTabId,
 } from '../common/qaap-execution-surface-tabs';
 import type { MobileProjectEntry } from './mobile-projects-types';
-import type { TranscriptWorkspaceSurfacesCache } from './qaap-transcript-workspace-surfaces-cache';
+import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 import type { MobileProjectsProjectDetailUi } from './mobile-projects-project-detail-ui';
 import type { MobileProjectsTranscriptHeaderUi } from './mobile-projects-transcript-header-ui';
 import type { MobileProjectsTranscriptSurfacesUi } from './mobile-projects-transcript-surfaces-ui';
-import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, closeExecutionSurfaceSidebarExtracted, directChildWithClassExtracted, dismissExecutionSurfaceSidebarExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, openExecutionSurfaceSidebarExtracted, openExecutionSurfaceSidebarWhenReadyExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted, syncTranscriptTabStripExtracted } from './mobile-projects-execution-surface-tabs-ui-render';
+import { activateExecutionSurfaceTabExtracted, appendExecutionSurfaceTabStripToTitleRowExtracted, centerExecutionSurfaceActiveControlExtracted, closeExecutionSurfaceSidebarExtracted, directChildWithClassExtracted, dismissExecutionSurfaceSidebarExtracted, mountExecutionSurfaceTabContentExtracted, mountTranscriptExecutionHeaderExtracted, navigateExecutionSurfaceBackExtracted, openExecutionSurfaceSidebarExtracted, openExecutionSurfaceSidebarWhenReadyExtracted, rebuildExecutionSurfaceTabStripsExtracted, refreshExecutionSurfaceTabStripStateExtracted, replaceExecutionSurfaceTabStripExtracted, resolveExecutionSurfaceProjectExtracted, resolveExecutionSurfaceTabStripHostExtracted, restoreActiveExecutionSurfaceExtracted, scheduleExecutionSurfaceFrameExtracted, showOnlyExecutionSurfaceTabExtracted, syncConnectedTranscriptSurfaceHostsExtracted, syncExecutionSurfaceChromeExtracted, syncExecutionSurfaceChromeInHostExtracted, syncHeaderExecutionTabStripExtracted, syncProjectDetailTabStripExtracted, syncSurfaceHostsFromContainerExtracted } from './mobile-projects-execution-surface-tabs-ui-render';
 import { applyExecutionSurfaceIconSelectDisplayExtracted, buildExecutionViewTabStripExtracted, buildTranscriptTabStripExtracted, createExecutionSurfaceIconSelectExtracted, createTerminalAgentTuiSelectExtracted, executionSurfaceTabSpecsExtracted, executionTabOverflowMenuMinTopExtracted, openExecutionTabOverflowMenuExtracted, resolveExecutionTabOverflowMenuPortalExtracted, resolveTerminalAgentTuiActiveAgentIdExtracted, syncTerminalAgentTuiTriggerExtracted, syncTerminalAgentTuiTriggersInStripExtracted } from './mobile-projects-execution-surface-tabs-ui-streaming';
 import { closeExecutionTabOverflowMenuExtracted, mountTranscriptSurfaceTabExtracted, positionExecutionTabOverflowMenuExtracted } from './mobile-projects-execution-surface-tabs-ui-timeline';
 
@@ -123,7 +123,6 @@ export type MobileProjectsExecutionSurfaceSidebarState = NonNullable<MobileProje
 
 /** Tab strip, overflow picker, and execution-surface visibility for transcript and project detail. */
 export class MobileProjectsExecutionSurfaceTabsUi {
-
     constructor(
         /** @internal Used by the extracted mobile-projects-execution-surface-tabs-ui-* modules. */
         public readonly host: MobileProjectsExecutionSurfaceTabsHost,
@@ -239,10 +238,6 @@ export class MobileProjectsExecutionSurfaceTabsUi {
 
     syncProjectDetailTabStrip(): void {
         syncProjectDetailTabStripExtracted(this);
-    }
-
-    syncTranscriptTabStrip(project: MobileProjectEntry): void {
-        syncTranscriptTabStripExtracted(this, project);
     }
 
     rebuildExecutionSurfaceTabStrips(project: MobileProjectEntry, activeTab: TranscriptTab): void {

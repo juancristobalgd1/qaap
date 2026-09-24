@@ -47,7 +47,6 @@ interface CodexStreamEvent {
  * Incrementally parses {@code codex exec --json} NDJSON into chat segments.
  */
 export class QaapCodexStreamAccumulator {
-
     protected buffer = '';
     protected segments: QaapAgentMessageSegment[] = [];
     protected readonly itemsById = new Map<string, number>();
@@ -294,16 +293,6 @@ export class QaapCodexStreamAccumulator {
         this.itemsById.set(toolUseId, this.segments.length);
         this.segments.push(segment);
     }
-}
-
-export function parseCodexLog(log: string): { content: string; segments: QaapAgentMessageSegment[] } {
-    const acc = new QaapCodexStreamAccumulator();
-    acc.push(log);
-    if (acc.consumedJsonEvents()) {
-        const segments = [...acc.getSegments()];
-        return { content: acc.getDisplayText() || log.trim(), segments };
-    }
-    return { content: log.trim(), segments: [] };
 }
 
 function isCodexMessageItem(itemType: string): boolean {

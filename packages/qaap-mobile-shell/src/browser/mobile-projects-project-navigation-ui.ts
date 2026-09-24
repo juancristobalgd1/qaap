@@ -12,7 +12,7 @@ import {
 } from './mobile-projects-open';
 import type { MobileProjectsService } from './mobile-projects-service';
 import type { MobileProjectEntry, MobileProjectsHubView } from './mobile-projects-types';
-import type { TranscriptWorkspaceSurfacesCache } from './qaap-transcript-workspace-surfaces-cache';
+import type { TranscriptWorkspaceSurfacesCache } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache';
 
 export interface MobileProjectsProjectNavigationHost {
     hubView: MobileProjectsHubView;
@@ -59,7 +59,7 @@ export interface MobileProjectsProjectNavigationHost {
     syncLandingHubListChrome(): void;
     renderList(): void;
     hubQueryUi: import('./mobile-projects-hub-query-ui').MobileProjectsHubQueryUi;
-    disposeTranscriptTerminalSlides(workspaceKey?: import('./qaap-transcript-workspace-surfaces-cache').TranscriptWorkspaceSurfaceKey): void;
+    disposeTranscriptTerminalSlides(workspaceKey?: import('@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-workspace-surfaces-cache').TranscriptWorkspaceSurfaceKey): void;
     refreshProjects(): Promise<void>;
     hide(): void;
     dismissPanelIfSheet(): void;

@@ -30,7 +30,6 @@ interface PersistedProjectSessions {
 
 @injectable()
 export class QaapProjectSessionStore {
-
     protected readonly byUser = new Map<string, Map<string, QaapProjectSessionSummary>>();
     protected readonly storePath = resolveProjectSessionStorePath();
     protected readonly sqlitePath = resolveQaapSqlitePath(this.storePath);
@@ -46,10 +45,6 @@ export class QaapProjectSessionStore {
     listForUser(login: string): QaapProjectSessionSummary[] {
         const map = this.byUser.get(login);
         return map ? [...map.values()] : [];
-    }
-
-    getForUser(login: string, repoKey: string): QaapProjectSessionSummary | undefined {
-        return this.byUser.get(login)?.get(repoKey);
     }
 
     deleteForUser(login: string, repoKey: string): boolean {

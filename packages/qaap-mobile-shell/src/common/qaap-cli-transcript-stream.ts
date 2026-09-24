@@ -41,13 +41,6 @@ export interface QaapAgentStreamAccumulator {
     getTurnUsage?(): QaapAgentContextUsage | undefined;
 }
 
-/** Live CLI stream → AG-UI trace rows with running/streaming tail states. */
-export function getAccumulatorTraceEvents(
-    accumulator: Pick<QaapAgentStreamAccumulator, 'getSegments'>,
-): readonly QaapTranscriptTraceEventDTO[] {
-    return segmentsToTraceEvents([...accumulator.getSegments()], { streaming: true });
-}
-
 export function mergeAccumulatorTraceEvents(
     existing: readonly QaapTranscriptTraceEventDTO[] | undefined,
     accumulator: Pick<QaapAgentStreamAccumulator, 'getTraceEvents'>,

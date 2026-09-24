@@ -8,7 +8,7 @@ import { parseAgentLogForTranscript } from '../common/qaap-cli-transcript-stream
 import { dedupeAgentMessageTextSegments } from '../common/qaap-qaiq-stream';
 import { resolveQaapTranscriptTrace, segmentsToTraceEvents, traceEventsToSegments, type QaapTranscriptTrace } from '../common/qaap-transcript-trace-model';
 import { agentMessageHasStructuredTrace } from '../common/qaap-transcript-trace-lifecycle';
-import { fingerprintTranscriptMessage, TRANSCRIPT_MESSAGE_ID_ATTR } from '../common/qaap-transcript-incremental-update';
+import { fingerprintTranscriptMessage, TRANSCRIPT_MESSAGE_ID_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     isTranscriptAgentTailStreaming,
     resolveTranscriptEffectiveStatus,
@@ -16,7 +16,7 @@ import {
 import {
     transcriptHasActiveSelection,
     transcriptHasInteractiveFocus,
-} from './qaap-transcript-scroll-intent';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-scroll-intent';
 import {
     resolveStoredTranscriptReadMessageIndex,
 } from './qaap-transcript-read-position';

@@ -28,14 +28,14 @@ import { normalizePreviewUrlForSameOrigin } from '@theia/qaap-adapters/lib/brows
 import { probeQaapDevPreviewPort } from './qaap-dev-preview-client';
 import {
     TRANSCRIPT_TOOL_USE_ID_ATTR,
-} from '../common/qaap-transcript-incremental-update';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import {
     recordTranscriptRenderMetric,
-} from '../common/qaap-transcript-render-metrics';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import {
     QaapTranscriptLiveController,
-} from './qaap-transcript-live-controller';
+} from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-live-controller';
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_BUDGET_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_VISUAL_VERIFICATION_POLL_MS } from './mobile-projects-transcript-live-ui';
 import { TRANSCRIPT_PREVIEW_POLL_BASE_MS } from './mobile-projects-transcript-live-ui';
@@ -271,12 +271,6 @@ export function reconcileTranscriptInlineToolApprovalCardsExtracted(ctx: MobileP
                 card.remove();
             }
         });
-}
-
-export function hasInlineToolApprovalCardExtracted(ctx: MobileProjectsTranscriptLiveUiContext, chatHost: HTMLElement | undefined, toolUseId: string): boolean {
-        return !!chatHost?.querySelector(
-            `details[${TRANSCRIPT_TOOL_USE_ID_ATTR}="${CSS.escape(toolUseId)}"] .${TRANSCRIPT_APPROVAL_CARD_CLASS}`,
-        );
 }
 
 export function findTranscriptToolSegmentExtracted(ctx: MobileProjectsTranscriptLiveUiContext, conv: QaapAgentConversationDTO,

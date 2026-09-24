@@ -7,7 +7,7 @@ import {
     enableTranscriptRenderMetrics,
     getTranscriptRenderMetricsSnapshot,
     resetTranscriptRenderMetrics,
-} from '../common/qaap-transcript-render-metrics';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import {
     appendLongTranscriptProbeDelta,
     buildLongTranscriptProbeConversation,

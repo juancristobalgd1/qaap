@@ -15,7 +15,7 @@ import {
     type TranscriptToolUiPayload,
     type TranscriptToolUiQuestionFlowPayload,
 } from '../common/qaap-transcript-tool-ui-payloads';
-import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from './qaap-transcript-code-view';
+import { createTranscriptCodeView, resolveTranscriptCodeLanguage } from '@theia/qaap-transcript-overlay/lib/browser/qaap-transcript-code-view';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 
 export const TRANSCRIPT_CODE_BLOCK_CARD_CLASS = 'theia-mobile-agent-code-block-card';

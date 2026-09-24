@@ -140,15 +140,6 @@ export function isTranscriptPreviewWaitingExtracted(ctx: MobileProjectsTranscrip
         && conversationShouldWatchDevPreview(conv, window.location.origin);
 }
 
-export function findTranscriptPreviewRunButtonExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext): HTMLButtonElement | undefined {
-    const headerButton = ctx.host.headerPreviewRunHost.querySelector('.theia-mobile-transcript-preview-run');
-    if (headerButton instanceof HTMLButtonElement) {
-        return headerButton;
-    }
-    const overlayButton = ctx.host.transcriptEmbeddedPreview?.root.querySelector('.theia-mobile-transcript-preview-run');
-    return overlayButton instanceof HTMLButtonElement ? overlayButton : undefined;
-}
-
 export function syncHeaderPreviewRunButtonExtracted(ctx: MobileProjectsTranscriptSurfacesUiContext, project: MobileProjectEntry | undefined,
     summary: QaapAgentConversationSummaryDTO | undefined,
     conv: QaapAgentConversationDTO | undefined,): void {

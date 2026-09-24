@@ -4,29 +4,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import {
-    formatTranscriptStreamElapsed,
-    formatTranscriptStreamTokens,
-    formatTranscriptThoughtDuration,
-    isTranscriptAgentThinkingPhase,
-    isTranscriptSimpleQaTurn,
-    isTranscriptStreamStalled,
-    isTranscriptStreamTimedOut,
-    isTranscriptComposerVisualIdle,
-    isTranscriptThinkingGracePeriod,
-    resolveTranscriptTraceDisplayPhase,
-    resolveTranscriptTurnStartMs,
-    resolveTranscriptTurnStreamChars,
-    shouldExpandTranscriptInlineTimeline,
-    shouldShowTranscriptInlineTimeline,
-    shouldShowTranscriptStreamingActivity,
-    shouldShowTranscriptThoughtBrief,
-    shouldTranscriptStreamLabelShimmer,
-    TRANSCRIPT_THINKING_UI_GRACE_MS,
-} from './qaap-transcript-stream-status';
+import { formatTranscriptStreamElapsed, formatTranscriptStreamTokens, isTranscriptAgentThinkingPhase, isTranscriptSimpleQaTurn, isTranscriptStreamStalled, isTranscriptStreamTimedOut, isTranscriptComposerVisualIdle, isTranscriptThinkingGracePeriod, resolveTranscriptTraceDisplayPhase, resolveTranscriptTurnStartMs, resolveTranscriptTurnStreamChars, shouldExpandTranscriptInlineTimeline, shouldShowTranscriptInlineTimeline, shouldShowTranscriptStreamingActivity, shouldShowTranscriptThoughtBrief, shouldTranscriptStreamLabelShimmer, TRANSCRIPT_THINKING_UI_GRACE_MS } from './qaap-transcript-stream-status';
 
 describe('qaap-transcript-stream-status', () => {
-
     it('formats elapsed time across ranges', () => {
         expect(formatTranscriptStreamElapsed(0)).to.equal('0s');
         expect(formatTranscriptStreamElapsed(12_400)).to.equal('12s');
@@ -75,12 +55,6 @@ describe('qaap-transcript-stream-status', () => {
         expect(isTranscriptAgentThinkingPhase([{ type: 'tool' }], true)).to.equal(false);
         expect(isTranscriptAgentThinkingPhase([{ type: 'text', content: 'hi' }], true)).to.equal(false);
         expect(isTranscriptAgentThinkingPhase([{ type: 'thinking', content: 'plan' }], false)).to.equal(false);
-    });
-
-    it('formats short thought durations in seconds', () => {
-        expect(formatTranscriptThoughtDuration(400)).to.equal('1s');
-        expect(formatTranscriptThoughtDuration(2_400)).to.equal('2s');
-        expect(formatTranscriptThoughtDuration(90_000)).to.equal('1m 30s');
     });
 
     it('detects stream stalls after the grace window', () => {

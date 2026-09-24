@@ -14,11 +14,7 @@ import {
     resolveQaapBuiltinAgentMentionId,
 } from './qaap-builtin-agents';
 import { isQaapHarnessEnabled, readDisabledHarnessIds } from './qaap-harness-preferences';
-import {
-    readStoredAgentModel,
-    resolveStoredAgentModelForSubmit,
-    writeStoredAgentModel,
-} from './qaap-agent-model-selection';
+import { resolveStoredAgentModelForSubmit } from './qaap-agent-model-selection';
 
 export {
     agentSupportsModelPicker,
@@ -194,10 +190,6 @@ export function scopedAgentStorageKey(cwd: string): string {
     return `${SELECTED_AGENT_STORAGE_KEY}.${hashString(cwd)}`;
 }
 
-export function scopedQaiqModelStorageKey(cwd: string): string {
-    return `${SELECTED_QAIQ_MODEL_STORAGE_KEY}.${hashString(cwd)}`;
-}
-
 export function migrateLegacyBackendAgentId(agentId: string | undefined): string | undefined {
     if (!agentId) {
         return undefined;
@@ -260,10 +252,6 @@ export function writeStoredAgent(cwd: string | undefined, agentId: string): void
     }
 }
 
-export function readStoredQaiqModel(cwd: string | undefined): QaapCreateAgentTaskQaiqModel | undefined {
-    return readStoredAgentModel(cwd, QAIQ_AGENT_ID);
-}
-
 export function toQaapCreateAgentTaskQaiqModel(model: {
     readonly provider: QaapCreateAgentTaskQaiqModel['provider'];
     readonly vendor: string;
@@ -274,21 +262,6 @@ export function toQaapCreateAgentTaskQaiqModel(model: {
         vendor: model.vendor,
         modelId: model.modelId,
     };
-}
-
-/** @deprecated Use {@link resolveStoredAgentModelForSubmit}. */
-export function resolveStoredQaiqModelForAgent(
-    agentId: string | undefined,
-    cwd: string | undefined,
-): QaapCreateAgentTaskQaiqModel | undefined {
-    return resolveStoredAgentModelForSubmit(agentId, cwd);
-}
-
-export function writeStoredQaiqModel(
-    cwd: string | undefined,
-    model: QaapCreateAgentTaskQaiqModel | QaapQaiqModelOption,
-): void {
-    writeStoredAgentModel(cwd, QAIQ_AGENT_ID, model);
 }
 
 /**
@@ -383,11 +356,6 @@ export function filterQaapComposerAgents(
     return mergeComposerAgentPickerOptions(agents);
 }
 
-/** True when the server listed at least one VPS coding CLI the composer can pick. */
-export function hasSelectableCodingAgent(agents: readonly QaapAgentTaskAgentOption[]): boolean {
-    return filterQaapComposerAgents(agents).length > 0;
-}
-
 /**
  * Sticky/transcript composer agent picker — honors the current/stored choice, then defaults to
  * {@link QAAP_COMPOSER_DEFAULT_AGENT_ID} when available. Returns undefined when no coding CLI is installed
@@ -433,10 +401,6 @@ export function buildCreateAgentTaskBody(draft: string, agent: string, cwd: stri
     const base = { prompt: draft, agent, cwd, ...(contextPreamble ? { contextPreamble } : {}) };
     const agentModel = resolveStoredAgentModelForSubmit(agent, cwd);
     return agentModel ? { ...base, agentModel, qaiqModel: agentModel } : base;
-}
-
-export function shellAgentFallback(): QaapAgentTaskAgentOption {
-    return { id: SHELL_AGENT_ID, label: 'Shell', available: true };
 }
 
 /** Agents offered in mobile/desktop pickers (excludes shell and UI-hidden VPS agents). */
@@ -667,15 +631,6 @@ export async function fetchAgentModelsForAgent(agentId: string): Promise<QaapQai
         return [...CODEX_FALLBACK_MODELS];
     }
     return models;
-}
-
-export async function fetchAgentTaskList(cwd?: string): Promise<QaapAgentTaskListSnapshot> {
-    const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : '';
-    const response = await fetch(`${QAAP_AGENT_TASK_API_PATH}${query}`, { credentials: 'include' });
-    if (!response.ok) {
-        throw new Error(response.statusText);
-    }
-    return parseAgentTaskListBody(await response.json());
 }
 
 function parseAgentTaskListBody(body: {

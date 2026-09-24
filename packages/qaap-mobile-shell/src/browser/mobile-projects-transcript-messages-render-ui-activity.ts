@@ -3,7 +3,7 @@ import type { TranscriptAgentFailureDialogOptions } from './mobile-projects-tran
 // Extracted from mobile-projects-transcript-messages-render-ui.ts
 
 import { normalizeAgentMessageContentForDisplay } from '../common/qaap-agent-message-content';
-import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_MESSAGE_ID_ATTR, canStreamPatchAgentAppendTextSegment, canStreamPatchAgentAppendThinkingSegment, canStreamPatchAgentAppendToolSegment, canStreamPatchAgentSegmentsInPlace, canStreamPatchAgentSegmentsInPlaceWithAppend, canStreamPatchStdoutAgentContentOnly } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { enhanceTranscriptCaptureDirectives } from './qaap-transcript-capture-pending-ui';
 import { hasMobileExecutionEventTimeline, syncTranscriptStandaloneTurnProvenance } from './qaap-execution-event-timeline';
 import { resolveAgentDisplayLabel } from './qaap-agent-ui';
@@ -14,7 +14,7 @@ import {
 import {
     appendBeforeTranscriptLiveStatus,
 } from '../common/qaap-transcript-live-status';
-import { recordTranscriptRenderMetric } from '../common/qaap-transcript-render-metrics';
+import { recordTranscriptRenderMetric } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-render-metrics';
 import { type QaapAgentConversationDTO, type QaapAgentMessageDTO, type QaapAgentMessageSegmentDTO } from '../common/qaap-agent-conversation-client';
 import {
     extractLastFailedToolFromMessage,

@@ -15,7 +15,7 @@ import {
     fingerprintTranscriptTimelineSummary,
     TRANSCRIPT_TIMELINE_SUMMARY_FP_ATTR,
 } from '../common/qaap-transcript-timeline-sync-fingerprint';
-import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR } from '../common/qaap-transcript-incremental-update';
+import { TRANSCRIPT_ACTIVITY_TIMELINE_ATTR, TRANSCRIPT_SEGMENT_INDEX_ATTR } from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import {
     createThinkingOrbIndicator,
     destroyThinkingOrbIndicator,

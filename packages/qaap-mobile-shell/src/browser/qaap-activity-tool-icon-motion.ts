@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { prefersReducedMotion } from '../common/qaap-prefers-reduced-motion';
+import { prefersReducedMotion } from '@theia/qaap-transcript-overlay/lib/common/qaap-prefers-reduced-motion';
 
 /**
  * Continuous lucide-animated–inspired motion on transcript/trace tool icons

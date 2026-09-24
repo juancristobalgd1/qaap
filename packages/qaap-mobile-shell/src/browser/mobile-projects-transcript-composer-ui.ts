@@ -24,7 +24,6 @@ import {
     type QaapCreateAgentTaskQaiqModel,
     type QaapQaiqModelOption,
 } from '../common/qaap-agent-task-client';
-import { formatQaiqModelSelectionLabel } from '../common/qaap-qaiq-model-catalog';
 import {
     reconcileComposerModeId,
     resolveStickyComposerModes,
@@ -96,7 +95,6 @@ export interface MobileProjectsTranscriptComposerHost {
 
 /** Transcript sticky-composer agent/mode/approval sheets and backend agent list refresh. */
 export class MobileProjectsTranscriptComposerUi {
-
     constructor(protected readonly host: MobileProjectsTranscriptComposerHost) { }
 
     async ensureTranscriptComposerAgentsLoaded(
@@ -167,14 +165,6 @@ export class MobileProjectsTranscriptComposerUi {
             }
         }
         return readStoredAgentModel(cwd, agentId);
-    }
-
-    resolveTranscriptComposerModelLabel(
-        agentId: string,
-        cwd: string | undefined,
-    ): string | undefined {
-        const model = this.resolveTranscriptComposerAgentModel(agentId, cwd);
-        return model ? formatQaiqModelSelectionLabel(model) : undefined;
     }
 
     async refreshTranscriptComposerAgents(project: MobileProjectEntry): Promise<boolean> {

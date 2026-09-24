@@ -29,7 +29,7 @@ import { ensureTranscriptDevPreview } from './qaap-transcript-preview-bootstrap'
 import type { QaapProjectBootstrapService } from './qaap-project-bootstrap-service';
 import {
     mergeConversationTranscriptFingerprint,
-} from '../common/qaap-transcript-incremental-update';
+} from '@theia/qaap-transcript-overlay/lib/common/qaap-transcript-incremental-update';
 import { isTranscriptDocumentVisible } from '../common/qaap-transcript-document-visibility';
 import { scheduleTranscriptIdleWork } from '../common/qaap-transcript-idle-scheduler';
 import { isTranscriptAgentExecutionBusy, resolveTranscriptEffectiveStatus, isConversationTurnVisuallySettled } from '../common/qaap-transcript-turn-status';

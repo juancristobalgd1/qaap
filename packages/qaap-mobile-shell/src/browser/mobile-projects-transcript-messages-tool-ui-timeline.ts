@@ -358,15 +358,6 @@ export function appendTranscriptToolPillSummaryTailExtracted(ctx: MobileProjects
         ctx.appendTranscriptShellSummaryTail(summary, { ...options, showState: false });
 }
 
-export function appendTranscriptCardCopyTailExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, summary: HTMLElement, copyFrom: () => string): void {
-        ctx.appendTranscriptShellSummaryTail(summary, {
-            finished: true,
-            failed: false,
-            showState: false,
-            copyFrom,
-        });
-}
-
 export function createTranscriptShellWindowHeadExtracted(ctx: MobileProjectsTranscriptMessagesToolUiContext, options: {
         title: string;
         finished: boolean;

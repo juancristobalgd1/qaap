@@ -35,16 +35,6 @@ import {
     sendExternalComposerContext as sendExternalComposerContextHelper,
 } from './mobile-projects-panel-helpers';
 
-export function onHeaderIdeViewPickerClickExtracted(ctx: MobileProjectsPanelContext, event: MouseEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    if (ctx.headerIdeViewPickerMenu?.classList.contains('theia-mod-open')) {
-        ctx.closeHeaderIdeViewPickerMenu();
-        return;
-    }
-    ctx.openHeaderIdeViewPickerMenu();
-}
-
 export function openHeaderIdeViewPickerMenuExtracted(ctx: MobileProjectsPanelContext): void {
     const picker = ctx.mobileIdeViewPicker;
     const btn = ctx.headerIdeViewPickerBtn;
